@@ -8,6 +8,7 @@ import shutil
 import tempfile
 
 import pytest
+from mirakuru import SimpleExecutor
 from pytest_redis import factories as pytest_redis_factories
 from redis import Redis
 
@@ -29,7 +30,10 @@ def pytest_addoption(parser):
 
 
 redis_server_fixture = None
+redis_data_server_fixture = None
 bec_redis_fixture = None
+_bec_redis_data_fixture = None
+bec_redis_data_fixture = None
 _start_servers = False
 bec_servers_scope = (
     lambda fixture_name, config: config.getoption("--flush-redis") and "function" or "session"
@@ -39,6 +43,9 @@ services_config_template = """
 redis:
   host: %(redis_host)s
   port: %(redis_port)s
+redis_data:
+  host: %(redis_data_host)s
+  port: %(redis_data_port)s
 mongodb:
   host: "localhost"
   port: 27017
@@ -49,6 +56,8 @@ scibec:
 service_config:
   abort_on_ctrl_c: False
   enforce_ACLs: False
+  redis_data:
+    memory_limit: 2gb
   file_writer:
     plugin: default_NeXus_format
     base_path: %(file_writer_base_path)s
@@ -77,6 +86,8 @@ def _get_tmp_dir():
 def pytest_configure(config):
     global redis_server_fixture
     global bec_redis_fixture
+    global redis_data_server_fixture
+    global _bec_redis_data_fixture
     global _start_servers
     global _bec_servers_scope
 
@@ -94,12 +105,26 @@ def pytest_configure(config):
         redis_server_fixture = pytest_redis_factories.proc.redis_proc(
             executable=config.getoption("--bec-redis-cmd"), datadir=datadir
         )
+        plugins = []
+        for plugin in ("librejson", "redisearch"):
+            plugin_path = os.path.join(
+                os.environ.get("CONDA_PREFIX", "/usr"), "lib", f"{plugin}.so"
+            )
+            if os.path.exists(plugin_path):
+                plugins.append(plugin_path)
+        redis_data_server_fixture = pytest_redis_factories.proc.redis_proc(
+            executable=config.getoption("--bec-redis-cmd"), modules=plugins, datadir=datadir
+        )
 
         if config.getoption("--flush-redis"):
             bec_redis_fixture = pytest_redis_factories.client.redisdb("redis_server_fixture")
+            _bec_redis_data_fixture = pytest_redis_factories.client.redisdb(
+                "redis_data_server_fixture"
+            )
             _bec_servers_scope = "function"  # have to restart servers at each test
         else:
             bec_redis_fixture = redis_server_fixture
+            _bec_redis_data_fixture = redis_data_server_fixture
     else:
         # do not automatically start redis - bec_redis_fixture will use existing
         # process, will wait for 3 seconds max (must be running already);
@@ -109,9 +134,39 @@ def pytest_configure(config):
         redis_server_fixture = pytest_redis_factories.noproc.redis_noproc(
             host=config.getoption("--bec-redis-host"), startup_timeout=3
         )
+        redis_data_server_fixture = pytest_redis_factories.noproc.redis_noproc(
+            host=config.getoption("--bec-redis-host"), port=6380, startup_timeout=3
+        )
         bec_redis_fixture = redis_server_fixture
+        _bec_redis_data_fixture = redis_data_server_fixture
 
     _start_servers = config.getoption("--start-servers")
+
+
+@pytest.fixture(scope=bec_servers_scope)
+def bec_redis_data_host_port(request, _bec_redis_data_fixture):
+    if isinstance(_bec_redis_data_fixture, Redis):
+        server_fixture = request.getfixturevalue("redis_data_server_fixture")
+        return server_fixture.host, server_fixture.port
+    else:
+        return _bec_redis_data_fixture.host, _bec_redis_data_fixture.port
+
+
+@pytest.fixture(scope=bec_servers_scope)
+def bec_redis_data_fixture(
+    _bec_redis_data_fixture, bec_redis_data_host_port, bec_services_config_file_path
+):
+    redis_host, redis_port = bec_redis_data_host_port
+    config = ServiceConfig(bec_services_config_file_path)
+    maxmemory = config.redis_data_memory_limit
+    redis_client = Redis(redis_host, redis_port)
+    redis_client.config_set("save", "")
+    redis_client.config_set("maxmemory", maxmemory)
+    redis_client.config_set("maxmemory-policy", "noeviction")
+    with SimpleExecutor(
+        command=["memory_tracker", "--init-db", f"--redis-url=redis://{redis_host}:{redis_port}"]
+    ):
+        yield _bec_redis_data_fixture
 
 
 @pytest.fixture(scope=bec_servers_scope)
@@ -129,13 +184,34 @@ def bec_files_path(request):
 
 
 @pytest.fixture(scope=bec_servers_scope)
-def bec_services_config_file_path(bec_files_path):
-    return pathlib.Path(bec_files_path / "services_config.yaml")
+def bec_services_config_file_path(bec_files_path, bec_redis_host_port, bec_redis_data_host_port):
+    redis_host, redis_port = bec_redis_host_port
+    redis_data_host, redis_data_port = bec_redis_data_host_port
+    path = pathlib.Path(bec_files_path / "services_config.yaml")
+    # path where hdf5 files are saved
+    file_writer_path = path.parent
+    # write config file
+    with open(path, "w") as services_config_file:
+        services_config_file.write(
+            services_config_template
+            % {
+                "redis_host": redis_host,
+                "redis_port": redis_port,
+                "redis_data_host": redis_data_host,
+                "redis_data_port": redis_data_port,
+                "file_writer_base_path": file_writer_path,
+            }
+        )
+    return path
 
 
 @pytest.fixture(scope=bec_servers_scope)
-def bec_test_config_file_path(bec_files_path):
-    return pathlib.Path(bec_files_path / "test_config.yaml")
+def bec_test_config_file_path(bec_files_path, test_config_yaml_file_path):
+    # ensure test config file (device info...) is written where appropriate for tests,
+    # i.e. either in /tmp/pytest/... directory, or following user "--files-path"
+    path = pathlib.Path(bec_files_path / "test_config.yaml")
+    shutil.copyfile(test_config_yaml_file_path, path)
+    return path
 
 
 @pytest.fixture(scope=bec_servers_scope)
@@ -154,26 +230,8 @@ def bec_servers(
     bec_test_config_file_path,
     bec_files_path,
     bec_redis_host_port,
+    bec_redis_data_host_port,
 ):
-    redis_host, redis_port = bec_redis_host_port
-    # ensure configuration files are written where appropriate for tests,
-    # i.e. either in /tmp/pytest/... directory, or following user "--files-path"
-    # 1) test config (devices...)
-    shutil.copyfile(test_config_yaml_file_path, bec_test_config_file_path)
-    # 2) path where files are saved
-    file_writer_path = bec_services_config_file_path.parent  # / "writer_output"
-    # file_writer_path.mkdir(exist_ok=True)
-    # 3) services config
-    with open(bec_services_config_file_path, "w") as services_config_file:
-        services_config_file.write(
-            services_config_template
-            % {
-                "redis_host": redis_host,
-                "redis_port": redis_port,
-                "file_writer_base_path": file_writer_path,
-            }
-        )
-
     if _start_servers:
         from bec_server.bec_server_utils.service_handler import ServiceHandler
 
@@ -198,7 +256,7 @@ def bec_servers(
 
 @pytest.fixture
 def bec_ipython_client_with_demo_config(
-    bec_redis_fixture, bec_services_config_file_path, bec_servers
+    bec_redis_fixture, bec_redis_data_fixture, bec_services_config_file_path, bec_servers
 ):
     config = ServiceConfig(bec_services_config_file_path)
     bec = BECIPythonClient(config, RedisConnector, forced=True)
@@ -212,7 +270,9 @@ def bec_ipython_client_with_demo_config(
 
 
 @pytest.fixture
-def bec_client_lib_with_demo_config(bec_redis_fixture, bec_services_config_file_path, bec_servers):
+def bec_client_lib_with_demo_config(
+    bec_redis_fixture, bec_redis_data_fixture, bec_services_config_file_path, bec_servers
+):
     config = ServiceConfig(bec_services_config_file_path)
     bec = BECClient(config, RedisConnector, forced=True, wait_for_server=True)
     bec.start()

@@ -23,6 +23,7 @@ DEFAULT_BASE_PATH = (
 
 DEFAULT_SERVICE_CONFIG = {
     "redis": {"host": os.environ.get("BEC_REDIS_HOST", "localhost"), "port": 6379},
+    "redis_data": {"host": os.environ.get("BEC_REDIS_HOST", "localhost"), "port": 6380},
     "service_config": {
         "file_writer": {"plugin": "default_NeXus_format", "base_path": DEFAULT_BASE_PATH},
         "log_writer": {"base_path": DEFAULT_BASE_PATH},
@@ -45,6 +46,7 @@ class ServiceConfig:
             self._load_config()
         if self.config:
             self._load_urls("redis", required=True)
+            self._load_urls("redis_data", required=True)
             self._load_urls("mongodb", required=False)
 
         self._update_config(service_config=service_config, redis=redis, **kwargs)
@@ -104,9 +106,17 @@ class ServiceConfig:
         return self._load_urls("redis", required=True)
 
     @property
+    def redis_data(self):
+        return self._load_urls("redis_data", required=True)
+
+    @property
     def abort_on_ctrl_c(self):
         return self.service_config.get("abort_on_ctrl_c", True)
 
     def is_default(self):
         """Return whether config is DEFAULT_SERVICE_CONFIG"""
         return self.config is DEFAULT_SERVICE_CONFIG
+
+    @property
+    def redis_data_memory_limit(self):
+        return self.service_config.get("redis_data", {}).get("memory_limit", "1gb")
