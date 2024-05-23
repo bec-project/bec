@@ -1,6 +1,7 @@
 from string import Template
 from unittest import mock
 
+from bec_server.bec_server_utils.service_handler import ServiceDesc
 from bec_server.bec_server_utils.tmux_launch import tmux_start, tmux_stop
 
 
@@ -8,23 +9,18 @@ def test_tmux_start():
     with mock.patch("bec_server.bec_server_utils.tmux_launch.libtmux") as mock_libtmux_server:
         tmux_start(
             "/path/to/bec",
-            "/path/to/config",
             {
-                "scan_server": {
-                    "path": Template("$base_path/scan_server"),
-                    "command": "bec-scan-server",
-                },
-                "scan_bundler": {
-                    "path": Template("$base_path/scan_bundler"),
-                    "command": "bec-scan-bundler",
-                },
+                "scan_server": ServiceDesc(Template("$base_path/scan_server"), "bec-scan-server"),
+                "scan_bundler": ServiceDesc(
+                    Template("$base_path/scan_bundler"), "bec-scan-bundler"
+                ),
             },
         )
         mock_libtmux_server.Server().new_session.assert_called_once_with(
             "bec", window_name="BEC server. Use `ctrl+b d` to detach.", kill_session=True
         )
         assert (
-            mock_libtmux_server.Server().new_session().attached_window.select_layout.call_count == 2
+            mock_libtmux_server.Server().new_session().attached_window.select_layout.call_count == 1
         )
 
         assert mock_libtmux_server.Server().new_session().set_option.call_count == 1

@@ -23,6 +23,7 @@ dependencies = [
     "ophyd_devices>=1.10.3, <2.0",
     "pydantic~=2.8",
     "py-scibec~=1.15",
+    "psutil~=5.9",
     "pyyaml~=6.0",
     "python-dotenv~=1.0",
     "rich~=13.7",

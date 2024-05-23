@@ -11,7 +11,11 @@ def test_main_start():
             )
             main()
             mock_service_handler.assert_called_once_with(
-                bec_path=mock.ANY, config_path=None, no_tmux=False
+                bec_path=mock.ANY,
+                config_path=None,
+                no_tmux=False,
+                start_redis=False,
+                no_persistence=False,
             )
             mock_service_handler().start.assert_called_once()
 
@@ -24,7 +28,11 @@ def test_main_stop():
             )
             main()
             mock_service_handler.assert_called_once_with(
-                bec_path=mock.ANY, config_path=None, no_tmux=False
+                bec_path=mock.ANY,
+                config_path=None,
+                no_tmux=False,
+                start_redis=False,
+                no_persistence=False,
             )
             mock_service_handler().stop.assert_called_once()
 
@@ -37,7 +45,11 @@ def test_main_restart():
             )
             main()
             mock_service_handler.assert_called_once_with(
-                bec_path=mock.ANY, config_path=None, no_tmux=False
+                bec_path=mock.ANY,
+                config_path=None,
+                no_tmux=False,
+                start_redis=False,
+                no_persistence=False,
             )
             mock_service_handler().restart.assert_called_once()
 
@@ -50,7 +62,11 @@ def test_main_start_with_config():
             )
             main()
             mock_service_handler.assert_called_once_with(
-                bec_path=mock.ANY, config_path="/path/to/config", no_tmux=False
+                bec_path=mock.ANY,
+                config_path="/path/to/config",
+                no_tmux=False,
+                start_redis=False,
+                no_persistence=False,
             )
             mock_service_handler().start.assert_called_once()
 
@@ -63,6 +79,10 @@ def test_main_restart_with_config():
             )
             main()
             mock_service_handler.assert_called_once_with(
-                bec_path=mock.ANY, config_path="/path/to/config", no_tmux=False
+                bec_path=mock.ANY,
+                config_path="/path/to/config",
+                no_tmux=False,
+                start_redis=False,
+                no_persistence=False,
             )
             mock_service_handler().restart.assert_called_once()
