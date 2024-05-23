@@ -19,6 +19,12 @@ def main():
     start.add_argument(
         "--no-tmux", action="store_true", default=False, help="Do not start processes in tmux"
     )
+    start.add_argument(
+        "--start-redis", action="store_true", default=False, help="Start Redis server"
+    )
+    start.add_argument(
+        "--no-persistence", action="store_true", default=False, help="Do not load/save RDB file"
+    )
     command.add_parser("stop", help="Stop the BEC server")
     restart = command.add_parser("restart", help="Restart the BEC server")
     restart.add_argument(
@@ -37,6 +43,8 @@ def main():
         bec_path=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         config_path=config,
         no_tmux=args.no_tmux if "no_tmux" in args else False,
+        start_redis=args.start_redis if "start_redis" in args else False,
+        no_persistence=args.no_persistence if "no_persistence" in args else False,
     )
     if args.command == "start":
         service_handler.start()
