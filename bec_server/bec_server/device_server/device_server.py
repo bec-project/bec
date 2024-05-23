@@ -363,6 +363,28 @@ class DeviceServer(RPCMixin, BECService):
             except Exception as exc:
                 signals = self._retry_obj_method(dev, obj, "read", exc)
 
+            streams = self.device_manager.get_data_streams(obj.name)
+            if streams is None:
+                print(f"NO DATA STREAM FOR {obj.name}")
+            else:
+                for stream in streams:
+                    # convert stream name to signal name
+                    # (the stream name -in Redis- matches the Flint data channel name, which corresponds to Flint conventions)
+                    name = stream.name
+                    if name.startswith("axis:"):
+                        name = name[5:]  # remove 'axis:' prefix
+                    dev_name, _, signal_name = name.partition(":")
+                    if not signal_name:
+                        signal_name = dev_name  # positioner or readback signal without suffix
+                    else:
+                        signal_name = f"{dev_name}_{signal_name.replace(':', '_')}"
+                    try:
+                        stream.send(signals[signal_name]["value"])
+                    except KeyError:
+                        print(
+                            f"Warning: Stream {stream.name} for device {obj.name}: No signal with name {repr(signal_name)}"
+                        )
+
             self.connector.set_and_publish(
                 MessageEndpoints.device_read(device_root),
                 messages.DeviceMessage(signals=signals, metadata=metadata),

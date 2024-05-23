@@ -147,6 +147,25 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def device_blissdata_stream(device: str) -> EndpointInfo:
+        """
+        Endpoint for identifying device stream (blissdata). This endpoint is used by the device server to publish
+        the device stream using a messages.DeviceMessage message.
+
+        Args:
+            device (str): Device name, e.g. "samx".
+
+        Returns:
+            EndpointInfo: Endpoint for device stream.
+        """
+        endpoint = f"internal/devices/streams/{device}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeviceStreamInfoMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def device_req_status(device: str) -> EndpointInfo:
         """
         Endpoint for device request status. This endpoint is used by the device server to publish

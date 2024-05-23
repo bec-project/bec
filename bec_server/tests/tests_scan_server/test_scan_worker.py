@@ -1016,7 +1016,11 @@ def test_check_for_interruption(scan_worker_mock):
             messages.DeviceInstructionMessage(
                 device=None,
                 action="open_scan",
-                parameter={"num_points": 150, "scan_motors": ["samx", "samy"]},
+                parameter={
+                    "num_points": 150,
+                    "scan_motors": ["samx", "samy"],
+                    "scan_name": "test_scan",
+                },
                 metadata={
                     "readout_priority": "monitored",
                     "DIID": 18,
@@ -1033,7 +1037,7 @@ def test_check_for_interruption(scan_worker_mock):
             messages.DeviceInstructionMessage(
                 device=None,
                 action="open_scan",
-                parameter={"num_points": 150},
+                parameter={"num_points": 150, "scan_name": "test_scan"},
                 metadata={
                     "readout_priority": "monitored",
                     "DIID": 18,
@@ -1060,33 +1064,38 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
 
     assert worker.parent.connector.get(MessageEndpoints.scan_number()) == None
 
-    with mock.patch.object(worker, "current_instruction_queue_item") as queue_mock:
-        with mock.patch.object(worker, "_initialize_scan_info") as init_mock:
-            with mock.patch.object(worker.scan_report_instructions, "append") as instr_append_mock:
-                with mock.patch.object(worker, "_send_scan_status") as send_mock:
-                    with mock.patch.object(
-                        worker.current_instruction_queue_item.parent.queue_manager,
-                        "send_queue_status",
-                    ) as queue_status_mock:
-                        active_rb = queue_mock.active_request_block
-                        active_rb.scan_report_instructions = []
-                        worker.open_scan(instr)
+    with mock.patch("bec_server.scan_server.scan_worker.DataStore"):
+        with mock.patch(
+            "bec_server.scan_server.scan_worker.bec_scan_info_to_blissdata_scan_info",
+            return_value=({}, {}),
+        ):
+            with mock.patch.object(worker, "current_instruction_queue_item") as queue_mock:
+                with mock.patch.object(
+                    worker.scan_report_instructions, "append"
+                ) as instr_append_mock:
+                    with mock.patch.object(worker, "_send_scan_status") as send_mock:
+                        with mock.patch.object(
+                            worker.current_instruction_queue_item.parent.queue_manager,
+                            "send_queue_status",
+                        ) as queue_status_mock:
+                            active_rb = queue_mock.active_request_block
+                            active_rb.scan_report_instructions = []
+                            worker.open_scan(instr)
 
-                        if not scan_id:
-                            assert worker.scan_id == instr.metadata.get("scan_id")
-                            assert worker.scan_motors == [
-                                worker.device_manager.devices["samx"],
-                                worker.device_manager.devices["samy"],
+                            if not scan_id:
+                                assert worker.scan_id == instr.metadata.get("scan_id")
+                                assert worker.scan_motors == [
+                                    worker.device_manager.devices["samx"],
+                                    worker.device_manager.devices["samy"],
+                                ]
+                            else:
+                                assert worker.scan_id == 111
+                                assert worker.scan_motors == ["bpm4i"]
+                            assert active_rb.scan_report_instructions == [
+                                {"scan_progress": corr_num_points}
                             ]
-                        else:
-                            assert worker.scan_id == 111
-                            assert worker.scan_motors == ["bpm4i"]
-                        init_mock.assert_called_once_with(active_rb, instr, corr_num_points)
-                        assert active_rb.scan_report_instructions == [
-                            {"scan_progress": corr_num_points}
-                        ]
-                        queue_status_mock.assert_called_once()
-                        send_mock.assert_called_once_with("open")
+                            queue_status_mock.assert_called_once()
+                            send_mock.assert_called_once_with("open")
 
 
 @pytest.mark.parametrize(

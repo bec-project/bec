@@ -14,6 +14,7 @@ classifiers = [
 ]
 dependencies = [
     "bec-lib",
+    "blissdata==2.0.0rc2",
     "h5py~=3.10",
     "libtmux~=0.37",
     "lmfit~=1.3",

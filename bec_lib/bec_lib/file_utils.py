@@ -141,23 +141,17 @@ class FileWriter:
             leading_zeros (int, optional): Number of leading zeros. Defaults to 5.
 
         """
-        self.service_config = service_config
-        self._scan_bundle = scan_bundle
-        self._leading_zeros = leading_zeros
-        self._kwargs = kwargs
         self._base_path = "."  # default to current directory
-        self.connector = connector
-        self.service_config_parser = None
         self._configured = False
-        self._initialized = True
-        if self.connector:
-            self.configure_file_writer()
-            self._configured = True
-
-    def configure_file_writer(self):
-        """Configure the file writer mixin class in case service_config is provided"""
-        self.service_config_parser = ServiceConfigParser(self.service_config)
-        self._base_path = self.service_config_parser.get_base_path()
+        self._kwargs = kwargs
+        self._leading_zeros = leading_zeros
+        self._scan_bundle = scan_bundle
+        self.connector = connector
+        self.service_config = service_config
+        self.service_config_parser = None
+        if self.service_config:
+            self.service_config_parser = ServiceConfigParser(self.service_config)
+            self._base_path = self.service_config_parser.get_base_path()
 
     @property
     def scan_bundle(self) -> int:
@@ -200,12 +194,29 @@ class FileWriter:
 
     def get_scan_msg(self):
         """Get the scan message for the next scan"""
+        if self.connector is None:
+            return None
         msg = self.connector.get(MessageEndpoints.scan_status())
         if not isinstance(msg, ScanStatusMessage):
             return None
         return msg
 
-    def compile_full_filename(self, suffix: str, create_dir: bool = True) -> str:
+    def _check_file_suffix(self, suffix: str):
+        # to check if suffix is alphanumeric and ascii, however we allow in addition - and _
+        check_suffix = suffix.replace("_", "").replace("-", "")
+        if not check_suffix.isalnum() or not check_suffix.isascii():
+            raise FileWriterError(
+                f"Can't use suffix {suffix}; formatting is alphanumeric:{suffix.isalnum()} and ascii {suffix.isascii()}"
+            )
+
+    def compile_full_filename(
+        self,
+        suffix: str = "master",
+        create_dir: bool = True,
+        scan_number: int = -1,
+        user_suffix: str = "",
+        scan_dir: str = "",
+    ) -> str:
         """
         Compile a full filename for a given scan number and suffix.
 
@@ -217,38 +228,45 @@ class FileWriter:
 
         Args:
             suffix (str): Filename suffix including extension. We allow alphanumeric, ascii characters - and _.
-            file_type (str) : Optional, will default to h5.
             create_dir (bool, optional): Create the directory if it does not exist. Defaults to True.
 
         Returns:
             str: Full filename
         """
-        # to check if suffix is alphanumeric and ascii, however we allow in addition - and _
-        check_suffix = suffix.replace("_", "").replace("-", "")
-        if not check_suffix.isalnum() or not check_suffix.isascii():
-            raise FileWriterError(
-                f"Can't use suffix {suffix}; formatting is alphanumeric:{suffix.isalnum()} and ascii {suffix.isascii()}"
+        self._check_file_suffix(suffix)
+
+        if not self.service_config_parser:
+            warnings.warn(
+                f"No service config provided, using default base path: {os.path.abspath(self._base_path)}"
             )
-        if self._configured:
+            if scan_number == -1:
+                scan_number = 0
+
+        if scan_number >= 0:
+            # build filename without querying last scan msg
+            scannr = scan_number
+        else:
             scan_msg = self.get_scan_msg()
             if not scan_msg:
-                warnings.warn("No scan message available.")
-                return ""
+                raise RuntimeError("No scan message available.")
             scannr = scan_msg.content["info"]["scan_number"]
             user_suffix = scan_msg.info.get("file_suffix")
             scan_dir = scan_msg.info.get("file_directory")
-            if not scan_dir:
-                scan_dir = self.get_scan_directory(
-                    scannr, self.scan_bundle, self.leading_zeros, user_suffix=user_suffix
-                )
-            if user_suffix:
-                suffix += f"_{user_suffix}"
-            full_file = os.path.join(
-                self._base_path, "data", scan_dir, f"S{scannr:0{self._leading_zeros}d}_{suffix}.h5"
+
+        if user_suffix:
+            self._check_file_suffix(user_suffix)
+            suffix += f"_{user_suffix}"
+
+        if not scan_dir:
+            scan_dir = self.get_scan_directory(
+                scannr, self.scan_bundle, self.leading_zeros, user_suffix=user_suffix
             )
-        else:
-            full_file = os.path.join(self._base_path, "data", f"S00000_default_{suffix}.h5")
-            warnings.warn(f"No service config provided, using default base path {full_file}.")
+
+        full_file = os.path.join(
+            self._base_path, "data", scan_dir, f"S{scannr:0{self._leading_zeros}d}_{suffix}.h5"
+        )
+
         if create_dir:
             os.makedirs(os.path.dirname(full_file), exist_ok=True)
-        return full_file
+
+        return os.path.abspath(full_file)
