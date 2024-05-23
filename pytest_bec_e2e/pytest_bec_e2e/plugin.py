@@ -187,10 +187,7 @@ def bec_servers(
         try:
             yield
         finally:
-            for process in processes:
-                process.terminate()
-            for process in processes:
-                os.waitpid(process.pid, 0)
+            service_handler.stop(processes)
     else:
         # Nothing to do here: servers are supposed to be started externally.
         yield
