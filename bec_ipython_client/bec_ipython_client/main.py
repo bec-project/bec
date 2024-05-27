@@ -223,6 +223,7 @@ def main():
     )
     parser.add_argument("--version", action="store_true", default=False)
     parser.add_argument("--nogui", action="store_true", default=False)
+    parser.add_argument("--flint", action="store_true", default=False)
     parser.add_argument("--dont-wait-for-server", action="store_true", default=False)
     parser.add_argument("--post-startup-file", action="store", default=None)
 
