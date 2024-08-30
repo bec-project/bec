@@ -19,5 +19,6 @@ service_config:
   file_writer:
     plugin: default_NeXus_format
     base_path: /tmp
+    enable_bliss_writer: True
   log_writer:
     base_path: /tmp
