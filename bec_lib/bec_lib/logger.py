@@ -220,13 +220,23 @@ class BECLogger:
         """
         if not self.service_name:
             return
-        filename = os.path.join(self._base_path, f"{self.service_name}.log")
-        self.logger.add(
-            filename,
-            level=level,
-            format=self.formatting,
-            filter=lambda record: record["level"].no != LogLevel.CONSOLE_LOG,
-        )
+        try:
+            filename = os.path.join(self._base_path, f"{self.service_name}.log")
+            self.logger.add(
+                filename,
+                level=level,
+                format=self.formatting,
+                filter=lambda record: record["level"].no != LogLevel.CONSOLE_LOG,
+            )
+        except PermissionError:
+            import tempfile
+            filename = tempfile.NamedTemporaryFile(prefix=self.service_name, delete=False, mode="a+")
+            self.logger.add(
+                filename,
+                level=level,
+                format=self.formatting,
+                filter=lambda record: record["level"].no != LogLevel.CONSOLE_LOG,
+            )
 
     def add_console_log(self):
         """
@@ -240,18 +250,29 @@ class BECLogger:
 
         if not self.service_name:
             return
-        filename = os.path.join(self._base_path, f"{self.service_name}_CONSOLE.log")
 
         # define a level corresponding to console log - this is to be able to filter messages
         # (only those with this particular level will be recorded by the console logger,
         # while other loggers will ignore them)
 
-        self.logger.add(
-            filename,
-            level=LogLevel.CONSOLE_LOG,
-            format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
-            filter=lambda record: record["level"].no == LogLevel.CONSOLE_LOG,
-        )
+        try:
+            filename = os.path.join(self._base_path, f"{self.service_name}_CONSOLE.log")
+            self.logger.add(
+                filename,
+                level=LogLevel.CONSOLE_LOG,
+                format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
+                filter=lambda record: record["level"].no == LogLevel.CONSOLE_LOG,
+            )
+        except PermissionError:
+            import tempfile
+            filename = tempfile.NamedTemporaryFile(suffix=f"{self.service_name}_CONSOLE.log", delete=False, mode="a+")
+            self.logger.add(
+                filename,
+                level=LogLevel.CONSOLE_LOG,
+                format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
+                filter=lambda record: record["level"].no == LogLevel.CONSOLE_LOG,
+            )
+
         self._console_log = True
 
     def add_redis_log(self, level: LogLevel):
