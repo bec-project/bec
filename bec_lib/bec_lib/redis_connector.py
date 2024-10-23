@@ -1073,8 +1073,8 @@ class RedisConnector(ConnectorBase):
         In order to keep this fail-safe and simple it uses 'mock'...
         """
         from unittest.mock import (
-            Mock,
-        )  # import is done here, to not pollute the file with something normally in tests
+            Mock,  # import is done here, to not pollute the file with something normally in tests
+        )
 
         warnings.warn(
             "RedisConnector.consumer() is deprecated and should not be used anymore. Use RedisConnector.register() with 'topics', 'patterns', 'cb' or 'start_thread' instead. Additional keyword args are transmitted to the callback. For the caller, the main difference with RedisConnector.register() is that it does not return a new thread.",
