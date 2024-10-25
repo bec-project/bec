@@ -601,10 +601,9 @@ class DMClientMock(DeviceManagerBase):
 
 
 class PipelineMock:  # pragma: no cover
-    _pipe_buffer = []
-    _connector = None
 
     def __init__(self, connector) -> None:
+        self._pipe_buffer = []
         self._connector = connector
 
     def execute(self):
