@@ -1,19 +1,33 @@
 import copy
-import functools
-import os
 import time
 from unittest import mock
 
+import fakeredis
 import numpy as np
 import pytest
-import yaml
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.redis_connector import RedisConnector
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+def fake_redis_server(host, port):
+    redis = fakeredis.FakeRedis()
+    return redis
+
+
+@pytest.fixture
+def connected_connector():
+    connector = RedisConnector("localhost:1", redis_cls=fake_redis_server)
+    connector._redis_conn.flushall()
+    try:
+        yield connector
+    finally:
+        connector.shutdown()
 
 
 class ControllerMock:
@@ -109,31 +123,25 @@ def test_disable_unreachable_devices(device_manager, session_from_test_config):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_flyer_event_callback(dm_with_devices):
+def test_flyer_event_callback(dm_with_devices, connected_connector):
     device_manager = dm_with_devices
     samx = device_manager.devices.samx
     samx.metadata = {"scan_id": "12345"}
-
+    # Use here fake redis connector to avoid complications with PipelineMock
+    device_manager.connector = connected_connector
     device_manager._obj_flyer_callback(
-        obj=samx.obj, value={"data": {"idata": np.random.rand(20), "edata": np.random.rand(20)}}
+        obj=samx.obj,
+        value={"data": {"idata": np.random.rand(20), "edata": np.random.rand(20)}},
+        metadata={"scan_id": "test_scan_id"},
     )
-    pipe = device_manager.connector.pipeline()
-    bundle, progress = pipe._pipe_buffer[-2:]
-
-    # check connector method
-    assert bundle[0] == "send"
-    assert progress[0] == "set_and_publish"
-
-    # check endpoint
-    assert bundle[1][0] == MessageEndpoints.device_read("samx").endpoint
-    assert progress[1][0] == MessageEndpoints.device_progress("samx").endpoint
-
-    # check message
-    bundle_msg = bundle[1][1]
-    assert len(bundle_msg) == 20
-
-    progress_msg = progress[1][1]
-    assert progress_msg.content["status"] == 20
+    msg = connected_connector.get(MessageEndpoints.device_read("samx"))
+    assert "signals" in msg.content
+    assert "idata" in msg.content["signals"]
+    assert "edata" in msg.content["signals"]
+    msg = connected_connector.get(MessageEndpoints.device_status("samx"))
+    assert msg.metadata["scan_id"] == "12345"
+    assert msg.content["device"] == "samx"
+    assert msg.content["status"] == 20
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

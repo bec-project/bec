@@ -564,6 +564,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def _obj_flyer_callback(self, *_args, **kwargs):
         obj = kwargs["obj"]
+        logger.warning(
+            f"Flyer callback will be deprecated in future, please refactor your device {obj.root.name} in favor of an async devices as soon as possible."
+        )
         data = kwargs["value"].get("data")
         ds_obj = self.devices[obj.root.name]
         metadata = ds_obj.metadata
@@ -577,24 +580,23 @@ class DeviceManagerDS(DeviceManagerBase):
 
         # make sure all arrays are of equal length
         max_points = min(len(d) for d in data.values())
-        bundle = messages.BundleMessage()
+
+        pipe = self.connector.pipeline()
         for ii in range(emitted_points, max_points):
             timestamp = time.time()
             signals = {}
             for key, val in data.items():
                 signals[key] = {"value": val[ii], "timestamp": timestamp}
-            bundle.append(
-                messages.DeviceMessage(signals=signals, metadata={"point_id": ii, **metadata})
+            msg = messages.DeviceMessage(signals=signals, metadata={"point_id": ii, **metadata})
+            self.connector.set_and_publish(
+                MessageEndpoints.device_read(obj.root.name), msg, pipe=pipe
             )
+
         ds_obj.emitted_points[metadata["scan_id"]] = max_points
-        pipe = self.connector.pipeline()
-        self.connector.send(MessageEndpoints.device_read(obj.root.name), bundle, pipe=pipe)
         msg = messages.DeviceStatusMessage(
             device=obj.root.name, status=max_points, metadata=metadata
         )
-        self.connector.set_and_publish(
-            MessageEndpoints.device_progress(obj.root.name), msg, pipe=pipe
-        )
+        self.connector.set(MessageEndpoints.device_status(obj.root.name), msg, pipe=pipe)
         pipe.execute()
 
     def _obj_progress_callback(self, *_args, obj, value, max_value, done, **kwargs):
