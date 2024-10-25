@@ -422,5 +422,6 @@ def test_interactive_scan(bec_client_lib):
 
     report.wait()
 
-    assert len(report.scan.live_data) == 10
+    while len(report.scan.live_data) != 10:
+        time.sleep(0.1)
     assert len(report.scan.live_data.samx.samx.val) == 10

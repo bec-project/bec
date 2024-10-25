@@ -1,6 +1,8 @@
+import fakeredis
 import pytest
 
 from bec_lib.logger import bec_logger
+from bec_lib.redis_connector import RedisConnector
 
 # overwrite threads_check fixture from bec_lib,
 # to have it in autouse
@@ -10,3 +12,35 @@ from bec_lib.logger import bec_logger
 def threads_check(threads_check):
     yield
     bec_logger.logger.remove()
+
+
+def fake_redis_server(host, port):
+    redis = fakeredis.FakeRedis()
+    return redis
+
+
+@pytest.fixture
+def connected_connector():
+    connector = RedisConnector("localhost:1", redis_cls=fake_redis_server)
+    connector._redis_conn.flushall()
+    try:
+        yield connector
+    finally:
+        connector.shutdown()
+
+
+class _ScanStubStatusMock:
+    def __init__(self, done_func) -> None:
+        self._done = done_func()
+
+    @property
+    def done(self):
+        return next(self._done)
+
+    def wait(self):
+        return
+
+
+@pytest.fixture
+def ScanStubStatusMock():
+    return _ScanStubStatusMock

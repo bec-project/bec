@@ -761,6 +761,24 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def device_instructions_response() -> EndpointInfo:
+        """
+        Endpoint for device instruction repsonses. This endpoint is used by the device
+        server to publish responses to device instructions, typically sent by the scan
+        server using a messages.DeviceInstructionResponse message. The messages are used
+        to inform interested services about the status of device instructions.
+
+        Returns:
+            EndpointInfo: Endpoint for the device instruction response.
+        """
+        endpoint = "internal/devices/instructions_response"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeviceInstructionResponse,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def device_rpc(rpc_id: str) -> EndpointInfo:
         """
         Endpoint for device rpc. This endpoint is used by the device server to publish

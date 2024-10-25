@@ -7,7 +7,7 @@ import pytest
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.tests.utils import ConnectorMock
-from bec_server.scan_server.errors import DeviceMessageError, ScanAbortion
+from bec_server.scan_server.errors import ScanAbortion
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
     InstructionQueueItem,
@@ -67,892 +67,12 @@ class InstructionQueueMock(InstructionQueueItem):
         else:
             raise StopIteration
 
-        # while self.status == InstructionQueueStatus.PAUSED:
-        #     return "instr_paused"
-
-        # return "instr"
-
-
-@pytest.mark.parametrize(
-    "instruction,devices",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device="samy",
-                action="wait",
-                parameter={"type": "move", "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            ["samy"],
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx", "samy"],
-                action="wait",
-                parameter={"type": "move", "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            ["samx", "samy"],
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="",
-                action="wait",
-                parameter={"type": "move", "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            ["samx", "samy"],
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="",
-                action="wait",
-                parameter={"type": "move", "group": "primary", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            ["samx", "samy"],
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="",
-                action="wait",
-                parameter={"type": "move", "group": "nogroup", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            ["samx", "samy"],
-        ),
-    ],
-)
-def test_get_devices_from_instruction(scan_worker_mock, instruction, devices):
-    worker = scan_worker_mock
-    worker.scan_motors = devices
-    worker.readout_priority.update({"monitored": devices})
-
-    returned_devices = worker._get_devices_from_instruction(instruction)
-
-    if not instruction.content.get("device"):
-        group = instruction.content["parameter"].get("group")
-        if group == "primary":
-            assert (
-                set(
-                    dev.name
-                    for dev in worker.device_manager.devices.monitored_devices(worker.scan_motors)
-                ).difference(set(dev.name for dev in returned_devices))
-                == set()
-            )
-        elif group == "scan_motor":
-            assert returned_devices == devices
-        else:
-            assert returned_devices == []
-    else:
-        assert returned_devices == [worker.device_manager.devices[dev] for dev in devices]
-
-
-@pytest.mark.parametrize(
-    "instructions",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device="samx",
-                action="set",
-                parameter={"value": 10, "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            )
-        ),
-        messages.DeviceInstructionMessage(
-            device="samx",
-            action="set",
-            parameter={"value": 10, "wait_group": "scan_motor"},
-            metadata={"readout_priority": "monitored", "DIID": None},
-        ),
-    ],
-)
-def test_add_wait_group(scan_worker_mock, instructions):
-    worker = scan_worker_mock
-    if instructions.metadata["DIID"]:
-        worker._add_wait_group(instructions)
-        assert worker._groups == {"scan_motor": {"samx": 3}}
-
-        worker._groups["scan_motor"] = {"samy": 2}
-        worker._add_wait_group(instructions)
-        assert worker._groups == {"scan_motor": {"samy": 2, "samx": 3}}
-
-    else:
-        with pytest.raises(DeviceMessageError) as exc_info:
-            worker._add_wait_group(instructions)
-        assert exc_info.value.args[0] == "Device message metadata does not contain a DIID entry."
-
-
-def test_add_wait_group_to_existing_wait_group(scan_worker_mock):
-    instr1 = messages.DeviceInstructionMessage(
-        device="samx",
-        action="set",
-        parameter={"value": 10, "wait_group": "scan_motor"},
-        metadata={"readout_priority": "monitored", "DIID": 3},
-    )
-    instr2 = messages.DeviceInstructionMessage(
-        device="samx",
-        action="set",
-        parameter={"value": 10, "wait_group": "scan_motor"},
-        metadata={"readout_priority": "monitored", "DIID": 4},
-    )
-    worker = scan_worker_mock
-    worker._add_wait_group(instr1)
-    worker._add_wait_group(instr2)
-    assert worker._groups == {"scan_motor": {"samx": 4}}
-
-
-@pytest.mark.parametrize(
-    "instructions,wait_type",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device="samy",
-                action="wait",
-                parameter={"type": "move", "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            "move",
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="samy",
-                action="wait",
-                parameter={"type": "read", "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            "read",
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="samy",
-                action="wait",
-                parameter={"type": "trigger", "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            "trigger",
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="samy",
-                action="wait",
-                parameter={"type": None, "group": "scan_motor", "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            ),
-            None,
-        ),
-    ],
-)
-def test_wait_for_devices(scan_worker_mock, instructions, wait_type):
-    worker = scan_worker_mock
-
-    with mock.patch.object(worker, "_wait_for_idle") as idle_mock:
-        with mock.patch.object(worker, "_wait_for_read") as read_mock:
-            with mock.patch.object(worker, "_wait_for_trigger") as trigger_mock:
-                if wait_type:
-                    worker.wait_for_devices(instructions)
-
-                if wait_type == "move":
-                    idle_mock.assert_called_once_with(instructions)
-                elif wait_type == "read":
-                    read_mock.assert_called_once_with(instructions)
-                elif wait_type == "trigger":
-                    trigger_mock.assert_called_once_with(instructions)
-                else:
-                    with pytest.raises(DeviceMessageError) as exc_info:
-                        worker.wait_for_devices(instructions)
-                    assert exc_info.value.args[0] == "Unknown wait command"
-
-
-@pytest.mark.parametrize(
-    "instructions",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device="samx",
-                action="complete",
-                parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            )
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device=None,
-                action="complete",
-                parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            )
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx", "samy"],
-                action="complete",
-                parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            )
-        ),
-    ],
-)
-def test_complete_devices(scan_worker_mock, instructions):
-    worker = scan_worker_mock
-    with mock.patch.object(worker, "_wait_for_status") as wait_for_status_mock:
-        with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-            worker.complete_devices(instructions)
-            if instructions.content["device"]:
-                devices = instructions.content["device"]
-                if isinstance(devices, str):
-                    devices = [devices]
-            else:
-                devices = [dev.name for dev in worker.device_manager.devices.enabled_devices]
-
-            wait_for_status_mock.assert_called_once_with(devices, instructions.metadata)
-            send_mock.assert_called_once_with(
-                MessageEndpoints.device_instructions(),
-                messages.DeviceInstructionMessage(
-                    device=devices, action="complete", parameter={}, metadata=instructions.metadata
-                ),
-            )
-
-
-@pytest.mark.parametrize(
-    "instructions",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=None,
-                action="pre_scan",
-                parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 3},
-            )
-        )
-    ],
-)
-def test_pre_scan(scan_worker_mock, instructions):
-    worker = scan_worker_mock
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        with mock.patch.object(worker, "_wait_for_status") as wait_for_status_mock:
-            worker.pre_scan(instructions)
-            devices = [dev.name for dev in worker.device_manager.devices.enabled_devices]
-
-            wait_for_status_mock.assert_called_once_with(devices, instructions.metadata)
-            send_mock.assert_called_once_with(
-                MessageEndpoints.device_instructions(),
-                messages.DeviceInstructionMessage(
-                    device=devices, action="pre_scan", parameter={}, metadata=instructions.metadata
-                ),
-            )
-
-
-@pytest.mark.parametrize(
-    "device_status,devices,instr,abort",
-    [
-        (
-            [
-                messages.DeviceReqStatusMessage(
-                    device="samx",
-                    success=True,
-                    metadata={
-                        "readout_priority": "monitored",
-                        "DIID": 3,
-                        "scan_id": "scan_id",
-                        "RID": "requestID",
-                    },
-                )
-            ],
-            [("samx", 4)],
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            False,
-        ),
-        (
-            [
-                messages.DeviceReqStatusMessage(
-                    device="samx",
-                    success=False,
-                    metadata={
-                        "readout_priority": "monitored",
-                        "DIID": 3,
-                        "scan_id": "scan_id",
-                        "RID": "request",
-                    },
-                )
-            ],
-            [("samx", 4)],
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            False,
-        ),
-        (
-            [
-                messages.DeviceReqStatusMessage(
-                    device="samx",
-                    success=False,
-                    metadata={
-                        "readout_priority": "monitored",
-                        "DIID": 4,
-                        "scan_id": "scan_id",
-                        "RID": "requestID",
-                    },
-                )
-            ],
-            [("samx", 4)],
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            True,
-        ),
-        (
-            [
-                messages.DeviceReqStatusMessage(
-                    device="samx",
-                    success=False,
-                    metadata={
-                        "readout_priority": "monitored",
-                        "DIID": 3,
-                        "scan_id": "scan_id",
-                        "RID": "requestID",
-                    },
-                )
-            ],
-            [("samx", 4)],
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            False,
-        ),
-    ],
-)
-def test_check_for_failed_movements(scan_worker_mock, device_status, devices, instr, abort):
-    worker = scan_worker_mock
-    worker.device_manager.connector = ConnectorMock()
-    if abort:
-        with pytest.raises(ScanAbortion):
-            worker.device_manager.connector._get_buffer[
-                MessageEndpoints.device_readback("samx").endpoint
-            ] = messages.DeviceMessage(signals={"samx": {"value": 4}}, metadata={})
-            worker._check_for_failed_movements(device_status, devices, instr)
-    else:
-        worker._check_for_failed_movements(device_status, devices, instr)
-
-
-@pytest.mark.parametrize(
-    "msg1,msg2,req_msg",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device="samx",
-                action="set",
-                parameter={"value": 10, "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceReqStatusMessage(
-                device="samx",
-                success=False,
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="samx",
-                action="set",
-                parameter={"value": 10, "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceReqStatusMessage(
-                device="samx",
-                success=True,
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device="samx",
-                action="set",
-                parameter={"value": 10, "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceReqStatusMessage(
-                device="samx",
-                success=True,
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 5,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-        ),
-    ],
-)
-def test_wait_for_idle(scan_worker_mock, msg1, msg2, req_msg: messages.DeviceReqStatusMessage):
-    worker = scan_worker_mock
-    worker.device_manager.connector = ConnectorMock()
-
-    with mock.patch.object(
-        worker.validate, "get_device_status", return_value=[req_msg]
-    ) as device_status:
-        worker.device_manager.connector._get_buffer[
-            MessageEndpoints.device_readback("samx").endpoint
-        ] = messages.DeviceMessage(signals={"samx": {"value": 4}}, metadata={})
-
-        worker._add_wait_group(msg1)
-        if req_msg.content["success"]:
-            worker._wait_for_idle(msg2)
-        else:
-            with pytest.raises(ScanAbortion):
-                worker._wait_for_idle(msg2)
-
-
-@pytest.mark.parametrize(
-    "msg1,msg2,req_msg",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="set",
-                parameter={"value": 10, "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            messages.DeviceStatusMessage(
-                device="samx",
-                status=0,
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-        )
-    ],
-)
-def test_wait_for_read(scan_worker_mock, msg1, msg2, req_msg: messages.DeviceReqStatusMessage):
-    worker = scan_worker_mock
-    worker.device_manager.connector = ConnectorMock()
-
-    with mock.patch.object(
-        worker.validate, "get_device_status", return_value=[req_msg]
-    ) as device_status:
-        with mock.patch.object(worker, "_check_for_interruption") as interruption_mock:
-            assert worker._groups == {}
-            worker._groups["scan_motor"] = {"samx": 3, "samy": 4}
-            worker.device_manager.connector._get_buffer[
-                MessageEndpoints.device_readback("samx").endpoint
-            ] = messages.DeviceMessage(signals={"samx": {"value": 4}}, metadata={})
-            worker._add_wait_group(msg1)
-            worker._wait_for_read(msg2)
-            assert worker._groups == {"scan_motor": {"samy": 4}}
-            interruption_mock.assert_called_once()
-
-
-@pytest.mark.parametrize(
-    "instr",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=None,
-                action="set",
-                parameter={"time": 0.1},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            )
-        )
-    ],
-)
-def test_wait_for_trigger(scan_worker_mock, instr):
-    worker = scan_worker_mock
-    worker._last_trigger = instr
-
-    with mock.patch.object(worker.validate, "get_device_status") as status_mock:
-        with mock.patch.object(worker, "_check_for_interruption") as interruption_mock:
-            status_mock.return_value = [
-                messages.DeviceReqStatusMessage(
-                    device="eiger",
-                    success=True,
-                    metadata={
-                        "readout_priority": "async",
-                        "DIID": 3,
-                        "scan_id": "scan_id",
-                        "RID": "requestID",
-                    },
-                ),
-                messages.DeviceReqStatusMessage(
-                    device="monitor_async",
-                    success=True,
-                    metadata={
-                        "readout_priority": "async",
-                        "DIID": 3,
-                        "scan_id": "scan_id",
-                        "RID": "requestID",
-                    },
-                ),
-            ]
-            worker._wait_for_trigger(instr)
-            assert status_mock.call_count == 1
-            assert "eiger" in status_mock.call_args[0][1]
-            assert "monitor_async" in status_mock.call_args[0][1]
-
-
-def test_wait_for_stage(scan_worker_mock):
-    worker = scan_worker_mock
-    devices = ["samx", "samy"]
-    with mock.patch.object(worker.validate, "get_device_status") as status_mock:
-        with mock.patch.object(worker, "_check_for_interruption") as interruption_mock:
-            worker._wait_for_stage(True, devices, {})
-            status_mock.assert_called_once_with(MessageEndpoints.device_staged, devices)
-            interruption_mock.assert_called_once()
-
 
 def test_wait_for_device_server(scan_worker_mock):
     worker = scan_worker_mock
     with mock.patch.object(worker.parent, "wait_for_service") as service_mock:
         worker._wait_for_device_server()
         service_mock.assert_called_once_with("DeviceServer")
-
-
-@pytest.mark.parametrize(
-    "instr",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="set",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            )
-        )
-    ],
-)
-def test_set_devices(scan_worker_mock, instr):
-    worker = scan_worker_mock
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        worker.set_devices(instr)
-        send_mock.assert_called_once_with(MessageEndpoints.device_instructions(), instr)
-
-
-@pytest.mark.parametrize(
-    "instr",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="trigger",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            )
-        )
-    ],
-)
-def test_trigger_devices(scan_worker_mock, instr):
-    worker = scan_worker_mock
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        worker.trigger_devices(instr)
-        devices = [
-            dev.name for dev in worker.device_manager.devices.get_software_triggered_devices()
-        ]
-
-        send_mock.assert_called_once_with(
-            MessageEndpoints.device_instructions(),
-            messages.DeviceInstructionMessage(
-                device=devices,
-                action="trigger",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-        )
-
-
-@pytest.mark.parametrize(
-    "instr",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="trigger",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            )
-        )
-    ],
-)
-def test_send_rpc(scan_worker_mock, instr):
-    worker = scan_worker_mock
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        worker.send_rpc(instr)
-        send_mock.assert_called_once_with(MessageEndpoints.device_instructions(), instr)
-
-
-@pytest.mark.parametrize(
-    "instr",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="read",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            )
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device=[],
-                action="read",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            )
-        ),
-    ],
-)
-def test_read_devices(scan_worker_mock, instr):
-    worker = scan_worker_mock
-    instr_devices = instr.content["device"]
-    if instr_devices is None:
-        instr_devices = []
-    worker.readout_priority.update({"monitored": instr_devices})
-    devices = [dev.name for dev in worker._get_devices_from_instruction(instr)]
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        worker.read_devices(instr)
-
-        if instr.content.get("device"):
-            send_mock.assert_called_once_with(
-                MessageEndpoints.device_instructions(),
-                messages.DeviceInstructionMessage(
-                    device=["samx"],
-                    action="read",
-                    parameter=instr.content["parameter"],
-                    metadata=instr.metadata,
-                ),
-            )
-        else:
-            send_mock.assert_called_once_with(
-                MessageEndpoints.device_instructions(),
-                messages.DeviceInstructionMessage(
-                    device=devices,
-                    action="read",
-                    parameter=instr.content["parameter"],
-                    metadata=instr.metadata,
-                ),
-            )
-
-
-@pytest.mark.parametrize(
-    "instr, devices, parameter, metadata",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="trigger",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            ["samx"],
-            {"value": 10, "wait_group": "scan_motor", "time": 30},
-            {"readout_priority": "monitored", "DIID": 3, "scan_id": "scan_id", "RID": "requestID"},
-        )
-    ],
-)
-def test_kickoff_devices(scan_worker_mock, instr, devices, parameter, metadata):
-    worker = scan_worker_mock
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        worker.kickoff_devices(instr)
-        send_mock.assert_called_once_with(
-            MessageEndpoints.device_instructions(),
-            messages.DeviceInstructionMessage(
-                device=devices, action="kickoff", parameter=parameter, metadata=metadata
-            ),
-        )
-
-
-@pytest.mark.parametrize(
-    "instr, devices",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="trigger",
-                parameter={"value": 10, "wait_group": "scan_motor", "time": 30},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 3,
-                    "scan_id": "scan_id",
-                    "RID": "requestID",
-                },
-            ),
-            None,
-        )
-    ],
-)
-def test_publish_readback(scan_worker_mock, instr, devices):
-    worker = scan_worker_mock
-    with mock.patch.object(worker, "_get_readback", return_value=[{}]) as get_readback:
-        with mock.patch.object(worker.device_manager, "connector") as connector_mock:
-            worker._publish_readback(instr)
-
-            get_readback.assert_called_once_with(["samx"])
-            pipe = connector_mock.pipeline()
-            msg = messages.DeviceMessage(signals={}, metadata=instr.metadata)
-            connector_mock.set_and_publish.assert_called_once_with(
-                MessageEndpoints.device_read("samx"), msg, pipe
-            )
-
-
-def test_get_readback(scan_worker_mock):
-    worker = scan_worker_mock
-    devices = ["samx"]
-    with mock.patch.object(worker.device_manager, "connector") as connector_mock:
-        worker._get_readback(devices)
-        pipe = connector_mock.pipeline()
-        connector_mock.get.assert_called_once_with(
-            MessageEndpoints.device_readback("samx"), pipe=pipe
-        )
-        connector_mock.execute_pipeline.assert_called_once()
 
 
 def test_publish_data_as_read(scan_worker_mock):
@@ -1179,121 +299,81 @@ def test_close_scan(scan_worker_mock, msg, scan_id, max_point_id, exp_num_points
     assert worker.current_scan_info["num_points"] == exp_num_points
 
 
-@pytest.mark.parametrize(
-    "msg",
-    [
-        messages.DeviceInstructionMessage(
-            device=None,
-            action="stage",
-            parameter={},
-            metadata={"readout_priority": "async", "DIID": 18, "scan_id": "12345"},
-        )
-    ],
-)
-def test_stage_device(scan_worker_mock, msg):
-    worker = scan_worker_mock
-    worker.device_manager.devices["eiger"]._config["readoutPriority"] = "async"
-    worker.device_manager.devices["flyer_sim"]._config["readoutPriority"] = "on_request"
+# @pytest.mark.parametrize(
+#     "msg",
+#     [
+#         messages.DeviceInstructionMessage(
+#             device=None,
+#             action="stage",
+#             parameter={},
+#             metadata={"readout_priority": "async", "DIID": 18, "scan_id": "12345"},
+#         )
+#     ],
+# )
+# def test_stage_device(scan_worker_mock, msg):
+#     worker = scan_worker_mock
+#     worker.device_manager.devices["eiger"]._config["readoutPriority"] = "async"
+#     worker.device_manager.devices["flyer_sim"]._config["readoutPriority"] = "on_request"
 
-    with mock.patch.object(worker, "_wait_for_stage") as wait_mock:
-        with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-            worker.stage_devices(msg)
-            on_request_device_names = [
-                dev.name for dev in worker.device_manager.devices.on_request_devices()
-            ]
+#     with mock.patch.object(worker, "_wait_for_stage") as wait_mock:
+#         with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
+#             worker.stage_devices(msg)
+#             on_request_device_names = [
+#                 dev.name for dev in worker.device_manager.devices.on_request_devices()
+#             ]
 
-            async_devices = worker.device_manager.devices.async_devices()
-            async_device_names = [dev.name for dev in async_devices]
-            excluded_devices = async_devices
-            excluded_devices.extend(worker.device_manager.devices.on_request_devices())
-            excluded_devices.extend(worker.device_manager.devices.continuous_devices())
-            devices = [
-                dev.name
-                for dev in worker.device_manager.devices.enabled_devices
-                if dev not in excluded_devices
-            ]
+#             async_devices = worker.device_manager.devices.async_devices()
+#             async_device_names = [dev.name for dev in async_devices]
+#             excluded_devices = async_devices
+#             excluded_devices.extend(worker.device_manager.devices.on_request_devices())
+#             excluded_devices.extend(worker.device_manager.devices.continuous_devices())
+#             devices = [
+#                 dev.name
+#                 for dev in worker.device_manager.devices.enabled_devices
+#                 if dev not in excluded_devices
+#             ]
 
-            for dev in [
-                *worker.device_manager.devices.monitored_devices(),
-                *worker.device_manager.devices.baseline_devices(),
-                *worker.device_manager.devices.async_devices(),
-            ]:
-                assert dev.name in worker._staged_devices
-            for async_dev in async_devices:
-                assert (
-                    mock.call(
-                        MessageEndpoints.device_instructions(),
-                        messages.DeviceInstructionMessage(
-                            device=async_dev.name,
-                            action="stage",
-                            parameter=msg.content["parameter"],
-                            metadata=msg.metadata,
-                        ),
-                    )
-                    in send_mock.mock_calls
-                )
-            assert (
-                mock.call(
-                    MessageEndpoints.device_instructions(),
-                    messages.DeviceInstructionMessage(
-                        device=devices,
-                        action="stage",
-                        parameter=msg.content["parameter"],
-                        metadata=msg.metadata,
-                    ),
-                )
-                in send_mock.mock_calls
-            )
-            assert (
-                mock.call(staged=True, devices=devices, metadata=msg.metadata)
-                in wait_mock.mock_calls
-            )
-            assert (
-                mock.call(staged=True, devices=async_device_names, metadata=msg.metadata)
-                in wait_mock.mock_calls
-            )
-            for dev in on_request_device_names:
-                assert dev not in worker._staged_devices
-
-
-@pytest.mark.parametrize(
-    "msg, devices, parameter, metadata, cleanup",
-    [
-        (
-            messages.DeviceInstructionMessage(
-                device=None,
-                action="close_scan",
-                parameter={"parameter": "param"},
-                metadata={"readout_priority": "monitored", "DIID": 18, "scan_id": "12345"},
-            ),
-            ["samx"],
-            {"parameter": "param"},
-            {"readout_priority": "monitored", "DIID": 18, "scan_id": "12345"},
-            False,
-        ),
-        (None, None, {}, {}, False),
-        (None, None, {}, {}, True),
-    ],
-)
-def test_unstage_device(scan_worker_mock, msg, devices, parameter, metadata, cleanup):
-    worker = scan_worker_mock
-    if not devices:
-        devices = [dev.name for dev in worker.device_manager.devices.enabled_devices]
-
-    with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        with mock.patch.object(worker, "_wait_for_stage") as wait_mock:
-            worker.unstage_devices(msg, devices, cleanup)
-
-            send_mock.assert_called_once_with(
-                MessageEndpoints.device_instructions(),
-                messages.DeviceInstructionMessage(
-                    device=devices, action="unstage", parameter=parameter, metadata=metadata
-                ),
-            )
-            if cleanup:
-                wait_mock.assert_not_called()
-            else:
-                wait_mock.assert_called_once_with(staged=False, devices=devices, metadata=metadata)
+#             for dev in [
+#                 *worker.device_manager.devices.monitored_devices(),
+#                 *worker.device_manager.devices.baseline_devices(),
+#                 *worker.device_manager.devices.async_devices(),
+#             ]:
+#                 assert dev.name in worker._staged_devices
+#             for async_dev in async_devices:
+#                 assert (
+#                     mock.call(
+#                         MessageEndpoints.device_instructions(),
+#                         messages.DeviceInstructionMessage(
+#                             device=async_dev.name,
+#                             action="stage",
+#                             parameter=msg.content["parameter"],
+#                             metadata=msg.metadata,
+#                         ),
+#                     )
+#                     in send_mock.mock_calls
+#                 )
+#             assert (
+#                 mock.call(
+#                     MessageEndpoints.device_instructions(),
+#                     messages.DeviceInstructionMessage(
+#                         device=devices,
+#                         action="stage",
+#                         parameter=msg.content["parameter"],
+#                         metadata=msg.metadata,
+#                     ),
+#                 )
+#                 in send_mock.mock_calls
+#             )
+#             assert (
+#                 mock.call(staged=True, devices=devices, metadata=msg.metadata)
+#                 in wait_mock.mock_calls
+#             )
+#             assert (
+#                 mock.call(staged=True, devices=async_device_names, metadata=msg.metadata)
+#                 in wait_mock.mock_calls
+#             )
+#             for dev in on_request_device_names:
+#                 assert dev not in worker._staged_devices
 
 
 @pytest.mark.parametrize("status,expire", [("open", None), ("closed", 1800), ("aborted", 1800)])
@@ -1346,7 +426,6 @@ def test_process_instructions(scan_worker_mock, abortion):
                             reset_mock.assert_called_once()
 
                         else:
-                            assert worker._groups == {}
                             assert queue.stopped == True
                             assert interruption_mock.call_count == 1
                             assert queue.is_active == True
@@ -1362,7 +441,7 @@ def test_process_instructions(scan_worker_mock, abortion):
                 device=None,
                 action="open_scan",
                 parameter={"readout_priority": {"monitored": [], "baseline": [], "on_request": []}},
-                metadata={"readout_priority": "monitored", "DIID": 18, "scan_id": "12345"},
+                metadata={"readout_priority": "monitored", "scan_id": "12345"},
             ),
             "open_scan",
         ),
@@ -1371,68 +450,54 @@ def test_process_instructions(scan_worker_mock, abortion):
                 device=None,
                 action="close_scan",
                 parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 18, "scan_id": "12345"},
+                metadata={"readout_priority": "monitored", "scan_id": "12345"},
             ),
             "close_scan",
-        ),
-        (
-            messages.DeviceInstructionMessage(
-                device=["samx"],
-                action="wait",
-                parameter={"type": "move", "wait_group": "scan_motor"},
-                metadata={
-                    "readout_priority": "monitored",
-                    "DIID": 4,
-                    "scan_id": "12345",
-                    "RID": "123456",
-                },
-            ),
-            "wait_for_devices",
         ),
         (
             messages.DeviceInstructionMessage(
                 device=None,
                 action="trigger",
                 parameter={"group": "trigger"},
-                metadata={"readout_priority": "monitored", "DIID": 20, "point_id": 0},
+                metadata={"readout_priority": "monitored", "point_id": 0},
             ),
-            "trigger_devices",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
-                parameter={"value": 1.3681828686580249, "wait_group": "scan_motor"},
-                metadata={"readout_priority": "monitored", "DIID": 24},
+                parameter={"value": 1.3681828686580249},
+                metadata={"readout_priority": "monitored"},
             ),
-            "set_devices",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
                 device=None,
                 action="read",
-                parameter={"group": "primary", "wait_group": "readout_primary"},
-                metadata={"readout_priority": "monitored", "DIID": 30, "point_id": 1},
+                parameter={"group": "primary"},
+                metadata={"readout_priority": "monitored", "point_id": 1},
             ),
-            "read_devices",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
                 device=None,
                 action="stage",
                 parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 17},
+                metadata={"readout_priority": "monitored"},
             ),
-            "stage_devices",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
                 device=None,
                 action="unstage",
                 parameter={},
-                metadata={"readout_priority": "monitored", "DIID": 17},
+                metadata={"readout_priority": "monitored"},
             ),
-            "unstage_devices",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
@@ -1445,24 +510,24 @@ def test_process_instructions(scan_worker_mock, abortion):
                     "args": [],
                     "kwargs": {},
                 },
-                metadata={"readout_priority": "monitored", "DIID": 9},
+                metadata={"readout_priority": "monitored"},
             ),
-            "send_rpc",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
                 device="samx", action="kickoff", parameter={}, metadata={}
             ),
-            "kickoff_devices",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(
                 device=None,
                 action="baseline_reading",
                 parameter={},
-                metadata={"readout_priority": "baseline", "DIID": 15},
+                metadata={"readout_priority": "baseline"},
             ),
-            "baseline_reading",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(device=None, action="close_scan_def", parameter={}),
@@ -1482,11 +547,11 @@ def test_process_instructions(scan_worker_mock, abortion):
         ),
         (
             messages.DeviceInstructionMessage(device=None, action="pre_scan", parameter={}),
-            "pre_scan",
+            "forward_instruction",
         ),
         (
             messages.DeviceInstructionMessage(device=None, action="complete", parameter={}),
-            "complete_devices",
+            "forward_instruction",
         ),
     ],
 )
@@ -1495,13 +560,15 @@ def test_instruction_step(scan_worker_mock, msg, method):
     with mock.patch(
         f"bec_server.scan_server.scan_worker.ScanWorker.{method}"
     ) as instruction_method:
-        worker._instruction_step(msg)
-        instruction_method.assert_called_once()
+        with mock.patch.object(worker, "update_instr_with_scan_report") as update_mock:
+            worker._instruction_step(msg)
+            instruction_method.assert_called_once()
+            if method == "set":
+                update_mock.assert_called_once_with(msg)
 
 
 def test_reset(scan_worker_mock):
     worker = scan_worker_mock
-    worker._gropus = 1
     worker.current_scan_id = 1
     worker.current_scan_info = 1
     worker.scan_id = 1
@@ -1510,7 +577,6 @@ def test_reset(scan_worker_mock):
 
     worker.reset()
 
-    assert worker._groups == {}
     assert worker.current_scan_id == ""
     assert worker.current_scan_info == {}
     assert worker.scan_id == None
@@ -1520,9 +586,15 @@ def test_reset(scan_worker_mock):
 
 def test_cleanup(scan_worker_mock):
     worker = scan_worker_mock
-    with mock.patch.object(worker, "unstage_devices") as unstage_mock:
+    with mock.patch.object(worker, "forward_instruction") as forward_mock:
         worker.cleanup()
-        unstage_mock.assert_called_once_with(devices=list(worker._staged_devices), cleanup=True)
+        sent_message = forward_mock.mock_calls[0].args[0]
+        diid = sent_message.metadata["device_instr_id"]
+        devices = sent_message.device
+        msg = messages.DeviceInstructionMessage(
+            device=devices, action="unstage", parameter={}, metadata={"device_instr_id": diid}
+        )
+        forward_mock.assert_called_once_with(msg)
 
 
 def test_shutdown(scan_worker_mock):
@@ -1534,3 +606,69 @@ def test_shutdown(scan_worker_mock):
             worker.shutdown()
             set_mock.assert_called_once()
             join_mock.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        messages.DeviceInstructionMessage(
+            device=["samx"], action="set", parameter={"value": 1}, metadata={"scan_id": "scan_id"}
+        )
+    ],
+)
+def test_worker_update_instr_with_scan_report_no_update(msg, scan_worker_mock):
+    worker = scan_worker_mock
+    worker.current_instruction_queue_item = mock.MagicMock(spec=InstructionQueueItem)
+    arb = worker.current_instruction_queue_item.active_request_block = mock.MagicMock(
+        spec=RequestBlock
+    )
+    arb.scan_report_instructions = []
+    with mock.patch.object(worker, "forward_instruction") as forward_mock:
+        worker._instruction_step(msg)
+        worker.update_instr_with_scan_report(msg)
+        forward_mock.assert_called_once_with(msg)
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        messages.DeviceInstructionMessage(
+            device=["samx"], action="set", parameter={"value": 1}, metadata={"scan_id": "scan_id"}
+        )
+    ],
+)
+def test_worker_update_instr_with_scan_report_no_update_with_report(msg, scan_worker_mock):
+    worker = scan_worker_mock
+    worker.current_instruction_queue_item = mock.MagicMock(spec=InstructionQueueItem)
+    arb = worker.current_instruction_queue_item.active_request_block = mock.MagicMock(
+        spec=RequestBlock
+    )
+    arb.scan_report_instructions = [{"scan_progress": 10}]
+    with mock.patch.object(worker, "forward_instruction") as forward_mock:
+        worker._instruction_step(msg)
+        worker.update_instr_with_scan_report(msg)
+        forward_mock.assert_called_once_with(msg)
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        messages.DeviceInstructionMessage(
+            device=["samx"], action="set", parameter={"value": 1}, metadata={"scan_id": "scan_id"}
+        )
+    ],
+)
+def test_worker_update_instr_with_scan_report_update(msg, scan_worker_mock):
+    worker = scan_worker_mock
+    worker.current_instruction_queue_item = mock.MagicMock(spec=InstructionQueueItem)
+    arb = worker.current_instruction_queue_item.active_request_block = mock.MagicMock(
+        spec=RequestBlock
+    )
+    arb.scan_report_instructions = [
+        {"readback": {"RID": "rid", "devices": ["samx"], "start": [0], "end": [1]}}
+    ]
+    with mock.patch.object(worker, "forward_instruction") as forward_mock:
+        worker._instruction_step(msg)
+        worker.update_instr_with_scan_report(msg)
+        forward_mock.assert_called_once_with(msg)
+        assert msg.metadata["response"] is True
