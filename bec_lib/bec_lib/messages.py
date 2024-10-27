@@ -664,20 +664,38 @@ class FileMessage(BECMessage):
         file_path (str): Path to the file.
         done (bool): True if the file writing operation is done.
         successful (bool): True if the file writing operation was successful.
-        hinted_locations (dict, optional): Hinted location of important datasets within
-            the file. Can be used to automatically link a master file with its data files.
-            Defaults to None.
-        devices (list, optional): List of devices that are associated with the file.
+        device_name (str): Name of the device. If is_master_file is True, device_name is optional.
+        is_master_file (bool, optional): True if the file is a master file. Defaults to False.
+        file_type (str, optional): Type of the file. Defaults to "h5".
+        hinted_h5_entries (dict[str, str], optional): Dictionary with hinted h5 entries. Defaults to None.
+                    This allows the file writer to automatically create external links within the master.h5 file
+                    written by BEC under the entry for the specified device. The dictionary should contain the
+                    sub-entries and to where these should link in the external h5 file (file_path).
+                    Example for device_name='eiger', and dict('data' : '/entry/data/data'), the location
+                    '/entry/collection/devices/eiger/data' within the master file will link to '/entry/data/data'
+                    of the external file.
         metadata (dict, optional): Additional metadata. Defaults to None.
 
     """
 
     msg_type: ClassVar[str] = "file_message"
+
     file_path: str
     done: bool
     successful: bool
-    hinted_locations: dict[str, str] | None = None
-    devices: list[str] | None = None
+    is_master_file: bool = Field(default=False)
+    device_name: str | None = Field(default=None)
+    file_type: str = "h5"
+    hinted_h5_entries: dict[str, str] | None = None
+
+    @field_validator("is_master_file", mode="after")
+    @classmethod
+    def check_is_master_file(cls, v: bool):
+        """Validate is the FileMessage is for the master file"""
+        if v is False:
+            return v
+        if v is True:
+            return cls.device_name != None
 
 
 class FileContentMessage(BECMessage):
