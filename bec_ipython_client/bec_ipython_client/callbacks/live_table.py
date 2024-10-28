@@ -305,8 +305,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 f"Scan {self.scan_item.scan_number} finished. Scan ID {self.scan_item.scan_id}. Elapsed time: {elapsed_time:.2f} s"
             )
         )
-        # TODO #286
-        # self._print_client_msgs_all()
+        self._print_client_msgs_all()
 
     def process_request(self):
         """process the request and start the core loop for live updates"""

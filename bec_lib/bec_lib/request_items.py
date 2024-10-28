@@ -44,7 +44,6 @@ class RequestItem:
         self.accepted = accepted
         self._decision_pending = decision_pending
         self._scan_id = scan_id
-        # TODO #286
         self.client_messages = client_messages
         self.client_messages_asap = client_messages_asap
         self.callbacks = CallbackHandler()
@@ -64,9 +63,8 @@ class RequestItem:
     def update_with_client_message(self, message: messages.ClientInfoMessage):
         """Update the current request item with a ClientInfoMessage"""
         self.client_messages.append(message)
-        # TODO #286
-        # if message.show_asap:
-        self.client_messages_asap.append(message)
+        if message.show_asap:
+            self.client_messages_asap.append(message)
 
     @staticmethod
     def _format_client_msg(msg: messages.ClientInfoMessage) -> str:

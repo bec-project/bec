@@ -107,20 +107,19 @@ class LiveUpdatesBase(abc.ABC):
             msg = self.scan_queue_request.client_messages_asap.pop(0)
             print(self._format_client_msg(msg))
 
-    # TODO #286
-    # def _print_client_msgs_all(self):
-    #     """Print summary of client messages"""
-    #     # pylint: disable=protected-access
-    #     if not self.scan_queue_request.client_messages:
-    #         return
-    #     print("------------------------")
-    #     print("Summary of client messages")
-    #     print("------------------------")
-    #     # pylint: disable=protected-access
-    #     while len(self.scan_queue_request.client_messages) > 0:
-    #         msg = self.scan_queue_request.client_messages.pop(0)
-    #         print(self._format_client_msg(msg))
-    #     print("------------------------")
+    def _print_client_msgs_all(self):
+        """Print summary of client messages"""
+        # pylint: disable=protected-access
+        if not self.scan_queue_request.client_messages:
+            return
+        print("------------------------")
+        print("Summary of client messages")
+        print("------------------------")
+        # pylint: disable=protected-access
+        while len(self.scan_queue_request.client_messages) > 0:
+            msg = self.scan_queue_request.client_messages.pop(0)
+            print(self._format_client_msg(msg))
+        print("------------------------")
 
 
 class ScanRequestMixin:

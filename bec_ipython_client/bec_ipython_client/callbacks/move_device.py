@@ -149,8 +149,7 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
                         progress.set_finished(dev)
                 # pylint: disable=protected-access
                 progress._progress.refresh()
-        # TODO #286
-        # self._print_client_msgs_all()
+        self._print_client_msgs_all()
 
     def run(self):
         """run the progressbar."""
