@@ -269,7 +269,7 @@ class ScanManager:
 
     def _client_msg_callback(self, msg: dict, **_kwargs) -> None:
         message = msg["data"]
-        self.request_storage.update_with_client_message(message)
+        self.queue_storage.update_with_client_message(message)
 
     def _scan_status_callback(self, msg, **_kwargs) -> None:
         scan = msg.value

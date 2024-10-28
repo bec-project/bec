@@ -17,6 +17,7 @@ from typeguard import typechecked
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.queue_items import QueueItem
 from bec_lib.utils.import_utils import lazy_import
 
 # TODO: put back normal import when Pydantic gets faster
@@ -327,12 +328,18 @@ class DeviceBase:
             msg = self.root.parent.connector.get(MessageEndpoints.device_rpc(rpc_id))
             if msg:
                 break
-            # pylint: disable=protected-access
-            scan_queue_request._print_all_client_asap_messages()
             self.root.parent.parent.alarm_handler.raise_alarms()
+            self._handle_client_info_msg()
             time.sleep(0.01)
-
         return self._handle_rpc_response(msg)
+
+    def _handle_client_info_msg(self):
+        """Handle client messages during RPC calls"""
+        msgs = self.root.parent.connector.xread(MessageEndpoints.client_info(), block=200)
+        if not msgs:
+            return
+        for msg in msgs:
+            print(QueueItem.format_client_msg(msg["data"]))
 
     def _run_rpc_call(self, device, func_call, *args, wait_for_rpc_response=True, **kwargs) -> Any:
         """

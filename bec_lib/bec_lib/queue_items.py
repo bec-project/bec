@@ -43,6 +43,7 @@ class QueueItem:
         status: str,
         active_request_block: dict,
         scan_id: list[str],
+        client_messages: list | None = None,
         **_kwargs,
     ) -> None:
         self.scan_manager = scan_manager
@@ -51,6 +52,9 @@ class QueueItem:
         self._status = status
         self.active_request_block = active_request_block
         self.scan_ids = scan_id
+        if client_messages is None:
+            client_messages = []
+        self.client_messages = client_messages
 
     @property
     @update_queue
@@ -99,6 +103,10 @@ class QueueItem:
         self.active_request_block = queue_item.get("active_request_block")
         self.scan_ids = queue_item.get("scan_id")
 
+    def update_with_client_message(self, message: messages.ClientInfoMessage):
+        """append a client message to the queue item"""
+        self.client_messages.append(message)
+
     @property
     def queue_position(self) -> int | None:
         """get the current queue position"""
@@ -110,6 +118,31 @@ class QueueItem:
                 if self.queue_id == queue["queue_id"]:
                     return queue_position
         return None
+
+    def get_client_messages(self, only_asap: bool = False) -> list[messages.ClientInfoMessage]:
+        """Get all client messages from the queue item.
+
+        Args:
+            only_asap (bool): If True, only return the asap messages.
+        """
+        msgs = []
+        for ii, msg in enumerate(self.client_messages):
+            if only_asap is True and msg.show_asap is False:
+                continue
+            msgs.append(msg)
+            self.client_messages.pop(ii)
+        return msgs
+
+    @staticmethod
+    def format_client_msg(msg: messages.ClientInfoMessage) -> str:
+        """Pop messages from the client message handler.
+
+        Args:
+            msg (messages.ClientInfoMessage): client message
+        """
+        source = msg.source if msg.source else ""
+        rtr = f"Client info ({source}) : {msg.message}"
+        return rtr
 
 
 class QueueStorage:
@@ -208,3 +241,11 @@ class QueueStorage:
             if scan_id in queue_item.scans:
                 return queue_item
         return None
+
+    def update_with_client_message(self, client_message: messages.ClientInfoMessage) -> None:
+        """Update the queue item with a new ClientInfoMessage"""
+        queue_info = self.current_scan_queue["primary"].get("info")
+        if not queue_info:
+            return
+        queue_item = self.find_queue_item_by_ID(queue_info[0]["queue_id"])
+        queue_item.update_with_client_message(client_message)

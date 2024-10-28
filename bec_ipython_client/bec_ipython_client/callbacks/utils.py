@@ -87,40 +87,32 @@ class LiveUpdatesBase(abc.ABC):
                 content = traceback.format_exc()
                 logger.warning(f"Failed to run callback function: {content}")
 
-    def _format_client_msg(self, msg: messages.ClientInfoMessage) -> str:
-        """Pop messages from the client message handler.
-
-        Args:
-            messages (list, optional): List of messages to be popped. Defaults to None.
-        """
-        source = msg.source if msg.source else ""
-        rtr = f"Client info ({source}) : {msg.message}"
-        return rtr
-
     def _print_client_msgs_asap(self):
         """Print client messages flagged as show_asap"""
         # pylint: disable=protected-access
-        if not self.scan_queue_request.client_messages_asap:
+        if self.scan_queue_request is None:
             return
-        # pylint: disable=protected-access
-        while len(self.scan_queue_request.client_messages_asap) > 0:
-            msg = self.scan_queue_request.client_messages_asap.pop(0)
-            print(self._format_client_msg(msg))
+        msgs = self.scan_queue_request.queue.get_client_messages(only_asap=True)
+        if not msgs:
+            return
+        for msg in msgs:
+            print(self.scan_queue_request.queue.format_client_msg(msg))
 
-    # TODO #286
-    # def _print_client_msgs_all(self):
-    #     """Print summary of client messages"""
-    #     # pylint: disable=protected-access
-    #     if not self.scan_queue_request.client_messages:
-    #         return
-    #     print("------------------------")
-    #     print("Summary of client messages")
-    #     print("------------------------")
-    #     # pylint: disable=protected-access
-    #     while len(self.scan_queue_request.client_messages) > 0:
-    #         msg = self.scan_queue_request.client_messages.pop(0)
-    #         print(self._format_client_msg(msg))
-    #     print("------------------------")
+    def _print_client_msgs_all(self):
+        """Print summary of client messages"""
+        # pylint: disable=protected-access
+        if self.scan_queue_request is None:
+            return
+        msgs = self.scan_queue_request.queue.get_client_messages()
+        if not msgs:
+            return
+        print("------------------------")
+        print("Summary of client messages")
+        print("------------------------")
+        # pylint: disable=protected-access
+        for msg in msgs:
+            print(self.scan_queue_request.queue.format_client_msg(msg))
+        print("------------------------")
 
 
 class ScanRequestMixin:

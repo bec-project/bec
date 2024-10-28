@@ -11,6 +11,7 @@ import pytest
 from bec_ipython_client.callbacks.live_table import LiveUpdatesTable, sort_devices
 from bec_ipython_client.callbacks.utils import ScanRequestMixin
 from bec_lib import messages
+from bec_lib.queue_items import QueueItem
 
 
 @pytest.fixture
@@ -250,9 +251,20 @@ def test_print_client_msgs(client_with_grid_scan):
     client_msg = messages.ClientInfoMessage(
         message="message", RID="something", show_asap=True, source="scan_server"
     )
-    client.queue.request_storage.update_with_client_message(client_msg)
+    client_msg2 = messages.ClientInfoMessage(message="message2", RID="something", show_asap=False)
+    mock_queue_item = QueueItem(
+        client.queue.request_storage.scan_manager,
+        queue_id="something",
+        request_blocks=[],
+        status="running",
+        active_request_block={},
+        scan_id="test",
+        client_messages=[client_msg, client_msg2],
+    )
     with mock.patch.object(
-        client.queue.request_storage.scan_manager.queue_storage, "find_queue_item_by_requestID"
+        client.queue.request_storage.scan_manager.queue_storage,
+        "find_queue_item_by_requestID",
+        return_value=mock_queue_item,
     ):
         live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
         live_update.wait_for_request_acceptance()
@@ -262,19 +274,6 @@ def test_print_client_msgs(client_with_grid_scan):
             rtr1 = "Client info (scan_server) : message" + "\n"
             assert result.getvalue() == rtr1
             # second time should not add anything
-            live_update._print_client_msgs_asap()
+            rtr1 += "------------------------\nSummary of client messages\n------------------------\nClient info () : message2\n------------------------\n"
+            live_update._print_client_msgs_all()
             assert result.getvalue() == rtr1
-            # live_update._print_client_msgs_all()
-            # rtr2 = (
-            #     "------------------------"
-            #     + "\n"
-            #     + "Summary of client messages"
-            #     + "\n"
-            #     + "------------------------"
-            #     + "\n"
-            #     + "Client info (scan_server) : message"
-            #     + "\n"
-            #     + "------------------------"
-            #     + "\n"
-            # )
-            # assert result.getvalue() == rtr1 + rtr2

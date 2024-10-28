@@ -32,8 +32,6 @@ class RequestItem:
         scan_id: str = None,
         request=None,
         response=None,
-        client_messages: list = [],
-        client_messages_asap: list = [],
         accepted: bool = None,
         **_kwargs,
     ) -> None:
@@ -44,9 +42,6 @@ class RequestItem:
         self.accepted = accepted
         self._decision_pending = decision_pending
         self._scan_id = scan_id
-        # TODO #286
-        self.client_messages = client_messages
-        self.client_messages_asap = client_messages_asap
         self.callbacks = CallbackHandler()
 
     def update_with_response(self, response: messages.RequestResponseMessage):
@@ -60,44 +55,6 @@ class RequestItem:
         """update the current request item with a ScanQueueMessage / request message"""
         self.request = request
         self.requestID = request.metadata["RID"]
-
-    def update_with_client_message(self, message: messages.ClientInfoMessage):
-        """Update the current request item with a ClientInfoMessage"""
-        self.client_messages.append(message)
-        # TODO #286
-        # if message.show_asap:
-        self.client_messages_asap.append(message)
-
-    @staticmethod
-    def _format_client_msg(msg: messages.ClientInfoMessage) -> str:
-        """Pop messages from the client message handler.
-
-        Args:
-            messages (list, optional): List of messages to be popped. Defaults to None.
-        """
-        scope_info = []
-        if msg.source:
-            scope_info.append(msg.source)
-        if msg.scope:
-            scope_info.append(msg.scope)
-        scope_info = "|".join(scope_info)
-
-        rtr = (
-            f"Client info ({scope_info}): {msg.message}"
-            if scope_info
-            else f"Client info: {msg.message}"
-        )
-        return rtr
-
-    def _print_all_client_asap_messages(self):
-        """Print client messages flagged as show_asap"""
-        # pylint: disable=protected-access
-        if not self.client_messages_asap:
-            return
-        # pylint: disable=protected-access
-        while len(self.client_messages_asap) > 0:
-            msg = self.client_messages_asap.pop(0)
-            print(self._format_client_msg(msg))
 
     @property
     def decision_pending(self) -> bool:
@@ -132,12 +89,6 @@ class RequestItem:
         scan_req = cls(
             scan_manager=scan_manager, requestID=request.metadata["RID"], request=request
         )
-        return scan_req
-
-    @classmethod
-    def from_client_message(cls, scan_manager: ScanManager, message: messages.ClientInfoMessage):
-        """initialize a request item from a ClientInfoMessage"""
-        scan_req = cls(scan_manager=scan_manager, requestID=message.RID, client_messages=[message])
         return scan_req
 
     @property
@@ -200,22 +151,4 @@ class RequestStorage:
                 return
 
             self.storage.append(RequestItem.from_request(self.scan_manager, request_msg))
-            return
-
-    def update_with_client_message(self, client_message: messages.ClientInfoMessage) -> None:
-        """Update the request item with a new ClientInfoMessage"""
-        with self._lock:
-            if client_message.RID:
-                request_item = self.find_request_by_ID(client_message.RID)
-                if request_item:
-                    request_item.update_with_client_message(client_message)
-                    return
-
-                self.storage.append(
-                    RequestItem.from_client_message(self.scan_manager, client_message)
-                )
-                return
-            if client_message.show_asap:
-                # pylint: disable=protected-access
-                print(RequestItem._format_client_msg(client_message))
             return
