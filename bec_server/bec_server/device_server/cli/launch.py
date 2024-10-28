@@ -8,6 +8,10 @@
 # to ensure that the epics environment variables are set correctly.
 import importlib.metadata as imd
 
+# pylint: disable=unused-import
+# Import ophyd devices to monkey patch all status classes inheriting from StatusBase from ophyd
+import ophyd_devices
+
 entry_points = imd.entry_points(group="bec.deployment.device_server")
 for entry_point in entry_points:
     if entry_point.name == "plugin_ds_startup":

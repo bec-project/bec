@@ -448,18 +448,27 @@ class DeviceServer(RPCMixin, BECService):
 
         pipe = self.connector.pipeline()
         for dev in devices:
+            ret = None
             obj = self.device_manager.devices[dev].obj
             if hasattr(obj, "_staged"):
                 # pylint: disable=protected-access
                 if obj._staged == Staged.yes:
                     logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
                     self.device_manager.devices[dev].obj.unstage()
-                self.device_manager.devices[dev].obj.stage()
+                ret = self.device_manager.devices[dev].obj.stage()
             self.connector.set(
                 MessageEndpoints.device_staged(dev),
                 messages.DeviceStatusMessage(device=dev, status=1, metadata=instr.metadata),
                 pipe,
             )
+            if isinstance(ret, ophyd.StatusBase):
+                status = ret
+            else:
+                status = ophyd.StatusBase()
+                status.obj = obj
+                status.set_finished()
+            status.__dict__["instruction"] = instr
+            status.add_callback(self._status_callback)
         pipe.execute()
 
     def _unstage_device(self, instr: messages.DeviceInstructionMessage) -> None:
@@ -469,11 +478,12 @@ class DeviceServer(RPCMixin, BECService):
 
         pipe = self.connector.pipeline()
         for dev in devices:
+            ret = None
             obj = self.device_manager.devices[dev].obj
             if hasattr(obj, "_staged"):
                 # pylint: disable=protected-access
                 if obj._staged == Staged.yes:
-                    self.device_manager.devices[dev].obj.unstage()
+                    ret = self.device_manager.devices[dev].obj.unstage()
                 else:
                     logger.debug(f"Device {obj.name} was already unstaged.")
             self.connector.set(
@@ -481,4 +491,12 @@ class DeviceServer(RPCMixin, BECService):
                 messages.DeviceStatusMessage(device=dev, status=0, metadata=instr.metadata),
                 pipe,
             )
+            if isinstance(ret, ophyd.StatusBase):
+                status = ret
+            else:
+                status = ophyd.StatusBase()
+                status.obj = obj
+                status.set_finished()
+            status.__dict__["instruction"] = instr
+            status.add_callback(self._status_callback)
         pipe.execute()

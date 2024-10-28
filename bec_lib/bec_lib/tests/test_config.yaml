@@ -3,7 +3,7 @@
 ############################################################
 
 eiger:
-  readoutPriority: monitored
+  readoutPriority: async
   deviceClass: ophyd_devices.SimCamera
   deviceConfig:
     device_access: true
@@ -2239,3 +2239,17 @@ rt_controller:
     - test device
   enabled: true
   readOnly: false
+
+# Test device that returns status object on stage/unstage
+
+sim_cam_with_status:
+  readoutPriority: async
+  deviceClass: ophyd_devices.sim.sim_test_devices.SimCameraWithStageStatus
+  deviceConfig:
+    device_access: true
+    raise_on_stage: false
+  deviceTags:
+    - detector
+  enabled: true
+  readOnly: false
+  softwareTrigger: true

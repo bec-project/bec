@@ -710,8 +710,8 @@ def test_wait_for_stage(scan_worker_mock):
     devices = ["samx", "samy"]
     with mock.patch.object(worker.validate, "get_device_status") as status_mock:
         with mock.patch.object(worker, "_check_for_interruption") as interruption_mock:
-            worker._wait_for_stage(True, devices, {})
-            status_mock.assert_called_once_with(MessageEndpoints.device_staged, devices)
+            worker._wait_for_status(devices, {})
+            status_mock.assert_called_once_with(MessageEndpoints.device_req_status, devices)
             interruption_mock.assert_called_once()
 
 
@@ -1195,7 +1195,7 @@ def test_stage_device(scan_worker_mock, msg):
     worker.device_manager.devices["eiger"]._config["readoutPriority"] = "async"
     worker.device_manager.devices["flyer_sim"]._config["readoutPriority"] = "on_request"
 
-    with mock.patch.object(worker, "_wait_for_stage") as wait_mock:
+    with mock.patch.object(worker, "_wait_for_status") as wait_mock:
         with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
             worker.stage_devices(msg)
             on_request_device_names = [
@@ -1244,13 +1244,9 @@ def test_stage_device(scan_worker_mock, msg):
                 )
                 in send_mock.mock_calls
             )
+            assert mock.call(devices=devices, metadata=msg.metadata) in wait_mock.mock_calls
             assert (
-                mock.call(staged=True, devices=devices, metadata=msg.metadata)
-                in wait_mock.mock_calls
-            )
-            assert (
-                mock.call(staged=True, devices=async_device_names, metadata=msg.metadata)
-                in wait_mock.mock_calls
+                mock.call(devices=async_device_names, metadata=msg.metadata) in wait_mock.mock_calls
             )
             for dev in on_request_device_names:
                 assert dev not in worker._staged_devices
@@ -1281,7 +1277,7 @@ def test_unstage_device(scan_worker_mock, msg, devices, parameter, metadata, cle
         devices = [dev.name for dev in worker.device_manager.devices.enabled_devices]
 
     with mock.patch.object(worker.device_manager.connector, "send") as send_mock:
-        with mock.patch.object(worker, "_wait_for_stage") as wait_mock:
+        with mock.patch.object(worker, "_wait_for_status") as wait_mock:
             worker.unstage_devices(msg, devices, cleanup)
 
             send_mock.assert_called_once_with(
@@ -1293,7 +1289,7 @@ def test_unstage_device(scan_worker_mock, msg, devices, parameter, metadata, cle
             if cleanup:
                 wait_mock.assert_not_called()
             else:
-                wait_mock.assert_called_once_with(staged=False, devices=devices, metadata=metadata)
+                wait_mock.assert_called_once_with(devices=devices, metadata=metadata)
 
 
 @pytest.mark.parametrize("status,expire", [("open", None), ("closed", 1800), ("aborted", 1800)])

@@ -367,10 +367,8 @@ class ScanWorker(threading.Thread):
             ),
         )
         self._staged_devices.update(stage_device_names_without_async)
-        self._wait_for_stage(staged=True, devices=async_device_names, metadata=instr.metadata)
-        self._wait_for_stage(
-            staged=True, devices=stage_device_names_without_async, metadata=instr.metadata
-        )
+        self._wait_for_status(devices=async_device_names, metadata=instr.metadata)
+        self._wait_for_status(devices=stage_device_names_without_async, metadata=instr.metadata)
 
     def unstage_devices(
         self, instr: messages.DeviceInstructionMessage = None, devices: list = None, cleanup=False
@@ -397,7 +395,7 @@ class ScanWorker(threading.Thread):
             ),
         )
         if not cleanup:
-            self._wait_for_stage(staged=False, devices=devices, metadata=metadata)
+            self._wait_for_status(devices=devices, metadata=metadata)
 
     @property
     def scan_report_instructions(self):
@@ -561,29 +559,6 @@ class ScanWorker(threading.Thread):
         }
         logger.debug("Finished waiting")
         logger.debug(datetime.datetime.now() - start)
-
-    def _wait_for_stage(self, staged: bool, devices: list, metadata: dict) -> None:
-        """
-        Wait for devices to become staged/unstaged
-
-        Args:
-            staged (bool): True if devices should be staged, False if they should be unstaged
-            devices (list): List of devices to wait for
-            metadata (dict): Metadata of the instruction
-        """
-
-        stage_validator = (
-            self.validate.devices_are_staged if staged else self.validate.devices_are_unstaged
-        )
-
-        while not self.validate.devices_are_ready(
-            devices,
-            MessageEndpoints.device_staged,
-            messages.DeviceStatusMessage,
-            metadata,
-            [stage_validator, self.validate.matching_requestID],
-        ):
-            continue
 
     def _wait_for_device_server(self) -> None:
         self.parent.wait_for_service("DeviceServer")
