@@ -375,8 +375,10 @@ class BECLogger:
         """
         # pylint: disable=consider-using-with
         # pylint: disable=unspecified-encoding
+        file_existed = os.path.exists(path)
         textio = os.open(path, mode)
-        os.chmod(path, 0o664)
+        if file_existed is False:
+            os.chmod(path, 0o664)
         return textio
 
 

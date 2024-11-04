@@ -43,8 +43,10 @@ class ServiceConfigParser:
 
     def create_directory(self, directory: str, mode=0o771) -> None:
         """Create a directory if it does not exist."""
+        directory_existed = os.path.exists(directory)
         os.makedirs(directory, mode=mode, exist_ok=True)
-        os.chmod(directory, mode)
+        if directory_existed is False:
+            os.chmod(directory, mode)
 
 
 class LogWriter:
