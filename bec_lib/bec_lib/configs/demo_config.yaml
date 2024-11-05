@@ -13,6 +13,21 @@ eiger:
   readOnly: false
   softwareTrigger: true
 
+mca:
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimWaveform
+  deviceConfig:
+    device_access: true
+    sim_init:
+        model: GaussianModel
+        params:
+            amplitude: 10
+            center: 0
+            sigma: 1
+  enabled: true
+  softwareTrigger: true
+  
+
 ############## Cameras and detectors end here ##############
 dyn_signals:
   readoutPriority: baseline

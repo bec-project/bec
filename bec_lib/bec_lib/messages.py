@@ -361,6 +361,19 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
+class DeviceStreamInfoMessage(BECMessage):
+    """Message type for sending blissdata stream info for a device
+
+    Args:
+        stream_names (list): Names of data streams for the device
+    """
+
+    msg_type: ClassVar[str] = "device_stream_info_message"
+    scan_key: str
+    stream_names: list[str]
+    device_name: str
+
+
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
 

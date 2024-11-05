@@ -29,16 +29,17 @@ def test_request_response(session_from_test_config, device_manager):
                 device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
             ):
                 with mock.patch.object(device_manager.config_helper, "wait_for_service_response"):
-                    device_manager.initialize("")
-                    with mock.patch.object(
-                        device_manager.config_update_handler, "send_config_request_reply"
-                    ) as request_reply:
-                        device_manager.config_update_handler.parse_config_request(
-                            msg=messages.DeviceConfigMessage(
-                                action="update", config={"something": "something"}
+                    with mock.patch("bec_server.device_server.devices.devicemanager.DataStore"):
+                        device_manager.initialize("")
+                        with mock.patch.object(
+                            device_manager.config_update_handler, "send_config_request_reply"
+                        ) as request_reply:
+                            device_manager.config_update_handler.parse_config_request(
+                                msg=messages.DeviceConfigMessage(
+                                    action="update", config={"something": "something"}
+                                )
                             )
-                        )
-                        request_reply.assert_called_once()
+                            request_reply.assert_called_once()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

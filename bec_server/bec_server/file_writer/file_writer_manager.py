@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import threading
 import traceback
 
@@ -72,22 +74,48 @@ class FileWriterManager(BECService):
             connector_cls (RedisConnector): Connector class
         """
         super().__init__(config, connector_cls, unique_service=True)
-        self._lock = threading.RLock()
-        self.file_writer_config = self._service_config.service_config.get("file_writer")
-        self._start_device_manager()
-        self.connector.register(
-            MessageEndpoints.scan_segment(), cb=self._scan_segment_callback, parent=self
-        )
-        self.connector.register(
-            MessageEndpoints.scan_status(), cb=self._scan_status_callback, parent=self
-        )
-        self.scan_storage = {}
-        self.writer_mixin = FileWriter(
-            service_config=self.file_writer_config, connector=self.connector
-        )
-        self.file_writer = HDF5FileWriter(self)
 
+        self.blissdata_subscriber = None
+        self.file_writer_config = self._service_config.service_config.get("file_writer")
+
+        if self.file_writer_config.get("enable_bliss_writer", "false") in (
+            "False",
+            "false",
+            "no",
+            "0",
+        ):
+            self._lock = threading.RLock()
+            self._start_device_manager()
+            self.connector.register(
+                MessageEndpoints.scan_segment(), cb=self._scan_segment_callback, parent=self
+            )
+            self.connector.register(
+                MessageEndpoints.scan_status(), cb=self._scan_status_callback, parent=self
+            )
+            self.scan_storage = {}
+            self.writer_mixin = FileWriter(
+                service_config=self.file_writer_config, connector=self.connector
+            )
+            self.file_writer = HDF5FileWriter(self)
+        else:
+            from blisswriter.subscribers.session_subscriber import NexusSessionSubscriber
+            from blisswriter.utils.logging_utils import config as configure_logger
+
+            configure_logger(logging.getLogger("blisswriter"), bec_logger.level)
+            redis_data_url = f"redis://{self._service_config.redis_data}"
+            os.environ["REDIS_DATA_URL"] = redis_data_url
+            self.blissdata_subscriber = NexusSessionSubscriber("bec", writer_name="external")
+            logger.info("Starting blissdata subscriber (listening to session 'bec')")
+            self.blissdata_subscriber.start()
+            # self.blissdata_subscriber.join() # wait is done in 'launch' script with a lock
         self.status = messages.BECStatus.RUNNING
+
+    def shutdown(self):
+        super().shutdown()
+        if self.blissdata_subscriber is not None:
+            logger.info("Stopping blissdata subscriber...")
+            self.blissdata_subscriber.stop()
+            logger.info("Goodbye")
 
     def _start_device_manager(self):
         self.wait_for_service("DeviceServer")
@@ -283,10 +311,9 @@ class FileWriterManager(BECService):
             return
 
         file_path = ""
-        file_suffix = "master"
 
         try:
-            file_path = self.writer_mixin.compile_full_filename(suffix=file_suffix)
+            file_path = self.writer_mixin.compile_full_filename()
             self.connector.set_and_publish(
                 MessageEndpoints.public_file(scan_id, "master"),
                 messages.FileMessage(file_path=file_path, done=False, successful=False),

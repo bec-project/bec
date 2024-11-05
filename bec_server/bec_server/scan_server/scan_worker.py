@@ -1,14 +1,21 @@
 import datetime
+import itertools
 import threading
 import time
 import traceback
+
+import numpy
+from blissdata.redis_engine.store import DataStore
+from blissdata.streams.base import Stream
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.file_utils import FileWriter
 from bec_lib.logger import bec_logger
 
+from .blissdata_utils import bec_scan_info_to_blissdata_scan_info
 from .device_validation import DeviceValidation
 from .errors import DeviceMessageError, ScanAbortion
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
@@ -23,6 +30,8 @@ class ScanWorker(threading.Thread):
 
     def __init__(self, *, parent, queue_name: str = "primary"):
         super().__init__(daemon=True)
+        self._data_store = None
+        self._blissdata_scan = {}
         self.queue_name = queue_name
         self.name = f"ScanWorker-{queue_name}"
         self.parent = parent
@@ -77,6 +86,54 @@ class ScanWorker(threading.Thread):
 
         self._initialize_scan_info(active_rb, instr, num_points)
 
+        # from here, self.current_scan_info is populated
+        if self._data_store is None:
+            # new scan
+            service = self.device_manager._service
+            redis_data_url = f"redis://{service._service_config.redis_data}"
+            self._data_store = DataStore(redis_data_url)
+
+        bliss_scan_id = {
+            "name": self.current_scan_info["scan_name"],
+            "number": self.current_scan_info["scan_number"],
+            "data_policy": "no_policy",
+            "session": "bec",
+        }
+
+        # read info about monitored devices ;
+        # create blissdata scan_info structure
+        devname_channels, scan_info = bec_scan_info_to_blissdata_scan_info(
+            self.current_scan_info, self.connector
+        )
+
+        new_blissdata_scan = self._data_store.create_scan(bliss_scan_id, info=scan_info)
+
+        data_streams = {}
+        for dev_name, channel_info_list in devname_channels.items():
+            data_streams[dev_name] = [
+                new_blissdata_scan.create_stream(
+                    Stream.recipe(
+                        channel_info.name, channel_info.dtype, channel_info.shape, info={}
+                    )
+                )
+                for channel_info in channel_info_list
+            ]
+        self._blissdata_scan[self.scan_id] = (new_blissdata_scan, data_streams)
+
+        # after 'prepare', clients can connect to streams
+        new_blissdata_scan.prepare()
+
+        # now we can tell devices about their data streams
+        for dev_name, streams in data_streams.items():
+            if dev_name.startswith("axis:"):
+                dev_name = dev_name[5:]
+            msg = messages.DeviceStreamInfoMessage(
+                scan_key=new_blissdata_scan.key,
+                device_name=dev_name,
+                stream_names=[stream.name for stream in streams],
+            )
+            self.connector.send(MessageEndpoints.device_blissdata_stream(dev_name), msg)
+
         # only append the scan_progress if the scan is not using device_progress
         if active_rb.scan.use_scan_progress_report:
             if not self.scan_report_instructions or not self.scan_report_instructions[-1].get(
@@ -85,6 +142,7 @@ class ScanWorker(threading.Thread):
                 self.scan_report_instructions.append({"scan_progress": num_points})
         self.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
+        new_blissdata_scan.start()
         self._send_scan_status("open")
 
     def close_scan(self, instr: messages.DeviceInstructionMessage, max_point_id: int) -> None:
@@ -100,6 +158,21 @@ class ScanWorker(threading.Thread):
         if self.scan_id != scan_id:
             return
 
+        try:
+            bliss_scan, data_streams = self._blissdata_scan[self.scan_id]
+        except KeyError:
+            # are we in tests ?
+            pass
+        else:
+            # close blissdata streams
+            for stream in itertools.chain(*data_streams.values()):
+                stream.seal()
+            bliss_scan.stop()
+            bliss_scan.info["end_reason"] = "SUCCESS"
+            bliss_scan.info["end_time"] = datetime.datetime.now().astimezone().isoformat()
+            bliss_scan.close()
+            del self._blissdata_scan[self.scan_id]
+
         # reset the scan ID now that the scan will be closed
         self.scan_id = None
 
@@ -108,7 +181,6 @@ class ScanWorker(threading.Thread):
             # flyers do not increase the point_id but instead set the num_points directly
             num_points = self.current_instruction_queue_item.active_request_block.scan.num_pos
             self.current_scan_info["num_points"] = num_points
-
         else:
             # point_id starts at 0
             scan_info["num_points"] = max_point_id + 1
@@ -668,11 +740,27 @@ class ScanWorker(threading.Thread):
                 "num_points": num_points,
             }
         )
+        scan_args = active_rb.scan.parameter["args"]
+        scan_kwargs = active_rb.scan.parameter["kwargs"]
+        system_config = scan_kwargs.get("system_config", {"file_suffix": "", "file_directory": ""})
+        user_suffix = system_config["file_suffix"]
+        scan_dir = system_config["file_directory"]
+        service_config = self.device_manager._service._service_config
+        file_writer_service_config = service_config.service_config.get("file_writer")
+        self.current_scan_info["scan_file_path"] = FileWriter(
+            service_config=file_writer_service_config
+        ).compile_full_filename(
+            create_dir=False,
+            scan_number=self.parent.scan_number,
+            user_suffix=user_suffix,
+            scan_dir=scan_dir,
+        )
+
         self.current_scan_info["scan_msgs"] = [
             str(scan_msg) for scan_msg in self.current_instruction_queue_item.scan_msgs
         ]
-        self.current_scan_info["args"] = active_rb.scan.parameter["args"]
-        self.current_scan_info["kwargs"] = active_rb.scan.parameter["kwargs"]
+        self.current_scan_info["args"] = scan_args
+        self.current_scan_info["kwargs"] = scan_kwargs
         self.current_scan_info["readout_priority"] = {
             "monitored": [
                 dev.full_name

@@ -352,14 +352,14 @@ class BECLogger:
         """
         Get the current log level.
         """
-        return self._log_level
+        return self._stderr_log_level
 
     @level.setter
     def level(self, val: LogLevel):
-        self._log_level = val
         self._redis_log_level = val
         self._file_log_level = val
         self._stderr_log_level = val
+        self._log_level = self._stderr_log_level
         self._update_sinks()
 
     def _file_opener(self, path: str, mode: str, **kwargs):

@@ -13,6 +13,7 @@ import traceback
 import numpy as np
 import ophyd
 import ophyd_devices as opd
+from blissdata.redis_engine.store import DataStore
 from ophyd.ophydobj import OphydObject
 from ophyd.signal import EpicsSignalBase
 from typeguard import typechecked
@@ -81,6 +82,8 @@ class DeviceManagerDS(DeviceManagerBase):
         status_cb: list = None,
     ):
         super().__init__(service, status_cb)
+        self._data_store = None
+        self._data_streams = {}
         self._config_request_connector = None
         self._device_instructions_connector = None
         self._config_update_handler_cls = config_update_handler
@@ -94,6 +97,14 @@ class DeviceManagerDS(DeviceManagerBase):
             else ConfigUpdateHandler(device_manager=self)
         )
         super().initialize(bootstrap_server)
+
+        service = self._service
+        redis_data_url = f"redis://{service._service_config.redis_data}"
+        self._data_store = DataStore(redis_data_url)
+
+        self.connector.register(
+            patterns=MessageEndpoints.device_blissdata_stream("*"), cb=self._new_stream_for_device
+        )
 
     def _reload_action(self) -> None:
         pass
@@ -313,6 +324,7 @@ class DeviceManagerDS(DeviceManagerBase):
             DSDevice: initialized device object
         """
         name = dev.get("name")
+        print("INITIALIZING", name)
         enabled = dev.get("enabled")
 
         self.update_config(obj, config)
@@ -348,6 +360,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if not hasattr(obj, "event_types"):
             return opaas_obj
 
+        print(obj, "EVENT TYPES=", obj.event_types)
         if "readback" in obj.event_types:
             obj.subscribe(self._obj_callback_readback, run=opaas_obj.enabled)
         elif "value" in obj.event_types:
@@ -447,6 +460,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if not obj.connected:
             return
         name = obj.root.name
+        print("IN READBACK", name)
         signals = obj.root.read()
         metadata = self.devices.get(obj.root.name).metadata
         dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
@@ -467,6 +481,20 @@ class DeviceManagerDS(DeviceManagerBase):
         )
         pipe.execute()
 
+    def _new_stream_for_device(self, msg):
+        msg = msg.value
+        scan_key = msg.scan_key
+        dev_name = msg.device_name
+        stream_names = msg.stream_names
+        blissdata_scan = self._data_store.load_scan(scan_key)
+        rw_streams = []
+        for stream_name in stream_names:
+            rw_streams.append(blissdata_scan.get_writer_stream(stream_name))
+        self._data_streams[dev_name] = rw_streams
+
+    def get_data_streams(self, device_name):
+        return self._data_streams.get(device_name)
+
     @typechecked
     def _obj_callback_device_monitor_2d(
         self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
@@ -480,6 +508,15 @@ class DeviceManagerDS(DeviceManagerBase):
             value (np.ndarray): data from ophyd device
 
         """
+        print("IN MONITOR", obj.root.name)
+        if obj.connected:
+            data_streams = self.get_data_streams(obj.root.name)
+            if data_streams is None:
+                print(f"NO DATA STREAMS FOR {obj.root.name}")
+            else:
+                data_stream = data_streams[0]
+                data_stream.send(value)
+
         # Convert sizes from bytes to MB
         dsize = len(value.tobytes()) / 1e6
         max_size = 1000

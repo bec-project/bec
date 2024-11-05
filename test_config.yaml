@@ -1,0 +1,24 @@
+redis:
+  host: 127.0.0.1
+  port: 24878
+redis_data:
+  host: 127.0.0.1
+  port: 24879
+mongodb:
+  host: "localhost"
+  port: 27017
+scibec:
+  host: http://localhost
+  port: 3030
+  beamline: TestBeamline
+service_config:
+  abort_on_ctrl_c: False
+  enforce_ACLs: False
+  redis_data:
+    memory_limit: 2gb
+  file_writer:
+    plugin: default_NeXus_format
+    base_path: /tmp
+    enable_bliss_writer: True
+  log_writer:
+    base_path: /tmp

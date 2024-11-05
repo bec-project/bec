@@ -25,12 +25,13 @@ lmfit = lazy_import("lmfit")
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
 
-try:
-    import matplotlib.pyplot as plt
-
-    plt.ion()
-except ImportError:
-    plt = None
+# try:
+#    import matplotlib.pyplot as plt
+#
+#    plt.ion()
+# except ImportError:
+#    plt = None
+plt = None
 
 
 class DAPPluginObjectBase:

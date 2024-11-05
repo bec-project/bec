@@ -1072,8 +1072,8 @@ class RedisConnector(ConnectorBase):
 
         In order to keep this fail-safe and simple it uses 'mock'...
         """
-        from unittest.mock import (  # import is done here, to not pollute the file with something normally in tests
-            Mock,
+        from unittest.mock import (
+            Mock,  # import is done here, to not pollute the file with something normally in tests
         )
 
         warnings.warn(

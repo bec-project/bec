@@ -100,12 +100,13 @@ def test_disable_unreachable_devices(device_manager, session_from_test_config):
                 device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
             ):
                 with mock.patch.object(device_manager.config_helper, "wait_for_service_response"):
-                    device_manager.initialize("")
-                    assert device_manager.config_update_handler is not None
-                    assert device_manager.devices.samx.enabled is False
-                    msg = messages.DeviceConfigMessage(
-                        action="update", config={"samx": {"enabled": False}}
-                    )
+                    with mock.patch("bec_server.device_server.devices.devicemanager.DataStore"):
+                        device_manager.initialize("")
+                        assert device_manager.config_update_handler is not None
+                        assert device_manager.devices.samx.enabled is False
+                        msg = messages.DeviceConfigMessage(
+                            action="update", config={"samx": {"enabled": False}}
+                        )
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

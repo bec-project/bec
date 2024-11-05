@@ -419,36 +419,6 @@ class DatasetIdOnHold(ContextDecorator):
         queue.next_dataset_number += 1
 
 
-class FileWriter:
-    @typechecked
-    def __init__(self, file_suffix: str = None, file_directory: str = None) -> None:
-        """Context manager for updating metadata
-
-        Args:
-            fw_config (dict): Dictionary with metadata for the filewriter, can only have keys "file_suffix" and "file_directory"
-        """
-        self.client = _get_client()
-        self.system_config = self.client.system_config
-        self._orig_system_config = None
-        self._orig_metadata = None
-        self.file_suffix = file_suffix
-        self.file_directory = file_directory
-
-    def __enter__(self):
-        """Enter the context manager"""
-        self._orig_metadata = deepcopy(self.client.metadata)
-        self._orig_system_config = self.system_config.model_copy(deep=True)
-        self.system_config.file_suffix = self.file_suffix
-        self.system_config.file_directory = self.file_directory
-        return self
-
-    def __exit__(self, *exc):
-        """Exit the context manager"""
-        self.client.metadata = self._orig_metadata
-        self.system_config.file_suffix = self._orig_system_config.file_suffix
-        self.system_config.file_directory = self._orig_system_config.file_directory
-
-
 class Metadata:
     @typechecked
     def __init__(self, metadata: dict) -> None:

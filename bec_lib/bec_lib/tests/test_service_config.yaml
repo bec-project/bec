@@ -1,6 +1,9 @@
 redis:
   host: localhost
   port: 6379
+redis_data:
+  host: localhost
+  port: 6380
 mongodb:
   host: localhost
   port: 27017
@@ -12,6 +15,8 @@ service_config:
   general:
     reset_queue_on_cancel: True
     enforce_ACLs: False
+  redis_data:
+    memory_limit: 2gb
   file_writer:
     plugin: default_NeXus_format
     base_path: ./

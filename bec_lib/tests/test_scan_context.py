@@ -3,32 +3,12 @@ from unittest import mock
 import pytest
 
 from bec_lib.device import DeviceBase
-from bec_lib.scans import (
-    DatasetIdOnHold,
-    FileWriter,
-    HideReport,
-    Metadata,
-    ScanDef,
-    ScanExport,
-    ScanGroup,
-)
+from bec_lib.scans import DatasetIdOnHold, HideReport, Metadata, ScanDef, ScanExport, ScanGroup
 
 # pylint: disable=no-member
 # pylint: disable=missing-function-docstring
 # pylint: disable=redefined-outer-name
 # pylint: disable=protected-access
-
-
-def test_filewriter_cm(bec_client_mock):
-    client = bec_client_mock
-    client.scans._file_writer = None
-    client.system_config.file_directory = None
-    client.system_config.file_suffix = None
-    with FileWriter(file_suffix="testsuffix", file_directory="testdirectory"):
-        assert client.system_config.file_directory == "testdirectory"
-        assert client.system_config.file_suffix == "testsuffix"
-    assert client.system_config.file_directory is None
-    assert client.system_config.file_suffix is None
 
 
 def test_metadata_handler(bec_client_mock):

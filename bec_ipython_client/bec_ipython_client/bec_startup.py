@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 
 import numpy as np  # not needed but always nice to have
@@ -37,6 +38,18 @@ else:
         if gui.auto_updates.create_default_dock:
             gui.auto_updates.start_default_dock()
         fig = gui.auto_updates.get_default_figure()
+
+    if _main_dict["args"].flint:
+        redis_data_url = f"redis://{bec._client._service_config.redis_data}"
+        flint_process = subprocess.Popen(
+            [sys.executable, "-m", "bliss.flint", "--no-rpc", "--no-persistence", "-s", "bec"],
+            env=dict(os.environ) | {"REDIS_DATA_URL": redis_data_url},
+            cwd=os.environ[
+                "HOME"
+            ],  # prevent unexpected imports from current directory (e.g when developing - starting from Python 3.11 can use -P option)
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
 
     _available_plugins = plugin_helper.get_ipython_client_startup_plugins(state="post")
     if _available_plugins:
