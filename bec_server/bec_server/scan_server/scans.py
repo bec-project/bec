@@ -463,7 +463,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             val = yield from self.stubs.send_rpc_and_wait(dev, "read")
             obj = self.device_manager.devices[dev]
             self.start_pos.append(val[obj.full_name].get("value"))
-        if self.relative:
+        if self.relative and len(self.start_pos) > 0:
             self.positions += self.start_pos
 
     def close_scan(self):
@@ -568,10 +568,10 @@ class SyncFlyScanBase(ScanBase, ABC):
     scan_type = "fly"
     pre_move = False
 
-    def _get_scan_motors(self):
+    def _get_scan_motors(self) -> None:
         # fly scans normally do not have stepper scan motors so
         # the default way of retrieving scan motors is not applicable
-        return []
+        return None
 
     @property
     @abstractmethod
@@ -677,7 +677,7 @@ class DeviceRPC(ScanStub):
 
     def run(self):
         # different to calling self.device_rpc, this procedure will not wait for a reply and therefore not check any errors.
-        yield from self.stubs.rpc(
+        yield from self.stubs.send_rpc(
             self.parameter.get("device"),
             self.parameter.get("func"),
             *self.parameter.get("args"),
@@ -858,7 +858,7 @@ class FermatSpiralScan(ScanBase):
     gui_config = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2"],
-        "Movement Parameters": ["step", "relative"],
+        "Movement Parameters": ["step", "spiral_type", "relative"],
         "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
     }
 
@@ -894,7 +894,7 @@ class FermatSpiralScan(ScanBase):
             settling_time (float): settling time in seconds. Default is 0.
             relative (bool): if True, the motors will be moved relative to their current position. Default is False.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
-            spiral_type (float): type of spiral to use. Default is 0.
+            spiral_type (float): Angular offset (e.g. 0, 0.25,... ) in radians that determines the shape of the spiral. Default is 0.
             optim_trajectory (str): trajectory optimization method. Default is None. Options are "corridor" and "none".
 
         Returns:
@@ -955,7 +955,8 @@ class RoundScan(ScanBase):
         **kwargs,
     ):
         """
-        A scan following a round shell-like pattern.
+        A scan following a round shell-like pattern with increasing number of points in each ring. The scan starts at the inner ring and moves outwards.
+        The user defines the inner and outer radius, the number of rings and the number of positions in the first ring.
 
         Args:
             motor_1 (DeviceBase): first motor
@@ -974,18 +975,17 @@ class RoundScan(ScanBase):
             >>> scans.round_scan(dev.motor1, dev.motor2, 0, 25, 5, 3, exp_time=0.1, relative=True)
 
         """
-        super().__init__(relative=relative, burst_at_each_point=burst_at_each_point, **kwargs)
-        self.axis = []
         self.motor_1 = motor_1
         self.motor_2 = motor_2
+        super().__init__(relative=relative, burst_at_each_point=burst_at_each_point, **kwargs)
+        self.axis = []
         self.inner_ring = inner_ring
         self.outer_ring = outer_ring
         self.number_of_rings = number_of_rings
         self.pos_in_first_ring = pos_in_first_ring
 
     def _get_scan_motors(self):
-        caller_args = list(self.caller_args.items())[0]
-        self.scan_motors = [caller_args[0], caller_args[1][0]]
+        self.scan_motors = [self.motor_1, self.motor_2]
 
     def _calculate_positions(self):
         self.positions = get_round_scan_positions(
@@ -1021,7 +1021,13 @@ class ContLineScan(ScanBase):
     ):
         """
         A continuous line scan. Use this scan if you want to move a motor continuously from start to stop position whilst
-        acquiring data at predefined positions. The scan will abort if the motor moves too fast and a point is skipped.
+        acquiring data at predefined positions. The scan will abort if the motor moves too fast to acquire data within the
+        given absolute tolerance.
+        If no offset is provided, the offset is calculated as 0.5*acc_time*target_velocity.
+        If no atol is provided, the atol is calculated at 10% of the step size, however, we take into consideration
+        that EPICs typically only updates the position with 100ms intervals, which defines a lower limit for the atol.
+
+        Please note that the motor limits have to be set correctly for allowing the motor to reach the start position including the offset.
 
         Args:
             device (DeviceBase): motor to move continuously from start to stop position
@@ -1142,7 +1148,7 @@ class ContLineScan(ScanBase):
                 pos_axis = pos
             if not low_limit <= pos_axis <= high_limit:
                 raise LimitError(
-                    f"Target position {pos} for motor {self.device} is outside of range: [{low_limit},"
+                    f"Target position including offset {pos_axis} (offset: {self.offset}) for motor {self.device} is outside of range: [{low_limit},"
                     f" {high_limit}]"
                 )
 
@@ -1213,11 +1219,16 @@ class ContLineFlyScan(AsyncFlyScanBase):
             >>> scans.cont_line_fly_scan(dev.sam_rot, 0, 180, exp_time=0.1)
 
         """
-        super().__init__(relative=relative, exp_time=exp_time, **kwargs)
         self.motor = motor
         self.start = start
         self.stop = stop
         self.device_move_request_id = str(uuid.uuid4())
+        super().__init__(relative=relative, exp_time=exp_time, **kwargs)
+
+    def _get_scan_motors(self):
+        # fly scans normally do not have stepper scan motors so
+        # the default way of retrieving scan motors is not applicable
+        self.scan_motors = [self.motor]
 
     def prepare_positions(self):
         self.positions = np.array([[self.start], [self.stop]], dtype=float)
@@ -1238,10 +1249,14 @@ class ContLineFlyScan(AsyncFlyScanBase):
 
     def scan_core(self):
         # move the motor to the start position
-        yield from self.stubs.set(device=[self.motor], value=self.positions[0], wait=True)
+        yield from self.stubs.set(device=self.motor, value=self.positions[0][0], wait=True)
 
         # start the flyer
-        status_flyer = yield from self.stubs.set(device=self.motor, value=self.positions[1][0])
+        status_flyer = yield from self.stubs.set(
+            device=self.motor,
+            value=self.positions[1][0],
+            metadata={"response": True, "RID": self.device_move_request_id},
+        )
 
         while not status_flyer.done:
             status_trigger = yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
@@ -1416,7 +1431,7 @@ class ListScan(ScanBase):
         Args:
             *args: pairs of motors and position lists
             relative: Start from an absolute or relative position
-            burst: number of acquisition per point
+            burst_at_each_point: number of acquisition per point
 
         Returns:
             ScanReport
@@ -1430,12 +1445,12 @@ class ListScan(ScanBase):
             raise ValueError("All position lists must be of equal length.")
 
     def _calculate_positions(self):
-        self.positions = np.vstack(tuple(self.caller_args.values()), dtype=float).T.tolist()
+        self.positions = np.vstack(tuple(self.caller_args.values()), dtype=float).T
 
 
 class TimeScan(ScanBase):
     scan_name = "time_scan"
-    required_kwargs = ["points", "interval"]
+    required_kwargs = []
     gui_config = {"Scan Parameters": ["points", "interval", "exp_time", "burst_at_each_point"]}
 
     def __init__(
@@ -1456,13 +1471,13 @@ class TimeScan(ScanBase):
             points: number of points
             interval: time interval between points
             exp_time: exposure time in s
-            burst: number of acquisition per point
+            burst_at_each_point: number of acquisition per point
 
         Returns:
             ScanReport
 
         Examples:
-            >>> scans.time_scan(points=10, interval=1.5, exp_time=0.1, relative=True)
+            >>> scans.time_scan(10, 1.5, exp_time=0.1, relative=True)
 
         """
         super().__init__(exp_time=exp_time, burst_at_each_point=burst_at_each_point, **kwargs)
@@ -1560,19 +1575,19 @@ class Acquire(ScanBase):
     required_kwargs = []
     gui_config = {"Scan Parameters": ["exp_time", "burst_at_each_point"]}
 
-    def __init__(self, *args, exp_time: float = 0, burst_at_each_point: int = 1, **kwargs):
+    def __init__(self, exp_time: float = 0, burst_at_each_point: int = 1, **kwargs):
         """
         A simple acquisition at the current position.
 
         Args:
             exp_time (float): exposure time in s
-            burst: number of acquisition per point
+            burst_at_each_point: number of acquisition per point
 
         Returns:
             ScanReport
 
         Examples:
-            >>> scans.acquire(exp_time=0.1, relative=True)
+            >>> scans.acquire(exp_time=0.1)
 
         """
         super().__init__(exp_time=exp_time, burst_at_each_point=burst_at_each_point, **kwargs)
@@ -1679,7 +1694,7 @@ class OpenInteractiveScan(ScanComponent):
             exp_time: exposure time in s
             steps: number of steps (please note: 5 steps == 6 positions)
             relative: Start from an absolute or relative position
-            burst: number of acquisition per point
+            burst_at_each_point: number of acquisition per point
 
         Returns:
             ScanReport
@@ -1750,7 +1765,7 @@ class CloseInteractiveScan(ScanComponent):
             exp_time: exposure time in s
             steps: number of steps (please note: 5 steps == 6 positions)
             relative: Start from an absolute or relative position
-            burst: number of acquisition per point
+            burst_at_each_point: number of acquisition per point
 
         Returns:
             ScanReport

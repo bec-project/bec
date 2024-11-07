@@ -245,7 +245,7 @@ class ScanStubs:
             >>> send_rpc_and_wait("samx", "controller.my_custom_function")
         """
 
-        status = yield from self.rpc(device, func_name, *args, **kwargs)
+        status = yield from self.send_rpc(device, func_name, *args, **kwargs)
         status.wait()
         return self._get_result_from_status(status)
 
@@ -705,7 +705,7 @@ class ScanStubs:
         """
         yield self._device_msg(device=None, action="close_scan_group", parameter={})
 
-    def rpc(
+    def send_rpc(
         self, device: str, func_name: str, *args, metadata=None, rpc_id=None, **kwargs
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
@@ -722,7 +722,7 @@ class ScanStubs:
             Generator[None, None, None]: Generator that yields a device message.
 
         Examples:
-            >>> yield from self.rpc("samx", "controller.my_custom_function", 1, 2, arg1="test")
+            >>> yield from self.send_rpc("samx", "controller.my_custom_function", 1, 2, arg1="test")
 
         """
         rpc_id = str(uuid.uuid4()) if rpc_id is None else rpc_id
