@@ -40,6 +40,7 @@ class ScanStubStatus:
         device_instr_id: str = None,
         done: bool = False,
         shutdown_event: threading.Event = None,
+        registry: dict = None,
     ) -> None:
         """
         Initialize the status object.
@@ -56,6 +57,7 @@ class ScanStubStatus:
             device_instr_id if device_instr_id is not None else str(uuid.uuid4())
         )
         self._shutdown_event = shutdown_event if shutdown_event is not None else threading.Event()
+        self._registry = registry if registry is not None else {}
         self._sub_status_objects: list[ScanStubStatus] = []
         self.done = done
         self.value = None
@@ -142,6 +144,9 @@ class ScanStubStatus:
         Returns:
             ScanStubStatus: Status object
         """
+        self._registry.pop(self._device_instr_id, None)
+        for st in self._sub_status_objects:
+            self._registry.pop(st._device_instr_id, None)
 
         if min_wait is not None:
             time.sleep(min_wait)
@@ -206,9 +211,27 @@ class ScanStubs:
         )
         self.shutdown_event = shutdown_event
         self._readout_priority = {}
+        self._status_registry = {}
 
     def _create_status(self) -> ScanStubStatus:
-        return ScanStubStatus(self._instruction_handler, shutdown_event=self.shutdown_event)
+        status = ScanStubStatus(
+            self._instruction_handler,
+            shutdown_event=self.shutdown_event,
+            registry=self._status_registry,
+        )
+        self._status_registry[status._device_instr_id] = status
+        return status
+
+    def get_remaining_status_objects(self, exclude_done=True) -> list[ScanStubStatus]:
+        """
+        Get the remaining status objects.
+
+        Returns:
+            list: List of remaining status objects.
+        """
+        if exclude_done:
+            return [st for st in self._status_registry.values() if not st.done]
+        return list(self._status_registry.values())
 
     @staticmethod
     def _exclude_nones(input_dict: dict):
@@ -473,7 +496,7 @@ class ScanStubs:
         status.wait()
         return status
 
-    def pre_scan(self) -> Generator[None, None, None]:
+    def pre_scan(self, wait=True) -> Generator[None, None, None]:
         """
         Trigger pre-scan actions on all devices. Typically, pre-scan actions are called directly before the scan core starts and
         are used to perform time-critical actions.
@@ -494,6 +517,8 @@ class ScanStubs:
             parameter={},
             metadata={"device_instr_id": status._device_instr_id},
         )
+        if wait:
+            status.wait()
         return status
 
     def baseline_reading(self) -> Generator[None, None, None]:

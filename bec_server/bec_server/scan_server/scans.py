@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
@@ -389,6 +390,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self.frames_per_trigger = frames_per_trigger
         self.optim_trajectory = optim_trajectory
         self.burst_index = 0
+        self._baseline_status = None
 
         self.start_pos = []
         self.positions = []
@@ -416,8 +418,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     def read_scan_motors(self):
         """read the scan motors"""
-        status = yield from self.stubs.read(device=self.scan_motors)
-        status.wait()
+        yield from self.stubs.read(device=self.scan_motors, wait=True)
 
     def _calculate_positions(self) -> None:
         """Calculate the positions"""
@@ -456,7 +457,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     def run_baseline_reading(self):
         """perform a reading of all baseline devices"""
-        yield from self.stubs.baseline_reading()
+        self._baseline_status = yield from self.stubs.baseline_reading()
 
     def _set_position_offset(self):
         for dev in self.scan_motors:
@@ -484,7 +485,10 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     def finalize(self):
         """finalize the scan"""
         yield from self.return_to_start()
-        yield from self.stubs.complete(device=None)
+        yield from self.stubs.complete(device=None, wait=True)
+
+        if self._baseline_status:
+            self._baseline_status.wait()
 
     def unstage(self):
         """call the unstage procedure"""
@@ -493,6 +497,17 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     def cleanup(self):
         """call the cleanup procedure"""
         yield from self.close_scan()
+        remaining_status_objects = self.stubs.get_remaining_status_objects(exclude_done=False)
+        if remaining_status_objects:
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                source={"Scan": self.scan_name},
+                msg=f"Scan completed with remaining status objects: {remaining_status_objects}",
+                alarm_type="ScanCleanupWarning",
+                metadata={},
+            )
+            for obj in remaining_status_objects:
+                obj.wait()
 
     def _at_each_point(self, ind=None, pos=None):
         yield from self._move_scan_motors_and_wait(pos)
