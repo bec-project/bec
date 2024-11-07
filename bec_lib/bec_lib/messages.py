@@ -361,6 +361,16 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
+class DeviceInstructionResponse(BECMessage):
+    msg_type: ClassVar[str] = "device_instruction_response"
+    device: str | list[str] | None
+    status: Literal["completed", "running", "error"]
+    error_message: str | None = None
+    instruction: DeviceInstructionMessage
+    instruction_id: str
+    result: Any | None = None
+
+
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
 

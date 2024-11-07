@@ -183,7 +183,13 @@ class ScanBundler(BECService):
                     == len(self.monitored_devices[scan_id]["devices"])
                 )
             )
-
+            missing_devices = [
+                dev for dev, status in monitored_devices["point_id"][point_id].items() if not status
+            ]
+            if missing_devices:
+                logger.debug(
+                    f"Waiting for devices {missing_devices} to complete for scan_id {scan_id} at point {point_id}."
+                )
             if all_monitored_devices_completed and self.sync_storage[scan_id].get(point_id):
                 self._update_monitor_signals(scan_id, point_id)
                 self._send_scan_point(scan_id, point_id)

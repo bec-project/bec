@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -18,6 +18,9 @@ from bec_lib.logger import bec_logger
 from .errors import LimitError, ScanAbortion
 from .path_optimization import PathOptimizerMixin
 from .scan_stubs import ScanStubs
+
+if TYPE_CHECKING:
+    from bec_server.scan_server.instruction_handler import InstructionHandler
 
 logger = bec_logger.logger
 
@@ -198,6 +201,7 @@ class RequestBase(ABC):
         monitored: list = None,
         parameter: dict = None,
         metadata: dict = None,
+        instruction_handler: InstructionHandler = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -224,6 +228,8 @@ class RequestBase(ABC):
         if metadata is None:
             self.metadata = {}
         self.stubs = ScanStubs(
+            device_manager=self.device_manager,
+            instruction_handler=instruction_handler,
             connector=self.device_manager.connector,
             device_msg_callback=self.device_msg_metadata,
             shutdown_event=self._shutdown_event,
@@ -241,7 +247,7 @@ class RequestBase(ABC):
         self._scan_report_devices = devices
 
     def device_msg_metadata(self):
-        default_metadata = {"readout_priority": "monitored", "DIID": self.DIID}
+        default_metadata = {"readout_priority": "monitored"}
         metadata = {**default_metadata, **self.metadata}
         self.DIID += 1
         return metadata
@@ -410,7 +416,8 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     def read_scan_motors(self):
         """read the scan motors"""
-        yield from self.stubs.read_and_wait(device=self.scan_motors, wait_group="scan_motor")
+        status = yield from self.stubs.read(device=self.scan_motors)
+        status.wait()
 
     def _calculate_positions(self) -> None:
         """Calculate the positions"""
@@ -477,7 +484,6 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     def finalize(self):
         """finalize the scan"""
         yield from self.return_to_start()
-        yield from self.stubs.wait(wait_type="read", group="primary", wait_group="readout_primary")
         yield from self.stubs.complete(device=None)
 
     def unstage(self):
@@ -490,19 +496,15 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     def _at_each_point(self, ind=None, pos=None):
         yield from self._move_scan_motors_and_wait(pos)
-        if ind > 0:
-            yield from self.stubs.wait(
-                wait_type="read", group="primary", wait_group="readout_primary"
-            )
+
         time.sleep(self.settling_time)
-        yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
-        yield from self.stubs.wait(wait_type="trigger", group="trigger", wait_time=self.exp_time)
-        yield from self.stubs.read(
-            group="primary", wait_group="readout_primary", point_id=self.point_id
-        )
-        yield from self.stubs.wait(
-            wait_type="read", group="scan_motor", wait_group="readout_primary"
-        )
+
+        trigger_time = self.exp_time * self.frames_per_trigger
+        trigger_status = yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
+        trigger_status.wait(min_wait=trigger_time)
+
+        read_status = yield from self.stubs.read(group="primary", point_id=self.point_id)
+        read_status.wait()
 
         self.point_id += 1
 
@@ -511,10 +513,13 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             pos = [pos]
         if len(pos) == 0:
             return
+        status_objs = []
         for ind, val in enumerate(self.scan_motors):
-            yield from self.stubs.set(device=val, value=pos[ind], wait_group="scan_motor")
+            status_obj = yield from self.stubs.set(device=val, value=pos[ind])
+            status_objs.append(status_obj)
 
-        yield from self.stubs.wait(wait_type="move", group="scan_motor", wait_group="scan_motor")
+        for obj in status_objs:
+            obj.wait()
 
     def _get_position(self):
         for ind, pos in enumerate(self.positions):
@@ -672,7 +677,14 @@ class DeviceRPC(ScanStub):
 
     def run(self):
         # different to calling self.device_rpc, this procedure will not wait for a reply and therefore not check any errors.
-        yield from self.stubs.rpc(device=self.parameter.get("device"), parameter=self.parameter)
+        yield from self.stubs.rpc(
+            self.parameter.get("device"),
+            self.parameter.get("func"),
+            *self.parameter.get("args"),
+            rpc_id=self.parameter.get("rpc_id"),
+            metadata=self.metadata,
+            **self.parameter.get("kwargs"),
+        )
 
 
 class Move(RequestBase):
@@ -704,10 +716,7 @@ class Move(RequestBase):
     def _at_each_point(self, pos=None):
         for ii, motor in enumerate(self.scan_motors):
             yield from self.stubs.set(
-                device=motor,
-                value=self.positions[0][ii],
-                wait_group="scan_motor",
-                metadata={"response": True},
+                device=motor, value=self.positions[0][ii], metadata={"response": True}
             )
 
     def cleanup(self):
@@ -755,13 +764,13 @@ class UpdatedMove(Move):
     scan_name = "umv"
 
     def _at_each_point(self, pos=None):
+        status_objects = []
         for ii, motor in enumerate(self.scan_motors):
-            yield from self.stubs.set(
-                device=motor, value=self.positions[0][ii], wait_group="scan_motor"
-            )
+            obj = yield from self.stubs.set(device=motor, value=self.positions[0][ii])
+            status_objects.append(obj)
 
-        for motor in self.scan_motors:
-            yield from self.stubs.wait(wait_type="move", device=motor, wait_group="scan_motor")
+        for obj in status_objects:
+            obj.wait()
 
     def scan_report_instructions(self):
         yield from self.stubs.scan_report_instruction(
@@ -1104,7 +1113,7 @@ class ContLineScan(ScanBase):
         yield from self._set_position_offset()
         self._check_limits()
 
-    def _calculate_positions(self) -> None:
+    def _calculate_positions(self):
         yield from self._get_motor_attributes()
         self.positions = np.linspace(self.start, self.stop, self.steps, dtype=float)[
             np.newaxis, :
@@ -1137,18 +1146,16 @@ class ContLineScan(ScanBase):
                     f" {high_limit}]"
                 )
 
-    def _at_each_point(self, _pos=None):
-        yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
-        yield from self.stubs.wait(wait_type="trigger", group="trigger", wait_time=self.exp_time)
-        yield from self.stubs.read(group="primary", wait_group="primary", point_id=self.point_id)
+    def _at_each_point(self, _ind=None, _pos=None):
+        status = yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
+        status.wait(min_wait=self.exp_time)
+        yield from self.stubs.read(group="primary", point_id=self.point_id, wait=True)
         self.point_id += 1
 
     def scan_core(self):
         yield from self._move_scan_motors_and_wait(self.positions[0] - self.offset)
         # send the slow motor on its way
-        yield from self.stubs.set(
-            device=self.scan_motors[0], value=self.positions[-1][0], wait_group="scan_motor"
-        )
+        yield from self.stubs.set(device=self.scan_motors[0], value=self.positions[-1][0])
 
         while self.point_id < len(self.positions[:]):
             cont_motor_positions = self.device_manager.devices[self.scan_motors[0]].read()
@@ -1231,23 +1238,16 @@ class ContLineFlyScan(AsyncFlyScanBase):
 
     def scan_core(self):
         # move the motor to the start position
-        yield from self.stubs.set_and_wait(device=[self.motor], positions=self.positions[0])
+        yield from self.stubs.set(device=[self.motor], value=self.positions[0], wait=True)
 
         # start the flyer
-        flyer_request = yield from self.stubs.set_with_response(
-            device=self.motor, value=self.positions[1][0], request_id=self.device_move_request_id
-        )
+        status_flyer = yield from self.stubs.set(device=self.motor, value=self.positions[1][0])
 
-        while True:
-            yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
-            yield from self.stubs.read_and_wait(
-                group="primary", wait_group="readout_primary", point_id=self.point_id
-            )
-            yield from self.stubs.wait(
-                wait_type="trigger", group="trigger", wait_time=self.exp_time
-            )
-            if self.stubs.request_is_completed(flyer_request):
-                break
+        while not status_flyer.done:
+            status_trigger = yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
+            status_read = yield from self.stubs.read(group="primary", point_id=self.point_id)
+            status_trigger.wait(min_wait=self.exp_time)
+            status_read.wait()
             self.point_id += 1
 
     def finalize(self):
@@ -1326,7 +1326,7 @@ class RoundScanFlySim(SyncFlyScanBase):
         )
 
     def scan_core(self):
-        yield from self.stubs.kickoff(
+        status = yield from self.stubs.kickoff(
             device=self.flyer,
             parameter={
                 "num_pos": self.num_pos,
@@ -1334,17 +1334,9 @@ class RoundScanFlySim(SyncFlyScanBase):
                 "exp_time": self.exp_time,
             },
         )
-        target_DIID = self.DIID - 1
 
-        while True:
-            yield from self.stubs.read_and_wait(group="primary", wait_group="readout_primary")
-            status = self.device_manager.connector.get(MessageEndpoints.device_status(self.flyer))
-            if status:
-                device_is_idle = status.content.get("status", 1) == 0
-                matching_RID = self.metadata.get("RID") == status.metadata.get("RID")
-                matching_DIID = target_DIID == status.metadata.get("DIID")
-                if device_is_idle and matching_RID and matching_DIID:
-                    break
+        while not status.done:
+            yield from self.stubs.read(group="primary", wait=True)
 
             time.sleep(1)
             logger.debug("reading monitors")
@@ -1485,19 +1477,6 @@ class TimeScan(ScanBase):
         self.num_pos = self.points
         yield None
 
-    def _at_each_point(self, ind=None, pos=None):
-        if ind > 0:
-            yield from self.stubs.wait(
-                wait_type="read", group="primary", wait_group="readout_primary"
-            )
-        yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
-        yield from self.stubs.wait(wait_type="trigger", group="trigger", wait_time=self.exp_time)
-        yield from self.stubs.read(
-            group="primary", wait_group="readout_primary", point_id=self.point_id
-        )
-        yield from self.stubs.wait(wait_type="trigger", group="trigger", wait_time=self.interval)
-        self.point_id += 1
-
     def scan_core(self):
         for ind in range(self.num_pos):
             yield from self._at_each_point(ind)
@@ -1552,33 +1531,19 @@ class MonitorScan(ScanBase):
 
     def _get_flyer_status(self) -> list:
         connector = self.device_manager.connector
-
-        pipe = connector.pipeline()
-        connector.lrange(
-            MessageEndpoints.device_req_status_container(self.metadata["RID"]), 0, -1, pipe
-        )
-        connector.get(MessageEndpoints.device_readback(self.flyer), pipe)
-        return connector.execute_pipeline(pipe)
+        connector.get(MessageEndpoints.device_readback(self.flyer))
+        return connector.get(MessageEndpoints.device_readback(self.flyer))
 
     def scan_core(self):
-        yield from self.stubs.set(
-            device=self.flyer, value=self.positions[0][0], wait_group="scan_motor"
-        )
-        yield from self.stubs.wait(wait_type="move", device=self.flyer, wait_group="scan_motor")
+        yield from self.stubs.set(device=self.flyer, value=self.positions[0][0], wait=True)
 
         # send the slow motor on its way
-        yield from self.stubs.set(
-            device=self.flyer,
-            value=self.positions[1][0],
-            wait_group="scan_motor",
-            metadata={"response": True},
+        status = yield from self.stubs.set(
+            device=self.flyer, value=self.positions[1][0], metadata={"response": True}
         )
 
-        while True:
-            move_completed, readback = self._get_flyer_status()
-
-            if move_completed:
-                break
+        while not status.done:
+            readback = self._get_flyer_status()
 
             if not readback:
                 continue
@@ -1619,15 +1584,9 @@ class Acquire(ScanBase):
         self._calculate_positions()
 
     def _at_each_point(self, ind=None, pos=None):
-        if ind > 0:
-            yield from self.stubs.wait(
-                wait_type="read", group="primary", wait_group="readout_primary"
-            )
-        yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
-        yield from self.stubs.wait(wait_type="trigger", group="trigger", wait_time=self.exp_time)
-        yield from self.stubs.read(
-            group="primary", wait_group="readout_primary", point_id=self.point_id
-        )
+        status = yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
+        status.wait(min_wait=self.exp_time)
+        yield from self.stubs.read(group="primary", point_id=self.point_id, wait=True)
         self.point_id += 1
 
     def scan_core(self):
@@ -1753,25 +1712,30 @@ class InteractiveTrigger(ScanComponent):
         super().__init__(**kwargs)
 
     def run(self):
-        yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
-        yield from self.stubs.wait(wait_type="trigger", group="trigger", wait_time=self.exp_time)
+        status = yield from self.stubs.trigger(group="trigger", point_id=self.point_id)
+        status.wait(min_wait=self.exp_time)
 
 
 class InteractiveReadMontiored(ScanComponent):
     scan_name = "_interactive_read_monitored"
     required_kwargs = {"point_id": ScanArgType.INT}
 
-    def __init__(self, *args, point_id: int = 0, **kwargs):
+    def __init__(self, *args, monitored: list = None, point_id: int = 0, **kwargs):
         """
         Read the devices that are on readoutPriority "monitored".
         """
+
+        self.monitored = monitored
         super().__init__(**kwargs)
         self.point_id = point_id
 
+    def _get_scan_motors(self):
+        self.scan_motors = self.monitored if self.monitored else []
+
     def run(self):
-        yield from self.stubs.read_and_wait(
-            group="primary", wait_group="readout_primary", point_id=self.point_id
-        )
+        self.update_readout_priority()
+        self.stubs._readout_priority = self.readout_priority
+        yield from self.stubs.read(group="primary", point_id=self.point_id, wait=True)
 
 
 class CloseInteractiveScan(ScanComponent):

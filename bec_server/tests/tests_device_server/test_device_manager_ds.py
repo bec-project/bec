@@ -2,32 +2,15 @@ import copy
 import time
 from unittest import mock
 
-import fakeredis
 import numpy as np
 import pytest
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.redis_connector import RedisConnector
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
-
-
-def fake_redis_server(host, port):
-    redis = fakeredis.FakeRedis()
-    return redis
-
-
-@pytest.fixture
-def connected_connector():
-    connector = RedisConnector("localhost:1", redis_cls=fake_redis_server)
-    connector._redis_conn.flushall()
-    try:
-        yield connector
-    finally:
-        connector.shutdown()
 
 
 class ControllerMock:

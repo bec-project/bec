@@ -1,7 +1,7 @@
 import enum
 import inspect
 import time
-from typing import Generator, Protocol
+from typing import Generator, Literal, Protocol
 
 from ophyd import DeviceStatus, Kind
 from ophyd_devices.interfaces.protocols.bec_protocols import (
@@ -111,11 +111,23 @@ class DeviceObjectMock(BECDeviceProtocol):
 class MockSignal(DeviceObjectMock, BECSignalProtocol):
 
     def __init__(
-        self, name: str, value: any = 0, kind: Kind = Kind.normal, parent=None, precision=None
+        self,
+        name: str,
+        value: any = 0,
+        kind: Kind = Kind.normal,
+        parent=None,
+        precision=None,
+        readout_priority: Literal["monitored", "baseline", "async"] = "monitored",
+        software_trigger: bool = False,
     ):
         super().__init__(name=name, parent=parent, kind=kind)
         self._value = value
-        self._config = {"deviceConfig": {"limits": [0, 0]}, "userParameter": None}
+        self._config = {
+            "deviceConfig": {"limits": [0, 0]},
+            "userParameter": None,
+            "readoutPriority": readout_priority,
+            "softwareTrigger": software_trigger,
+        }
         self._metadata = dict(read_access=True, write_access=True, precision=precision)
         self._info = {
             "signals": {},
@@ -188,7 +200,14 @@ class MockSignal(DeviceObjectMock, BECSignalProtocol):
 
 class PositionerMock(DeviceObjectMock, BECPositionerProtocol):
 
-    def __init__(self, name: str, kind: Kind = Kind.normal, parent=None):
+    def __init__(
+        self,
+        name: str,
+        kind: Kind = Kind.normal,
+        parent=None,
+        readout_priority: Literal["monitored", "baseline", "async"] = "baseline",
+        software_trigger: bool = False,
+    ):
         super().__init__(name=name, parent=parent, kind=kind)
         # Name of readback signal is the same as the name of the positioner
         self.readback = MockSignal(name=self.name, kind=Kind.normal, value=0, precision=3)
@@ -198,7 +217,12 @@ class PositionerMock(DeviceObjectMock, BECPositionerProtocol):
         )
         self.velocity = MockSignal(name=f"{self.name}_velocity", kind=Kind.config, value=0)
         self.acceleration = MockSignal(name=f"{self.name}_acceleration", kind=Kind.config, value=0)
-        self._config = {"deviceConfig": {"limits": [-50, 50]}, "userParameter": None}
+        self._config = {
+            "deviceConfig": {"limits": [-50, 50]},
+            "userParameter": None,
+            "readoutPriority": readout_priority,
+            "softwareTrigger": software_trigger,
+        }
         self._read_attrs = ["readback", "setpoint", "motor_is_moving"]
         self._read_config_attrs = ["velocity", "acceleration"]
         self._info = {
@@ -307,11 +331,13 @@ class DMMock:
         self.devices = DeviceContainer()
         self.connector = ConnectorMock()
 
-    def add_device(self, name, value=None, dev_type: DeviceMockType = DeviceMockType.POSITIONER):
+    def add_device(
+        self, name, value=None, dev_type: DeviceMockType = DeviceMockType.POSITIONER, **kwargs
+    ):
         if dev_type == DeviceMockType.POSITIONER:
-            self.devices[name] = PositionerMock(name=name)
+            self.devices[name] = PositionerMock(name=name, **kwargs)
         elif dev_type == DeviceMockType.SIGNAL:
-            self.devices[name] = MockSignal(name=name)
+            self.devices[name] = MockSignal(name=name, **kwargs)
         else:
             raise ValueError(f"Unknown device type {dev_type}")
         if value is not None:

@@ -30,12 +30,13 @@ class RPCMixin:
         result = StringIO()
         with redirect_stdout(result):
             try:
+                self.requests_handler.add_request(instr, num_status_objects=1)
                 instr_params = instr.content.get("parameter")
                 device = instr.content["device"]
                 self._assert_device_is_enabled(instr)
                 res = self.process_rpc_instruction(instr)
                 # send result to client
-                self._send_rpc_result_to_client(device, instr_params, res, result)
+                self._send_rpc_result_to_client(instr, device, instr_params, res, result)
                 logger.trace(res)
             except Exception as exc:  # pylint: disable=broad-except
                 # send error to client
@@ -72,8 +73,19 @@ class RPCMixin:
         return res
 
     def _send_rpc_result_to_client(
-        self, device: str, instr_params: dict, res: Any, result: StringIO
+        self,
+        instr: messages.DeviceInstructionMessage,
+        device: str,
+        instr_params: dict,
+        res: Any,
+        result: StringIO,
     ):
+        diid = instr.metadata.get("device_instr_id")
+        request = self.requests_handler.get_request(diid)
+        # if the request was already resolved by a status object,
+        # we won't find it in the requests_handler
+        if request and not request.get("status_objects"):
+            self.requests_handler.set_finished(diid, success=True, result=res)
         self.connector.set(
             MessageEndpoints.device_rpc(instr_params.get("rpc_id")),
             messages.DeviceRPCMessage(
@@ -153,7 +165,7 @@ class RPCMixin:
 
         if isinstance(res, ophyd.StatusBase):
             res.__dict__["instruction"] = instr
-            res.add_callback(self._status_callback)
+            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], res)
             res = {
                 "type": "status",
                 "RID": instr.metadata.get("RID"),
@@ -213,10 +225,11 @@ class RPCMixin:
         return self._rpc_read_configuration_and_return(instr)
 
     def _send_rpc_exception(self, exc: Exception, instr: messages.DeviceInstructionMessage):
+        error_traceback = traceback.format_exc()
         exc_formatted = {
             "error": exc.__class__.__name__,
             "msg": exc.args,
-            "traceback": traceback.format_exc(),
+            "traceback": error_traceback,
         }
         logger.info(f"Received exception: {exc_formatted}, {exc}")
         instr_params = instr.content.get("parameter")
@@ -226,3 +239,7 @@ class RPCMixin:
                 device=instr.content["device"], return_val=None, out=exc_formatted, success=False
             ),
         )
+        diid = instr.metadata.get("device_instr_id")
+        request = self.requests_handler.get_request(diid)
+        if request and not request.get("status_objects"):
+            self.requests_handler.set_finished(diid, success=False, error_message=error_traceback)

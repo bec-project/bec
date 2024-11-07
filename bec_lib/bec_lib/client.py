@@ -229,7 +229,8 @@ class BECClient(BECService, UserScriptsMixin):
         self.scans = Scans(self._parent)
         builtins.__dict__["scans"] = self.scans
         self.scans_namespace = SimpleNamespace(
-            **{scan_name: scan.run for scan_name, scan in self.scans._available_scans.items()}
+            scan_def=self.scans.scan_def,
+            **{scan_name: scan.run for scan_name, scan in self.scans._available_scans.items()},
         )
 
     def load_high_level_interface(self, module_name: str) -> None:

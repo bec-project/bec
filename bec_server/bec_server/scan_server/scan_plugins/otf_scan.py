@@ -34,32 +34,23 @@ class OTFScan(SyncFlyScanBase):
         return self.otf_device
 
     def scan_core(self):
-        yield from self.stubs.set(
-            device=self.mono, value=self.caller_kwargs["e1"], wait_group="flyer"
-        )
-        yield from self.stubs.wait(device=[self.mono], wait_group="flyer", wait_type="move")
+        yield from self.stubs.set(device=self.mono, value=self.caller_kwargs["e1"], wait=True)
         yield from self.stubs.kickoff(
             device=self.otf_device,
             parameter={
                 key: val for key, val in self.caller_kwargs.items() if key in ["e1", "e2", "time"]
             },
+            wait=True,
         )
-        yield from self.stubs.wait(device=[self.otf_device], wait_group="kickoff", wait_type="move")
-        yield from self.stubs.complete(device=self.otf_device)
-        target_diid = self.DIID - 1
+        status = yield from self.stubs.complete(device=self.otf_device)
 
-        while True:
-            yield from self.stubs.read_and_wait(group="primary", wait_group="readout_primary")
-            status = self.stubs.get_req_status(
-                device=self.otf_device, RID=self.metadata["RID"], DIID=target_diid
-            )
+        while not status.done:
+            yield from self.stubs.read(group="primary", wait=True)
             progress = self.stubs.get_device_progress(
                 device=self.otf_device, RID=self.metadata["RID"]
             )
             if progress:
                 self.num_pos = progress
-            if status:
-                break
             time.sleep(1)
 
 
@@ -108,7 +99,7 @@ class HystScan(ScanBase):
         self._check_limits()
 
     def _at_each_point(self):
-        yield from self.stubs.read(group="primary", wait_group="primary", point_id=self.point_id)
+        yield from self.stubs.read(group="primary", point_id=self.point_id)
         self.point_id += 1
 
     def _get_next_scan_motor_position(self):
@@ -127,45 +118,29 @@ class HystScan(ScanBase):
             "field_x", "ramprate.set", self.default_ramp_rate
         )
         status.wait()
-        yield from self.stubs.set(
-            device=self.flyer, value=self.flyer_positions[0], wait_group="flyer"
-        )
-        yield from self.stubs.wait(device=[self.flyer], wait_group="flyer", wait_type="move")
+        yield from self.stubs.set(device=self.flyer, value=self.flyer_positions[0], wait=True)
 
         status = yield from self.stubs.send_rpc_and_wait("field_x", "ramprate.set", self.ramp_rate)
         status.wait()
         # send the slow motor on its way
-        yield from self.stubs.set(
-            device=self.flyer, value=self.flyer_positions[1], wait_group="flyer"
-        )
+        status = yield from self.stubs.set(device=self.flyer, value=self.flyer_positions[1])
 
-        flyer_done = False
         pos_generator = self._get_next_scan_motor_position()
-        target_DIID = self.DIID - 1
-        dev = self.device_manager.devices
-        while not flyer_done:
-            flyer_done = bool(
-                self.stubs.get_req_status(
-                    device=self.flyer, DIID=target_DIID, RID=self.metadata["RID"]
-                )
-            )
 
+        dev = self.device_manager.devices
+        while not status.done:
             val = next(pos_generator)
             logger.info(f"Moving mono to {val}.")
-            yield from self.stubs.set(device=self.energy_motor, value=val, wait_group="mono")
-            yield from self.stubs.wait(
-                device=[self.energy_motor], wait_group="mono", wait_type="move"
-            )
+            yield from self.stubs.set(device=self.energy_motor, value=val, wait=True)
 
             monitored_devices = [dev.name for dev in dev.monitored_devices([])]
-            yield from self.stubs.read_and_wait(
+            yield from self.stubs.read(
                 device=[self.flyer, self.scan_motors[0], *monitored_devices],
-                wait_group="readout_primary",
                 point_id=self.point_id,
+                wait=True,
             )
             # time.sleep(1)
             self.point_id += 1
-            self.scan_motors[0]
             self.num_pos += 1
 
         status = yield from self.stubs.send_rpc_and_wait(

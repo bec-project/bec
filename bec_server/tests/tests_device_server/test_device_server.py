@@ -9,7 +9,6 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import BECStatus
-from bec_lib.redis_connector import MessageObject
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server import DeviceServer
@@ -75,13 +74,13 @@ def test_stop(device_server_mock):
             device="samx",
             action="read",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device=["samx", "samy"],
             action="read",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test2"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test2"},
         ),
     ],
 )
@@ -132,25 +131,25 @@ def test_on_stop_all_devices(device_server_mock):
             device="eiger",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device=["samx", "samy"],
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device="motor2_disabled",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device="motor1_disabled",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
     ],
 )
@@ -177,19 +176,19 @@ def test_assert_device_is_enabled(device_server_mock, instr):
             device="samx",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device="not_a_valid_device",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device=None,
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
     ],
 )
@@ -221,7 +220,7 @@ def test_assert_device_is_valid(device_server_mock, instr):
             device="samx",
             action="set",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -263,7 +262,7 @@ def test_handle_device_instruction_raises_alarm(device_server_mock):
             device="samx",
             action="set",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -292,7 +291,7 @@ def test_handle_device_instructions_limit_error(device_server_mock, instructions
             device="samx",
             action="read",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -311,7 +310,7 @@ def test_handle_device_instructions_read(device_server_mock, instructions):
             device="samx",
             action="rpc",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -341,7 +340,7 @@ def test_handle_device_instructions_rpc(device_server_mock, instructions):
             device="samx",
             action="kickoff",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -361,7 +360,7 @@ def test_handle_device_instructions_kickoff(device_server_mock, instructions):
             device="samx",
             action="complete",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -381,19 +380,19 @@ def test_handle_device_instructions_complete(device_server_mock, instructions):
             device="flyer_sim",
             action="complete",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device="bpm4i",
             action="complete",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device=None,
             action="complete",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
     ],
 )
@@ -417,7 +416,7 @@ def test_complete_device(device_server_mock, instr):
             device="samx",
             action="pre_scan",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -437,7 +436,7 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
             device="samx",
             action="trigger",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -456,7 +455,7 @@ def test_handle_device_instructions_trigger(device_server_mock, instructions):
             device="samx",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -475,7 +474,7 @@ def test_handle_device_instructions_stage(device_server_mock, instructions):
             device="samx",
             action="unstage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -494,13 +493,13 @@ def test_handle_device_instructions_unstage(device_server_mock, instructions):
             device="eiger",
             action="trigger",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "12345"},
         ),
         messages.DeviceInstructionMessage(
             device=["samx", "samy"],
             action="trigger",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "12345"},
         ),
     ],
 )
@@ -526,7 +525,7 @@ def test_trigger_device(device_server_mock, instr):
             device="flyer_sim",
             action="kickoff",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -548,7 +547,7 @@ def test_kickoff_device(device_server_mock, instr):
             device="samx",
             action="set",
             parameter={"value": 5},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         )
     ],
 )
@@ -560,13 +559,12 @@ def test_set_device(device_server_mock, instr):
         res = [
             msg
             for msg in device_server.connector.message_sent
-            if msg["queue"] == MessageEndpoints.device_req_status("samx").endpoint
+            if msg["queue"] == MessageEndpoints.device_instructions_response()
         ]
         if res:
             break
     msg = res[0]["msg"]
     assert msg.metadata["RID"] == "test"
-    assert msg.content["success"]
 
 
 @pytest.mark.parametrize(
@@ -576,13 +574,13 @@ def test_set_device(device_server_mock, instr):
             device="samx",
             action="read",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
         ),
         messages.DeviceInstructionMessage(
             device=["samx", "samy"],
             action="read",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1, "RID": "test2"},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test2"},
         ),
     ],
 )
@@ -694,19 +692,22 @@ def test_retry_obj_method_buffer(device_server_mock, instr):
     "instr",
     [
         messages.DeviceInstructionMessage(
-            device="samx", action="stage", parameter={}, metadata={"stream": "primary", "DIID": 1}
+            device="samx",
+            action="stage",
+            parameter={},
+            metadata={"stream": "primary", "device_instr_id": "diid"},
         ),
         messages.DeviceInstructionMessage(
             device=["samx", "samy"],
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1},
+            metadata={"stream": "primary", "device_instr_id": "diid"},
         ),
         messages.DeviceInstructionMessage(
             device="ring_current_sim",
             action="stage",
             parameter={},
-            metadata={"stream": "primary", "DIID": 1},
+            metadata={"stream": "primary", "device_instr_id": "diid"},
         ),
     ],
 )

@@ -7,7 +7,7 @@ import time
 import traceback
 import uuid
 from enum import Enum
-from typing import Deque
+from typing import TYPE_CHECKING, Deque
 
 from rich.console import Console
 from rich.table import Table
@@ -18,10 +18,14 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
 from .errors import LimitError, ScanAbortion
+from .instruction_handler import InstructionHandler
 from .scan_assembler import ScanAssembler
 from .scans import ScanBase
 
 logger = bec_logger.logger
+
+if TYPE_CHECKING:
+    from bec_server.scan_server.scan_server import ScanServer
 
 
 def requires_queue(fcn):
@@ -53,7 +57,7 @@ class ScanQueueStatus(Enum):
 
 class QueueManager:
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, parent) -> None:
+    def __init__(self, parent: ScanServer) -> None:
         self.parent = parent
         self.connector = parent.connector
         self.num_queues = 1
@@ -61,6 +65,7 @@ class QueueManager:
         self.queues: dict[str, ScanQueue] = {}
         self._start_scan_queue_register()
         self._lock = threading.RLock()
+        self.instruction_handler = InstructionHandler(self.connector)
 
     def add_to_queue(self, scan_queue: str, msg: messages.ScanQueueMessage, position=-1) -> None:
         """Add a new ScanQueueMessage to the queue.
@@ -136,6 +141,7 @@ class QueueManager:
 
     @staticmethod
     def _scan_queue_order_callback(msg, parent, **_kwargs):
+        # pylint: disable=protected-access
         parent._handle_scan_order_change(msg.value)
 
     def _handle_scan_order_change(self, msg: messages.ScanQueueOrderMessage) -> None:
