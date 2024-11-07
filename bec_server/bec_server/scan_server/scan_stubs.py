@@ -326,7 +326,7 @@ class ScanStubs:
         )
 
     def kickoff(
-        self, *, device: str, parameter: dict = None, metadata=None, wait: bool = False
+        self, *, device: str, parameter: dict = None, metadata=None, wait: bool = True
     ) -> Generator[messages.DeviceInstructionMessage, None, None]:
         """Kickoff a fly scan device.
 
@@ -336,7 +336,7 @@ class ScanStubs:
             device (str): Device name of flyer.
             parameter (dict, optional): Additional parameters that should be forwarded to the device. Defaults to {}.
             metadata (dict, optional): Metadata that should be forwarded to the device. Defaults to {}.
-            wait (bool, optional): If True, the kickoff command will wait for the completion of the kickoff operation before returning. Defaults to False.
+            wait (bool, optional): If True, the kickoff command will wait for the completion of the kickoff operation before returning. Defaults to True.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
@@ -354,7 +354,7 @@ class ScanStubs:
         return status
 
     def complete(
-        self, *, device: str = None, metadata=None, wait: bool = False
+        self, *, device: str = None, metadata=None, wait: bool = True
     ) -> Generator[None, None, None]:
         """Complete a fly scan device.
 
@@ -363,7 +363,7 @@ class ScanStubs:
         Args:
             device (str): Device name of flyer.
             metadata (dict, optional): Metadata that should be forwarded to the device. Defaults to {}.
-            wait (bool, optional): If True, the complete command will wait for the completion of the complete operation before returning. Defaults to False.
+            wait (bool, optional): If True, the complete command will wait for the completion of the complete operation before returning. Defaults to True.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
@@ -556,7 +556,7 @@ class ScanStubs:
         device: list[str] | str | None = None,
         point_id: int | None = None,
         group: Literal["scan_motor", "primary", None] = None,
-        wait: bool = False,
+        wait: bool = True,
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
         Perform a reading on a device or device group.
@@ -570,7 +570,7 @@ class ScanStubs:
             device (list, optional): Device name. Can be used instead of group. Defaults to None.
             point_id (int, optional): point_id to assign this reading to point within the scan. Defaults to None.
             group (Literal["scan_motor", "primary", None], optional): Device group. Can be used instead of device. Defaults to None.
-            wait (bool, optional): If True, the read command will wait for the completion of the read operation before returning. Defaults to False.
+            wait (bool, optional): If True, the read command will wait for the completion of the read operation before returning. Defaults to True.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
@@ -626,7 +626,7 @@ class ScanStubs:
         )
 
     def trigger(
-        self, *, group: str, point_id: int, wait: bool = False
+        self, *, group: str, point_id: int, min_wait=0, wait: bool = True
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """Trigger a device group. Note that the trigger event is not blocking and does not wait for the completion of the trigger event.
         To wait for the completion of the trigger event, use the :func:`wait` command, specifying the wait_type as "trigger".
@@ -636,7 +636,7 @@ class ScanStubs:
         Args:
             group (str): Device group that should receive the trigger.
             point_id (int): point_id that should be attached to this trigger event.
-            wait (bool, optional): If True, the trigger command will wait for the completion of the trigger operation before returning. Defaults to False.
+            wait (bool, optional): If True, the trigger command will wait for the completion of the trigger operation before returning. Defaults to True.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
@@ -657,12 +657,14 @@ class ScanStubs:
         yield self._device_msg(
             device=devices, action="trigger", parameter={"group": group}, metadata=metadata
         )
+        if min_wait:
+            time.sleep(min_wait)
         if wait:
             status.wait()
         return status
 
     def set(
-        self, *, device: str, value: float, metadata=None, wait: bool = False
+        self, *, device: str, value: float, metadata=None, wait: bool = True
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """Set the device to a specific value. This is similar to the direct set command
         in the command-line interface. The wait_group can be used to wait for the completion of this event.
@@ -675,7 +677,7 @@ class ScanStubs:
             device (str): Device name
             value (float): Target value.
             metadata (dict, optional): Metadata that should be attached to this event. Defaults to None.
-            wait (bool, optional): If True, the set command will wait for the completion of the set operation before returning. Defaults to False.
+            wait (bool, optional): If True, the set command will wait for the completion of the set operation before returning. Defaults to True.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
@@ -735,7 +737,7 @@ class ScanStubs:
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
         Perfrom an RPC (remote procedure call) on a device.
-        Do not use this command directly. Instead, use :func:`send_rpc_and_wait` to perform an RPC and wait for its return value.
+        For blocking calls, use :func:`send_rpc_and_wait`.
 
         Args:
             device (str): Device name.

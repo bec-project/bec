@@ -56,7 +56,7 @@ def stubs():
     ],
 )
 def test_kickoff(stubs, device, parameter, metadata, reference_msg):
-    msg = list(stubs.kickoff(device=device, parameter=parameter, metadata=metadata))
+    msg = list(stubs.kickoff(device=device, parameter=parameter, metadata=metadata, wait=False))
     reference_msg.metadata["device_instr_id"] = msg[0].metadata["device_instr_id"]
     assert msg[0] == reference_msg
 
