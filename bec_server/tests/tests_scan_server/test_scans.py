@@ -338,7 +338,7 @@ def test_scan_updated_move(
             yield None
             return ScanStubStatusMock(lambda: iter([True]))
 
-        with mock.patch.object(s.stubs, "rpc") as mock_rpc:
+        with mock.patch.object(s.stubs, "send_rpc") as mock_rpc:
             mock_rpc.side_effect = mock_rpc_func
             for step in s.run():
                 if step:

@@ -96,8 +96,8 @@ def test_device_progress(stubs, msg, ret_value, raised_error):
 
 def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
     with mock.patch.object(stubs, "_get_result_from_status", return_value="msg") as get_rpc:
-        original_rpc = stubs.rpc
-        with mock.patch.object(stubs, "rpc") as mock_rpc:
+        original_rpc = stubs.send_rpc
+        with mock.patch.object(stubs, "send_rpc") as mock_rpc:
 
             def mock_rpc_func(*args, **kwargs):
                 yield from original_rpc(*args, **kwargs)

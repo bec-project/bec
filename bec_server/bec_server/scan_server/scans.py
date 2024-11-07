@@ -677,7 +677,7 @@ class DeviceRPC(ScanStub):
 
     def run(self):
         # different to calling self.device_rpc, this procedure will not wait for a reply and therefore not check any errors.
-        yield from self.stubs.rpc(
+        yield from self.stubs.send_rpc(
             self.parameter.get("device"),
             self.parameter.get("func"),
             *self.parameter.get("args"),
