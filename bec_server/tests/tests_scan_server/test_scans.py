@@ -2010,9 +2010,12 @@ def test_ContLineFlyScan(device_manager_mock, instruction_handler_mock, ScanStub
         return ScanStubStatusMock(done_func=fake_done)
 
     with mock.patch.object(request.stubs, "set", side_effect=fake_set):
-        ref_list = list(request.run())
+        with mock.patch.object(request.stubs, "_get_result_from_status") as get_result:
+            get_result.return_value = {"samx": {"value": 0}}
+            ref_list = list(request.run())
 
-    ref_list[1].parameter["readback"]["RID"] = "ddaad496-6178-4f6a-8c2e-0c9d416e5d9c"
+    ref_list[1].parameter["rpc_id"] = "rpc_id"
+    ref_list[2].parameter["readback"]["RID"] = "ddaad496-6178-4f6a-8c2e-0c9d416e5d9c"
     for item in ref_list:
         if hasattr(item, "metadata") and "RID" in item.metadata:
             item.metadata["RID"] = "ddaad496-6178-4f6a-8c2e-0c9d416e5d9c"
@@ -2021,6 +2024,18 @@ def test_ContLineFlyScan(device_manager_mock, instruction_handler_mock, ScanStub
 
     assert ref_list == [
         None,
+        messages.DeviceInstructionMessage(
+            metadata={"readout_priority": "monitored"},
+            device="samx",
+            action="rpc",
+            parameter={
+                "device": "samx",
+                "func": "read",
+                "rpc_id": "rpc_id",
+                "args": (),
+                "kwargs": {},
+            },
+        ),
         messages.DeviceInstructionMessage(
             metadata={"readout_priority": "monitored"},
             device=None,
@@ -2039,9 +2054,9 @@ def test_ContLineFlyScan(device_manager_mock, instruction_handler_mock, ScanStub
             device=None,
             action="open_scan",
             parameter={
-                "scan_motors": [],
+                "scan_motors": ["samx"],
                 "readout_priority": {
-                    "monitored": [],
+                    "monitored": ["samx"],
                     "baseline": [],
                     "on_request": [],
                     "async": [],
@@ -2060,7 +2075,7 @@ def test_ContLineFlyScan(device_manager_mock, instruction_handler_mock, ScanStub
         ),
         messages.DeviceInstructionMessage(
             metadata={"readout_priority": "baseline"},
-            device=["rtx", "samx", "samy", "samz"],
+            device=["rtx", "samy", "samz"],
             action="read",
             parameter={},
         ),
@@ -2080,10 +2095,11 @@ def test_ContLineFlyScan(device_manager_mock, instruction_handler_mock, ScanStub
         ),
         messages.DeviceInstructionMessage(
             metadata={"readout_priority": "monitored", "point_id": 0},
-            device=["bpm4i", "eiger"],
+            device=["bpm4i", "eiger", "samx"],
             action="read",
             parameter={"group": "primary"},
         ),
+        "fake_set",
         messages.DeviceInstructionMessage(
             metadata={"readout_priority": "monitored"},
             device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
