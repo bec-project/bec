@@ -25,13 +25,6 @@ lmfit = lazy_import("lmfit")
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
 
-try:
-    import matplotlib.pyplot as plt
-
-    plt.ion()
-except ImportError:
-    plt = None
-
 
 class DAPPluginObjectBase:
     """
@@ -308,10 +301,16 @@ class LmfitService1DResult:
         Plot the fit.
         """
         # move this to BECWidgets once it's available
-        if not plt:
+        try:
+            # pylint: disable=import-outside-toplevel
+            import matplotlib.pyplot as plt
+
+            plt.ion()
+        except ImportError:
             raise ImportError(
                 "matplotlib is not installed. Cannot plot. Please install matplotlib using 'pip install matplotlib'."
             )
+
         input_data = self.input_data
         plt.figure()
         plt.plot(input_data["x"], input_data["y"], label="data", color="black", marker="o")
