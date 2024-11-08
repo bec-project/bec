@@ -338,7 +338,7 @@ class ScanStubs:
         positions=None,
         metadata=None,
     ) -> Generator[messages.DeviceInstructionMessage, None, None]:
-        """Open a new scan.
+        """Open a new scan. This is typically not used directly but called by the underlying base class.
 
         Args:
             scan_motors (list): List of scan motors.
@@ -467,7 +467,8 @@ class ScanStubs:
         """
         Stage all devices.
 
-        On the device server, `stage` will call the `stage` method of the device.
+        On the device server, `stage` will call the `stage` method of the device and instruct
+        the device to prepare for the upcoming scan.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator
@@ -520,7 +521,8 @@ class ScanStubs:
         """
         Unstage all devices.
 
-        On the device server, `unstage` will call the `unstage` method of the device.
+        On the device server, `unstage` will call the `unstage` method of the device and instruct
+        the device to clean up after the scan.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
@@ -717,12 +719,10 @@ class ScanStubs:
         metadata=None,
         wait: bool = True,
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
-        """Set the device to a specific value. This is similar to the direct set command
-        in the command-line interface. The wait_group can be used to wait for the completion of this event.
-        For a set operation, this simply means that the device has acknowledged the set command and does not
-        necessarily mean that the device has reached the target value.
-
+        """
+        Set one or multiple devices to specific values. The number of devices and values must match.
         On the device server, `set` will call the `set` method of the device.
+        When setting multiple devices, the set operation will be performed in parallel and the status object will wait for all devices to complete.
 
         Args:
             device (str, list[str]): Device name or list of device names.
@@ -733,12 +733,17 @@ class ScanStubs:
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
 
-        .. warning::
+        Examples:
+            # Set a single device
+            >>> yield from self.stubs.set(device="samx", value=1)
 
-            Do not use this command to kickoff a long running operation. Use :func:`kickoff` instead or, if the
-            device does not support the kickoff command, use :func:`set_with_response` instead.
+            # Set multiple devices
+            >>> yield from self.stubs.set(device=["samx", "samy"], value=[1, 2])
 
-        see also: :func:`wait`, :func:`set_and_wait`, :func:`set_with_response`
+            # Set a single device and wait for the completion
+            >>> status = yield from self.stubs.set(device="samx", value=1, wait=False)
+            # ... do something else
+            >>> status.wait()
 
         """
         metadata = metadata if metadata is not None else {}
@@ -769,30 +774,30 @@ class ScanStubs:
             status.wait()
         return status
 
-    def open_scan_def(self) -> Generator[None, None, None]:
+    def open_scan_def(self) -> Generator[messages.DeviceInstructionMessage, None, None]:
         """
         Open a new scan definition
 
         Returns:
-            Generator[None, None, None]: Generator that yields a device message.
+            Generator[messages.DeviceInstructionMessage, None, None]: Generator that yields a device message.
         """
         yield self._device_msg(device=None, action="open_scan_def", parameter={})
 
-    def close_scan_def(self) -> Generator[None, None, None]:
+    def close_scan_def(self) -> Generator[messages.DeviceInstructionMessage, None, None]:
         """
         Close a scan definition
 
         Returns:
-            Generator[None, None, None]: Generator that yields a device message.
+            Generator[messages.DeviceInstructionMessage, None, None]: Generator that yields a device message.
         """
         yield self._device_msg(device=None, action="close_scan_def", parameter={})
 
-    def close_scan_group(self) -> Generator[None, None, None]:
+    def close_scan_group(self) -> Generator[messages.DeviceInstructionMessage, None, None]:
         """
         Close a scan group
 
         Returns:
-            Generator[None, None, None]: Generator that yields a device message.
+            Generator[messages.DeviceInstructionMessage, None, None]: Generator that yields a device message.
         """
         yield self._device_msg(device=None, action="close_scan_group", parameter={})
 
@@ -810,7 +815,7 @@ class ScanStubs:
             kwargs (dict): Keyword arguments to pass on to the RPC function.
 
         Returns:
-            Generator[None, None, None]: Generator that yields a device message.
+            Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
 
         Examples:
             >>> yield from self.send_rpc("samx", "controller.my_custom_function", 1, 2, arg1="test")
@@ -835,14 +840,16 @@ class ScanStubs:
 
         return status
 
-    def scan_report_instruction(self, instructions: dict) -> Generator[None, None, None]:
+    def scan_report_instruction(
+        self, instructions: dict
+    ) -> Generator[messages.DeviceInstructionMessage, None, None]:
         """Scan report instructions
 
         Args:
             instructions (dict): Dict containing the scan report instructions
 
         Returns:
-            Generator[None, None, None]: Generator that yields a device message.
+            Generator[messages.DeviceInstructionMessage, None, None]: Generator that yields a device message.
         """
         yield self._device_msg(
             device=None, action="scan_report_instruction", parameter=instructions
