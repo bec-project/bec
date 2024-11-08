@@ -543,17 +543,13 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self.point_id += 1
 
     def _move_scan_motors_and_wait(self, pos):
+        if pos is None:
+            return
         if not isinstance(pos, list) and not isinstance(pos, np.ndarray):
             pos = [pos]
         if len(pos) == 0:
             return
-        status_objs = []
-        for ind, val in enumerate(self.scan_motors):
-            status_obj = yield from self.stubs.set(device=val, value=pos[ind], wait=False)
-            status_objs.append(status_obj)
-
-        for obj in status_objs:
-            obj.wait()
+        yield from self.stubs.set(device=self.scan_motors, value=pos)
 
     def _get_position(self):
         for ind, pos in enumerate(self.positions):
@@ -803,13 +799,7 @@ class UpdatedMove(Move):
     scan_name = "umv"
 
     def _at_each_point(self, pos=None):
-        status_objects = []
-        for ii, motor in enumerate(self.scan_motors):
-            obj = yield from self.stubs.set(device=motor, value=self.positions[0][ii], wait=False)
-            status_objects.append(obj)
-
-        for obj in status_objects:
-            obj.wait()
+        yield from self.stubs.set(device=self.scan_motors, value=self.positions[0])
 
     def scan_report_instructions(self):
         yield from self.stubs.scan_report_instruction(

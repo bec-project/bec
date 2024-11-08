@@ -41,6 +41,7 @@ class ScanStubStatus:
         done: bool = False,
         shutdown_event: threading.Event = None,
         registry: dict = None,
+        is_container: bool = False,
     ) -> None:
         """
         Initialize the status object.
@@ -48,8 +49,10 @@ class ScanStubStatus:
         Args:
             instruction_handler (InstructionHandler): Instruction handler.
             device_instr_id (str): Device instruction ID.
-            shutdown_event (threading.Event, optional): Shutdown event. Defaults to None.
             done (bool, optional): Flag that indicates if the status object is done. Defaults to False.
+            shutdown_event (threading.Event, optional): Shutdown event. Defaults to None.
+            registry (dict, optional): Registry for status objects. Defaults to None.
+            is_container (bool, optional): Flag that indicates if the status object is a container. Defaults to False.
 
         """
         self._instruction_handler = instruction_handler
@@ -64,7 +67,10 @@ class ScanStubStatus:
         self.value = None
         self.message = None
         self._future = concurrent.futures.Future()
-        self._instruction_handler.register_callback(self._device_instr_id, self._update_future)
+        if is_container:
+            self.set_done()
+        else:
+            self._instruction_handler.register_callback(self._device_instr_id, self._update_future)
 
     @property
     def done(self) -> bool:
@@ -75,7 +81,8 @@ class ScanStubStatus:
             bool: Done flag
         """
         self._done_checked = True
-        return self._done
+        sub_status_done = self._get_sub_status_done()
+        return self._done and sub_status_done
 
     @done.setter
     def done(self, value: bool):
@@ -231,11 +238,12 @@ class ScanStubs:
         self._readout_priority = {}
         self._status_registry = {}
 
-    def _create_status(self) -> ScanStubStatus:
+    def _create_status(self, is_container=False) -> ScanStubStatus:
         status = ScanStubStatus(
             self._instruction_handler,
             shutdown_event=self.shutdown_event,
             registry=self._status_registry,
+            is_container=is_container,
         )
         self._status_registry[status._device_instr_id] = status
         return status
@@ -702,7 +710,12 @@ class ScanStubs:
         return status
 
     def set(
-        self, *, device: str, value: float, metadata=None, wait: bool = True
+        self,
+        *,
+        device: str | list[str],
+        value: float | list[float],
+        metadata=None,
+        wait: bool = True,
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """Set the device to a specific value. This is similar to the direct set command
         in the command-line interface. The wait_group can be used to wait for the completion of this event.
@@ -712,8 +725,8 @@ class ScanStubs:
         On the device server, `set` will call the `set` method of the device.
 
         Args:
-            device (str): Device name
-            value (float): Target value.
+            device (str, list[str]): Device name or list of device names.
+            value (float, list[float]): Value or list of values that should be set.
             metadata (dict, optional): Metadata that should be attached to this event. Defaults to None.
             wait (bool, optional): If True, the set command will wait for the completion of the set operation before returning. Defaults to True.
 
@@ -728,16 +741,29 @@ class ScanStubs:
         see also: :func:`wait`, :func:`set_and_wait`, :func:`set_with_response`
 
         """
-        status = self._create_status()
         metadata = metadata if metadata is not None else {}
 
-        # pylint: disable=protected-access
-        metadata["device_instr_id"] = status._device_instr_id
+        if not isinstance(device, list):
+            device = [device]
 
-        msg = self._device_msg(
-            device=device, action="set", parameter={"value": value}, metadata=metadata
-        )
-        yield msg
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+
+        if not isinstance(value, list):
+            value = [value]
+
+        if len(device) != len(value):
+            raise DeviceMessageError("The number of devices and values must match.")
+
+        status = self._create_status(is_container=True)
+        for dev, val in zip(device, value):
+            sub_status = self._create_status()
+            # pylint: disable=protected-access
+            metadata["device_instr_id"] = sub_status._device_instr_id
+            yield self._device_msg(
+                device=dev, action="set", parameter={"value": val}, metadata=metadata
+            )
+            status.add_status(sub_status)
 
         if wait:
             status.wait()
