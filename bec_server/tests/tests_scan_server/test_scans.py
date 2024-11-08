@@ -413,10 +413,10 @@ def test_scan_updated_move(
                     parameter={"value": -5.0},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 0},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 0},
@@ -431,10 +431,10 @@ def test_scan_updated_move(
                     parameter={"value": 0.0},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 1},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 1},
@@ -449,10 +449,10 @@ def test_scan_updated_move(
                     parameter={"value": 5.0},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 2},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 2},
@@ -688,10 +688,10 @@ def test_fermat_scan(scan_msg, reference_scan_list):
                     parameter={"value": 1.0},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 0},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 0},
@@ -700,10 +700,10 @@ def test_fermat_scan(scan_msg, reference_scan_list):
                     parameter={"group": "primary"},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 1},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 1},
@@ -712,10 +712,10 @@ def test_fermat_scan(scan_msg, reference_scan_list):
                     parameter={"group": "primary"},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 2},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 2},
@@ -885,8 +885,8 @@ def test_device_rpc(device_manager_mock, instruction_handler_mock):
                 messages.DeviceInstructionMessage(
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
-                    metadata={"point_id": 0, "readout_priority": "monitored"},
+                    parameter={},
+                    metadata={"readout_priority": "monitored"},
                 ),
                 messages.DeviceInstructionMessage(
                     device=["bpm4i", "eiger"],
@@ -1495,10 +1495,10 @@ def test_list_scan_raises_for_different_lengths():
                     parameter={},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 0},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 0},
@@ -1507,10 +1507,10 @@ def test_list_scan_raises_for_different_lengths():
                     parameter={"group": "primary"},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 1},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 1},
@@ -1519,10 +1519,10 @@ def test_list_scan_raises_for_different_lengths():
                     parameter={"group": "primary"},
                 ),
                 messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored", "point_id": 2},
+                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
-                    parameter={"group": "trigger"},
+                    parameter={},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored", "point_id": 2},
@@ -1905,8 +1905,8 @@ def test_InteractiveTrigger(device_manager_mock, instruction_handler_mock):
         messages.DeviceInstructionMessage(
             device=["eiger"],
             action="trigger",
-            parameter={"group": "trigger"},
-            metadata={"readout_priority": "monitored", "point_id": 0},
+            parameter={},
+            metadata={"readout_priority": "monitored"},
         )
     ]
 
@@ -2088,10 +2088,10 @@ def test_ContLineFlyScan(device_manager_mock, instruction_handler_mock, ScanStub
         "fake_set",
         "fake_set",
         messages.DeviceInstructionMessage(
-            metadata={"readout_priority": "monitored", "point_id": 0},
+            metadata={"readout_priority": "monitored"},
             device=["eiger"],
             action="trigger",
-            parameter={"group": "trigger"},
+            parameter={},
         ),
         messages.DeviceInstructionMessage(
             metadata={"readout_priority": "monitored", "point_id": 0},

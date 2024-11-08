@@ -497,7 +497,28 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     def cleanup(self):
         """call the cleanup procedure"""
         yield from self.close_scan()
-        remaining_status_objects = self.stubs.get_remaining_status_objects(exclude_done=False)
+
+        # Check if there are any unchecked status objects left.
+        # Their done status was not checked nor were they waited for
+        # While this is not an error, it is a warning that the scan
+        # might not have completed as expected.
+        unchecked_status_objects = self.stubs.get_remaining_status_objects(
+            exclude_done=False, exclude_checked=True
+        )
+        if unchecked_status_objects:
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                source={"Scan": self.scan_name},
+                msg=f"Scan completed with unchecked status objects: {unchecked_status_objects}. Use .wait() or .done within the scan to check their status.",
+                alarm_type="ScanCleanupWarning",
+                metadata={},
+            )
+
+        # Check if there are any remaining status objects that are not done.
+        # This is not an error but we send a warning and wait for them to complete.
+        remaining_status_objects = self.stubs.get_remaining_status_objects(
+            exclude_done=True, exclude_checked=False
+        )
         if remaining_status_objects:
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
@@ -515,9 +536,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         time.sleep(self.settling_time)
 
         trigger_time = self.exp_time * self.frames_per_trigger
-        yield from self.stubs.trigger(
-            group="trigger", point_id=self.point_id, min_wait=trigger_time
-        )
+        yield from self.stubs.trigger(min_wait=trigger_time)
 
         yield from self.stubs.read(group="primary", point_id=self.point_id)
 
@@ -1173,9 +1192,7 @@ class ContLineScan(ScanBase):
                 )
 
     def _at_each_point(self, _ind=None, _pos=None):
-        yield from self.stubs.trigger(
-            group="trigger", point_id=self.point_id, min_wait=self.exp_time
-        )
+        yield from self.stubs.trigger(min_wait=self.exp_time)
         yield from self.stubs.read(group="primary", point_id=self.point_id)
         self.point_id += 1
 
@@ -1285,9 +1302,7 @@ class ContLineFlyScan(AsyncFlyScanBase):
         )
 
         while not status_flyer.done:
-            status_trigger = yield from self.stubs.trigger(
-                group="trigger", point_id=self.point_id, wait=False
-            )
+            status_trigger = yield from self.stubs.trigger(wait=False)
             yield from self.stubs.read(group="primary", point_id=self.point_id)
             status_trigger.wait(min_wait=self.exp_time)
             self.point_id += 1
@@ -1627,9 +1642,7 @@ class Acquire(ScanBase):
         self._calculate_positions()
 
     def _at_each_point(self, ind=None, pos=None):
-        yield from self.stubs.trigger(
-            group="trigger", point_id=self.point_id, min_wait=self.exp_time
-        )
+        yield from self.stubs.trigger(min_wait=self.exp_time)
         yield from self.stubs.read(group="primary", point_id=self.point_id)
         self.point_id += 1
 
@@ -1756,9 +1769,7 @@ class InteractiveTrigger(ScanComponent):
         super().__init__(**kwargs)
 
     def run(self):
-        yield from self.stubs.trigger(
-            group="trigger", point_id=self.point_id, min_wait=self.exp_time
-        )
+        yield from self.stubs.trigger(min_wait=self.exp_time)
 
 
 class InteractiveReadMontiored(ScanComponent):
