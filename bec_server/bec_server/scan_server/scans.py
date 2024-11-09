@@ -933,6 +933,8 @@ class FermatSpiralScan(ScanBase):
             >>> scans.fermat_scan(dev.motor1, -5, 5, dev.motor2, -5, 5, step=0.5, exp_time=0.1, relative=True, optim_trajectory="corridor")
 
         """
+        self.motor1 = motor1
+        self.motor2 = motor2
         super().__init__(
             exp_time=exp_time,
             settling_time=settling_time,
@@ -941,14 +943,16 @@ class FermatSpiralScan(ScanBase):
             optim_trajectory=optim_trajectory,
             **kwargs,
         )
-        self.motor1 = motor1
-        self.motor2 = motor2
+
         self.start_motor1 = start_motor1
         self.stop_motor1 = stop_motor1
         self.start_motor2 = start_motor2
         self.stop_motor2 = stop_motor2
         self.step = step
         self.spiral_type = spiral_type
+
+    def _get_scan_motors(self):
+        self.scan_motors = [self.motor1, self.motor2]
 
     def _calculate_positions(self):
         self.positions = get_fermat_spiral_pos(
@@ -1292,9 +1296,8 @@ class ContLineFlyScan(AsyncFlyScanBase):
         )
 
         while not status_flyer.done:
-            status_trigger = yield from self.stubs.trigger(wait=False)
+            yield from self.stubs.trigger(min_wait=self.exp_time)
             yield from self.stubs.read(group="primary", point_id=self.point_id)
-            status_trigger.wait(min_wait=self.exp_time)
             self.point_id += 1
 
     def finalize(self):
@@ -1812,3 +1815,66 @@ class CloseInteractiveScan(ScanComponent):
         yield from self.unstage()
         yield from self.cleanup()
         yield from self.stubs.close_scan_def()
+
+
+class TutorialFlyScanContLine(AsyncFlyScanBase):
+    scan_name = "tutorial_cont_line_fly_scan"
+
+    def __init__(
+        self,
+        motor: DeviceBase,
+        start: float,
+        stop: float,
+        exp_time: float = 0,
+        relative: bool = False,
+        **kwargs,
+    ):
+        """
+        A continuous line fly scan. Use this scan if you want to move a motor continuously from start to stop position whilst
+        acquiring data as fast as possible (respecting the exposure time). The scan will stop automatically when the motor
+        reaches the end position.
+
+        Args:
+            motor (DeviceBase): motor to move continuously from start to stop position
+            start (float): start position
+            stop (float): stop position
+            exp_time (float): exposure time in seconds. Default is 0.
+            relative (bool): if True, the motor will be moved relative to its current position. Default is False.
+
+        Returns:
+            ScanReport
+
+        Examples:
+            >>> scans.tutorial_cont_line_fly_scan(dev.sam_rot, 0, 180, exp_time=0.1)
+
+        """
+        super().__init__(exp_time=exp_time, relative=relative, **kwargs)
+        self.motor = motor
+        self.start = start
+        self.stop = stop
+
+    def prepare_positions(self):
+        self.positions = np.array([[self.start], [self.stop]])
+        self.num_pos = None
+        yield from self._set_position_offset()
+
+    def scan_core(self):
+        # move the motor to the start position
+        yield from self.stubs.set(device=self.motor, value=self.start)
+
+        # start the flyer
+        status_flyer = yield from self.stubs.set(device=self.motor, value=self.stop, wait=False)
+
+        while not status_flyer.done:
+            # send a trigger and wait at least the exposure time
+            yield from self.stubs.trigger(min_wait=self.exp_time)
+
+            # read out all monitored devices
+            yield from self.stubs.read(group="primary", point_id=self.point_id)
+
+            # increase the point id
+            self.point_id += 1
+
+    def finalize(self):
+        yield from super().finalize()
+        self.num_pos = self.point_id
