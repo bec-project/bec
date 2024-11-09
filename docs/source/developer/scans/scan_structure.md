@@ -92,16 +92,11 @@ For each position in the scan, the method `_at_each_point` is called, providing 
 :dedent: 4
 ```
 
-1. Move the scan motors to the target position. 
+1. Move the scan motors to the target position and wait for the motors to finish moving.
 1. Let the device settle for a specified time (default: `settling_time=0`).
-1. Send out a trigger. 
-1. Start the readout of all devices that are on `readout_priority="monitored"` and are currently enabled.
-1. Wait for the readout of the scan motors to finish. 
-1. Move the scan motors to the next position.
-1. Wait for the rest of the monitored devices to finish their readout.
-1. Let the device settle for a specified time (default: `settling_time=0`).
-1. Send out a trigger.
-1. ... repeat until finished.
+1. Send out a trigger and wait at least for the specified time (`min_wait`).
+1. Read out all devices that are on `readout_priority="monitored"` and are currently enabled and assign the readout to the `point_id`.
+1. Increase the `poind_id` by one.
 
 ```{important}
 The `point_id` is an identifier for the current point in the scan. It is used later on to bundle and correlate device readings. It is crucial that the `point_id` is increased by one for each point in the scan as as seen in the default implementation of the `_at_each_point` method.

@@ -85,7 +85,7 @@ pip install -e './ophyd_devices[dev]'
 ```
 
 ```bash
-pip install -e './bec_widgets[pyqt6,dev]'
+pip install -e './bec_widgets[pyside6,dev]'
 ```
 
 ```bash
