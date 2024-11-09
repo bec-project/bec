@@ -81,6 +81,8 @@ class ScanStubStatus:
             bool: Done flag
         """
         self._done_checked = True
+        for st in self._sub_status_objects:
+            st._done_checked = True
         sub_status_done = self._get_sub_status_done()
         return self._done and sub_status_done
 
@@ -734,15 +736,15 @@ class ScanStubs:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
 
         Examples:
-            # Set a single device
+            >>> # Set a single device
             >>> yield from self.stubs.set(device="samx", value=1)
 
-            # Set multiple devices
+            >>> # Set multiple devices
             >>> yield from self.stubs.set(device=["samx", "samy"], value=[1, 2])
 
-            # Set a single device and wait for the completion
+            >>> # Set a single device and wait for the completion
             >>> status = yield from self.stubs.set(device="samx", value=1, wait=False)
-            # ... do something else
+            >>> # ... do something else
             >>> status.wait()
 
         """
