@@ -79,6 +79,9 @@ class ScanItem:
         self._run_request_callbacks("scan_status", scan_status.content, scan_status.metadata)
 
     def _run_request_callbacks(self, event_type: str, data: dict, metadata: dict):
+        queue = self.queue
+        if queue is None:
+            return
         for rid in self.queue.requestIDs:
             req = self.scan_manager.request_storage.find_request_by_ID(rid)
             if req is None:
@@ -86,6 +89,8 @@ class ScanItem:
             req.callbacks.run(event_type, data, metadata)
 
     def poll_callbacks(self):
+        if self.queue is None:
+            return
         for rid in self.queue.requestIDs:
             req = self.scan_manager.request_storage.find_request_by_ID(rid)
             if req is None:
@@ -156,7 +161,7 @@ class ScanItem:
 class ScanStorage:
     """stores scan items"""
 
-    def __init__(self, scan_manager: ScanManager, maxlen=50, init_scan_number=0) -> None:
+    def __init__(self, scan_manager: ScanManager, maxlen=100, init_scan_number=0) -> None:
         self.scan_manager = scan_manager
         self.storage = deque(maxlen=maxlen)
         self.last_scan_number = init_scan_number
@@ -311,7 +316,7 @@ class ScanStorage:
     def update_with_queue_status(self, queue_msg: messages.ScanQueueStatusMessage):
         """create new scan items based on their existence in the queue info"""
         queue_info = queue_msg.content["queue"]["primary"].get("info")
-        for queue_item in queue_info:
+        for ii, queue_item in enumerate(queue_info):
             # append = True
             # for scan_obj in self.storage:
             #     if len(set(scan_obj.scan_id) & set(queue_item["scan_id"])) > 0:
@@ -330,3 +335,6 @@ class ScanStorage:
                     scan_id=queue_item["scan_id"][ii],
                     status=queue_item["status"],
                 )
+            if ii > 20:
+                # only keep the last 20 queue items
+                break

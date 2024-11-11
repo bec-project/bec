@@ -115,7 +115,7 @@ class QueueItem:
 class QueueStorage:
     """stores queue items"""
 
-    def __init__(self, scan_manager: ScanManager, maxlen=50) -> None:
+    def __init__(self, scan_manager: ScanManager, maxlen=100) -> None:
         self.storage: deque[QueueItem] = deque(maxlen=maxlen)
         self._lock = threading.RLock()
         self.scan_manager = scan_manager
@@ -175,12 +175,15 @@ class QueueStorage:
         self.current_scan_queue = queue_msg.content["queue"]
         self._update_queue_history()
         queue_info = queue_msg.content["queue"]["primary"].get("info")
-        for queue_item in queue_info:
+        for ii, queue_item in enumerate(queue_info):
             queue = self.find_queue_item_by_ID(queue_id=queue_item["queue_id"])
             if queue:
                 queue.update_queue_item(queue_item)
                 continue
             self.storage.append(QueueItem(scan_manager=self.scan_manager, **queue_item))
+            if ii > 20:
+                # only keep the last 20 queue items
+                break
 
     @threadlocked
     def find_queue_item_by_ID(self, queue_id: str) -> QueueItem | None:
