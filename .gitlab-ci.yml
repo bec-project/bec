@@ -230,6 +230,7 @@ end-2-end:
     - if: '$CI_PIPELINE_SOURCE == "pipeline"'
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "production"'
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "pre_release"'
   script:
     - if [[ "$CI_PROJECT_PATH" != "bec/bec" ]]; then
       apk update; apk add git; echo -e "\033[35;1m Using branch $CHILD_PIPELINE_BRANCH of BEC \033[0;m";

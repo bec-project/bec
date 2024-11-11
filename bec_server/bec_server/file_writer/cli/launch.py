@@ -1,7 +1,5 @@
 # This file is the entry point for the file writer service.
 # It is called either by the bec-file-writer entry point or directly from the command line.
-import argparse
-import os
 import threading
 
 from bec_lib.bec_service import parse_cmdline_args

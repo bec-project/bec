@@ -8,6 +8,7 @@ from ophyd import Device, Kind, Signal, Staged, StatusBase
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
+from bec_server.device_server.device_server import RequestHandler
 from bec_server.device_server.rpc_mixin import RPCMixin
 
 
@@ -17,6 +18,7 @@ def rpc_cls():
     rpc_mixin.connector = mock.MagicMock()
     rpc_mixin.connector = mock.MagicMock()
     rpc_mixin.device_manager = mock.MagicMock()
+    rpc_mixin.requests_handler = mock.MagicMock(spec=RequestHandler)
     yield rpc_mixin
 
 
@@ -26,7 +28,7 @@ def instr():
         device="device",
         action="rpc",
         parameter={"rpc_id": "rpc_id", "func": "trigger"},
-        metadata={"RID": "RID"},
+        metadata={"RID": "RID", "device_instr_id": "diid"},
     )
 
 
@@ -111,7 +113,7 @@ def test_send_rpc_exception(rpc_cls, instr):
 def test_send_rpc_result_to_client(rpc_cls):
     result = mock.MagicMock()
     result.getvalue.return_value = "result"
-    rpc_cls._send_rpc_result_to_client("device", {"rpc_id": "rpc_id"}, 1, result)
+    rpc_cls._send_rpc_result_to_client(mock.MagicMock(), "device", {"rpc_id": "rpc_id"}, 1, result)
     rpc_cls.connector.set.assert_called_once_with(
         MessageEndpoints.device_rpc("rpc_id"),
         messages.DeviceRPCMessage(device="device", return_val=1, out="result", success=True),
@@ -130,7 +132,7 @@ def test_run_rpc(rpc_cls, instr):
         rpc_cls._assert_device_is_enabled.assert_called_once_with(instr)
         _process_rpc_instruction.assert_called_once_with(instr)
         _send_rpc_result_to_client.assert_called_once_with(
-            "device", {"rpc_id": "rpc_id", "func": "trigger"}, 1, mock.ANY
+            instr, "device", {"rpc_id": "rpc_id", "func": "trigger"}, 1, mock.ANY
         )
 
 

@@ -13,9 +13,9 @@ import time
 from collections import defaultdict, deque
 from typing import TYPE_CHECKING
 
-from bec_lib.async_data import AsyncDataHandler
+from bec_lib.live_scan_data import LiveScanData
 from bec_lib.logger import bec_logger
-from bec_lib.scan_data import ScanData
+from bec_lib.scan_data_container import ScanDataContainer
 from bec_lib.utils import threadlocked
 
 logger = bec_logger.logger
@@ -44,17 +44,13 @@ class ScanItem:
         **_kwargs,
     ) -> None:
         self.scan_manager = scan_manager
-        self._async_data_handler = None
         self._queue_id = queue_id
         self.scan_number = scan_number
         self.scan_id = scan_id
         self.status = status
         self.status_message = None
-        self.data = ScanData()
-        self.async_data = {}
-        self.baseline = ScanData()
-        if self.scan_manager is not None:
-            self._async_data_handler = AsyncDataHandler(scan_manager.connector)
+        self.data = ScanDataContainer()
+        self.live_data = LiveScanData()
         self.open_scan_defs = set()
         self.open_queue_group = None
         self.num_points = None
@@ -95,25 +91,20 @@ class ScanItem:
     def _get_pandas(self):
         try:
             return importlib.import_module("pandas")
-        except ImportError:
-            raise ImportError("Install `pandas` to use to_pandas() method")
+        except ImportError as exc:
+            raise ImportError("Install `pandas` to use to_pandas() method") from exc
 
     def to_pandas(self) -> pd.DataFrame:
         """convert to pandas dataframe"""
         pd = self._get_pandas()
         tmp = defaultdict(list)
-        for scan_msg in self.data.messages.values():
+        for scan_msg in self.live_data.messages.values():
             scan_msg_data = scan_msg.content["data"]
             for dev, dev_data in scan_msg_data.items():
                 for signal, signal_data in dev_data.items():
                     for key, value in signal_data.items():
                         tmp[(dev, signal, key)].append(value)
         return pd.DataFrame(tmp)
-
-    def _update_async_data(self):
-        self.async_data = self._async_data_handler.get_async_data_for_scan(self.scan_id)
-        # msg = messages.ScanMessage(point_id=0, scan_id=self.scan_id, data=data)
-        # self.async_data.set(0, msg)
 
     def __eq__(self, other):
         return self.scan_id == other.scan_id
@@ -139,11 +130,10 @@ class ScanItem:
         scan_number = f"\tScan number: {self.scan_number}\n" if self.scan_number else ""
         num_points = f"\tNumber of points: {self.num_points}\n" if self.num_points else ""
         public_file = ""
-        if self.public_files:
-            for file_path in self.public_files:
-                file_name = file_path.split("/")[-1]
-                if "_master" in file_name:
-                    public_file = "\tFile: " + file_path + "\n"
+        for file_path in self.public_files:
+            file_name = file_path.split("/")[-1]
+            if "_master" in file_name:
+                public_file = "\tFile: " + file_path + "\n"
         details = (
             start_time + end_time + elapsed_time + scan_id + scan_number + num_points + public_file
         )
@@ -156,7 +146,7 @@ class ScanItem:
 class ScanStorage:
     """stores scan items"""
 
-    def __init__(self, scan_manager: ScanManager, maxlen=50, init_scan_number=0) -> None:
+    def __init__(self, scan_manager: ScanManager, maxlen=5, init_scan_number=0) -> None:
         self.scan_manager = scan_manager
         self.storage = deque(maxlen=maxlen)
         self.last_scan_number = init_scan_number
@@ -243,11 +233,6 @@ class ScanStorage:
         # add queue group
         scan_item.open_queue_group = scan_status.content["info"].get("queue_group")
 
-        # update async data
-        if scan_status.content.get("status") != "open":
-            # pylint: disable=protected-access
-            scan_item._update_async_data()
-
         # run status callbacks
         scan_item.emit_status(scan_status)
 
@@ -261,20 +246,8 @@ class ScanStorage:
             with self._lock:
                 for scan_item in self.storage:
                     if scan_item.scan_id == scan_msg.metadata["scan_id"]:
-                        scan_item.data.set(scan_msg.content["point_id"], scan_msg)
+                        scan_item.live_data.set(scan_msg.content["point_id"], scan_msg)
                         scan_item.emit_data(scan_msg)
-                        return
-            time.sleep(0.01)
-
-    def add_scan_baseline(self, scan_msg: messages.ScanBaselineMessage) -> None:
-        """update a scan item with a new scan baseline"""
-        logger.info(f"Received scan baseline for scan {scan_msg.metadata['scan_id']}: ")
-        while True:
-            with self._lock:
-                for scan_item in self.storage:
-                    if scan_item.scan_id == scan_msg.metadata["scan_id"]:
-                        point = len(scan_item.baseline)
-                        scan_item.baseline.set(point, scan_msg)
                         return
             time.sleep(0.01)
 
@@ -284,6 +257,9 @@ class ScanStorage:
             with self._lock:
                 for scan_item in self.storage:
                     if scan_item.scan_id == scan_id:
+                        # if we receive the master file, we can create the data container
+                        if "_master" in msg.content["file_path"] and msg.done:
+                            scan_item.data.set_file(file_path=msg.content["file_path"])
                         file_path = msg.content["file_path"]
                         done_state = msg.content["done"]
                         successful = msg.content["successful"]

@@ -21,7 +21,7 @@ def test_grid_scan_lib(bec_client_lib):
     scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
     status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
     status.wait()
-    assert len(status.scan.data) == 100
+    assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
 
 
@@ -70,10 +70,10 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
     s.wait()
     while len(reference_container["data"]) < 10:
         time.sleep(0.1)
-    assert len(s.scan.data) == 10
+    assert len(s.scan.live_data) == 10
     assert len(reference_container["data"]) == 10
 
-    for ii, msg in enumerate(s.scan.data.messages.values()):
+    for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == reference_container["data"][ii]
 
 
@@ -358,7 +358,8 @@ def test_computed_signal(bec_client_lib):
 
     res = scans.line_scan(dev.samx, -0.1, 0.1, steps=10, relative=False, exp_time=0)
     res.wait()
-    assert "pseudo_signal1" in res.scan.baseline
+    out = res.scan.data.devices.pseudo_signal1.read()
+    assert "value" in out["pseudo_signal1"]
 
     def compute_signal1(*args, **kwargs):
         return 5
@@ -421,5 +422,6 @@ def test_interactive_scan(bec_client_lib):
 
     report.wait()
 
-    assert len(report.scan.data) == 10
-    assert len(report.scan.data.samx.samx.val) == 10
+    while len(report.scan.live_data) != 10:
+        time.sleep(0.1)
+    assert len(report.scan.live_data.samx.samx.val) == 10

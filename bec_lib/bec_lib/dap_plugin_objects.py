@@ -291,8 +291,8 @@ class LmfitService1DResult:
         if not scan_item:
             return None
 
-        x = scan_item.data[input_data["device_x"]][input_data["signal_x"]].val
-        y = scan_item.data[input_data["device_y"]][input_data["signal_y"]].val
+        x = scan_item.live_data[input_data["device_x"]][input_data["signal_x"]].val
+        y = scan_item.live_data[input_data["device_y"]][input_data["signal_y"]].val
 
         return {"x": x, "y": y}
 

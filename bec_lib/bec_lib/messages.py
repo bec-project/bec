@@ -361,6 +361,16 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
+class DeviceInstructionResponse(BECMessage):
+    msg_type: ClassVar[str] = "device_instruction_response"
+    device: str | list[str] | None
+    status: Literal["completed", "running", "error"]
+    error_message: str | None = None
+    instruction: DeviceInstructionMessage
+    instruction_id: str
+    result: Any | None = None
+
+
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
 
@@ -535,6 +545,35 @@ class ScanMessage(BECMessage):
     data: dict
 
 
+class ScanHistoryMessage(BECMessage):
+    """Message type for sending scan history data from the file writer
+
+    Args:
+        scan_id (str): Scan ID.
+        scan_number (int): Scan number.
+        dataset_number (int): Dataset number.
+        file_path (str): Path to the file.
+        exit_status (Literal["closed", "aborted", "halted"]): Exit status of the scan.
+        start_time (float): Start time of the scan.
+        end_time (float): End time of the scan.
+        scan_name (str): Name of the scan.
+        num_points (int): Number of points in the scan.
+        metadata (dict, optional): Additional metadata.
+
+    """
+
+    msg_type: ClassVar[str] = "scan_history_message"
+    scan_id: str
+    scan_number: int
+    dataset_number: int
+    file_path: str
+    exit_status: Literal["closed", "aborted", "halted"]
+    start_time: float
+    end_time: float
+    scan_name: str
+    num_points: int
+
+
 class ScanBaselineMessage(BECMessage):
     """Message type for sending scan baseline data from the scan bundler
 
@@ -635,14 +674,38 @@ class FileMessage(BECMessage):
         file_path (str): Path to the file.
         done (bool): True if the file writing operation is done.
         successful (bool): True if the file writing operation was successful.
+        device_name (str): Name of the device. If is_master_file is True, device_name is optional.
+        is_master_file (bool, optional): True if the file is a master file. Defaults to False.
+        file_type (str, optional): Type of the file. Defaults to "h5".
+        hinted_h5_entries (dict[str, str], optional): Dictionary with hinted h5 entries. Defaults to None.
+                    This allows the file writer to automatically create external links within the master.h5 file
+                    written by BEC under the entry for the specified device. The dictionary should contain the
+                    sub-entries and to where these should link in the external h5 file (file_path).
+                    Example for device_name='eiger', and dict('data' : '/entry/data/data'), the location
+                    '/entry/collection/devices/eiger/data' within the master file will link to '/entry/data/data'
+                    of the external file.
         metadata (dict, optional): Additional metadata. Defaults to None.
 
     """
 
     msg_type: ClassVar[str] = "file_message"
+
     file_path: str
     done: bool
     successful: bool
+    is_master_file: bool = Field(default=False)
+    device_name: str | None = Field(default=None)
+    file_type: str = "h5"
+    hinted_h5_entries: dict[str, str] | None = None
+
+    @field_validator("is_master_file", mode="after")
+    @classmethod
+    def check_is_master_file(cls, v: bool):
+        """Validate is the FileMessage is for the master file"""
+        if v is False:
+            return v
+        if v is True:
+            return cls.device_name != None
 
 
 class FileContentMessage(BECMessage):

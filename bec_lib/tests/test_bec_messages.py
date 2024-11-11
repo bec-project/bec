@@ -211,7 +211,12 @@ def test_StatusMessage():
 
 def test_FileMessage():
     msg = messages.FileMessage(
-        file_path="/path/to/file", done=True, successful=True, metadata={"RID": "1234"}
+        device_name="samx",
+        file_path="/path/to/file",
+        done=True,
+        successful=True,
+        hinted_h5_entries={"data": "entry/data"},
+        metadata={"RID": "1234"},
     )
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)

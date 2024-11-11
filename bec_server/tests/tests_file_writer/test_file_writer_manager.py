@@ -1,5 +1,6 @@
 # pylint: skip-file
 import os
+import time
 from unittest import mock
 
 import numpy as np
@@ -20,6 +21,16 @@ from bec_server.file_writer.file_writer_manager import ScanStorage
 # pylint: disable=protected-access
 
 dir_path = os.path.dirname(bec_lib.__file__)
+
+
+@pytest.fixture
+def scan_storage_mock():
+    storage = ScanStorage(10, "scan_id")
+    storage.start_time = time.time()
+    storage.end_time = time.time()
+    storage.num_points = 10
+    storage.metadata = {"dataset_number": 10, "exit_status": "closed", "scan_name": "line_scan"}
+    yield storage
 
 
 @pytest.fixture
@@ -83,13 +94,14 @@ class MockWriter(HDF5FileWriter):
         super().__init__(file_writer_manager)
         self.write_called = False
 
-    def write(self, file_path: str, data):
+    def write(self, file_path: str, data, mode="w", file_handle=None):
         self.write_called = True
 
 
-def test_write_file(file_writer_manager_mock):
+def test_write_file(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
+
     with mock.patch.object(
         file_manager.writer_mixin, "compile_full_filename"
     ) as mock_create_file_path:
@@ -100,9 +112,9 @@ def test_write_file(file_writer_manager_mock):
         assert file_manager.file_writer.write_called is True
 
 
-def test_write_file_invalid_scan_id(file_writer_manager_mock):
+def test_write_file_invalid_scan_id(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
     with mock.patch.object(
         file_manager.writer_mixin, "compile_full_filename"
     ) as mock_create_file_path:
@@ -110,9 +122,9 @@ def test_write_file_invalid_scan_id(file_writer_manager_mock):
         mock_create_file_path.assert_not_called()
 
 
-def test_write_file_invalid_scan_number(file_writer_manager_mock):
+def test_write_file_invalid_scan_number(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
     file_manager.scan_storage["scan_id"].scan_number = None
     with mock.patch.object(
         file_manager.writer_mixin, "compile_full_filename"
@@ -121,9 +133,9 @@ def test_write_file_invalid_scan_number(file_writer_manager_mock):
         mock_create_file_path.assert_not_called()
 
 
-def test_write_file_raises_alarm_on_error(file_writer_manager_mock):
+def test_write_file_raises_alarm_on_error(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
     with mock.patch.object(
         file_manager.writer_mixin, "compile_full_filename"
     ) as mock_compile_filename:
@@ -136,9 +148,9 @@ def test_write_file_raises_alarm_on_error(file_writer_manager_mock):
             mock_connector.raise_alarm.assert_called_once()
 
 
-def test_update_baseline_reading(file_writer_manager_mock):
+def test_update_baseline_reading(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
     with mock.patch.object(file_manager, "connector") as mock_connector:
         mock_connector.get.return_value = messages.ScanBaselineMessage(
             scan_id="scan_id", data={"data": "data"}
@@ -148,15 +160,15 @@ def test_update_baseline_reading(file_writer_manager_mock):
         mock_connector.get.assert_called_once_with(MessageEndpoints.public_scan_baseline("scan_id"))
 
 
-def test_scan_storage_append():
-    storage = ScanStorage(10, "scan_id")
+def test_scan_storage_append(scan_storage_mock):
+    storage = scan_storage_mock
     storage.append(1, {"data": "data"})
     assert storage.scan_segments[1] == {"data": "data"}
     assert storage.scan_finished is False
 
 
-def test_scan_storage_ready_to_write():
-    storage = ScanStorage(10, "scan_id")
+def test_scan_storage_ready_to_write(scan_storage_mock):
+    storage = scan_storage_mock
     storage.num_points = 1
     storage.scan_finished = True
     storage.append(1, {"data": "data"})
@@ -170,88 +182,12 @@ def test_update_file_references(file_writer_manager_mock):
         mock_connector.keys.assert_not_called()
 
 
-def test_update_file_references_gets_keys(file_writer_manager_mock):
+def test_update_file_references_gets_keys(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
     with mock.patch.object(file_manager, "connector") as mock_connector:
         file_manager.update_file_references("scan_id")
         mock_connector.keys.assert_called_once_with(MessageEndpoints.public_file("scan_id", "*"))
-
-
-def test_update_async_data(file_writer_manager_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
-    with mock.patch.object(file_manager, "connector") as mock_connector:
-        with mock.patch.object(file_manager, "_process_async_data") as mock_process:
-            key = MessageEndpoints.device_async_readback("scan_id", "dev1").endpoint
-            mock_connector.keys.return_value = [key.encode()]
-            data = [(b"0-0", b'{"data": "data"}')]
-            mock_connector.xrange.return_value = data
-            file_manager.update_async_data("scan_id")
-            mock_connector.xrange.assert_called_once_with(key, min="-", max="+")
-            mock_process.assert_called_once_with(data, "scan_id", "dev1")
-
-
-def test_process_async_data_single_entry(file_writer_manager_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
-    data = [{"data": messages.DeviceMessage(signals={"data": {"value": np.zeros((10, 10))}})}]
-    file_manager._process_async_data(data, "scan_id", "dev1")
-    assert np.isclose(
-        file_manager.scan_storage["scan_id"].async_data["dev1"]["data"]["value"], np.zeros((10, 10))
-    ).all()
-
-
-def test_process_async_data_extend(file_writer_manager_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
-    data = [
-        {
-            "data": messages.DeviceMessage(
-                signals={"data": {"value": np.zeros((10, 10))}}, metadata={"async_update": "extend"}
-            )
-        }
-        for ii in range(10)
-    ]
-    file_manager._process_async_data(data, "scan_id", "dev1")
-    assert file_manager.scan_storage["scan_id"].async_data["dev1"]["data"]["value"].shape == (
-        100,
-        10,
-    )
-
-
-def test_process_async_data_append(file_writer_manager_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
-    data = [
-        {
-            "data": messages.DeviceMessage(
-                signals={"data": {"value": np.zeros((10, 10))}}, metadata={"async_update": "append"}
-            )
-        }
-        for ii in range(10)
-    ]
-    file_manager._process_async_data(data, "scan_id", "dev1")
-    assert len(file_manager.scan_storage["scan_id"].async_data["dev1"]["data"]["value"]) == 10
-
-
-def test_process_async_data_replace(file_writer_manager_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
-    data = [
-        {
-            "data": messages.DeviceMessage(
-                signals={"data": {"value": np.zeros((10, 10))}},
-                metadata={"async_update": "replace"},
-            )
-        }
-        for ii in range(10)
-    ]
-    file_manager._process_async_data(data, "scan_id", "dev1")
-    assert file_manager.scan_storage["scan_id"].async_data["dev1"]["data"]["value"].shape == (
-        10,
-        10,
-    )
 
 
 def test_update_scan_storage_with_status_ignores_none(file_writer_manager_mock):
@@ -262,14 +198,14 @@ def test_update_scan_storage_with_status_ignores_none(file_writer_manager_mock):
     assert file_manager.scan_storage == {}
 
 
-def test_ready_to_write(file_writer_manager_mock):
+def test_ready_to_write(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
     file_manager.scan_storage["scan_id"].scan_finished = True
     file_manager.scan_storage["scan_id"].num_points = 1
     file_manager.scan_storage["scan_id"].scan_segments = {"0": {"data": np.zeros((10, 10))}}
     assert file_manager.scan_storage["scan_id"].ready_to_write() is True
-    file_manager.scan_storage["scan_id1"] = ScanStorage(101, "scan_id1")
+    file_manager.scan_storage["scan_id1"] = scan_storage_mock
     file_manager.scan_storage["scan_id1"].scan_finished = True
     file_manager.scan_storage["scan_id1"].num_points = 2
     file_manager.scan_storage["scan_id1"].scan_segments = {"0": {"data": np.zeros((10, 10))}}

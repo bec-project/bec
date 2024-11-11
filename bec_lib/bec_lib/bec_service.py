@@ -27,6 +27,7 @@ from bec_lib.utils.import_utils import lazy_import, lazy_import_from
 
 if TYPE_CHECKING:
     from bec_lib.connector import ConnectorBase
+    from bec_lib.redis_connector import RedisConnector
 
 # TODO: put back normal imports when Pydantic gets faster
 messages = lazy_import("bec_lib.messages")
@@ -101,7 +102,7 @@ class BECService:
         self._name = name if name else self.__class__.__name__
         self._import_config(config)
         self._connector_cls = connector_cls
-        self.connector = connector_cls(self.bootstrap_server)
+        self.connector: RedisConnector = connector_cls(self.bootstrap_server)
         self._unique_service = unique_service
         self.wait_for_server = wait_for_server
         self.__service_id = str(uuid.uuid4())

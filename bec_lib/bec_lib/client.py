@@ -27,6 +27,7 @@ from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.plugin_helper import _get_available_plugins
+from bec_lib.scan_history import ScanHistory
 from bec_lib.service_config import ServiceConfig
 from bec_lib.user_scripts_mixin import UserScriptsMixin
 from bec_lib.utils.import_utils import lazy_import_from
@@ -190,7 +191,7 @@ class BECClient(BECService, UserScriptsMixin):
         self._start_alarm_handler()
         self.load_all_user_scripts()
         self.config = self.device_manager.config_helper
-        self.history = self.queue.queue_storage.storage
+        self.history = ScanHistory(self.connector)
         self.dap = DAPPlugins(self)
         self.bl_checks = BeamlineChecks(self)
         self.bl_checks.start()
@@ -228,7 +229,8 @@ class BECClient(BECService, UserScriptsMixin):
         self.scans = Scans(self._parent)
         builtins.__dict__["scans"] = self.scans
         self.scans_namespace = SimpleNamespace(
-            **{scan_name: scan.run for scan_name, scan in self.scans._available_scans.items()}
+            scan_def=self.scans.scan_def,
+            **{scan_name: scan.run for scan_name, scan in self.scans._available_scans.items()},
         )
 
     def load_high_level_interface(self, module_name: str) -> None:

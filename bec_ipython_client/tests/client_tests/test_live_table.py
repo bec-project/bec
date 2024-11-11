@@ -98,8 +98,8 @@ def test_wait_for_request_acceptance(client_with_grid_scan):
 
 
 class ScanItemMock:
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, live_data):
+        self.live_data = live_data
         self.metadata = {}
 
 
@@ -117,7 +117,7 @@ def test_print_table_data(client_with_grid_scan):
         data={"samx": {"samx": {"value": 0}}},
         metadata={"scan_report_devices": ["samx"], "scan_type": "step"},
     )
-    live_update.scan_item = ScanItemMock(data=[live_update.point_data])
+    live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
     with mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs:
         live_update.print_table_data()
         assert mock_client_msgs.called
@@ -137,7 +137,7 @@ def test_print_table_data_lamni_flyer(client_with_grid_scan):
         data={"lamni_flyer_1": {"value": 0}},
         metadata={"scan_report_devices": ["samx"], "scan_type": "fly"},
     )
-    live_update.scan_item = ScanItemMock(data=[live_update.point_data])
+    live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
     with mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs:
         live_update.print_table_data()
         assert mock_client_msgs.called
@@ -159,7 +159,7 @@ def test_print_table_data_hinted_value(client_with_grid_scan):
         data={"samx": {"samx_hint": {"value": 0}}},
         metadata={"scan_report_devices": ["samx"], "scan_type": "fly"},
     )
-    live_update.scan_item = ScanItemMock(data=[live_update.point_data])
+    live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
 
     with (
         mock.patch.object(live_update, "table") as mocked_table,
@@ -187,7 +187,7 @@ def test_print_table_data_hinted_value_with_precision(client_with_grid_scan):
         data={"samx": {"samx_hint": {"value": 0}}},
         metadata={"scan_report_devices": ["samx"], "scan_type": "fly"},
     )
-    live_update.scan_item = ScanItemMock(data=[live_update.point_data])
+    live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
 
     with (
         mock.patch.object(live_update, "table") as mocked_table,
@@ -230,7 +230,7 @@ def test_print_table_data_variants(client_with_grid_scan, value, expected):
         data={"lamni_flyer_1": {"value": value}},
         metadata={"scan_report_devices": ["samx"], "scan_type": "fly"},
     )
-    live_update.scan_item = ScanItemMock(data=[live_update.point_data])
+    live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
 
     with mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs:
         live_update.print_table_data()

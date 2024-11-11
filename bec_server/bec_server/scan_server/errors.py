@@ -8,3 +8,7 @@ class LimitError(Exception):
 
 class DeviceMessageError(Exception):
     pass
+
+
+class DeviceInstructionError(Exception):
+    pass

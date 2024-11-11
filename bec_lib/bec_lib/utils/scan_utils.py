@@ -160,7 +160,7 @@ def scan_to_dict(scan_item: ScanItem, flat: bool = True) -> dict:
             "value": defaultdict(lambda: defaultdict(lambda: [])),
         }
 
-    for dev, dev_data in scan_item.data.items():
+    for dev, dev_data in scan_item.live_data.items():
         for signal, signal_data in dev_data.items():
             if flat:
                 scan_dict["timestamp"][signal] = signal_data["timestamp"]

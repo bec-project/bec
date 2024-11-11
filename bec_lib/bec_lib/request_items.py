@@ -159,7 +159,7 @@ class RequestItem:
 class RequestStorage:
     """stores request items"""
 
-    def __init__(self, scan_manager: ScanManager, maxlen=50) -> None:
+    def __init__(self, scan_manager: ScanManager, maxlen=5) -> None:
         self.storage: deque[RequestItem] = deque(maxlen=maxlen)
         self._lock = threading.RLock()
         self.scan_manager = scan_manager

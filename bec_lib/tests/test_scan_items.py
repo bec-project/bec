@@ -6,8 +6,8 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.live_scan_data import LiveScanData
 from bec_lib.queue_items import QueueItem
-from bec_lib.scan_data import ScanData
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_manager import ScanManager
 from bec_lib.tests.utils import ConnectorMock
@@ -39,7 +39,7 @@ def test_update_with_queue_status(scan_queue_status_msg):
 
 
 def test_scan_item_to_pandas(scan_item):
-    scan_item.data = ScanData()
+    scan_item.live_data = LiveScanData()
     data = {
         0: messages.ScanMessage(
             point_id=0, scan_id="scan_id", data={"samx": {"samx": {"value": 1, "timestamp": 0}}}
@@ -52,7 +52,7 @@ def test_scan_item_to_pandas(scan_item):
         ),
     }
     for ii, msg in data.items():
-        scan_item.data.set(ii, msg)
+        scan_item.live_data.set(ii, msg)
 
     df = scan_item.to_pandas()
     assert df["samx"]["samx"]["value"].tolist() == [1, 2, 3]
@@ -60,7 +60,7 @@ def test_scan_item_to_pandas(scan_item):
 
 
 def test_scan_item_to_pandas_empty_data(scan_item):
-    scan_item.data = ScanData()
+    scan_item.data = LiveScanData()
 
     df = scan_item.to_pandas()
     assert df.empty
@@ -339,7 +339,7 @@ def test_add_scan_segment_emits_data():
     scan_manager = ScanManager(ConnectorMock(""))
     scan_item = mock.MagicMock()
     scan_item.scan_id = "scan_id"
-    scan_item.data = ScanData()
+    scan_item.live_data = LiveScanData()
     scan_manager.scan_storage.storage.append(scan_item)
 
     msg = messages.ScanMessage(
@@ -347,4 +347,4 @@ def test_add_scan_segment_emits_data():
     )
     scan_manager.scan_storage.add_scan_segment(msg)
     scan_item.emit_data.assert_called_once_with(msg)
-    assert scan_item.data.messages == {0: msg}
+    assert scan_item.live_data.messages == {0: msg}

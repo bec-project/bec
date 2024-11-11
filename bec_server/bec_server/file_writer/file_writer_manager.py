@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import threading
+import time
 import traceback
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
-from bec_lib.async_data import AsyncDataHandler
 from bec_lib.bec_service import BECService
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
@@ -13,6 +13,7 @@ from bec_lib.file_utils import FileWriter
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_lib.service_config import ServiceConfig
+from bec_server.file_writer.async_writer import AsyncWriter
 from bec_server.file_writer.file_writer import HDF5FileWriter
 
 logger = bec_logger.logger
@@ -81,6 +82,8 @@ class FileWriterManager(BECService):
         self.connector.register(
             MessageEndpoints.scan_status(), cb=self._scan_status_callback, parent=self
         )
+
+        self.async_writer = None
         self.scan_storage = {}
         self.writer_mixin = FileWriter(
             service_config=self.file_writer_config, connector=self.connector
@@ -130,12 +133,20 @@ class FileWriterManager(BECService):
             scan_storage.metadata["exit_status"] = status
         if status == "open" and not scan_storage.start_time:
             scan_storage.start_time = msg.content.get("timestamp")
+            self.async_writer = AsyncWriter(
+                self.writer_mixin.compile_full_filename(suffix="master"),
+                scan_id=scan_id,
+                connector=self.connector,
+                devices=self.device_manager.devices.async_devices(),
+            )
+            self.async_writer.start()
 
         if status in ["closed", "aborted", "halted"]:
             if status in ["aborted", "halted"]:
                 scan_storage.forced_finish = True
             if not scan_storage.end_time:
                 scan_storage.end_time = msg.content.get("timestamp")
+
             scan_storage.scan_finished = True
             info = msg.content.get("info")
             if info:
@@ -144,6 +155,11 @@ class FileWriterManager(BECService):
                     scan_storage.enforce_sync = True
                 else:
                     scan_storage.enforce_sync = info["monitor_sync"] == "bec"
+
+            if self.async_writer:
+                self.async_writer.stop()
+                self.async_writer.join()
+
             self.check_storage_status(scan_id=scan_id)
 
     def insert_to_scan_storage(self, msg: messages.ScanMessage) -> None:
@@ -204,54 +220,8 @@ class FileWriterManager(BECService):
         if not file_msgs:
             return
         for name, file_msg in zip(names, file_msgs):
-            self.scan_storage[scan_id].file_references[name] = {
-                "path": file_msg.content["file_path"],
-                "done": file_msg.content["done"],
-                "successful": file_msg.content["successful"],
-                "metadata": file_msg.metadata,
-            }
+            self.scan_storage[scan_id].file_references[name] = file_msg
         return
-
-    def update_async_data(self, scan_id: str) -> None:
-        """
-        Update the async data for the scan.
-        All async data is sent to the endpoint MessageEndpoints.device_async_readback(scan_id, device_name)
-        before the scan finishes. This function retrieves the async data and adds them to the scan storage.
-
-        Args:
-            scan_id (str): Scan ID
-        """
-
-        if not self.scan_storage.get(scan_id):
-            return
-        # get all async devices
-        async_device_keys = self.connector.keys(
-            MessageEndpoints.device_async_readback(scan_id, "*")
-        )
-        if not async_device_keys:
-            return
-        for device_key in async_device_keys:
-            key = device_key.decode()
-            device_name = key.split(MessageEndpoints.device_async_readback(scan_id, "").endpoint)[
-                -1
-            ].split(":")[0]
-            msgs = self.connector.xrange(key, min="-", max="+")
-            if not msgs:
-                continue
-            self._process_async_data(msgs, scan_id, device_name)
-
-    def _process_async_data(self, msgs: list, scan_id: str, device_name: str):
-        """
-        Process the async data for the scan and add it to the scan storage. If needed, concatenate the data.
-
-        Args:
-            msgs (list): List of async data messages
-            scan_id (str): Scan ID
-            device_name (str): Device name
-        """
-        self.scan_storage[scan_id].async_data[device_name] = AsyncDataHandler.process_async_data(
-            msgs
-        )
 
     def check_storage_status(self, scan_id: str) -> None:
         """
@@ -266,7 +236,6 @@ class FileWriterManager(BECService):
             self.update_baseline_reading(scan_id)
             self.update_file_references(scan_id)
             if self.scan_storage[scan_id].ready_to_write():
-                self.update_async_data(scan_id)
                 self.write_file(scan_id)
 
     def write_file(self, scan_id: str) -> None:
@@ -285,6 +254,8 @@ class FileWriterManager(BECService):
         file_path = ""
         file_suffix = "master"
 
+        start_time = time.time()
+
         try:
             file_path = self.writer_mixin.compile_full_filename(suffix=file_suffix)
             self.connector.set_and_publish(
@@ -292,8 +263,15 @@ class FileWriterManager(BECService):
                 messages.FileMessage(file_path=file_path, done=False, successful=False),
             )
             successful = True
-            logger.info(f"Starting writing to file {file_path}.")
-            self.file_writer.write(file_path=file_path, data=storage)
+            logger.info(f"Writing to file {file_path}.")
+
+            # If we've already written device data, we need to append to the file
+            writte_devices = None if not self.async_writer else self.async_writer.written_devices
+            write_mode = "w" if not writte_devices else "a"
+            file_handle = self.async_writer.file_handle if self.async_writer else None
+            self.file_writer.write(
+                file_path=file_path, data=storage, mode=write_mode, file_handle=file_handle
+            )
         # pylint: disable=broad-except
         # pylint: disable=unused-variable
         except Exception:
@@ -302,15 +280,35 @@ class FileWriterManager(BECService):
             self.connector.raise_alarm(
                 severity=Alarms.MINOR,
                 alarm_type="FileWriterError",
-                source="file_writer_manager",
+                source={"file_writer_manager": content},
                 msg=f"Failed to write to file {file_path}. Error: {content}",
                 metadata=self.scan_storage[scan_id].metadata,
             )
             successful = False
+        finally:
+            # make sure that the file is closed
+            if file_handle:
+                file_handle.close()
+        logger.info(f"Writing to file {file_path} took {time.time() - start_time:.2f} seconds.")
+
         self.scan_storage.pop(scan_id)
         self.connector.set_and_publish(
             MessageEndpoints.public_file(scan_id, "master"),
             messages.FileMessage(file_path=file_path, done=True, successful=successful),
+        )
+        history_msg = messages.ScanHistoryMessage(
+            scan_id=scan_id,
+            scan_number=storage.scan_number,
+            dataset_number=storage.metadata.get("dataset_number"),
+            exit_status=storage.metadata.get("exit_status"),
+            file_path=file_path,
+            start_time=storage.start_time,
+            end_time=storage.end_time,
+            num_points=storage.num_points,
+            scan_name=storage.metadata.get("scan_name"),
+        )
+        self.connector.xadd(
+            topic=MessageEndpoints.scan_history(), msg_dict={"data": history_msg}, max_size=10000
         )
         if successful:
             logger.success(f"Finished writing file {file_path}.")

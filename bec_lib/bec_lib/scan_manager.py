@@ -57,8 +57,6 @@ class ScanManager:
             topics=MessageEndpoints.scan_segment(), cb=self._scan_segment_callback
         )
 
-        self.connector.register(topics=MessageEndpoints.scan_baseline(), cb=self._baseline_callback)
-
         self.connector.register(topics=MessageEndpoints.client_info(), cb=self._client_msg_callback)
 
         self.connector.register(
@@ -283,10 +281,6 @@ class ScanManager:
             scan_msgs = [scan_msgs]
         for scan_msg in scan_msgs:
             self.scan_storage.add_scan_segment(scan_msg)
-
-    def _baseline_callback(self, msg, **_kwargs) -> None:
-        msg = msg.value
-        self.scan_storage.add_scan_baseline(msg)
 
     @typechecked
     def add_scan_to_queue_schedule(

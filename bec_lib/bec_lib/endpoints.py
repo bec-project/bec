@@ -7,12 +7,16 @@ from __future__ import annotations
 # pylint: disable=too-many-public-methods
 import enum
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from bec_lib.utils.import_utils import lazy_import
 
-# TODO: put back normal import when Pydantic gets faster
-# from bec_lib import messages
-messages = lazy_import("bec_lib.messages")
+if TYPE_CHECKING:
+    from bec_lib import messages
+else:
+    # TODO: put back normal import when Pydantic gets faster
+    # from bec_lib import messages
+    messages = lazy_import("bec_lib.messages")
 
 
 class MessageOp(list[str], enum.Enum):
@@ -20,7 +24,7 @@ class MessageOp(list[str], enum.Enum):
 
     SET_PUBLISH = ["register", "set_and_publish", "delete", "get", "keys"]
     SEND = ["send", "register"]
-    STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last"]
+    STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last", "delete"]
     LIST = ["lpush", "lrange", "rpush", "ltrim", "keys", "delete"]
     SET = ["set", "get", "delete", "keys"]
 
@@ -667,6 +671,20 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def scan_history() -> EndpointInfo:
+        """
+        Endpoint for scan history. This endpoint is used to keep track of the scan history
+        using a messages.ScanHistoryMessage message. The endpoint is connected to a redis stream.
+
+        Returns:
+            EndpointInfo: Endpoint for scan history.
+        """
+        endpoint = "scans/scan_history"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.ScanHistoryMessage, message_op=MessageOp.STREAM
+        )
+
+    @staticmethod
     def available_scans() -> EndpointInfo:
         """
         Endpoint for available scans. This endpoint is used to publish the available scans
@@ -739,6 +757,24 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.DeviceInstructionMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
+    def device_instructions_response() -> EndpointInfo:
+        """
+        Endpoint for device instruction repsonses. This endpoint is used by the device
+        server to publish responses to device instructions, typically sent by the scan
+        server using a messages.DeviceInstructionResponse message. The messages are used
+        to inform interested services about the status of device instructions.
+
+        Returns:
+            EndpointInfo: Endpoint for the device instruction response.
+        """
+        endpoint = "internal/devices/instructions_response"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeviceInstructionResponse,
             message_op=MessageOp.SEND,
         )
 

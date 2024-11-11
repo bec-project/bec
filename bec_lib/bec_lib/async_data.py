@@ -4,7 +4,7 @@ This module contains the AsyncDataHandler class which is used to receive and sto
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -62,12 +62,13 @@ class AsyncDataHandler:
         return self.process_async_data(msgs)
 
     @staticmethod
-    def process_async_data(msgs: list[messages.DeviceMessage]) -> dict | list[dict]:
+    def process_async_data(
+        msgs: list[dict[Literal["data"], messages.DeviceMessage]]
+    ) -> dict | list[dict]:
         """
         Process the async data.
 
         Args:
-            device_name(str): the name of the device
             msgs(list[messages.DeviceMessage]): the async data to process
 
         Returns:

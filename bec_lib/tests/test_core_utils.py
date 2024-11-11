@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_lib.scan_data import ScanData
+from bec_lib.live_scan_data import LiveScanData
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_report import ScanReport
 from bec_lib.utils.rpc_utils import user_access
@@ -21,7 +21,7 @@ class ScanReportMock(ScanReport):
 
 @pytest.fixture
 def scan_data():
-    scan_data = ScanData()
+    scan_data = LiveScanData()
     for ii in range(10):
         msg = messages.ScanMessage(
             point_id=ii,
@@ -94,7 +94,7 @@ def test__write_csv():
 
 def test_scan_to_dict(scanitem, scan_data):
     """Test scan_to_dict function."""
-    scanitem.data = scan_data
+    scanitem.live_data = scan_data
     return_dict = scan_to_dict(scanitem, flat=True)
     assert return_dict.keys() == {"timestamp", "value"}
     assert return_dict["value"].keys() == {"samx", "setpoint"}
@@ -111,7 +111,7 @@ def test_extract_scan_data(scanitem, scan_data):
         status=scanitem.status,
         info={"scan_number": scanitem.scan_number, "dataset_number": datasetnumber},
     )
-    scanitem.data = scan_data
+    scanitem.live_data = scan_data
     header, body = _extract_scan_data(scanitem, header=None, write_metadata=True)
     assert len(header) == 7
     assert len(body) == 10

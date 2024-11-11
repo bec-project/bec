@@ -5,23 +5,183 @@ consumed by the scan worker and potentially forwarded to the device server.
 
 from __future__ import annotations
 
+import concurrent
+import concurrent.futures
 import threading
 import time
 import uuid
 from collections.abc import Callable
-from typing import Generator, Literal
+from typing import TYPE_CHECKING, Any, Generator, Literal
 
 import numpy as np
 
 from bec_lib import messages
 from bec_lib.connector import ConnectorBase
-from bec_lib.device import Status
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
-from .errors import DeviceMessageError, ScanAbortion
+from .errors import DeviceInstructionError, DeviceMessageError
+
+if TYPE_CHECKING:  # pragma: no cover
+    from bec_lib.devicemanager import DeviceManagerBase
+    from bec_server.scan_server.instruction_handler import InstructionHandler
 
 logger = bec_logger.logger
+
+
+class ScanStubStatus:
+    """
+    Status object that can be used to wait for the completion of a device instruction.
+    """
+
+    def __init__(
+        self,
+        instruction_handler: InstructionHandler,
+        device_instr_id: str = None,
+        done: bool = False,
+        shutdown_event: threading.Event = None,
+    ) -> None:
+        """
+        Initialize the status object.
+
+        Args:
+            instruction_handler (InstructionHandler): Instruction handler.
+            device_instr_id (str): Device instruction ID.
+            shutdown_event (threading.Event, optional): Shutdown event. Defaults to None.
+            done (bool, optional): Flag that indicates if the status object is done. Defaults to False.
+
+        """
+        self._instruction_handler = instruction_handler
+        self._device_instr_id = (
+            device_instr_id if device_instr_id is not None else str(uuid.uuid4())
+        )
+        self._shutdown_event = shutdown_event if shutdown_event is not None else threading.Event()
+        self._sub_status_objects: list[ScanStubStatus] = []
+        self.done = done
+        self.value = None
+        self.message = None
+        self._future = concurrent.futures.Future()
+        self._instruction_handler.register_callback(self._device_instr_id, self._update_future)
+
+    def add_status(self, status: ScanStubStatus):
+        """
+        Add a status object to the current status object.
+        This can be used to wait for the completion of multiple status objects.
+
+        Args:
+            status (ScanStubStatus): Status object
+
+        """
+
+        self._sub_status_objects.append(status)
+
+    def _update_future(self, message: messages.DeviceInstructionResponse = None):
+        self.message = message
+        if message.status == "completed":
+            self.set_done(message.result)
+        elif message.status == "error":
+            self.set_failed(message.error_message)
+        else:
+            self.set_running()
+
+    def set_done(self, result=None):
+        """
+        Set the status object to done.
+
+        Args:
+            result (any, optional): Result of the operation. Defaults to None.
+        """
+        self.done = True
+        self._future.set_result(result)
+
+    def set_failed(self, error_message: str = ""):
+        """
+        Set the status object to failed.
+
+        Args:
+            error_message (str, optional): Error message. Defaults to "".
+        """
+        self.done = True
+        self._future.set_exception(DeviceInstructionError(error_message))
+
+    def set_running(self):
+        """
+        Set the status object to running.
+        """
+        self.done = False
+        self._future.set_running_or_notify_cancel()
+
+    @property
+    def result(self):
+        """
+        Get the result of the operation.
+
+        Returns:
+            any: Result of the operation
+        """
+        return self._future.result()
+
+    def _get_sub_status_done(self) -> bool:
+        return all(st.done for st in self._sub_status_objects) if self._sub_status_objects else True
+
+    def wait(
+        self, min_wait: float = None, timeout: float = np.inf, logger_wait=5
+    ) -> ScanStubStatus:
+        """
+        Wait for the completion of the status object.
+
+        Args:
+            min_wait (float, optional): Minimum wait time in seconds. Defaults to None.
+            timeout (float, optional): Timeout in seconds. Defaults to None.
+            logger_wait (int, optional): Time in seconds before logging the remaining status objects. Defaults to 5.
+
+        Raises:
+            TimeoutError: Raised if the timeout is reached.
+            DeviceInstructionError: Raised if the instruction failed.
+
+        Returns:
+            ScanStubStatus: Status object
+        """
+
+        if min_wait is not None:
+            time.sleep(min_wait)
+
+        if self.done and self._get_sub_status_done():
+            return self
+
+        # pylint: disable=protected-access
+        futures = [st._future for st in self._sub_status_objects]
+        futures.append(self._future)
+
+        increment = 0.5
+        wait_time = 0
+
+        while not all(e.done() for e in futures):
+            done, _ = concurrent.futures.wait(
+                futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
+            )
+            for future in done:
+                if future.exception() is not None:
+                    raise future.exception()
+            wait_time += increment
+            if wait_time >= timeout:
+                raise TimeoutError("The wait operation timed out.")
+            if self._shutdown_event.is_set():
+                break
+            if wait_time > logger_wait:
+                objs = []
+                objs.extend([str(st) for st in self._sub_status_objects if not st.done])
+                objs.append(str(self))
+                logger.info(f"Waiting for the completion of the following status objects: {objs}")
+
+        return self
+
+    def __repr__(self):
+        if self.message:
+            instr = self.message.instruction.action
+            devices = self.message.instruction.device
+            return f"ScanStubStatus({self._device_instr_id}, action={instr}, devices={devices})"
+        return f"ScanStubStatus({self._device_instr_id})"
 
 
 class ScanStubs:
@@ -32,15 +192,23 @@ class ScanStubs:
 
     def __init__(
         self,
+        device_manager: DeviceManagerBase,
+        instruction_handler: InstructionHandler,
         connector: ConnectorBase,
         device_msg_callback: Callable = None,
         shutdown_event: threading.Event = None,
     ) -> None:
+        self._device_manager = device_manager
+        self._instruction_handler = instruction_handler
         self.connector = connector
         self.device_msg_metadata = (
             device_msg_callback if device_msg_callback is not None else lambda: {}
         )
         self.shutdown_event = shutdown_event
+        self._readout_priority = {}
+
+    def _create_status(self) -> ScanStubStatus:
+        return ScanStubStatus(self._instruction_handler, shutdown_event=self.shutdown_event)
 
     @staticmethod
     def _exclude_nones(input_dict: dict):
@@ -76,142 +244,23 @@ class ScanStubs:
         Examples:
             >>> send_rpc_and_wait("samx", "controller.my_custom_function")
         """
-        rpc_id = str(uuid.uuid4())
-        parameter = {
-            "device": device,
-            "func": func_name,
-            "rpc_id": rpc_id,
-            "args": args,
-            "kwargs": kwargs,
-        }
-        yield from self.rpc(
-            device=device, parameter=parameter, metadata={"response": True, "RID": rpc_id}
-        )
-        return self._get_from_rpc(rpc_id)
 
-    def _get_from_rpc(self, rpc_id) -> any:
+        status = yield from self.send_rpc(device, func_name, *args, **kwargs)
+        status.wait()
+        return self._get_result_from_status(status)
+
+    def _get_result_from_status(self, status: ScanStubStatus) -> Any:
         """
-        Get the return value from an RPC call.
+        Get the result from a status object.
+        Little wrapper to simplify the testability of the status object.
 
         Args:
-            rpc_id (str): RPC ID
-
-        Raises:
-            ScanAbortion: Raised if the RPC's success flag is False
+            status (ScanStubStatus): Status object
 
         Returns:
-            any: Return value of the RPC call
+            Any: Result of the status object
         """
-
-        while not self.shutdown_event.is_set():
-            msg = self.connector.get(MessageEndpoints.device_rpc(rpc_id))
-            if msg:
-                break
-            time.sleep(0.001)
-        if self.shutdown_event.is_set():
-            raise ScanAbortion("The scan was aborted.")
-        if not msg.content["success"]:
-            error = msg.content["out"]
-            if isinstance(error, dict) and {"error", "msg", "traceback"}.issubset(
-                set(error.keys())
-            ):
-                error_msg = f"During an RPC, the following error occured:\n{error['error']}: {error['msg']}.\nTraceback: {error['traceback']}\n The scan will be aborted."
-            else:
-                error_msg = "During an RPC, an error occured"
-            raise ScanAbortion(error_msg)
-
-        logger.debug(msg.content.get("out"))
-        return_val = msg.content.get("return_val")
-        if not isinstance(return_val, dict):
-            return return_val
-        if return_val.get("type") == "status" and return_val.get("RID"):
-            return Status(self.connector, return_val.get("RID"))
-        return return_val
-
-    def set_with_response(
-        self, *, device: str, value: float, request_id: str = None, metadata=None
-    ) -> Generator[None, None, None]:
-        """Set a device to a specific value and return the request ID. Use :func:`request_is_completed` to later check if the request is completed.
-        Use this method if you want to wait for the completion of a set operation whilst still being able to perform other operations on the same device.
-
-        On the device server, `set_with_response` will call the `set` method of the device.
-
-        Args:
-            device (str): Device name.
-            value (float): Target value.
-
-        Returns:
-            Generator[None, None, None]: Generator that yields a device message.
-
-        see also: :func:`request_is_completed`
-
-        """
-        request_id = str(uuid.uuid4()) if request_id is None else request_id
-        metadata = metadata if metadata is not None else {}
-        metadata.update({"response": True, "RID": request_id})
-        yield from self.set(device=device, value=value, wait_group="set", metadata=metadata)
-        return request_id
-
-    def request_is_completed(self, RID: str) -> bool:
-        """Check if a request that was initiated with :func:`set_with_response` is completed.
-
-        Args:
-            RID (str): Request ID.
-
-        Returns:
-            bool: True if the request is completed, False otherwise.
-
-        """
-        msg = self.connector.lrange(MessageEndpoints.device_req_status_container(RID), 0, -1)
-        if not msg:
-            return False
-        return True
-
-    def set_and_wait(
-        self, *, device: list[str], positions: list | np.ndarray
-    ) -> Generator[None, None, None]:
-        """Set devices to a specific position and wait completion.
-
-        On the device server, `set_and_wait` will call the `set` method of the device.
-
-        Args:
-            device (list[str]): List of device names.
-            positions (list | np.ndarray): Target position.
-
-        Returns:
-            Generator[None, None, None]: Generator that yields a device message.
-
-        see also: :func:`set`, :func:`wait`, :func:`set_with_response`
-
-        """
-        if not isinstance(positions, list) and not isinstance(positions, np.ndarray):
-            positions = [positions]
-        if len(positions) == 0:
-            return
-        for ind, val in enumerate(device):
-            yield from self.set(device=val, value=positions[ind], wait_group="scan_motor")
-        yield from self.wait(device=device, wait_type="move", wait_group="scan_motor")
-
-    def read_and_wait(
-        self, *, wait_group: str, device: list = None, group: str = None, point_id: int = None
-    ) -> Generator[None, None, None]:
-        """Perform a reading and wait for completion.
-
-        On the device server, `read_and_wait` will call the `read` method of the device.
-
-        Args:
-            wait_group (str): wait group
-            device (list, optional): List of device names. Can be specified instead of group. Defaults to None.
-            group (str, optional): Group name of devices. Can be specified instead of device. Defaults to None.
-            point_id (int, optional): _description_. Defaults to None.
-
-        Returns:
-            Generator[None, None, None]: Generator that yields a device message.
-
-        """
-        self._check_device_and_groups(device, group)
-        yield from self.read(device=device, group=group, wait_group=wait_group, point_id=point_id)
-        yield from self.wait(device=device, wait_type="read", group=group, wait_group=wait_group)
+        return status.result
 
     def open_scan(
         self,
@@ -238,6 +287,7 @@ class ScanStubs:
             Generator[None, None, None]: Generator that yields a device message.
 
         """
+        self._readout_priority = readout_priority
         yield self._device_msg(
             device=None,
             action="open_scan",
@@ -249,12 +299,12 @@ class ScanStubs:
                 "scan_name": scan_name,
                 "scan_type": scan_type,
             },
-            metadata=metadata,
+            metadata=metadata if metadata is not None else {},
         )
 
     def kickoff(
-        self, *, device: str, parameter: dict = None, wait_group="kickoff", metadata=None
-    ) -> Generator[None, None, None]:
+        self, *, device: str, parameter: dict = None, metadata=None, wait: bool = False
+    ) -> Generator[messages.DeviceInstructionMessage, None, None]:
         """Kickoff a fly scan device.
 
         On the device server, `kickoff` will call the `kickoff` method of the device.
@@ -262,48 +312,54 @@ class ScanStubs:
         Args:
             device (str): Device name of flyer.
             parameter (dict, optional): Additional parameters that should be forwarded to the device. Defaults to {}.
+            metadata (dict, optional): Metadata that should be forwarded to the device. Defaults to {}.
+            wait (bool, optional): If True, the kickoff command will wait for the completion of the kickoff operation before returning. Defaults to False.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
         """
+        status = self._create_status()
         parameter = parameter if parameter is not None else {}
-        parameter = {"configure": parameter, "wait_group": wait_group}
+        parameter = {"configure": parameter}
+        metadata = metadata if metadata is not None else {}
+        metadata["device_instr_id"] = status._device_instr_id
         yield self._device_msg(
             device=device, action="kickoff", parameter=parameter, metadata=metadata
         )
+        if wait:
+            status.wait()
+        return status
 
-    def complete(self, *, device: str, metadata=None) -> Generator[None, None, None]:
+    def complete(
+        self, *, device: str = None, metadata=None, wait: bool = False
+    ) -> Generator[None, None, None]:
         """Complete a fly scan device.
 
         On the device server, `complete` will call the `complete` method of the device.
 
         Args:
             device (str): Device name of flyer.
+            metadata (dict, optional): Metadata that should be forwarded to the device. Defaults to {}.
+            wait (bool, optional): If True, the complete command will wait for the completion of the complete operation before returning. Defaults to False.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
         """
+        status = self._create_status()
+        if device is None:
+            device = [dev.root.name for dev in self._device_manager.devices.enabled_devices]
+
+        if not isinstance(device, list):
+            device = [device]
+
+        device = sorted(device)
+
+        metadata = metadata if metadata is not None else {}
+        metadata["device_instr_id"] = status._device_instr_id
         yield self._device_msg(device=device, action="complete", parameter={}, metadata=metadata)
-
-    def get_req_status(self, device: str, RID: str, DIID: int) -> int:
-        """Check if a device request status matches the given RID and DIID
-
-        Args:
-            device (str): device under inspection
-            RID (str): request ID
-            DIID (int): device instruction ID
-
-        Returns:
-            int: 1 if the request status matches the RID and DIID, 0 otherwise
-        """
-        msg = self.connector.get(MessageEndpoints.device_req_status(device))
-        if not msg:
-            return 0
-        matching_RID = msg.metadata.get("RID") == RID
-        matching_DIID = msg.metadata.get("DIID") == DIID
-        if matching_DIID and matching_RID:
-            return 1
-        return 0
+        if wait:
+            status.wait()
+        return status
 
     def get_device_progress(self, device: str, RID: str) -> float | None:
         """Get reported device progress
@@ -338,7 +394,7 @@ class ScanStubs:
         see also: :func:`open_scan`
         """
 
-        yield self._device_msg(device=None, action="close_scan", parameter={})
+        yield self._device_msg(device=None, action="close_scan", parameter={}, metadata={})
 
     def stage(self) -> Generator[None, None, None]:
         """
@@ -351,7 +407,46 @@ class ScanStubs:
 
         see also: :func:`unstage`
         """
-        yield self._device_msg(device=None, action="stage", parameter={})
+        status = self._create_status()
+
+        async_devices = self._device_manager.devices.async_devices()
+        excluded_devices = [device.name for device in async_devices]
+        excluded_devices.extend(
+            device.name for device in self._device_manager.devices.on_request_devices()
+        )
+        excluded_devices.extend(
+            device.name for device in self._device_manager.devices.continuous_devices()
+        )
+        stage_device_names_without_async = [
+            dev.root.name
+            for dev in self._device_manager.devices.enabled_devices
+            if dev.name not in excluded_devices
+        ]
+
+        if async_devices:
+            async_devices = sorted(async_devices, key=lambda x: x.name)
+        for det in async_devices:
+            sub_status = self._create_status()
+            instr = messages.DeviceInstructionMessage(
+                device=det.name,
+                action="stage",
+                parameter={},
+                metadata={"device_instr_id": sub_status._device_instr_id},
+            )
+            yield instr
+            status.add_status(sub_status)
+
+        if stage_device_names_without_async:
+            stage_device_names_without_async = sorted(stage_device_names_without_async)
+        instr = messages.DeviceInstructionMessage(
+            device=stage_device_names_without_async,
+            action="stage",
+            parameter={},
+            metadata={"device_instr_id": status._device_instr_id},
+        )
+        yield instr
+        status.wait()
+        return status
 
     def unstage(self) -> Generator[None, None, None]:
         """
@@ -364,7 +459,19 @@ class ScanStubs:
 
         see also: :func:`stage`
         """
-        yield self._device_msg(device=None, action="unstage", parameter={})
+        status = self._create_status()
+        staged_devices = [dev.root.name for dev in self._device_manager.devices.enabled_devices]
+        if staged_devices:
+            staged_devices = sorted(staged_devices)
+        instr = messages.DeviceInstructionMessage(
+            device=staged_devices,
+            action="unstage",
+            parameter={},
+            metadata={"device_instr_id": status._device_instr_id},
+        )
+        yield instr
+        status.wait()
+        return status
 
     def pre_scan(self) -> Generator[None, None, None]:
         """
@@ -377,7 +484,17 @@ class ScanStubs:
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
         """
-        yield self._device_msg(device=None, action="pre_scan", parameter={})
+        status = self._create_status()
+        devices = [dev.root.name for dev in self._device_manager.devices.enabled_devices]
+        if devices:
+            devices = sorted(devices)
+        yield self._device_msg(
+            device=devices,
+            action="pre_scan",
+            parameter={},
+            metadata={"device_instr_id": status._device_instr_id},
+        )
+        return status
 
     def baseline_reading(self) -> Generator[None, None, None]:
         """
@@ -389,56 +506,33 @@ class ScanStubs:
             Generator[None, None, None]: Generator that yields a device message.
 
         """
+        status = self._create_status()
+        baseline_devices = [
+            dev.root.name
+            for dev in self._device_manager.devices.baseline_devices(
+                readout_priority=self._readout_priority
+            )
+        ]
+        if not baseline_devices:
+            status.set_done()
+            return status
+        baseline_devices = sorted(baseline_devices)
         yield self._device_msg(
-            device=None,
-            action="baseline_reading",
+            device=baseline_devices,
+            action="read",
             parameter={},
-            metadata={"readout_priority": "baseline"},
+            metadata={"readout_priority": "baseline", "device_instr_id": status._device_instr_id},
         )
-
-    def wait(
-        self,
-        *,
-        wait_type: Literal["move", "read", "trigger"],
-        device: list[str] | str | None = None,
-        group: Literal["scan_motor", "primary", None] = None,
-        wait_group: str = None,
-        wait_time: float = None,
-    ):
-        """Wait for an event.
-
-        Args:
-            wait_type (Literal["move", "read", "trigger"]): Type of wait event. Can be "move", "read" or "trigger".
-            device (list[str] | str, optional): List of device names. Defaults to None.
-            group (Literal["scan_motor", "primary", None]): Device group that can be used instead of device. Defaults to None.
-                "scan_motor" is used to select the provided "scan_motors" of the scan. "primary" is used to select all monitored devices.
-            wait_group (str, optional): Wait group for this event. Defaults to None. The specified wait group must match the wait group
-                that was used in the corresponding trigger, read or set command, cf. :func:`read`, :func:`set`, :func:`trigger`.
-            wait_time (float, optional): Wait time (for wait_type="trigger"). Defaults to None. The specified wait time is the minimum time
-                the wait event will wait for the completion of the trigger. Additionally, the wait event will wait for the completion of the
-                status events of the triggered devices.
-
-        Returns:
-            Generator[None, None, None]: Generator that yields a device message.
-
-        Example:
-            >>> yield from self.stubs.wait(wait_type="move", group="scan_motor", wait_group="scan_motor")
-            >>> yield from self.stubs.wait(wait_type="read", group="scan_motor", wait_group="my_readout_motors")
-
-        """
-        self._check_device_and_groups(device, group)
-        parameter = {"type": wait_type, "time": wait_time, "group": group, "wait_group": wait_group}
-        self._exclude_nones(parameter)
-        yield self._device_msg(device=device, action="wait", parameter=parameter)
+        return status
 
     def read(
         self,
         *,
-        wait_group: str,
         device: list[str] | str | None = None,
         point_id: int | None = None,
         group: Literal["scan_motor", "primary", None] = None,
-    ) -> Generator[None, None, None]:
+        wait: bool = False,
+    ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
         Perform a reading on a device or device group.
 
@@ -451,6 +545,7 @@ class ScanStubs:
             device (list, optional): Device name. Can be used instead of group. Defaults to None.
             point_id (int, optional): point_id to assign this reading to point within the scan. Defaults to None.
             group (Literal["scan_motor", "primary", None], optional): Device group. Can be used instead of device. Defaults to None.
+            wait (bool, optional): If True, the read command will wait for the completion of the read operation before returning. Defaults to False.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
@@ -460,12 +555,27 @@ class ScanStubs:
             >>> yield from self.stubs.read(wait_group="sample_stage", device="samx", point_id=self.point_id)
 
         """
+        status = self._create_status()
         self._check_device_and_groups(device, group)
-        parameter = {"group": group, "wait_group": wait_group}
-        metadata = {"point_id": point_id}
+        parameter = {"group": group}
+        metadata = {"point_id": point_id, "device_instr_id": status._device_instr_id}
         self._exclude_nones(parameter)
         self._exclude_nones(metadata)
+        if device is None:
+            device = [
+                dev.root.name
+                for dev in self._device_manager.devices.monitored_devices(
+                    readout_priority=self._readout_priority
+                )
+            ]
+        if not device:
+            status.set_done()
+            return status
+        device = sorted(device)
         yield self._device_msg(device=device, action="read", parameter=parameter, metadata=metadata)
+        if wait:
+            status.wait()
+        return status
 
     def publish_data_as_read(
         self, *, device: str, data: dict, point_id: int
@@ -490,7 +600,9 @@ class ScanStubs:
             metadata=metadata,
         )
 
-    def trigger(self, *, group: str, point_id: int) -> Generator[None, None, None]:
+    def trigger(
+        self, *, group: str, point_id: int, wait: bool = False
+    ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """Trigger a device group. Note that the trigger event is not blocking and does not wait for the completion of the trigger event.
         To wait for the completion of the trigger event, use the :func:`wait` command, specifying the wait_type as "trigger".
 
@@ -499,20 +611,34 @@ class ScanStubs:
         Args:
             group (str): Device group that should receive the trigger.
             point_id (int): point_id that should be attached to this trigger event.
+            wait (bool, optional): If True, the trigger command will wait for the completion of the trigger operation before returning. Defaults to False.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
 
         see also: :func:`wait`
         """
-        yield self._device_msg(
-            device=None,
-            action="trigger",
-            parameter={"group": group},
-            metadata={"point_id": point_id},
-        )
+        status = self._create_status()
+        metadata = {"device_instr_id": status._device_instr_id, "point_id": point_id}
+        devices = [
+            dev.root.name for dev in self._device_manager.devices.get_software_triggered_devices()
+        ]
+        if not devices:
+            yield None
+            status.set_done()
+            return status
 
-    def set(self, *, device: str, value: float, wait_group: str, metadata=None):
+        devices = sorted(devices)
+        yield self._device_msg(
+            device=devices, action="trigger", parameter={"group": group}, metadata=metadata
+        )
+        if wait:
+            status.wait()
+        return status
+
+    def set(
+        self, *, device: str, value: float, metadata=None, wait: bool = False
+    ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """Set the device to a specific value. This is similar to the direct set command
         in the command-line interface. The wait_group can be used to wait for the completion of this event.
         For a set operation, this simply means that the device has acknowledged the set command and does not
@@ -523,10 +649,11 @@ class ScanStubs:
         Args:
             device (str): Device name
             value (float): Target value.
-            wait_group (str): wait group for this event.
+            metadata (dict, optional): Metadata that should be attached to this event. Defaults to None.
+            wait (bool, optional): If True, the set command will wait for the completion of the set operation before returning. Defaults to False.
 
         Returns:
-            Generator[None, None, None]: Generator that yields a device message.
+            Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
 
         .. warning::
 
@@ -536,12 +663,20 @@ class ScanStubs:
         see also: :func:`wait`, :func:`set_and_wait`, :func:`set_with_response`
 
         """
-        yield self._device_msg(
-            device=device,
-            action="set",
-            parameter={"value": value, "wait_group": wait_group},
-            metadata=metadata,
+        status = self._create_status()
+        metadata = metadata if metadata is not None else {}
+
+        # pylint: disable=protected-access
+        metadata["device_instr_id"] = status._device_instr_id
+
+        msg = self._device_msg(
+            device=device, action="set", parameter={"value": value}, metadata=metadata
         )
+        yield msg
+
+        if wait:
+            status.wait()
+        return status
 
     def open_scan_def(self) -> Generator[None, None, None]:
         """
@@ -570,19 +705,44 @@ class ScanStubs:
         """
         yield self._device_msg(device=None, action="close_scan_group", parameter={})
 
-    def rpc(self, *, device: str, parameter: dict, metadata=None) -> Generator[None, None, None]:
-        """Perfrom an RPC (remote procedure call) on a device.
+    def send_rpc(
+        self, device: str, func_name: str, *args, metadata=None, rpc_id=None, **kwargs
+    ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
+        """
+        Perfrom an RPC (remote procedure call) on a device.
         Do not use this command directly. Instead, use :func:`send_rpc_and_wait` to perform an RPC and wait for its return value.
 
         Args:
             device (str): Device name.
-            parameter (dict): parameters used for this rpc instructions.
+            func_name (str): Function name.
+            args (tuple): Arguments to pass on to the RPC function.
+            kwargs (dict): Keyword arguments to pass on to the RPC function.
 
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
 
+        Examples:
+            >>> yield from self.send_rpc("samx", "controller.my_custom_function", 1, 2, arg1="test")
+
         """
+        rpc_id = str(uuid.uuid4()) if rpc_id is None else rpc_id
+        parameter = {
+            "device": device,
+            "func": func_name,
+            "rpc_id": rpc_id,
+            "args": args,
+            "kwargs": kwargs,
+        }
+        status = self._create_status()
+
+        metadata = metadata if metadata is not None else {}
+
+        # pylint: disable=protected-access
+        metadata["device_instr_id"] = status._device_instr_id
+
         yield self._device_msg(device=device, action="rpc", parameter=parameter, metadata=metadata)
+
+        return status
 
     def scan_report_instruction(self, instructions: dict) -> Generator[None, None, None]:
         """Scan report instructions

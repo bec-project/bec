@@ -17,6 +17,8 @@ from bec_lib.logger import bec_logger
 
 logger = bec_logger.logger
 
+# pylint: disable=protected-access
+
 
 @pytest.mark.timeout(100)
 def test_grid_scan(capsys, bec_ipython_client_fixture):
@@ -26,7 +28,7 @@ def test_grid_scan(capsys, bec_ipython_client_fixture):
     dev = bec.device_manager.devices
     scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
     status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
-    assert len(status.scan.data) == 100
+    assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
     captured = capsys.readouterr()
     assert "finished. Scan ID" in captured.out
@@ -50,7 +52,7 @@ def test_fermat_scan(capsys, bec_ipython_client_fixture):
         relative=True,
         optim_trajectory="corridor",
     )
-    assert len(status.scan.data) == 393
+    assert len(status.scan.live_data) == 393
     assert status.scan.num_points == 393
     captured = capsys.readouterr()
     assert "finished. Scan ID" in captured.out
@@ -63,7 +65,7 @@ def test_line_scan(capsys, bec_ipython_client_fixture):
     bec.metadata.update({"unit_test": "test_line_scan"})
     dev = bec.device_manager.devices
     status = scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
-    assert len(status.scan.data) == 10
+    assert len(status.scan.live_data) == 10
     assert status.scan.num_points == 10
     captured = capsys.readouterr()
     assert "finished. Scan ID" in captured.out
@@ -149,13 +151,13 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
     status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
 
     # make sure the scan completed the expected number of positions
-    assert len(status.scan.data) == 100
+    assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
 
     # make sure the scan is relative to the starting position
     assert np.isclose(
         current_pos_samx - 5,
-        status.scan.data[0].content["data"]["samx"]["samx"]["value"],
+        status.scan.live_data[0].content["data"]["samx"]["samx"]["value"],
         atol=tolerance_samx,
     )
 
@@ -179,12 +181,12 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
     )
 
     # make sure the scan completed the expected number of points
-    assert len(status.scan.data) == 100
+    assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
 
     # make sure the scan was absolute, not relative
     assert np.isclose(
-        -5, status.scan.data[0].content["data"]["samx"]["samx"]["value"], atol=tolerance_samx
+        -5, status.scan.live_data[0].content["data"]["samx"]["samx"]["value"], atol=tolerance_samx
     )
     scan_number_end = bec.queue.next_scan_number
     assert scan_number_end == scan_number_start + 2
@@ -202,7 +204,7 @@ def test_scan_abort(bec_ipython_client_fixture):
                 continue
             if bec.queue.scan_storage.current_scan is None:
                 continue
-            if len(bec.queue.scan_storage.current_scan.data) > 10:
+            if len(bec.queue.scan_storage.current_scan.live_data) > 10:
                 _thread.interrupt_main()
                 break
         while True:
@@ -235,7 +237,7 @@ def test_scan_abort(bec_ipython_client_fixture):
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
 
-    assert len(bec.queue.scan_storage.storage[-1].data) < 200
+    assert len(bec.queue.scan_storage.storage[-1].live_data) < 200
 
     scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=True)
     scan_number_end = bec.queue.next_scan_number
@@ -294,7 +296,7 @@ def test_queued_scan(bec_ipython_client_fixture):
         assert scan1.scan.queue.queue_position == 0
         assert scan2.scan.queue.queue_position == 1
         break
-    while len(scan2.scan.data) != 50:
+    while len(scan2.scan.live_data) != 50:
         time.sleep(0.5)
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
     while current_queue["info"] or current_queue["status"] != "RUNNING":
@@ -311,7 +313,7 @@ def test_fly_scan(bec_ipython_client_fixture):
     scans = bec.scans
     dev = bec.device_manager.devices
     status = scans.round_scan_fly(dev.flyer_sim, 0, 40, 5, 3, exp_time=0.05, relative=True)
-    assert len(status.scan.data) == 63
+    assert len(status.scan.live_data) == 63
     assert status.scan.num_points == 63
 
 
@@ -326,7 +328,7 @@ def test_scan_restart(bec_ipython_client_fixture):
         while True:
             if not bec.queue.scan_storage.current_scan:
                 continue
-            if len(bec.queue.scan_storage.current_scan.data) > 0:
+            if len(bec.queue.scan_storage.current_scan.live_data) > 0:
                 time.sleep(2)
                 bec.queue.request_scan_restart()
                 bec.queue.request_scan_continuation()
@@ -364,7 +366,7 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture):
         while True:
             if not bec.queue.scan_storage.current_scan:
                 continue
-            if len(bec.queue.scan_storage.current_scan.data) > 0:
+            if len(bec.queue.scan_storage.current_scan.live_data) > 0:
                 time.sleep(2)
                 bec.queue.request_scan_interruption(deferred_pause=False)
                 time.sleep(5)
@@ -404,7 +406,7 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
         while True:
             if not bec.queue.scan_storage.current_scan:
                 continue
-            if len(bec.queue.scan_storage.current_scan.data) > 0:
+            if len(bec.queue.scan_storage.current_scan.live_data) > 0:
                 time.sleep(2)
                 bec.queue.request_scan_interruption(deferred_pause=False)
                 time.sleep(5)
@@ -451,7 +453,7 @@ def test_file_writer(bec_ipython_client_fixture):
         relative=True,
         metadata={"sample": "my_sample"},
     )
-    assert len(scan.scan.data) == 100
+    assert len(scan.scan.live_data) == 100
     msg = bec.device_manager.connector.get(
         MessageEndpoints.public_file(scan.scan.scan_id, "master")
     )
@@ -474,7 +476,7 @@ def test_file_writer(bec_ipython_client_fixture):
             file["entry"]["collection"]["metadata"]["bec"]["dataset_number"][()] == dataset_number
         )
         file_data = file["entry"]["collection"]["devices"]["samx"]["samx"]["value"][...]
-        stream_data = scan.scan.data["samx"]["samx"]["value"]
+        stream_data = scan.scan.live_data["samx"]["samx"]["value"]
         assert all(file_data == stream_data)
 
 
@@ -553,10 +555,10 @@ def test_list_scan(bec_ipython_client_fixture):
     status = scans.list_scan(
         dev.samx, [0, 1, 2, 3, 4], dev.samy, [0, 1, 2, 3, 4], exp_time=0.1, relative=False
     )
-    assert len(status.scan.data) == 5
+    assert len(status.scan.live_data) == 5
 
     status = scans.list_scan(dev.samx, [0, 1, 2, 3, 4, 5], exp_time=0.1, relative=False)
-    assert len(status.scan.data) == 6
+    assert len(status.scan.live_data) == 6
 
     status = scans.list_scan(
         dev.samx,
@@ -568,7 +570,7 @@ def test_list_scan(bec_ipython_client_fixture):
         exp_time=0.1,
         relative=False,
     )
-    assert len(status.scan.data) == 4
+    assert len(status.scan.live_data) == 4
 
 
 @pytest.mark.timeout(100)
@@ -577,7 +579,7 @@ def test_time_scan(bec_ipython_client_fixture):
     bec.metadata.update({"unit_test": "test_time_scan"})
     scans = bec.scans
     status = scans.time_scan(points=5, interval=0.5, exp_time=0.1, relative=False)
-    assert len(status.scan.data) == 5
+    assert len(status.scan.live_data) == 5
 
 
 @pytest.mark.timeout(100)
@@ -589,7 +591,7 @@ def test_monitor_scan(bec_ipython_client_fixture):
     dev.samx.limits = [-1100, 1100]
     time.sleep(5)
     status = scans.monitor_scan(dev.samx, -100, 100, relative=False)
-    assert len(status.scan.data) > 100
+    assert len(status.scan.live_data) > 100
 
 
 @pytest.mark.timeout(100)
@@ -614,8 +616,9 @@ def test_burst_scan(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_burst_scan"})
     dev = bec.device_manager.devices
+    scans = bec.scans
     s = scans.line_scan(dev.samx, 0, 1, burst_at_each_point=2, steps=10, relative=False)
-    assert len(s.scan.data) == 20
+    assert len(s.scan.live_data) == 20
 
 
 @pytest.mark.timeout(100)
@@ -623,6 +626,7 @@ def test_callback_data_matches_scan_data(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_callback_data_matches_scan_data"})
     dev = bec.device_manager.devices
+    scans = bec.scans
     reference_container = {"data": [], "metadata": {}}
 
     def dummy_callback(data, metadata):
@@ -633,10 +637,10 @@ def test_callback_data_matches_scan_data(bec_ipython_client_fixture):
     s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, callback=dummy_callback)
     while len(reference_container["data"]) < 10:
         time.sleep(0.1)
-    assert len(s.scan.data) == 10
+    assert len(s.scan.live_data) == 10
     assert len(reference_container["data"]) == 10
 
-    for ii, msg in enumerate(s.scan.data.messages.values()):
+    for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == reference_container["data"][ii]
 
 
@@ -645,6 +649,7 @@ def test_async_callback_data_matches_scan_data(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_async_callback_data_matches_scan_data"})
     dev = bec.device_manager.devices
+    scans = bec.scans
     reference_container = {"data": [], "metadata": {}}
 
     def dummy_callback(data, metadata):
@@ -657,10 +662,10 @@ def test_async_callback_data_matches_scan_data(bec_ipython_client_fixture):
     while len(reference_container["data"]) < 10:
         time.sleep(0.1)
 
-    assert len(s.scan.data) == 10
+    assert len(s.scan.live_data) == 10
     assert len(reference_container["data"]) == 10
 
-    for ii, msg in enumerate(s.scan.data.messages.values()):
+    for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == reference_container["data"][ii]
 
 
@@ -669,6 +674,7 @@ def test_disabled_device_raises_scan_request_error(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_disabled_device_raises_scan_rejection"})
     dev = bec.device_manager.devices
+    scans = bec.scans
     dev.samx.enabled = False
     with pytest.raises((AlarmBase, ScanRequestError)):
         scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
@@ -720,6 +726,7 @@ def test_device_monitor(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_device_monitor"})
     dev = bec.device_manager.devices
+    scans = bec.scans
     dev.eiger.image_shape.set([10, 10])
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
@@ -739,6 +746,7 @@ def test_async_data(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_device_monitor"})
     dev = bec.device_manager.devices
+    scans = bec.scans
     # Set amplitude to 100
     amplitude = 100
     dev.waveform.sim.select_model("ConstantModel")
@@ -747,12 +755,10 @@ def test_async_data(bec_ipython_client_fixture):
     dev.waveform.async_update.set("append")
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
-    np.testing.assert_array_equal(
-        s1.scan.async_data["waveform"]["waveform_waveform"]["value"], amplitude * np.ones((10, 10))
-    )
+    waveform_data = s1.scan.data.devices.waveform.waveform_waveform.read()
+    np.testing.assert_array_equal(waveform_data["value"], amplitude * np.ones((10, 10)))
     dev.waveform.async_update.set("extend")
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
-    np.testing.assert_array_equal(
-        s1.scan.async_data["waveform"]["waveform_waveform"]["value"], amplitude * np.ones(100)
-    )
+    waveform_data = s1.scan.data.devices.waveform.waveform_waveform.read()
+    np.testing.assert_array_equal(waveform_data["value"], amplitude * np.ones(100))

@@ -47,8 +47,8 @@ def test_LmfitService1D_get_provided_services(lmfit_service):
 
 def test_LmfitService1D_get_data_from_current_scan_without_devices(lmfit_service):
     scan_item = mock.MagicMock()
-    scan_item.data = mock.MagicMock()
-    scan_item.data[0].metadata = {"scan_report_devices": ["device_x", "device_y"]}
+    scan_item.live_data = mock.MagicMock()
+    scan_item.live_data[0].metadata = {"scan_report_devices": ["device_x", "device_y"]}
 
     data = lmfit_service.get_data_from_current_scan(scan_item)
     assert data is None
@@ -56,13 +56,13 @@ def test_LmfitService1D_get_data_from_current_scan_without_devices(lmfit_service
 
 def test_LmfitService1D_get_data_from_current_scan(lmfit_service):
     scan_item = mock.MagicMock()
-    scan_item.data = mock.MagicMock()
+    scan_item.live_data = mock.MagicMock()
     lmfit_service.device_x = "device_x"
     lmfit_service.signal_x = "signal_x"
     lmfit_service.device_y = "device_y"
     lmfit_service.signal_y = "signal_y"
 
-    scan_item.data = {
+    scan_item.live_data = {
         "device_x": {"signal_x": {"value": [1, 2, 3], "timestamp": 0}},
         "device_y": {"signal_y": {"value": [4, 5, 6], "timestamp": 0}},
     }
@@ -85,12 +85,12 @@ def test_LmfitService1D_get_data_from_current_scan(lmfit_service):
 )
 def test_LmfitService1D_get_data_from_current_scan_returns_None(lmfit_service, scan_data):
     scan_item = mock.MagicMock()
-    scan_item.data = mock.MagicMock()
+    scan_item.live_data = mock.MagicMock()
     lmfit_service.device_x = "device_x"
     lmfit_service.signal_x = "signal_x"
     lmfit_service.device_y = "device_y"
     lmfit_service.signal_y = "signal_y"
-    scan_item.data = scan_data
+    scan_item.live_data = scan_data
     data = lmfit_service.get_data_from_current_scan(scan_item)
     assert data is None
 

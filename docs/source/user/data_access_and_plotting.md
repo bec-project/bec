@@ -74,13 +74,33 @@ Often, a fit is simply a means to find the optimal position of a motor. Therefor
 umv(dev.samx, res.center)
 ```
 
+
 ## Accessing scan data from the history
-The BEC client maintains a local history of the 50 most recent scans since the client's startup. 
-You can easily retrieve scan data from `bec.history`, which is a Python `list`, as demonstrated in the example below, where we fetch data from the latest scan. You will receive a list of all scan_items, which most likely is going to be a single scan item for most use cases.
+BEC maintains the history of the last 10 000 scans. You can easily retrieve scan data from `bec.history`, as demonstrated in the example below, where we fetch data from the latest scan. 
 ```ipython
-scan_data_list = bec.history[-1].scans
-scan_data = scan_data_list[0]
+scan_data_container = bec.history[-1]
 ```
+
+Alternatively, you can access the scan data from a specific scan by providing the scan id:
+```ipython
+scan_data_container = bec.history.get_by_scan_id(scan_id)
+```
+
+The history returns a `ScanDataContainer` object, which is a container for the scan data and maps your HDF5 file's "collection" structure to a python object. Upon accessing the data, the object will automatically load the necessary data from the HDF5 file and based on the size of the data, cache it in memory for faster access on subsequent calls.
+
+The following code snippet demonstrates how to access the data from the `samx` device and its `samx` signal. The return type is a dictionary containing the data.
+
+```ipython
+samx_signal_data = scan_data_container.devices.samx.samx.read()
+```
+
+If you want to access the data of the `samx` device and all its signals, you can use the following code snippet:
+
+```ipython
+samx_data = scan_data_container.devices.samx.read()
+```
+
+
 
 ## Export scan data from client
 BEC consistently saves data in h5 format, following the NX standard. 

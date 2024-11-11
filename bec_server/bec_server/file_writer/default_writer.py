@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from bec_lib import messages
     from bec_lib.devicemanager import DeviceManagerBase
     from bec_server.file_writer.file_writer import HDF5Storage
 
@@ -17,7 +18,7 @@ class DefaultFormat:
         storage: HDF5Storage,
         data: dict,
         info_storage: dict,
-        file_references: dict,
+        file_references: dict[str, messages.FileMessage],
         device_manager: DeviceManagerBase,
     ):
         self.storage = storage
@@ -84,6 +85,15 @@ class DefaultFormat:
         devices.attrs["NX_class"] = "NXcollection"
         metadata = collection.create_dataset("metadata", data=self.info_storage)
         metadata.attrs["NX_class"] = "NXcollection"
+        readout_groups = collection.create_group("readout_groups")
+        readout_groups.attrs["NX_class"] = "NXcollection"
+        for priority_name, devices in self.info_storage["bec"]["readout_priority"].items():
+            if priority_name not in ["baseline", "monitored", "async"]:
+                continue
+            group = readout_groups.create_group(priority_name)
+            group.attrs["NX_class"] = "NXcollection"
+            for device in devices:
+                group.create_soft_link(name=device, target=f"/entry/collection/devices/{device}")
 
         # /entry/control
         control = entry.create_group("control")

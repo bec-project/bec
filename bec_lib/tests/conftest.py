@@ -1,4 +1,7 @@
+import time
+
 import fakeredis
+import h5py
 import pytest
 
 from bec_lib import bec_logger, messages
@@ -77,3 +80,71 @@ def scan_queue_status_msg():
             }
         }
     )
+
+
+@pytest.fixture
+def mock_file(tmpdir):
+    """
+    Create a mock hdf5 file.
+    """
+    file_path = tmpdir / "test.h5"
+    readout_groups = {
+        "baseline": ["samy", "samz"],
+        "monitored": ["samx", "bpm4i"],
+        "async": ["waveform"],
+    }
+    with h5py.File(file_path, "w") as f:
+        metadata = f.create_group("entry/collection/metadata")
+        metadata.create_dataset("sample_name", data="test_sample")
+        metadata_bec = f.create_group("entry/collection/metadata/bec")
+        metadata_bec.create_dataset("scan_id", data="scan_id_1")
+        for group, devices in readout_groups.items():
+            readout_group = f.create_group(f"entry/collection/readout_groups/{group}")
+
+            for device in devices:
+                dev_group = f.create_group(f"entry/collection/devices/{device}/{device}")
+                for signal in ["value", "timestamp"]:
+                    dev_group.create_dataset(signal, data=[1, 2, 3])
+                # create a link from the readout group to the device
+                readout_group[device] = h5py.SoftLink(f"/entry/collection/devices/{device}")
+
+    return file_path
+
+
+@pytest.fixture
+def file_history_messages(mock_file):
+    return [
+        messages.ScanHistoryMessage(
+            scan_id="scan_id_1",
+            scan_number=1,
+            dataset_number=1,
+            file_path=str(mock_file),
+            exit_status="closed",
+            start_time=time.time(),
+            end_time=time.time(),
+            scan_name="line_scan",
+            num_points=10,
+        ),
+        messages.ScanHistoryMessage(
+            scan_id="scan_id_2",
+            scan_number=2,
+            dataset_number=2,
+            file_path=str(mock_file),
+            exit_status="closed",
+            start_time=time.time(),
+            end_time=time.time(),
+            scan_name="line_scan",
+            num_points=10,
+        ),
+        messages.ScanHistoryMessage(
+            scan_id="scan_id_3",
+            scan_number=3,
+            dataset_number=2,
+            file_path=str(mock_file),
+            exit_status="closed",
+            start_time=time.time(),
+            end_time=time.time(),
+            scan_name="line_scan",
+            num_points=10,
+        ),
+    ]

@@ -114,7 +114,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def devices(self):
         """get the devices for the callback"""
         if self.point_data.metadata["scan_type"] == "step":
-            return self.get_devices_from_scan_data(self.scan_item.data[0])
+            return self.get_devices_from_scan_data(self.scan_item.live_data[0])
         if self.point_data.metadata["scan_type"] == "fly":
             devices = list(self.point_data.content["data"].keys())
             if len(devices) > self.MAX_DEVICES:
@@ -192,7 +192,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
         ) as progressbar:
             while True:
                 self.check_alarms()
-                self.point_data = self.scan_item.data.get(self.point_id)
+                self.point_data = self.scan_item.live_data.get(self.point_id)
                 if self.scan_item.num_points:
                     progressbar.max_points = self.scan_item.num_points
                     if target_num_points == 0:

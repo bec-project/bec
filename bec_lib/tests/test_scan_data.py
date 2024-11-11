@@ -1,12 +1,12 @@
 import pytest
 
 from bec_lib import messages
-from bec_lib.scan_data import ScanData
+from bec_lib.live_scan_data import LiveScanData
 
 
 @pytest.fixture
 def scan_data():
-    scan_data = ScanData()
+    scan_data = LiveScanData()
     for ii in range(10):
         msg = messages.ScanMessage(
             point_id=ii,

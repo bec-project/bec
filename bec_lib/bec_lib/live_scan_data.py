@@ -150,9 +150,9 @@ class DeviceData(dict):
         return self.__signals.values()
 
 
-class ScanData(dict):
+class LiveScanData(dict):
     """
-    ScanData is a container for storing scan data.
+    LiveScanData is a container for storing scan data.
     """
 
     def __init__(self, *args, **kwargs):

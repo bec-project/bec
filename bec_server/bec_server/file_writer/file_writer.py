@@ -17,6 +17,9 @@ from .merged_dicts import merge_dicts
 
 logger = bec_logger.logger
 
+if typing.TYPE_CHECKING:
+    from bec_server.file_writer.file_writer_manager import ScanStorage
+
 
 class NeXusLayoutError(Exception):
     """
@@ -27,6 +30,7 @@ class NeXusLayoutError(Exception):
 class HDF5Storage:
     """
     The HDF5Storage class is a container used by the HDF5 writer plugins to store data in the correct NeXus format.
+    It is used to store groups, datasets, soft links and external links before writing them to the HDF5 file.
     """
 
     def __init__(self, storage_type: str = "group", data=None) -> None:
@@ -96,15 +100,16 @@ class HDF5Storage:
 class HDF5StorageWriter:
     """
     The HDF5StorageWriter class is used to write the HDF5Storage object to an HDF5 file.
-
-    The class
     """
 
     device_storage = None
     info_storage = None
 
     def add_group(self, name: str, container: typing.Any, val: HDF5Storage):
-        group = container.create_group(name)
+        if name in container:
+            group = container[name]
+        else:
+            group = container.create_group(name)
         self.add_attribute(group, val.attrs)
         self.add_content(group, val._storage)
 
@@ -143,9 +148,17 @@ class HDF5StorageWriter:
             if isinstance(data, list):
                 if data and isinstance(data[0], dict):
                     data = json.dumps(data)
+                elif not all(isinstance(x, type(data[0])) for x in data):
+                    data = json.dumps(data)
             dataset = container.create_dataset(name, data=data)
             self.add_attribute(dataset, val.attrs)
             self.add_content(dataset, val._storage)
+            if container.parent.parent.name == "/entry/collection/devices":
+                signal_name = container.name.split("/")[-1]
+                group_name = container.parent.name.split("/")[-1]
+                if signal_name == group_name:
+                    container.attrs["NX_class"] = "NXdata"
+                    container.attrs["signal"] = "value"
         except Exception:
             content = traceback.format_exc()
             logger.error(f"Failed to write dataset {name}: {content}")
@@ -167,6 +180,7 @@ class HDF5StorageWriter:
 
     def add_content(self, container, storage):
         for name, val in storage.items():
+            # pylint: disable=protected-access
             if val._storage_type == "group":
                 self.add_group(name, container, val)
             elif val._storage_type == "dataset":
@@ -214,13 +228,15 @@ class HDF5FileWriter:
                 device_storage[dev].append(data.scan_segments[point][dev])
         return device_storage
 
-    def write(self, file_path: str, data):
+    def write(self, file_path: str, data: ScanStorage, mode="w", file_handle=None):
         """
         Write the data to an HDF5 file.
 
         Args:
             file_path (str): File path
             data (ScanStorage): Scan data
+            mode (str, optional): File mode. Defaults to "w".
+            file_handle (h5py.File, optional): File handle. Defaults to None.
 
         Raises:
             NeXusLayoutError: Raised when the NeXus layout is incorrect.
@@ -251,8 +267,8 @@ class HDF5FileWriter:
                 writer_format_cls = plugins[requested_plugin]
 
         for file_ref in data.file_references.values():
-            rel_path = os.path.relpath(file_ref["path"], os.path.dirname(file_path))
-            file_ref["path"] = rel_path
+            rel_path = os.path.relpath(file_ref.file_path, os.path.dirname(file_path))
+            file_ref.file_path = rel_path
 
         writer_storage = writer_format_cls(
             storage=HDF5Storage(),
@@ -269,8 +285,11 @@ class HDF5FileWriter:
         msg = messages.FileContentMessage(**msg_data)
         self.file_writer_manager.connector.set_and_publish(MessageEndpoints.file_content(), msg)
 
-        with h5py.File(file_path, "w") as file:
-            HDF5StorageWriter.write(writer_storage, file)
+        file_handle = file_handle or h5py.File(file_path, mode=mode)
+        try:
+            HDF5StorageWriter.write(writer_storage, file_handle)
+        finally:
+            file_handle.close()
 
 
 def dict_to_storage(storage, data):

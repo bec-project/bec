@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import traceback
+from typing import TYPE_CHECKING
 
 from bec_lib import messages
 from bec_lib.logger import bec_logger
@@ -8,13 +11,16 @@ from .scans import RequestBase, unpack_scan_args
 
 logger = bec_logger.logger
 
+if TYPE_CHECKING:
+    from .scan_server import ScanServer
+
 
 class ScanAssembler:
     """
     ScanAssembler receives scan messages and translates the scan message into device instructions.
     """
 
-    def __init__(self, *, parent):
+    def __init__(self, *, parent: ScanServer):
         self.parent = parent
         self.device_manager = self.parent.device_manager
         self.connector = self.parent.connector
@@ -46,6 +52,7 @@ class ScanAssembler:
                 device_manager=self.device_manager,
                 parameter=msg.content.get("parameter"),
                 metadata=msg.metadata,
+                instruction_handler=self.parent.queue_manager.instruction_handler,
                 **kwargs,
             )
             return scan_instance

@@ -356,12 +356,15 @@ class DeviceManagerDS(DeviceManagerBase):
             obj.subscribe(self._obj_callback_device_monitor_2d, run=False)
         if "device_monitor_1d" in obj.event_types:
             obj.subscribe(self._obj_callback_device_monitor_1d, run=False)
+        if "file_event" in obj.event_types:
+            obj.subscribe(self._obj_callback_file_event, run=False)
         if "done_moving" in obj.event_types:
             obj.subscribe(self._obj_callback_done_moving, event_type="done_moving", run=False)
         if "flyer" in obj.event_types:
             obj.subscribe(self._obj_flyer_callback, event_type="flyer", run=False)
         if "progress" in obj.event_types:
             obj.subscribe(self._obj_progress_callback, event_type="progress", run=False)
+
         if hasattr(obj, "motor_is_moving"):
             obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)
 
@@ -564,6 +567,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def _obj_flyer_callback(self, *_args, **kwargs):
         obj = kwargs["obj"]
+        logger.warning(
+            f"Flyer callback will be deprecated in future, please refactor your device {obj.root.name} in favor of an async devices as soon as possible."
+        )
         data = kwargs["value"].get("data")
         ds_obj = self.devices[obj.root.name]
         metadata = ds_obj.metadata
@@ -577,24 +583,23 @@ class DeviceManagerDS(DeviceManagerBase):
 
         # make sure all arrays are of equal length
         max_points = min(len(d) for d in data.values())
-        bundle = messages.BundleMessage()
+
+        pipe = self.connector.pipeline()
         for ii in range(emitted_points, max_points):
             timestamp = time.time()
             signals = {}
             for key, val in data.items():
                 signals[key] = {"value": val[ii], "timestamp": timestamp}
-            bundle.append(
-                messages.DeviceMessage(signals=signals, metadata={"point_id": ii, **metadata})
+            msg = messages.DeviceMessage(signals=signals, metadata={"point_id": ii, **metadata})
+            self.connector.set_and_publish(
+                MessageEndpoints.device_read(obj.root.name), msg, pipe=pipe
             )
+
         ds_obj.emitted_points[metadata["scan_id"]] = max_points
-        pipe = self.connector.pipeline()
-        self.connector.send(MessageEndpoints.device_read(obj.root.name), bundle, pipe=pipe)
         msg = messages.DeviceStatusMessage(
             device=obj.root.name, status=max_points, metadata=metadata
         )
-        self.connector.set_and_publish(
-            MessageEndpoints.device_progress(obj.root.name), msg, pipe=pipe
-        )
+        self.connector.set(MessageEndpoints.device_status(obj.root.name), msg, pipe=pipe)
         pipe.execute()
 
     def _obj_progress_callback(self, *_args, obj, value, max_value, done, **kwargs):
@@ -603,3 +608,47 @@ class DeviceManagerDS(DeviceManagerBase):
             value=value, max_value=max_value, done=done, metadata=metadata
         )
         self.connector.set_and_publish(MessageEndpoints.device_progress(obj.root.name), msg)
+
+    def _obj_callback_file_event(
+        self,
+        *_args,
+        obj,
+        file_path: str,
+        done: bool,
+        successful: bool,
+        file_type: str = "h5",
+        hinted_h5_entries: dict[str, str] | None = None,
+        **kwargs,
+    ):
+        """Callback for file events on devices. This callback set and publishes
+        a file message to the file_event and public_file endpoints in Redis to inform
+        the file writer and other services about externally created files.
+
+        Args:
+            obj (OphydObject): ophyd object
+            file_path (str): file path to the created file
+            done (bool): if the file is done
+            successfull (bool): if the file was created successfully
+            file_type (str): Optional, file type. Default is h5.
+            hinted_h5_entry (dict[str, str] | None): Optional, hinted h5 entry. Please check FileMessage for more details
+        """
+        device_name = obj.root.name
+        metadata = self.devices[device_name].metadata
+        if kwargs.get("metadata") is not None:
+            metadata.update(kwargs.get("metadata"))
+        scan_id = metadata.get("scan_id")
+        msg = messages.FileMessage(
+            file_path=file_path,
+            done=done,
+            successful=successful,
+            file_type=file_type,
+            device_name=device_name,
+            hinted_h5_entries=hinted_h5_entries,
+            metadata=metadata,
+        )
+        pipe = self.connector.pipeline()
+        self.connector.set_and_publish(MessageEndpoints.file_event(device_name), msg, pipe=pipe)
+        self.connector.set_and_publish(
+            MessageEndpoints.public_file(scan_id=scan_id, name=device_name), msg, pipe=pipe
+        )
+        pipe.execute()

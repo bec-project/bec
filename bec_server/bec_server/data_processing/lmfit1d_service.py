@@ -269,9 +269,9 @@ class LmfitService1D(DAPServiceBase):
         signal_y = devices.get("signal_y", self.signal_y)
 
         if not device_x:
-            if not scan_item.data:
+            if not scan_item.live_data:
                 return None
-            scan_report_devices = scan_item.data[0].metadata.get("scan_report_devices", [])
+            scan_report_devices = scan_item.live_data[0].metadata.get("scan_report_devices", [])
             if not scan_report_devices:
                 logger.warning("Failed to find scan report devices")
                 return None
@@ -291,13 +291,13 @@ class LmfitService1D(DAPServiceBase):
             signal_x = hints[0]
 
         # get the event data
-        if not scan_item.data:
+        if not scan_item.live_data:
             return None
-        x = scan_item.data.get(device_x, {}).get(signal_x, {}).get("value")
+        x = scan_item.live_data.get(device_x, {}).get(signal_x, {}).get("value")
         if not x:
             logger.warning(f"Failed to find signal {device_x}.{signal_x}")
             return None
-        y = scan_item.data.get(device_y, {}).get(signal_y, {}).get("value")
+        y = scan_item.live_data.get(device_y, {}).get(signal_y, {}).get("value")
         if not y:
             logger.warning(f"Failed to find signal {device_y}.{signal_y}")
             return None
