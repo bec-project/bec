@@ -105,6 +105,9 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
     bec.metadata.update({"unit_test": "test_mv_scan_nested_device"})
     dev = bec.device_manager.devices
     scans.mv(dev.hexapod.x, 10, dev.hexapod.y, 20, relative=False).wait()
+    if not bec.connector._messages_queue.empty():
+        print("Waiting for messages to be processed")
+        time.sleep(0.5)
     current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod_x"]["value"]
     current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod_y"]["value"]
     assert np.isclose(
@@ -114,6 +117,9 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
         current_pos_hexapod_y, 20, atol=dev.hexapod._config["deviceConfig"].get("tolerance", 0.5)
     )
     scans.umv(dev.hexapod.x, 10, dev.hexapod.y, 20, relative=False)
+    if not bec.connector._messages_queue.empty():
+        print("Waiting for messages to be processed")
+        time.sleep(0.5)
     current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod_x"]["value"]
     current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod_y"]["value"]
     captured = capsys.readouterr()
