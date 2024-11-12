@@ -538,7 +538,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         trigger_time = self.exp_time * self.frames_per_trigger
         yield from self.stubs.trigger(min_wait=trigger_time)
 
-        yield from self.stubs.read(group="primary", point_id=self.point_id)
+        yield from self.stubs.read(group="monitored", point_id=self.point_id)
 
         self.point_id += 1
 
@@ -1187,7 +1187,7 @@ class ContLineScan(ScanBase):
 
     def _at_each_point(self, _ind=None, _pos=None):
         yield from self.stubs.trigger(min_wait=self.exp_time)
-        yield from self.stubs.read(group="primary", point_id=self.point_id)
+        yield from self.stubs.read(group="monitored", point_id=self.point_id)
         self.point_id += 1
 
     def scan_core(self):
@@ -1297,7 +1297,7 @@ class ContLineFlyScan(AsyncFlyScanBase):
 
         while not status_flyer.done:
             yield from self.stubs.trigger(min_wait=self.exp_time)
-            yield from self.stubs.read(group="primary", point_id=self.point_id)
+            yield from self.stubs.read(group="monitored", point_id=self.point_id)
             self.point_id += 1
 
         self.num_pos = self.point_id
@@ -1385,7 +1385,7 @@ class RoundScanFlySim(SyncFlyScanBase):
         )
 
         while not status.done:
-            yield from self.stubs.read(group="primary")
+            yield from self.stubs.read(group="monitored")
 
             time.sleep(1)
             logger.debug("reading monitors")
@@ -1634,7 +1634,7 @@ class Acquire(ScanBase):
 
     def _at_each_point(self, ind=None, pos=None):
         yield from self.stubs.trigger(min_wait=self.exp_time)
-        yield from self.stubs.read(group="primary", point_id=self.point_id)
+        yield from self.stubs.read(group="monitored", point_id=self.point_id)
         self.point_id += 1
 
     def scan_core(self):
@@ -1782,7 +1782,7 @@ class InteractiveReadMontiored(ScanComponent):
     def run(self):
         self.update_readout_priority()
         self.stubs._readout_priority = self.readout_priority
-        yield from self.stubs.read(group="primary", point_id=self.point_id)
+        yield from self.stubs.read(group="monitored", point_id=self.point_id)
 
 
 class CloseInteractiveScan(ScanComponent):

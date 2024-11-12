@@ -476,7 +476,7 @@ def test_process_instructions(scan_worker_mock, abortion):
             messages.DeviceInstructionMessage(
                 device=None,
                 action="read",
-                parameter={"group": "primary"},
+                parameter={"group": "monitored"},
                 metadata={"readout_priority": "monitored", "point_id": 1},
             ),
             "forward_instruction",
