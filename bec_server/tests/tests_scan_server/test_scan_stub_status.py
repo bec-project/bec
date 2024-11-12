@@ -257,3 +257,13 @@ def test_scan_stub_status_wait_log_remaining(scan_stub_status):
             f"Waiting for the completion of the following status objects: ['ScanStubStatus({scan_stub_status._device_instr_id}, action=set, devices=samx)']"
             in out
         )
+
+
+def test_stub_status_as_container(instruction_handler):
+    container = ScanStubStatus(instruction_handler, is_container=True)
+    sub_status = ScanStubStatus(instruction_handler)
+    container.add_status(sub_status)
+    assert container.done is False
+    sub_status.set_done()
+    container.wait()
+    assert container.done is True

@@ -58,13 +58,23 @@ class InstructionHandler:
 
         if instruction.instruction_id in self._callback_storage:
             for callback in self._callback_storage[instruction.instruction_id]:
-                callback(instruction)
+                self._run_callback(callback, instruction)
 
         # Since we always create the status objects before submitting the instruction, we can safely remove the callback
         # once the status is completed or errored, whilst ensuring that the status object was updated properly
         if instruction.status in ["completed", "error"]:
             self._callback_storage.pop(instruction.instruction_id, None)
             self._instruction_storage.pop(instruction.instruction_id, None)
+
+    @staticmethod
+    def _run_callback(
+        callback: Callable[[messages.DeviceInstructionResponse], None],
+        instruction: messages.DeviceInstructionResponse,
+    ) -> None:
+        try:
+            callback(instruction)
+        except Exception as e:
+            print(f"Error in callback for instruction {instruction.instruction_id}: {e}")
 
     def register_callback(
         self, instruction_id: str, callback: Callable[[messages.DeviceInstructionResponse], None]
@@ -80,7 +90,7 @@ class InstructionHandler:
         """
 
         if instruction_id in self._instruction_storage:
-            callback(self._instruction_storage[instruction_id].instruction)
+            self._run_callback(callback, self._instruction_storage[instruction_id])
             return
 
         with self._lock:
