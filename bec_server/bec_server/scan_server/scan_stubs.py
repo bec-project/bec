@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Generator, Literal
 
 import numpy as np
+from typeguard import typechecked
 
 from bec_lib import messages
 from bec_lib.connector import ConnectorBase
@@ -604,6 +605,7 @@ class ScanStubs:
         )
         return status
 
+    @typechecked
     def read(
         self,
         *,
