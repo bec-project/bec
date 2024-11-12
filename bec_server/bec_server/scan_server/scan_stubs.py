@@ -469,8 +469,10 @@ class ScanStubs:
         """
         Stage all devices.
 
-        On the device server, `stage` will call the `stage` method of the device and instruct
-        the device to prepare for the upcoming scan.
+        On the device server, `stage` will call the `stage` method on all enabled devices. Devices
+        that are marked as async will receive a separate stage command, while all other devices will
+        receive a single stage command. As stage can be a time-consuming operation on async devices,
+        this procedure allows for a more efficient staging process.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator
@@ -523,8 +525,7 @@ class ScanStubs:
         """
         Unstage all devices.
 
-        On the device server, `unstage` will call the `unstage` method of the device and instruct
-        the device to clean up after the scan.
+        On the device server, `unstage` will call the `unstage` method of all enabled devices.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
