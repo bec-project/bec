@@ -96,7 +96,13 @@ def test_LmfitService1D_get_data_from_current_scan_returns_None(lmfit_service, s
 
 
 def test_LmfitService1D_process(lmfit_service):
-    lmfit_service.data = {"x": [1, 2, 3], "y": [4, 5, 6], "x_lim": False, "x_original": [1, 2, 3]}
+    lmfit_service.data = {
+        "x": [1, 2, 3],
+        "y": [4, 5, 6],
+        "x_lim": False,
+        "x_original": [1, 2, 3],
+        "scan_data": True,
+    }
     lmfit_service.model = mock.MagicMock()
 
     result = lmfit_service.process()

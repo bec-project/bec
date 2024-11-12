@@ -168,6 +168,8 @@ class LmfitService1D(DAPServiceBase):
         signal_x: DeviceBase | str = None,
         device_y: DeviceBase | str = None,
         signal_y: DeviceBase | str = None,
+        data_x: np.ndarray = None,
+        data_y: np.ndarray = None,
         x_min: float = None,
         x_max: float = None,
         amplitude: lmfit.Parameter = None,
@@ -183,6 +185,8 @@ class LmfitService1D(DAPServiceBase):
             signal_x (DeviceBase | str): Signal name for x
             device_y (DeviceBase | str): Device name for y
             signal_y (DeviceBase | str): Signal name for y
+            data_x (np.ndarray): Data for x instead of a scan item
+            data_y (np.ndarray): Data for y instead of a scan item
             x_min (float): Minimum x value
             x_max (float): Maximum x value
             parameters (dict): Fit parameters
@@ -194,6 +198,26 @@ class LmfitService1D(DAPServiceBase):
 
         self.oversample = oversample
 
+        self.parameters = {}
+        if amplitude:
+            self.parameters["amplitude"] = amplitude
+        if center:
+            self.parameters["center"] = center
+        if sigma:
+            self.parameters["sigma"] = sigma
+
+        self.parameters = deserialize_param_object(self.parameters)
+
+        if data_x is not None and data_y is not None:
+            self.data = {
+                "x": data_x,
+                "y": data_y,
+                "x_original": data_x,
+                "x_lim": False,
+                "scan_data": False,
+            }
+            return
+
         selected_device = kwargs.get("selected_device")
         if selected_device:
             device_y, signal_y = selected_device
@@ -204,8 +228,6 @@ class LmfitService1D(DAPServiceBase):
             self.scan_id = scan_id
         else:
             scan_item = self.current_scan_item
-
-        self.parameters = {}
 
         if device_x:
             self.device_x = device_x
@@ -221,14 +243,6 @@ class LmfitService1D(DAPServiceBase):
         elif device_y and self.client.device_manager.devices.get(device_y):
             if len(self.client.device_manager.devices[device_y]._hints) == 1:
                 self.signal_y = self.client.device_manager.devices[device_y]._hints[0]
-        if amplitude:
-            self.parameters["amplitude"] = amplitude
-        if center:
-            self.parameters["center"] = center
-        if sigma:
-            self.parameters["sigma"] = sigma
-
-        self.parameters = deserialize_param_object(self.parameters)
 
         if not self.continuous:
             if not scan_item:
@@ -328,6 +342,7 @@ class LmfitService1D(DAPServiceBase):
             "y": y,
             "x_original": x_original,
             "x_lim": (x_min is not None or x_max is not None),
+            "scan_data": True,
         }
 
     def process(self) -> tuple[dict, dict]:
@@ -361,14 +376,17 @@ class LmfitService1D(DAPServiceBase):
 
         # add the fit parameters to the metadata
         metadata = {}
-        metadata["input"] = {
-            "scan_id": self.scan_id,
-            "device_x": self.device_x,
-            "signal_x": self.signal_x,
-            "device_y": self.device_y,
-            "signal_y": self.signal_y,
-            "parameters": serialize_lmfit_params(self.parameters),
-        }
+        if self.data["scan_data"]:
+            metadata["input"] = {
+                "scan_id": self.scan_id,
+                "device_x": self.device_x,
+                "signal_x": self.signal_x,
+                "device_y": self.device_y,
+                "signal_y": self.signal_y,
+                "parameters": serialize_lmfit_params(self.parameters),
+            }
+        else:
+            metadata["input"] = {"parameters": serialize_lmfit_params(self.parameters)}
         metadata["fit_parameters"] = result.best_values
         metadata["fit_summary"] = result.summary()
         logger.info(f"fit summary: {metadata['fit_summary']}")
