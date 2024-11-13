@@ -245,7 +245,7 @@ def test_TutorialFlyScanContLine(scan_assembler, ScanStubStatusMock):
 ```
 We use the `scan_assembler` fixture to create a new instance of a scan, passing in the class name and the desired arguments. 
 
-So far, our test only initialized the scan. Since our scan relies on a status object's `done` attribute to return `True`, we need to mock the `set` method of the scan stubs to return a status object that will return `True` when the second time `done` attribute is accessed (cf. `fake_done`).  
+So far, our test only initialized the scan. Since our scan relies on a status object's `done` attribute to return `True`, we need to mock the `set` method of the scan stubs to return a status object that will return `True` when the second time `done` attribute is accessed (cf. `fake_done`). To this end, our `fake_set` method will yield a fake message "fake_set" and return the `ScanStubStatusMock` object. The latter will return the `fake_done` generator when the `done_func` attribute is accessed, simulating the behavior of a real status object.
 
 ```python
     def fake_done():
