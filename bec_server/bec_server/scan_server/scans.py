@@ -218,7 +218,7 @@ class RequestBase(ABC):
         self.positions = []
         self._pre_scan_macros = []
         self._scan_report_devices = None
-        self._get_scan_motors()
+        self.update_scan_motors()
         self.readout_priority = {
             "monitored": monitored if monitored is not None else [],
             "baseline": [],
@@ -284,7 +284,10 @@ class RequestBase(ABC):
                         f" {high_limit}]"
                     )
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
+        """
+        Scan motors are automatically elevated to readout priority monitored and read out in the beginning of the scan.
+        """
         if len(self.caller_args) == 0:
             return
         if self.arg_bundle_size.get("bundle"):
@@ -598,7 +601,7 @@ class SyncFlyScanBase(ScanBase, ABC):
     scan_type = "fly"
     pre_move = False
 
-    def _get_scan_motors(self) -> None:
+    def update_scan_motors(self) -> None:
         # fly scans normally do not have stepper scan motors so
         # the default way of retrieving scan motors is not applicable
         return None
@@ -702,7 +705,7 @@ class DeviceRPC(ScanStub):
     }
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": 1}
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         pass
 
     def run(self):
@@ -951,7 +954,7 @@ class FermatSpiralScan(ScanBase):
         self.step = step
         self.spiral_type = spiral_type
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         self.scan_motors = [self.motor1, self.motor2]
 
     def _calculate_positions(self):
@@ -1017,7 +1020,7 @@ class RoundScan(ScanBase):
         self.number_of_rings = number_of_rings
         self.pos_in_first_ring = pos_in_first_ring
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         self.scan_motors = [self.motor_1, self.motor_2]
 
     def _calculate_positions(self):
@@ -1080,11 +1083,11 @@ class ContLineScan(ScanBase):
             >>> scans.cont_line_scan(dev.motor1, -5, 5, steps=10, exp_time=0.1, relative=True)
 
         """
+        self.device = device
         super().__init__(
             exp_time=exp_time, relative=relative, burst_at_each_point=burst_at_each_point, **kwargs
         )
         self.steps = steps
-        self.device = device
         self.offset = offset
         self.start = start
         self.stop = stop
@@ -1094,6 +1097,9 @@ class ContLineScan(ScanBase):
         self.dist_step = None
         self.time_per_step = None
         self.hinted_signal = None
+
+    def update_scan_motors(self):
+        self.scan_motors = [self.device]
 
     def _get_motor_attributes(self):
         """Get the motor attributes"""
@@ -1261,7 +1267,7 @@ class ContLineFlyScan(AsyncFlyScanBase):
         self.device_move_request_id = str(uuid.uuid4())
         super().__init__(relative=relative, exp_time=exp_time, **kwargs)
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         # fly scans normally do not have stepper scan motors so
         # the default way of retrieving scan motors is not applicable
         self.scan_motors = [self.motor]
@@ -1349,7 +1355,7 @@ class RoundScanFlySim(SyncFlyScanBase):
         self.number_of_rings = number_of_rings
         self.number_pos = number_pos
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         self.scan_motors = []
 
     @property
@@ -1435,15 +1441,18 @@ class RoundROIScan(ScanBase):
             >>> scans.round_roi_scan(dev.motor1, 20, dev.motor2, 20, dr=2, nth=3, exp_time=0.1, relative=True)
 
         """
+        self.motor_1 = motor_1
+        self.motor_2 = motor_2
         super().__init__(
             exp_time=exp_time, relative=relative, burst_at_each_point=burst_at_each_point, **kwargs
         )
-        self.motor_1 = motor_1
-        self.motor_2 = motor_2
         self.width_1 = width_1
         self.width_2 = width_2
         self.dr = dr
         self.nth = nth
+
+    def update_scan_motors(self):
+        self.scan_motors = [self.motor_1, self.motor_2]
 
     def _calculate_positions(self) -> None:
         self.positions = get_round_roi_scan_positions(
@@ -1561,7 +1570,7 @@ class MonitorScan(ScanBase):
         self.start = start
         self.stop = stop
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         self.scan_motors = [self.device]
         self.flyer = self.device
 
@@ -1776,7 +1785,7 @@ class InteractiveReadMontiored(ScanComponent):
         super().__init__(**kwargs)
         self.point_id = point_id
 
-    def _get_scan_motors(self):
+    def update_scan_motors(self):
         self.scan_motors = self.monitored if self.monitored else []
 
     def run(self):

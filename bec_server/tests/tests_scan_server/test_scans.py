@@ -1111,7 +1111,7 @@ def test_request_base_check_limits():
     assert request.positions == [[-100, 30]]
 
 
-def test_request_base_get_scan_motors():
+def test_request_baseupdate_scan_motors():
     class RequestBaseMock(RequestBase):
         def run(self):
             pass
@@ -1130,17 +1130,17 @@ def test_request_base_get_scan_motors():
 
     assert request.scan_motors == ["samx"]
     request.caller_args = ""
-    request._get_scan_motors()
+    request.update_scan_motors()
     assert request.scan_motors == ["samx"]
 
     request.arg_bundle_size = {"bundle": 2, "min": None, "max": None}
     request.caller_args = {"samz": (-2, 2), "samy": (-1, 2)}
-    request._get_scan_motors()
+    request.update_scan_motors()
     assert request.scan_motors == ["samz", "samy"]
 
     request.caller_args = {"samx"}
     request.arg_bundle_size = {"bundle": 0, "min": None, "max": None}
-    request._get_scan_motors()
+    request.update_scan_motors()
     assert request.scan_motors == ["samz", "samy", "samx"]
 
 
@@ -1196,7 +1196,7 @@ def test_scan_base_set_position_offset():
     assert request.start_pos == []
 
 
-def test_round_scan_fly_sim_get_scan_motors():
+def test_round_scan_fly_simupdate_scan_motors():
     device_manager = DMMock()
     device_manager.add_device("flyer_sim")
     scan_msg = messages.ScanQueueMessage(
@@ -1214,7 +1214,7 @@ def test_round_scan_fly_sim_get_scan_motors():
         parameter=scan_msg.content["parameter"],
     )
 
-    request._get_scan_motors()
+    request.update_scan_motors()
     assert request.scan_motors == []
     assert request.flyer == list(scan_msg.content["parameter"]["args"].keys())[0]
 
