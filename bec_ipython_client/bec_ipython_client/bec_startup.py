@@ -49,6 +49,7 @@ else:
                 gui.auto_updates.start_default_dock()
             fig = gui.auto_updates.get_default_figure()
             gui_started_event.set()
+            gui.show()
 
         _gui.start(gui_post_startup)
 
