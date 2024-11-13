@@ -88,7 +88,7 @@ res = bec.dap.GaussianModel.fit(s.scan, "samx", "samx", "bpm4i", "bpm4i")
 The result of the fit is stored in the `res` object which contains the fit parameters and the fit result.
 You can further optimize the fit by limiting the fit range, e.g. 
 ```python
-res = bec.dap.GaussianModel.fit(scan_report.scan, "samx", "samx", "bpm4i", "bpm4i", x_min=-2, x_max=2)
+res = bec.dap.GaussianModel.fit(s.scan, "samx", "samx", "bpm4i", "bpm4i", x_min=-2, x_max=2)
 ```
 
 To display the fit, you can use the `plot` method of the `res` object:
