@@ -126,7 +126,7 @@ Let's build the method accordingly:
             yield from self.stubs.trigger(min_wait=self.exp_time)
             
             # read out all monitored devices
-            yield from self.stubs.read(group="primary", point_id=self.point_id)
+            yield from self.stubs.read(group="monitored", point_id=self.point_id)
 
             # increase the point id
             self.point_id += 1
@@ -197,7 +197,7 @@ class TutorialFlyScanContLine(AsyncFlyScanBase):
             yield from self.stubs.trigger(min_wait=self.exp_time)
             
             # read out all monitored devices
-            yield from self.stubs.read(group="primary", point_id=self.point_id)
+            yield from self.stubs.read(group="monitored", point_id=self.point_id)
 
             # increase the point id
             self.point_id += 1
@@ -407,7 +407,7 @@ def test_TutorialFlyScanContLine(scan_assembler, ScanStubStatusMock):
             metadata={"readout_priority": "monitored", "point_id": 0},
             device=["bpm4i", "eiger"],
             action="read",
-            parameter={"group": "primary"},
+            parameter={"group": "monitored"},
         ),
         "fake_set",
         messages.DeviceInstructionMessage(

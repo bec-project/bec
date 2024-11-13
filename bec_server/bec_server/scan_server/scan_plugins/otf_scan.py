@@ -45,7 +45,7 @@ class OTFScan(SyncFlyScanBase):
         status = yield from self.stubs.complete(device=self.otf_device)
 
         while not status.done:
-            yield from self.stubs.read(group="primary", wait=True)
+            yield from self.stubs.read(group="monitored", wait=True)
             progress = self.stubs.get_device_progress(
                 device=self.otf_device, RID=self.metadata["RID"]
             )
@@ -99,7 +99,7 @@ class HystScan(ScanBase):
         self._check_limits()
 
     def _at_each_point(self):
-        yield from self.stubs.read(group="primary", point_id=self.point_id)
+        yield from self.stubs.read(group="monitored", point_id=self.point_id)
         self.point_id += 1
 
     def _get_next_scan_motor_position(self):

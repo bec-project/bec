@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Generator, Literal
 
 import numpy as np
+from typeguard import typechecked
 
 from bec_lib import messages
 from bec_lib.connector import ConnectorBase
@@ -604,12 +605,13 @@ class ScanStubs:
         )
         return status
 
+    @typechecked
     def read(
         self,
         *,
         device: list[str] | str | None = None,
         point_id: int | None = None,
-        group: Literal["scan_motor", "primary", None] = None,
+        group: Literal["scan_motor", "monitored", None] = None,
         wait: bool = True,
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
@@ -621,14 +623,14 @@ class ScanStubs:
             device (list[str], str, optional): Device name. Can be a list of devices or a single device. Defaults to None.
             point_id (int, optional): point_id to assign this reading to point within the scan. If None, the read will simply update
                 the cache without assigning the read to a specific point. Defaults to None.
-            group (Literal["scan_motor", "primary", None], optional): Device group. Can be used instead of device. Defaults to None.
+            group (Literal["scan_motor", "monitored", None], optional): Device group. Can be used instead of device. Defaults to None.
             wait (bool, optional): If True, the read command will wait for the completion of the read operation before returning. Defaults to True.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
 
         Example:
-            >>> yield from self.stubs.read(group="primary", point_id=self.point_id)
+            >>> yield from self.stubs.read(group="monitored", point_id=self.point_id)
             >>> yield from self.stubs.read(device="samx", point_id=self.point_id)
 
         """
