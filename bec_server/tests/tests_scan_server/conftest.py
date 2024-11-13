@@ -27,20 +27,3 @@ def connected_connector():
         yield connector
     finally:
         connector.shutdown()
-
-
-class _ScanStubStatusMock:
-    def __init__(self, done_func) -> None:
-        self._done = done_func()
-
-    @property
-    def done(self):
-        return next(self._done)
-
-    def wait(self):
-        return
-
-
-@pytest.fixture
-def ScanStubStatusMock():
-    return _ScanStubStatusMock

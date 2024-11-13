@@ -9,6 +9,7 @@ from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.errors import DeviceMessageError
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_stubs import ScanStubs
+from bec_server.scan_server.tests.fixtures import ScanStubStatusMock
 
 
 @pytest.fixture

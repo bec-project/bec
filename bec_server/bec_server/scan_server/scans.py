@@ -1300,9 +1300,7 @@ class ContLineFlyScan(AsyncFlyScanBase):
             yield from self.stubs.read(group="primary", point_id=self.point_id)
             self.point_id += 1
 
-    def finalize(self):
-        yield from super().finalize()
-        self.num_pos = self.point_id + 1
+        self.num_pos = self.point_id
 
 
 class RoundScanFlySim(SyncFlyScanBase):
