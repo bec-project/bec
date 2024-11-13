@@ -142,9 +142,10 @@ class BECIPythonClient:
 
     def shutdown(self):
         """shutdown the client and all its components"""
-        if self.gui:
+        try:
             self.gui.close()
-
+        except AttributeError:
+            pass
         self._client.shutdown()
 
 

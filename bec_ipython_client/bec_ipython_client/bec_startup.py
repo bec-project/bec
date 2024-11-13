@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 
 import numpy as np  # not needed but always nice to have
 
@@ -8,6 +9,7 @@ from bec_ipython_client.main import main_dict as _main_dict
 from bec_lib import plugin_helper
 from bec_lib.logger import bec_logger as _bec_logger
 from bec_lib.redis_connector import RedisConnector as _RedisConnector
+from bec_lib.utils.proxy import Proxy
 
 try:
     from bec_widgets.cli.auto_updates import AutoUpdates
@@ -22,21 +24,54 @@ bec = _BECIPythonClient(
 )
 _main_dict["bec"] = bec
 
+
+class GuiProxy(Proxy):
+    def close(self):
+        gui = self.__factory__(ignore_event=True)
+        gui.close()
+
+
 try:
     bec.start()
 except Exception:
     sys.excepthook(*sys.exc_info())
 else:
     if bec.started and not _main_dict["args"].nogui and _BECDockArea is not None:
-        gui = bec.gui = _BECDockArea()
-        gui.show()
-        if gui.auto_updates is None:
-            AutoUpdates.create_default_dock = True
-            AutoUpdates.enabled = True
-            gui.auto_updates = AutoUpdates(gui=gui)
-        if gui.auto_updates.create_default_dock:
-            gui.auto_updates.start_default_dock()
-        fig = gui.auto_updates.get_default_figure()
+        _gui = _BECDockArea()
+        _gui_started_event = threading.Event()
+
+        def gui_post_startup(gui=_gui, gui_started_event=_gui_started_event):
+            if gui.auto_updates is None:
+                AutoUpdates.create_default_dock = True
+                AutoUpdates.enabled = True
+                gui.auto_updates = AutoUpdates(gui=gui)
+            if gui.auto_updates.create_default_dock:
+                gui.auto_updates.start_default_dock()
+            fig = gui.auto_updates.get_default_figure()
+            gui_started_event.set()
+            gui.show()
+
+        _gui.start(gui_post_startup)
+
+        class get_gui:
+            def __init__(self, gui, gui_started_event):
+                self.gui = gui
+                self.event = gui_started_event
+
+            def __call__(self, ignore_event=False):
+                if ignore_event:
+                    return self.gui
+                if self.gui is None:
+                    return None
+                self.event.wait(timeout=5)
+                if not self.event.is_set():
+                    self.gui = None
+                return self.gui
+
+        gui = bec.gui = GuiProxy(get_gui(_gui, _gui_started_event))
+
+        del _gui
+        del _gui_started_event
 
     _available_plugins = plugin_helper.get_ipython_client_startup_plugins(state="post")
     if _available_plugins:
