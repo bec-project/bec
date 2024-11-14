@@ -267,3 +267,14 @@ def test_stub_status_as_container(instruction_handler):
     sub_status.set_done()
     container.wait()
     assert container.done is True
+
+
+def test_stub_status_as_container_results(instruction_handler):
+    container = ScanStubStatus(instruction_handler, is_container=True)
+    for ii in range(10):
+        sub_status = ScanStubStatus(instruction_handler)
+        container.add_status(sub_status)
+        sub_status.set_done(ii)
+    container.wait()
+    assert container.done is True
+    assert container.result == list(range(10))

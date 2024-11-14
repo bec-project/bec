@@ -68,6 +68,7 @@ class ScanStubStatus:
         self.value = None
         self.message = None
         self._future = concurrent.futures.Future()
+        self._is_container = is_container
         if is_container:
             self.set_done()
         else:
@@ -140,13 +141,22 @@ class ScanStubStatus:
         self._future.set_running_or_notify_cancel()
 
     @property
-    def result(self):
+    def result(self) -> Any:
         """
         Get the result of the operation.
+        If the status object is a container of multiple status objects, the result will be a list of the results of the sub status objects.
 
         Returns:
-            any: Result of the operation
+            Any: Result of the operation, or list of results of the sub status objects.
         """
+
+        if self._sub_status_objects:
+            out = []
+            for st in self._sub_status_objects:
+                out.append(st._future.result())
+            if not self._is_container:
+                out.append(self._future.result())
+            return out
         return self._future.result()
 
     def _get_sub_status_done(self) -> bool:
@@ -285,16 +295,35 @@ class ScanStubs:
 
     def send_rpc_and_wait(self, device: str, func_name: str, *args, **kwargs) -> any:
         """
-        Perform an RPC (remote procedure call) on a device and wait for its return value.
+        Perform an RPC (remote procedure call) on a device and wait for its return value. If
+        the return value is an ophyd status object, the method will wait for the completion of the
+        status object before returning.
         This method can be used to call any function on a device, irrespective of the
         function's USER ACCESS settings. The function will be called with the provided arguments
-        and return the return value of the function. If the function returns a status object, the
-        status object will be returned instead.
+        and return the return value of the function.
 
-        Please note that to avoid shadowing the keyword arguments of the device's function,
-        `send_rpc_and_wait` does not accept a "wait" keyword argument. The function will always
-        wait for the completion of the RPC. If you want to perform a non-blocking RPC, use
-        :func:`send_rpc` instead.
+        .. important ::
+            Please note that to avoid shadowing the keyword arguments of the device's function,
+            `send_rpc_and_wait` does not accept a "wait" keyword argument. The function will always
+            wait for the completion of the RPC. If you want to perform a non-blocking RPC, use
+            :func:`send_rpc` instead.
+
+        .. attention ::
+            Sending an RPC to a device often creates a strong coupling between the scan and the device.
+            While this can be useful in some cases, it is recommended to implement the desired device-specific
+            functionality on the device itself and simply rely on the generic scan stubs to control the device.
+            This helps to keep the scan logic clean and the device-specific logic on the device. Moreover, once
+            the device-specific logic is implemented on the device, it can be used in any scan without the need
+            re-implement the logic in the scan.
+
+        .. note ::
+            Running
+                >>> return_val = yield from send_rpc_and_wait("samx", "controller.my_custom_function")
+
+            is equivalent to running
+                >>> status = yield from send_rpc("samx", "controller.my_custom_function")
+                >>> status.wait()
+                >>> return_val = status.result
 
         Args:
             device (str): Name of the device
@@ -309,7 +338,8 @@ class ScanStubs:
             any: Return value of the executed rpc function
 
         Examples:
-            >>> send_rpc_and_wait("samx", "controller.my_custom_function")
+            >>> yield from send_rpc_and_wait("samx", "controller.my_custom_function")
+            >>> out = yield from send_rpc_and_wait("samx", "controller.func_with_args", arg1=1, arg2=2)
         """
 
         status = yield from self.send_rpc(device, func_name, *args, **kwargs)
@@ -696,7 +726,17 @@ class ScanStubs:
         Returns:
             Generator[None, None, None]: Generator that yields a device message.
 
-        see also: :func:`wait`
+        Examples:
+            >>> # Trigger all devices and wait for the completion
+            >>> yield from self.stubs.trigger()
+
+            >>> # Trigger all devices and wait for the completion with a minimum wait time of 0.1 seconds
+            >>> yield from self.stubs.trigger(min_wait=0.1)
+
+            >>> # Trigger all devices and do not wait for the completion immediately
+            >>> status = yield from self.stubs.trigger(wait=False)
+            >>> # ... do something else
+            >>> status.wait()
         """
         status = self._create_status()
         metadata = {"device_instr_id": status._device_instr_id}
@@ -812,18 +852,28 @@ class ScanStubs:
         """
         Perfrom an RPC (remote procedure call) on a device.
         For blocking calls, use :func:`send_rpc_and_wait`.
+        Any additional arguments and keyword arguments will be passed on to the RPC function.
 
         Args:
             device (str): Device name.
             func_name (str): Function name.
             args (tuple): Arguments to pass on to the RPC function.
+            metadata (dict, optional): Metadata that should be forwarded to the device. Defaults to None.
+            rpc_id (str, optional): RPC ID. Defaults to None.
             kwargs (dict): Keyword arguments to pass on to the RPC function.
 
         Returns:
             Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]: Generator that yields a device message and returns a status object.
 
         Examples:
+            >>> # Call a function on a device without waiting for the completion
             >>> yield from self.send_rpc("samx", "controller.my_custom_function", 1, 2, arg1="test")
+
+            >>> # Call a function on a device and wait for the completion
+            >>> status = yield from self.send_rpc("samx", "controller.my_custom_function", 1, 2, arg1="test")
+            >>> status.wait()
+            >>> # Get the result of the RPC call
+            >>> print(status.result)
 
         """
         rpc_id = str(uuid.uuid4()) if rpc_id is None else rpc_id
