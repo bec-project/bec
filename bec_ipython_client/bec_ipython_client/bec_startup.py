@@ -12,9 +12,9 @@ from bec_lib.redis_connector import RedisConnector as _RedisConnector
 from bec_lib.utils.proxy import Proxy
 
 try:
-    from bec_widgets.cli.client import BECDockArea as __BECDockArea
+    from bec_widgets.cli.client import BECDockArea
 except ImportError:
-    __BECDockArea = None
+    BECDockArea = None
 
 logger = _bec_logger.logger
 
@@ -30,7 +30,7 @@ class GuiProxy(Proxy):
         gui.close()
 
 
-class _BECDockArea(__BECDockArea):
+class _BECDockArea(BECDockArea):
     def show(self):
         if self._process is not None:
             return self.show_all()
@@ -50,7 +50,7 @@ try:
 except Exception:
     sys.excepthook(*sys.exc_info())
 else:
-    if bec.started and not _main_dict["args"].nogui and __BECDockArea is not None:
+    if bec.started and not _main_dict["args"].nogui and BECDockArea is not None:
         _gui = _BECDockArea()
         _gui.start()
 
