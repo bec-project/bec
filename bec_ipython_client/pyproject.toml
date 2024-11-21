@@ -13,7 +13,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "bec_lib",
+    "bec-lib~=3.0",
     "ipython~=8.22",
     "numpy>=1.24, <3.0",
     "pyepics~=3.5",
@@ -27,7 +27,7 @@ dev = [
     "coverage~=7.0",
     "isort~=5.13, >=5.13.2",
     "pylint~=3.0",
-    "pytest-bec-e2e",
+    "pytest-bec-e2e~=3.0",
     "pytest-random-order~=1.1",
     "pytest-redis~=3.1",
     "pytest-retry~=1.1",
