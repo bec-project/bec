@@ -1,5 +1,5 @@
 (developer.bec_sim)=
-# Simulations
+# Simulation Framework
 The BEC simulation framework comprises a set of simulated devices. These devices offer a platform for developers to explore, test, or add new features to the core libraries of BEC and BEC-Widgets. Additionally, the end-to-end test framework enables the simulation of user behavior at the beamline, facilitating the testing of newly developed features against common user commands. These end-to-end tests encompass various scans, motions, and scenarios, such as requesting a motor to move beyond its limits or simulating system recovery from user interruptions (CTRL-C). Moreover, the framework enables users to develop scripts, GUIs, or data processing tools without requiring access to the physical devices, facilitating faster development cycles.
 
 ## Architecture
