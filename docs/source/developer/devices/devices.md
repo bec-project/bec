@@ -8,7 +8,7 @@ In the following, we offer an overview of [Ophyd](#developer.ophyd),  introducin
 Next, we explain how to [configure devices in BEC](#developer.ophyd_device_config) and load new configurations.
 Beamlines will inevitably need to modify device configurations to add, remove, or update devices.
 The [device server](developer.architecture) is the central hub where BEC manages all devices.
-The section [device server devices](#developer.devices.devices_in_bec) outlines how devices are managed there.
+The section [Devices in BEC](#developer.devices.devices_in_bec) outlines how devices are managed there.
 
 
 BEC includes a [simulation framework](#developer.bec_sim) for simulating a wide range of beamline devices.

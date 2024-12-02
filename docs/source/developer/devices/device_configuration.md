@@ -42,7 +42,7 @@ The enabled status specifies whether the device is enabled.
 The read only indicates if the device is read-only. When set to true, writing to the device is disabled. It's optional in the device configuration and defaults to false.
 
 * **softwareTrigger** \
-The software trigger determines if BEC should explicitly invoke the device's trigger method during a scan. It's an optional parameter in the device configuration, defaulting to false
+The software trigger determines if BEC should explicitly invoke the device's trigger method during a scan. It's an optional parameter in the device configuration and defaults to false.
 
 * **deviceTags** \
 The device tags contain the tags of the device. The tags are used to group devices and to filter devices.
@@ -78,7 +78,7 @@ curr:
   softwareTrigger: false
 ```
 
-In the example above, the `base_config.yaml` and `endstation_config.yaml` files are included in the device configuration. The `curr` device is defined directly in the device configuration. Alternatively, the `base_config.yaml` and `endstation_config.yaml` files can bec combined into a single tag:
+In the example above, the `base_config.yaml` and `endstation_config.yaml` files are included in the device configuration. The `curr` device is defined directly in the device configuration. Alternatively, the `base_config.yaml` and `endstation_config.yaml` files can be combined into a single tag:
   
 ```yaml
 external_config:
