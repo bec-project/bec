@@ -481,6 +481,7 @@ trigger-bec_widgets:
         ref: $BEC_WIDGETS_BRANCH
         file: /.gitlab-ci.yml
   variables:
+    QT_QPA_PLATFORM: offscreen
     BEC_CORE_BRANCH: $CI_COMMIT_REF_NAME
     OPHYD_DEVICES_BRANCH: ${OPHYD_DEVICES_BRANCH}
     CHILD_PIPELINE_BRANCH: $BEC_WIDGETS_BRANCH
