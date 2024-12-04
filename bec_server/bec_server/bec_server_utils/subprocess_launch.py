@@ -17,9 +17,9 @@ class TerminalProc:
 
 
 TERMINALS = (
-    # TerminalProc("xfce4-terminal", args=["--disable-server", "-H", "-e"], spawn_child=False),
-    # TerminalProc("konsole", args=["--hold", "-e"], spawn_child=False),
-    # TerminalProc("xterm", args=["-hold", "-e"], spawn_child=False),
+    TerminalProc("xfce4-terminal", args=["--disable-server", "-H", "-e"], spawn_child=False),
+    TerminalProc("konsole", args=["--hold", "-e"], spawn_child=False),
+    TerminalProc("xterm", args=["-hold", "-e"], spawn_child=False),
 )
 
 
@@ -50,7 +50,7 @@ def subprocess_start(bec_path: str, services: dict):
             term = detect_terminal()
         except RuntimeError:
             # no terminal: execute servers in background
-            processes.append(subprocess.Popen(cmd.split(), cwd=cwd))
+            processes.append(subprocess.Popen(cmd.split(), cwd=cwd, stdout=subprocess.DEVNULL))
         else:
             processes.append(subprocess.Popen([term.cmd] + term.args + [cmd], cwd=cwd))
     return processes
