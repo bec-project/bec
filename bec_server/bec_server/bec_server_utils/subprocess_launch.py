@@ -17,9 +17,9 @@ class TerminalProc:
 
 
 TERMINALS = (
-    TerminalProc("xfce4-terminal", args=["--disable-server", "-H", "-e"], spawn_child=False),
-    TerminalProc("konsole", args=["--hold", "-e"], spawn_child=False),
-    TerminalProc("xterm", args=["-hold", "-e"], spawn_child=False),
+    # TerminalProc("xfce4-terminal", args=["--disable-server", "-H", "-e"], spawn_child=False),
+    # TerminalProc("konsole", args=["--hold", "-e"], spawn_child=False),
+    # TerminalProc("xterm", args=["-hold", "-e"], spawn_child=False),
 )
 
 
