@@ -349,15 +349,19 @@ class DeviceManagerDS(DeviceManagerBase):
             return opaas_obj
 
         if "readback" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, run=opaas_obj.enabled)
+            obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
         elif "value" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, run=opaas_obj.enabled)
+            obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
         if "device_monitor_2d" in obj.event_types:
-            obj.subscribe(self._obj_callback_device_monitor_2d, run=False)
+            obj.subscribe(
+                self._obj_callback_device_monitor_2d, event_type="device_monitor_2d", run=False
+            )
         if "device_monitor_1d" in obj.event_types:
-            obj.subscribe(self._obj_callback_device_monitor_1d, run=False)
+            obj.subscribe(
+                self._obj_callback_device_monitor_1d, event_type="device_monitor_1d", run=False
+            )
         if "file_event" in obj.event_types:
-            obj.subscribe(self._obj_callback_file_event, run=False)
+            obj.subscribe(self._obj_callback_file_event, event_type="file_event", run=False)
         if "done_moving" in obj.event_types:
             obj.subscribe(self._obj_callback_done_moving, event_type="done_moving", run=False)
         if "flyer" in obj.event_types:
