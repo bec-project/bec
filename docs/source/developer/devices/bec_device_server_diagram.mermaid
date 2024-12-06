@@ -1,0 +1,12 @@
+flowchart TD
+    C(YAML file) -->|sent| D[Device Server]
+    D --> O{Device creation}
+    O -->|instantiates|X[Ophyd device 'X']
+    O -->|instantiates|Y[Ophyd device 'Y']
+    X -->|connects|E[Epics PV]
+    X -->|connects|F[Epics PV]
+    X -->|connects|G[Epics PV]
+    E --> H[Hardware controller]
+    F --> H[Hardware controller]
+    G --> H[Hardware controller]
+

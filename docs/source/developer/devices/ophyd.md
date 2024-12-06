@@ -1,10 +1,10 @@
 (developer.ophyd)=
-# Ophyd Library
-[Ophyd](https://nsls-ii.github.io/ophyd/) is the hardware abstraction layer developed by NSLS-II and used by BEC to communicate with hardware. It is a Python library that provides a consistent interface between the underlying control communication protocol and high-level software such as BEC. While Ophyd can be used for any device, it comes with EPICS support out of the box. This means that many devices that are controlled by EPICS can be integrated directly into BEC without the need of writing custom Ophyd classes. The most common devices that are integrated into BEC are based on `EpicsMotor` and `EpicsSignal` (or `EpicsSignalRO`). Examples of device configurations can be found in the [Ophyd devices repository](https://gitlab.psi.ch/bec/ophyd_devices/-/tree/main/ophyd_devices/configs?ref_type=heads).
+# Introduction to Ophyd
+[Ophyd](https://nsls-ii.github.io/ophyd/) is the Python library to interface with hardware developed at NSLS-II and used by BEC to communicate with hardware. It provides a consistent interface between the underlying control communication protocol and high-level software such as BEC. While Ophyd can theoritically be used for any device, it comes with EPICS support out of the box. This means that many devices that are controlled by EPICS can be integrated directly into BEC without the need of writing custom code. The most common devices that are integrated into BEC are based on `EpicsMotor` and `EpicsSignal` (or `EpicsSignalRO`). Examples of device configurations can be found in the [Ophyd devices repository](https://gitlab.psi.ch/bec/ophyd_devices/-/tree/main/ophyd_devices/configs?ref_type=heads).
 
 The following paragraph briefly introduces core concepts of Ophyd. A more detailed description of devices within BEC can be found in the [Devices in BEC](#developer.devices.devices_in_bec) section. Besides that, we provide a section about [Device Integration](#developer.devices.device_integration.overview) with information and tutorials how we recommend to pursue custom device integration.
 
-## Introduction
+## Ophyd concepts
 For a high-level control layer such as BEC, it is essential to have a unified interface to control devices. This is where Ophyd comes into play. BEC is agnostic towards the underlying communication protocol of devices, but instead simply expects a set of standardised methods and properties with certain functionality. A good example is that any motor integrated into Ophyd looks the same to BEC, and its move method will move the motor to the target position. 
 In general, there are two different types of devices in Ophyd, `Signal` and `Device`. They represent the fundamental building blocks of Ophyd and will be further explained in the following. 
 

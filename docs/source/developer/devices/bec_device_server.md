@@ -1,0 +1,119 @@
+(developer.devices.bec_device_server)=
+# BEC Device Server
+
+The BEC Device Server is the service in charge of connecting with the beamline hardware
+and providing the corresponding entry points for all other services (see [BEC architecture](developer.architecture)).
+
+Thanks to BEC message passing interface, the BEC Device Server receives human-readable
+YAML files containing **device definitions** and instantiates _Device_ and _Signal_ objects.
+
+Those objects represent control system components, usually EPICS PVs, grouped into
+a class (as defined by the [Ophyd library](developer.ophyd)). This allows to have an
+uniform hardware abstraction layer for BEC.
+
+```{figure} /assets/bec_device_server_diagram2.png
+Diagram representing the reading of device definitions to create Devices connected to the control system
+```
+
+## BEC Devices and Signals API
+
+The BEC Device Server receives device definitions, and instantiates the corresponding objects from the hardware
+abstraction layer. Those objects are **wrapped to fit into 4 main classes**:
+
+- [_Device_](/api_reference/_autosummary/bec_lib.device.Device.rst#bec_lib.device.Device)
+    - which corresponds to the [Device type in Ophyd](https://nsls-ii.github.io/ophyd/device-overview.html#device)
+- [_Signal_](/api_reference/_autosummary/bec_lib.device.Signal.rst#bec_lib.device.Signal)
+    - which corresponds to the [Signal type in Ophyd](https://nsls-ii.github.io/ophyd/signals.html)
+- [_Positioner_](/api_reference/_autosummary/bec_lib.device.Signal.rst#bec_lib.device.Signal)
+- [_ComputedSignal_]((/api_reference/_autosummary/bec_lib.device.Signal.rst#bec_lib.device.Signal))
+
+BEC provides a set of protocols to define the interfaces of Device Server objects, described below:
+
+```{figure} /assets/bec_device_protocols2.png
+Class diagram of BEC Device Server protocols
+```
+
+### Base Interface
+All devices conform to a core interface defined in the *BECBaseProtocol* protocol. This protocol specifies the core functionality any device in BEC must provide, and this functionality is exposed to any client. The aquivalent in Ophyd is the [OphydObject](https://blueskyproject.io/ophyd/user/generated/ophyd.ophydobj.OphydObject.html).
+
+````{dropdown} View code: BECBaseProtocol
+:icon: code-square
+:animate: fade-in-slide-down
+
+```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
+:language: python
+:pyobject: BECBaseProtocol
+```
+````
+
+### Device Interface
+The device protocol extends *BECBaseProtocol* by adding additional methods relevant the device interface. Any device inheriting from `ophyd.device.Device` automatically complies with that interface.
+
+````{dropdown} View code: BECDeviceProtocol
+:icon: code-square
+:animate: fade-in-slide-down
+
+```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
+:language: python
+:pyobject: BECDeviceProtocol
+```
+````
+
+### Signal Interface
+Similarly to the *Device* protocol, the *Signal* protocol extends *BECBaseProtocol* and introduces additional methods relevant to signals. Any device inheriting from `ophyd.signal.Signal` automatically complies with that interface.
+
+````{dropdown} View code: BECSignalProtocol
+:icon: code-square
+:animate: fade-in-slide-down
+
+```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
+:language: python
+:pyobject: BECSignalProtocol
+```
+````
+
+### Positioner Interface
+Positioners are a special case of devices, providing additional methods to set or move the device to a target position. The most common example from ophyd is the `EpicsMotor` class. Other examples include temperature or pressure controllers, as they can also be set to a target value.
+
+````{dropdown} View code: BECPositionerProtocol
+:icon: code-square
+:animate: fade-in-slide-down
+
+```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
+:language: python
+:pyobject: BECPositionerProtocol
+```
+````
+
+````{note}
+Please note that `ComputedSignal` is a special case, to provide an easy way to calculate a new signal based on the input of a single or multiple other signals. For the moment, there is no protocol for this class. 
+````
+
+## Accessing objects from clients
+
+_Device_, _Signal_, _Positioner_ and _ComputedSignal_ objects live in the BEC Device Server, each client (like BEC Scan Server or BEC command line)
+receive a **proxy object**. The proxy object is a local representative of the object on the server side, and can be
+used transparently thanks to BEC Remote Procedure Call (RPC).
+
+```{figure} /assets/bec_device_server_proxy2.png
+Diagram representing proxy objects in clients, and RPC communication from Device Server
+```
+
+````{note}
+Any device action requested during scans or by a client is handled by the device server. 
+````
+
+### Extending proxy objects with custom methods - User Access
+
+While the protocols provide a core set of methods accessible to users, there may be cases where additional methods for specific devices should be made available to users on the client side.
+BEC provides a simple mechanism to enable this, by providing a list of strings containing method names in the `USER_ACCESS` class attribute of any custom BEC Device:
+
+``` python
+class MyCustomDevice(Device):
+    USER_ACCESS = ['my_custom_method']
+
+    def my_custom_method(self):
+        """This is a custom method that should be accessible to the user."""
+        ...
+```
+

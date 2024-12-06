@@ -1,0 +1,41 @@
+classDiagram
+    BECBaseProtocol: +name
+    BECBaseProtocol: +kind
+    BECBaseProtocol: +parent
+    BECBaseProtocol: +root
+    BECBaseProtocol: +hints
+    BECBaseProtocol: +connected
+    BECBaseProtocol: +read() 
+    BECBaseProtocol: +read_configuration()
+    BECBaseProtocol: +describe()
+    BECBaseProtocol: +describe_configuration()
+    BECBaseProtocol: +destroy()
+    BECBaseProtocol: +trigger()
+    BECBaseProtocol <|-- BECSignalProtocol
+    BECSignalProtocol: +limits
+    BECSignalProtocol: +high_limit
+    BECSignalProtocol: +low_limit
+    BECSignalProtocol: +write_access
+    BECSignalProtocol: +check_value(value)
+    BECSignalProtocol: +put(value, force=False, timeout=None)
+    BECSignalProtocol: +set(value, timeout=None)
+    BECBaseProtocol <|-- BECDeviceProtocol
+    BECDeviceProtocol: +stage()
+    BECDeviceProtocol: +unstage()
+    BECDeviceProtocol: +stop()
+    BECDeviceProtocol <|-- BECPositionerProtocol
+    BECPositionerProtocol: +limits
+    BECPositionerProtocol: +high_limit
+    BECPositionerProtocol: +low_limit
+    BECPositionerProtocol: +check_value(value)
+    BECPositionerProtocol: +move(position)
+    BECPositionerProtocol: +set(position)
+    BECDeviceProtocol <|-- BECFlyerProtocol
+    BECFlyerProtocol: +kickoff()
+    BECFlyerProtocol: +complete()
+    
+    
+    
+
+     
+    

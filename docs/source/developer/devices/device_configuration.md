@@ -1,9 +1,7 @@
 (developer.ophyd_device_config)=
-## Device Configuration
-BEC creates representative devices and signals dynamically on the devices server, following the specifications given in the device configuration. 
-The device configuration can be loaded from and stored to a yaml file and contains all necessary information about the devices. 
+## Defining Devices
 
-An example of an ophyd device based on EPICS is a single PV, e.g. the synchrotron's ring current: 
+Device definition files are YAML files containing entries like the following example for the synchrotron ring current:
 
 ```yaml
 curr:
@@ -21,7 +19,7 @@ curr:
   softwareTrigger: false
 ```
 
-More examples of device configurations can be found in the [Ophyd devices repository](https://gitlab.psi.ch/bec/ophyd_devices/-/tree/main/ophyd_devices/configs).
+(More examples of device configurations can be found in the [Ophyd devices repository](https://gitlab.psi.ch/bec/ophyd_devices/-/tree/main/ophyd_devices/configs))
 
 The following sections explain the different parts of the device configuration in more detail.
 
@@ -31,6 +29,10 @@ The device class specifies the type of the device. In the example above, the dev
 * **deviceConfig** \
 The device config contains the configuration of the device. In the example above, the device config contains the read PV (`read_pv`). The read PV is the PV that is read out by the device. In this case, the read PV is `ARIDI-PCT:CURRENT`. The device config can contain any configuration parameter that is supported by the device class. 
 The device is constructed by passing the device config to the device class. In the example above, the device is constructed by calling `EpicsSignalRO(name='curr', read_pv='ARIDI-PCT:CURRENT', auto_monitor=True)`.
+
+```` {note}
+By default, items in the form `attribute: value` within `deviceConfig` are **applied** to the object, i.e. this triggers hardware calls in order to setup the device. 
+````
 
 * **readoutPriority** \
 The readout priority specifies the priority with which the device is read out. For BEC controlled readouts, set the readout priority either to `on_request`, `baseline` or `monitored`. The on_request priority is used for devices that should not be read out during the scan, yet are configured to be read out manually. The baseline priority is used for devices that are read out at the beginning of the scan and whose value does not change during the scan. The monitored priority is used for devices that are read out during the scan and whose value may change during the scan. If the readout of the device is asynchronous to the monitored devices, set the readout priority to `async`. For devices that are read out continuously, set the readout priority to `continuous`. 
@@ -92,18 +94,24 @@ For a single file, the `!include` tag can also be merged into a single line:
 base_config: !include ./path/to/base_config.yaml
 ```
 
-
 (developer.ophyd.config_validation)=
-## Validation of the device config
-To avoid errors during loading of the device config, the device config should be validated before loading it. This can be done by installing the `ophyd_devices` package and running the following command:
+## Validation of the device definition
+To avoid errors during loading of the device definitions, it is recommended to validate the YAML document before loading it. The `ophyd_devices` package provides the `ophyd_test` tool for this purpose:
 
 ```bash
 ophyd_test --config ./path/to/my/config/file.yaml
 ```
 
-This will perform a static validation of the device config and will print any errors that are found. For checking if the devices can be created and connect successfully, an additional flag can be passed:
+This will perform a static validation of the file, and will print any errors that are found. For checking if the devices can be created and connect successfully, an additional flag can be passed:
 
 ```bash
 ophyd_test --config ./path/to/my/config/file.yaml --connect
 ``` 
 
+(developer.ophyd.config_loading)=
+## Loading device definitions
+From the beamline setup scripts, or from the BEC command line, it is easy to load YAML files into the BEC Device Server using the BEC API:
+
+`update_session_with_file(<path to yml file>)`
+
+The current configuration is backed up in a recovery file by default, to be able to load it back later if needed.

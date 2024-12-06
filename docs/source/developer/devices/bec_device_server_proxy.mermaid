@@ -1,0 +1,8 @@
+flowchart TD
+    C[Command line client] -->|contains|X['X' device proxy]
+    S[Scan server] -->|contains|Y['X' device proxy]
+    D[Device Server] -->|contains| A[BEC Device 'X']
+    X -->|BEC RPC comm.| D 
+    D --> X
+    Y -->|BEC RPC comm.| D
+    D --> Y
