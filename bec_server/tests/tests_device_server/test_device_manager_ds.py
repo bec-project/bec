@@ -128,13 +128,13 @@ def test_flyer_event_callback(dm_with_devices, connected_connector):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_progress_callback(dm_with_devices):
+def test_obj_callback_progress(dm_with_devices):
     device_manager = dm_with_devices
     samx = device_manager.devices.samx
     samx.metadata = {"scan_id": "12345"}
 
     with mock.patch.object(device_manager, "connector") as mock_connector:
-        device_manager._obj_progress_callback(obj=samx.obj, value=1, max_value=2, done=False)
+        device_manager._obj_callback_progress(obj=samx.obj, value=1, max_value=2, done=False)
         mock_connector.set_and_publish.assert_called_once_with(
             MessageEndpoints.device_progress("samx"),
             messages.ProgressMessage(
@@ -212,3 +212,50 @@ def test_obj_callback_file_event(dm_with_devices, connected_connector):
     assert msg.content["file_type"] == "h5"
     assert msg.metadata == {"scan_id": "12345", "user_info": "my_info"}
     assert msg.content["is_master_file"] is False
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_subscribe_to_device_events(dm_with_devices):
+    opaas_obj = mock.MagicMock()
+    opaas_obj.enabled = False
+    obj = mock.MagicMock()
+    # Test 2 event types together
+    obj.event_types = ("file_event", "device_monitor_1d")
+    with mock.patch.object(dm_with_devices, "_obj_callback_file_event") as mock_callback_file_event:
+        with mock.patch.object(
+            dm_with_devices, "_obj_callback_device_monitor_1d"
+        ) as mock_callback_device_monitor_1d:
+            dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
+            assert obj.subscribe.call_count == 2
+            assert (
+                mock.call(mock_callback_file_event, event_type="file_event", run=False)
+                in obj.subscribe.call_args_list
+            )
+            assert (
+                mock.call(
+                    mock_callback_device_monitor_1d, event_type="device_monitor_1d", run=False
+                )
+                in obj.subscribe.call_args_list
+            )
+
+    # Test all event types
+    for ii, event_type in enumerate(
+        [
+            "readback",
+            "value",
+            "device_monitor_1d",
+            "device_monitor_2d",
+            "file_event",
+            "done_moving",
+            "progress",
+        ]
+    ):
+        obj.event_types = (event_type,)
+        callback_name = (
+            f"_obj_callback_{event_type}" if event_type != "value" else "_obj_callback_readback"
+        )
+        with mock.patch.object(dm_with_devices, callback_name) as mock_callback:
+            dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
+            assert obj.subscribe.call_args == mock.call(
+                mock_callback, event_type=event_type, run=False
+            )

@@ -347,6 +347,12 @@ class DeviceManagerDS(DeviceManagerBase):
         # add subscriptions
         if not hasattr(obj, "event_types"):
             return opaas_obj
+        self._subscribe_to_device_events(obj, opaas_obj)
+
+        return opaas_obj
+
+    def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
+        """Subscribe to device events"""
 
         if "readback" in obj.event_types:
             obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
@@ -367,7 +373,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if "flyer" in obj.event_types:
             obj.subscribe(self._obj_flyer_callback, event_type="flyer", run=False)
         if "progress" in obj.event_types:
-            obj.subscribe(self._obj_progress_callback, event_type="progress", run=False)
+            obj.subscribe(self._obj_callback_progress, event_type="progress", run=False)
 
         if hasattr(obj, "motor_is_moving"):
             obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)
@@ -381,8 +387,6 @@ class DeviceManagerDS(DeviceManagerBase):
                     component.subscribe(self._obj_callback_readback, run=False)
                 elif component.kind == ophyd.Kind.config:
                     component.subscribe(self._obj_callback_configuration, run=False)
-
-        return opaas_obj
 
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
@@ -606,7 +610,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.set(MessageEndpoints.device_status(obj.root.name), msg, pipe=pipe)
         pipe.execute()
 
-    def _obj_progress_callback(self, *_args, obj, value, max_value, done, **kwargs):
+    def _obj_callback_progress(self, *_args, obj, value, max_value, done, **kwargs):
         metadata = self.devices[obj.root.name].metadata
         msg = messages.ProgressMessage(
             value=value, max_value=max_value, done=done, metadata=metadata
