@@ -8,12 +8,15 @@ from scipy.ndimage import center_of_mass
 from typeguard import typechecked
 
 from bec_lib.device_monitor_plugin import DeviceMonitorPlugin
+from bec_lib.logger import bec_logger
 from bec_server.data_processing.dap_service import DAPError, DAPServiceBase
 
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
     from bec_lib.device import DeviceBase
     from bec_lib.scan_items import ScanItem
+
+logger = bec_logger.logger
 
 
 class ReturnType(str, Enum):
@@ -37,15 +40,14 @@ class ImageAnalysisService(DAPServiceBase):
         self.device = None
         self.return_type = None
 
-    def configure(
-        self, *args, scan_item=None, device=None, images=None, return_type=None, **kwargs
-    ):
-        # TODO somehow the serialisation of these arguments was noch properly working.
-        # It crashed on the ScanItem/DeviceBase/np.ndarray types. (I believe)
+    def configure(self, scan_item=None, device=None, images=None, return_type=None, **kwargs):
+        # TODO Add type hints for np.ndarray and list[np.ndarray] do not work yet in the signature_serializer
+        # This will be adressed in a different MR, issue is created #395
         # scan_item: ScanItem | str = None,
         # device: DeviceBase | str = None,
         # images: np.ndarray | list[np.ndarray] | None = None,
         # **kwargs,
+        # ):
         """Configure the image analysis service. Either provide a scan item and a device which
         has a 2D monitor active, or provide the images directly. If no data is found for the input
         the service will return an empty stream output.
@@ -56,31 +58,34 @@ class ImageAnalysisService(DAPServiceBase):
             images: Alternatively, you can provide the images directly
             return_type: The type of data to return, can be "min", "max", "mean", "median", "std", "center_of_mass"
         """
-        self.device = str(device)
         if return_type is None:
             return_type = ReturnType.CENTER_OF_MASS
         else:
             return_type = ReturnType(return_type)
         self.return_type = return_type
-        if images is None:
-            self.data = self.get_images_for_scan_item(scan_item=scan_item)
+        # If images are provided, use them
+        if images is not None:
+            if isinstance(images, np.ndarray):
+                self.data = [images]
+            elif isinstance(images, list) and all(
+                isinstance(image, np.ndarray) for image in images
+            ):
+                self.data = images
             return
-        if isinstance(images, np.ndarray):
-            self.data = [images]
-        elif isinstance(images, list) and all(isinstance(image, np.ndarray) for image in images):
-            self.data = images
-        else:
-            raise DAPError(f"Invalid format for images: {images} provided")
+        # Else if scan item is provided, get the images
+        if device is None or scan_item is None:
+            raise DAPError(
+                f"Either provide a device: {device} and scan_id {scan_item} or images {images}"
+            )
+        self.device = str(device)
+        self.data = self.get_images_for_scan_item(scan_id=scan_item)
 
-    def get_images_for_scan_item(self, scan_item: ScanItem | str) -> list[np.ndarray]:
+    def get_images_for_scan_item(self, scan_id: str) -> list[np.ndarray]:
         """Get the data for the scan item."""
-        scan_id = scan_item
-        if scan_id != self.scan_id or not self.current_scan_item:
-            scan_item = self.client.queue.scan_storage.find_scan_by_ID(scan_id)
-            self.scan_id = scan_id
-        else:
-            scan_item = self.current_scan_item
+        self.scan_id = scan_id
         data = self.device_monitor_plugin.get_data_for_scan(device=self.device, scan=self.scan_id)
+        if len(data) == 0:
+            logger.warning(f"No data found for scan {scan_id} and device {self.device}")
         return data
 
     @typechecked
