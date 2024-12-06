@@ -8,6 +8,7 @@ import bec_server.data_processing as data_processing
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
+from bec_server.data_processing.image_analysis_service import ImageAnalysisService
 from bec_server.data_processing.lmfit1d_service import LmfitService1D
 
 logger = bec_logger.logger
@@ -21,14 +22,16 @@ def main():
     _, _, config = parse_cmdline_args()
 
     bec_server = data_processing.dap_server.DAPServer(
-        config=config, connector_cls=RedisConnector, provided_services=[LmfitService1D]
+        config=config,
+        connector_cls=RedisConnector,
+        provided_services=[LmfitService1D, ImageAnalysisService],
     )
     bec_server.start()
 
     try:
         event = threading.Event()
         logger.success(
-            f"Started DAP server for {bec_server._service_id} services. Press Ctrl+C to stop."
+            f"Started DAP server (id: {bec_server._service_id}) with {', '.join(serv.__name__ for serv in bec_server._provided_services)} services active. Press Ctrl+C to stop."
         )
         event.wait()
     except KeyboardInterrupt:

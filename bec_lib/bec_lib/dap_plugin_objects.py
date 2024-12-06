@@ -74,8 +74,8 @@ class DAPPluginObjectBase:
         for key, val in kwargs.items():
             if isinstance(val, ScanItem):
                 converted_kwargs[key] = val.scan_id
-            elif isinstance(arg, ScanReport):
-                converted_kwargs[key] = arg.scan.scan_id
+            elif isinstance(val, ScanReport):
+                converted_kwargs[key] = val.scan.scan_id
             elif isinstance(val, lmfit.Parameter):
                 converted_kwargs[key] = serialize_param_object(val)
             else:
@@ -320,6 +320,12 @@ class LmfitService1DResult:
 
     def __str__(self) -> str:
         return f"{self._model} fit result: \n Params: {self.params} \n Min: {self.min} \n Max: {self.max}"
+
+
+class ImageAnalysisService(DAPPluginObject):
+    """
+    Plugin for image analysis.
+    """
 
 
 class LmfitService1D(DAPPluginObjectAutoRun):
