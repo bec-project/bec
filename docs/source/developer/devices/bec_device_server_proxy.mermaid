@@ -1,8 +1,11 @@
-flowchart TD
-    C[Command line client] -->|contains|X['X' device proxy]
-    S[Scan server] -->|contains|Y['X' device proxy]
-    D[Device Server] -->|contains| A[BEC Device 'X']
-    X -->|BEC RPC comm.| D 
-    D --> X
-    Y -->|BEC RPC comm.| D
-    D --> Y
+sequenceDiagram
+    Client->>+Device Server manager: get device X
+    Device Server manager->>Device Server: connects
+    Device Server->>Ophyd device X: creates
+    Device Server manager->>- Client: returns X proxy    
+    Client->>+Device Server manager: X proxy .action()
+    Device Server manager->>Device Server: make RPC call
+    Device Server->>Ophyd device X: execute command
+    Ophyd device X->> Device Server: return result
+    Device Server ->> Device Server manager: return result
+    Device Server manager ->>- Client: return result

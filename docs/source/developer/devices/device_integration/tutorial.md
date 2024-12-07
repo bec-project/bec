@@ -4,6 +4,16 @@ This tutorial guides you through integrating a custom detector class with beamli
 
 For this example, we will utilize an EPICS area detector IOC as the backend, focusing on a Pilatus detector with an HDF5 filewriter plugin.
 
+````{note}
+When integrating a new detector, generic implementation must go to the Ophyd Devices repository. In this example, though, since the problematic of a specific usage of a device on a specific beamline is detailed, the code should go to the **beamline plugin repository**.
+The [plugin repository](#developer.bec_plugins) section provides more details on the plugin structure.
+For device integration, each plugin contains a sub-module, *beamline_XX_bec/devices*, where beamline-specific device integrations are located. These integrations may include fully customised devices or thin classes that add beamline-specific logic to existing integrations from *ophyd_devices*. 
+````
+
+````{note}
+Auto-generated device lists for each beamline repository are available at *beamline_XX_bec/beamline_XX_bec/devices/device_list.md*, i.e. the [device list for cSAXS](https://gitlab.psi.ch/bec/csaxs_bec/-/blob/main/csaxs_bec/devices/device_list.md?ref_type=heads).
+````
+
 ## Detector Communication 
 
 The [*ophyd_devices.devices.areadetector*](https://gitlab.psi.ch/bec/ophyd_devices/-/tree/main/ophyd_devices/devices/areadetector?ref_type=heads) module provides several communication interfaces for various EPICS area detector IOCs. In this example, we use `PilatusDetectorCam` and `HDF5Plugin_V35` to combine detector control with file writing capabilities.
@@ -244,14 +254,35 @@ def on_complete(self):
 The non-blocking implementation pawns a background thread that wraps around the *wait_for_signals* method. This enables asynchronous execution, where the status object (`status.done`) indicates whether conditions are met or if exceptions where raised (status.exception).
 ````
 
-### Summary
-This section outlined how to integrate a custom detector class by combining the concepts introduced in the [generic approach](#developer.devices.device_integration.beamline_specific_integration.generic_approach). The example demonstrates integration with the *PSIDetectorBase* class and a beamline-specific *custom_prepare_cls*. Additionally, we showed how to implement signal synchronization using both blocking and non-blocking mechanisms. Below, the complete custom detector class implementation is provided.
+### Using events
 
-````{admonition} Device Event and Callbacks
-So far, this tutorial has not utilised Ophyd's event system or its callback mechanisms. The [device events and callbacks](#developer.devices.device_integration.device_events_and_callbacks) will explore:
-* Forwarding upcoming filewriter actions to BEC.
-* Using callbacks to ensure BEC's main filewriter service links externally written files.
-````
+**File Event**
+We can extend the `on_stage` and `on_unstage` method to inform BEC about file events. At the bottom of the `on_stage` method, we can add the following code snippet to inform BEC about the file event. The file event informs BEC about the file path, type, and additional information about the file. In particularly, the `hinted_location` can be used to provide additional information about the file structure, e.g. in case of h5 files the location of data that should be linked to the main file.
+
+```python
+self._run_subs(
+    sub_type=self.SUB_FILE_EVENT,
+    file_path=self.parent.filepath.get(),
+    file_type="h5",
+    hinted_location={'data' : '/entry/data/data'},
+    done=False,
+    success=False
+)
+```
+
+Secondly, we can add a similar code snippet to the `on_unstage` method to inform BEC that the file writing is done and the file is closed.
+```python
+self._run_subs(
+    sub_type=self.SUB_FILE_EVENT,
+    file_path=self.parent.filepath.get(),
+    file_type="h5",
+    hinted_location={'data' : '/entry/data/data'},
+    done=True,
+    success=True
+)
+```
+
+The full code for the custom detector integration is shown below: 
 
 ````{dropdown} View code: Full Custom Detector Class
 :icon: code-square
@@ -327,6 +358,15 @@ class BeamlinePilatusCustomPrepare(CustomDetectorMixin):
         # Don't use `set` method on capture signal, since this will be blocking otherwise
         self.parent.hdf5.capture.put(1)
 
+        self._run_subs(
+            sub_type=self.SUB_FILE_EVENT,
+            file_path=self.parent.filepath.get(),
+            file_type="h5",
+            hinted_location={'data' : '/entry/data/data'},
+            done=False,
+            success=False
+        )
+
     def on_pre_scan(self):
         """Custom on_pre_scan method for Beamline X, executed just before the scan starts."""
         self.parent.acquire.put(0)
@@ -361,6 +401,18 @@ class BeamlinePilatusCustomPrepare(CustomDetectorMixin):
         )
         return status
 
+    def on_unstage(self):
+        """Custom on_unstage method for Beamline X, executed after the scan is complete."""
+        if self.parent.stopped is False:
+            self._run_subs(
+                sub_type=self.SUB_FILE_EVENT,
+                file_path=self.parent.filepath.get(),
+                file_type="h5",
+                hinted_location={'data' : '/entry/data/data'},
+                done=True,
+                success=True
+            )
+
     def on_stop(self):
         """Custom on_stop method for Beamline X, executed when the scan is stopped."""
         self.parent.acquire.put(0)
@@ -386,6 +438,111 @@ class MyPilatusDetector(PSIDetectorBase, PilatusDetectorCam):
     hdf5 = Cpt(HDF5Plugin_V35, "HDF1:")
     custom_prepare_cls = BeamlinePilatusCustomPrepare
 
+    SUB_FILE_EVENT = "file_event"
+
 ```
 ````
 
+````{note}
+Implementing the specific logic for when a file is successfully written is crucial and may vary for each detector. The example above is a simplified implementation, assuming the file was written successfully when the `on_unstage` method is called. While the concept is demonstrated here, the timing of the callback must be tailored to each detector's behavior.
+````
+## Callback examples
+
+**Readback**
+Triggers a `.read()` for all signals classified as *kind.normal* or *kind.hinted*.
+```python
+self._run_subs(sub_type=self.SUB_READBACK)
+```
+
+**Value**
+Triggers the same callback in BEC as the **readback** callback. It is typically the default SUB event for a signal.
+```python
+self._run_subs(sub_type=self.SUB_VALUE)
+```
+
+**Done Moving**
+Triggers a .read() by executing the **readback** callback on the device.
+```python
+self._run_subs(sub_type=self.SUB_DONE_MOVING)
+```
+
+**Motor is moving**
+Reports whether a motor is currently moving. 
+* *value*: Binary or boolean value of whether the motor is moving.
+```python
+self._run_subs(sub_type=self.SUB_MOTOR_IS_MOVING, value=True)
+```
+
+**Progress**
+Updates BEC on the device's progress, such as motor motion during a scan or detector frame acquisition.
+* *progress*: Current progress value.
+* *max_value*: Maximum progress value.
+* *done*: Binary or boolean value indicating whether the device is done.
+```python
+self._run_subs(sub_type=self.SUB_PROGRESS, value=5, max_value=100, done=False)
+```
+
+**File Event**
+Notifies BEC about file-related events, particularly useful for devices with external writing processes (e.g., large 2D detectors). Typically the device sends two messages: one when the device is prepared for a scan and a second when the scan is finished. 
+* *file_path*: Path to the file.
+* *file_type*: Type of the file.
+* *hinted_location*: Additional information about the file structure, the location of data that should be linked to the main file.
+* *done*: Binary or boolean value indicating whether the file event is complete.
+* *success*: Binary or boolean value indicating whether the file event was successful.
+
+```python
+self._run_subs(
+    sub_type=self.SUB_FILE_EVENT, 
+    file_path='/raw/data/S00000-S00999/S00020/S00020_pilatus.h5', 
+    file_type="h5", 
+    hinted_location={'data' : '/entry/data/data'}, 
+    done=False, 
+    success=False)
+```
+
+````{note}
+We recommend using BEC's file utilities to compile file paths for external writing processes. This ensures paths are correctly formatted and stored in designated directories.
+````
+
+**Device Monitor 1D**
+Sends preview data in the form of a 1D array to BEC. This data is not stored but is useful for visualization purposes.
+* *value*: 1D numpy array of data.
+```python
+self._run_subs(sub_type=self.SUB_DEVICE_MONITOR_1D, value=np.random.rand(100))
+```
+
+**Device Monitor 2D**
+Sends preview data in the form of a 2D array or an RGB image (a NumPy array of shape (X, X, 3)) to BEC.
+* *value*: 2D numpy array or RGB image.
+```python
+self._run_subs(sub_type=self.SUB_DEVICE_MONITOR_2D, value=np.random.rand(100, 100))
+```
+
+(developer.devices.device_integration.external_data_sources)=
+## External Data Sources
+For large external data sources not managed by a device, you can send events directly to BEC. This section builds on the file event example and explains how to notify BEC about file events from an external source.
+There are two steps involved: (1) Create a [FileMessage](#bec_lib.messages.FileMessage) and (2) emit it to the [public_file endpoint](#bec_lib.endpoints.MessageEndpoints.public_file) and [file_event endpoint](#bec_lib.endpoints.MessageEndpoints.file_event).
+
+```python
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib import messages
+from bec_lib.redis_connector import RedisConnector
+
+scan_id = "scan id of the current scan"
+
+# get a new producer for redis messages, localhost:6379 is the default address
+producer = RedisConnector(["localhost:6379"]).producer()
+
+# prepare the message
+msg = messages.FileMessage(file_path="/path/to/file.h5", done=False, success=False, file_type="h5", hinted_location={'data' : '/entry/data/data'})
+
+# send the message using the scan_id and a user-friendly but unique name to describe the source (e.g. "eiger")
+producer.set_and_publish(
+    MessageEndpoints.public_file(scan_id, "eiger"),
+    msg,
+)
+producer.set_and_publish(
+    MessageEndpoints.file_event(scan_id, "eiger"),
+    msg,
+)
+```

@@ -8,10 +8,10 @@ Thanks to BEC message passing interface, the BEC Device Server receives human-re
 YAML files containing **device definitions** and instantiates _Device_ and _Signal_ objects.
 
 Those objects represent control system components, usually EPICS PVs, grouped into
-a class (as defined by the [Ophyd library](developer.ophyd)). This allows to have an
+a class (as defined by the [Ophyd library](developer.ophyd_devices)). This allows to have an
 uniform hardware abstraction layer for BEC.
 
-```{figure} /assets/bec_device_server_diagram2.png
+```{figure} /assets/bec_device_server_diagram.png
 Diagram representing the reading of device definitions to create Devices connected to the control system
 ```
 
@@ -29,7 +29,7 @@ abstraction layer. Those objects are **wrapped to fit into 4 main classes**:
 
 BEC provides a set of protocols to define the interfaces of Device Server objects, described below:
 
-```{figure} /assets/bec_device_protocols2.png
+```{figure} /assets/bec_device_protocols.png
 Class diagram of BEC Device Server protocols
 ```
 
@@ -95,8 +95,8 @@ _Device_, _Signal_, _Positioner_ and _ComputedSignal_ objects live in the BEC De
 receive a **proxy object**. The proxy object is a local representative of the object on the server side, and can be
 used transparently thanks to BEC Remote Procedure Call (RPC).
 
-```{figure} /assets/bec_device_server_proxy2.png
-Diagram representing proxy objects in clients, and RPC communication from Device Server
+```{figure} /assets/bec_device_server_proxy.png
+Diagram representing proxy object in client, and RPC communication from Device Server
 ```
 
 ````{note}

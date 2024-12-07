@@ -1,75 +1,10 @@
-(developer.devices.device_integration.beamline_specific_integration)=
-# Beamline Specific Integration 
-Seamlessly integrating devices across beamlines while accommodating beamline-specific requirements is a critical aspect of reliable device management. Ideally, a device can be reused across multiple beamlines without compromising its core functionality. At the same time, beamline-specific requirements, such as customised behavior during scans, should be easily implemented. This section explains how to achieve this balance without rewriting the entire device class for each beamline.
+(developer.devices.device_integration.best_practices)=
+# Beamline Specific Integration best practices
 
-## Example - Customise EpicsMotor 
-```` {note}
-If the beamline does not require any customisation of the device, the device can be used as an [EpicsMotor](https://nsls-ii.github.io/ophyd/builtin-devices.html#epicsmotor). Please check the [device configuration section](#developer.ophyd_device_config) for more details on how to load and use the device. 
-````
-Let’s consider a scenario where a motor must operate with a specific velocity during certain scans at a beamline. We can create a new class inheriting from `EpicsMotor` and extend its functionality to meet these requirements.
+Integrating devices across beamlines while accommodating beamline-specific requirements is a critical aspect of reliable device management. Ideally, a device can be reused across multiple beamlines without compromising its core functionality. At the same time, beamline-specific requirements, such as customised behavior during scans, should be easily implemented. This section explains how to achieve this balance without rewriting the entire device class for each beamline.
 
-``` python
-from ophyd import EpicsMotor
-
-class MyBeamlineMotor(EpicsMotor):
-    def stage(self):
-        """Set velocity during staging."""
-        self.velocity.set(2).wait()  # Set velocity to 2
-        return super().stage()
-```
-This customisation modifies the *stage* method to adjust the velocity during the preparation phase for a scan. While this addresses basic requirements, it does not account for more complex scenarios, such as restoring the velocity after a scan or adjusting it only for specific scan types.
-
-**Advanced Customisation**
-
-To handle more advanced requirements, such as adapting behavior based on scan type and restoring the original velocity after a scan, we need to extend the logic further.
-
-``` python
-from bec_lib import messages
-from bec_lib.endpoints import MessageEndpoints
-from ophyd import EpicsMotor
-
-class MyBeamlineMotor(EpicsMotor):
-
-   def __init__(self, prefix="", *, name, kind=None, parent=None, device_manager=None, **kwargs):
-      super().__init__(prefix, name=name, kind=kind, parent=parent, **kwargs)
-      self.device_manager = device_manager
-      self._stored_velocity = None
-
-   def stage(self):
-      """Stage the motor"""
-      scan_msg = self.get_scaninfo()
-      # No scan message available, proceed without any actions
-      if scan_msg is None:
-         return super().stage()
-      # Get the scan type
-      scan_type = scan_msg.content["info"].get("scan_type")
-      if scan_type == "fly":
-         # Store velocity
-         self._stored_velocity = self.velocity.get()
-         # Set velocity to 2 during staging
-         self.user_velocity.set(2).wait()
-      return super().stage()
-
-   def get_scaninfo(self) -> messages.ScanStatusMessage:
-      """Get current scan message"""
-      msg = self.device_manager.connector.get(MessageEndpoints.scan_status())
-      if not isinstance(msg, messages.ScanStatusMessage):
-         return None
-      return msg
-
-   def unstage(self):
-      """Unstage the motor"""
-      # restore the old velocity if it was stored
-      if self._stored_velocity is not None:
-         self.user_velocity.set(self._stored_velocity).wait()
-      return super().unstage()
-```
-In this enhanced version:
-- *device_manager*: The *device_manager* is injected as a dependency during initialisation providing access to the connector class for retrieving scan-related information. This happens automatically on the device server if the device has *device_manager* in its signature.
-- *dynamic behaviour*: The *stage* method retrieves the scan type from BEC and adjusts the motor's velocity for *fly* scans automatically.
-- *state restoration*: The *unstage* method restores the original velocity if it was changed during staging.
-
-**Why a Generic Approach Matters**
+(developer.devices.device_integration.beamline_specific_integration.generic_approach)=
+## Generic Integration Approach
 
 Customising devices is often necessary, but repeating similar logic across multiple beamlines can lead to code duplication and maintenance challenges. Instead, we recommend adopting a more generic approach to encapsulate beamline-specific logic in a single place. This approach separates the device communication logic from the beamline-specific logic, making it easier to manage and extend. We will explore this approach in the following.
 
@@ -77,12 +12,9 @@ Customising devices is often necessary, but repeating similar logic across multi
 The *Ophyd* library provides several abstract methods that integrate seamlessly with BEC's scanning framework. Refer to the [ophyd section](#developer.ophyd.device) for details. Additionally, we recommend to explore the [scan structure](#developer.scans.scan_structure) section to understand the hierarchy and methods relevant during scans within BEC.
 ````
 
-(developer.devices.device_integration.beamline_specific_integration.generic_approach)=
-## Generic Integration Approach
-The example above illustrates the challenges of integrating beamline-specific requirements into devices. To avoid repeating the same code for each device and prevent the implementation of beamline-specific logic from becoming complex and error-prone, we recommend encapsulating beamline-specific logic in a single location. This approach separates the logic for device communication and BEC communication as much as possible.
-
 **Base Class for Device Integration**
 
+We recommend encapsulating beamline-specific logic in a single location. This approach separates the logic for device communication and BEC communication as much as possible.
 We introduce a base class that wraps around the standard Ophyd interface. This base class provides hooks for beamline-specific logic, implemented through a separate class handling custom prepare actions.
 
 In the code snippet below, the *stage* method of the *PSIDetectorBase* class includes a call to `self.custom_prepare.on_stage()`, which serves as a hook for beamline-specific logic during the staging process. Before this hook is executed, the class fetches and parses the latest scan information from BEC via `self.scaninfo.load_scan_metadata()`.
@@ -128,7 +60,7 @@ The *custom_prepare_cls* is initialised as `self.custom_prepare_cls(parent=self,
 ```
 ````
 
-While this approach introduces additional layers, it provides several key benefits:
+While this approach introduces several layers, it provides several key benefits:
 - **Modularity:** Separates beamline-specific logic from device classes, improving readability and maintainability.
 - **Reusability:** Beamline-specific logic can be reused across multiple devices.
 - **Extensibility:** Additional hooks, such as `on_unstage` or `on_complete`, can be added to the custom class as needed.
