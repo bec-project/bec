@@ -33,57 +33,13 @@ BEC provides a set of protocols to define the interfaces of Device Server object
 Class diagram of BEC Device Server protocols
 ```
 
-### Base Interface
-All devices conform to a core interface defined in the *BECBaseProtocol* protocol. This protocol specifies the core functionality any device in BEC must provide, and this functionality is exposed to any client. The aquivalent in Ophyd is the [OphydObject](https://blueskyproject.io/ophyd/user/generated/ophyd.ophydobj.OphydObject.html).
+## Device Interfaces
 
-````{dropdown} View code: BECBaseProtocol
-:icon: code-square
-:animate: fade-in-slide-down
-
-```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
-:language: python
-:pyobject: BECBaseProtocol
-```
-````
-
-### Device Interface
-The device protocol extends *BECBaseProtocol* by adding additional methods relevant the device interface. Any device inheriting from `ophyd.device.Device` automatically complies with that interface.
-
-````{dropdown} View code: BECDeviceProtocol
-:icon: code-square
-:animate: fade-in-slide-down
-
-```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
-:language: python
-:pyobject: BECDeviceProtocol
-```
-````
-
-### Signal Interface
-Similarly to the *Device* protocol, the *Signal* protocol extends *BECBaseProtocol* and introduces additional methods relevant to signals. Any device inheriting from `ophyd.signal.Signal` automatically complies with that interface.
-
-````{dropdown} View code: BECSignalProtocol
-:icon: code-square
-:animate: fade-in-slide-down
-
-```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
-:language: python
-:pyobject: BECSignalProtocol
-```
-````
-
-### Positioner Interface
-Positioners are a special case of devices, providing additional methods to set or move the device to a target position. The most common example from ophyd is the `EpicsMotor` class. Other examples include temperature or pressure controllers, as they can also be set to a target value.
-
-````{dropdown} View code: BECPositionerProtocol
-:icon: code-square
-:animate: fade-in-slide-down
-
-```{literalinclude} ../../../../../ophyd_devices/ophyd_devices/interfaces/protocols/bec_protocols.py
-:language: python
-:pyobject: BECPositionerProtocol
-```
-````
+We use a set of protocols to define and test against an expected interface for devices loaded into the BEC Device Server. This ensures that all devices conform to a common set of methods and properties. You can find the protocol definitions in the *ophyd devices* repository [here](https://gitlab.psi.ch/bec/ophyd_devices/-/blob/main/ophyd_devices/interfaces/protocols/bec_protocols.py?ref_type=heads).
+* Any object of type device or signal within BEC must comply with the *BECBaseProtocol*. The equivalent in Ophyd is the [OphydObject](https://blueskyproject.io/ophyd/user/generated/ophyd.ophydobj.OphydObject.html).
+* A device must comply with the *BECDeviceProtocol*. The equivalent in Ophyd is the [Device](https://blueskyproject.io/ophyd/device-overview.html#device).
+* A signal must comply with the *BECSignalProtocol*. The equivalent in Ophyd is the [Signal](https://blueskyproject.io/ophyd/user/reference/signals.html).
+* A positioner must comply with the *BECPositionerProtocol*. The equivalent in Ophyd is the [Positioner](https://blueskyproject.io/ophyd/user/reference/positioners.html).
 
 ````{note}
 Please note that `ComputedSignal` is a special case, to provide an easy way to calculate a new signal based on the input of a single or multiple other signals. For the moment, there is no protocol for this class. 
