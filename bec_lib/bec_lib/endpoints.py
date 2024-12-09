@@ -7,7 +7,7 @@ from __future__ import annotations
 # pylint: disable=too-many-public-methods
 import enum
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bec_lib.utils.import_utils import lazy_import
 
@@ -1298,3 +1298,16 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.StatusMessage, message_op=MessageOp.SET
         )
+
+    @staticmethod
+    def database_ingest() -> EndpointInfo:
+        """
+        Endpoint for database ingest. This endpoint is used to publish the database ingest
+        using a messages.DatabaseIngestMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for database ingest.
+        """
+        endpoint = "internal/database/ingest"
+
+        return EndpointInfo(endpoint=endpoint, message_type=Any, message_op=MessageOp.STREAM)

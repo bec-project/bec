@@ -240,7 +240,20 @@ class ScanWorker(threading.Thread):
             f"New scan status: {self.current_scan_id} / {status} / {current_scan_info_print}"
         )
         msg = messages.ScanStatusMessage(
-            scan_id=self.current_scan_id, status=status, info=self.current_scan_info
+            scan_id=self.current_scan_id,
+            status=status,
+            scan_name=self.current_scan_info.get("scan_name"),
+            scan_number=self.current_scan_info.get("scan_number"),
+            session_id=self.current_scan_info.get("session_id"),
+            dataset_number=self.current_scan_info.get("dataset_number"),
+            num_points=self.current_scan_info.get("num_points"),
+            scan_type=self.current_scan_info.get("scan_type"),
+            scan_report_devices=self.current_scan_info.get("scan_report_devices"),
+            user_metadata=self.current_scan_info.get("user_metadata"),
+            readout_priority=self.current_scan_info.get("readout_priority"),
+            scan_parameters=self.current_scan_info.get("scan_parameters"),
+            scan_input=self.current_scan_info.get("scan_input"),
+            info=self.current_scan_info,
         )
         expire = None if status in ["open", "paused"] else 1800
         pipe = self.device_manager.connector.pipeline()

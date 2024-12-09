@@ -13,6 +13,7 @@ import queue
 import sys
 import threading
 import time
+import typing
 import warnings
 from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
@@ -56,56 +57,65 @@ def validate_endpoint(endpoint_arg):
                     DeprecationWarning,
                 )
                 return func(*args, **kwargs)
-            if isinstance(endpoint, EndpointInfo):
-                if func.__name__ not in endpoint.message_op:
-                    raise ValueError(
-                        f"Endpoint {endpoint} is not compatible with {func.__name__} method"
-                    )
-                for val in list(args) + list(kwargs.values()):
-                    if isinstance(val, BECMessage) and not isinstance(val, endpoint.message_type):
-                        if not isinstance(val, BundleMessage):
-                            raise TypeError(
-                                f"Message type {type(val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                            )
-                        for msg in val.messages:
-                            if not isinstance(msg, endpoint.message_type):
-                                raise TypeError(
-                                    f"Message type {type(msg)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                                )
 
-                    if isinstance(val, dict):
-                        for sub_val in val.values():
-                            if isinstance(sub_val, BECMessage) and not isinstance(
-                                sub_val, endpoint.message_type
-                            ):
-                                raise TypeError(
-                                    f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                                )
-                    if isinstance(val, list):
-                        for sub_val in val:
-                            if isinstance(sub_val, BECMessage) and not isinstance(
-                                sub_val, endpoint.message_type
-                            ):
-                                raise TypeError(
-                                    f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                                )
-                    if isinstance(val, tuple):
-                        for sub_val in val:
-                            if isinstance(sub_val, BECMessage) and not isinstance(
-                                sub_val, endpoint.message_type
-                            ):
-                                raise TypeError(
-                                    f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                                )
-
-                if isinstance(arg, list):
-                    arg[argument_index] = endpoint.endpoint
-                    return func(*arg, **kwargs)
-
-                arg[endpoint_arg] = endpoint.endpoint
-                return func(*args, **arg)
-            else:
+            if not isinstance(endpoint, EndpointInfo):
                 raise TypeError(f"Endpoint {endpoint} is not EndpointInfo")
+
+            if func.__name__ not in endpoint.message_op:
+                raise ValueError(
+                    f"Endpoint {endpoint} is not compatible with {func.__name__} method"
+                )
+            for val in list(args) + list(kwargs.values()):
+                if isinstance(val, BECMessage) and endpoint.message_type == typing.Any:
+                    continue
+                if isinstance(val, BECMessage) and not isinstance(val, endpoint.message_type):
+                    if not isinstance(val, BundleMessage):
+                        raise TypeError(
+                            f"Message type {type(val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
+                        )
+                    for msg in val.messages:
+                        if not isinstance(msg, endpoint.message_type):
+                            raise TypeError(
+                                f"Message type {type(msg)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
+                            )
+
+                if isinstance(val, dict):
+                    for sub_val in val.values():
+                        if isinstance(sub_val, BECMessage) and endpoint.message_type == typing.Any:
+                            continue
+                        if isinstance(sub_val, BECMessage) and not isinstance(
+                            sub_val, endpoint.message_type
+                        ):
+                            raise TypeError(
+                                f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
+                            )
+                if isinstance(val, list):
+                    for sub_val in val:
+                        if isinstance(sub_val, BECMessage) and endpoint.message_type == typing.Any:
+                            continue
+                        if isinstance(sub_val, BECMessage) and not isinstance(
+                            sub_val, endpoint.message_type
+                        ):
+                            raise TypeError(
+                                f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
+                            )
+                if isinstance(val, tuple):
+                    for sub_val in val:
+                        if isinstance(sub_val, BECMessage) and endpoint.message_type == typing.Any:
+                            continue
+                        if isinstance(sub_val, BECMessage) and not isinstance(
+                            sub_val, endpoint.message_type
+                        ):
+                            raise TypeError(
+                                f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
+                            )
+
+            if isinstance(arg, list):
+                arg[argument_index] = endpoint.endpoint
+                return func(*arg, **kwargs)
+
+            arg[endpoint_arg] = endpoint.endpoint
+            return func(*args, **arg)
 
         return wrapper
 
