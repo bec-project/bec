@@ -157,9 +157,19 @@ class ScanStatusMessage(BECMessage):
     Args:
         scan_id (str): Unique scan ID
         status (Literal["open", "paused", "aborted", "halted", "closed"]) : Current scan status
+        scan_number (int, optional): Scan number
+        session_id (str, optional): Session ID
+        num_points (int, optional): Number of points in the scan. Only relevant if the number of points is determined by BEC.
+        scan_name (str, optional): Name of the scan, e.g. 'line_scan'
+        scan_type (Literal["step", "fly"], optional): Type of scan
+        dataset_number (int, optional): Dataset number
+        scan_report_devices (list[str], optional): List of devices that are part of the scan report
+        user_metadata (dict, optional): User metadata
+        readout_priority (dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]], optional): Readout priority
+        scan_parameters (dict[Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any], optional): Scan parameters such as exposure time, frames per trigger, settling time, readout time
+        scan_input (dict[Literal["arg_bundles", "inputs", "kwargs"], Any], optional): Scan input
         info (dict): Dictionary containing additional information about the scan
-        timestamp (float, optional): Timestamp of the scan status update. If None, the current time is used.
-        metadata (dict, optional): Additional metadata to describe and identify the scan.
+        timestamp (float, optional): Timestamp of the message. Defaults to time.time()
 
     Examples:
         >>> ScanStatusMessage(scan_id="1234", status="open", info={"positions": {"samx": 0.5, "samy": 0.5}})
