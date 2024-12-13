@@ -13,6 +13,7 @@ import queue
 import sys
 import threading
 import time
+import traceback
 import warnings
 from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
@@ -149,7 +150,7 @@ class RedisConnector(ConnectorBase):
     a simple interface to send and receive messages from a redis server.
     """
 
-    def __init__(self, bootstrap: list, redis_cls=None):
+    def __init__(self, bootstrap: list, redis_cls=None, **kwargs):
         """
         Initialize the connector
 
@@ -165,7 +166,7 @@ class RedisConnector(ConnectorBase):
         if redis_cls:
             self._redis_conn = redis_cls(host=self.host, port=self.port)
         else:
-            self._redis_conn = redis.Redis(host=self.host, port=self.port)
+            self._redis_conn = redis.Redis(host=self.host, port=self.port, **kwargs)
 
         # main pubsub connection
         self._pubsub_conn = self._redis_conn.pubsub()
@@ -183,6 +184,17 @@ class RedisConnector(ConnectorBase):
         self._stop_events_listener_thread = threading.Event()
         self._stop_stream_events_listener_thread = threading.Event()
         self.stream_keys = {}
+
+    def authenticate(self, password: str, username: str = "user"):
+        """
+        Authenticate to the redis server
+
+        Args:
+            password (str): password
+            username (str, optional): username. Defaults to "default".
+        """
+        self._redis_conn.connection_pool.connection_kwargs["username"] = username
+        self._redis_conn.connection_pool.connection_kwargs["password"] = password
 
     def shutdown(self):
         """
@@ -394,9 +406,7 @@ class RedisConnector(ConnectorBase):
 
         if self._events_listener_thread is None:
             # create the thread that will get all messages for this connector;
-            self._events_listener_thread = threading.Thread(
-                target=self._get_messages_loop, args=(self._pubsub_conn,)
-            )
+            self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
             self._events_listener_thread.start()
 
         if patterns is not None:
@@ -689,7 +699,7 @@ class RedisConnector(ConnectorBase):
 
         return len(unsubscribe_list) > 0
 
-    def _get_messages_loop(self, pubsub: redis.client.PubSub) -> None:
+    def _get_messages_loop(self) -> None:
         """
         Get messages loop. This method is run in a separate thread and listens
         for messages from the redis server.
@@ -700,7 +710,7 @@ class RedisConnector(ConnectorBase):
         error = False
         while not self._stop_events_listener_thread.is_set():
             try:
-                msg = pubsub.get_message(timeout=1)
+                msg = self._pubsub_conn.get_message(timeout=1)
             except redis.exceptions.ConnectionError:
                 if not error:
                     error = True
@@ -729,20 +739,25 @@ class RedisConnector(ConnectorBase):
         return True
 
     def _handle_message(self, msg):
-        if isinstance(msg, StreamMessage):
-            return self._handle_stream_message(msg)
-        channel = msg["channel"].decode()
-        with self._topics_cb_lock:
-            if msg["pattern"] is not None:
-                callbacks = self._topics_cb[msg["pattern"].decode()]
-            else:
-                callbacks = self._topics_cb[channel]
-        msg = MessageObject(topic=channel, value=MsgpackSerialization.loads(msg["data"]))
-        for cb_ref, kwargs in callbacks:
-            cb = cb_ref()
-            if cb:
-                self._execute_callback(cb, msg, kwargs)
-        return True
+        try:
+            if isinstance(msg, StreamMessage):
+                return self._handle_stream_message(msg)
+            channel = msg["channel"].decode()
+            with self._topics_cb_lock:
+                if msg["pattern"] is not None:
+                    callbacks = self._topics_cb[msg["pattern"].decode()]
+                else:
+                    callbacks = self._topics_cb[channel]
+            msg = MessageObject(topic=channel, value=MsgpackSerialization.loads(msg["data"]))
+            for cb_ref, kwargs in callbacks:
+                cb = cb_ref()
+                if cb:
+                    self._execute_callback(cb, msg, kwargs)
+            return True
+        # pylint: disable=broad-except
+        except Exception:
+            content = traceback.format_exc()
+            bec_logger.logger.error(f"Error handling message {msg}:\n{content}")
 
     def poll_messages(self, timeout=None) -> None:
         """Poll messages from the messages queue
@@ -853,9 +868,8 @@ class RedisConnector(ConnectorBase):
     def set_and_publish(self, topic: EndpointInfo, msg, pipe=None, expire: int = None) -> None:
         """piped combination of self.publish and self.set"""
         client = pipe if pipe is not None else self.pipeline()
-        if not isinstance(msg, BECMessage):
-            raise TypeError(f"Message {msg} is not a BECMessage")
-        msg = MsgpackSerialization.dumps(msg)
+        if isinstance(msg, BECMessage):
+            msg = MsgpackSerialization.dumps(msg)
         client.set(topic, msg, ex=expire)
         self.raw_send(topic, msg, pipe=client)
         if not pipe:
