@@ -236,19 +236,16 @@ def test_redis_connector_lrange(connector, topic, start, end, use_pipe):
 )
 def test_redis_connector_set_and_publish(connector, topic, msg, pipe, expire):
     if not isinstance(msg, BECMessage):
-        with pytest.raises(TypeError):
-            connector.set_and_publish(topic, msg, pipe, expire)
+        msg_sent = msg
     else:
-        connector.set_and_publish(topic, msg, pipe, expire)
+        msg_sent = MsgpackSerialization.dumps(msg)
 
-        connector._redis_conn.pipeline().publish.assert_called_once_with(
-            topic, MsgpackSerialization.dumps(msg)
-        )
-        connector._redis_conn.pipeline().set.assert_called_once_with(
-            topic, MsgpackSerialization.dumps(msg), ex=expire
-        )
-        if not pipe:
-            connector._redis_conn.pipeline().execute.assert_called_once()
+    connector.set_and_publish(topic, msg, pipe, expire)
+
+    connector._redis_conn.pipeline().publish.assert_called_once_with(topic, msg_sent)
+    connector._redis_conn.pipeline().set.assert_called_once_with(topic, msg_sent, ex=expire)
+    if not pipe:
+        connector._redis_conn.pipeline().execute.assert_called_once()
 
 
 @pytest.mark.parametrize("topic, msg, expire", [["topic1", "msg1", None], ["topic2", "msg2", 400]])
