@@ -320,7 +320,7 @@ class DeviceManagerDS(DeviceManagerBase):
         # refresh the device info
         pipe = self.connector.pipeline()
         self.reset_device_data(obj, pipe)
-        self.publish_device_info(obj, pipe)
+        raised_exc = self.publish_device_info(obj, pipe)
         pipe.execute()
 
         # insert the created device obj into the device manager
@@ -328,6 +328,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
         # pylint:disable=protected-access # this function is shared with clients and it is currently not foreseen that clients add new devices
         self.devices._add_device(name, opaas_obj)
+
+        if raised_exc:
+            raise raised_exc
 
         if not enabled:
             return opaas_obj
@@ -432,7 +435,7 @@ class DeviceManagerDS(DeviceManagerBase):
             logger.error(f"{error_traceback}. Failed to connect to {obj.name}.")
             raise ConnectionError(f"Failed to establish a connection to device {obj.name}")
 
-    def publish_device_info(self, obj: OphydObject, pipe=None) -> None:
+    def publish_device_info(self, obj: OphydObject, pipe=None) -> None | Exception:
         """
         Publish the device info to redis. The device info contains
         inter alia the class name, user functions and signals.
@@ -440,13 +443,22 @@ class DeviceManagerDS(DeviceManagerBase):
         Args:
             obj (_type_): _description_
         """
-
-        interface = get_device_info(obj)
-        self.connector.set(
-            MessageEndpoints.device_info(obj.name),
-            messages.DeviceInfoMessage(device=obj.name, info=interface),
-            pipe,
-        )
+        try:
+            interface = get_device_info(obj)
+            self.connector.set(
+                MessageEndpoints.device_info(obj.name),
+                messages.DeviceInfoMessage(device=obj.name, info=interface),
+                pipe,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to get device info for {obj.name}: {exc}")
+            interface = get_device_info(obj, connect=False)
+            self.connector.set(
+                MessageEndpoints.device_info(obj.name),
+                messages.DeviceInfoMessage(device=obj.name, info=interface),
+                pipe,
+            )
+            return exc
 
     def reset_device_data(self, obj: OphydObject, pipe=None) -> None:
         """delete all device data and device info"""

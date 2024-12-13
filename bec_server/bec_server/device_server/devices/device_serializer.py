@@ -89,7 +89,9 @@ def get_device_base_class(obj: Any) -> str:
     return "unknown"
 
 
-def get_device_info(obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase) -> dict:
+def get_device_info(
+    obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, connect=True
+) -> dict:
     """
     Get the device info from the object
 
@@ -132,7 +134,7 @@ def get_device_info(obj: PositionerBase | ComputedSignal | Signal | Device | BEC
 
     if hasattr(obj, "walk_subdevices"):
         for _, dev in obj.walk_subdevices():
-            sub_devices.append(get_device_info(dev))
+            sub_devices.append(get_device_info(dev, connect=connect))
     if obj.name in protected_names or getattr(obj, "dotted_name", None) in protected_names:
         raise DeviceConfigError(
             f"Device name {obj.name} is protected and cannot be used. Please rename the device."
@@ -142,6 +144,13 @@ def get_device_info(obj: PositionerBase | ComputedSignal | Signal | Device | BEC
         hints = {"fields": [obj.name]}
     else:
         hints = obj.hints
+
+    if connect:
+        describe = obj.describe()
+        describe_configuration = obj.describe_configuration() | {"egu": getattr(obj, "egu", None)}
+    else:
+        describe = {}
+        describe_configuration = {}
     return {
         "device_name": obj.name,
         "device_info": {
@@ -152,9 +161,8 @@ def get_device_info(obj: PositionerBase | ComputedSignal | Signal | Device | BEC
             "write_access": getattr(obj, "write_access", None),
             "signals": signals,
             "hints": hints,
-            "describe": obj.describe(),
-            "describe_configuration": obj.describe_configuration()
-            | {"egu": getattr(obj, "egu", None)},
+            "describe": describe,
+            "describe_configuration": describe_configuration,
             "sub_devices": sub_devices,
             "custom_user_access": user_access,
         },

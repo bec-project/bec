@@ -485,6 +485,10 @@ class DeviceManagerBase:
                     )
                 if "enabled" in config[dev]:
                     self.devices[dev]._config["enabled"] = config[dev]["enabled"]
+                    if self.devices[dev].enabled:
+                        dev_info_msg = self._get_device_info(dev)
+                        self.devices[dev]._info = dev_info_msg.info.get("device_info", {})
+                        self.devices[dev]._parse_info()
                     status = "enabled" if self.devices[dev].enabled else "disabled"
                     logger.info(f"Device {dev} has been {status}.")
                 if "readOnly" in config[dev]:
