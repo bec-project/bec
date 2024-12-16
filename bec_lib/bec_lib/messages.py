@@ -889,6 +889,18 @@ class GUIInstructionMessage(BECMessage):
     parameter: dict
 
 
+class GUIAutoUpdateConfigMessage(BECMessage):
+    """Message for Auto Update configuration
+
+    Args:
+        selected_device (str): the selected device for plotting
+        metadata (dict, optional): Metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "gui_auto_update_config_message"
+    selected_device: str
+
+
 class ServiceResponseMessage(BECMessage):
     """Message for service responses
 

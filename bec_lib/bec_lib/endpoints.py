@@ -1286,6 +1286,21 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def gui_auto_update_config(gui_id: str) -> EndpointInfo:
+        """
+        Endpoint for Auto Update configuration.
+
+        Returns:
+            EndpointInfo: Endpoint for Auto Update configuration.
+        """
+        endpoint = f"public/gui/config/auto_update/{gui_id}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.GUIAutoUpdateConfigMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
+
+    @staticmethod
     def gui_heartbeat(gui_id: str) -> EndpointInfo:
         """
         Endpoint for GUI heartbeat. This endpoint is used to publish the GUI heartbeat
