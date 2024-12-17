@@ -1,3 +1,4 @@
+import threading
 import time
 
 import numpy as np
@@ -75,6 +76,24 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == reference_container["data"][ii]
+
+
+@pytest.mark.timeout(100)
+def test_rpc_call_in_event_callback(bec_client_lib):
+    scans = bec_client_lib.scans
+    cb_executed = threading.Event()
+
+    def scan_status_update(msg):
+        status = msg.value.status
+        if status == "open":
+            # this makes a RPC call
+            pos = yield dev.samx.position
+            cb_executed.set()
+
+    bec_client_lib.connector.register(MessageEndpoints.scan_status(), cb=scan_status_update)
+    s = scans.line_scan(dev.samx, 0, 1, steps=10, exp_time=0.2, relative=False)
+    s.wait()
+    cb_executed.wait()
 
 
 @pytest.mark.timeout(100)

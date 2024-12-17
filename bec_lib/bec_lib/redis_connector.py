@@ -16,10 +16,11 @@ import time
 import traceback
 import warnings
 from collections.abc import MutableMapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import wraps
 from glob import fnmatch
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Generator
 
 import louie
 import redis
@@ -114,6 +115,12 @@ def validate_endpoint(endpoint_arg):
 
 
 @dataclass
+class GeneratorExecution:
+    fut: Awaitable
+    g: Generator
+
+
+@dataclass
 class StreamSubscriptionInfo:
     id: str
     topic: str
@@ -185,6 +192,8 @@ class RedisConnector(ConnectorBase):
         self._stop_stream_events_listener_thread = threading.Event()
         self.stream_keys = {}
 
+        self._generator_executor = ThreadPoolExecutor()
+
     def authenticate(self, password: str, username: str = "user"):
         """
         Authenticate to the redis server
@@ -201,6 +210,9 @@ class RedisConnector(ConnectorBase):
         Shutdown the connector
         """
         super().shutdown()
+
+        self._generator_executor.shutdown()
+
         if self._events_listener_thread:
             self._stop_events_listener_thread.set()
             self._events_listener_thread.join()
@@ -726,22 +738,38 @@ class RedisConnector(ConnectorBase):
 
     def _execute_callback(self, cb, msg, kwargs):
         try:
-            cb(msg, **kwargs)
+            g = cb(msg, **kwargs)
         # pylint: disable=broad-except
         except Exception:
             sys.excepthook(*sys.exc_info())
-
-    def _handle_stream_message(self, stream_msg):
-        for cb_ref, kwargs in stream_msg.callbacks:
-            cb = cb_ref()
-            if cb:
-                self._execute_callback(cb, stream_msg.msg, kwargs)
-        return True
+        else:
+            if inspect.isgenerator(g):
+                # reschedule execution to delineate the generator
+                self._messages_queue.put(g)
 
     def _handle_message(self, msg):
-        try:
-            if isinstance(msg, StreamMessage):
-                return self._handle_stream_message(msg)
+        if inspect.isgenerator(msg):
+            g = msg
+            fut = self._generator_executor.submit(next, g)
+            self._messages_queue.put(GeneratorExecution(fut, g))
+        elif isinstance(msg, StreamMessage):
+            for cb_ref, kwargs in msg.callbacks:
+                cb = cb_ref()
+                if cb:
+                    self._execute_callback(cb, msg.msg, kwargs)
+        elif isinstance(msg, GeneratorExecution):
+            fut, g = msg.fut, msg.g
+            if fut.done():
+                try:
+                    res = fut.result()
+                except StopIteration:
+                    pass
+                else:
+                    fut = self._generator_executor.submit(g.send, res)
+                    self._messages_queue.put(GeneratorExecution(fut, g))
+            else:
+                self._messages_queue.put(GeneratorExecution(fut, g))
+        else:
             channel = msg["channel"].decode()
             with self._topics_cb_lock:
                 if msg["pattern"] is not None:
@@ -753,11 +781,6 @@ class RedisConnector(ConnectorBase):
                 cb = cb_ref()
                 if cb:
                     self._execute_callback(cb, msg, kwargs)
-            return True
-        # pylint: disable=broad-except
-        except Exception:
-            content = traceback.format_exc()
-            bec_logger.logger.error(f"Error handling message {msg}:\n{content}")
 
     def poll_messages(self, timeout=None) -> None:
         """Poll messages from the messages queue
@@ -785,7 +808,12 @@ class RedisConnector(ConnectorBase):
                 if msg is StopIteration:
                     return False
 
-                self._handle_message(msg)
+                try:
+                    self._handle_message(msg)
+                # pylint: disable=broad-except
+                except Exception:
+                    content = traceback.format_exc()
+                    bec_logger.logger.error(f"Error handling message {msg}:\n{content}")
 
                 if timeout is None:
                     if self._messages_queue.empty():
