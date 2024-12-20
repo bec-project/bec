@@ -60,6 +60,15 @@ def decode_bec_message_v12(raw_bytes):
     return msg
 
 
+def encode_bec_message_json(msg):
+    if not isinstance(msg, BECMessage):
+        return msg
+
+    msg_version = 1.2
+    out = {"msg_type": msg.msg_type, "msg_version": msg_version, "msg_body": msg.__dict__}
+    return json_ext.dumps(out)
+
+
 def encode_bec_status(status):
     if not isinstance(status, BECStatus):
         return status
@@ -133,6 +142,8 @@ def decode_bec_type(obj):
 class SerializationRegistry:
     """Registry for serialization codecs"""
 
+    use_json = False
+
     def __init__(self):
         self._encoder = []
         self._ext_decoder = {}
@@ -181,9 +192,13 @@ class SerializationRegistry:
         """
         Register codec for BECMessage
         """
-        # order matters
-        self.register_ext_type(encode_bec_status, decode_bec_status)
-        self.register_ext_type(encode_bec_message_v12, decode_bec_message_v12)
+        if not self.use_json:
+            # order matters
+            self.register_ext_type(encode_bec_status, decode_bec_status)
+            self.register_ext_type(encode_bec_message_v12, decode_bec_message_v12)
+        else:
+            self.register_object_hook(encode_bec_status, decode_bec_status)
+            self.register_object_hook(encode_bec_message_json, decode_bec_message_v12)
 
     def register_set_encoder(self):
         """
@@ -257,6 +272,8 @@ class MsgpackExt(SerializationRegistry):
 
 class JsonExt(SerializationRegistry):
     """Encapsulates JSON dumps/loads with extensions"""
+
+    use_json = True
 
     def _default(self, obj):
         for encoder, _ in self._encoder:
