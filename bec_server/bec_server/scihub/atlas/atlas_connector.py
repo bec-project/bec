@@ -141,3 +141,7 @@ class AtlasConnector:
             self._config_request_handler.shutdown()
         if self.metadata_handler:
             self.metadata_handler.shutdown()
+        if self.atlas_forwarder:
+            self.atlas_forwarder.shutdown()
+        if self.redis_atlas:
+            self.redis_atlas.shutdown()
