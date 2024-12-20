@@ -313,9 +313,9 @@ class RedisConnector(ConnectorBase):
             msg (BECMessage): message
             pipe (Pipeline, optional): redis pipe. Defaults to None.
         """
-        if not isinstance(msg, BECMessage):
-            raise TypeError(f"Message {msg} is not a BECMessage")
-        self.raw_send(topic, MsgpackSerialization.dumps(msg), pipe)
+        if isinstance(msg, BECMessage):
+            msg = MsgpackSerialization.dumps(msg)
+        self.raw_send(topic, msg, pipe)
 
     def _start_events_dispatcher_thread(self, start_thread):
         if start_thread and self._events_dispatcher_thread is None:
@@ -906,6 +906,14 @@ class RedisConnector(ConnectorBase):
                 return MsgpackSerialization.loads(data)
             except RuntimeError:
                 return data
+
+    def mget(self, topics: list[str], pipe=None):
+        """retrieve multiple entries"""
+        client = pipe if pipe is not None else self._redis_conn
+        data = client.mget(topics)
+        if pipe:
+            return data
+        return [MsgpackSerialization.loads(d) if d else None for d in data]
 
     @validate_endpoint("topic")
     def xadd(
