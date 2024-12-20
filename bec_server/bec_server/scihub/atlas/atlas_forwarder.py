@@ -9,6 +9,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
 if TYPE_CHECKING:
+    from bec_lib.redis_connector import RedisConnector
     from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 
 logger = bec_logger.logger
@@ -17,7 +18,6 @@ logger = bec_logger.logger
 class AtlasForwarder:
     def __init__(self, atlas_connector: AtlasConnector):
         self.atlas_connector = atlas_connector
-        self._deployment_register = None
         self.active_subscriptions = set()
         self._deployment_cleanup_thread = None
         self._shutdown_event = threading.Event()
@@ -25,10 +25,15 @@ class AtlasForwarder:
         self._start_deployment_cleanup_loop()
 
     def _start_deployment_subscription(self):
-        self._deployment_register = self.atlas_connector.redis_atlas.register(
+        self.atlas_connector.redis_atlas.register(
             patterns=f"internal/deployment/{self.atlas_connector.deployment_name}/*/state",
             # patterns="*",
             cb=self._update_deployment_subscriptions,
+            parent=self,
+        )
+        self.atlas_connector.redis_atlas.register(
+            patterns=f"internal/deployment/{self.atlas_connector.deployment_name}/request",
+            cb=self._on_redis_request,
             parent=self,
         )
 
@@ -50,13 +55,28 @@ class AtlasForwarder:
             self._shutdown_event.wait(60)
 
     @staticmethod
+    def _on_redis_request(msg_obj, parent):
+        msg = msg_obj.value
+        redis_atlas: RedisConnector = parent.atlas_connector.redis_atlas
+        redis_bec: RedisConnector = parent.atlas_connector.connector
+        if msg.data.get("action") == "get":
+            key = msg.data.get("key")
+
+            out = redis_bec.get(key)
+            topic = msg.data.get("response_endpoint")
+            if out is None:
+                out = "null"
+            print(f"Sending response to {topic}: {out}")
+            redis_atlas.send(topic, out)
+
+    @staticmethod
     def _update_deployment_subscriptions(msg_obj, parent):
         msg = msg_obj.value
         parent.update_deployment_state(msg)
 
     def update_deployment_state(self, msg: messages.RawMessage):
         requested_subscriptions = {
-            sub for user_info in msg.data.values() for sub in user_info.get("subscriptions", [])
+            sub[0] for user_info in msg.data.values() for sub in user_info.get("subscriptions", [])
         }
 
         # Add new subscriptions
