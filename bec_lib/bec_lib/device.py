@@ -298,7 +298,7 @@ class DeviceBase:
                 error = {"error": "Exception", "msg": error, "traceback": ""}
             raise RPCError(
                 f"During an RPC, the following error occured:\n{error['error']}:"
-                f" {error['msg']}.\nTraceback: {error['traceback']}\n The scan will be aborted."
+                f" {error['msg']}.\nTraceback: {error['traceback']}\n The request will be aborted."
             )
         if msg.content.get("out"):
             print(msg.content.get("out"))
