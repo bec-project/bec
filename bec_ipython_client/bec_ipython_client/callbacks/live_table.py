@@ -138,8 +138,8 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def _prepare_table(self) -> PrettyTable:
         """Prepares the custom table for the live updates."""
         header = self._get_header()
-        max_len = max(len(head) for head in header)
-        return PrettyTable(header, padding=max_len)
+        # min_len = min(len(head) for head in header)
+        return PrettyTable(header)
 
     def _get_header(self) -> list:
         """get the header for the table with up to self.MAX_DEVICES as entries

@@ -4,8 +4,9 @@ import numpy as np
 
 
 class PrettyTable:
-    def __init__(self, header: list, padding: int = 18) -> None:
+    def __init__(self, header: list, padding: int = 2, min_size: int = 6) -> None:
         self.header = header
+        self.header_sizes = [max(len(h), min_size) for h in header]
         self.padding = padding
         self.row_separator = None
         self.format_string = [".2f" for _ in self.header]
@@ -19,14 +20,20 @@ class PrettyTable:
     def get_header(self) -> str:
         return (
             "|"
-            + "|".join(self.aligned_to_center(self.padding, header) for header in self.header)
+            + "|".join(
+                self.aligned_to_center(header_size + self.padding, header)
+                for header_size, header in zip(self.header_sizes, self.header)
+            )
             + "|"
         )
 
     def get_row(self, *args) -> str:
         return (
             "|"
-            + "|".join(self.aligned_to_center(self.padding, val) for ii, val in enumerate(args))
+            + "|".join(
+                self.aligned_to_center(self.header_sizes[ii] + self.padding, val)
+                for ii, val in enumerate(args)
+            )
             + "|"
         )
 
@@ -39,7 +46,13 @@ class PrettyTable:
         return self._get_separator(fill="=")
 
     def _get_separator(self, column_sign="+", fill="-") -> str:
-        return "".join(column_sign + fill * self.padding for _ in self.header) + column_sign
+        return (
+            "".join(
+                column_sign + fill * (header_size + self.padding)
+                for header_size in self.header_sizes
+            )
+            + column_sign
+        )
 
     def get_header_lines(self) -> str:
         return self.header_lines
