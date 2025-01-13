@@ -35,8 +35,11 @@ class IPythonLiveUpdates:
         self._user_callback = None
         self._request_block_index = collections.defaultdict(lambda: 0)
         self._request_block_id = None
-        self.print_table_data = True
         self._current_queue = None
+
+    @property
+    def print_table_data(self):
+        return self.client.live_updates_config.print_live_table
 
     def _process_report_instructions(self, report_instructions: list) -> None:
         """Process instructions for the live updates.

@@ -249,6 +249,8 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def print_table_data(self):
         """print the table data for the current point_id"""
+        # pylint: disable=protected-access
+        self._print_client_msgs_asap()
         if not self._print_table_data:
             return
 
@@ -292,8 +294,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 self.dev_values[ind] = print_value
                 ind += 1
         print(self.table.get_row(str(self.point_id), *self.dev_values))
-        # pylint: disable=protected-access
-        self._print_client_msgs_asap()
 
     def close_table(self):
         """close the table and print the footer"""
@@ -305,7 +305,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 f"Scan {self.scan_item.scan_number} finished. Scan ID {self.scan_item.scan_id}. Elapsed time: {elapsed_time:.2f} s"
             )
         )
-        self._print_client_msgs_all()
 
     def process_request(self):
         """process the request and start the core loop for live updates"""
@@ -335,3 +334,4 @@ class LiveUpdatesTable(LiveUpdatesBase):
         self.wait_for_scan_item_to_finish()
         if self._print_table_data:
             self.close_table()
+        self._print_client_msgs_all()

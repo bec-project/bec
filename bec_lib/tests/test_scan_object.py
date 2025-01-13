@@ -93,7 +93,7 @@ def test_scan_object(scan_obj, dev):
 
 
 def test_scan_object_wo_live_updates(scan_obj, dev):
-    scan_obj.client.live_updates = None
+    scan_obj.client._live_updates = None
     with mock.patch("bec_lib.scan_report.ScanReport.from_request") as report:
         scan_obj._run(dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False)
         report().wait.assert_not_called()

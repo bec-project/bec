@@ -55,7 +55,7 @@ class BECIPythonClient:
         self._beamline_mixin = None
         self._exit_event = None
         self._exit_handler_thread = None
-        self.live_updates = None
+        self._live_updates = None
         self.gui = None
         self._client.callbacks.register(
             event_type=EventType.NAMESPACE_UPDATE, callback=self._update_namespace_callback
@@ -78,7 +78,7 @@ class BECIPythonClient:
         bec_logger.add_console_log()
         self._sighandler = SigintHandler(self)
         self._beamline_mixin = BeamlineMixin()
-        self.live_updates = IPythonLiveUpdates(self)
+        self._live_updates = IPythonLiveUpdates(self)
         self._configure_ipython()
         self.started = self._client.started
 

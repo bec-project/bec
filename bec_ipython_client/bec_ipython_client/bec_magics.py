@@ -28,7 +28,7 @@ class BECMagics(Magics):
     def resume(self, line):
         "Resume the scan"
         self.client.queue.request_scan_continuation()
-        return self.client.live_updates.continue_request()
+        return self.client._live_updates.continue_request()
 
     @line_magic
     def pause(self, line):
@@ -52,7 +52,7 @@ class BECMagics(Magics):
         scan_report = self.client.scans._available_scans["fermat_scan"]._get_scan_report_type(
             hide_report
         )
-        return self.client.live_updates.process_request(request, scan_report, [])
+        return self.client._live_updates.process_request(request, scan_report, [])
 
     @line_magic
     def halt(self, line):

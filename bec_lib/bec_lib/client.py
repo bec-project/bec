@@ -77,6 +77,13 @@ class SystemConfig(BaseModel):
         return value
 
 
+class LiveUpdatesConfig(BaseModel):
+    """LiveUpdates Config"""
+
+    print_live_table: bool = True
+    print_client_messages: bool = True
+
+
 class BECClient(BECService, UserScriptsMixin):
     """
     The BECClient class is the main entry point for the BEC client and all derived classes.
@@ -118,13 +125,14 @@ class BECClient(BECService, UserScriptsMixin):
         self.alarm_handler = None
         self.config = None
         self.history = None
-        self.live_updates = None
+        self._live_updates = None
         self.dap = None
         self.device_monitor = None
         self.bl_checks = None
         self.scans_namespace = SimpleNamespace()
         self._hli_funcs = {}
         self.metadata = {}
+        self.live_updates_config = LiveUpdatesConfig()
         self.system_config = SystemConfig()
         self.callbacks = CallbackHandler()
         self._parent = parent if parent is not None else self

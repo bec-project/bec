@@ -95,6 +95,8 @@ class LiveUpdatesBase(abc.ABC):
         msgs = self.scan_queue_request.queue.get_client_messages(only_asap=True)
         if not msgs:
             return
+        if self.bec.live_updates_config.print_client_messages is False:
+            return
         for msg in msgs:
             print(self.scan_queue_request.queue.format_client_msg(msg))
 
@@ -104,6 +106,8 @@ class LiveUpdatesBase(abc.ABC):
         if self.scan_queue_request is None:
             return
         msgs = self.scan_queue_request.queue.get_client_messages()
+        if self.bec.live_updates_config.print_client_messages is False:
+            return
         if not msgs:
             return
         print("------------------------")

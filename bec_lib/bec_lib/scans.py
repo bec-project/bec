@@ -134,8 +134,8 @@ class ScanObject:
         if scans._scan_export and scans._scan_export.scans is not None:
             scans._scan_export.scans.append(report)
 
-        if not hide_report and self.client.live_updates:
-            self.client.live_updates.process_request(request, callback)
+        if not hide_report and self.client._live_updates:
+            self.client._live_updates.process_request(request, callback)
 
         self.client.callbacks.poll()
 

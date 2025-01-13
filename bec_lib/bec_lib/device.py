@@ -336,6 +336,10 @@ class DeviceBase:
     def _handle_client_info_msg(self):
         """Handle client messages during RPC calls"""
         msgs = self.root.parent.connector.xread(MessageEndpoints.client_info(), block=200)
+        # The client is the parent.parent of the device
+        client: BECClient = self.root.parent.parent
+        if client.live_updates_config.print_client_messages is False:
+            return
         if not msgs:
             return
         for msg in msgs:
