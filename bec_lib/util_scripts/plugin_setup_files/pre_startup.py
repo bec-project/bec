@@ -14,10 +14,3 @@ def extend_command_line_args(parser):
     # parser.add_argument("--session", help="Session name", type=str, default="cSAXS")
 
     return parser
-
-
-# def get_config() -> ServiceConfig:
-#     """
-#     Create and return the service configuration.
-#     """
-#     return ServiceConfig(redis={"host": "localhost", "port": 6379})

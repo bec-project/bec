@@ -236,7 +236,7 @@ class RedisConnector(ConnectorBase):
     def send_client_info(
         self,
         message: str,
-        rid: str = None,
+        show_asap: bool = False,
         source: Literal[
             "bec_ipython_client",
             "scan_server",
@@ -248,8 +248,8 @@ class RedisConnector(ConnectorBase):
             None,
         ] = None,
         severity: int = 0,
-        show_asap: bool = False,
         scope: str = None,
+        rid: str = None,
         metadata: dict = None,
     ):
         """
@@ -257,6 +257,12 @@ class RedisConnector(ConnectorBase):
 
         Args:
             msg (str): message
+            show_asap (bool, optional): show asap. Defaults to False.
+            source (Literal[str], optional): Any of the services: "bec_ipython_client", "scan_server", "device_server", "scan_bundler", "file_writer", "scihub", "dap". Defaults to None.
+            severity (int, optional): severity. Defaults to 0.
+            rid (str, optional): request ID. Defaults to None.
+            scope (str, optional): scope. Defaults to None.
+            metadata (dict, optional): metadata. Defaults to None.
         """
         client_msg = ClientInfoMessage(
             message=message,
