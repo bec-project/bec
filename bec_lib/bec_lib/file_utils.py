@@ -8,13 +8,16 @@ from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import ServiceConfigError
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
 from bec_lib.utils.import_utils import lazy_import_from
 
-# TODO: put back normal import when Pydantic gets faster
-ScanStatusMessage = lazy_import_from("bec_lib.messages", ("ScanStatusMessage",))
-
+logger = bec_logger.logger
 if TYPE_CHECKING:
+    from bec_lib.messages import ScanStatusMessage
     from bec_lib.redis_connector import RedisConnector
+else:
+    # TODO: put back normal import when Pydantic gets faster
+    ScanStatusMessage = lazy_import_from("bec_lib.messages", ("ScanStatusMessage",))
 
 
 class ServiceConfigParser:
@@ -118,6 +121,53 @@ class FileWriterError(Exception):
     """Exception for errors in the file writer"""
 
 
+def compile_file_path_for_scan_status(
+    base_path: str,
+    scan_nr: int,
+    scan_bundle: int = 1000,
+    leading_zeros: int = 5,
+    file_directory: str = None,
+) -> str:
+    """Compile the File Path for ScanStatusMessage without suffix and file type extension."""
+    if file_directory is None:
+        file_directory = FileWriter.get_scan_directory(
+            scan_number=scan_nr, scan_bundle=scan_bundle, leading_zeros=leading_zeros
+        )
+
+    file_path = os.path.join(base_path, "data", file_directory, f"S{scan_nr:0{leading_zeros}d}")
+    return file_path
+
+
+def get_full_path(scan_status_msg: ScanStatusMessage, name: str, create_dir: bool = True) -> str:
+    """Get the full file path for a given scan status message and additional name.
+
+    Args:
+        scan_status_msg (ScanStatusMessage): Scan status message
+        name (str): Additional name (i.e. device name) to add to the file path
+        create_dir (bool, optional): Create the directory if it does not exist. Defaults to True.
+    """
+
+    if name == "":
+        raise FileWriterError("Name must not be empty.")
+    check_name = name.replace("_", "").replace("-", "")
+    if not check_name.isalnum() or not check_name.isascii():
+        raise FileWriterError(
+            f"Can't use suffix {name}; formatting is alphanumeric:{name.isalnum()} and ascii {name.isascii()}"
+        )
+    file_path = scan_status_msg.info.get("file_path", None)
+    if not file_path:
+        raise FileWriterError("No file path available in scan status message.")
+    # Add name and user_suffix to the file path
+    user_suffix = scan_status_msg.scan_parameters["system_config"].get("file_suffix", None)
+    if user_suffix:
+        name += f"_{user_suffix}"
+    # Compile full file path
+    full_path = f"{file_path}_{name}.h5"
+    if create_dir:
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    return full_path
+
+
 class FileWriter:
     """FileWriter for creating file paths and directories for services and devices."""
 
@@ -171,8 +221,9 @@ class FileWriter:
         """Get the number of leading zeros."""
         return self._leading_zeros
 
+    @staticmethod
     def get_scan_directory(
-        self, scan_number: int, scan_bundle: int, leading_zeros: int = None, user_suffix: str = None
+        scan_number: int, scan_bundle: int, leading_zeros: int = None, user_suffix: str = None
     ) -> str:
         """
         Get the scan directory for a given scan number and scan bundle.
@@ -225,6 +276,13 @@ class FileWriter:
         Returns:
             str: Full filename
         """
+        logger.warning(
+            (
+                "Deprecation warning. This method will be removed in the future."
+                "Use get_full_path from this module instead."
+            )
+        )
+
         # to check if suffix is alphanumeric and ascii, however we allow in addition - and _
         check_suffix = suffix.replace("_", "").replace("-", "")
         if not check_suffix.isalnum() or not check_suffix.isascii():

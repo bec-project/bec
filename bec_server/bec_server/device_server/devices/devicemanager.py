@@ -292,6 +292,10 @@ class DeviceManagerDS(DeviceManagerBase):
         signature = inspect.signature(dev_cls)
         if "device_manager" in signature.parameters:
             init_kwargs["device_manager"] = device_manager
+        if "scan_info" in signature.parameters:
+            # Additional device_manager != None is needed for static_device_test which
+            # uses the static method with device_manager=None
+            init_kwargs["scan_info"] = device_manager.scan_info if device_manager else None
 
         # initialize the device object
         obj = dev_cls(**init_kwargs)
@@ -394,6 +398,8 @@ class DeviceManagerDS(DeviceManagerBase):
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
         self.connect_device(opaas_obj.obj)
+        if hasattr(opaas_obj.obj, "on_connected"):
+            opaas_obj.obj.on_connected()
         opaas_obj.initialize_device_buffer(self.connector)
 
     @staticmethod

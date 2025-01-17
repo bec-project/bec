@@ -216,11 +216,18 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
             scan_type="grid_scan",
             parameter={
                 "args": {"samx": (-5, 5, 5), "samy": (-1, 1, 2)},
-                "kwargs": {"exp_time": 1, "relative": True},
+                "kwargs": {
+                    "exp_time": 1,
+                    "relative": True,
+                    "system_config": {"file_suffix": None, "file_directory": None},
+                },
                 "num_points": 10,
             },
             queue="primary",
-            metadata={"RID": "something"},
+            metadata={
+                "RID": "something",
+                "system_config": {"file_suffix": None, "file_directory": None},
+            },
         )
     ],
 )
@@ -228,7 +235,10 @@ def test_initialize_scan_info(scan_worker_mock, msg):
     worker = scan_worker_mock
     scan_server = scan_worker_mock.parent
     rb = RequestBlock(msg, assembler=ScanAssembler(parent=scan_server))
-    assert rb.metadata == {"RID": "something"}
+    assert rb.metadata == {
+        "RID": "something",
+        "system_config": {"file_suffix": None, "file_directory": None},
+    }
 
     with mock.patch.object(worker, "current_instruction_queue_item"):
         worker.scan_motors = ["samx"]
@@ -251,7 +261,11 @@ def test_initialize_scan_info(scan_worker_mock, msg):
         assert worker.current_scan_info["monitor_sync"] == "bec"
         assert worker.current_scan_info["frames_per_trigger"] == 1
         assert worker.current_scan_info["args"] == {"samx": (-5, 5, 5), "samy": (-1, 1, 2)}
-        assert worker.current_scan_info["kwargs"] == {"exp_time": 1, "relative": True}
+        assert worker.current_scan_info["kwargs"] == {
+            "exp_time": 1,
+            "relative": True,
+            "system_config": {"file_suffix": None, "file_directory": None},
+        }
         assert "samx" in worker.current_scan_info["readout_priority"]["monitored"]
         assert "samy" in worker.current_scan_info["readout_priority"]["baseline"]
 
