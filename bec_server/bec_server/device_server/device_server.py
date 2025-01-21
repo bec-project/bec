@@ -6,9 +6,10 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
 import ophyd
-from ophyd import Kind, OphydObject, Staged
+from ophyd import DeviceStatus, Kind, OphydObject, Staged
 from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
@@ -107,7 +108,7 @@ class RequestHandler:
         """
         self._storage.clear()
 
-    def add_status_object(self, instr_id: str, status_obj: ophyd.StatusBase):
+    def add_status_object(self, instr_id: str, status_obj: ophyd.StatusBase, cb: callable = None):
         """
         Add a status object to the storage.
 
@@ -117,6 +118,8 @@ class RequestHandler:
         """
         self._storage[instr_id]["status_objects"].append(status_obj)
         status_obj.add_callback(self.on_status_object_update)
+        if cb is not None:
+            status_obj.add_callback(cb)
 
     def set_finished(self, instr_id: str, success: bool = None, error_message=None, result=None):
         """
@@ -422,7 +425,7 @@ class DeviceServer(RPCMixin, BECService):
             if not hasattr(obj, "complete"):
                 # if the device does not have a complete method, we assume that it is done
                 status = ophyd.StatusBase()
-                status.obj = obj
+                status.__dict__["obj"] = obj
                 status.set_finished()
             else:
                 logger.debug(f"Completing device: {dev}")
@@ -486,8 +489,10 @@ class DeviceServer(RPCMixin, BECService):
         pipe = self.connector.pipeline()
         if hasattr(status, "device"):
             obj = status.device
-        else:
+        elif hasattr(status, "obj"):
             obj = status.obj
+        else:
+            obj = status.__dict__["obj"]
 
         # if we've started a subscription, we need to unsubscribe now
         # this is typically the case for operations on nested devices.
@@ -652,24 +657,52 @@ class DeviceServer(RPCMixin, BECService):
         # self.requests_handler.add_request(instr, num_status_objects=len(devices))
         # moreover, we will then need to add the status objects to the request handler
         # self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status_obj)
-        self.requests_handler.add_request(instr, num_status_objects=0)
+        self.requests_handler.add_request(instr, num_status_objects=len(devices))
 
-        pipe = self.connector.pipeline()
         for dev in devices:
+            status = None
             obj = self.device_manager.devices[dev].obj
             if hasattr(obj, "_staged"):
                 # pylint: disable=protected-access
                 if obj._staged == Staged.yes:
                     logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
-                    self.device_manager.devices[dev].obj.unstage()
-                self.device_manager.devices[dev].obj.stage()
-            self.connector.set(
-                MessageEndpoints.device_staged(dev),
-                messages.DeviceStatusMessage(device=dev, status=1, metadata=instr.metadata),
-                pipe,
+                    status = self.device_manager.devices[dev].obj.unstage()
+                    if isinstance(status, DeviceStatus):
+                        status.wait(timeout=5)  # Timeout needed if unstage is stuck?
+                status = self.device_manager.devices[dev].obj.stage()
+            if not isinstance(status, DeviceStatus):
+                status = DeviceStatus(obj)
+                status.set_finished()
+            status.__dict__["instruction"] = instr
+            status.__dict__["obj"] = obj
+            status.__dict__["status"] = 1
+
+            self.requests_handler.add_status_object(
+                instr.metadata["device_instr_id"], status, cb=self._device_staged_callback
             )
-        pipe.execute()
-        self.requests_handler.set_finished(instr.metadata["device_instr_id"], success=True)
+
+    def _device_staged_callback(self, status: DeviceStatus) -> None:
+        """Set the device status to staged"""
+        obj = status.__dict__["obj"]
+        dev_name = obj.name
+        instr = status.__dict__["instruction"]
+        state = status.__dict__["status"]
+        self.connector.set(
+            MessageEndpoints.device_staged(dev_name),
+            messages.DeviceStatusMessage(device=dev_name, status=state, metadata=instr.metadata),
+        )
+        if state == 1:  # Device was/is staged
+            obj = self.device_manager.devices[dev_name].obj
+            if hasattr(obj, "_staged"):
+                # pylint: disable=protected-access
+                if obj._staged != Staged.yes:
+                    self.device_manager.connector.raise_alarm(
+                        severity=Alarms.MAJOR,
+                        alarm_type="Error",
+                        source={"device": dev_name, "method": "stage"},
+                        msg=f"Failed to run stage on device {dev_name}.",
+                        metadata={},
+                    )
 
     def _unstage_device(self, instr: messages.DeviceInstructionMessage) -> None:
         devices = instr.content["device"]
@@ -681,21 +714,25 @@ class DeviceServer(RPCMixin, BECService):
         # self.requests_handler.add_request(instr, num_status_objects=len(devices))
         # moreover, we will then need to add the status objects to the request handler
         # self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status_obj)
-        self.requests_handler.add_request(instr, num_status_objects=0)
-
-        pipe = self.connector.pipeline()
+        self.requests_handler.add_request(instr, num_status_objects=len(devices))
+        status = None
         for dev in devices:
+            status = None
             obj = self.device_manager.devices[dev].obj
             if hasattr(obj, "_staged"):
                 # pylint: disable=protected-access
                 if obj._staged == Staged.yes:
-                    self.device_manager.devices[dev].obj.unstage()
+                    status = self.device_manager.devices[dev].obj.unstage()
                 else:
                     logger.debug(f"Device {obj.name} was already unstaged.")
-            self.connector.set(
-                MessageEndpoints.device_staged(dev),
-                messages.DeviceStatusMessage(device=dev, status=0, metadata=instr.metadata),
-                pipe,
+
+            if not isinstance(status, DeviceStatus):
+                status = DeviceStatus(obj)
+                status.set_finished()
+            status.__dict__["instruction"] = instr
+            status.__dict__["obj"] = obj
+            status.__dict__["status"] = 0
+
+            self.requests_handler.add_status_object(
+                instr.metadata["device_instr_id"], status, cb=self._device_staged_callback
             )
-        pipe.execute()
-        self.requests_handler.set_finished(instr.metadata["device_instr_id"], success=True)

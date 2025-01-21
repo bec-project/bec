@@ -709,21 +709,40 @@ def test_retry_obj_method_buffer(device_server_mock, instr):
             parameter={},
             metadata={"stream": "primary", "device_instr_id": "diid"},
         ),
+        messages.DeviceInstructionMessage(
+            device="device_with_not_resolving_status",
+            action="stage",
+            parameter={},
+            metadata={"stream": "primary", "device_instr_id": "diid"},
+        ),
     ],
 )
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_stage_device(device_server_mock, instr):
     device_server = device_server_mock
-    device_server._stage_device(instr)
-    devices = instr.content["device"]
-    devices = devices if isinstance(devices, list) else [devices]
-    dev_man = device_server.device_manager.devices
-    for dev in devices:
-        if not hasattr(dev_man[dev].obj, "_staged"):
-            continue
+    if instr.content["device"] != "device_with_not_resolving_status":
+        device_server._stage_device(instr)
+        devices = instr.content["device"]
+        devices = devices if isinstance(devices, list) else [devices]
+        dev_man = device_server.device_manager.devices
+        for dev in devices:
+            if not hasattr(dev_man[dev].obj, "_staged"):
+                continue
+            assert device_server.device_manager.devices[dev].obj._staged == Staged.yes
+        device_server._unstage_device(instr)
+        for dev in devices:
+            if not hasattr(dev_man[dev].obj, "_staged"):
+                continue
+            assert device_server.device_manager.devices[dev].obj._staged == Staged.no
+    else:
+        # device_server_mock.device_manager.devices.device_with_not_resolving_status.enabled = True
+        device_server._stage_device(instr)
+        status = device_server.requests_handler._storage["diid"]["status_objects"][0]
+        assert status.done is False
+        dev = "device_with_not_resolving_status"
+        obj = device_server.device_manager.devices[dev].obj
+        obj.stage_thread_event.set()
+        while not status.done:
+            pass
+        assert status.done is True
         assert device_server.device_manager.devices[dev].obj._staged == Staged.yes
-    device_server._unstage_device(instr)
-    for dev in devices:
-        if not hasattr(dev_man[dev].obj, "_staged"):
-            continue
-        assert device_server.device_manager.devices[dev].obj._staged == Staged.no
