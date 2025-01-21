@@ -2223,7 +2223,6 @@ sim_proxy_test:
       motor_dir: [0, 1] # x:0 , y:1, z:2 coordinates
   enabled: true
   readOnly: false
-
 rt_controller:
   readoutPriority: baseline
   deviceClass: ophyd_devices.sim.SimPositionerWithController
@@ -2238,4 +2237,12 @@ rt_controller:
     - user motors
     - test device
   enabled: true
+  readOnly: false
+device_with_not_resolving_status:
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.sim.sim_test_devices.SimDeviceWithStatusStageUnstage
+  deviceConfig:
+  deviceTags:
+    - test device
+  enabled: false
   readOnly: false
