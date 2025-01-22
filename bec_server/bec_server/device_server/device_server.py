@@ -108,7 +108,7 @@ class RequestHandler:
         """
         self._storage.clear()
 
-    def add_status_object(self, instr_id: str, status_obj: ophyd.StatusBase, cb: callable = None):
+    def add_status_object(self, instr_id: str, status_obj: ophyd.StatusBase):
         """
         Add a status object to the storage.
 
@@ -118,8 +118,6 @@ class RequestHandler:
         """
         self._storage[instr_id]["status_objects"].append(status_obj)
         status_obj.add_callback(self.on_status_object_update)
-        if cb is not None:
-            status_obj.add_callback(cb)
 
     def set_finished(self, instr_id: str, success: bool = None, error_message=None, result=None):
         """
@@ -668,7 +666,14 @@ class DeviceServer(RPCMixin, BECService):
                     logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
                     status = self.device_manager.devices[dev].obj.unstage()
                     if isinstance(status, DeviceStatus):
-                        status.wait(timeout=5)  # Timeout needed if unstage is stuck?
+                        for ii in range(3):
+                            try:
+                                status.wait(timeout=10)
+                            except ophyd_errors.WaitTimeoutError:
+                                logger.warning(
+                                    f"Unstaging device {dev} still running, {10*(ii+1)} seconds passed."
+                                )
+                        raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")
                 status = self.device_manager.devices[dev].obj.stage()
             if not isinstance(status, DeviceStatus):
                 status = DeviceStatus(obj)
@@ -676,10 +681,8 @@ class DeviceServer(RPCMixin, BECService):
             status.__dict__["instruction"] = instr
             status.__dict__["obj"] = obj
             status.__dict__["status"] = 1
-
-            self.requests_handler.add_status_object(
-                instr.metadata["device_instr_id"], status, cb=self._device_staged_callback
-            )
+            status.add_callback(self._device_staged_callback)
+            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
     def _device_staged_callback(self, status: DeviceStatus) -> None:
         """Set the device status to staged"""
@@ -693,16 +696,9 @@ class DeviceServer(RPCMixin, BECService):
         )
         if state == 1:  # Device was/is staged
             obj = self.device_manager.devices[dev_name].obj
-            if hasattr(obj, "_staged"):
-                # pylint: disable=protected-access
-                if obj._staged != Staged.yes:
-                    self.device_manager.connector.raise_alarm(
-                        severity=Alarms.MAJOR,
-                        alarm_type="Error",
-                        source={"device": dev_name, "method": "stage"},
-                        msg=f"Failed to run stage on device {dev_name}.",
-                        metadata={},
-                    )
+            # pylint: disable=protected-access
+            if hasattr(obj, "_staged") and obj._staged != Staged.yes:
+                raise ValueError(f"Failed to stage device {dev_name}.")
 
     def _unstage_device(self, instr: messages.DeviceInstructionMessage) -> None:
         devices = instr.content["device"]
@@ -733,6 +729,5 @@ class DeviceServer(RPCMixin, BECService):
             status.__dict__["obj"] = obj
             status.__dict__["status"] = 0
 
-            self.requests_handler.add_status_object(
-                instr.metadata["device_instr_id"], status, cb=self._device_staged_callback
-            )
+            status.add_callback(self._device_staged_callback)
+            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
