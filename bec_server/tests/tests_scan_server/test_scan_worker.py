@@ -1,4 +1,5 @@
 # pylint: skip-file
+import os
 import uuid
 from unittest import mock
 
@@ -228,17 +229,48 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
                 "RID": "something",
                 "system_config": {"file_suffix": None, "file_directory": None},
             },
-        )
+        ),
+        messages.ScanQueueMessage(
+            scan_type="grid_scan",
+            parameter={
+                "args": {"samx": (-5, 5, 5), "samy": (-1, 1, 2)},
+                "kwargs": {
+                    "exp_time": 1,
+                    "relative": True,
+                    "system_config": {"file_suffix": "test", "file_directory": "tmp"},
+                },
+                "num_points": 10,
+            },
+            queue="primary",
+            metadata={
+                "RID": "something",
+                "system_config": {"file_suffix": "test", "file_directory": "tmp"},
+            },
+        ),
+        messages.ScanQueueMessage(
+            scan_type="grid_scan",
+            parameter={
+                "args": {"samx": (-5, 5, 5), "samy": (-1, 1, 2)},
+                "kwargs": {
+                    "exp_time": 1,
+                    "relative": True,
+                    "system_config": {"file_suffix": "test", "file_directory": None},
+                },
+                "num_points": 10,
+            },
+            queue="primary",
+            metadata={
+                "RID": "something",
+                "system_config": {"file_suffix": "test", "file_directory": None},
+            },
+        ),
     ],
 )
 def test_initialize_scan_info(scan_worker_mock, msg):
     worker = scan_worker_mock
     scan_server = scan_worker_mock.parent
     rb = RequestBlock(msg, assembler=ScanAssembler(parent=scan_server))
-    assert rb.metadata == {
-        "RID": "something",
-        "system_config": {"file_suffix": None, "file_directory": None},
-    }
+    assert rb.metadata == msg.metadata
 
     with mock.patch.object(worker, "current_instruction_queue_item"):
         worker.scan_motors = ["samx"]
@@ -261,13 +293,21 @@ def test_initialize_scan_info(scan_worker_mock, msg):
         assert worker.current_scan_info["monitor_sync"] == "bec"
         assert worker.current_scan_info["frames_per_trigger"] == 1
         assert worker.current_scan_info["args"] == {"samx": (-5, 5, 5), "samy": (-1, 1, 2)}
-        assert worker.current_scan_info["kwargs"] == {
-            "exp_time": 1,
-            "relative": True,
-            "system_config": {"file_suffix": None, "file_directory": None},
-        }
+        assert worker.current_scan_info["kwargs"] == msg.parameter["kwargs"]
         assert "samx" in worker.current_scan_info["readout_priority"]["monitored"]
         assert "samy" in worker.current_scan_info["readout_priority"]["baseline"]
+
+        base_path = worker.parent._service_config.service_config["file_writer"]["base_path"]
+        scan_nr = worker.current_scan_info["scan_number"]
+        file_dir = msg.parameter["kwargs"]["system_config"]["file_directory"]
+        suffix = msg.parameter["kwargs"]["system_config"]["file_suffix"]
+        if file_dir is None:
+            if suffix is None:
+                file_dir = "S00000-00999/S00002"
+            else:
+                file_dir = f"S00000-00999/S00002_{suffix}"
+        file_components = os.path.join(base_path, "data", file_dir, "S00002"), "h5"
+        assert worker.current_scan_info["file_components"] == file_components
 
 
 @pytest.mark.parametrize(

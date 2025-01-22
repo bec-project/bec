@@ -12,7 +12,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.utils.import_utils import lazy_import_from
 
 logger = bec_logger.logger
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.messages import ScanStatusMessage
     from bec_lib.redis_connector import RedisConnector
 else:
@@ -121,21 +121,39 @@ class FileWriterError(Exception):
     """Exception for errors in the file writer"""
 
 
-def compile_file_path_for_scan_status(
+def compile_file_components(
     base_path: str,
     scan_nr: int,
     scan_bundle: int = 1000,
     leading_zeros: int = 5,
     file_directory: str = None,
-) -> str:
-    """Compile the File Path for ScanStatusMessage without suffix and file type extension."""
+    user_suffix: str = None,
+) -> tuple[str, str]:
+    """Compile the File Path for ScanStatusMessage without suffix and file type extension.
+
+    Args:
+        base_path (str): Base path
+        scan_nr (int): Scan number
+        scan_bundle (int, optional): Scan bundle size. Defaults to 1000.
+        leading_zeros (int, optional): Number of leading zeros. Defaults to 5.
+        file_directory (str, optional): File directory. Defaults to None.
+
+    Returns:
+        tuple(str, str): Tuple with file path components (file_path, extension), i.e. ('/data/S00000-00999/S00001', 'h5')
+    """
+    file_extension = "h5"
     if file_directory is None:
         file_directory = FileWriter.get_scan_directory(
-            scan_number=scan_nr, scan_bundle=scan_bundle, leading_zeros=leading_zeros
+            scan_number=scan_nr,
+            scan_bundle=scan_bundle,
+            leading_zeros=leading_zeros,
+            user_suffix=user_suffix,
         )
 
-    file_path = os.path.join(base_path, "data", file_directory, f"S{scan_nr:0{leading_zeros}d}")
-    return file_path
+    file_path_component = os.path.join(
+        base_path, "data", file_directory, f"S{scan_nr:0{leading_zeros}d}"
+    )
+    return (file_path_component, file_extension)
 
 
 def get_full_path(scan_status_msg: ScanStatusMessage, name: str, create_dir: bool = True) -> str:
@@ -154,15 +172,18 @@ def get_full_path(scan_status_msg: ScanStatusMessage, name: str, create_dir: boo
         raise FileWriterError(
             f"Can't use suffix {name}; formatting is alphanumeric:{name.isalnum()} and ascii {name.isascii()}"
         )
-    file_path = scan_status_msg.info.get("file_path", None)
-    if not file_path:
+    file_components = scan_status_msg.info.get("file_components", None)
+    if not file_components:
+        raise FileWriterError("No file path available in scan status message.")
+    file_base_path, file_extension = file_components[0], file_components[1]
+    if not file_components:
         raise FileWriterError("No file path available in scan status message.")
     # Add name and user_suffix to the file path
     user_suffix = scan_status_msg.scan_parameters["system_config"].get("file_suffix", None)
     if user_suffix:
         name += f"_{user_suffix}"
     # Compile full file path
-    full_path = f"{file_path}_{name}.h5"
+    full_path = f"{file_base_path}_{name}.{file_extension}"
     if create_dir:
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path

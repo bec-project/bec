@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.file_utils import compile_file_path_for_scan_status
+from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
 
 from .errors import ScanAbortion
@@ -194,7 +194,7 @@ class ScanWorker(threading.Thread):
                 "num_points": num_points,
                 "scan_parameters": active_rb.scan.scan_parameters,
                 "request_inputs": active_rb.scan.request_inputs,
-                "file_path": compile_file_path_for_scan_status(
+                "file_components": compile_file_components(
                     # pylint: disable=protected-access
                     base_path=self.parent._service_config.service_config["file_writer"][
                         "base_path"
@@ -203,6 +203,7 @@ class ScanWorker(threading.Thread):
                     file_directory=active_rb.scan.scan_parameters["system_config"][
                         "file_directory"
                     ],
+                    user_suffix=active_rb.scan.scan_parameters["system_config"]["file_suffix"],
                 ),
             }
         )
