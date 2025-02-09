@@ -748,3 +748,6 @@ class ConnectorMock(ConnectorBase):  # pragma: no cover
             pipe._pipe_buffer.append(("xrange", (topic, min, max), {}))
             return
         return []
+
+    def can_connect(self):
+        return True
