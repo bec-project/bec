@@ -698,3 +698,9 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             pipe._pipe_buffer.append(("xrange", (topic, min, max), {}))
             return
         return []
+
+    def can_connect(self):
+        return True
+
+    def redis_server_is_running(self):
+        return True
