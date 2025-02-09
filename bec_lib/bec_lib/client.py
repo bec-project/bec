@@ -105,6 +105,7 @@ class BECClient(BECService, UserScriptsMixin):
         forced=False,
         parent=None,
         name: str | None = None,
+        prompt_for_acl=False,
     ) -> None:
         """
         Initialize the BECClient
@@ -115,6 +116,7 @@ class BECClient(BECService, UserScriptsMixin):
             wait_for_server (bool, optional): Whether to wait for the server to be available before starting. Defaults to False.
             forced (bool, optional): Whether to force the initialization of a new client. Defaults to False.
             name (str, optional): The name of the client. Defaults to None.
+            prompt_for_acl (bool, optional): Whether to prompt for ACL. Defaults to False.
         """
         if self._initialized:
             return
@@ -122,6 +124,7 @@ class BECClient(BECService, UserScriptsMixin):
             "config": config if config is not None else ServiceConfig(),
             "connector_cls": connector_cls if connector_cls is not None else RedisConnector,
             "wait_for_server": wait_for_server,
+            "prompt_for_acl": prompt_for_acl,
         }
         self._name = name
         self.device_manager = None
@@ -179,8 +182,13 @@ class BECClient(BECService, UserScriptsMixin):
             config = self.__init_params["config"]
             connector_cls = self.__init_params["connector_cls"]
             wait_for_server = self.__init_params["wait_for_server"]
+            prompt_for_acl = self.__init_params["prompt_for_acl"]
             super().__init__(
-                config, connector_cls, wait_for_server=wait_for_server, name=self._name
+                config,
+                connector_cls,
+                wait_for_server=wait_for_server,
+                name=self._name,
+                prompt_for_acl=prompt_for_acl,
             )
             builtins.bec = self._parent
             self._start_services()

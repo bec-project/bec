@@ -10,11 +10,6 @@ import yaml
 
 from bec_lib.logger import bec_logger
 
-try:
-    from bec_plugins.utils import load_service_config as plugin_load_service_config
-except ImportError:
-    plugin_load_service_config = None
-
 logger = bec_logger.logger
 
 DEFAULT_BASE_PATH = (
@@ -27,6 +22,7 @@ DEFAULT_SERVICE_CONFIG = {
         "file_writer": {"plugin": "default_NeXus_format", "base_path": DEFAULT_BASE_PATH},
         "log_writer": {"base_path": DEFAULT_BASE_PATH},
     },
+    "acl": DEFAULT_BASE_PATH + "/.bec_acl.env",
 }
 
 
@@ -77,13 +73,7 @@ class ServiceConfig:
                 f" {json.dumps(self.config, sort_keys=True, indent=4)}"
             )
             return
-        if plugin_load_service_config:
-            self.config = plugin_load_service_config()
-            logger.info(
-                "Loaded new config from plugin:"
-                f" {json.dumps(self.config, sort_keys=True, indent=4)}"
-            )
-            return
+
         if not self.config_path:
             self.config = DEFAULT_SERVICE_CONFIG
             return
