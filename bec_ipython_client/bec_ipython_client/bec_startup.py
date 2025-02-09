@@ -7,6 +7,7 @@ import numpy as np  # not needed but always nice to have
 from bec_ipython_client.main import BECIPythonClient as _BECIPythonClient
 from bec_ipython_client.main import main_dict as _main_dict
 from bec_lib import plugin_helper
+from bec_lib.acl_login import BECAuthenticationError
 from bec_lib.logger import bec_logger as _bec_logger
 from bec_lib.redis_connector import RedisConnector as _RedisConnector
 
@@ -25,6 +26,9 @@ _main_dict["bec"] = bec
 
 try:
     bec.start()
+except (BECAuthenticationError, KeyboardInterrupt) as exc:
+    logger.error(f"{exc} Exiting.")
+    os._exit(0)
 except Exception:
     sys.excepthook(*sys.exc_info())
 else:
