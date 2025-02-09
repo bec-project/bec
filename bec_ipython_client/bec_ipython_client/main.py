@@ -5,6 +5,7 @@ from importlib.metadata import version
 from typing import Iterable, Literal
 
 import IPython
+import requests
 from IPython.terminal.ipapp import TerminalIPythonApp
 from IPython.terminal.prompts import Prompts, Token
 
@@ -13,6 +14,7 @@ from bec_ipython_client.bec_magics import BECMagics
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
 from bec_ipython_client.signals import ScanInterruption, SigintHandler
 from bec_lib import plugin_helper
+from bec_lib.acl_login import BECAuthenticationError
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import parse_cmdline_args
@@ -28,14 +30,17 @@ logger = bec_logger.logger
 class CLIBECClient(BECClient):
 
     def _wait_for_server(self):
-        ret = super()._wait_for_server()
+        super()._wait_for_server()
+
+        # NOTE: self._BECClient__init_params is a name mangling attribute of the parent class
+        # pylint: disable=no-member
         cmdline_args = self._BECClient__init_params["config"].config.get("cmdline_args")
         # set stderr logger level to SUCCESS (will not show messages <= INFO level)
         # (see issue #318), except if user explicitely asked for another level from cmd line
         if not cmdline_args or not cmdline_args.get("log_level"):
+            # pylint: disable=protected-access
             bec_logger._stderr_log_level = "SUCCESS"
             bec_logger._update_sinks()
-        return ret
 
 
 class BECIPythonClient:
@@ -47,7 +52,13 @@ class BECIPythonClient:
         forced=False,
     ) -> None:
         self._client = CLIBECClient(
-            config, connector_cls, wait_for_server, forced, parent=self, name="BECIPythonClient"
+            config,
+            connector_cls,
+            wait_for_server,
+            forced,
+            parent=self,
+            name="BECIPythonClient",
+            prompt_for_acl=True,
         )
         self._ip = IPython.get_ipython()
         self.started = False
@@ -74,7 +85,15 @@ class BECIPythonClient:
         """start the client"""
         if self.started:
             return
-        self._client.start()
+        try:
+            self._client.start()
+        except requests.exceptions.HTTPError as exc:
+            raise BECAuthenticationError(
+                "Authentication failed. Please check your credentials."
+            ) from exc
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt("Login aborted.")
+
         bec_logger.add_console_log()
         self._sighandler = SigintHandler(self)
         self._beamline_mixin = BeamlineMixin()

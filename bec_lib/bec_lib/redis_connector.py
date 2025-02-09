@@ -7,6 +7,7 @@ redis server.
 from __future__ import annotations
 
 import collections
+import copy
 import inspect
 import itertools
 import queue
@@ -243,7 +244,7 @@ class RedisConnector:
 
         self._generator_executor = ThreadPoolExecutor()
 
-    def authenticate(self, password: str, username: str = "user"):
+    def authenticate(self, password: str | None = None, username: str = "default"):
         """
         Authenticate to the redis server
 
@@ -251,8 +252,39 @@ class RedisConnector:
             password (str): password
             username (str, optional): username. Defaults to "default".
         """
-        self._redis_conn.connection_pool.connection_kwargs["username"] = username
-        self._redis_conn.connection_pool.connection_kwargs["password"] = password
+        old_kwargs = copy.deepcopy(self._redis_conn.connection_pool.connection_kwargs)
+        try:
+            self._close_pubsub()
+            self._redis_conn.connection_pool.reset()
+            self._redis_conn.connection_pool.connection_kwargs["username"] = username
+            self._redis_conn.connection_pool.connection_kwargs["password"] = password
+            if password is not None:
+                self._redis_conn.auth(password, username=username)
+            self._restart_pubsub()
+        except redis.exceptions.RedisError as exc:
+            self._redis_conn.connection_pool.reset()
+            self._redis_conn.connection_pool.connection_kwargs = old_kwargs
+            raise exc
+
+    def _close_pubsub(self):
+        if self._events_listener_thread:
+            self._stop_events_listener_thread.set()
+            self._events_listener_thread.join()
+            self._events_listener_thread = None
+        self._pubsub_conn.close()
+
+    def _restart_pubsub(self):
+        self._pubsub_conn = self._redis_conn.pubsub()
+        self._pubsub_conn.ignore_subscribe_messages = True
+        for topic in self._topics_cb.keys():
+            if "*" in topic:
+                self._pubsub_conn.psubscribe(topic)
+            else:
+                self._pubsub_conn.subscribe(topic)
+        self._stop_events_listener_thread.clear()
+        if self._events_listener_thread is None:
+            self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
+            self._events_listener_thread.start()
 
     def shutdown(self):
         """
@@ -1244,6 +1276,24 @@ class RedisConnector:
             )
         self._redis_conn.sadd(set_endpoint.endpoint, raw_msg[1])
         return decoded_msg
+
+    def can_connect(self) -> bool:
+        """Check if the connector needs authentication"""
+        try:
+            self._redis_conn.ping()
+        except redis.exceptions.AuthenticationError:
+            return False
+        return True
+
+    def redis_server_is_running(self) -> bool:
+        """Check if the redis server is running"""
+        try:
+            self._redis_conn.ping()
+        except redis.exceptions.AuthenticationError:
+            return True
+        except redis.exceptions.ConnectionError:
+            return False
+        return True
 
     def producer(self):
         """Return itself as a producer, to be compatible with old code"""
