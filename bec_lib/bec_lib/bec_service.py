@@ -20,6 +20,7 @@ import tomli
 from rich.console import Console
 from rich.table import Table
 
+from bec_lib.acl_login import BECAccess
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.service_config import ServiceConfig
@@ -97,12 +98,24 @@ class BECService:
         unique_service=False,
         wait_for_server=False,
         name: str | None = None,
+        prompt_for_ACL=False,
     ) -> None:
         super().__init__()
         self._name = name if name else self.__class__.__name__
         self._import_config(config)
         self._connector_cls = connector_cls
         self.connector: RedisConnector = connector_cls(self.bootstrap_server)
+        if self._service_config.config.get("service_account"):
+            user = self._service_config.config["service_account"]
+            password = self._service_config.config.get("service_account_token")
+
+            self.connector.authenticate(username=user, password=password)
+        if not self.connector.can_connect():
+            if prompt_for_ACL:
+                acl = BECAccess(self.connector)
+                acl.login()
+            else:
+                raise RuntimeError("Could not connect to Redis.")
         self._unique_service = unique_service
         self.wait_for_server = wait_for_server
         self.__service_id = str(uuid.uuid4())

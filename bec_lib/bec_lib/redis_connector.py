@@ -1124,6 +1124,14 @@ class RedisConnector(ConnectorBase):
             )
         return msgs if msgs else None
 
+    def can_connect(self) -> bool:
+        """Check if the connector needs authentication"""
+        try:
+            self._redis_conn.ping()
+        except redis.exceptions.AuthenticationError:
+            return False
+        return True
+
     def producer(self):
         """Return itself as a producer, to be compatible with old code"""
         warnings.warn(
