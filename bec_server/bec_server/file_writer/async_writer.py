@@ -4,23 +4,23 @@ Async writer for writing async device data to a separate nexus file
 
 from __future__ import annotations
 
-import os
 import threading
 import traceback
 from collections import defaultdict
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import h5py
 import numpy as np
 
 from bec_lib import messages
+from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.serialization import MsgpackSerialization
 
 logger = bec_logger.logger
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.redis_connector import RedisConnector
 
 
@@ -53,6 +53,8 @@ class AsyncWriter(threading.Thread):
         self.written_devices = set()
         self.file_handle = None
 
+        self.cursor = defaultdict(dict)
+
     def initialize_stream_keys(self):
         """
         Initialize the stream keys for the devices
@@ -83,35 +85,14 @@ class AsyncWriter(threading.Thread):
                 device_name = topic.decode().split("/")[-1]
                 for _, msg_entry in record.items():
                     device_msg: messages.DeviceMessage = MsgpackSerialization.loads(msg_entry)
-                    if device_msg.metadata["async_update"] == "replace":
-                        # if the message is a replace message, store the data to be written later
-                        self.device_data_replace[device_name] = {
-                            "async_update": "replace",
-                            "data": self.process_async_data(device_name, [device_msg]),
-                        }
-                    else:
-                        out[device_name].append(device_msg)
+                    out[device_name] = device_msg
                 self.stream_keys[topic.decode()] = index
         return out if out else None
 
-    def _get_write_data(self, data: dict, write_replace: bool = False) -> dict:
-        out = {}
-        if write_replace:
-            out.update(self.device_data_replace)
-        if not data:
-            return out
-        for device_name, device_data in data.items():
-            out[device_name] = {
-                "async_update": device_data[0].metadata["async_update"],
-                "data": self.process_async_data(device_name, device_data),
-            }
-        return out
-
     def poll_and_write_data(self, final: bool = False) -> None:
         data = self.poll_data(poll_timeout=None if final else 500)
-        out = self._get_write_data(data, write_replace=final)
-        if out:
-            self.write_data(out)
+        if data or final:
+            self.write_data(data or {}, write_replace=final)
 
     def _run(self) -> None:
         try:
@@ -132,6 +113,13 @@ class AsyncWriter(threading.Thread):
             content = traceback.format_exc()
             # self.send_file_message(done=True, successful=False)
             logger.error(f"Error writing async data file {self.file_path}: {content}")
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                alarm_type="AsyncWriterError",
+                source={"file_path": self.file_path},
+                msg=f"Error writing async data file {self.file_path}: {content}",
+                metadata={},
+            )
 
     def send_file_message(self, done: bool, successful: bool) -> None:
         """
@@ -159,7 +147,9 @@ class AsyncWriter(threading.Thread):
         """
         self.shutdown_event.set()
 
-    def write_data(self, data: list[dict]) -> None:
+    def write_data(
+        self, data: list[dict[str, messages.DeviceMessage]], write_replace: bool = False
+    ) -> None:
         """
         Write data to the file. If write_replace is True, write also async data with
         aggregation set to replace.
@@ -177,123 +167,211 @@ class AsyncWriter(threading.Thread):
 
         for device_name, data_container in data.items():
             self.written_devices.add(device_name)
-            # create the group if it doesn't exist
-            async_update = data_container["async_update"]
-            signal_data = data_container["data"]
+
+            # create the device group if it doesn't exist
+            # -> /entry/collections/devices/<device_name>
             group_name = f"{self.BASE_PATH}/{device_name}"
             if group_name not in f:
                 f.create_group(group_name)
             device_group = f[group_name]
-            # create the signal group if it doesn't exist
-            for signal_name, signal_data in signal_data.items():
+
+            signals = data_container.signals
+            async_update = data_container.metadata["async_update"]
+
+            for signal_name, signal_data in signals.items():
+                # create the device signal group if it doesn't exist
+                # -> /entry/collections/devices/<device_name>/<signal_name>
                 if signal_name not in device_group:
-                    device_group.create_group(signal_name)
-                signal_group = device_group[signal_name]
+                    signal_group = device_group.create_group(signal_name)
+                    signal_group.attrs["NX_class"] = "NXdata"
+                    signal_group.attrs["signal"] = "value"
+                else:
+                    signal_group = device_group[signal_name]
+
                 for key, value in signal_data.items():
 
                     if key == "value":
-                        self._write_value_data(signal_group, value, async_update)
+                        self.write_value_data(signal_group, value, async_update)
                     elif key == "timestamp":
-                        self._write_timestamp_data(signal_group, value)
-                    else:
-                        raise ValueError(f"Unknown key {key}")
+                        self.write_timestamp_data(signal_group, value)
+                    else:  # pragma: no cover
+                        # this should never happen as the keys are fixed in the pydantic model
+                        self.connector.raise_alarm(
+                            severity=Alarms.WARNING,
+                            alarm_type="ValueError",
+                            source={"device": device_name},
+                            msg=f"Unknown key: {key}. Data will not be written.",
+                            metadata={},
+                        )
+
+        if write_replace:
+            for group_name, value in self.device_data_replace.items():
+                group = f[group_name]
+                group.create_dataset("value", data=value, maxshape=value.shape)
+
         f.flush()
 
-    def _write_value_data(self, signal_group, value, async_update):
-
-        if isinstance(value, list) and len(value) == 1:
-            value = value[0]
-
-        if not isinstance(value, (np.ndarray, list)):
-            value = np.array(value)
+    def write_value_data(self, signal_group: h5py.Group, value: Any, async_update: dict):
 
         if isinstance(value, list):
-            shape = value[0].shape if hasattr(value[0], "shape") else (len(value),)
+            value = np.array(value)
+
+        # TODO: remove once all devices have been transitioned to the new async update format
+        ###############
+        if not isinstance(async_update, dict):
+            logger.warning(
+                f"Invalid async update metadata: {async_update}. Please transition your device to the new async update format."
+            )
+            if async_update == "extend":
+                async_update = {"type": "add", "max_shape": [None]}
+            else:
+                async_update = {"type": "add", "max_shape": [None] + list(value.shape)}
+        ###############
+
+        update_type: Literal["add", "add_slice", "replace"] = async_update["type"]
+
+        if update_type == "add":
+            self._write_value_add(async_update, signal_group, value)
+
+        elif update_type == "add_slice":
+            self._write_value_add_slice(async_update, signal_group, value)
+
+        elif update_type == "replace":
+            # store the data to be written after the scan is complete
+            self.device_data_replace[signal_group.name] = value
         else:
-            shape = value.shape
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                alarm_type="ValueError",
+                source={"device": signal_group.name},
+                msg=f"Unknown async update type: {update_type}. Data will not be written.",
+                metadata={},
+            )
 
-        shape = shape or (1,)
+    def _write_value_add(self, async_update: dict, signal_group: h5py.Group, value: Any):
+        """
+        Write the value data to the file using the 'add' async update type.
 
-        value_ndim = value.ndim if isinstance(value, np.ndarray) else len(value)
+        Args:
+            async_update (dict): The async update metadata
+            signal_group (h5py.Group): The group to write the data to
+            value (Any): The value data to write
+        """
+
+        max_shape: tuple = async_update["max_shape"]
+        # if max_shape contains more than one None, we have to use a vlen_dtype
+        num_undefined = sum(1 for i in max_shape if i is None)
+        if num_undefined and not isinstance(value, (np.ndarray, list)):
+            value = np.array(value)
 
         if "value" not in signal_group:
-            signal_group.attrs["NX_class"] = "NXdata"
-            signal_group.attrs["signal"] = "value"
-            if async_update == "extend":
-                # Create a chunked dataset and allow unlimited resizing
+            if num_undefined > 1:
+                shape = (1,) if value.ndim < len(max_shape) else (value.shape[0],)
                 signal_group.create_dataset(
                     "value",
-                    data=value,
-                    maxshape=tuple(None for _ in shape),
-                    chunks=True,  # Enable chunking
+                    shape=shape,
+                    maxshape=tuple(None for _ in value.shape),
+                    dtype=h5py.vlen_dtype(np.dtype(value[0].dtype)),
                 )
-            elif async_update == "append":
-                reference_shape = self.append_shapes[signal_group.name]["shape"]
-                reference_ndim = self.append_shapes[signal_group.name]["ndim"]
+                signal_group["value"][: shape[0]] = value
+            else:
+                if value.ndim < len(max_shape):
+                    value = value.reshape((1,) + value.shape)
+                signal_group.create_dataset("value", data=value, maxshape=max_shape)
+            return
 
-                if reference_ndim == value_ndim:
-                    value = value.reshape((1,) + shape)
-                signal_group.create_dataset(
-                    "value", data=value, maxshape=tuple([None] + list(reference_shape))
-                )
-
-            elif async_update == "replace":
-                # Create a fixed length dataset
-                signal_group.create_dataset("value", data=value)
-
+        # add to the already existing dataset
+        if value.ndim < len(max_shape):
+            value = value.reshape((1,) + value.shape)
+        if len(max_shape) == 1:
+            # 1D case: simply append the data
+            signal_group["value"].resize((len(signal_group["value"]) + len(value),))
+            signal_group["value"][-len(value) :] = value
         else:
-            if async_update == "extend":
-                # Extend the dataset with the new data
-                # we always extend along the first axis
-                if not isinstance(value, np.ndarray):
-                    value = np.array(value)
-                shapes = list(signal_group["value"].shape)
-                shapes[0] += value.shape[0]
-                signal_group["value"].resize(tuple(shapes))
-                signal_group["value"][-value.shape[0] :, ...] = value
-            elif async_update == "append":
-                # Append the data to the dataset
-                append_info = self.append_shapes[signal_group.name]
-                fixed_length = append_info["fixed_length"]
+            # ND case: we resize the first axis and append the data
+            current_shape = signal_group["value"].shape
+            signal_group["value"].resize((current_shape[0] + value.shape[0], *current_shape[1:]))
+            signal_group["value"][-value.shape[0] :, ...] = value
 
-                if isinstance(value, list):
-                    ndims = len(value)
-                else:
-                    ndims = 1
+    def _write_value_add_slice(self, async_update: dict, signal_group: h5py.Group, value: Any):
+        """
+        Write the value data to the file using the 'add_slice' async update type.
 
-                if append_info.pop("rewrite", False):
-                    # The shape has changed! - We need to rewrite the dataset
-                    append_info["fixed_length"] = False
+        Args:
+            async_update (dict): The async update metadata
+            signal_group (h5py.Group): The group to write the data to
+            value (Any): The value data to write
+        """
 
-                    # Read the current data
-                    data = signal_group["value"][:]
-                    # Delete the dataset
-                    del signal_group["value"]
+        max_shape: tuple = async_update["max_shape"]
+        # if max_shape contains more than one None, we have to use a vlen_dtype
+        num_undefined = sum(1 for i in max_shape if i is None)
+        if len(max_shape) != 2:
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                alarm_type="ValueError",
+                source={"device": signal_group.name},
+                msg=f"Invalid max_shape for async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written.",
+                metadata={},
+            )
+            return
 
-                    # we only have two options here, either the data is a list of arrays or a single array
-                    if isinstance(value, list):
-                        value_ndim = value[0].ndim
-                    else:
-                        value_ndim = value.ndim
+        row_index = async_update["index"]
 
-                    signal_group.create_dataset(
-                        "value",
-                        shape=(data.shape[0] + ndims,),
-                        maxshape=tuple(None for _ in shape),
-                        dtype=h5py.vlen_dtype(np.dtype(data[0].dtype)),
+        if "value" not in signal_group:
+            if num_undefined > 1:
+                row_index = 0
+                shape = (1,) if value.ndim < len(max_shape) else (value.shape[0],)
+                signal_group.create_dataset(
+                    "value",
+                    shape=shape,
+                    maxshape=(None,),
+                    dtype=h5py.vlen_dtype(np.dtype(value[0].dtype)),
+                )
+                signal_group["value"][row_index] = value
+            else:
+                if value.ndim < len(max_shape):
+                    value = value.reshape((1,) + value.shape)
+                if value.shape[1] > max_shape[1]:
+                    self.connector.raise_alarm(
+                        severity=Alarms.WARNING,
+                        alarm_type="ValueError",
+                        source={"device": signal_group.name, "slice": row_index},
+                        msg=f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated.",
+                        metadata={},
                     )
-                    # Write the data back to the dataset
-                    signal_group["value"][: data.shape[0]] = data
-                    signal_group["value"][data.shape[0] :] = value
-                elif not fixed_length:
-                    # Append the data to the dataset
-                    signal_group["value"].resize((len(signal_group["value"]) + ndims,))
-                    signal_group["value"][-ndims:] = value
-                else:
-                    signal_group["value"].resize((len(signal_group["value"]) + ndims, *shape))
-                    signal_group["value"][-ndims:, ...] = value
+                    value = value[:, : max_shape[1]]
+                signal_group.create_dataset("value", data=value, maxshape=max_shape)
+                self.cursor[signal_group.name][row_index] = value.shape[1]
+            return
 
-    def _write_timestamp_data(self, signal_group, value):
+        # add a slice to the already existing dataset
+        if num_undefined > 1:
+            max_index = signal_group["value"].shape[0]
+            if row_index == -1:
+                row_index = max_index + 1
+            if row_index >= max_index:
+                signal_group["value"].resize((row_index + 1,))
+                signal_group["value"][row_index] = value
+            else:
+                value = np.concatenate([signal_group["value"][row_index], value])
+                signal_group["value"][row_index] = value
+        else:
+            col_index = self.cursor[signal_group.name].get(row_index, 0)
+            if col_index + len(value) > max_shape[1]:
+                self.connector.raise_alarm(
+                    severity=Alarms.WARNING,
+                    alarm_type="ValueError",
+                    source={"device": signal_group.name, "slice": row_index},
+                    msg=f"Added data slice for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated.",
+                    metadata={},
+                )
+                value = value[: max_shape[1] - col_index]
+            signal_group["value"].resize((row_index + 1, max_shape[1]))
+            signal_group["value"][row_index, col_index : col_index + len(value)] = value
+            self.cursor[signal_group.name][row_index] = col_index + len(value)
+
+    def write_timestamp_data(self, signal_group, value):
         """
         Write the timestamp data to the file.
         Timestamp data is always written as a 1D array, irrespective of the async update type.
@@ -309,71 +387,3 @@ class AsyncWriter(threading.Thread):
         else:
             signal_group["timestamp"].resize((len(signal_group["timestamp"]) + len(value),))
             signal_group["timestamp"][-len(value) :] = value
-
-    def process_async_data(
-        self, device_name: str, msgs: list[messages.DeviceMessage]
-    ) -> dict | list[dict]:
-        """
-        Process the async data.
-
-        Args:
-            device_name (str): the device name
-            msgs(list[messages.DeviceMessage]): the async data to process
-
-        Returns:
-            list: the processed async data
-        """
-        concat_type = None
-        data = []
-        async_data = {}
-        # merge the msg data into a list of dictionaries
-        for msg in msgs:
-            if not concat_type:
-                concat_type = msg.metadata.get("async_update", "append")
-            data.append(msg.content["signals"])
-
-        if concat_type == "extend":
-            # concatenate the dictionaries
-            for signal in data[0].keys():
-                async_data[signal] = {}
-                for key in data[0][signal].keys():
-                    if hasattr(data[0][signal][key], "__iter__"):
-                        async_data[signal][key] = np.concatenate([d[signal][key] for d in data])
-                    else:
-                        async_data[signal][key] = [d[signal][key] for d in data]
-            return async_data
-
-        if concat_type == "append":
-            # concatenate the lists
-            for key in data[0].keys():
-                async_data[key] = {"value": [], "timestamp": []}
-
-                for d in data:
-                    if not isinstance(d[key]["value"], np.ndarray):
-                        d[key]["value"] = np.array(d[key]["value"])
-
-                    shape = d[key]["value"].shape
-                    ndim = d[key]["value"].ndim
-                    if os.path.join(self.BASE_PATH, device_name, key) not in self.append_shapes:
-                        self.append_shapes[os.path.join(self.BASE_PATH, device_name, key)] = {
-                            "shape": shape,
-                            "fixed_length": True,
-                            "ndim": ndim,
-                        }
-                    reference = self.append_shapes[os.path.join(self.BASE_PATH, device_name, key)]
-
-                    if reference["fixed_length"] and shape != reference["shape"]:
-                        reference["fixed_length"] = False
-                        reference["rewrite"] = True
-
-                    async_data[key]["value"].append(d[key]["value"])
-                    if "timestamp" in d[key]:
-                        async_data[key]["timestamp"].append(d[key]["timestamp"])
-            return async_data
-
-        if concat_type == "replace":
-            # replace the dictionaries
-            async_data = data[-1]
-            return async_data
-
-        raise ValueError(f"Unknown async update type: {concat_type}")
