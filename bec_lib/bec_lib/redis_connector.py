@@ -285,16 +285,27 @@ class RedisConnector(ConnectorBase):
         )
         self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
 
-    def raise_alarm(self, severity: Alarms, alarm_type: str, source: str, msg: str, metadata: dict):
+    def raise_alarm(
+        self, severity: Alarms, alarm_type: str, source: dict, msg: str, metadata: dict
+    ):
         """
         Raise an alarm
 
         Args:
             severity (Alarms): alarm severity
             alarm_type (str): alarm type
-            source (str): source
+            source (dict): source
             msg (str): message
             metadata (dict): metadata
+
+        Examples:
+            >>> connector.raise_alarm(
+                severity=Alarms.WARNING,
+                alarm_type="ValueError",
+                source={"device": "samx", "source": "async_file_writer"},
+                msg=f"test alarm",
+                metadata={"test": 1}
+            )
         """
         alarm_msg = AlarmMessage(
             severity=severity, alarm_type=alarm_type, source=source, msg=msg, metadata=metadata
