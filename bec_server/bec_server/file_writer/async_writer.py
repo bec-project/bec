@@ -26,7 +26,24 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class AsyncWriter(threading.Thread):
     """
-    Async writer for writing async device data to a separate nexus file
+    Async writer for writing async device data during the scan.
+
+    The writer supports the following async update types:
+    - add: Appends data to the existing dataset. The data is always appended to the first axis.
+    - add_slice: Appends a slice of data to the existing dataset. The slice is defined by the index in the async update metadata.
+    - replace: Replaces the existing dataset with the new data. Note that data is only written after the scan is complete.
+
+    To change the async update type, the device must send the async update metadata with the data. The metadata must contain the key 'async_update'
+    with the following structure:
+    {
+        "type": "add" | "add_slice" | "replace",
+        "max_shape": [int | None, ...],
+        "index": int
+    }
+
+    "index" is only required for the 'add_slice' type and specifies the row index to append the data to.
+    "max_shape" is required for the 'add' and 'add_slice' types and specifies the maximum shape of the dataset. If the dataset is 1D, 'max_shape' should be [None].
+
     """
 
     BASE_PATH = "/entry/collection/devices"
@@ -90,6 +107,12 @@ class AsyncWriter(threading.Thread):
         return out if out else None
 
     def poll_and_write_data(self, final: bool = False) -> None:
+        """
+        Poll the data and write it to the file
+
+        Args:
+            final (bool, optional): Whether this is the final write. If True, also write data with aggregation set to replace. Defaults to False.
+        """
         data = self.poll_data(poll_timeout=None if final else 500)
         if data or final:
             self.write_data(data or {}, write_replace=final)
@@ -304,9 +327,9 @@ class AsyncWriter(threading.Thread):
         """
 
         max_shape: tuple = async_update["max_shape"]
-        # if max_shape contains more than one None, we have to use a vlen_dtype
-        num_undefined = sum(1 for i in max_shape if i is None)
+
         if len(max_shape) != 2:
+            # We currently only support 2D datasets for the 'add_slice' async update type
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 alarm_type="ValueError",
@@ -316,6 +339,8 @@ class AsyncWriter(threading.Thread):
             )
             return
 
+        # if max_shape contains more than one None, we have to use a vlen_dtype
+        num_undefined = sum(1 for i in max_shape if i is None)
         row_index = async_update["index"]
 
         if "value" not in signal_group:
