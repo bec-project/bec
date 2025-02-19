@@ -996,3 +996,29 @@ class ServiceRequestMessage(BECMessage):
 
     msg_type: ClassVar[str] = "service_request_message"
     action: Literal["restart"]
+
+
+class ProcedureRequestMessage(BECMessage):
+    """Message type for sending procedure requests to the server
+
+    Sent by the API server / user to the procedure_request topic. It will be consumed by the scan server.
+        Args:
+            procedure_identifier (str): name of the procedure registered with the server
+            procedure_queue (str | none): a key for the procedure queue
+    """
+
+    msg_type: ClassVar[str] = "procedure_request_message"
+    procedure_identifier: str
+    procedure_queue: str | None = None
+
+
+class ProcedureExecutionMessage(BECMessage):
+    """Message type for sending procedure execution instructions to the scheduler
+
+    Sent by the  user to the procedure_request topic. It will be consumed by the scan server.
+        Args:
+            procedure_identifier (str): name of the procedure registered with the server
+    """
+
+    msg_type: ClassVar[str] = "procedure_execution_message"
+    procedure_identifier: str

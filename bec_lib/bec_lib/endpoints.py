@@ -1329,3 +1329,71 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.StatusMessage, message_op=MessageOp.SET
         )
+
+    # Procedures
+
+    @staticmethod
+    def available_procedures() -> EndpointInfo:
+        """
+        Endpoint for available procedures. This endpoint is used to publish the available procedures
+        using an AvailableResourceMessage.
+
+        Returns:
+            EndpointInfo: Endpoint for available procedures.
+        """
+        endpoint = f"{EndpointType.INFO}/procedures/available_procedures"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.SET,
+        )
+
+    @staticmethod
+    def procedure_request() -> EndpointInfo:
+        """
+        Endpoint for scan queue request. This endpoint is used to request the new scans.
+        The request is sent using a messages.ScanQueueMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request.
+        """
+        endpoint = f"{EndpointType.USER}/procedures/procedure_request"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureRequestMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def procedure_request_response() -> EndpointInfo:
+        """
+        Endpoint for procedure request responses. This endpoint is used to publish the
+        information on whether the procedure request was accepted or rejected. The response
+        is sent using a messages.RequestResponseMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request response.
+
+        """
+        endpoint = f"{EndpointType.INFO}/procedures/procedure_request_response"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.RequestResponseMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
+    def procedure_execution(queue_id: str):
+        """
+        Endpoint for new procedure executions.
+        The request is sent using a messages.ProcedureExecutionMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request.
+        """
+        endpoint = f"{EndpointType.INTERNAL}/procedures/procedure_execution/{queue_id}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureExecutionMessage,
+            message_op=MessageOp.LIST,
+        )
