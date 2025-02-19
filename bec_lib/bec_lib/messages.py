@@ -79,6 +79,9 @@ class BECMessage(BaseModel):
         )
         return self
 
+    def __hash__(self) -> int:
+        return self.model_dump_json().__hash__()
+
 
 class BundleMessage(BECMessage):
     """Message type to send a bundle of BECMessages.
@@ -749,10 +752,7 @@ class FileMessage(BECMessage):
     @classmethod
     def check_is_master_file(cls, v: bool):
         """Validate is the FileMessage is for the master file"""
-        if v is False:
-            return v
-        if v is True:
-            return cls.device_name is not None
+        return cls.device_name is not None if v else False
 
 
 class FileContentMessage(BECMessage):
@@ -1011,3 +1011,32 @@ class ServiceRequestMessage(BECMessage):
 
     msg_type: ClassVar[str] = "service_request_message"
     action: Literal["restart"]
+
+
+class ProcedureRequestMessage(BECMessage):
+    """Message type for sending procedure requests to the server
+
+    Sent by the API server / user to the procedure_request topic. It will be consumed by the scan server.
+        Args:
+            identifier (str): name of the procedure registered with the server
+            queue (str | none): a key for the procedure queue
+    """
+
+    msg_type: ClassVar[str] = "procedure_request_message"
+    identifier: str
+    args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] | None = None
+    queue: str | None = None
+
+
+class ProcedureExecutionMessage(BECMessage):
+    """Message type for sending procedure execution instructions to the scheduler
+
+    Sent by the  user to the procedure_request topic. It will be consumed by the scan server.
+        Args:
+            identifier (str): name of the procedure registered with the server
+    """
+
+    msg_type: ClassVar[str] = "procedure_execution_message"
+    identifier: str
+    queue: str
+    args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}

@@ -4,12 +4,15 @@ Endpoints for communication within the BEC.
 
 from __future__ import annotations
 
-# pylint: disable=too-many-public-methods
 import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from bec_lib.utils.import_utils import lazy_import
+
+# pylint: disable=too-many-public-methods
+# pylint: disable=too-many-lines
+
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
@@ -39,7 +42,8 @@ class MessageOp(list[str], enum.Enum):
     SEND = ["send", "register"]
     STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last", "delete"]
     LIST = ["lpush", "lrange", "rpush", "ltrim", "keys", "delete"]
-    SET = ["set", "get", "delete", "keys"]
+    KEY_VALUE = ["set", "get", "delete", "keys"]
+    SET = ["remove_from_set", "get_set_members"]
 
 
 MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]")
@@ -78,7 +82,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/devices/status/{device}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.DeviceStatusMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.DeviceStatusMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -182,7 +188,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.DeviceReqStatusMessage,
-            message_op=MessageOp.SET,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -257,7 +263,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.RequestResponseMessage,
-            message_op=MessageOp.SET,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -305,7 +311,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.AvailableResourceMessage,
-            message_op=MessageOp.SET,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -339,7 +345,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/devices/info/{device}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.DeviceInfoMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.DeviceInfoMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -358,7 +366,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/devices/staged/{device}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.DeviceStatusMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.DeviceStatusMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -637,7 +647,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.USER}/scan_number"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
         )
 
     @staticmethod
@@ -651,7 +661,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.USER}/dataset_number"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
         )
 
     @staticmethod
@@ -713,7 +723,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.AvailableResourceMessage,
-            message_op=MessageOp.SET,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -808,7 +818,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/devices/rpc/{rpc_id}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.DeviceRPCMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.DeviceRPCMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -841,7 +853,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/public/{scan_id}/scan_info"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.ScanStatusMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.ScanStatusMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -862,7 +876,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/public/{scan_id}/scan_segment/{point_id}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.ScanMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.ScanMessage, message_op=MessageOp.KEY_VALUE
         )
 
     @staticmethod
@@ -881,7 +895,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/public/{scan_id}/scan_baseline"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.ScanBaselineMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.ScanBaselineMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -1066,7 +1082,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.USER}/vars/{var_name}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
         )
 
     @staticmethod
@@ -1080,7 +1096,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.USER}/observer"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.ObserverMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.ObserverMessage, message_op=MessageOp.KEY_VALUE
         )
 
     @staticmethod
@@ -1114,7 +1130,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/logbook"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.CredentialsMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.CredentialsMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     # scibec
@@ -1129,7 +1147,9 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/scibec"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.CredentialsMessage, message_op=MessageOp.SET
+            endpoint=endpoint,
+            message_type=messages.CredentialsMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     # experiment
@@ -1143,7 +1163,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO}/account"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
         )
 
     # data processing
@@ -1198,7 +1218,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.AvailableResourceMessage,
-            message_op=MessageOp.SET,
+            message_op=MessageOp.KEY_VALUE,
         )
 
     @staticmethod
@@ -1327,7 +1347,91 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.USER}/gui/heartbeat/{gui_id}"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.StatusMessage, message_op=MessageOp.SET
+            endpoint=endpoint, message_type=messages.StatusMessage, message_op=MessageOp.KEY_VALUE
+        )
+
+    # Procedures
+
+    @staticmethod
+    def available_procedures() -> EndpointInfo:
+        """
+        Endpoint for available procedures. This endpoint is used to publish the available procedures
+        using an AvailableResourceMessage.
+
+        Returns:
+            EndpointInfo: Endpoint for available procedures.
+        """
+        endpoint = f"{EndpointType.INFO}/procedures/available_procedures"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.KEY_VALUE,
+        )
+
+    @staticmethod
+    def procedure_request() -> EndpointInfo:
+        """
+        Endpoint for scan queue request. This endpoint is used to request the new scans.
+        The request is sent using a messages.ScanQueueMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request.
+        """
+        endpoint = f"{EndpointType.USER}/procedures/procedure_request"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureRequestMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def procedure_request_response() -> EndpointInfo:
+        """
+        Endpoint for procedure request responses. This endpoint is used to publish the
+        information on whether the procedure request was accepted or rejected. The response
+        is sent using a messages.RequestResponseMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request response.
+
+        """
+        endpoint = f"{EndpointType.INFO}/procedures/procedure_request_response"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.RequestResponseMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
+    def procedure_execution(queue_id: str):
+        """
+        Endpoint for new procedure executions.
+        The request is sent using a messages.ProcedureExecutionMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request.
+        """
+        endpoint = f"{EndpointType.INTERNAL}/procedures/procedure_execution/{queue_id}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureExecutionMessage,
+            message_op=MessageOp.LIST,
+        )
+
+    @staticmethod
+    def active_procedure_executions():
+        """
+        Endpoint for finished procedure executions or querying currently running procedures.
+        The request is sent using a messages.ProcedureExecutionMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request.
+        """
+        endpoint = f"{EndpointType.INFO}/procedures/active_procedures"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureExecutionMessage,
+            message_op=MessageOp.SET,
         )
 
     @staticmethod

@@ -39,7 +39,7 @@ import redis.exceptions
 from redis.client import Pipeline, Redis
 
 from bec_lib.connector import MessageObject
-from bec_lib.endpoints import EndpointInfo, MessageEndpoints
+from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfoMessage
 from bec_lib.serialization import MsgpackSerialization
@@ -59,6 +59,12 @@ class PubSubMessage(TypedDict):
 
 
 class IncompatibleMessageForEndpoint(TypeError): ...
+
+
+class IncompatibleRedisOperation(TypeError): ...
+
+
+class InvalidItemForOperation(ValueError): ...
 
 
 class WrongArguments(ValueError): ...
@@ -102,7 +108,7 @@ def _validate_all_bec_messages(values: Iterable, endpoint: EndpointInfo):
             _raise_incompatible_message(val, endpoint)
         if isinstance(val, dict):
             _validate_sequence(val.values(), endpoint)
-        if isinstance(val, list) or isinstance(val, tuple):
+        if isinstance(val, (list, tuple)):
             _validate_sequence(val, endpoint)
 
 
@@ -127,10 +133,10 @@ def validate_endpoint(endpoint_arg_name: str):
             argument_index = argspec.args.index(endpoint_arg_name)
             if argument_index != 1:
                 raise ValueError
-        except ValueError:
+        except ValueError as e:
             raise WrongArguments(
                 f"@validate_endpoint should be applied to an instance function which takes the named argument ('{endpoint_arg_name}') as its first non-self argument."
-            )
+            ) from e
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -144,7 +150,7 @@ def validate_endpoint(endpoint_arg_name: str):
             if not _check_endpoint_type(endpoint):
                 return func(*args, **kwargs)
             if func.__name__ not in endpoint.message_op:
-                raise ValueError(
+                raise IncompatibleRedisOperation(
                     f"Endpoint {endpoint} is not compatible with {func.__name__} method"
                 )
             _validate_all_bec_messages(list(args) + list(kwargs.values()), endpoint)
@@ -227,9 +233,9 @@ class RedisConnector:
         self._stream_topics_subscription = collections.defaultdict(list)
         self._stream_topics_subscription_lock = threading.Lock()
 
-        self._events_listener_thread = None
-        self._stream_events_listener_thread = None
-        self._events_dispatcher_thread = None
+        self._events_listener_thread: threading.Thread | None = None
+        self._stream_events_listener_thread: threading.Thread | None = None
+        self._events_dispatcher_thread: threading.Thread | None = None
         self._messages_queue = queue.Queue()
         self._stop_events_listener_thread = threading.Event()
         self._stop_stream_events_listener_thread = threading.Event()
@@ -434,7 +440,7 @@ class RedisConnector:
         patterns, _ = self._convert_endpointinfo(patterns)
         if isinstance(patterns, str):
             return [patterns]
-        elif isinstance(patterns, list):
+        if isinstance(patterns, list):
             if not all(isinstance(p, str) for p in patterns):
                 raise ValueError("register: patterns must be a string or a list of strings")
         else:
@@ -939,7 +945,7 @@ class RedisConnector:
         return client.lset(topic, index, msg)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def rpush(self, topic: str, msg: str, pipe=None) -> int:
+    def rpush(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> int:
         """O(1) for each element added, so O(N) to add N elements when the
         command is called with multiple arguments. Insert all the specified
         values at the tail of the list stored at key. If key does not exist,
@@ -973,7 +979,9 @@ class RedisConnector:
         return ret
 
     @validate_endpoint("topic")
-    def set_and_publish(self, topic: str, msg, pipe=None, expire: int | None = None) -> None:
+    def set_and_publish(
+        self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None
+    ) -> None:
         """piped combination of self.publish and self.set"""
         client = pipe if pipe is not None else self.pipeline()
         if isinstance(msg, BECMessage):
@@ -984,7 +992,7 @@ class RedisConnector:
             client.execute()
 
     @validate_endpoint("topic")
-    def set(self, topic: str, msg, pipe=None, expire: int | None = None) -> None:
+    def set(self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None) -> None:
         """set redis value"""
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
@@ -997,13 +1005,13 @@ class RedisConnector:
         return self._redis_conn.keys(pattern)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def delete(self, topic: str, pipe=None):
+    def delete(self, topic: str, pipe: Pipeline | None = None):
         """delete topic"""
         client = pipe if pipe is not None else self._redis_conn
         client.delete(topic)
 
     @validate_endpoint("topic")
-    def get(self, topic: str, pipe=None):
+    def get(self, topic: str, pipe: Pipeline | None = None):
         """retrieve entry, either via hgetall or get"""
         client = pipe if pipe is not None else self._redis_conn
         data = client.get(topic)
@@ -1015,7 +1023,7 @@ class RedisConnector:
             except RuntimeError:
                 return data
 
-    def mget(self, topics: list[str], pipe=None):
+    def mget(self, topics: list[str], pipe: Pipeline | None = None):
         """retrieve multiple entries"""
         client = pipe if pipe is not None else self._redis_conn
         data = client.mget(topics)
@@ -1024,7 +1032,14 @@ class RedisConnector:
         return [MsgpackSerialization.loads(d) if d else None for d in data]  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def xadd(self, topic: str, msg_dict: dict, max_size=None, pipe=None, expire: int | None = None):
+    def xadd(
+        self,
+        topic: str,
+        msg_dict: dict,
+        max_size=None,
+        pipe: Pipeline | None = None,
+        expire: int | None = None,
+    ):
         """
         add to stream
 
@@ -1180,11 +1195,55 @@ class RedisConnector:
 
     def client_id(self) -> int:
         """Get the current connection's client ID."""
-        return self._redis_conn.client_id()  # type: ignore # using sync client
+        return self._redis_conn.client_id()  # type: ignore
 
     def unblock_client(self, id: int) -> None:
         """Unblock the client with the given ID."""
-        return self._redis_conn.client_unblock(id)  # type: ignore # using sync client
+        return self._redis_conn.client_unblock(id)  # type: ignore
+
+    @validate_endpoint("topic")
+    def remove_from_set(self, topic: str, msg, pipe: Pipeline | None = None):
+        """remove the item 'msg' from the set 'topic'"""
+        client = pipe or self._redis_conn
+        if isinstance(msg, BECMessage):
+            msg = MsgpackSerialization.dumps(msg)
+        if msg is None:
+            raise InvalidItemForOperation(f"Cannot remove None from set.")
+        client.srem(topic, msg)
+
+    @validate_endpoint("topic")
+    def get_set_members(self, topic: str, pipe: Pipeline | None = None) -> set:
+        """fetch the items in the set as a set'"""
+        return set(MsgpackSerialization.loads(msg) for msg in (pipe or self._redis_conn).smembers(topic))  # type: ignore
+
+    def blocking_list_pop_to_set_add(
+        self,
+        list_endpoint: EndpointInfo,
+        set_endpoint: EndpointInfo,
+        side: Literal["LEFT", "RIGHT"] = "LEFT",
+        # TODO update to float when https://github.com/redis/redis-py/pull/3526 is released
+        timeout_s: int | None = None,
+    ) -> BECMessage | None:
+        """Block for up to timeout seconds to pop an item from 'list_enpoint' on side ''side,
+        and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
+        """
+        _check_endpoint_type(list_endpoint)
+        _check_endpoint_type(set_endpoint)
+        if list_endpoint.message_op != MessageOp.LIST:
+            raise IncompatibleRedisOperation(
+                f"{list_endpoint} should be compatible with list operations!"
+            )
+        bpop = self._redis_conn.blpop if side == "LEFT" else self._redis_conn.brpop
+        raw_msg = bpop([list_endpoint.endpoint], timeout=timeout_s)
+        if raw_msg is None:
+            return None
+        decoded_msg = MsgpackSerialization.loads(raw_msg[1])
+        if not isinstance(decoded_msg, set_endpoint.message_type):
+            raise IncompatibleMessageForEndpoint(
+                f"Message {decoded_msg} is not suitable for the set endpoint {set_endpoint}"
+            )
+        self._redis_conn.sadd(set_endpoint.endpoint, raw_msg[1])
+        return decoded_msg
 
     def producer(self):
         """Return itself as a producer, to be compatible with old code"""
