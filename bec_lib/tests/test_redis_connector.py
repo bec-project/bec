@@ -32,12 +32,11 @@ bec_messages.TestMessage = TestMessage
 
 @pytest.fixture
 def connector():
-    with mock.patch("bec_lib.redis_connector.redis.Redis"):
-        _connector = RedisConnector("localhost:1")
-        try:
-            yield _connector
-        finally:
-            _connector.shutdown()
+    _connector = RedisConnector("localhost:1", redis_cls=mock.MagicMock)
+    try:
+        yield _connector
+    finally:
+        _connector.shutdown()
 
 
 def test_redis_connector_send_client_info(connector):
@@ -148,10 +147,10 @@ def test_redis_connector_lset(connector, topic, index, msgs, use_pipe):
 
     if pipe:
         connector._redis_conn.pipeline().lset.assert_called_once_with(topic, index, msgs)
-        assert ret == redis.Redis().pipeline().lset()
+        assert ret == connector._redis_conn.pipeline().lset()
     else:
         connector._redis_conn.lset.assert_called_once_with(topic, index, msgs)
-        assert ret == redis.Redis().lset()
+        assert ret == connector._redis_conn.lset()
 
 
 @pytest.mark.parametrize(
@@ -167,12 +166,12 @@ def test_redis_connector_lset_BECMessage(connector, topic, index, msgs, use_pipe
         connector._redis_conn.pipeline().lset.assert_called_once_with(
             topic, index, MsgpackSerialization.dumps(msgs)
         )
-        assert ret == redis.Redis().pipeline().lset()
+        assert ret == pipe.lset()
     else:
         connector._redis_conn.lset.assert_called_once_with(
             topic, index, MsgpackSerialization.dumps(msgs)
         )
-        assert ret == redis.Redis().lset()
+        assert ret == connector._redis_conn.lset()
 
 
 @pytest.mark.parametrize(
@@ -185,10 +184,10 @@ def test_redis_connector_rpush(connector, topic, msgs, use_pipe):
 
     if pipe:
         connector._redis_conn.pipeline().rpush.assert_called_once_with(topic, msgs)
-        assert ret == redis.Redis().pipeline().rpush()
+        assert ret == connector._redis_conn.pipeline().rpush()
     else:
         connector._redis_conn.rpush.assert_called_once_with(topic, msgs)
-        assert ret == redis.Redis().rpush()
+        assert ret == connector._redis_conn.rpush()
 
 
 @pytest.mark.parametrize(
@@ -204,10 +203,10 @@ def test_redis_connector_rpush_BECMessage(connector, topic, msgs, use_pipe):
         connector._redis_conn.pipeline().rpush.assert_called_once_with(
             topic, MsgpackSerialization.dumps(msgs)
         )
-        assert ret == redis.Redis().pipeline().rpush()
+        assert ret == connector._redis_conn.pipeline().rpush()
     else:
         connector._redis_conn.rpush.assert_called_once_with(topic, MsgpackSerialization.dumps(msgs))
-        assert ret == redis.Redis().rpush()
+        assert ret == connector._redis_conn.rpush()
 
 
 @pytest.mark.parametrize(
@@ -220,7 +219,7 @@ def test_redis_connector_lrange(connector, topic, start, end, use_pipe):
 
     if pipe:
         connector._redis_conn.pipeline().lrange.assert_called_once_with(topic, start, end)
-        assert ret == redis.Redis().pipeline().lrange()
+        assert ret == connector._redis_conn.pipeline().lrange()
     else:
         connector._redis_conn.lrange.assert_called_once_with(topic, start, end)
         assert ret == []
@@ -265,13 +264,13 @@ def test_redis_connector_keys(connector, pattern):
     ret = connector.keys(pattern)
     endpoint = pattern if isinstance(pattern, str) else pattern.endpoint
     connector._redis_conn.keys.assert_called_once_with(endpoint)
-    assert ret == redis.Redis().keys()
+    assert ret == connector._redis_conn.keys()
 
 
 def test_redis_connector_pipeline(connector):
     ret = connector.pipeline()
     connector._redis_conn.pipeline.assert_called_once()
-    assert ret == redis.Redis().pipeline()
+    assert ret == connector._redis_conn.pipeline()
 
 
 def use_pipe_fcn(connector, use_pipe):
@@ -299,10 +298,10 @@ def test_redis_connector_get(connector, topic, use_pipe):
     ret = connector.get(topic, pipe)
     if pipe:
         connector.pipeline().get.assert_called_once_with(topic)
-        assert ret == redis.Redis().pipeline().get()
+        assert ret == connector._redis_conn.pipeline().get()
     else:
         connector._redis_conn.get.assert_called_once_with(topic)
-        assert ret == redis.Redis().get()
+        assert ret == connector._redis_conn.get()
 
 
 def test_redis_connector_xread(connector):

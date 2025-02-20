@@ -7,7 +7,7 @@ from __future__ import annotations
 # pylint: disable=too-many-public-methods
 import enum
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from bec_lib.utils.import_utils import lazy_import
 
@@ -42,8 +42,11 @@ class MessageOp(list[str], enum.Enum):
     SET = ["set", "get", "delete", "keys"]
 
 
+MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]")
+
+
 @dataclass
-class EndpointInfo:
+class EndpointInfo(Generic[MessageType]):
     """
     Dataclass for endpoint info.
 
@@ -54,7 +57,7 @@ class EndpointInfo:
     """
 
     endpoint: str
-    message_type: messages.BECMessage
+    message_type: MessageType
     message_op: MessageOp
 
 
@@ -65,7 +68,7 @@ class MessageEndpoints:
 
     # devices feedback
     @staticmethod
-    def device_status(device: str) -> EndpointInfo:
+    def device_status(device: str):
         """
         Endpoint for device status. This endpoint is used by the device server to publish
         the device status using a messages.DeviceStatusMessage message.
@@ -79,7 +82,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_read(device: str) -> EndpointInfo:
+    def device_read(device: str):
         """
         Endpoint for device readings. This endpoint is used by the device server to publish
         the device readings using a messages.DeviceMessage message.
@@ -96,7 +99,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_read_configuration(device: str) -> EndpointInfo:
+    def device_read_configuration(device: str):
         """
         Endpoint for device configuration readings. This endpoint is used by the device server
         to publish the device configuration readings using a messages.DeviceMessage message.
@@ -113,7 +116,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_readback(device: str) -> EndpointInfo:
+    def device_readback(device: str):
         """
         Endpoint for device readbacks. This endpoint is used by the device server to publish
         the device readbacks using a messages.DeviceMessage message.
@@ -130,7 +133,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_raw(device: str) -> EndpointInfo:
+    def device_raw(device: str):
         """
         Endpoint for device raw readings. This endpoint is used by the device server to publish
         the device raw readings using a messages.DeviceMessage message.
@@ -147,7 +150,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_limits(device: str) -> EndpointInfo:
+    def device_limits(device: str):
         """
         Endpoint for device limits. This endpoint is used by the device server to publish
         the device limits using a messages.DeviceMessage message.
@@ -164,7 +167,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_req_status(device: str) -> EndpointInfo:
+    def device_req_status(device: str):
         """
         Endpoint for device request status. This endpoint is used by the device server to publish
         the device request status using a messages.DeviceReqStatusMessage message.
@@ -183,7 +186,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_req_status_container(RID: str) -> EndpointInfo:
+    def device_req_status_container(RID: str):
         """
         Endpoint for device request status container. This endpoint is used by the device server to publish
         the device request status using a messages.DeviceReqStatusMessage message.
@@ -202,7 +205,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_progress(device: str) -> EndpointInfo:
+    def device_progress(device: str):
         """
         Endpoint for device progress. This endpoint is used by the device server to publish
         the device progress using a messages.ProgressMessage message.
@@ -222,7 +225,7 @@ class MessageEndpoints:
 
     # device config
     @staticmethod
-    def device_config_request() -> EndpointInfo:
+    def device_config_request():
         """
         Endpoint for device config request. This endpoint can be used to
         request a modification to the device config. The request is sent using
@@ -237,7 +240,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_config_request_response(RID: str) -> EndpointInfo:
+    def device_config_request_response(RID: str):
         """
         Endpoint for device config request response. This endpoint is used by the
         device server and scihub connector to inform about whether the device config
@@ -258,7 +261,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_server_config_request() -> EndpointInfo:
+    def device_server_config_request():
         """
         Endpoint for device server config request. This endpoint can be used to
         request changes to config. Typically used by the scihub connector following a
@@ -274,7 +277,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_config_update() -> EndpointInfo:
+    def device_config_update():
         """
         Endpoint for device config update. This endpoint is used by the scihub connector
         to inform about a change to the device config. The update is sent using a
@@ -290,7 +293,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_config() -> EndpointInfo:
+    def device_config():
         """
         Endpoint for device config. This endpoint is used by the scihub connector
         to set the device config.
@@ -306,7 +309,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_config_history() -> EndpointInfo:
+    def device_config_history():
         """
         Endpoint for device config history. This endpoint is used to keep track of the
         device config history using a messages.AvailableResourceMessage message. The endpoint is
@@ -323,7 +326,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_info(device: str) -> EndpointInfo:
+    def device_info(device: str):
         """
         Endpoint for device info. This endpoint is used by the device server to publish
         the device info using a messages.DeviceInfoMessage message.
@@ -340,7 +343,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_staged(device: str) -> EndpointInfo:
+    def device_staged(device: str):
         """
         Endpoint for the device stage status. This endpoint is used by the device server
         to publish the device stage status using a messages.DeviceStatusMessage message.
@@ -359,7 +362,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_async_readback(scan_id: str, device: str) -> EndpointInfo:
+    def device_async_readback(scan_id: str, device: str):
         """
         Endpoint for receiving an async device readback over Redis streams.
         This endpoint is used by the device server to publish async device
@@ -380,7 +383,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_monitor_2d(device: str) -> EndpointInfo:
+    def device_monitor_2d(device: str):
         """
         Endpoint for device monitoring of 2D detectors.
         This endpoint is used to publish image data from a 2D area detector.
@@ -403,7 +406,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_monitor_1d(device: str) -> EndpointInfo:
+    def device_monitor_1d(device: str):
         """
         Endpoint for device monitoring of 1D detectors.
         This endpoint is used to publish image data from a 1D waveform detector.
@@ -427,7 +430,7 @@ class MessageEndpoints:
 
     # scan queue
     @staticmethod
-    def scan_queue_modification() -> EndpointInfo:
+    def scan_queue_modification():
         """
         Endpoint for scan queue modification. This endpoint is used to publish accepted
         scan queue modifications using a messages.ScanQueueModificationMessage message.
@@ -443,7 +446,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_modification_request() -> EndpointInfo:
+    def scan_queue_modification_request():
         """
         Endpoint for scan queue modification request. This endpoint is used to request
         a scan queue modification using a messages.ScanQueueModificationMessage message.
@@ -461,7 +464,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_order_change_request() -> EndpointInfo:
+    def scan_queue_order_change_request():
         """
         Endpoint for scan queue order change request. This endpoint is used to request
         a change in the scan queue order using a messages.ScanQueueOrderChangeMessage message.
@@ -477,7 +480,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_order_change_response() -> EndpointInfo:
+    def scan_queue_order_change_response():
         """
         Endpoint for scan queue order change response. This endpoint is used to publish the
         information on whether the scan queue order change was accepted or rejected. The response
@@ -494,7 +497,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_order_change() -> EndpointInfo:
+    def scan_queue_order_change():
         """
         Endpoint for scan queue order change. This endpoint is used to publish the
         scan queue order change using a messages.ScanQueueOrderMessage message.
@@ -510,7 +513,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_insert() -> EndpointInfo:
+    def scan_queue_insert():
         """
         Endpoint for scan queue inserts. This endpoint is used to publish accepted
         scans using a messages.ScanQueueMessage message.
@@ -526,7 +529,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_request() -> EndpointInfo:
+    def scan_queue_request():
         """
         Endpoint for scan queue request. This endpoint is used to request the new scans.
         The request is sent using a messages.ScanQueueMessage message.
@@ -540,7 +543,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_request_response() -> EndpointInfo:
+    def scan_queue_request_response():
         """
         Endpoint for scan queue request response. This endpoint is used to publish the
         information on whether the scan request was accepted or rejected. The response
@@ -558,7 +561,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def stop_all_devices() -> EndpointInfo:
+    def stop_all_devices():
         """
         Endpoint for stopping all devices. This endpoint is used to publish a message
         to stop all devices and is used by the scan server's scan queue if a scan queue
@@ -573,7 +576,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_status() -> EndpointInfo:
+    def scan_queue_status():
         """
         Endpoint for scan queue status. This endpoint is used to publish the scan queue
         status using a messages.ScanQueueStatusMessage message.
@@ -589,7 +592,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_history() -> EndpointInfo:
+    def scan_queue_history():
         """
         Endpoint for scan queue history. This endpoint is used to keep track of the
         scan queue history using a messages.ScanQueueHistoryMessage message. The endpoint is
@@ -606,7 +609,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_schedule(schedule_name: str) -> EndpointInfo:
+    def scan_queue_schedule(schedule_name: str):
         """
         Endpoint for scan queue schedule. This endpoint is used to store messages.ScanQueueScheduleMessage messages
         in a redis list.
@@ -624,7 +627,7 @@ class MessageEndpoints:
 
     # scan info
     @staticmethod
-    def scan_number() -> EndpointInfo:
+    def scan_number():
         """
         Endpoint for scan number. This endpoint is used to publish the scan number. The
         scan number is incremented after each scan and set in redis as an integer.
@@ -638,7 +641,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def dataset_number() -> EndpointInfo:
+    def dataset_number():
         """
         Endpoint for dataset number. This endpoint is used to publish the dataset number.
         The dataset number is incremented after each dataset and set in redis as an integer.
@@ -652,7 +655,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_status() -> EndpointInfo:
+    def scan_status():
         """
         Endpoint for scan status. This endpoint is used to publish the scan status using
         a messages.ScanStatusMessage message.
@@ -668,7 +671,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_progress() -> EndpointInfo:
+    def scan_progress():
         """
         Endpoint for scan progress. This endpoint is used to publish the scan progress using
         a messages.ProgressMessage message.
@@ -684,7 +687,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_history() -> EndpointInfo:
+    def scan_history():
         """
         Endpoint for scan history. This endpoint is used to keep track of the scan history
         using a messages.ScanHistoryMessage message. The endpoint is connected to a redis stream.
@@ -698,7 +701,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def available_scans() -> EndpointInfo:
+    def available_scans():
         """
         Endpoint for available scans. This endpoint is used to publish the available scans
         using an AvailableResourceMessage.
@@ -725,7 +728,7 @@ class MessageEndpoints:
         return f"{EndpointType.INFO}/scans/bluesky-events"
 
     @staticmethod
-    def scan_segment() -> EndpointInfo:
+    def scan_segment():
         """
         Endpoint for scan segment. This endpoint is used by the scan bundler to publish
         the scan segment using a messages.ScanMessage message.
@@ -739,7 +742,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_baseline() -> EndpointInfo:
+    def scan_baseline():
         """
         Endpoint for scan baseline readings. This endpoint is used by the scan bundler to
         publish the scan baseline readings using a messages.ScanBaselineMessage message.
@@ -756,7 +759,7 @@ class MessageEndpoints:
 
     # instructions
     @staticmethod
-    def device_instructions() -> EndpointInfo:
+    def device_instructions():
         """
         Endpoint for device instructions. This endpoint is used by the scan server to
         publish the device instructions using a messages.DeviceInstructionMessage message.
@@ -774,7 +777,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_instructions_response() -> EndpointInfo:
+    def device_instructions_response():
         """
         Endpoint for device instruction repsonses. This endpoint is used by the device
         server to publish responses to device instructions, typically sent by the scan
@@ -792,7 +795,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_rpc(rpc_id: str) -> EndpointInfo:
+    def device_rpc(rpc_id: str):
         """
         Endpoint for device rpc. This endpoint is used by the device server to publish
         the result of a device rpc using a messages.DeviceRPCMessage message.
@@ -809,7 +812,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def pre_scan_macros() -> EndpointInfo:
+    def pre_scan_macros():
         """
         Endpoint for pre scan macros. This endpoint is used to keep track of the pre scan
         macros. The endpoint is connected to a redis list.
@@ -823,7 +826,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def public_scan_info(scan_id: str) -> EndpointInfo:
+    def public_scan_info(scan_id: str):
         """
         Endpoint for scan info. This endpoint is used by the scan worker to publish the
         scan info using a messages.ScanStatusMessage message. In contrast to the scan_info endpoint,
@@ -842,7 +845,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def public_scan_segment(scan_id: str, point_id: int) -> EndpointInfo:
+    def public_scan_segment(scan_id: str, point_id: int):
         """
         Endpoint for public scan segments. This endpoint is used by the scan bundler to
         publish the scan segment using a messages.ScanMessage message. In contrast to the
@@ -863,7 +866,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def public_scan_baseline(scan_id: str) -> EndpointInfo:
+    def public_scan_baseline(scan_id: str):
         """
         Endpoint for public scan baseline readings. This endpoint is used by the scan bundler
         to publish the scan baseline readings using a messages.ScanBaselineMessage message.
@@ -882,7 +885,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def public_file(scan_id: str, name: str) -> EndpointInfo:
+    def public_file(scan_id: str, name: str):
         """
         Endpoint for public file. This endpoint is used by the file writer to publish the
         status of the file writing using a messages.FileMessage message.
@@ -900,7 +903,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def file_event(name: str) -> EndpointInfo:
+    def file_event(name: str):
         """
         Endpoint for public file_event. This endpoint is used by the file writer to publish the
         status of the file writing using a messages.FileMessage message.
@@ -917,7 +920,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def file_content() -> EndpointInfo:
+    def file_content():
         """
         Endpoint for file content. This endpoint is used by the file writer to publish the
         file content using a messages.FileContentMessage message.
@@ -934,7 +937,7 @@ class MessageEndpoints:
 
     # log
     @staticmethod
-    def log() -> EndpointInfo:
+    def log():
         """
         Endpoint for log. This endpoint is used by the redis connector to publish logs using
         a messages.LogMessage message.
@@ -948,7 +951,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def client_info() -> EndpointInfo:
+    def client_info():
         """
         Endpoint for client info. This endpoint is used by the redis connector to publish
         client info using a messages.ClientInfoMessage message.
@@ -962,7 +965,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def alarm() -> EndpointInfo:
+    def alarm():
         """
         Endpoint for alarms. This endpoint is used by the redis connector to publish alarms
         using a messages.AlarmMessage message.
@@ -977,7 +980,7 @@ class MessageEndpoints:
 
     # service
     @staticmethod
-    def service_status(service_id: str) -> EndpointInfo:
+    def service_status(service_id: str):
         """
         Endpoint for service status. This endpoint is used by all BEC services to publish
         their status using a messages.StatusMessage message.
@@ -995,7 +998,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def metrics(service_id: str) -> EndpointInfo:
+    def metrics(service_id: str):
         """
         Endpoint for metrics. This endpoint is used by all BEC services to publish their
         performance metrics using a messages.ServiceMetricMessage message.
@@ -1014,7 +1017,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def service_response(RID: str) -> EndpointInfo:
+    def service_response(RID: str):
         """
         Endpoint for service response. This endpoint is used by all BEC services to publish
         the result of a service request using a messages.ServiceResponseMessage message.
@@ -1033,7 +1036,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def service_request() -> EndpointInfo:
+    def service_request():
         """
         Endpoint for service request. This endpoint is used to
         request e.g. resarts of the bec server.
@@ -1050,7 +1053,7 @@ class MessageEndpoints:
 
     # misc
     @staticmethod
-    def global_vars(var_name: str) -> EndpointInfo:
+    def global_vars(var_name: str):
         """
         Endpoint for global variables. This endpoint is used to publish global variables
         using a messages.VariableMessage message.
@@ -1067,7 +1070,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def observer() -> EndpointInfo:
+    def observer():
         """
         Endpoint for observer. This endpoint is used to keep track of observer states using a.
         messages.ObserverMessage message. This endpoint is currently not used.
@@ -1081,7 +1084,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def progress(var_name) -> EndpointInfo:
+    def progress(var_name):
         """
         Endpoint for progress. This endpoint is used to publish the current progress
         using a messages.ProgressMessage message.
@@ -1101,7 +1104,7 @@ class MessageEndpoints:
 
     # logbook
     @staticmethod
-    def logbook() -> EndpointInfo:
+    def logbook():
         """
         Endpoint for logbook. This endpoint is used to publish logbook info such as
         url, user and token using a direct msgpack dump of a dictionary.
@@ -1116,7 +1119,7 @@ class MessageEndpoints:
 
     # scibec
     @staticmethod
-    def scibec() -> EndpointInfo:
+    def scibec():
         """
         Endpoint for scibec. This endpoint is used to publish scibec info such as
         url, user and token using a CredentialsMessage.
@@ -1131,7 +1134,7 @@ class MessageEndpoints:
 
     # experiment
     @staticmethod
-    def account() -> EndpointInfo:
+    def account():
         """
         Endpoint for account. This endpoint is used to publish the current account.
 
@@ -1145,7 +1148,7 @@ class MessageEndpoints:
 
     # data processing
     @staticmethod
-    def processed_data(process_id: str) -> EndpointInfo:
+    def processed_data(process_id: str):
         """
         Endpoint for processed data. This endpoint is used to publish new processed data
         streams using a messages.ProcessedDataMessage message.
@@ -1164,7 +1167,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def dap_config() -> EndpointInfo:
+    def dap_config():
         """
         Endpoint for DAP configuration. This endpoint is used to publish the DAP configuration
         using a messages.DAPConfigMessage message.
@@ -1180,7 +1183,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def dap_available_plugins(plugin_id: str) -> EndpointInfo:
+    def dap_available_plugins(plugin_id: str):
         """
         Endpoint for available DAP plugins. This endpoint is used to publish the available DAP
         plugins using a messages.AvailableResourceMessage message.
@@ -1199,7 +1202,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def dap_request() -> EndpointInfo:
+    def dap_request():
         """
         Endpoint for DAP request. This endpoint is used to request a DAP using a
         messages.DAPRequestMessage message.
@@ -1215,7 +1218,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def dap_response(RID: str) -> EndpointInfo:
+    def dap_response(RID: str):
         """
         Endpoint for DAP response. This endpoint is used to publish the DAP response using a
         messages.DAPResponseMessage message.
@@ -1235,7 +1238,7 @@ class MessageEndpoints:
 
     # GUI
     @staticmethod
-    def gui_config(gui_id: str) -> EndpointInfo:
+    def gui_config(gui_id: str):
         """
         Endpoint for GUI configuration. This endpoint is used to publish the GUI configuration
         using a messages.GUIConfigMessage message.
@@ -1251,7 +1254,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def gui_data(gui_id: str) -> EndpointInfo:
+    def gui_data(gui_id: str):
         """
         Endpoint for GUI data. This endpoint is used to publish the GUI data using a
         messages.GUIDataMessage message.
@@ -1267,7 +1270,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def gui_instructions(gui_id: str) -> EndpointInfo:
+    def gui_instructions(gui_id: str):
         """
         Endpoint for GUI instructions. This endpoint is used to publish the GUI instructions
         using a messages.GUIInstructionMessage message.
@@ -1283,7 +1286,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def gui_instruction_response(RID: str) -> EndpointInfo:
+    def gui_instruction_response(RID: str):
         """
         Endpoint for GUI instruction response. This endpoint is used to publish the GUI instruction response
         using a messages.RequestResponseMessage message.
@@ -1299,7 +1302,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def gui_auto_update_config(gui_id: str) -> EndpointInfo:
+    def gui_auto_update_config(gui_id: str):
         """
         Endpoint for Auto Update configuration.
 
@@ -1314,7 +1317,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def gui_heartbeat(gui_id: str) -> EndpointInfo:
+    def gui_heartbeat(gui_id: str):
         """
         Endpoint for GUI heartbeat. This endpoint is used to publish the GUI heartbeat
         using a messages.StatusMessage message.

@@ -21,12 +21,21 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import wraps
 from glob import fnmatch
-from typing import TYPE_CHECKING, Any, Awaitable, Generator, Literal
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Concatenate,
+    Generator,
+    Literal,
+    ParamSpec,
+)
 
 import louie
-import redis
 import redis.client
 import redis.exceptions
+from redis.client import Pipeline, Redis
 
 from bec_lib.connector import ConnectorBase, MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
@@ -35,13 +44,19 @@ from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfo
 from bec_lib.serialization import MsgpackSerialization
 
 if TYPE_CHECKING:  # pragma: no cover
-    from typing import Union
-
     from bec_lib.alarm_handler import Alarms
 
+P = ParamSpec("P")
 
-def validate_endpoint(endpoint_arg):
-    def decorator(func):
+
+def validate_endpoint(endpoint_arg: str):
+    """Decorate an instance method to validate the first argument (named endpoint_arg) as
+    an EndpointInfo and pass it as a str to the wrapped method. Further checks if any given BECMessage
+    to the function is appropriate for the endpoint."""
+
+    def decorator(
+        func: Callable[Concatenate[Any, str, P], Any]
+    ) -> Callable[Concatenate[Any, EndpointInfo, P], Any]:
         argspec = inspect.getfullargspec(func)
         argument_index = argspec.args.index(endpoint_arg)
 
@@ -136,7 +151,7 @@ class StreamSubscriptionInfo:
     topic: str
     newest_only: bool
     from_start: bool
-    cb_ref: callable
+    cb_ref: Callable
     kwargs: dict
 
     def __eq__(self, other):
@@ -151,8 +166,8 @@ class StreamSubscriptionInfo:
 
 @dataclass
 class DirectReadingStreamSubscriptionInfo(StreamSubscriptionInfo):
-    thread = None
-    stop_event = None
+    stop_event: threading.Event
+    thread: threading.Thread | None = None
 
 
 @dataclass
@@ -167,23 +182,20 @@ class RedisConnector(ConnectorBase):
     a simple interface to send and receive messages from a redis server.
     """
 
-    def __init__(self, bootstrap: list, redis_cls=None, **kwargs):
+    def __init__(self, bootstrap: list | str, redis_cls: type[Redis] = Redis, **kwargs):
         """
         Initialize the connector
 
         Args:
             bootstrap (list): list of strings in the form "host:port"
-            redis_cls (redis.client, optional): redis client class. Defaults to None.
+            redis_cls (redis.client, optional): redis client class. Defaults to the standard client redis.Redis. Must not be an async client.
         """
         super().__init__(bootstrap)
         self.host, self.port = (
             bootstrap[0].split(":") if isinstance(bootstrap, list) else bootstrap.split(":")
         )
 
-        if redis_cls:
-            self._redis_conn = redis_cls(host=self.host, port=self.port)
-        else:
-            self._redis_conn = redis.Redis(host=self.host, port=self.port, **kwargs)
+        self._redis_conn = redis_cls(host=self.host, port=self.port)
 
         # main pubsub connection
         self._pubsub_conn = self._redis_conn.pubsub()
@@ -258,9 +270,9 @@ class RedisConnector(ConnectorBase):
             None,
         ] = None,
         severity: int = 0,
-        scope: str = None,
-        rid: str = None,
-        metadata: dict = None,
+        scope: str | None = None,
+        rid: str | None = None,
+        metadata: dict | None = None,
     ):
         """
         Send a message to the client
@@ -285,14 +297,16 @@ class RedisConnector(ConnectorBase):
         )
         self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
 
-    def raise_alarm(self, severity: Alarms, alarm_type: str, source: str, msg: str, metadata: dict):
+    def raise_alarm(
+        self, severity: Alarms, alarm_type: str, source: dict[str, Any], msg: str, metadata: dict
+    ):
         """
         Raise an alarm
 
         Args:
             severity (Alarms): alarm severity
             alarm_type (str): alarm type
-            source (str): source
+            source (dict[str, Any]): source of the alarm
             msg (str): message
             metadata (dict): metadata
         """
@@ -326,7 +340,7 @@ class RedisConnector(ConnectorBase):
                 ret.append(res)
         return ret
 
-    def raw_send(self, topic: str, msg: bytes, pipe=None):
+    def raw_send(self, topic: str, msg: str | bytes, pipe: Pipeline | None = None):
         """
         Send a message to a topic. This is the raw version of send, it does not
         check the message type. Use this method if you want to send a message
@@ -341,7 +355,7 @@ class RedisConnector(ConnectorBase):
         client.publish(topic, msg)
 
     @validate_endpoint("topic")
-    def send(self, topic: EndpointInfo, msg: BECMessage, pipe=None) -> None:
+    def send(self, topic: str, msg: str | BECMessage, pipe=None) -> None:
         """
         Send a message to a topic
 
@@ -352,7 +366,7 @@ class RedisConnector(ConnectorBase):
         """
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
-        self.raw_send(topic, msg, pipe)
+        self.raw_send(topic, msg, pipe)  # type: ignore # using sync client
 
     def _start_events_dispatcher_thread(self, start_thread):
         if start_thread and self._events_dispatcher_thread is None:
@@ -364,7 +378,7 @@ class RedisConnector(ConnectorBase):
             self._events_dispatcher_thread.start()
             started_event.wait()  # synchronization of thread start
 
-    def _convert_endpointinfo(self, endpoint, check_message_op=True):
+    def _convert_endpointinfo(self, endpoint, check_message_op=True) -> tuple[list[str], str]:
         if isinstance(endpoint, EndpointInfo):
             return [endpoint.endpoint], endpoint.message_op.name
         if isinstance(endpoint, str):
@@ -387,7 +401,7 @@ class RedisConnector(ConnectorBase):
             return list(itertools.chain(*endpoints_str)), ref_message_op or ""
         raise ValueError(f"Invalid endpoint {endpoint}")
 
-    def _normalize_patterns(self, patterns):
+    def _normalize_patterns(self, patterns) -> list[str]:
         patterns, _ = self._convert_endpointinfo(patterns)
         if isinstance(patterns, str):
             return [patterns]
@@ -400,9 +414,9 @@ class RedisConnector(ConnectorBase):
 
     def register(
         self,
-        topics: str | list[str] | EndpointInfo | list[EndpointInfo] = None,
-        patterns: str | list[str] = None,
-        cb: callable = None,
+        topics: str | list[str] | EndpointInfo | list[EndpointInfo] | None = None,
+        patterns: str | list[str] | None = None,
+        cb: Callable | None = None,
         start_thread: bool = True,
         from_start: bool = False,
         newest_only: bool = False,
@@ -473,7 +487,7 @@ class RedisConnector(ConnectorBase):
                         self._topics_cb[topic].append(item)
         self._start_events_dispatcher_thread(start_thread)
 
-    def _add_direct_stream_listener(self, topic, cb_ref, **kwargs) -> int:
+    def _add_direct_stream_listener(self, topic, cb_ref, **kwargs):
         """
         Add a direct listener for a topic. This is used when newest_only is True.
 
@@ -483,15 +497,20 @@ class RedisConnector(ConnectorBase):
             kwargs (dict): additional keyword arguments to be transmitted to the callback
 
         Returns:
-            int: stream id
+            None
         """
         info = DirectReadingStreamSubscriptionInfo(
-            id="-", topic=topic, newest_only=True, from_start=False, cb_ref=cb_ref, kwargs=kwargs
+            id="-",
+            topic=topic,
+            newest_only=True,
+            from_start=False,
+            cb_ref=cb_ref,
+            kwargs=kwargs,
+            stop_event=threading.Event(),
         )
         if info in self._stream_topics_subscription[topic]:
             raise RuntimeError("Already registered stream topic with the same callback")
 
-        info.stop_event = threading.Event()
         info.thread = threading.Thread(target=self._direct_stream_listener, args=(info,))
         with self._stream_topics_subscription_lock:
             self._stream_topics_subscription[topic].append(info)
@@ -507,7 +526,7 @@ class RedisConnector(ConnectorBase):
             if not ret:
                 time.sleep(0.1)
                 continue
-            redis_id, msg_dict = ret[0]
+            redis_id, msg_dict = ret[0]  # type: ignore : we are using Redis synchronously
             timestamp, _, ind = redis_id.partition(b"-")
             info.id = f"{timestamp.decode()}-{int(ind.decode())+1}"
             stream_msg = StreamMessage(
@@ -516,7 +535,7 @@ class RedisConnector(ConnectorBase):
             )
             self._messages_queue.put(stream_msg)
 
-    def _get_stream_topics_id(self) -> dict:
+    def _get_stream_topics_id(self) -> tuple[dict, dict]:
         stream_topics_id = {}
         from_start_stream_topics_id = {}
         with self._stream_topics_subscription_lock:
@@ -580,18 +599,17 @@ class RedisConnector(ConnectorBase):
                 time.sleep(1)
             # pylint: disable=broad-except
             except Exception:
-                sys.excepthook(*sys.exc_info())
+                sys.excepthook(*sys.exc_info())  # type: ignore # inside except
             else:
                 error = False
                 with self._stream_topics_subscription_lock:
                     self._handle_stream_msg_list(from_start_msg_list, from_start=True)
                     self._handle_stream_msg_list(msg_list)
-        return True
 
     def _register_stream(
         self,
-        topics: list[str] = None,
-        cb: callable = None,
+        topics: list[str],
+        cb: Callable,
         from_start: bool = False,
         newest_only: bool = False,
         start_thread: bool = True,
@@ -601,8 +619,8 @@ class RedisConnector(ConnectorBase):
         Register a callback for a stream topic or pattern
 
         Args:
-            topic (str, optional): Topic. This should be a valid message endpoint string.
-            cb (callable, optional): callback. Defaults to None.
+            topic (list[str]): Topic(s). This should be a list of valid message endpoint string.
+            cb (Callable): callback.
             from_start (bool, optional): read from start. Defaults to False.
             newest_only (bool, optional): read newest only. Defaults to False.
             start_thread (bool, optional): start the dispatcher thread. Defaults to True.
@@ -633,7 +651,7 @@ class RedisConnector(ConnectorBase):
                         # no such key
                         last_id = "0-0"
                     else:
-                        last_id = stream_info["last-entry"][0].decode()
+                        last_id = stream_info["last-entry"][0].decode()  # type: ignore # we are using the sync Redis client
                     new_subscription = StreamSubscriptionInfo(
                         id="0-0" if from_start else last_id,
                         topic=topic,
@@ -662,7 +680,7 @@ class RedisConnector(ConnectorBase):
                 )
                 self._stream_events_listener_thread.start()
 
-    def _filter_topics_cb(self, topics: list, cb: Union[callable, None]):
+    def _filter_topics_cb(self, topics: list, cb: Callable | None):
         unsubscribe_list = []
         with self._topics_cb_lock:
             for topic in topics:
@@ -700,7 +718,7 @@ class RedisConnector(ConnectorBase):
                 if unsubscribe_list:
                     self._pubsub_conn.unsubscribe(unsubscribe_list)
 
-    def _unregister_stream(self, topics: list[str], cb: callable = None) -> bool:
+    def _unregister_stream(self, topics: list[str], cb: Callable | None = None) -> bool:
         """
         Unregister a stream listener.
 
@@ -755,7 +773,7 @@ class RedisConnector(ConnectorBase):
                 time.sleep(1)
             # pylint: disable=broad-except
             except Exception:
-                sys.excepthook(*sys.exc_info())
+                sys.excepthook(*sys.exc_info())  # type: ignore # inside except
             else:
                 error = False
                 if msg is not None:
@@ -766,7 +784,7 @@ class RedisConnector(ConnectorBase):
             g = cb(msg, **kwargs)
         # pylint: disable=broad-except
         except Exception:
-            sys.excepthook(*sys.exc_info())
+            sys.excepthook(*sys.exc_info())  # type: ignore # inside except
         else:
             if inspect.isgenerator(g):
                 # reschedule execution to delineate the generator
@@ -857,7 +875,12 @@ class RedisConnector(ConnectorBase):
 
     @validate_endpoint("topic")
     def lpush(
-        self, topic: EndpointInfo, msg: str, pipe=None, max_size: int = None, expire: int = None
+        self,
+        topic: str,
+        msg: str | BECMessage,
+        pipe: Pipeline | None = None,
+        max_size: int | None = None,
+        expire: int | None = None,
     ) -> None:
         """Time complexity: O(1) for each element added, so O(N) to
         add N elements when the command is called with multiple arguments.
@@ -877,14 +900,14 @@ class RedisConnector(ConnectorBase):
             client.execute()
 
     @validate_endpoint("topic")
-    def lset(self, topic: EndpointInfo, index: int, msg: str, pipe=None) -> None:
+    def lset(self, topic: str, index: int, msg: str, pipe: Pipeline | None = None) -> str:
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
-        return client.lset(topic, index, msg)
+        return client.lset(topic, index, msg)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def rpush(self, topic: EndpointInfo, msg: str, pipe=None) -> int:
+    def rpush(self, topic: str, msg: str, pipe=None) -> int:
         """O(1) for each element added, so O(N) to add N elements when the
         command is called with multiple arguments. Insert all the specified
         values at the tail of the list stored at key. If key does not exist,
@@ -893,10 +916,10 @@ class RedisConnector(ConnectorBase):
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
-        return client.rpush(topic, msg)
+        return client.rpush(topic, msg)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def lrange(self, topic: EndpointInfo, start: int, end: int, pipe=None):
+    def lrange(self, topic: str, start: int, end: int, pipe=None):
         """O(S+N) where S is the distance of start offset from HEAD for small
         lists, from nearest end (HEAD or TAIL) for large lists; and N is the
         number of elements in the specified range. Returns the specified elements
@@ -918,7 +941,7 @@ class RedisConnector(ConnectorBase):
         return ret
 
     @validate_endpoint("topic")
-    def set_and_publish(self, topic: EndpointInfo, msg, pipe=None, expire: int = None) -> None:
+    def set_and_publish(self, topic: str, msg, pipe=None, expire: int | None = None) -> None:
         """piped combination of self.publish and self.set"""
         client = pipe if pipe is not None else self.pipeline()
         if isinstance(msg, BECMessage):
@@ -929,7 +952,7 @@ class RedisConnector(ConnectorBase):
             client.execute()
 
     @validate_endpoint("topic")
-    def set(self, topic: EndpointInfo, msg, pipe=None, expire: int = None) -> None:
+    def set(self, topic: str, msg, pipe=None, expire: int | None = None) -> None:
         """set redis value"""
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
@@ -937,18 +960,18 @@ class RedisConnector(ConnectorBase):
         client.set(topic, msg, ex=expire)
 
     @validate_endpoint("pattern")
-    def keys(self, pattern: EndpointInfo) -> list:
+    def keys(self, pattern: str) -> list:
         """returns all keys matching a pattern"""
-        return self._redis_conn.keys(pattern)
+        return self._redis_conn.keys(pattern)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def delete(self, topic: EndpointInfo, pipe=None):
+    def delete(self, topic: str, pipe=None):
         """delete topic"""
         client = pipe if pipe is not None else self._redis_conn
         client.delete(topic)
 
     @validate_endpoint("topic")
-    def get(self, topic: EndpointInfo, pipe=None):
+    def get(self, topic: str, pipe=None):
         """retrieve entry, either via hgetall or get"""
         client = pipe if pipe is not None else self._redis_conn
         data = client.get(topic)
@@ -969,9 +992,7 @@ class RedisConnector(ConnectorBase):
         return [MsgpackSerialization.loads(d) if d else None for d in data]
 
     @validate_endpoint("topic")
-    def xadd(
-        self, topic: EndpointInfo, msg_dict: dict, max_size=None, pipe=None, expire: int = None
-    ):
+    def xadd(self, topic: str, msg_dict: dict, max_size=None, pipe=None, expire: int = None):
         """
         add to stream
 
@@ -1005,7 +1026,7 @@ class RedisConnector(ConnectorBase):
             client.execute()
 
     @validate_endpoint("topic")
-    def get_last(self, topic: EndpointInfo, key=None, count=1):
+    def get_last(self, topic: str, key=None, count=1):
         """
         Get last message from stream. Repeated calls will return
         the same message until a new message is added to the stream.
@@ -1039,12 +1060,7 @@ class RedisConnector(ConnectorBase):
 
     @validate_endpoint("topic")
     def xread(
-        self,
-        topic: EndpointInfo,
-        id: str = None,
-        count: int = None,
-        block: int = None,
-        from_start=False,
+        self, topic: str, id: str = None, count: int = None, block: int = None, from_start=False
     ) -> list | None:
         """
         read from stream
@@ -1102,7 +1118,7 @@ class RedisConnector(ConnectorBase):
         return out if out else None
 
     @validate_endpoint("topic")
-    def xrange(self, topic: EndpointInfo, min: str, max: str, count: int = None):
+    def xrange(self, topic: str, min: str, max: str, count: int = None):
         """
         read a range from stream
 
@@ -1123,6 +1139,14 @@ class RedisConnector(ConnectorBase):
                 {k.decode(): MsgpackSerialization.loads(msg) for k, msg in msg_dict.items()}
             )
         return msgs if msgs else None
+
+    def client_id(self) -> int:
+        """Get the current connection's client ID."""
+        return self._redis_conn.client_id()
+
+    def unblock_client(self, id: int) -> None:
+        """Unblock the client with the given ID."""
+        return self._redis_conn.client_unblock(id)
 
     def producer(self):
         """Return itself as a producer, to be compatible with old code"""
