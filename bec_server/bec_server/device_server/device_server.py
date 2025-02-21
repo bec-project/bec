@@ -645,7 +645,9 @@ class DeviceServer(RPCMixin, BECService):
             raise ValueError(f"Unknown on_failure value {ds_dev.on_failure}.")
         return signals
 
-    def _stage_device(self, instr: messages.DeviceInstructionMessage) -> None:
+    def _stage_device(
+        self, instr: messages.DeviceInstructionMessage, timeout_on_unstage: int = 10
+    ) -> None:
         devices = instr.content["device"]
         if not isinstance(devices, list):
             devices = [devices]
@@ -668,12 +670,17 @@ class DeviceServer(RPCMixin, BECService):
                     if isinstance(status, DeviceStatus):
                         for ii in range(3):
                             try:
-                                status.wait(timeout=10)
+                                status.wait(timeout=timeout_on_unstage)
+                                status = None  # Set status None and break the loop since unstage is successful
+                                break
                             except ophyd_errors.WaitTimeoutError:
                                 logger.warning(
-                                    f"Unstaging device {dev} still running, {10*(ii+1)} seconds passed."
+                                    f"Unstaging device {dev} still running, {timeout_on_unstage*(ii+1)} seconds passed."
                                 )
-                        raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")
+                        if status is not None:
+                            raise ValueError(
+                                f"Unstaging device {dev} failed to finish in 30 seconds"
+                            )
                 status = self.device_manager.devices[dev].obj.stage()
             if not isinstance(status, DeviceStatus):
                 status = DeviceStatus(obj)

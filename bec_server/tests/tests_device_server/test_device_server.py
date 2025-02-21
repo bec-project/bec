@@ -2,7 +2,7 @@ from unittest import mock
 from unittest.mock import ANY
 
 import pytest
-from ophyd import Staged
+from ophyd import DeviceStatus, Staged
 from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
@@ -735,7 +735,6 @@ def test_stage_device(device_server_mock, instr):
                 continue
             assert device_server.device_manager.devices[dev].obj._staged == Staged.no
     else:
-        # device_server_mock.device_manager.devices.device_with_not_resolving_status.enabled = True
         device_server._stage_device(instr)
         status = device_server.requests_handler._storage["diid"]["status_objects"][0]
         assert status.done is False
@@ -746,3 +745,41 @@ def test_stage_device(device_server_mock, instr):
             pass
         assert status.done is True
         assert device_server.device_manager.devices[dev].obj._staged == Staged.yes
+
+
+@pytest.mark.parametrize(
+    "instr",
+    [
+        messages.DeviceInstructionMessage(
+            device="samx",
+            action="stage",
+            parameter={},
+            metadata={"stream": "primary", "device_instr_id": "diid"},
+        )
+    ],
+)
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_stage_timeout_unstage_device(device_server_mock, instr):
+    """First test staging of samx, than test logic that raises if device is staged, needs to be unstaged and unstage fails"""
+
+    def callback():
+        device_server.device_manager.devices["samx"].obj._staged = Staged.no
+        status.set_finished()
+        return status
+
+    device_server = device_server_mock
+    device_server._stage_device(instr)
+    device_server.device_manager.devices["samx"].obj.unstage()
+    with mock.patch.object(
+        device_server.device_manager.devices["samx"].obj, "unstage"
+    ) as mock_unstage:
+        assert device_server.device_manager.devices["samx"].obj._staged == Staged.no
+        device_server._stage_device(instr, timeout_on_unstage=0.1)
+        assert device_server.device_manager.devices["samx"].obj._staged == Staged.yes
+        status = DeviceStatus(device=device_server.device_manager.devices["samx"].obj)
+        mock_unstage.return_value = status
+        with pytest.raises(ValueError):
+            device_server._stage_device(instr, timeout_on_unstage=0.1)
+        # Change the mock to return the resolved unstage status + unstage the device
+        mock_unstage.side_effect = callback
+        device_server._stage_device(instr, timeout_on_unstage=0.1)
