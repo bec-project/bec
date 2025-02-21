@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
@@ -8,9 +8,9 @@ from pydantic import Field
 
 import bec_lib.messages as bec_messages
 from bec_lib.alarm_handler import Alarms
-from bec_lib.endpoints import MessageEndpoints
+from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.messages import AlarmMessage, BECMessage, ClientInfoMessage, LogMessage
-from bec_lib.redis_connector import RedisConnector
+from bec_lib.redis_connector import RedisConnector, WrongArguments, validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
 
 # pylint: disable=protected-access
@@ -371,3 +371,33 @@ def test_send_raises_on_invalid_topic(connector):
 def test_mget(connector):
     connector.mget(["topic1", "topic2"])
     connector._redis_conn.mget.assert_called_once_with(["topic1", "topic2"])
+
+
+def test_validate_with_present_arg():
+
+    endpoint = EndpointInfo("test", Any, ["method"])  # type: ignore
+
+    @validate_endpoint("arg1")
+    def method(self_, arg1):
+        assert isinstance(arg1, str)
+        assert arg1 == "test"
+
+    method(None, endpoint)
+
+
+def test_validate_with_missing_arg():
+
+    with pytest.raises(WrongArguments):
+
+        @validate_endpoint("missing_arg")
+        def method(self_, arg1): ...
+
+
+def test_validate_rejects_wrong_op():
+    endpoint = EndpointInfo("test", Any, ["missing_ops"])  # type: ignore
+
+    @validate_endpoint("arg1")
+    def not_in_list(self_, arg1): ...
+
+    with pytest.raises(ValueError):
+        not_in_list(None, endpoint)
