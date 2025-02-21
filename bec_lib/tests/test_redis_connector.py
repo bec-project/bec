@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
@@ -8,9 +8,9 @@ from pydantic import Field
 
 import bec_lib.messages as bec_messages
 from bec_lib.alarm_handler import Alarms
-from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import AlarmMessage, BECMessage, ClientInfoMessage, LogMessage
-from bec_lib.redis_connector import RedisConnector
+from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
+from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfoMessage, LogMessage
+from bec_lib.redis_connector import RedisConnector, WrongArguments, validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
 
 # pylint: disable=protected-access
@@ -373,74 +373,46 @@ def test_mget(connector):
     connector._redis_conn.mget.assert_called_once_with(["topic1", "topic2"])
 
 
-# def test_redis_stream_register_threaded_get_id():
-#    register = RedisStreamConsumerThreaded(
-#        "localhost", "1", topics="topic1", cb=mock.MagicMock(), redis_cls=mock.MagicMock()
-#    )
-#    register.stream_keys["topic1"] = b"1691610882756-0"
-#    assert register.get_id("topic1") == b"1691610882756-0"
-#    assert register.get_id("doesnt_exist") == "0-0"
+def test_validate_with_present_arg():
+
+    endpoint = EndpointInfo("test", Any, ["method"])  # type: ignore
+
+    @validate_endpoint("arg1")
+    def method(self_, arg1):
+        assert isinstance(arg1, str)
+        assert arg1 == "test"
+
+    method(None, endpoint)
 
 
-# def test_redis_stream_register_threaded_poll_messages():
-#    register = RedisStreamConsumerThreaded(
-#        "localhost", "1", topics="topic1", cb=mock.MagicMock(), redis_cls=mock.MagicMock()
-#    )
-#    with mock.patch.object(
-#        register, "get_newest_message", return_value=None
-#    ) as mock_get_newest_message:
-#        register.poll_messages()
-#        mock_get_newest_message.assert_called_once()
-#        register._redis_conn.xread.assert_not_called()
+def test_validate_with_missing_arg():
+
+    with pytest.raises(WrongArguments):
+
+        @validate_endpoint("missing_arg")
+        def method(self_, arg1): ...
 
 
-# def test_redis_stream_register_threaded_poll_messages_newest_only():
-#    register = RedisStreamConsumerThreaded(
-#        "localhost",
-#        "1",
-#        topics="topic1",
-#        cb=mock.MagicMock(),
-#        redis_cls=mock.MagicMock(),
-#        newest_only=True,
-#    )
-#
-#    register._redis_conn.xrevrange.return_value = [(b"1691610882756-0", {b"data": b"msg"})]
-#    register.poll_messages()
-#    register._redis_conn.xread.assert_not_called()
-#    register.cb.assert_called_once_with(MessageObject(topic="topic1", value=b"msg"))
+def test_validate_rejects_wrong_op():
+    endpoint = EndpointInfo("test", Any, ["missing_ops"])  # type: ignore
+
+    @validate_endpoint("arg1")
+    def not_in_list(self_, arg1): ...
+
+    with pytest.raises(ValueError):
+        not_in_list(None, endpoint)
 
 
-# def test_redis_stream_register_threaded_poll_messages_read():
-#    register = RedisStreamConsumerThreaded(
-#        "localhost",
-#        "1",
-#        topics="topic1",
-#        cb=mock.MagicMock(),
-#        redis_cls=mock.MagicMock(),
-#    )
-#    register.stream_keys["topic1"] = "0-0"
-#
-#    msg = [[b"topic1", [(b"1691610714612-0", {b"data": b"msg"})]]]
-#
-#    register._redis_conn.xread.return_value = msg
-#    register.poll_messages()
-#    register._redis_conn.xread.assert_called_once_with({"topic1": "0-0"}, count=1)
-#    register.cb.assert_called_once_with(MessageObject(topic="topic1", value=b"msg"))
+def test_bundle_message_handled():
+    endpoint = MessageEndpoints.scan_segment()
+    messages = BundleMessage(
+        messages=[
+            endpoint.message_type(point_id=1, scan_id="", data={}),
+            endpoint.message_type(point_id=1, scan_id="", data={}),
+        ]
+    )
 
-# @pytest.mark.parametrize(
-#    "topics,expected",
-#    [
-#        ("topic1", ["topic1"]),
-#        (["topic1"], ["topic1"]),
-#        (["topic1", "topic2"], ["topic1", "topic2"]),
-#    ],
-# )
-# def test_redis_stream_register_threaded_init_topics(topics, expected):
-#    register = RedisStreamConsumerThreaded(
-#        "localhost",
-#        "1",
-#        topics=topics,
-#        cb=mock.MagicMock(),
-#        redis_cls=mock.MagicMock(),
-#    )
-#    assert register.topics == expected
+    @validate_endpoint("endpoint")
+    def send(self_, endpoint, messages): ...
+
+    send(None, endpoint, messages)

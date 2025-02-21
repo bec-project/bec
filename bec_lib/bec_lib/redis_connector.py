@@ -28,6 +28,7 @@ from typing import (
     Callable,
     Concatenate,
     Generator,
+    Iterable,
     Literal,
     ParamSpec,
 )
@@ -49,8 +50,64 @@ if TYPE_CHECKING:  # pragma: no cover
 P = ParamSpec("P")
 
 
-def validate_endpoint(endpoint_arg: str):
-    """Decorate an instance method to validate the first argument (named endpoint_arg) as
+class IncompatibleMessageForEndpoint(TypeError): ...
+
+
+class WrongArguments(ValueError): ...
+
+
+def _raise_incompatible_message(msg, endpoint):
+    raise IncompatibleMessageForEndpoint(
+        f"Message type {type(msg)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
+    )
+
+
+def _check_endpoint_type(endpoint: EndpointInfo | str) -> bool:
+    if isinstance(endpoint, str):
+        warnings.warn(
+            "RedisConnector methods with a string topic are deprecated and should not be used anymore. Use RedisConnector methods with an EndpointInfo instead.",
+            DeprecationWarning,
+        )
+        return False
+    if not isinstance(endpoint, EndpointInfo):
+        raise TypeError(f"Endpoint {endpoint} is not EndpointInfo")
+    return True
+
+
+def _validate_sequence(seq: Iterable, endpoint: EndpointInfo):
+    for sub_val in seq:
+        if isinstance(sub_val, BECMessage) and endpoint.message_type == Any:
+            continue
+        if isinstance(sub_val, BECMessage) and not isinstance(sub_val, endpoint.message_type):
+            _raise_incompatible_message(sub_val, endpoint)
+
+
+def _validate_all_bec_messages(values: Iterable, endpoint: EndpointInfo):
+    for val in values:
+        if isinstance(val, BECMessage) and endpoint.message_type == Any:
+            continue
+        if isinstance(val, BundleMessage):
+            for msg in val.messages:
+                if not isinstance(msg, endpoint.message_type):
+                    _raise_incompatible_message(msg, endpoint)
+        elif isinstance(val, BECMessage) and not isinstance(val, endpoint.message_type):
+            _raise_incompatible_message(val, endpoint)
+        if isinstance(val, dict):
+            _validate_sequence(val.values(), endpoint)
+        if isinstance(val, list) or isinstance(val, tuple):
+            _validate_sequence(val, endpoint)
+
+
+def _fix_docstring_for_ipython(func: Callable, arg_name: str):
+    if func.__doc__ is not None:
+        arg_annotation = f"    {arg_name} (str):"
+        if arg_annotation in func.__doc__:
+            func.__doc__ = func.__doc__.replace(arg_annotation, f"    {arg_name} (EndpointInfo):")
+    func.__annotations__[arg_name] = "EndpointInfo"
+
+
+def validate_endpoint(endpoint_arg_name: str):
+    """Decorate an instance method to validate the first argument (named endpoint_arg_name) as
     an EndpointInfo and pass it as a str to the wrapped method. Further checks if any given BECMessage
     to the function is appropriate for the endpoint."""
 
@@ -58,7 +115,14 @@ def validate_endpoint(endpoint_arg: str):
         func: Callable[Concatenate[Any, str, P], Any]
     ) -> Callable[Concatenate[Any, EndpointInfo, P], Any]:
         argspec = inspect.getfullargspec(func)
-        argument_index = argspec.args.index(endpoint_arg)
+        try:
+            argument_index = argspec.args.index(endpoint_arg_name)
+            if argument_index != 1:
+                raise ValueError
+        except ValueError:
+            raise WrongArguments(
+                f"@validate_endpoint should be applied to an instance function which takes the named argument ('{endpoint_arg_name}') as its first non-self argument."
+            )
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -66,74 +130,24 @@ def validate_endpoint(endpoint_arg: str):
                 endpoint = args[argument_index]
                 arg = list(args)
             except IndexError:
-                endpoint = kwargs[endpoint_arg]
+                endpoint = kwargs[endpoint_arg_name]
                 arg = kwargs
-            if isinstance(endpoint, str):
-                warnings.warn(
-                    "RedisConnector methods with a string topic are deprecated and should not be used anymore. Use RedisConnector methods with an EndpointInfo instead.",
-                    DeprecationWarning,
-                )
+
+            if not _check_endpoint_type(endpoint):
                 return func(*args, **kwargs)
-
-            if not isinstance(endpoint, EndpointInfo):
-                raise TypeError(f"Endpoint {endpoint} is not EndpointInfo")
-
             if func.__name__ not in endpoint.message_op:
                 raise ValueError(
                     f"Endpoint {endpoint} is not compatible with {func.__name__} method"
                 )
-            for val in list(args) + list(kwargs.values()):
-                if isinstance(val, BECMessage) and endpoint.message_type == Any:
-                    continue
-                if isinstance(val, BECMessage) and not isinstance(val, endpoint.message_type):
-                    if not isinstance(val, BundleMessage):
-                        raise TypeError(
-                            f"Message type {type(val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                        )
-                    for msg in val.messages:
-                        if not isinstance(msg, endpoint.message_type):
-                            raise TypeError(
-                                f"Message type {type(msg)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                            )
-
-                if isinstance(val, dict):
-                    for sub_val in val.values():
-                        if isinstance(sub_val, BECMessage) and endpoint.message_type == Any:
-                            continue
-                        if isinstance(sub_val, BECMessage) and not isinstance(
-                            sub_val, endpoint.message_type
-                        ):
-                            raise TypeError(
-                                f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                            )
-                if isinstance(val, list):
-                    for sub_val in val:
-                        if isinstance(sub_val, BECMessage) and endpoint.message_type == Any:
-                            continue
-                        if isinstance(sub_val, BECMessage) and not isinstance(
-                            sub_val, endpoint.message_type
-                        ):
-                            raise TypeError(
-                                f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                            )
-                if isinstance(val, tuple):
-                    for sub_val in val:
-                        if isinstance(sub_val, BECMessage) and endpoint.message_type == typing.Any:
-                            continue
-                        if isinstance(sub_val, BECMessage) and not isinstance(
-                            sub_val, endpoint.message_type
-                        ):
-                            raise TypeError(
-                                f"Message type {type(sub_val)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-                            )
+            _validate_all_bec_messages(list(args) + list(kwargs.values()), endpoint)
 
             if isinstance(arg, list):
                 arg[argument_index] = endpoint.endpoint
-                return func(*arg, **kwargs)
-
-            arg[endpoint_arg] = endpoint.endpoint
+                return func(*tuple(arg), **kwargs)
+            arg[endpoint_arg_name] = endpoint.endpoint
             return func(*args, **arg)
 
+        _fix_docstring_for_ipython(wrapper, endpoint_arg_name)
         return wrapper
 
     return decorator
@@ -355,7 +369,7 @@ class RedisConnector(ConnectorBase):
         client.publish(topic, msg)
 
     @validate_endpoint("topic")
-    def send(self, topic: str, msg: str | BECMessage, pipe=None) -> None:
+    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
         """
         Send a message to a topic
 
