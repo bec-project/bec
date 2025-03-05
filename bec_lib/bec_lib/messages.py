@@ -1040,3 +1040,33 @@ class ProcedureExecutionMessage(BECMessage):
     identifier: str
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
+
+
+class LoginInfoMessage(BECMessage):
+    """
+    Message for public login information
+
+    Args:
+        host (str): Hostname
+        deployment (str): Deployment id
+    """
+
+    msg_type: ClassVar[str] = "login_info_message"
+    host: str
+    deployment: str
+    available_accounts: list[str]
+    atlas_login: bool
+
+
+class ACLAccountsMessage(BECMessage):
+    """
+    Message for ACL accounts
+
+    Args:
+        accounts (dict): ACL accounts
+    """
+
+    msg_type: ClassVar[str] = "acl_accounts_message"
+    accounts: dict[
+        str, dict[Literal["categories", "keys", "channels", "commands", "profile"], list[str] | str]
+    ]
