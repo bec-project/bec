@@ -113,7 +113,12 @@ class BECIPythonClient:
         if self._ip is None:
             return
 
-        self._ip.prompts = BECClientPrompt(ip=self._ip, client=self._client, username="demo")
+        try:
+            username = self.connector._redis_conn.acl_whoami()
+        except Exception:
+            username = "unknown"
+
+        self._ip.prompts = BECClientPrompt(ip=self._ip, client=self._client, username=username)
         self._load_magics()
         self._ip.events.register("post_run_cell", log_console)
         self._ip.set_custom_exc((Exception,), _ip_exception_handler)  # register your handler
@@ -178,6 +183,7 @@ def _ip_exception_handler(self, etype, evalue, tb, tb_offset=None):
 class BECClientPrompt(Prompts):
     def __init__(self, ip, username, client, status=0):
         self._username = username
+        self.session_name = "bec"
         self.client = client
         self.status = status
         super().__init__(ip)
@@ -196,6 +202,7 @@ class BECClientPrompt(Prompts):
         return [
             (status_led, "\u2022"),
             (Token.Prompt, " " + self.username),
+            (Token.Prompt, "@" + self.session_name),
             (Token.Prompt, " ["),
             (Token.PromptNum, str(self.shell.execution_count)),
             (Token.Prompt, "/"),
