@@ -1470,3 +1470,36 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.CredentialsMessage, message_op=MessageOp.SEND
         )
+
+    @staticmethod
+    def login_info():
+        """
+        Endpoint for login info. This endpoint is used to publish public info about the login
+        using a messages.LoginInfoMessage message. This includes the deployment id and the host
+        name.
+
+        Returns:
+            EndpointInfo: Endpoint for login info.
+        """
+        endpoint = f"{EndpointType.PUBLIC}/acl/login_info"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.LoginInfoMessage,
+            message_op=MessageOp.KEY_VALUE,
+        )
+
+    @staticmethod
+    def acl_accounts():
+        """
+        Endpoint for ACL accounts. This endpoint is used to publish the ACL accounts using a
+        messages.ACLAccountsMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for ACL accounts.
+        """
+        endpoint = f"{EndpointType.ADMIN}/acl/accounts"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ACLAccountsMessage,
+            message_op=MessageOp.KEY_VALUE,
+        )
