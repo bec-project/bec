@@ -179,6 +179,41 @@ def test_async_writer_add_slice_fixed_size(async_writer, data):
     assert out.shape == (2, 20)
 
 
+def test_async_writer_add_slice_fixed_size_data_consistency(async_writer):
+    endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
+    data = [
+        messages.DeviceMessage(
+            signals={"monitor_async": {"value": np.random.rand(10), "timestamp": 1}},
+            metadata={"async_update": {"type": "add_slice", "index": 0, "max_shape": [None, 20]}},
+        ),
+        messages.DeviceMessage(
+            signals={"monitor_async": {"value": np.random.rand(10), "timestamp": 2}},
+            metadata={"async_update": {"type": "add_slice", "index": 0, "max_shape": [None, 20]}},
+        ),
+        messages.DeviceMessage(
+            signals={"monitor_async": {"value": np.random.rand(10), "timestamp": 2}},
+            metadata={"async_update": {"type": "add_slice", "index": 1, "max_shape": [None, 20]}},
+        ),
+    ]
+    for entry in data:
+        async_writer.connector.xadd(endpoint, msg_dict={"data": entry})
+        async_writer.poll_and_write_data()
+
+    # read the data back
+    with h5py.File(async_writer.file_path, "r") as f:
+        out = f[async_writer.BASE_PATH]["monitor_async"]["monitor_async"]["value"][:]
+
+    assert out.shape == (2, 20)
+    assert np.allclose(
+        out[0, :],
+        np.hstack(
+            (data[0].signals["monitor_async"]["value"], data[1].signals["monitor_async"]["value"])
+        ),
+    )
+    assert np.allclose(out[1, :10], data[2].signals["monitor_async"]["value"])
+    assert np.allclose(out[1, 10:], np.zeros(10))
+
+
 @pytest.mark.parametrize(
     "data",
     [
