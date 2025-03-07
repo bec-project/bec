@@ -144,6 +144,8 @@ class BECClient(BECService, UserScriptsMixin):
         self.callbacks = CallbackHandler()
         self._parent = parent if parent is not None else self
         self._initialized = True
+        self._username = ""
+        self._system_user = ""
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
@@ -205,7 +207,6 @@ class BECClient(BECService, UserScriptsMixin):
     def _start_services(self):
         self._load_scans()
         # self.logbook = LogbookConnector(self.connector)
-        self._update_username()
         self._start_device_manager()
         self._start_scan_queue()
         self._start_alarm_handler()
@@ -216,6 +217,7 @@ class BECClient(BECService, UserScriptsMixin):
         self.bl_checks = BeamlineChecks(self)
         self.bl_checks.start()
         self.device_monitor = DeviceMonitorPlugin(self.connector)
+        self._update_username()
 
     def alarms(self, severity=Alarms.WARNING):
         """get the next alarm with at least the specified severity"""
@@ -284,7 +286,9 @@ class BECClient(BECService, UserScriptsMixin):
         self.callbacks.run(EventType.NAMESPACE_UPDATE, action="add", ns_objects=funcs)
 
     def _update_username(self):
-        self._username = getpass.getuser()
+        # pylint: disable=protected-access
+        self._username = self.connector._redis_conn.acl_whoami()
+        self._system_user = getpass.getuser()
 
     def _start_scan_queue(self):
         self.queue = ScanManager(self.connector)
