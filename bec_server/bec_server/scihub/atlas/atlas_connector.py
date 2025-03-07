@@ -112,14 +112,19 @@ class AtlasConnector:
         for acl in acls:
             acl_name = acl.split(" ")[1]
             user_info: dict = self.connector._redis_conn.acl_getuser(acl_name)
-            if user_info["enabled"]:
-                if acl_name in ["default", "bec"]:
-                    continue
-                user_accounts[acl_name] = {
-                    key: val
-                    for key, val in user_info.items()
-                    if key in ["categories", "keys", "channels", "commands", "profile"]
-                }
+            if not user_info["enabled"] or acl_name in ["default", "bec"]:
+                continue
+            user_accounts[acl_name] = {
+                key: val
+                for key, val in user_info.items()
+                if key in ["categories", "keys", "channels", "commands", "profile"]
+            }
+
+            # patch the profile for test accounts "user" and "admin"
+            if acl_name == "user":
+                user_accounts[acl_name]["profile"] = "user_write"
+            elif acl_name == "admin":
+                user_accounts[acl_name]["profile"] = "su_write"
 
         self.connector.set(
             MessageEndpoints.acl_accounts(), messages.ACLAccountsMessage(accounts=user_accounts)
