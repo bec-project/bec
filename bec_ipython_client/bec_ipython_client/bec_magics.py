@@ -70,3 +70,11 @@ class BECMagics(Magics):
             print(f"Scan {line} does not exist.")
         else:
             rich.print_json(data=get_metadata_schema_for_scan(line).model_json_schema())
+
+    @line_magic
+    def su(self, line):
+        "Switch user"
+        # pylint: disable=protected-access
+        self.client._client.acl.login(line)
+        self.client._client._update_username()
+        self.client._refresh_ipython_username()
