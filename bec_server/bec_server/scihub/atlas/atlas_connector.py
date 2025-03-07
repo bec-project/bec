@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from dotenv import dotenv_values
 
+from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
@@ -45,6 +46,7 @@ class AtlasConnector:
         if self.connected_to_atlas:
             self.metadata_handler = AtlasMetadataHandler(self)
             self.atlas_forwarder = AtlasForwarder(self)
+        self.update_acls()
 
     @property
     def config(self):
@@ -65,21 +67,6 @@ class AtlasConnector:
                 self.redis_atlas = RedisConnector(
                     self.host, username=f"ingestor_{self.deployment_name}", password=self.atlas_key
                 )
-            # pylint: disable=protected-access
-
-            # use authenticate method once merged.
-            # self.redis_atlas.authenticate(self.atlas_key, username=f"ingestor_{self.deployment_name}")
-
-            # self.redis_atlas._redis_conn.auth(
-            #     self.atlas_key, username=f"ingestor_{self.deployment_name}"
-            # )
-            # self.redis_atlas._redis_conn.connection_pool.connection_kwargs["username"] = (
-            #     f"ingestor_{self.deployment_name}"
-            # )
-            # self.redis_atlas._redis_conn.connection_pool.connection_kwargs["password"] = (
-            #     self.atlas_key
-            # )
-
             self.redis_atlas._redis_conn.ping()
             logger.success("Connected to Atlas")
         # pylint: disable=broad-except
@@ -98,6 +85,53 @@ class AtlasConnector:
 
         self.redis_atlas.xadd(
             f"internal/deployment/{self.deployment_name}/ingest", data, max_size=1000
+        )
+
+    def update_acls(self):
+        """
+        Update the ACLs from Atlas. This is done by reading the ACLs from the Atlas
+        Redis instance and writing them to BEC's Redis instance.
+        If there is no connection to Atlas, it will populate the default ACLs.
+        """
+        if self.connected_to_atlas:
+            # TODO: Implement this
+            return
+
+        # Populate default ACLs
+        self._populate_default_acls()
+
+    def _populate_default_acls(self):
+        """
+        Populate default ACLs
+        """
+        # get the list of all ACLs
+        acls = self.connector._redis_conn.acl_list()
+        if not acls:
+            return
+        user_accounts = {}
+        for acl in acls:
+            acl_name = acl.split(" ")[1]
+            user_info: dict = self.connector._redis_conn.acl_getuser(acl_name)
+            if user_info["enabled"]:
+                if acl_name in ["default", "bec"]:
+                    continue
+                user_accounts[acl_name] = {
+                    key: val
+                    for key, val in user_info.items()
+                    if key in ["categories", "keys", "channels", "commands", "profile"]
+                }
+
+        self.connector.set(
+            MessageEndpoints.acl_accounts(), messages.ACLAccountsMessage(accounts=user_accounts)
+        )
+        self.connector.set(
+            MessageEndpoints.login_info(),
+            messages.LoginInfoMessage(
+                host="",
+                deployment="",
+                available_accounts=list(user_accounts.keys()),
+                atlas_login=False,
+            ),
         )
 
     def _load_environment(self):
