@@ -5,6 +5,8 @@ from importlib.metadata import version
 from typing import Iterable, Literal
 
 import IPython
+import redis
+import redis.exceptions
 import requests
 from IPython.terminal.ipapp import TerminalIPythonApp
 from IPython.terminal.prompts import Prompts, Token
@@ -108,17 +110,18 @@ class BECIPythonClient:
         if self._ip:
             self._ip.prompts.scan_number = scan_number + 1
 
+    def _refresh_ipython_username(self):
+        if not self._ip:
+            return
+        self._ip.prompts.username = self._client.username
+
     def _configure_ipython(self):
 
         if self._ip is None:
             return
 
-        try:
-            username = self.connector._redis_conn.acl_whoami()
-        except Exception:
-            username = "unknown"
-
-        self._ip.prompts = BECClientPrompt(ip=self._ip, client=self._client, username=username)
+        self._ip.prompts = BECClientPrompt(ip=self._ip, client=self._client, username="unknown")
+        self._refresh_ipython_username()
         self._load_magics()
         self._ip.events.register("post_run_cell", log_console)
         self._ip.set_custom_exc((Exception,), _ip_exception_handler)  # register your handler
@@ -176,6 +179,12 @@ class BECIPythonClient:
 def _ip_exception_handler(self, etype, evalue, tb, tb_offset=None):
     if issubclass(etype, (AlarmBase, ScanInterruption, DeviceConfigError)):
         print(f"\x1b[31m BEC alarm:\x1b[0m {evalue}")
+        return
+    if issubclass(etype, redis.exceptions.NoPermissionError):
+        # pylint: disable=protected-access
+        msg = f"The current user ({bec._client.username}) does not have the required permissions.\n {evalue}"
+        logger.info(f"Unauthorized: {msg}")
+        print(f"\x1b[31m Unauthorized:\x1b[0m {msg}")
         return
     self.showtraceback((etype, evalue, tb), tb_offset=None)  # standard IPython's printout
 
