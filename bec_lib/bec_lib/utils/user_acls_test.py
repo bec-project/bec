@@ -11,16 +11,16 @@ class BECAccessDemo:  # pragma: no cover
             self.connector = connector
         else:
             self.connector = RedisConnector("localhost:6379")
-        self.connector.authenticate(*self._find_admin_account())
+        self.connector.authenticate(**self._find_admin_account())
         self.username = "user"
         self.admin_username = "admin"
         self.deployment_id = "test_deployment"
 
-    def _find_admin_account(self):
+    def _find_admin_account(self) -> dict[str, str]:
         for user, token in [("default", None), ("bec", "bec"), ("admin", "admin")]:
             try:
-                self.connector.authenticate(token, user)
-                return token, user
+                self.connector.authenticate(username=user, password=token)
+                return {"username": user, "password": token}
             except Exception:
                 pass
         raise RuntimeError("No admin account found. Please restart the Redis server.")
@@ -100,7 +100,7 @@ class BECAccessDemo:  # pragma: no cover
 
     def reset(self):
         try:
-            self.connector.authenticate("admin", "admin")
+            self.connector.authenticate(username="admin", password="admin")
         # pylint: disable=broad-except
         except Exception:
             pass
