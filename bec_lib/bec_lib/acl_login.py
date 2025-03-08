@@ -57,13 +57,13 @@ class BECAccess:
         else:
             token = self._local_login(selected_account)
 
-        self.connector.authenticate(token, selected_account)
+        self.connector.authenticate(username=selected_account, password=token)
 
-    def login_with_token(self, username: str, token: str | None):
+    def login_with_token(self, *, username: str, token: str | None):
         """
         Login with a username and token.
         """
-        self.connector.authenticate(token, username)
+        self.connector.authenticate(username=username, password=token)
 
     def _ask_user_for_account(self, console: Console) -> str:
         """
@@ -239,14 +239,14 @@ class BECAccess:
         return False
 
     def _user_service_login(self) -> None:
-        self.connector.authenticate("bec", "bec")
+        self.connector.authenticate(username="bec", password="bec")
         self._info: messages.LoginInfoMessage | None = self.connector.get(
             MessageEndpoints.login_info()
         )
         self._atlas_login = self._info.atlas_login
         # pylint: disable=protected-access
         if not self._atlas_login:
-            self.login_with_token("user", None)
+            self.login_with_token(username="user", token=None)
         else:
             self.login()
 
