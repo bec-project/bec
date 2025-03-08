@@ -4,6 +4,7 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.acl_login import BECAccess, BECAuthenticationError
+from bec_lib.utils.user_acls_test import BECAccessDemo
 
 # pylint: disable=protected-access
 
@@ -20,16 +21,8 @@ def _login_info(accounts: list[str] | None = None):
 
 
 def _add_user_bec(connector):
-    connector._redis_conn.acl_setuser(
-        "bec",
-        enabled=True,
-        passwords=["+bec"],
-        categories=["+read"],
-        keys=["public/*"],
-        channels=[""],
-        reset_channels=True,
-        reset_keys=True,
-    )
+    demo = BECAccessDemo(connector)
+    demo.add_bec()
 
 
 def test_login(bec_access):
