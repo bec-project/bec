@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, Any
 
 import psutil
 import tomli
-from dotenv import dotenv_values
 from rich.console import Console
 from rich.table import Table
 
@@ -73,6 +72,7 @@ def parse_cmdline_args(parser=None):
 
     args, extra_args = parser.parse_known_args()
 
+    # pylint: disable=protected-access
     bec_logger._stderr_log_level = (
         bec_logger.level.name if args.log_level is None else args.log_level
     )
@@ -108,7 +108,7 @@ class BECService:
         self._connector_cls = connector_cls
         self.connector: RedisConnector = connector_cls(self.bootstrap_server)
         self.acl = BECAccess(self.connector)
-        self._auto_login(prompt_for_acl)
+        self.acl._auto_login(prompt_for_acl, self._service_config.config.get("acl"))
 
         self._unique_service = unique_service
         self.wait_for_server = wait_for_server
@@ -119,8 +119,8 @@ class BECService:
         self._service_info_event = threading.Event()
         self._metrics_emitter_thread = None
         self._metrics_emitter_event = threading.Event()
-        self._services_info = {}
-        self._services_metric = {}
+        self._services_info: dict[str, messages.StatusMessage] = {}
+        self._services_metric: dict[str, messages.ServiceMetricMessage] = {}
         self._initialize_logger()
         self._check_services()
         self._status = BECStatus.BUSY
@@ -128,71 +128,6 @@ class BECService:
         self._start_metrics_emitter()
         self._wait_for_server()
         self._version = None
-
-    def _auto_login(self, prompt_for_acl: bool = False):
-        """
-        Automatically login to Redis using the service account and token.
-
-        Args:
-            prompt_for_acl (bool): If True, prompt the user to login using ACL. Default is False.
-        """
-
-        if not self.connector.redis_server_is_running():
-            logger.warning("Redis server is not running.")
-            return
-
-        acl_file = self._service_config.config.get("acl")
-
-        if acl_file and os.path.exists(acl_file) and not prompt_for_acl:
-            # Load the account information from the .env file
-            # This is relevant for the BEC services that are not launched by the user
-            # but are auto-deployed.
-            account = dotenv_values(acl_file)
-            user = account.get("REDIS_USER")
-            password = account.get("REDIS_PASSWORD")
-            if self._check_redis_auth(user, password):
-                return
-
-        if self._check_redis_auth(None, None):
-            # If the default user is enabled, we can use it directly
-            return
-
-        if self._check_redis_auth("bec", "bec"):
-            try:
-                self.connector.get(MessageEndpoints.acl_accounts())
-                # ACLs are enabled but we have full access. No need to login.
-                return
-            except Exception:
-                pass
-
-        if prompt_for_acl:
-            # If the user is launching the service, prompt them to login
-            self.acl.initialize()
-            # pylint: disable=protected-access
-            if not self.acl._atlas_login:
-                self.acl.login_with_token("user", None)
-            else:
-                self.acl.login()
-        else:
-            raise RuntimeError("Could not connect to Redis.")
-
-    def _check_redis_auth(self, user: str | None, password: str | None) -> bool:
-        """
-        Check if the user and password are correct.
-
-        Args:
-            user (str): The username
-            password (str): The password
-
-        Returns:
-            bool: True if the user and password are correct, False otherwise
-        """
-        try:
-            if user:
-                self.connector.authenticate(username=user, password=password)
-            return self.connector.can_connect()
-        except Exception:
-            return False
 
     @property
     def _service_name(self):
@@ -245,7 +180,7 @@ class BECService:
             service_config=self._service_config.config["service_config"],
         )
 
-    def _update_existing_services(self):
+    def _update_existing_services(self) -> None:
         service_keys = self.connector.keys(MessageEndpoints.service_status("*"))
         if not service_keys:
             return
@@ -360,6 +295,7 @@ class BECService:
             msg = messages.ServiceMetricMessage(name=self._service_name, metrics=data)
             try:
                 self.connector.set_and_publish(MessageEndpoints.metrics(self._service_id), msg)
+            # pylint: disable=broad-except
             except Exception:
                 # exception is not explicitely specified,
                 # because it depends on the underlying connector
@@ -443,9 +379,14 @@ class BECService:
         self._update_existing_services()
         return self._services_info
 
-    def wait_for_service(self, name, status=None):
-        if status is None:
-            status = BECStatus.RUNNING
+    def wait_for_service(self, name, status: BECStatus = BECStatus.RUNNING):
+        """
+        Wait for a service to reach a certain status.
+
+        Args:
+            name (str): The name of the service.
+            status (BECStatus, optional): The status to wait for. Defaults to BECStatus.RUNNING.
+        """
         logger.info(f"Waiting for {name}.")
         while True:
             service_status_msg = self.service_status.get(name)
