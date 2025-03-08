@@ -6,8 +6,11 @@ from bec_lib.redis_connector import RedisConnector
 
 # pylint: disable=protected-access
 class BECAccessDemo:  # pragma: no cover
-    def __init__(self):
-        self.connector = RedisConnector("localhost:6379")
+    def __init__(self, connector: RedisConnector | None = None):
+        if connector:
+            self.connector = connector
+        else:
+            self.connector = RedisConnector("localhost:6379")
         self.connector.authenticate(*self._find_admin_account())
         self.username = "user"
         self.admin_username = "admin"
@@ -122,8 +125,10 @@ class BECAccessDemo:  # pragma: no cover
         )
 
 
-def _main(mode: str):
-    demo = BECAccessDemo()
+def _main(
+    mode: str, connector: RedisConnector | None = None, shutdown: bool = True
+):  # pragma: no cover
+    demo = BECAccessDemo(connector=connector)
 
     match mode:
         case "default":
@@ -146,12 +151,12 @@ def _main(mode: str):
         case _:
             raise ValueError(f"Invalid mode: {mode}")
 
-    demo.connector.shutdown()
+    if shutdown:
+        demo.connector.shutdown()
+        sys.exit(0)
 
-    sys.exit(0)
 
-
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     import argparse
 
     parser = argparse.ArgumentParser()
