@@ -1,4 +1,5 @@
 import sys
+from typing import Literal
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
@@ -52,6 +53,49 @@ class BECAccessDemo:  # pragma: no cover
             reset_channels=True,
             reset_keys=True,
         )
+
+    def add_account(self, name: str, password: str | None, level: Literal["admin", "user"]):
+        available_user = self.connector._redis_conn.acl_list()
+        if f"user {name}" in " ".join(available_user):
+            self.connector._redis_conn.acl_deluser(name)
+        if level == "admin":
+            config = {
+                "enabled": True,
+                "categories": ["+@all"],
+                "keys": ["*"],
+                "channels": ["*"],
+                "reset_channels": True,
+                "reset_keys": True,
+            }
+        else:
+            config = {
+                "enabled": True,
+                "nopass": True,
+                "categories": ["+@all", "-@dangerous"],
+                "keys": [
+                    "%R~public/*",  # Read-only access
+                    "%R~info/*",  # Read-only access
+                    f"%RW~personal/{name}/*",  # Read/Write access
+                    "%RW~user/*",  # Read/Write access
+                ],
+                "channels": [
+                    "public/*",
+                    "info/*",
+                    f"personal/{name}/*",
+                    "user/*",
+                    MessageEndpoints.public_file("*", "*").endpoint,
+                    # MessageEndpoints.device_read("*").endpoint, # probably not even needed
+                ],
+                "commands": ["+keys"],
+                "reset_channels": True,
+                "reset_keys": True,
+            }
+        if password:
+            config["passwords"] = [f"+{password}"]
+        else:
+            config["nopass"] = True
+
+        self.connector._redis_conn.acl_setuser(name, **config)
 
     def add_admin(self):
         available_user = self.connector._redis_conn.acl_list()
