@@ -142,25 +142,32 @@ def validate_endpoint(endpoint_arg_name: str):
         @wraps(func)
         def wrapper(*args, **kwargs):
             try:
-                endpoint = args[argument_index]
-                arg = list(args)
-            except IndexError:
-                endpoint = kwargs[endpoint_arg_name]
-                arg = kwargs
+                try:
+                    endpoint = args[argument_index]
+                    arg = list(args)
+                except IndexError:
+                    endpoint = kwargs[endpoint_arg_name]
+                    arg = kwargs
 
-            if not _check_endpoint_type(endpoint):
-                return func(*args, **kwargs)
-            if func.__name__ not in endpoint.message_op:
-                raise IncompatibleRedisOperation(
-                    f"Endpoint {endpoint} is not compatible with {func.__name__} method"
-                )
-            _validate_all_bec_messages(list(args) + list(kwargs.values()), endpoint)
+                if not _check_endpoint_type(endpoint):
+                    return func(*args, **kwargs)
+                if func.__name__ not in endpoint.message_op:
+                    raise IncompatibleRedisOperation(
+                        f"Endpoint {endpoint} is not compatible with {func.__name__} method"
+                    )
+                _validate_all_bec_messages(list(args) + list(kwargs.values()), endpoint)
 
-            if isinstance(arg, list):
-                arg[argument_index] = endpoint.endpoint
-                return func(*tuple(arg), **kwargs)
-            arg[endpoint_arg_name] = endpoint.endpoint
-            return func(*args, **arg)
+                if isinstance(arg, list):
+                    arg[argument_index] = endpoint.endpoint
+                    return func(*tuple(arg), **kwargs)
+                arg[endpoint_arg_name] = endpoint.endpoint
+                return func(*args, **arg)
+            except redis.exceptions.NoPermissionError as exc:
+                # the default NoPermissionError message is not very informative as it does not
+                # contain any information about the endpoint that caused the error
+                raise redis.exceptions.NoPermissionError(
+                    f"Permission denied for endpoint {endpoint.endpoint}"
+                ) from exc
 
         _fix_docstring_for_ipython(wrapper, endpoint_arg_name)
         return wrapper
@@ -244,15 +251,15 @@ class RedisConnector:
 
         self._generator_executor = ThreadPoolExecutor()
 
-    def authenticate(self, *, username: str = "default", password: str | None = None):
+    def authenticate(self, *, username: str = "default", password: str = "null"):
         """
         Authenticate to the redis server.
         Please note that the arguments are keyword-only. This is to avoid confusion as the
         underlying redis library accepts the password as the first argument.
 
         Args:
-            password (str): password
             username (str, optional): username. Defaults to "default".
+            password (str, optional): password. Defaults to "null".
         """
         old_kwargs = copy.deepcopy(self._redis_conn.connection_pool.connection_kwargs)
         try:
@@ -260,8 +267,7 @@ class RedisConnector:
             self._redis_conn.connection_pool.reset()
             self._redis_conn.connection_pool.connection_kwargs["username"] = username
             self._redis_conn.connection_pool.connection_kwargs["password"] = password
-            if password is not None:
-                self._redis_conn.auth(password, username=username)
+            self._redis_conn.auth(password, username=username)
             self._restart_pubsub()
         except redis.exceptions.RedisError as exc:
             self._redis_conn.connection_pool.reset()
@@ -665,6 +671,12 @@ class RedisConnector:
                 if not error:
                     error = True
                     bec_logger.logger.error("Failed to connect to redis. Is the server running?")
+                time.sleep(1)
+            except redis.exceptions.NoPermissionError:
+                bec_logger.logger.error(from_start_stream_topics_id, stream_topics_id)
+                if not error:
+                    error = True
+                    bec_logger.logger.error("Permission denied for stream topics")
                 time.sleep(1)
             # pylint: disable=broad-except
             except Exception:
@@ -1291,7 +1303,7 @@ class RedisConnector:
         """Check if the redis server is running"""
         try:
             self._redis_conn.ping()
-        except redis.exceptions.AuthenticationError:
+        except (redis.exceptions.AuthenticationError, redis.exceptions.ResponseError):
             return True
         except redis.exceptions.ConnectionError:
             return False
