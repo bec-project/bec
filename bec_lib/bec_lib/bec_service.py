@@ -69,6 +69,7 @@ def parse_cmdline_args(parser=None):
         choices=["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"],
         help="redis log level (not set means 'same as --log-level')",
     )
+    parser.add_argument("--user", default=None, help="user name to use for the service.", type=str)
 
     args, extra_args = parser.parse_known_args()
 
@@ -84,10 +85,14 @@ def parse_cmdline_args(parser=None):
     )
 
     config_file = args.config
+    cli_args = vars(args)
+    user = cli_args.pop("user")
+    acl_config = {"username": user} if user else {}
+
     if config_file:
-        service_config = ServiceConfig(config_file, cmdline_args=vars(args))
+        service_config = ServiceConfig(config_file, cmdline_args=cli_args, acl=acl_config)
     else:
-        service_config = ServiceConfig(cmdline_args=vars(args))
+        service_config = ServiceConfig(cmdline_args=cli_args, acl=acl_config)
 
     return args, extra_args, service_config
 
