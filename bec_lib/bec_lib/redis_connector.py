@@ -1291,7 +1291,7 @@ class RedisConnector:
         """Check if the redis server is running"""
         try:
             self._redis_conn.ping()
-        except redis.exceptions.AuthenticationError:
+        except (redis.exceptions.AuthenticationError, redis.exceptions.ResponseError):
             return True
         except redis.exceptions.ConnectionError:
             return False
