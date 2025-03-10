@@ -194,9 +194,12 @@ class BECAccess:
                 if self._check_redis_auth(user, password):
                     return True
         elif isinstance(acl_config, dict):
-            user = acl_config.get("username")
+            username = acl_config.get("username")
             password = acl_config.get("password")
-            if self._check_redis_auth(user, password):
+            if self._check_redis_auth(username, password):
+                return True
+            if not password and prompt_for_acl:
+                self._user_service_login(username=username)
                 return True
         else:
             raise ValueError(
@@ -238,17 +241,16 @@ class BECAccess:
                 pass
         return False
 
-    def _user_service_login(self) -> None:
+    def _user_service_login(self, username: str | None = None) -> None:
+        # login with user 'bec' to retrieve the login info
         self.connector.authenticate(username="bec", password="bec")
         self._info: messages.LoginInfoMessage | None = self.connector.get(
             MessageEndpoints.login_info()
         )
         self._atlas_login = self._info.atlas_login
-        # pylint: disable=protected-access
-        if not self._atlas_login:
-            self.login_with_token(username="user", token=None)
-        else:
-            self.login()
+        if not username and not self._info.atlas_login:
+            return self.login_with_token(username="user", token=None)
+        self.login(username)
 
     def _check_redis_auth(self, user: str | None, password: str | None) -> bool:
         """
