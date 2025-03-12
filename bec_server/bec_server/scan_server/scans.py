@@ -379,6 +379,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         monitored: list = None,
         return_to_start: bool = False,
         metadata: dict = None,
+        parent_scan: ScanBase = None,
         **kwargs,
     ):
         super().__init__(
@@ -390,8 +391,9 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             return_to_start=return_to_start,
             **kwargs,
         )
+        self._parent_scan = parent_scan
         self.DIID = 0
-        self.point_id = 0
+        self.point_id = 0 if parent_scan is None else parent_scan.point_id
         self.exp_time = exp_time
         self.readout_time = readout_time
         self.settling_time = settling_time
@@ -558,6 +560,9 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             for obj in remaining_status_objects:
                 obj.wait()
 
+        if self._parent_scan:
+            self._parent_scan.point_id = self.point_id
+
     def _at_each_point(self, ind=None, pos=None):
         yield from self._move_scan_motors_and_wait(pos)
 
@@ -595,20 +600,58 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             yield from self._move_scan_motors_and_wait(self.positions[0])
         yield from self.stubs.pre_scan()
 
-    def run(self):
+    def run(self, skip_pre_scan=False, skip_stage: bool | None = False):
         """run the scan. This method is called by the scan server and is the main entry point for the scan."""
+
+        if skip_stage is None and self._parent_scan:
+            skip_stage = True
+
         self.initialize()
         yield from self.read_scan_motors()
         yield from self.prepare_positions()
         yield from self.scan_report_instructions()
         yield from self.open_scan()
-        yield from self.stage()
+
+        if not skip_stage:
+            yield from self.stage()
+
         yield from self.run_baseline_reading()
-        yield from self.pre_scan()
+
+        if not skip_pre_scan:
+            yield from self.pre_scan()
+
         yield from self.scan_core()
         yield from self.finalize()
-        yield from self.unstage()
+
+        if not skip_stage:
+            yield from self.unstage()
+
         yield from self.cleanup()
+
+    def create_sub_scan(self, cls: type[ScanBase], *args, **kwargs):
+        """
+        Create a sub scan.
+
+        Args:
+            cls (ScanBase): class of the sub scan
+            *args: arguments for the sub scan
+            **kwargs: keyword arguments for the sub scan
+
+        Returns:
+            ScanBase: sub scan instance
+
+        Examples:
+            >>> sub_scan = self.create_sub_scan(LineScan, self.scan_motors[0], 0, 10, 100, exp_time=0.1)
+            >>> yield from sub_scan.run(skip_stage=True)
+        """
+        scan = cls(
+            *args,
+            device_manager=self.device_manager,
+            instruction_handler=self.stubs._instruction_handler,
+            parent_scan=self,
+            **kwargs,
+        )
+        return scan
 
     @classmethod
     def scan(cls, *args, **kwargs):
