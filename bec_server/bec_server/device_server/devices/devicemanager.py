@@ -395,6 +395,19 @@ class DeviceManagerDS(DeviceManagerBase):
                 elif component.kind == ophyd.Kind.config:
                     component.subscribe(self._obj_callback_configuration, run=False)
 
+        if hasattr(obj, "_sig_attrs"):  # dictionary with k: signal names, v: component objects
+            for signal_name, component in obj._sig_attrs.items():
+                logger.info(f"Subscribing to signal {signal_name}")
+                signal = getattr(obj, signal_name)
+                # PSIComponent
+                if hasattr(component, "_signal_type"):
+                    # alternatively check if _signal_type exists
+                    if component._signal_type == "preview":
+                        logger.info(f"Subscribing to preview signal {signal_name}")
+                        if component._ndim == 2:
+                            logger.info(f"Callback attached")
+                            signal.subscribe(self._new_obj_callback_preview_2d, run=False)
+
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
         self.connect_device(opaas_obj.obj)
@@ -495,6 +508,44 @@ class DeviceManagerDS(DeviceManagerBase):
             MessageEndpoints.device_read_configuration(name), dev_msg, pipe
         )
         pipe.execute()
+
+    def _new_obj_callback_preview_2d(self, *, old_value, value, **kwargs):
+        logger.info(f"Preview signal callback called")
+        dsize = len(value.tobytes()) / 1e6
+        max_size = 1000
+        timestamp = kwargs.get("timestamp", None)
+        if dsize > max_size:
+            logger.warning(
+                f"Data size of single message is too large to send, current max_size {max_size}."
+            )
+            return
+
+        obj = kwargs.get("obj", None)
+        logger.info(f"obj: {obj.name}")
+        obj = obj.root
+        logger.info(f"obj: {obj.name}")
+        if obj is None:
+            logger.info("obj is None")
+            return
+        if not hasattr(obj, "connected"):  # We are probably on a signal
+            obj = obj.root
+            logger.info(f"obj.root: {obj.name}")
+        if obj.connected:
+            logger.info("sending data")
+            name = obj.root.name
+            metadata = self.devices[name].metadata
+            msg = messages.DeviceMonitor2DMessage(
+                device=name,
+                data=value,
+                metadata=metadata,
+                timestamp=timestamp if timestamp else time.time(),
+            )
+            stream_msg = {"data": msg}
+            self.connector.xadd(
+                MessageEndpoints.device_monitor_2d(name),
+                stream_msg,
+                max_size=min(100, int(max_size // dsize)),
+            )
 
     @typechecked
     def _obj_callback_device_monitor_2d(

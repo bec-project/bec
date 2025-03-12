@@ -120,6 +120,15 @@ def get_device_info(
                         f"Signal name {component_name} is protected and cannot be used. Please rename the signal."
                     )
                 signal_obj = getattr(obj, component_name)
+                bec_component_type = getattr(comp, "signal_type", None)
+                if isinstance(bec_component_type, str):
+                    bec_component_name = bec_component_type
+                else:
+                    bec_component_name = (
+                        bec_component_type.value if bec_component_type is not None else ""
+                    )
+                msg_class = getattr(signal_obj, "_bec_message_type", None)
+                msg_type = msg_class.msg_type if msg_class is not None else None
                 signals.update(
                     {
                         component_name: {
@@ -135,6 +144,11 @@ def get_device_info(
                             "describe": signal_obj.describe().get(signal_obj.name, {}),
                             # pylint: disable=protected-access
                             "metadata": signal_obj._metadata,
+                            "bec_component_info": {
+                                "type": bec_component_name,
+                                "ndim": getattr(comp, "ndim", None),
+                                "msg_type": msg_type,
+                            },
                         }
                     }
                 )
