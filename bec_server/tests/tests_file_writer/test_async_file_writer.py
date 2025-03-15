@@ -339,25 +339,11 @@ def test_async_writer_replace(async_writer, data):
     assert np.allclose(out, data[-1].signals["monitor_async"]["value"])
 
 
-def test_async_write_raises_warning_for_unknown_type(async_writer):
-    endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
-    entry = messages.DeviceMessage(
-        signals={"monitor_async": {"value": np.random.rand(5), "timestamp": 1}},
-        metadata={"async_update": {"type": "unknown"}},
-    )
-    async_writer.connector.xadd(endpoint, msg_dict={"data": entry})
-    async_writer.poll_and_write_data()
-    msg = async_writer.connector.get(MessageEndpoints.alarm())
-    assert msg is not None
-    assert msg.source["device"] == "/entry/collection/devices/monitor_async/monitor_async"
-    assert msg.msg == "Unknown async update type: unknown. Data will not be written."
-
-
 def test_async_writer_raises_warning_for_3d_shape(async_writer):
     endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
     entry = messages.DeviceMessage(
         signals={"monitor_async": {"value": np.random.rand(5, 5, 5), "timestamp": 1}},
-        metadata={"async_update": {"type": "add_slice", "max_shape": [None, 5, 5]}},
+        metadata={"async_update": {"type": "add_slice", "index": 0, "max_shape": [None, 5, 5]}},
     )
     async_writer.connector.xadd(endpoint, msg_dict={"data": entry})
     async_writer.poll_and_write_data()

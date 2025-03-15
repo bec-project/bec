@@ -434,6 +434,40 @@ class DeviceMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_message"
     signals: dict[str, dict[Literal["value", "timestamp"], Any]]
+    metadata: dict[Literal["async_update"] | str, Any] | None = Field(default_factory=dict)
+
+    @field_validator("metadata")
+    @classmethod
+    def check_metadata(cls, v):
+        """Validate the metadata"""
+        if "async_update" not in v:
+            return v
+        async_update = v["async_update"]
+        if async_update.get("type") not in ["add", "add_slice", "replace"]:
+            raise ValueError(
+                f"Invalid async_update {async_update}. Must be 'add', 'add_slice' or 'replace'"
+            )
+        if async_update["type"] == "add":
+            AsyncUpdateAdd(**async_update)
+        elif async_update["type"] == "add_slice":
+            AsyncUpdateAddSlice(**async_update)
+
+        return v
+
+
+class AsyncUpdateAdd(BaseModel):
+    """Model for the 'add' async update type"""
+
+    type: Literal["add"] = Field(default="add")
+    max_shape: tuple[int | None, int | None] | list[int | None]
+
+
+class AsyncUpdateAddSlice(BaseModel):
+    """Model for the 'add_slice' async update type"""
+
+    type: Literal["add_slice"] = Field(default="add_slice")
+    max_shape: tuple[int | None, int | None] | list[int | None]
+    index: int = Field(ge=0)
 
 
 class DeviceRPCMessage(BECMessage):

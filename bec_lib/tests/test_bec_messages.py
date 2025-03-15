@@ -425,3 +425,33 @@ def test_GUIRegistryStateMessage():
                 }
             }
         )
+
+
+@pytest.mark.parametrize(
+    "async_update, error",
+    [
+        ({"type": "replace", "index": 0}, False),
+        ({"type": "replace", "index": 1}, False),
+        ({"type": "replace"}, False),
+        ({"type": "add", "index": 0}, True),
+        ({"type": "add", "index": 0, "max_shape": [None, None]}, False),
+        ({"type": "add", "index": 0, "max_shape": [None, "wrong"]}, True),
+        ({"type": "add", "max_shape": [None, 2]}, False),
+        ({"type": "add_slice", "max_shape": [None, 2]}, True),
+        ({"type": "add_slice", "index": None, "max_shape": [None, 2]}, True),
+        ({"type": "add_slice", "index": 0, "max_shape": [None, 2]}, False),
+        ({"type": "add_slice", "index": -1, "max_shape": [None, 2]}, True),
+    ],
+)
+def test_DeviceMessage_async_update(async_update, error):
+
+    if error:
+        with pytest.raises(pydantic.ValidationError):
+            messages.DeviceMessage(
+                signals={"samx": {"value": 5.2}},
+                metadata={"RID": "1234", "async_update": async_update},
+            )
+    else:
+        messages.DeviceMessage(
+            signals={"samx": {"value": 5.2}}, metadata={"RID": "1234", "async_update": async_update}
+        )
