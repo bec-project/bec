@@ -52,7 +52,10 @@ def get_custom_user_access_info(obj: Any, obj_interface: dict) -> dict:
                 if is_serializable(obj_member):
                     obj_interface[var] = {"type": type(obj_member).__name__}
                 elif get_device_base_class(obj_member) == "unknown":
-                    obj_interface[var] = get_custom_user_access_info(obj_member, {})
+                    obj_interface[var] = {
+                        "info": get_custom_user_access_info(obj_member, {}),
+                        "class_name": obj_member.__class__.__name__,
+                    }
                 else:
                     continue
             else:
@@ -172,6 +175,7 @@ def get_device_info(
             "device_attr_name": getattr(obj, "attr_name", ""),
             "device_dotted_name": getattr(obj, "dotted_name", ""),
             "device_base_class": get_device_base_class(obj),
+            "device_class": obj.__class__.__name__,
             "read_access": getattr(obj, "read_access", None),
             "write_access": getattr(obj, "write_access", None),
             "signals": signals,

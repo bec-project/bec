@@ -161,6 +161,7 @@ class DeviceBase:
         config: dict = None,
         parent=None,
         signal_info: dict = None,
+        class_name: str | None = None,
     ) -> None:
         """
         Args:
@@ -170,6 +171,7 @@ class DeviceBase:
             signal_info (dict, optional): The signal info dictionary. Defaults to None.
         """
         self.name = name
+        self._class_name = class_name or object.__getattribute__(self, "__class__").__name__
         self._signal_info = signal_info
         self._config = config
         if info is None:
@@ -481,8 +483,9 @@ class DeviceBase:
             else:
                 self._custom_rpc_methods[user_access_name] = DeviceBase(
                     name=user_access_name,
-                    info={"device_info": {"custom_user_access": descr}},
+                    info={"device_info": {"custom_user_access": descr["info"]}},
                     parent=self,
+                    class_name=descr["class_name"],
                 )
                 setattr(self, user_access_name, self._custom_rpc_methods[user_access_name])
 
@@ -652,6 +655,8 @@ class DeviceBase:
         # pylint: disable=import-outside-toplevel
         from bec_lib.devicemanager import DeviceManagerBase
 
+        class_name = obj._class_name
+
         if isinstance(obj.parent, DeviceManagerBase):
             # pylint: disable=protected-access
             config = "".join(
@@ -659,7 +664,7 @@ class DeviceBase:
             )
             separator = "--" * 10
             return (
-                f"{type(obj).__name__}(name={obj.name},"
+                f"{class_name}(name={obj.name},"
                 f" enabled={obj.enabled}):\n{separator}\nDetails:\n\tDescription:"
                 f" {obj._config.get('description', obj.name)}\n\tStatus:"
                 f" {'enabled' if obj.enabled else 'disabled'}\n\tRead only:"
@@ -670,7 +675,7 @@ class DeviceBase:
                 f" {obj._config.get('deviceTags', [])}\n\tUser parameter:"
                 f" {obj._config.get('userParameter')}\n{separator}\nConfig:\n{config}"
             )
-        return f"{type(obj).__name__}(name={obj.name}, enabled={obj.enabled})"
+        return f"{class_name}(name={obj.name}, enabled={obj.enabled})"
 
 
 class OphydInterfaceBase(DeviceBase):
