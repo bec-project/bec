@@ -88,6 +88,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
     positioner_info = {
         "device_info": {
             "device_base_class": "positioner",
+            "device_class": "SimPositioner",
             "signals": {
                 "readback": {
                     "component_name": "readback",
@@ -307,76 +308,79 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
     positioner_info_with_user_access["device_info"]["custom_user_access"].update(
         {
             "dummy_controller": {
-                "_fun_with_specific_args": {
-                    "type": "func",
-                    "doc": None,
-                    "signature": [
-                        {
-                            "name": "arg1",
-                            "kind": "POSITIONAL_OR_KEYWORD",
-                            "default": "_empty",
-                            "annotation": "float",
-                        },
-                        {
-                            "name": "arg2",
-                            "kind": "POSITIONAL_OR_KEYWORD",
-                            "default": "_empty",
-                            "annotation": "int",
-                        },
-                    ],
+                "device_class": "DummyController",
+                "info": {
+                    "_fun_with_specific_args": {
+                        "type": "func",
+                        "doc": None,
+                        "signature": [
+                            {
+                                "name": "arg1",
+                                "kind": "POSITIONAL_OR_KEYWORD",
+                                "default": "_empty",
+                                "annotation": "float",
+                            },
+                            {
+                                "name": "arg2",
+                                "kind": "POSITIONAL_OR_KEYWORD",
+                                "default": "_empty",
+                                "annotation": "int",
+                            },
+                        ],
+                    },
+                    "_func_with_args": {
+                        "type": "func",
+                        "doc": None,
+                        "signature": [
+                            {
+                                "name": "args",
+                                "kind": "VAR_POSITIONAL",
+                                "default": "_empty",
+                                "annotation": "_empty",
+                            }
+                        ],
+                    },
+                    "_func_with_args_and_kwargs": {
+                        "type": "func",
+                        "doc": None,
+                        "signature": [
+                            {
+                                "name": "args",
+                                "kind": "VAR_POSITIONAL",
+                                "default": "_empty",
+                                "annotation": "_empty",
+                            },
+                            {
+                                "name": "kwargs",
+                                "kind": "VAR_KEYWORD",
+                                "default": "_empty",
+                                "annotation": "_empty",
+                            },
+                        ],
+                    },
+                    "_func_with_kwargs": {
+                        "type": "func",
+                        "doc": None,
+                        "signature": [
+                            {
+                                "name": "kwargs",
+                                "kind": "VAR_KEYWORD",
+                                "default": "_empty",
+                                "annotation": "_empty",
+                            }
+                        ],
+                    },
+                    "_func_without_args_kwargs": {"type": "func", "doc": None, "signature": []},
+                    "controller_show_all": {
+                        "type": "func",
+                        "doc": "dummy controller show all\n\n        Raises:\n            in: _description_\n            LimitError: _description_\n\n        Returns:\n            _type_: _description_\n        ",
+                        "signature": [],
+                    },
+                    "some_var": {"type": "int"},
+                    "some_var_property": {"type": "NoneType"},
                 },
-                "_func_with_args": {
-                    "type": "func",
-                    "doc": None,
-                    "signature": [
-                        {
-                            "name": "args",
-                            "kind": "VAR_POSITIONAL",
-                            "default": "_empty",
-                            "annotation": "_empty",
-                        }
-                    ],
-                },
-                "_func_with_args_and_kwargs": {
-                    "type": "func",
-                    "doc": None,
-                    "signature": [
-                        {
-                            "name": "args",
-                            "kind": "VAR_POSITIONAL",
-                            "default": "_empty",
-                            "annotation": "_empty",
-                        },
-                        {
-                            "name": "kwargs",
-                            "kind": "VAR_KEYWORD",
-                            "default": "_empty",
-                            "annotation": "_empty",
-                        },
-                    ],
-                },
-                "_func_with_kwargs": {
-                    "type": "func",
-                    "doc": None,
-                    "signature": [
-                        {
-                            "name": "kwargs",
-                            "kind": "VAR_KEYWORD",
-                            "default": "_empty",
-                            "annotation": "_empty",
-                        }
-                    ],
-                },
-                "_func_without_args_kwargs": {"type": "func", "doc": None, "signature": []},
-                "controller_show_all": {
-                    "type": "func",
-                    "doc": "dummy controller show all\n\n        Raises:\n            in: _description_\n            LimitError: _description_\n\n        Returns:\n            _type_: _description_\n        ",
-                    "signature": [],
-                },
-                "some_var": {"type": "int"},
-                "some_var_property": {"type": "NoneType"},
-            },
-            "sim_state": {"type": "dict"},
+                "sim_state": {"type": "dict"},
+            }
         }
     )
     device_info = {
@@ -391,6 +395,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "device_dotted_name": "dyn_signals",
                     "device_attr_name": "dyn_signals",
                     "device_base_class": "device",
+                    "device_class": "SimDevice",
                     "signals": [],
                     "hints": {"fields": []},
                     "describe": {
@@ -433,6 +438,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                                 "device_attr_name": "messages",
                                 "device_dotted_name": "messages",
                                 "device_base_class": "device",
+                                "device_class": "SimDevice",
                                 "signals": {
                                     "message1": {
                                         "component_name": "message1",
@@ -582,6 +588,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
             "device_dotted_name": device_name,
             "device_attr_name": device_name,
             "device_base_class": device_base_class,
+            "device_class": device_class.__class__.__name__,
             "signals": signals,
         },
         "custom_user_acces": {},
