@@ -37,6 +37,12 @@ class DummyDeviceWithConflictingSubDevice(Device):
     sub_device = Cpt(DummyDeviceWithConflictingSignalNames)
 
 
+class DummyDeviceWithOverwriteDocs(MyDevice):
+    """This device will overwrite the docs of a component"""
+
+    OVERWRITE_DOCS = {"custom": "Signal docs were overwritten"}
+
+
 @pytest.mark.parametrize(
     "obj",
     [
@@ -61,3 +67,9 @@ def test_get_device_info_without_connection():
         mock.patch.object(device, "walk_components", side_effect=TimeoutError),
     ):
         _ = get_device_info(device, connect=False)
+
+
+def test_get_device_info_with_overwrite_docs():
+    device = DummyDeviceWithOverwriteDocs(name="test")
+    info = get_device_info(device, connect=True)
+    assert info["device_info"]["signals"]["custom"]["doc"] == "Signal docs were overwritten"
