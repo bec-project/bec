@@ -4,10 +4,10 @@ is used to create the device interface for proxy objects on other services.
 """
 
 import functools
-from typing import Any
+from typing import Any, Type
 
 import msgpack
-from ophyd import Device, PositionerBase, Signal
+from ophyd import Component, Device, PositionerBase, Signal
 from ophyd_devices import BECDeviceBase, ComputedSignal
 
 from bec_lib.bec_errors import DeviceConfigError
@@ -125,12 +125,7 @@ def get_device_info(
                         f"Signal name {component_name} is protected and cannot be used. Please rename the signal."
                     )
                 signal_obj = getattr(obj, component_name)
-                doc = (
-                    comp.doc
-                    if isinstance(comp.doc, str)
-                    and not comp.doc.startswith("Component attribute\n::")
-                    else ""
-                )
+                doc = compile_docstring_for_component(obj, component_name, comp)
                 signals.update(
                     {
                         component_name: {
@@ -182,3 +177,28 @@ def get_device_info(
             "custom_user_access": user_access,
         },
     }
+
+
+def compile_docstring_for_component(
+    obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase,
+    component_name: str,
+    comp: Type[Component],
+) -> str:
+    """
+    Compile the docstring for a component of a device
+
+    Args:
+        obj (PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase): object to get the device info from
+        component_name (str): name of the component
+
+    Returns:
+        str: compiled docstring
+    """
+    if hasattr(obj, "OVERWRITE_DOCS"):
+        if component_name in obj.OVERWRITE_DOCS:
+            return obj.OVERWRITE_DOCS[component_name]
+    return (
+        comp.doc
+        if isinstance(comp.doc, str) and not comp.doc.startswith("Component attribute\n::")
+        else ""
+    )
