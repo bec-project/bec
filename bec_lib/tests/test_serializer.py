@@ -36,11 +36,12 @@ def serializer(request):
         messages.DeviceMessage,
         float,
         messages.RawMessage(data={"a": 1, "b": 2}),
-        messages.BECStatus.RUNNING,
+        messages.StatusMessage(name="test", status=messages.BECStatus.IDLE, info={"x": "y"}),
     ],
 )
 def test_serialize(serializer, data):
     res = serializer.loads(serializer.dumps(data)) == data
+
     assert all(res) if isinstance(data, np.ndarray) else res
 
 
