@@ -5,6 +5,7 @@ Serialization module for BEC messages
 from __future__ import annotations
 
 import contextlib
+import enum
 import gc
 import inspect
 import json
@@ -54,7 +55,7 @@ def decode_bec_message_v12(raw_bytes):
         header = json.loads(header.decode())
         msg_body = msgpack.loads(body)
         msg_class = get_message_class(header.pop("msg_type"))
-        msg = msg_class(**header, **msg_body)
+        msg = msg_class.model_validate({**header, **msg_body})
     except Exception as exception:
         raise RuntimeError("Failed to decode BECMessage") from exception
 
@@ -67,7 +68,7 @@ def encode_bec_message_json(msg):
         return msg
 
     msg_version = 1.2
-    out = {"msg_type": msg.msg_type, "msg_version": msg_version, "msg_body": msg.__dict__}
+    out = {"msg_type": msg.msg_type, "msg_version": msg_version, "msg_body": msg.model_dump_json()}
     return out
 
 
@@ -80,33 +81,39 @@ def decode_bec_message_json(data):
 
     try:
         msg_class = get_message_class(data.pop("msg_type"))
-        msg = msg_class(**data["msg_body"])
+        msg = msg_class.model_validate_json(data["msg_body"])
     except Exception as exception:
         raise RuntimeError("Failed to decode BECMessage") from exception
 
     return msg
 
 
-def encode_bec_status(status):
-    if not isinstance(status, BECStatus):
-        return status
-    return status.value.to_bytes(1, "big")  # int.to_bytes
+def encode_int_enum(obj):
+    if not isinstance(obj, enum.Enum) or not isinstance(obj.value, int):
+        return obj
+    return {"__msgpack__": {"type": "int_enum", "value": obj.value}}
 
 
-def decode_bec_status(value):
-    return BECStatus(int.from_bytes(value, "big"))
+def decode_int_enum(obj):
+    if isinstance(obj, dict) and "__msgpack__" in obj and obj["__msgpack__"]["type"] == "int_enum":
+        return obj["__msgpack__"]["value"]
+    return obj
 
 
-def encode_bec_status_json(status):
-    if not isinstance(status, BECStatus):
-        return status
-    return {"__becstatus__": status.value}  # int.to_bytes
+def msgpack_encode_int_enum(obj):
+    if not isinstance(obj, enum.Enum) or not isinstance(obj.value, int):
+        return obj
+    if abs(obj.value) > 32767:
+        raise ValueError(
+            "Serialisation hook for integer enums supports values from -32,768 to 32,767"
+        )
+    return obj.value.to_bytes(2, "big")
 
 
-def decode_bec_status_json(value):
-    if "__becstatus__" not in value:
-        return value
-    return BECStatus(value["__becstatus__"])
+def msgpack_decode_int_enum(data):
+    if not isinstance(data, bytes):
+        return data
+    return int.from_bytes(data, "big")
 
 
 def encode_set(obj):
@@ -256,17 +263,11 @@ class SerializationRegistry:
         Register codec for BECMessage
         """
         if not self.use_json:
-            # order matters
-            self.register_ext_type(encode_bec_status, decode_bec_status)
+            # order matters - custom deserialiser checks code based on registered order
+            self.register_ext_type(msgpack_encode_int_enum, msgpack_decode_int_enum)
             self.register_ext_type(encode_bec_message_v12, decode_bec_message_v12)
         else:
             self.register_object_hook(encode_bec_message_json, decode_bec_message_json)
-
-    def register_bec_status(self):
-        """
-        Register codec for BECStatus
-        """
-        self.register_object_hook(encode_bec_status_json, decode_bec_status_json)
 
     def register_set_encoder(self):
         """
@@ -390,7 +391,6 @@ class JsonExt(SerializationRegistry):
 json_ext = JsonExt()
 json_ext.register_numpy(use_list=True)
 json_ext.register_bec_message()
-json_ext.register_bec_status()
 json_ext.register_set_encoder()
 json_ext.register_message_endpoint()
 json_ext.register_bec_message_type()

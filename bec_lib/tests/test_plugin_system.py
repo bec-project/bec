@@ -1,3 +1,11 @@
+"""
+These tests can run without access to the external infrastructure, so they are included with the
+unit tests, but they are not truly unit tests. They create a plugin repo and install it into the
+current environment! They may fail if you already have a plugin repo installed, and if they crash
+they could leave the temp repo installed. If you think this might have happened you can check with
+`pip list | grep test_plugin`.
+"""
+
 import importlib
 import os
 import subprocess
