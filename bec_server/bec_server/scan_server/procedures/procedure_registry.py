@@ -10,7 +10,7 @@ BUILTIN_PROCEDURES: dict[str, Callable[..., None]] = {
     "run scan": run_scan,
 }
 
-PROCEDURE_LIST: dict[str, Callable[[Any], None]] = {} | BUILTIN_PROCEDURES
+PROCEDURE_REGISTRY: dict[str, Callable[[Any], None]] = {} | BUILTIN_PROCEDURES
 
 
 def check_builtin_procedure(msg: ProcedureExecutionMessage) -> bool:
@@ -20,4 +20,4 @@ def check_builtin_procedure(msg: ProcedureExecutionMessage) -> bool:
 
 def callable_from_execution_message(msg: ProcedureExecutionMessage) -> Callable[..., None]:
     """Get the function to execute for the given message"""
-    return PROCEDURE_LIST[msg.identifier]
+    return PROCEDURE_REGISTRY[msg.identifier]
