@@ -11,17 +11,14 @@ from bec_lib.client import RedisConnector
 from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
+    ProcedureWorkerStatus,
     RequestResponseMessage,
 )
 from bec_lib.serialization import MsgpackSerialization
-from bec_server.scan_server.procedures import (
-    InProcessProcedureWorker,
-    ProcedureManager,
-    ProcedureWorker,
-    WorkerAlreadyExists,
-)
-from bec_server.scan_server.procedures.manager import DEFAULT_QUEUE, ProcedureWorker
-from bec_server.scan_server.procedures.worker_base import ProcedureWorkerStatus
+from bec_server.scan_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
+from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
+from bec_server.scan_server.procedures.manager import ProcedureManager, ProcedureWorker
+from bec_server.scan_server.procedures.procedure_registry import _BUILTIN_PROCEDURES
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -98,7 +95,7 @@ def test_process_request_happy_paths(process_request_manager, message: Procedure
     process_request_manager._ack.assert_called_with(True, f"Running procedure {message.identifier}")
     process_request_manager._conn.rpush.assert_called()
     endpoint, execution_msg = process_request_manager._conn.rpush.call_args.args
-    queue = message.queue or DEFAULT_QUEUE
+    queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
     assert queue in endpoint.endpoint
     assert execution_msg.identifier == message.identifier
     process_request_manager.spawn.assert_called()
@@ -116,14 +113,18 @@ def test_process_request_failure(process_request_manager):
 class UnlockableWorker(ProcedureWorker):
     TEST_TIMEOUT = 10
 
-    def __init__(self, server: str, queue: str):
-        super().__init__(server, queue)
-        self.event = threading.Event()
+    def __init__(self, server: str, queue: str, lifetime_s: int | None = None):
+        super().__init__(server, queue, lifetime_s)
+        self.event_1 = threading.Event()
+        self.event_2 = threading.Event()
 
     def _setup_execution_environment(self): ...
     def _kill_process(self): ...
     def _run_task(self, item):
-        self.event.wait(self.TEST_TIMEOUT)
+        self.status = ProcedureWorkerStatus.RUNNING
+        self.event_1.wait(self.TEST_TIMEOUT)
+        self.status = ProcedureWorkerStatus.IDLE
+        self.event_2.wait(self.TEST_TIMEOUT)
 
 
 def _wait_until(predicate: Callable[[], bool], timeout_s: float = 0.1):
@@ -137,7 +138,6 @@ def _wait_until(predicate: Callable[[], bool], timeout_s: float = 0.1):
             raise TimeoutError()
 
 
-@patch("bec_server.scan_server.procedures.manager.queue_TIMEOUT_S", 1)
 @patch("bec_server.scan_server.procedures.worker_base.RedisConnector")
 @patch("bec_server.scan_server.procedures.manager.RedisConnector", MagicMock())
 def test_spawn(redis_connector, procedure_manager: ProcedureManager):
@@ -145,7 +145,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     message = PROCESS_REQUEST_TEST_CASES[0]
     # popping from the list queue should give the execution message
     redis_connector().blocking_list_pop_to_set_add.side_effect = [message, None]
-    queue = message.queue or DEFAULT_QUEUE
+    queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     # trigger the running of the test message
     procedure_manager.process_queue_request(message)  # type: ignore
@@ -166,9 +166,11 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
 
     # queue "timed out" and brpop returns None, so work() will return on the next iteration
     with procedure_manager.lock:
-        worker.event.set()  # let the task end and return to ProcedureWorker.work()
-        # queue deletion at the end of spawn needs the lock so we can catch it in IDLE
+        worker.event_1.set()  # let the task end and return to ProcedureWorker.work()
+        # queue deletion callback needs the lock so we can catch it in FINISHED
         _wait_until(lambda: worker.status == ProcedureWorkerStatus.IDLE)
+        worker.event_2.set()
+        _wait_until(lambda: worker.status == ProcedureWorkerStatus.FINISHED)
     # spawn deletes the worker queue
     _wait_until(lambda: len(procedure_manager.active_workers) == 0)
 
@@ -227,3 +229,8 @@ def test_builtin_procedure_scan_execution(_, Client):
             )
         )
     Client().scans.line_scan.assert_called_with(*args, **kwargs)
+
+
+def test_builtin_procedures_are_bec_procedures():
+    for proc in _BUILTIN_PROCEDURES.values():
+        assert isinstance(proc, BecProcedure)

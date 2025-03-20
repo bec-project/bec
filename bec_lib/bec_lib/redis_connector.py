@@ -127,7 +127,7 @@ def validate_endpoint(endpoint_arg_name: str):
     to the function is appropriate for the endpoint."""
 
     def decorator(
-        func: Callable[Concatenate[Any, str, P], Any],
+        func: Callable[Concatenate[Any, str, P], Any]
     ) -> Callable[Concatenate[Any, EndpointInfo, P], Any]:
         argspec = inspect.getfullargspec(func)
         try:
@@ -1287,9 +1287,9 @@ class RedisConnector:
 
         In order to keep this fail-safe and simple it uses 'mock'...
         """
-        from unittest.mock import (
+        from unittest.mock import (  # import is done here, to not pollute the file with something normally in tests
             Mock,
-        )  # import is done here, to not pollute the file with something normally in tests
+        )
 
         warnings.warn(
             "RedisConnector.consumer() is deprecated and should not be used anymore. Use RedisConnector.register() with 'topics', 'patterns', 'cb' or 'start_thread' instead. Additional keyword args are transmitted to the callback. For the caller, the main difference with RedisConnector.register() is that it does not return a new thread.",
