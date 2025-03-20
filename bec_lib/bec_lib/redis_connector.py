@@ -1229,7 +1229,7 @@ class RedisConnector:
         # TODO update to float when https://github.com/redis/redis-py/pull/3526 is released
         timeout_s: int | None = None,
     ) -> BECMessage | None:
-        """Block for up to timeout seconds to pop an item from 'list_enpoint' on side ''side,
+        """Block for up to timeout seconds to pop an item from 'list_enpoint' on side `side`,
         and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
         """
         _check_endpoint_type(list_endpoint)
@@ -1248,7 +1248,21 @@ class RedisConnector:
                 f"Message {decoded_msg} is not suitable for the set endpoint {set_endpoint}"
             )
         self._redis_conn.sadd(set_endpoint.endpoint, raw_msg[1])
-        return decoded_msg
+        return decoded_msg  # type: ignore # list pop returns one item
+
+    @validate_endpoint("endpoint")
+    def blocking_list_pop(
+        self, endpoint: str, side: Literal["LEFT", "RIGHT"] = "LEFT", timeout_s: int | None = None
+    ) -> BECMessage | None:
+        """Block for up to timeout seconds to pop an item from 'endpoint' on side `side`.
+        Returns the popped item, or None if waiting timed out.
+        """
+        _check_endpoint_type(endpoint)
+        bpop = self._redis_conn.blpop if side == "LEFT" else self._redis_conn.brpop
+        raw_msg = bpop([endpoint], timeout=timeout_s)
+        if raw_msg is None:
+            return None
+        return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
 
     def producer(self):
         """Return itself as a producer, to be compatible with old code"""
@@ -1273,9 +1287,9 @@ class RedisConnector:
 
         In order to keep this fail-safe and simple it uses 'mock'...
         """
-        from unittest.mock import (  # import is done here, to not pollute the file with something normally in tests
+        from unittest.mock import (
             Mock,
-        )
+        )  # import is done here, to not pollute the file with something normally in tests
 
         warnings.warn(
             "RedisConnector.consumer() is deprecated and should not be used anymore. Use RedisConnector.register() with 'topics', 'patterns', 'cb' or 'start_thread' instead. Additional keyword args are transmitted to the callback. For the caller, the main difference with RedisConnector.register() is that it does not return a new thread.",
