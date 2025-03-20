@@ -4,9 +4,9 @@ FROM ghcr.io/bec-project/bec_requirements:${BEC_VERSION} AS bec_procedure_worker
 # deployment directory should be mounted at /bec
 
 # Install bec components
-RUN uv pip install  --system -e /bec/bec_lib[dev]
-RUN uv pip install  --system -e /bec/bec_server[dev]
-RUN uv pip install  --system -e /bec/bec_ipython_client[dev]
+RUN uv pip install --system -e /bec/bec_lib[dev]
+RUN uv pip install --system -e /bec/bec_server[dev]
+RUN uv pip install --system -e /bec/bec_ipython_client[dev]
 
 # Get plugin and ophyd devices
 # ...

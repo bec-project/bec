@@ -208,6 +208,17 @@ def test_StatusMessage():
     assert res_loaded == msg
 
 
+def test_ProcedureWorkerStatusMessage():
+    msg = messages.ProcedureWorkerStatusMessage(
+        worker_queue="background tasks",
+        status=messages.ProcedureWorkerStatus.IDLE,
+        metadata={"RID": "1234"},
+    )
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+    assert res_loaded == msg
+
+
 def test_FileMessage():
     msg = messages.FileMessage(
         device_name="samx",
