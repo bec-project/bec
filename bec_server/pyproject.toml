@@ -21,6 +21,7 @@ dependencies = [
     "numpy>=1.24, <3.0",
     "ophyd~=1.9",
     "ophyd_devices>=1.10.3, <2.0",
+    "podman>=5.4",
     "psutil",
     "pydantic~=2.8",
     "pyyaml~=6.0",
@@ -48,6 +49,7 @@ bec-scan-server = "bec_server.scan_server.cli.launch:main"
 bec-scan-bundler = "bec_server.scan_bundler.cli.launch:main"
 bec-scihub = "bec_server.scihub.cli.launch:main"
 bec-server = "bec_server:main"
+bec-procedure-worker = "bec_server.scan_server.procedures.container_worker:main"
 
 
 [project.urls]

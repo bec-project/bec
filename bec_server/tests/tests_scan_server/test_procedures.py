@@ -14,13 +14,13 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.serialization import MsgpackSerialization
-from bec_server.scan_server.procedures import (
-    InProcessProcedureWorker,
+from bec_server.scan_server.procedures.constants import WorkerAlreadyExists
+from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
+from bec_server.scan_server.procedures.manager import (
+    DEFAULT_QUEUE,
     ProcedureManager,
     ProcedureWorker,
-    WorkerAlreadyExists,
 )
-from bec_server.scan_server.procedures.manager import DEFAULT_QUEUE, ProcedureWorker
 from bec_server.scan_server.procedures.worker_base import ProcedureWorkerStatus
 
 # pylint: disable=protected-access

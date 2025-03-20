@@ -12,17 +12,17 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureRequestMessage, RequestResponseMessage
 from bec_lib.redis_connector import RedisConnector
-from bec_server.scan_server.procedures.exceptions import WorkerAlreadyExists
+from bec_server.scan_server.procedures.constants import (
+    DEFAULT_QUEUE,
+    MANAGER_SHUTDOWN_TIMEOUT_S,
+    MAX_WORKERS,
+    WorkerAlreadyExists,
+)
 from bec_server.scan_server.procedures.procedure_registry import PROCEDURE_LIST
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
-
-MAX_WORKERS = 10
-queue_TIMEOUT_S = 10
-MANAGER_SHUTDOWN_TIMEOUT_S = 2
-DEFAULT_QUEUE = "primary"
 
 
 class ProcedureWorkerEntry(TypedDict):

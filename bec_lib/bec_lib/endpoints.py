@@ -1425,13 +1425,28 @@ class MessageEndpoints:
         The request is sent using a messages.ProcedureExecutionMessage message.
 
         Returns:
-            EndpointInfo: Endpoint for scan queue request.
+            EndpointInfo: Endpoint for set of active procedure executions.
         """
         endpoint = f"{EndpointType.INFO.value}/procedures/active_procedures"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureExecutionMessage,
             message_op=MessageOp.SET,
+        )
+
+    @staticmethod
+    def procedure_worker_status_update(queue_id: str):
+        """
+        Endpoint for status updates of out-of-process procedure workers.
+
+        Returns:
+            EndpointInfo: Endpoint for procedure worker status for given queue.
+        """
+        endpoint = f"{EndpointType.INFO.value}/procedures/worker_status/{queue_id}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureWorkerStatusMessage,
+            message_op=MessageOp.LIST,
         )
 
     @staticmethod
