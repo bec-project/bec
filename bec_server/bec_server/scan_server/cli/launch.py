@@ -6,7 +6,7 @@ import threading
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
-from bec_server import scan_server
+from bec_server.scan_server import scan_server
 
 logger = bec_logger.logger
 bec_logger.level = bec_logger.LOGLEVEL.INFO
@@ -18,7 +18,7 @@ def main():
     """
     _, _, config = parse_cmdline_args()
 
-    bec_server = scan_server.scan_server.ScanServer(config=config, connector_cls=RedisConnector)
+    bec_server = scan_server.ScanServer(config=config, connector_cls=RedisConnector)
     try:
         event = threading.Event()
         # pylint: disable=E1102
