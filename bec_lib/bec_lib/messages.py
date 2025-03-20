@@ -11,6 +11,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
+from bec_server.scan_server.procedures.constants import ProcedureWorkerStatus
 
 
 class BECStatus(enum.Enum):
@@ -1040,3 +1041,17 @@ class ProcedureExecutionMessage(BECMessage):
     identifier: str
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
+
+
+class ProcedureWorkerStatusMessage(BECMessage):
+    """Message type for sending procedure worker status updates
+
+    Args:
+        worker_queue (str): Worker queue ID
+        status (str): Worker status
+
+    """
+
+    msg_type: ClassVar[str] = "procedure_worker_status_message"
+    worker_queue: str
+    status: ProcedureWorkerStatus
