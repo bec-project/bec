@@ -1,0 +1,25 @@
+# Base image
+FROM python:3.11-slim AS base
+
+# This image should be built and pushed to our internal container repo on release
+# The result is used in Dockerfile.worker to create the local worker image for
+# Any given deployment
+
+# Set working directory - BEC deployment should be mounted here
+WORKDIR /bec
+
+FROM base AS bec_procedure_worker_requirements
+# Install dependencies - BEC release workflow should build this stage and deploy
+# it to the internal container registry
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    tmux \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip wheel
+RUN pip install uv
+RUN uv pip install  --system -r /bec/bec_lib/pyproject.toml 
+RUN uv pip install  --system -r /bec/bec_server/pyproject.toml
+RUN uv pip install  --system -r /bec/bec_ipython_client/pyproject.toml
+
