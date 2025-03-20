@@ -3,7 +3,11 @@ import pydantic
 import pytest
 
 from bec_lib import messages
-from bec_lib.serialization import MsgpackSerialization
+from bec_lib.serialization import (
+    MsgpackSerialization,
+    decode_bec_message_json,
+    encode_bec_message_json,
+)
 
 
 @pytest.mark.parametrize("version", [1.0, 1.1, 1.2, None])
@@ -207,6 +211,10 @@ def test_StatusMessage():
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
+
+    res_json = encode_bec_message_json(msg)
+    res_loaded_json = decode_bec_message_json(res_json)
+    assert res_loaded_json == msg
 
 
 def test_FileMessage():

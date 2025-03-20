@@ -5,6 +5,7 @@ Serialization module for BEC messages
 from __future__ import annotations
 
 import contextlib
+import enum
 import gc
 import inspect
 import json
@@ -67,7 +68,7 @@ def encode_bec_message_json(msg):
         return msg
 
     msg_version = 1.2
-    out = {"msg_type": msg.msg_type, "msg_version": msg_version, "msg_body": msg.__dict__}
+    out = {"msg_type": msg.msg_type, "msg_version": msg_version, "msg_body": msg.model_dump()}
     return out
 
 
@@ -87,26 +88,14 @@ def decode_bec_message_json(data):
     return msg
 
 
-def encode_bec_status(status):
-    if not isinstance(status, BECStatus):
-        return status
-    return status.value.to_bytes(1, "big")  # int.to_bytes
+def encode_int_enum(obj):
+    if not isinstance(obj, enum.Enum) or not isinstance(obj.value, int):
+        return obj
+    return obj.value.to_bytes(1, "big")
 
 
-def decode_bec_status(value):
-    return BECStatus(int.from_bytes(value, "big"))
-
-
-def encode_bec_status_json(status):
-    if not isinstance(status, BECStatus):
-        return status
-    return {"__becstatus__": status.value}  # int.to_bytes
-
-
-def decode_bec_status_json(value):
-    if "__becstatus__" not in value:
-        return value
-    return BECStatus(value["__becstatus__"])
+def decode_int_enum(value):
+    return int.from_bytes(value, "big")
 
 
 def encode_set(obj):
@@ -257,16 +246,10 @@ class SerializationRegistry:
         """
         if not self.use_json:
             # order matters
-            self.register_ext_type(encode_bec_status, decode_bec_status)
+            self.register_ext_type(encode_int_enum, decode_int_enum)
             self.register_ext_type(encode_bec_message_v12, decode_bec_message_v12)
         else:
             self.register_object_hook(encode_bec_message_json, decode_bec_message_json)
-
-    def register_bec_status(self):
-        """
-        Register codec for BECStatus
-        """
-        self.register_object_hook(encode_bec_status_json, decode_bec_status_json)
 
     def register_set_encoder(self):
         """
@@ -390,7 +373,6 @@ class JsonExt(SerializationRegistry):
 json_ext = JsonExt()
 json_ext.register_numpy(use_list=True)
 json_ext.register_bec_message()
-json_ext.register_bec_status()
 json_ext.register_set_encoder()
 json_ext.register_message_endpoint()
 json_ext.register_bec_message_type()
