@@ -14,9 +14,45 @@ from redis import Redis
 from bec_ipython_client import BECIPythonClient
 from bec_lib.client import BECClient
 from bec_lib.config_helper import ConfigHelper
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import wait_for_empty_queue
+
+
+class LogTestTool:
+    def __init__(self, client: BECIPythonClient):
+        self._conn: RedisConnector = client.connector
+        self._logs = None
+
+    def fetch(self, count: int | None = None) -> None:
+        """Fetch logs from the server and store them for interrogation, get all by default or get
+        the last `count` logs (latter will not fetch read logs again if they have been seen!)"""
+        log_data = self._conn.xread(MessageEndpoints.log(), from_start=(count is None), count=count)
+        if log_data is None:
+            self._logs = None
+            return
+        self._logs = list(item["data"].log_msg["text"] for item in log_data)
+
+    def is_present_in_any_message(self, needle: str) -> bool:
+        """Assert that the provided string is in at least one log message"""
+        if self._logs is None:
+            raise RuntimeError("No logs fetched")
+        for log in self._logs:
+            if needle in log:
+                return True
+        return False
+
+    def are_present_in_order(self, needles: list[str]) -> tuple[bool, str]:
+        if self._logs is None:
+            raise RuntimeError("No logs fetched")
+        _needles = list(reversed(needles.copy()))
+        for log in self._logs:
+            if _needles[-1] in log:
+                _needles.pop()
+            if len(_needles) == 0:
+                return True, ""
+        return False, _needles[0]
 
 
 @pytest.hookimpl
@@ -239,3 +275,9 @@ def bec_client_lib(bec_client_lib_with_demo_config):
     bec.queue.request_scan_continuation()
     wait_for_empty_queue(bec)
     yield bec
+
+
+@pytest.fixture
+def bec_ipython_client_fixture_with_logtool(bec_ipython_client_fixture):
+    bec: BECIPythonClient = bec_ipython_client_fixture
+    yield bec, LogTestTool(bec)
