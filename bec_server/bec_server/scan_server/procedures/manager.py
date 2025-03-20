@@ -12,22 +12,31 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureRequestMessage, RequestResponseMessage
 from bec_lib.redis_connector import RedisConnector
-from bec_server.scan_server.procedures.exceptions import WorkerAlreadyExists
-from bec_server.scan_server.procedures.procedure_registry import PROCEDURE_LIST
+from bec_server.scan_server.procedures.constants import (
+    DEFAULT_QUEUE,
+    MANAGER_SHUTDOWN_TIMEOUT_S,
+    MAX_WORKERS,
+    QUEUE_TIMEOUT_S,
+    WorkerAlreadyExists,
+)
+from bec_server.scan_server.procedures.procedure_registry import PROCEDURE_REGISTRY
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
 
-MAX_WORKERS = 10
-queue_TIMEOUT_S = 10
-MANAGER_SHUTDOWN_TIMEOUT_S = 2
-DEFAULT_QUEUE = "primary"
-
 
 class ProcedureWorkerEntry(TypedDict):
     worker: ProcedureWorker | None
     future: Future
+
+
+def _log_on_end(future: Future):
+    """Use as a callback so that future is always done."""
+    if e := future.exception():
+        logger.error(f"Worker failed with exception: {e}")
+    else:
+        logger.success(f"Procedure worker {future} shut down gracefully")
 
 
 class ProcedureManager:
@@ -56,7 +65,7 @@ class ProcedureManager:
         self._conn.register(MessageEndpoints.procedure_request(), None, self.process_queue_request)
 
     def _ack(self, accepted: bool, msg: str):
-        logger.debug(f"procedure accepted: {accepted}, message: {msg}")
+        logger.info(f"procedure accepted: {accepted}, message: {msg}")
         self._conn.send(
             self._reply_endpoint, RequestResponseMessage(accepted=accepted, message=msg)
         )
@@ -64,10 +73,10 @@ class ProcedureManager:
     def _validate_request(self, msg: dict[str, Any]):
         try:
             message_obj = ProcedureRequestMessage.model_validate(msg)
-            if message_obj.identifier not in PROCEDURE_LIST.keys():
+            if message_obj.identifier not in PROCEDURE_REGISTRY.keys():
                 self._ack(
                     False,
-                    f"Procedure {message_obj.identifier} not known to the server. Available: {list(PROCEDURE_LIST.keys())}",
+                    f"Procedure {message_obj.identifier} not known to the server. Available: {list(PROCEDURE_REGISTRY.keys())}",
                 )
                 return None
         except ValidationError as e:
@@ -101,6 +110,7 @@ class ProcedureManager:
         with self.lock:
             if queue not in self.active_workers:
                 new_worker = self.executor.submit(self.spawn, queue=queue)
+                new_worker.add_done_callback(_log_on_end)
                 self.active_workers[queue] = {"worker": None, "future": new_worker}
 
     def spawn(self, queue: str):
@@ -113,7 +123,7 @@ class ProcedureManager:
             raise WorkerAlreadyExists(
                 f"Queue {queue} already has an active worker in {self.active_workers}!"
             )
-        with self._worker_cls(self._server, queue) as worker:
+        with self._worker_cls(self._server, queue, QUEUE_TIMEOUT_S) as worker:
             with self.lock:
                 self.active_workers[queue]["worker"] = worker
             worker.work()
