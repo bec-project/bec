@@ -1284,18 +1284,17 @@ class RedisConnector:
         list_endpoint: EndpointInfo,
         set_endpoint: EndpointInfo,
         side: Literal["LEFT", "RIGHT"] = "LEFT",
-        # TODO update to float when https://github.com/redis/redis-py/pull/3526 is released
-        timeout_s: int | None = None,
+        timeout_s: float | None = None,
     ) -> BECMessage | None:
-        """Block for up to timeout seconds to pop an item from 'list_enpoint' on side ''side,
+        """Block for up to timeout seconds to pop an item from 'list_enpoint' on side `side`,
         and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
         """
-        _check_endpoint_type(list_endpoint)
-        _check_endpoint_type(set_endpoint)
-        if list_endpoint.message_op != MessageOp.LIST:
-            raise IncompatibleRedisOperation(
-                f"{list_endpoint} should be compatible with list operations!"
-            )
+        for ep, ops in [(list_endpoint, MessageOp.LIST), (set_endpoint, MessageOp.SET)]:
+            _check_endpoint_type(ep)
+            if ep.message_op != ops:
+                raise IncompatibleRedisOperation(
+                    f"{ep} should be compatible with {ops.name} operations!"
+                )
         bpop = self._redis_conn.blpop if side == "LEFT" else self._redis_conn.brpop
         raw_msg = bpop([list_endpoint.endpoint], timeout=timeout_s)
         if raw_msg is None:
@@ -1306,7 +1305,20 @@ class RedisConnector:
                 f"Message {decoded_msg} is not suitable for the set endpoint {set_endpoint}"
             )
         self._redis_conn.sadd(set_endpoint.endpoint, raw_msg[1])
-        return decoded_msg
+        return decoded_msg  # type: ignore # list pop returns one item
+
+    @validate_endpoint("endpoint")
+    def blocking_list_pop(
+        self, endpoint: str, side: Literal["LEFT", "RIGHT"] = "LEFT", timeout_s: float | None = None
+    ) -> BECMessage | None:
+        """Block for up to timeout seconds to pop an item from 'endpoint' on side `side`.
+        Returns the popped item, or None if waiting timed out.
+        """
+        bpop = self._redis_conn.blpop if side == "LEFT" else self._redis_conn.brpop
+        raw_msg = bpop([endpoint], timeout=timeout_s)
+        if raw_msg is None:
+            return None
+        return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
 
     def can_connect(self) -> bool:
         """Check if the connector needs authentication"""
