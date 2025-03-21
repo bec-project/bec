@@ -10,6 +10,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.service_config import ServiceConfig
 from bec_server.scan_server.procedures.constants import (
     PODMAN_URI,
     ContainerWorkerEnv,
@@ -23,8 +24,10 @@ logger = bec_logger.logger
 
 class ContainerProcedureWorker(ProcedureWorker):
     def _worker_environment(self) -> ContainerWorkerEnv:
+        """Used to pass information to the container as environment variables - should be the
+        minimum necessary, and pass other information through redis"""
         return {
-            "redis_server": "localhost:6379",
+            "redis_server": f"{self._conn.host}:{self._conn.port}",
             "queue": self._queue,
             "timeout_s": str(self._lifetime_s),
         }
@@ -45,7 +48,8 @@ class ContainerProcedureWorker(ProcedureWorker):
         )
 
     def _kill_process(self):
-        self._container.kill()
+        if self._container.inspect()["State"]["Status"] not in ["exited", "stopped"]:
+            self._container.kill()
 
     def work(self):
         """block until the container is killed - update status in the meantime"""
@@ -53,15 +57,19 @@ class ContainerProcedureWorker(ProcedureWorker):
         # on timeout check if container is still running
 
         status_update = None
-        while self._container.status not in ["exited", "stopped"]:
+        while self._container.inspect()["State"]["Status"] not in ["exited", "stopped"]:
             status_update = self._conn.blocking_list_pop(
-                MessageEndpoints.procedure_worker_status_update(self._queue)
+                MessageEndpoints.procedure_worker_status_update(self._queue), timeout_s=1
             )
             if status_update is not None:
                 if not isinstance(status_update, messages.ProcedureWorkerStatusMessage):
                     raise ProcedureWorkerError(f"Received unexpected message {status_update}")
                 self.status = status_update.status
-                logger.debug(f"Container worker status update: {status_update}")
+                logger.info(
+                    f"Container worker '{self._queue}' status update: {status_update.status.name}"
+                )
+            # TODO: we probably do want to handle some kind of timeout here but we don't know how
+            # long a running procedure should actually take - it could theoretically be infinite
 
 
 def main():
@@ -69,6 +77,8 @@ def main():
     from bec_lib.logger import bec_logger
 
     logger = bec_logger.logger
+
+    logger.info(f"Container worker internal client started")
     try:
         needed_keys = ContainerWorkerEnv.__annotations__.keys()
         logger.debug(f"Checking for environment variables: {needed_keys}")
@@ -76,6 +86,11 @@ def main():
     except KeyError as e:
         logger.error(f"Missing environment variable needed by container worker: {e}")
         return
+
+    host, port = env["redis_server"].split(":")
+    redis = {"host": host, "port": port}
+    client = BECClient(config=ServiceConfig(redis=redis))
+    client.start()
 
     logger.info(f"ContainerWorker started container for queue {env['queue']}")
     logger.debug(f"ContainerWorker environment: {env}")
@@ -86,9 +101,6 @@ def main():
     status_endpoint = MessageEndpoints.procedure_worker_status_update(env["queue"])
 
     logger.debug(f"ContainerWorker connecting to Redis at {conn.host}:{conn.port}")
-    client = BECClient()
-    client.start()
-    logger.debug(f"ContainerWorker client started")
 
     def _push_status(status: ProcedureWorkerStatus):
         conn.rpush(
