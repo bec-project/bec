@@ -166,23 +166,27 @@ def get_full_path(scan_status_msg: ScanStatusMessage, name: str, create_dir: boo
         create_dir (bool, optional): Create the directory if it does not exist. Defaults to True.
     """
 
-    if name == "":
+    if not isinstance(name, str) or not name.strip():
         raise FileWriterError("Name must not be empty.")
+
     check_name = name.replace("_", "").replace("-", "")
     if not check_name.isalnum() or not check_name.isascii():
         raise FileWriterError(
             f"Can't use suffix {name}; formatting is alphanumeric:{name.isalnum()} and ascii {name.isascii()}"
         )
-    file_components = scan_status_msg.info.get("file_components", None)
+
+    file_components = scan_status_msg.info.get("file_components")
     if not file_components:
         raise FileWriterError("No file path available in scan status message.")
     file_base_path, file_extension = file_components[0], file_components[1]
     if not file_components:
         raise FileWriterError("No file path available in scan status message.")
+
     # Add name and user_suffix to the file path
-    user_suffix = scan_status_msg.scan_parameters["system_config"].get("file_suffix", None)
+    user_suffix = scan_status_msg.scan_parameters["system_config"].get("file_suffix")
     if user_suffix:
         name += f"_{user_suffix}"
+
     # Compile full file path
     full_path = f"{file_base_path}_{name}.{file_extension}"
     if create_dir:

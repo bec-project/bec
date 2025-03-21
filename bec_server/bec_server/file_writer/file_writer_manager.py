@@ -9,7 +9,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.file_utils import FileWriter
+from bec_lib.file_utils import FileWriter, get_full_path
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_lib.service_config import ServiceConfig
@@ -140,7 +140,7 @@ class FileWriterManager(BECService):
         if status == "open" and not scan_storage.start_time:
             scan_storage.start_time = msg.content.get("timestamp")
             scan_storage.async_writer = AsyncWriter(
-                self.writer_mixin.compile_full_filename(suffix="master"),
+                get_full_path(msg, name="master"),
                 scan_id=scan_id,
                 connector=self.connector,
                 devices=self.device_manager.devices.async_devices(),
