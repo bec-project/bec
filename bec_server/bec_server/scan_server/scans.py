@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
+from functools import wraps
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -15,6 +16,7 @@ from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_server.scan_server.scan_modifier import ScanModifier
 
 from .errors import LimitError, ScanAbortion
 from .path_optimization import PathOptimizerMixin
@@ -319,6 +321,30 @@ class RequestBase(ABC):
         pass
 
 
+def modifier(func):
+    """
+    Decorator for modifier functions. A modifier function is a function that is called before or after a scan function.
+    """
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if not self.modifier.has_modifier(func.__name__):
+            yield from func(self, *args, **kwargs)
+            return
+        mods = self.modifier.modifiers[func.__name__]
+        if "pre" in mods:
+            pre_modifier = mods["pre"]
+            for mod in pre_modifier:
+                yield from mod.run()
+        yield from func(self, *args, **kwargs)
+        if "post" in mods:
+            post_modifier = mods["post"]
+            for mod in post_modifier:
+                yield from mod.run()
+
+    return wrapper
+
+
 class ScanBase(RequestBase, PathOptimizerMixin):
     """
     Base class for all scans. The following methods are called in the following order during the scan
@@ -405,6 +431,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self.start_pos = []
         self.positions = []
         self.num_pos = 0
+        self.modifier = ScanModifier(self)
 
         if "return_to_start" not in self.caller_kwargs:
             # if return_to_start is not set in the kwargs, return to start only if
@@ -465,6 +492,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         yield from self._set_position_offset()
         self._check_limits()
 
+    @modifier
     def open_scan(self):
         """open the scan"""
         positions = self.positions if isinstance(self.positions, list) else self.positions.tolist()
@@ -477,6 +505,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             scan_type=self.scan_type,
         )
 
+    @modifier
     def stage(self):
         """call the stage procedure"""
         yield from self.stubs.stage()
@@ -493,16 +522,23 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         if self.relative and len(self.start_pos) > 0:
             self.positions += self.start_pos
 
+    @modifier
     def close_scan(self):
         """close the scan"""
         yield from self.stubs.close_scan()
 
+    @modifier
     def scan_core(self):
         """perform the scan core procedure"""
         for ind, pos in self._get_position():
             for self.burst_index in range(self.burst_at_each_point):
-                yield from self._at_each_point(ind, pos)
+                yield from self.at_each_point(ind, pos)
             self.burst_index = 0
+
+    @modifier
+    def at_each_point(self, ind=None, pos=None):
+        """at each point procedure"""
+        yield from self._at_each_point(ind, pos)
 
     def move_to_start(self):
         """return to the start position"""
@@ -510,6 +546,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             return
         yield from self._move_scan_motors_and_wait(self.start_pos)
 
+    @modifier
     def finalize(self):
         """finalize the scan"""
         yield from self.move_to_start()
@@ -518,10 +555,12 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         if self._baseline_status:
             self._baseline_status.wait()
 
+    @modifier
     def unstage(self):
         """call the unstage procedure"""
         yield from self.stubs.unstage()
 
+    @modifier
     def cleanup(self):
         """call the cleanup procedure"""
         yield from self.close_scan()
@@ -586,6 +625,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     def scan_report_instructions(self):
         yield None
 
+    @modifier
     def pre_scan(self):
         """
         pre scan procedure. This method is called before the scan_core method and can be used to
