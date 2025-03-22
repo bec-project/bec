@@ -18,7 +18,7 @@ class BECAccessDemo:  # pragma: no cover
         self.deployment_id = "test_deployment"
 
     def _find_admin_account(self) -> dict[str, str]:
-        for user, token in [("default", None), ("bec", "bec"), ("admin", "admin")]:
+        for user, token in [("default", "null"), ("admin", "admin")]:
             try:
                 self.connector.authenticate(username=user, password=token)
                 return {"username": user, "password": token}
@@ -105,36 +105,6 @@ class BECAccessDemo:  # pragma: no cover
             self.admin_username,
             enabled=True,
             passwords=["+admin"],
-            categories=["+@all"],
-            keys=["*"],
-            channels=["*"],
-            reset_channels=True,
-            reset_keys=True,
-        )
-
-    def add_bec_limited(self):
-        available_user = self.connector._redis_conn.acl_list()
-        if "user bec" in " ".join(available_user):
-            self.connector._redis_conn.acl_deluser("bec")
-        self.connector._redis_conn.acl_setuser(
-            "bec",
-            enabled=True,
-            passwords=["+bec"],
-            categories=["+read"],
-            keys=["public/*"],
-            channels=[""],
-            reset_channels=True,
-            reset_keys=True,
-        )
-
-    def add_bec(self):
-        available_user = self.connector._redis_conn.acl_list()
-        if "user bec" in " ".join(available_user):
-            self.connector._redis_conn.acl_deluser("bec")
-        self.connector._redis_conn.acl_setuser(
-            "bec",
-            enabled=True,
-            passwords=["+bec"],
             categories=["+@all"],
             keys=["*"],
             channels=["*"],
