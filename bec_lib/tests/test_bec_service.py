@@ -28,13 +28,14 @@ dir_path = os.path.dirname(bec_lib.__file__)
 def bec_service(config, connector_cls=None, **kwargs):
     if connector_cls is None:
         connector_cls = mock.MagicMock()
-    service = BECService(config=config, connector_cls=connector_cls, **kwargs)
-    try:
-        yield service
-    finally:
-        service.shutdown()
-        bec_logger.logger.remove()
-        bec_logger._reset_singleton()
+    with mock.patch("bec_lib.bec_service.BECAccess") as mock_access:
+        service = BECService(config=config, connector_cls=connector_cls, **kwargs)
+        try:
+            yield service
+        finally:
+            service.shutdown()
+            bec_logger.logger.remove()
+            bec_logger._reset_singleton()
 
 
 def test_bec_service_init_with_service_config():
@@ -233,6 +234,7 @@ def test_parse_cmdline_args_with_config():
                     "file_log_level": None,
                     "redis_log_level": None,
                 },
+                acl={},
             )
 
 
