@@ -153,11 +153,7 @@ class BECAccess:
             return
 
         # Check if we can simply use the default user account
-        if self._default_user_login_successful():
-            return
-
-        # Check if we can use the 'bec' account to get full access
-        if self._bec_user_login_successful(full_access=True):
+        if self._default_user_login_successful(full_access=True):
             return
 
         if prompt_for_acl:
@@ -207,28 +203,17 @@ class BECAccess:
             )
         return False
 
-    def _default_user_login_successful(self) -> bool:
+    def _default_user_login_successful(self, full_access: bool) -> bool:
         """
         Login using the default user account.
+
+        Args:
+            full_access (bool): If True, the user has to have full access to the Redis
 
         Returns:
             bool: True if the login was successful, False otherwise.
         """
         if self._check_redis_auth(None, None):
-            return True
-        return False
-
-    def _bec_user_login_successful(self, full_access: bool) -> bool:
-        """
-        Login using the bec account.
-
-        Args:
-            full_access (bool): If True, the user has to have full access to the Redis server.
-
-        Returns:
-            bool: True if the login was successful, False otherwise.
-        """
-        if self._check_redis_auth("bec", "bec"):
             if not full_access:
                 return True
 
@@ -242,8 +227,6 @@ class BECAccess:
         return False
 
     def _user_service_login(self, username: str | None = None) -> None:
-        # login with user 'bec' to retrieve the login info
-        self.connector.authenticate(username="bec", password="bec")
         self._info: messages.LoginInfoMessage | None = self.connector.get(
             MessageEndpoints.login_info()
         )
