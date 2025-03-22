@@ -149,24 +149,35 @@ class BECAccessDemo:  # pragma: no cover
         except Exception:
             pass
 
-        self.enable_default(True)
+        self.set_default_limited(False)
         self.connector._redis_conn.reset()
         available_user = self.connector._redis_conn.acl_list()
         for user in ["user", "admin", "bec"]:
             if f"user {user}" in " ".join(available_user):
                 self.connector._redis_conn.acl_deluser(user)
 
-    def enable_default(self, enable: bool):
-        self.connector._redis_conn.acl_setuser(
-            "default",
-            enabled=enable,
-            nopass=True,
-            categories=["+@all"],
-            keys=["*"],
-            channels=["*"],
-            reset_channels=True,
-            reset_keys=True,
-        )
+    def set_default_limited(self, limited: bool):
+        if limited:
+            self.connector._redis_conn.acl_setuser(
+                "default",
+                enabled=True,
+                nopass=True,
+                categories=["+read"],
+                keys=["public/*"],
+                reset_channels=True,
+                reset_keys=True,
+            )
+        else:
+            self.connector._redis_conn.acl_setuser(
+                "default",
+                enabled=True,
+                nopass=True,
+                categories=["+@all"],
+                keys=["*"],
+                channels=["*"],
+                reset_channels=True,
+                reset_keys=True,
+            )
 
 
 def _main(
@@ -178,17 +189,11 @@ def _main(
         case "default":
             demo.reset()
             print("Enabled mode default. Please restart the bec server.")
-        case "bec":
-            demo.reset()
-            demo.add_bec()
-            demo.enable_default(False)
-            print("Enabled mode bec. Please restart the bec server.")
         case "admin":
             demo.reset()
             demo.add_user()
             demo.add_admin()
-            demo.add_bec_limited()
-            demo.enable_default(False)
+            demo.set_default_limited(True)
             print(
                 "Enabled mode admin. Please make sure to place the .bec_acl.env file in the root directory and restart the bec server."
             )
