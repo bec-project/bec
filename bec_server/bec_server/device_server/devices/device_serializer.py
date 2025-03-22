@@ -4,11 +4,13 @@ is used to create the device interface for proxy objects on other services.
 """
 
 import functools
+import inspect
 from typing import Any
 
 import msgpack
 from ophyd import Device, PositionerBase, Signal
 from ophyd_devices import BECDeviceBase, ComputedSignal
+from ophyd_devices.interfaces.base_classes.psi_device_base import PSIDeviceBase
 
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.device import DeviceBase
@@ -31,6 +33,37 @@ def is_serializable(var: Any) -> bool:
         return True
     except (TypeError, OverflowError):
         return False
+
+
+def get_runtime_modifiers(obj: Any) -> list:
+    """
+    Get the runtime modifiers
+    """
+
+    available_modifiers = [
+        "on_stage",
+        "on_unstage",
+        "on_pre_scan",
+        "on_trigger",
+        "on_complete",
+        "on_kickoff",
+    ]
+
+    if not isinstance(obj, PSIDeviceBase):
+        return []
+
+    # check if the method overrides the base class method
+    runtime_modifiers = []
+    for modifier in available_modifiers:
+        mod = getattr(obj, modifier, None)
+        if not mod:
+            continue
+        code = list(mod.__code__.co_code)
+        if len(code) <= 4:  # 4 bytes is the minimum size of a function
+            continue
+        runtime_modifiers.append(modifier)
+
+    return runtime_modifiers
 
 
 def get_custom_user_access_info(obj: Any, obj_interface: dict) -> dict:
@@ -169,6 +202,7 @@ def get_device_info(
     else:
         describe = {}
         describe_configuration = {}
+
     return {
         "device_name": obj.name,
         "device_info": {
@@ -184,5 +218,6 @@ def get_device_info(
             "describe_configuration": describe_configuration,
             "sub_devices": sub_devices,
             "custom_user_access": user_access,
+            "runtime_modifiers": get_runtime_modifiers(obj),
         },
     }

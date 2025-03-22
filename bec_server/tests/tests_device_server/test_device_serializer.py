@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 from ophyd import Component as Cpt
 from ophyd import Device, Signal
+from ophyd_devices.interfaces.base_classes.psi_device_base import PSIDeviceBase
 
 from bec_lib.bec_errors import DeviceConfigError
 from bec_server.device_server.devices.device_serializer import get_device_info
@@ -61,3 +62,30 @@ def test_get_device_info_without_connection():
         mock.patch.object(device, "walk_components", side_effect=TimeoutError),
     ):
         _ = get_device_info(device, connect=False)
+
+
+def test_get_device_info_with_runtime_modifiers():
+    class MyDeviceWithRuntimeModifiers(PSIDeviceBase):
+        def on_stage(self):
+            pass
+
+        def on_pre_scan(self):
+            a = 2
+
+        def on_unstage(self):
+            a = 2
+
+    device = MyDeviceWithRuntimeModifiers(name="test")
+    device_info = get_device_info(device)
+    assert device_info["device_info"]["runtime_modifiers"] == ["on_unstage", "on_pre_scan"]
+
+    class MyDeviceWithoutRuntimeModifiers(PSIDeviceBase):
+        pass
+
+    device = MyDeviceWithoutRuntimeModifiers(name="test")
+    device_info = get_device_info(device)
+    assert device_info["device_info"]["runtime_modifiers"] == []
+
+    device = MyDevice(name="test")
+    device_info = get_device_info(device)
+    assert device_info["device_info"]["runtime_modifiers"] == []
