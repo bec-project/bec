@@ -1083,3 +1083,18 @@ class ACLAccountsMessage(BECMessage):
     accounts: dict[
         str, dict[Literal["categories", "keys", "channels", "commands", "profile"], list[str] | str]
     ]
+
+
+class ScanModifierMessage(BECMessage):
+    """
+    Message type for publishing scan modifier.
+    """
+
+    msg_type: ClassVar[str] = "scan_modifier_message"
+    modifier: dict[
+        Literal["default"] | str,
+        dict[
+            Literal["stage", "unstage", "trigger", "pre_scan", "at_each_point"] | str,
+            dict[Literal["pre", "post"], list[dict[str, Any]]],
+        ],
+    ]

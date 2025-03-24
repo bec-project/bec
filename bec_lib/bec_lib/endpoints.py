@@ -727,6 +727,22 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def scan_modifier():
+        """
+        Endpoint for scan modifier. This endpoint is used to publish the scan modifier
+        using a messages.ScanModifierMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan modifier.
+        """
+        endpoint = f"{EndpointType.INFO.value}/scans/scan_modifier"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ScanModifierMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def bluesky_events() -> str:
         """
         Endpoint for bluesky events. This endpoint is used by the scan bundler to
