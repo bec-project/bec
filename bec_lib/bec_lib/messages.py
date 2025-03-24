@@ -1040,3 +1040,18 @@ class ProcedureExecutionMessage(BECMessage):
     identifier: str
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
+
+
+class ScanModifierMessage(BECMessage):
+    """
+    Message type for publishing scan modifier.
+    """
+
+    msg_type: ClassVar[str] = "scan_modifier_message"
+    modifier: dict[
+        Literal["default"] | str,
+        dict[
+            Literal["stage", "unstage", "trigger", "pre_scan", "at_each_point"] | str,
+            dict[Literal["pre", "post"], list[dict[str, Any]]],
+        ],
+    ]
