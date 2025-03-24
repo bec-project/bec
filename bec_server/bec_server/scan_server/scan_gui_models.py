@@ -114,7 +114,7 @@ class GUIInput(BaseModel):
                 "The argument name is required to infer the display name",
                 {"wrong_value": v},
             )
-        parts = re.split("(_|\d+)", name)
+        parts = re.split(r"(_|\d+)", name)
         formatted_parts = []
         for part in parts:
             if part.isdigit():
