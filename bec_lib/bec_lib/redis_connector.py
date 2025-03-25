@@ -264,6 +264,8 @@ class RedisConnector:
             username (str, optional): username. Defaults to "default".
             password (str, optional): password. Defaults to "null".
         """
+        if password is None:
+            password = "null"
         old_kwargs = copy.deepcopy(self._redis_conn.connection_pool.connection_kwargs)
         try:
             self._close_pubsub()
