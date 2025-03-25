@@ -1005,7 +1005,7 @@ class ServiceRequestMessage(BECMessage):
     """Message for service requests
 
     Args:
-        request (dict): Service request
+        action (Literal["restart"]): Action to be executed by the service
         metadata (dict, optional): Metadata. Defaults to None.
     """
 

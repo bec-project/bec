@@ -63,6 +63,11 @@ class BECMagics(Magics):
         return self.client.queue.request_scan_halt()
 
     @line_magic
+    def server_restart(self, line):
+        "Request a server restart"
+        return self.client._request_server_restart()
+
+    @line_magic
     def schema(self, line):
         "print the metadata schema for a given scan"
         scans = self.shell.user_ns["scans"]

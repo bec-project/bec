@@ -9,6 +9,7 @@ import builtins
 import getpass
 import importlib
 import inspect
+import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -35,7 +36,7 @@ from bec_lib.utils.import_utils import lazy_import_from
 logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib.messages import BECStatus, VariableMessage
+    from bec_lib.messages import BECStatus, ServiceRequestMessage, VariableMessage
     from bec_lib.redis_connector import RedisConnector
     from bec_lib.scan_manager import ScanManager
     from bec_lib.scans import Scans
@@ -46,6 +47,7 @@ else:
     RedisConnector = lazy_import_from("bec_lib.redis_connector", ("RedisConnector",))
     ScanManager = lazy_import_from("bec_lib.scan_manager", ("ScanManager",))
     Scans = lazy_import_from("bec_lib.scans", ("Scans",))
+    ServiceRequestMessage = lazy_import_from("bec_lib.messages", ("ServiceRequestMessage",))
 
 
 class SystemConfig(BaseModel):
@@ -346,3 +348,26 @@ class BECClient(BECService, UserScriptsMixin):
         if not doc_string:
             return ""
         return doc_string.strip().split("\n")[0]
+
+    def _request_server_restart(self):
+        # pylint: disable=protected-access
+        if self.connector is None or self.device_manager is None:
+            raise RuntimeError("Client not initialized. Cannot restart server.")
+
+        self._update_existing_services()
+        # Check that the SciHub service is running
+        if "SciHub" not in self._services_info:
+            raise RuntimeError("Cannot restart server. SciHub service is not running.")
+
+        msg = ServiceRequestMessage(action="restart")
+        self.connector.send(MessageEndpoints.service_request(), msg)
+        print("Server restart requested. Waiting for server to restart...")
+        time.sleep(3)  # wait for the service info to be updated
+        logger.info("Requested server restart")
+        for service in ["DeviceServer", "ScanServer", "ScanBundler", "SciHub", "FileWriterManager"]:
+            print(f"Waiting for {service} to restart...")
+            self.wait_for_service(service, BECStatus.RUNNING)
+        print("Updating client...")
+        self._load_scans()
+        self.device_manager._load_session()
+        print("Server restarted successfully.")
