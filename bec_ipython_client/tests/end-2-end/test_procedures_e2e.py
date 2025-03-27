@@ -28,7 +28,7 @@ logger = bec_logger.logger
 
 @pytest.fixture
 def client_logtool_and_manager(
-    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
+    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"]
 ) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
     server = MagicMock()
@@ -41,49 +41,42 @@ def client_logtool_and_manager(
 
 
 @pytest.mark.timeout(100)
+@patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 def test_happy_path_container_procedure_runner(
-    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
+    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager]
 ):
-    with patch.dict(
-        bec_server.scan_server.procedures.manager.PROCEDURE_REGISTRY,
-        {"test procedure identifier": MagicMock()},
-    ):
-        client, logtool, manager = client_logtool_and_manager
-        assert manager.active_workers == {}
-        conn = client.connector
-        endpoint = MessageEndpoints.procedure_request()
-        msg = messages.ProcedureRequestMessage(
-            identifier="test procedure identifier", args_kwargs=((), {})
-        )
-        conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
+    test_args = (1, 2, 3)
+    test_kwargs = {"a": "b", "c": "d"}
+    client, logtool, manager = client_logtool_and_manager
+    assert manager.active_workers == {}
+    conn = client.connector
+    endpoint = MessageEndpoints.procedure_request()
+    msg = messages.ProcedureRequestMessage(
+        identifier="log_message_args_kwargs", args_kwargs=(test_args, test_kwargs)
+    )
+    conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
-        for _ in range(1000):
-            time.sleep(0.1)
-            if manager.active_workers == {}:
-                break
+    for _ in range(1000):
+        time.sleep(0.1)
+        if manager.active_workers == {}:
+            break
 
-        logtool.fetch()
-        assert logtool.is_present_in_any_message(f"procedure accepted: True, message:")
-        assert logtool.is_present_in_any_message(
-            "ContainerWorker started container for queue primary"
-        )
-        assert logtool.are_present_in_order(
-            [
-                "Container worker 'primary' status update: IDLE",
-                "Container worker 'primary' status update: RUNNING",
-                "Container worker 'primary' status update: IDLE",
-                "Container worker 'primary' status update: FINISHED",
-            ]
-        )
-
+    logtool.fetch()
+    assert logtool.is_present_in_any_message(f"procedure accepted: True, message:")
+    assert logtool.is_present_in_any_message("ContainerWorker started container for queue primary")
+    assert logtool.are_present_in_order(
         [
-            print(f)
-            for f in filter(
-                lambda s: "devicemanager" not in s and "scan_bundler" not in s,
-                cast(list, logtool._logs),
-            )
+            "Container worker 'primary' status update: IDLE",
+            "Container worker 'primary' status update: RUNNING",
+            "Container worker 'primary' status update: IDLE",
+            "Container worker 'primary' status update: FINISHED",
         ]
-
-
-# is shutter open??
-# is beam avail??
+    )
+    assert logtool.are_present_in_order(
+        [
+            "Container worker 'primary' status update: IDLE",
+            f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
+            "Container worker 'primary' status update: IDLE",
+            "Container worker 'primary' status update: FINISHED",
+        ]
+    )

@@ -12,6 +12,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureRequestMessage, RequestResponseMessage
 from bec_lib.redis_connector import RedisConnector
+from bec_server.scan_server.procedures import procedure_registry
 from bec_server.scan_server.procedures.constants import (
     DEFAULT_QUEUE,
     MANAGER_SHUTDOWN_TIMEOUT_S,
@@ -19,7 +20,6 @@ from bec_server.scan_server.procedures.constants import (
     QUEUE_TIMEOUT_S,
     WorkerAlreadyExists,
 )
-from bec_server.scan_server.procedures.procedure_registry import PROCEDURE_REGISTRY
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 from bec_server.scan_server.scan_server import ScanServer
 
@@ -73,10 +73,10 @@ class ProcedureManager:
     def _validate_request(self, msg: dict[str, Any]):
         try:
             message_obj = ProcedureRequestMessage.model_validate(msg)
-            if message_obj.identifier not in PROCEDURE_REGISTRY.keys():
+            if not procedure_registry.is_registered(message_obj.identifier):
                 self._ack(
                     False,
-                    f"Procedure {message_obj.identifier} not known to the server. Available: {list(PROCEDURE_REGISTRY.keys())}",
+                    f"Procedure {message_obj.identifier} not known to the server. Available: {list(procedure_registry.available())}",
                 )
                 return None
         except ValidationError as e:

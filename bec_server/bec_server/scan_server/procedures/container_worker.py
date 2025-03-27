@@ -2,7 +2,7 @@ import json
 import os
 import time
 from http import HTTPStatus
-from typing import cast
+from typing import Protocol, cast, runtime_checkable
 
 import podman
 from podman.domain.containers import Container
@@ -15,6 +15,7 @@ from bec_lib.logger import LogLevel, bec_logger
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
+from bec_server.scan_server.procedures import procedure_registry
 from bec_server.scan_server.procedures.constants import (
     IMAGE_NAME,
     PODMAN_URI,
@@ -137,12 +138,9 @@ def main():
         )
 
     def _run_task(item: ProcedureExecutionMessage):
-        # evaluate procedure
-        time.sleep(0.5)
-        logger.success(
-            f"Running procedure {item.identifier} in container - pretending to take one second"
+        procedure_registry.callable_from_execution_message(item)(
+            *item.args_kwargs[0], **item.args_kwargs[1]
         )
-        time.sleep(0.5)
 
     _push_status(ProcedureWorkerStatus.IDLE)
     item = None
