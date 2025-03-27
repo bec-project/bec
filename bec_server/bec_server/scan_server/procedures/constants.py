@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import TypedDict
+from typing import ParamSpec, Protocol, TypedDict, runtime_checkable
 
 
 class ProcedureWorkerStatus(Enum):
@@ -13,6 +13,18 @@ class ContainerWorkerEnv(TypedDict):
     redis_server: str
     queue: str
     timeout_s: str
+
+
+P = ParamSpec("P")
+
+
+@runtime_checkable
+class BecProcedure(Protocol[P]):
+    """A procedure should not return anything, because it could be run in an isolated environment
+    and data needs to be extracted in other ways. It may be a simple function, but it can also be
+    a class instance which implements __call__ and does some"""
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> None: ...
 
 
 class ProcedureWorkerError(RuntimeError): ...
