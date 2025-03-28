@@ -16,6 +16,12 @@ import ophyd
 import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
 from ophyd.signal import EpicsSignalBase
+from ophyd_devices.utils.psi_components import (  # Async1DComponent,; Async2DComponent,
+    DynamicSignalComponent,
+    FileEventComponent,
+    PreviewComponent,
+    ProgressComponent,
+)
 from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
@@ -393,6 +399,177 @@ class DeviceManagerDS(DeviceManagerBase):
                     component.subscribe(self._obj_callback_readback, run=False)
                 elif component.kind == ophyd.Kind.config:
                     component.subscribe(self._obj_callback_configuration, run=False)
+
+        if hasattr(obj, "_sig_attrs"):
+            for signal_name, component in obj._sig_attrs.items():
+                if isinstance(component, ProgressComponent):
+                    logger.info(
+                        f"Subscribing to progress signal {signal_name} of device {obj.name}."
+                    )
+                    signal = getattr(obj, signal_name)
+                    signal.subscribe(self._psi_component_progress_callback, run=False)
+                elif isinstance(component, FileEventComponent):
+                    logger.info(
+                        f"Subscribing to file event signal {signal_name} of device {obj.name}."
+                    )
+                    signal = getattr(obj, signal_name)
+                    signal.subscribe(self._psi_component_file_event_callback, run=False)
+                elif isinstance(component, DynamicSignalComponent):
+                    logger.info(
+                        f"Subscribing to dynamic signal {signal_name} of device {obj.name}."
+                    )
+                    signal = getattr(obj, signal_name)
+                    signal.subscribe(self._psi_component_dynamic_signal_callback, run=False)
+                elif isinstance(component, PreviewComponent):
+                    logger.info(
+                        f"Subscribing to preview 1D signal {signal_name} of device {obj.name}."
+                    )
+                    signal = getattr(obj, signal_name)
+                    if component.ndim == 1:
+                        signal.subscribe(self._psi_component_preview_1d_component, run=False)
+                    elif component.ndim == 2:
+                        signal.subscribe(self._psi_component_preview_2d_component, run=False)
+                # elif isinstance(component, Async1DComponent):
+                #     logger.info(
+                #         f"Subscribing to async 1D signal {signal_name} of device {obj.name}."
+                #     )
+                #     signal = getattr(obj, signal_name)
+                #     signal.subscribe(self._psi_component_async_1d_component, run=False)
+                # elif isinstance(component, Async2DComponent):
+                #     logger.info(
+                #         f"Subscribing to async 2D signal {signal_name} of device {obj.name}."
+                #     )
+                #     signal = getattr(obj, signal_name)
+                #     signal.subscribe(self._psi_component_async_2d_component, run=False)
+
+    @typechecked
+    def _psi_component_progress_callback(
+        self, *, old_value: messages.ProgressMessage, value: messages.ProgressMessage, **kwargs
+    ):
+        """Callback for PSIComponent: ProgressComponent"""
+        obj = kwargs.get("obj", None)
+        if obj is None:
+            logger.error(f"No object found in kwargs {kwargs} for PSI component progress callback.")
+            return
+        device_name = obj.root.name
+        root_obj = obj.root
+        if root_obj.connected:
+            self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), value)
+
+    @typechecked
+    def _psi_component_file_event_callback(
+        self, *, old_value: messages.FileMessage, value: messages.FileMessage, **kwargs
+    ):
+        """Callback for PSIComponent: FileEventComponent"""
+        obj = kwargs.get("obj", None)
+        if obj is None:
+            logger.error(f"No object found in kwargs {kwargs} for PSI component progress callback.")
+            return
+        device_name = obj.root.name
+        root_obj = obj.root
+        metadata = self.devices[device_name].metadata
+        scan_id = metadata["scan_id"]
+        if root_obj.connected:
+            pipe = self.connector.pipeline()
+            self.connector.set_and_publish(
+                MessageEndpoints.file_event(device_name), value, pipe=pipe
+            )
+            self.connector.set_and_publish(
+                MessageEndpoints.public_file(scan_id=scan_id, name=device_name), value, pipe=pipe
+            )
+            pipe.execute()
+
+    @typechecked
+    def _psi_component_dynamic_signal_callback(
+        self, *, old_value: messages.DeviceMessage, value: messages.DeviceMessage, **kwargs
+    ):
+        """Callback for PSIComponent: DynamicSignalComponent"""
+        # What exactly should the dynamic signal callback do?
+        obj = kwargs.get("obj", None)
+        if obj is None:
+            logger.error(f"No object found in kwargs {kwargs} for PSI component progress callback.")
+            return
+        device_name = obj.root.name
+        root_obj = obj.root
+        # In case we receive an update for the dynamic signal, we read out all readback signals, and add the dynamic signals?
+        # I don't like this, I think this should maybe get its own endpoint similar to the device_async_readback...
+        # Or maybe we should put it to the device_async_readback, because in the end this is simply a special type of readback signal isn't it?
+        signals = obj.root.read()
+        msg_dict = value.model_dump()
+        msg_dict["signals"].update(signals)
+        value = messages.DeviceMessage(**msg_dict)
+        if root_obj.connected:
+            # Maybe we should use a new endpoint for dynamic signals??
+            self.connector.set_and_publish(MessageEndpoints.device_read(device_name), value)
+
+    @typechecked
+    def _psi_component_preview_2d_component(
+        self,
+        *,
+        old_value: messages.DeviceMonitor2DMessage,
+        value: messages.DeviceMonitor2DMessage,
+        **kwargs,
+    ):
+        """Calback for Preview Component with 2D data"""
+        obj = kwargs.get("obj", None)
+        if obj is None:
+            logger.error(f"No object found in kwargs {kwargs} for PSI component progress callback.")
+            return
+        dsize = value.data.nbytes / 1e6
+        max_size = 1000
+        if dsize > max_size:
+            logger.warning(
+                f"Data size of single message for {obj.name} is too large to send, current max_size {max_size}."
+            )
+            return
+
+        device_name = obj.root.name
+        metadata = self.devices[device_name].metadata
+        # Update the metadata with the device metadata, this ensure scan_id is present
+        value.metadata.update(metadata)
+        scan_id = metadata["scan_id"]
+        # If object is connected, send the data
+        if obj.connected:
+            stream_msg = {"data": value}
+            self.connector.xadd(
+                MessageEndpoints.device_monitor_2d(device_name),
+                stream_msg,
+                max_size=min(1000, int(max_size // dsize)),  # 1000 images or 1GB max
+            )
+
+    @typechecked
+    def _psi_component_preview_1d_component(
+        self,
+        *,
+        old_value: messages.DeviceMonitor1DMessage,
+        value: messages.DeviceMonitor1DMessage,
+        **kwargs,
+    ):
+        """Calback for Preview Component with 2D data"""
+        obj = kwargs.get("obj", None)
+        if obj is None:
+            logger.error(f"No object found in kwargs {kwargs} for PSI component progress callback.")
+            return
+        dsize = value.data.nbytes / 1e6
+        max_size = 1000  # 1GB
+        if dsize > max_size:
+            logger.warning(
+                f"Data size of single message for {obj.name} is too large to send, current max_size {max_size}."
+            )
+            return
+
+        device_name = obj.root.name
+        metadata = self.devices[device_name].metadata
+        # Update the metadata with the device metadata, this ensure scan_id is present
+        value.metadata.update(metadata)
+        # If object is connected, send the data
+        if obj.connected:
+            stream_msg = {"data": value}
+            self.connector.xadd(
+                MessageEndpoints.device_monitor_1d(device_name),
+                stream_msg,
+                max_size=min(1000, int(max_size // dsize)),  # 1000 images or 1GB max
+            )
 
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
