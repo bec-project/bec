@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Concatenate, Generic, Literal, Optional, ParamSpec, TypeVar,
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -13,24 +13,73 @@ from bec_lib.messages import BECMessage
 logger = bec_logger.logger
 
 
+Dims = TypeVar("Dims", bound=Literal[1, 2, 3])
+UpdateType = TypeVar("UpdateType", bound=Literal["replace", "append", "add"])
+XAxisPresent = TypeVar("XAxisPresent", bound=Literal[True, False] | None)
+
+
+class Test(Generic[XAxisPresent]):
+    x_axis: XAxisPresent = False
+
+
 # Consider using dataclasses or Pydantic for better structure and validation
-class DAPSchema(BaseModel):
-    ndim: Literal[1, 2, 3]
-    max_shape: tuple[int, ...]
-    async_update: Literal["replace", "append", "add"] = Field(default="replace")  # TBD
-    x_axis: Optional[bool] = Field(default=False)  # TBD
+# This is basically wrong to do https://github.com/microsoft/pyright/discussions/8937
+# https://github.com/microsoft/pyright/issues/9775
+# https://github.com/microsoft/pyright/issues/9158
+class DAPSchema(Generic[Dims, UpdateType, XAxisPresent], BaseModel):
+    ndim: Dims
+    max_shape: tuple[int, ...] | None = None
+    async_update: UpdateType = "replace"
+    x_axis: XAxisPresent = False
     dap_report: Optional[dict[str, Any]] = Field(default_factory=dict)  # TBD
 
 
-# What is not yet clear here is how to we handle the x,y,z
+SchemaType = TypeVar("SchemaType", bound=DAPSchema)
 
 
-class DAPBlockMessage(BECMessage):
+class DAPBlockMessage(BECMessage, Generic[SchemaType]):
     data: np.ndarray
-    schema: DAPSchema
+    message_schema: SchemaType
     data_x: Optional[np.ndarray | None] = Field(default=None)
 
     model_config = {"validate_assignment": True, "arbitrary_types_allowed": True}
+
+
+SchemaTypeOut = TypeVar("SchemaTypeOut", bound=DAPSchema)
+P = ParamSpec("P")
+
+# this should be doubly linked so that we can check against and add to the tail but
+# run the workflow from the start
+class Workflow(Generic[SchemaType, SchemaTypeOut]):
+    def __init__(
+        self,
+        block: Callable[
+            Concatenate[DAPBlockMessage[SchemaType], P], DAPBlockMessage[SchemaTypeOut]
+        ],
+        **kwargs,
+    ):
+        self._block = block
+        self._kwargs = kwargs
+        self._previous_workflow = None
+        self.head = self
+
+    def set_history(self, wf: Workflow[SchemaTypeOut, DAPSchema ]):
+        self._previous_workflow = wf
+        self._head = wf.head
+
+    def add_block(
+        self,
+        block: Callable[
+            Concatenate[DAPBlockMessage[SchemaTypeOut], P], DAPBlockMessage[DAPSchema]
+        ],
+        **kwargs,
+    ):
+        next = Workflow(block, **kwargs)
+        next.set_history(self)
+        
+
+
+# What is not yet clear here is how to we handle the x,y,z
 
 
 class DAPBlock(ABC):
@@ -75,7 +124,7 @@ class DAPBlock(ABC):
         return True
 
     @abstractmethod
-    def run(self, msg: DAPBlockMessage, **kwargs) -> DAPBlockMessage:
+    def __call__(self, msg: DAPBlockMessage, **kwargs) -> DAPBlockMessage:
         """Run method implemented by subclasses.
 
         Args:
@@ -96,7 +145,7 @@ class SmoothBlock(DAPBlock):
     )
 
     # pylint: disable=arguments-differ
-    def run(self, msg: DAPBlockMessage, sigma: float = 2.0) -> DAPBlockMessage:
+    def __call__(self, msg: DAPBlockMessage, sigma: float = 2.0) -> DAPBlockMessage:
         """
         Run the smoothing block.
 
@@ -125,7 +174,7 @@ class GradientBlock(DAPBlock):
     )
 
     # pylint: disable=arguments-differ
-    def run(self, msg: DAPBlockMessage) -> DAPBlockMessage:
+    def __call__(self, msg: DAPBlockMessage) -> DAPBlockMessage:
         """
         Run the gradient block.
 
