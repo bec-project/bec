@@ -39,7 +39,11 @@ def login_info_available(func):
     def wrapper(self, *args, **kwargs):
         # pylint: disable=protected-access
         if self._info is None:
-            raise BECAuthenticationError("Login information not available. Unable to login.")
+            raise BECAuthenticationError(
+                "Unable to login: Missing login information.\n"
+                "The login information is not available, likely because the system is not set up for ACLs. "
+                "Try to restart the server. If the error persists, contact the BEC team.\n"
+            )
         return func(self, *args, **kwargs)
 
     return wrapper
