@@ -254,7 +254,7 @@ class RedisConnector:
 
         self._generator_executor = ThreadPoolExecutor()
 
-    def authenticate(self, *, username: str = "default", password: str = "null"):
+    def authenticate(self, *, username: str = "default", password: str | None = "null"):
         """
         Authenticate to the redis server.
         Please note that the arguments are keyword-only. This is to avoid confusion as the
