@@ -113,7 +113,7 @@ class BECService:
         self._connector_cls = connector_cls
         self.connector: RedisConnector = connector_cls(self.bootstrap_server)
         self.acl = BECAccess(self.connector)
-        self.acl._auto_login(prompt_for_acl, self._service_config.config.get("acl"))
+        self.acl._bec_service_login(prompt_for_acl, self._service_config.config.get("acl"))
 
         self._unique_service = unique_service
         self.wait_for_server = wait_for_server

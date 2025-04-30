@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+from functools import wraps
 from getpass import getpass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import requests
 from dotenv import dotenv_values
@@ -12,9 +13,13 @@ from rich.table import Table
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.utils.import_utils import lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
+    from bec_lib.messages import LoginInfoMessage
+else:
+    LoginInfoMessage = lazy_import_from("bec_lib.messages", "LoginInfoMessage")
+
 
 logger = bec_logger.logger
 
@@ -25,6 +30,21 @@ class BECAuthenticationError(Exception):
     """
 
 
+def login_info_available(func):
+    """
+    Decorator to check if login information is available before calling the function.
+    """
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # pylint: disable=protected-access
+        if self._info is None:
+            raise BECAuthenticationError("Login information not available. Unable to login.")
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 class BECAccess:
     """
     This class provides a way to authenticate with the BEC instance using the ACL system
@@ -32,9 +52,10 @@ class BECAccess:
 
     def __init__(self, connector: RedisConnector):
         self.connector = connector
-        self._info = None
+        self._info: LoginInfoMessage | None = None
         self._atlas_login = False
 
+    @login_info_available
     def login(self, name: str | None = None):
         """
         Start the login process for the BEC instance.
@@ -42,9 +63,6 @@ class BECAccess:
         Args:
             name: The name of the account to login with. If not provided, the user will be prompted to select an account.
         """
-        if self._info is None:
-            raise BECAuthenticationError("Login information not available. Unable to login.")
-
         console = Console()
 
         if name is None:
@@ -65,6 +83,41 @@ class BECAccess:
         """
         self.connector.authenticate(username=username, password=token)
 
+    def _bec_service_login(
+        self, prompt_for_acl: bool = False, acl_config: dict | str | None = None
+    ) -> None:
+        """
+        Login to Redis using the ACL system. This is the main entry point for the login process, started
+        by the BECService.
+
+        Args:
+            prompt_for_acl (bool): If True, prompt the user to login using ACL. This is typically only used
+                for user-facing services. Default is False.
+            acl_config (dict or str): The ACL configuration. If a string is provided, it will be treated as a
+                path to the configuration file. If a dictionary is provided, it should contain the username and
+                password for the account.
+        """
+
+        if not self.connector.redis_server_is_running():
+            logger.warning("Redis server is not running.")
+            return
+
+        # Check if we have the login specified in the configuration file
+        if acl_config and self._config_login_successful(prompt_for_acl, acl_config):
+            return
+
+        # Check if we can simply use the default user account
+        if self._default_user_login_successful(full_access=True):
+            return
+
+        if prompt_for_acl:
+            # If the user is launching the service, prompt them to login
+            self._user_service_login()
+            return
+
+        raise BECAuthenticationError("Could not connect to Redis.")
+
+    @login_info_available
     def _ask_user_for_account(self, console: Console) -> str:
         """
         Ask the user to select an account to login with.
@@ -75,6 +128,8 @@ class BECAccess:
         Returns:
             str: The account name
         """
+        # Note: The decorator will check if the login information is available and raise an error if not.
+        self._info = cast(LoginInfoMessage, self._info)
         accounts = self._info.available_accounts
 
         console.print(
@@ -102,10 +157,25 @@ class BECAccess:
         console.print(f"[green]You selected:[/green] {selected_account}\n")
         return selected_account
 
+    @login_info_available
     def _psi_login(self, selected_account: str) -> str:
         """
         Login using the Atlas system.
+
+        Args:
+            selected_account (str): The account to login with.
+        Returns:
+            str: The token for the account
         """
+
+        # Note: The decorator will check if the login information is available and raise an error if not.
+        self._info = cast(LoginInfoMessage, self._info)
+
+        if not self._info.host.startswith("https://") or not self._info.host.startswith("http://"):
+            raise BECAuthenticationError(
+                f"The host is not a valid URL. Please check the configuration. Host: {self._info.host}"
+            )
+
         username = input("Enter your PSI username: ").strip()
         password = getpass("Enter your PSI password (hidden): ")
 
@@ -136,36 +206,7 @@ class BECAccess:
         password = getpass(f"Enter the token for {selected_account} (hidden): ")
         return password
 
-    def _auto_login(self, prompt_for_acl: bool = False, acl_config: dict | str | None = None):
-        """
-        Automatically login to Redis using the service account and token.
-
-        Args:
-            prompt_for_acl (bool): If True, prompt the user to login using ACL. Default is False.
-        """
-
-        if not self.connector.redis_server_is_running():
-            logger.warning("Redis server is not running.")
-            return
-
-        # Check if we have the login specified in the configuration file
-        if self._config_login_successful(prompt_for_acl, acl_config):
-            return
-
-        # Check if we can simply use the default user account
-        if self._default_user_login_successful(full_access=True):
-            return
-
-        if prompt_for_acl:
-            # If the user is launching the service, prompt them to login
-            self._user_service_login()
-            return
-
-        raise BECAuthenticationError("Could not connect to Redis.")
-
-    def _config_login_successful(
-        self, prompt_for_acl: bool, acl_config: dict | str | None = None
-    ) -> bool:
+    def _config_login_successful(self, prompt_for_acl: bool, acl_config: dict | str) -> bool:
         """
         Login to Redis using the configuration file.
 
@@ -176,8 +217,6 @@ class BECAccess:
         Returns:
             bool: True if the login was successful, False otherwise.
         """
-        if not acl_config:
-            return False
 
         if isinstance(acl_config, str):
             if os.path.exists(acl_config) and not prompt_for_acl:
@@ -226,14 +265,27 @@ class BECAccess:
                 pass
         return False
 
+    def _update_login_info(self) -> None:
+        """
+        Update the login information.
+        """
+        self._info = self.connector.get(MessageEndpoints.login_info())
+
     def _user_service_login(self, username: str | None = None) -> None:
-        self._info: messages.LoginInfoMessage | None = self.connector.get(
-            MessageEndpoints.login_info()
-        )
+        """
+        Login using the specified username.
+        If no username is provided, the user will be prompted to enter their username.
+
+        Args:
+            username (str): The username to login with. If not provided, the user will be prompted to enter their username.
+        """
+        self._update_login_info()
+        if not self._info:
+            raise BECAuthenticationError("Login information not available. Unable to login.")
         self._atlas_login = self._info.atlas_login
         if not username and not self._info.atlas_login:
             return self.login_with_token(username="user", token=None)
-        self.login(username)
+        return self.login(username)
 
     def _check_redis_auth(self, user: str | None, password: str | None) -> bool:
         """
