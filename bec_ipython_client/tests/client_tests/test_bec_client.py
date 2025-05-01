@@ -6,6 +6,7 @@ import IPython
 import pytest
 
 from bec_ipython_client import BECIPythonClient, main
+from bec_lib import messages
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 
@@ -134,6 +135,7 @@ def ipython_client(service_config):
         connector_cls=mock.MagicMock(spec=RedisConnector),
         wait_for_server=False,
     )
+    client._local_only_types = (mock.MagicMock,)
     yield client
     client.shutdown()
     client._client._reset_singleton()
@@ -145,6 +147,7 @@ def test_bec_ipython_client_start(service_config):
         connector_cls=mock.MagicMock(spec=RedisConnector),
         wait_for_server=True,
     )
+    client._local_only_types = (mock.MagicMock,)
     try:
         with mock.patch.object(client._client, "wait_for_service") as wait_for_service:
             with mock.patch.object(client, "_configure_ipython") as configure_ipython:
@@ -184,3 +187,23 @@ def test_bec_ipython_client_start_without_bec_services(ipython_client):
                 client.start()
                 configure_ipython.assert_called_once()
                 wait_for_service.assert_not_called()
+
+
+def test_bec_ipython_client_property_access(ipython_client):
+    client = ipython_client
+    assert client._client._name == "BECIPythonClient"  # name only exists on the client
+    assert client._name == "BECIPythonClient"
+
+    with mock.patch.object(client, "wait_for_service") as wait_for_service:
+        with mock.patch.object(client, "_configure_ipython") as configure_ipython:
+            with mock.patch.object(client, "_load_scans"):
+                client.start()
+
+                with mock.patch.object(client._client, "connector") as mock_connector:
+                    mock_connector.get.return_value = messages.VariableMessage(value="account")
+                    assert client._client.active_account == "account"
+
+                    with pytest.raises(AttributeError):
+                        client.active_account = "account"
+                    with pytest.raises(AttributeError):
+                        client._client.active_account = "account"
