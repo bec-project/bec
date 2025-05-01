@@ -64,6 +64,14 @@ class BECIPythonClient:
     def __getattr__(self, name):
         return getattr(self._client, name)
 
+    def __setattr__(self, name, value):
+        if name in self.__dict__ or name in self.__class__.__dict__:
+            super().__setattr__(name, value)
+        elif "_client" in self.__dict__ and hasattr(self._client, name):
+            setattr(self._client, name, value)
+        else:
+            super().__setattr__(name, value)
+
     def __dir__(self) -> Iterable[str]:
         return dir(self._client) + dir(self.__class__)
 
