@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import inspect
+import json
 from functools import cache, lru_cache
-from typing import TYPE_CHECKING, Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 from bec_lib.logger import bec_logger
 
@@ -122,6 +125,33 @@ def get_ipython_client_startup_plugins(state: Literal["pre", "post"]) -> dict:
         if entry_point.name == target
     }
     return modules
+
+
+def plugin_package_name():
+    """Get the package and module name of the installed plugin repository. Raises ValueError if no
+    plugin is installed or more than one plugin is installed."""
+    plugins = importlib.metadata.entry_points(group="bec")
+    if len(plugins) != 1:
+        raise ValueError(
+            "You must have one and only one BEC plugin repository installed for this to work"
+        )
+    return list(plugins)[0].value
+
+
+def module_dist_info(name: str) -> dict[str, Any]:
+    """Get the 'direct_url' distribution info for the given package name"""
+    dist = importlib.metadata.Distribution.from_name(name)
+    return json.loads(dist.read_text("direct_url.json") or "{}")
+
+
+def plugin_repo_path() -> str:
+    """Get the path on disk of the installed plugin repository. Raises ValueError if no plugin is
+    installed or more than one plugin is installed. Raises ValueError if the installed plugin is not
+    installed in editable mode."""
+    dist_info = module_dist_info(plugin_package_name())
+    if not dist_info.get("dir_info", {}).get("editable", False):
+        raise ValueError("Plugin repo must be installed in editable mode")
+    return dist_info.get("url")[5:]  # cut off "file:" prefix # type: ignore # this must exist
 
 
 def _filter_plugins(module) -> bool:
