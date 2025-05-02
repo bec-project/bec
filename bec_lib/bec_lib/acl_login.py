@@ -175,7 +175,7 @@ class BECAccess:
         # Note: The decorator will check if the login information is available and raise an error if not.
         self._info = cast(LoginInfoMessage, self._info)
 
-        if not self._info.host.startswith("https://") or not self._info.host.startswith("http://"):
+        if not self._info.host.startswith("https://") and not self._info.host.startswith("http://"):
             raise BECAuthenticationError(
                 f"The host is not a valid URL. Please check the configuration. Host: {self._info.host}"
             )
@@ -183,23 +183,54 @@ class BECAccess:
         username = input("Enter your PSI username: ").strip()
         password = getpass("Enter your PSI password (hidden): ")
 
-        out = requests.post(
-            self._info.host + "/api/v1/login",
-            json={"username": username, "password": password},
-            timeout=5,
-        )
-        out.raise_for_status()
+        try:
+            out = requests.post(
+                self._info.host + "/api/v1/user/login",
+                json={"username": username, "password": password},
+                timeout=15,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise BECAuthenticationError(
+                f"Timeout error while trying to connect to the host: {self._info.host}. Please check your connection. Error: {exc}"
+            ) from exc
+        except Exception as exc:
+            raise BECAuthenticationError(
+                f"An unexpected error occurred while trying to connect to the host: {self._info.host}. Please check your connection. Error: {exc}"
+            ) from exc
+
+        if out.status_code != 200:
+            match out.status_code:
+                case 401:
+                    raise BECAuthenticationError(
+                        "Invalid username or password. Please check your credentials."
+                    )
+                case 404:
+                    raise BECAuthenticationError(
+                        f"The host is not a valid URL. Please check the configuration. Host: {self._info.host}"
+                    )
+                case _:
+                    raise BECAuthenticationError(
+                        f"An error occurred while logging in. Status code: {out.status_code}"
+                    )
 
         jwt_token = out.json()
         out = requests.get(
             self._info.host + "/api/v1/bec_access",
             params={"deployment_id": self._info.deployment, "user": selected_account},
             headers={"Authorization": f"Bearer {jwt_token}"},
-            timeout=5,
+            timeout=15,
         )
-
         if out.status_code != 200:
-            out.raise_for_status()
+            match out.status_code:
+                case 404:
+                    raise BECAuthenticationError(
+                        "The selected account does not exist or is not available to the specified user."
+                    )
+                case _:
+                    raise BECAuthenticationError(
+                        f"An error occurred while logging in. Status code: {out.status_code}"
+                    )
+
         token = out.json()
         return token
 

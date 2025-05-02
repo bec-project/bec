@@ -89,10 +89,6 @@ class BECIPythonClient:
             return
         try:
             self._client.start()
-        except requests.exceptions.HTTPError as exc:
-            raise BECAuthenticationError(
-                "Authentication failed. Please check your credentials."
-            ) from exc
         except KeyboardInterrupt:
             raise KeyboardInterrupt("Login aborted.")
 

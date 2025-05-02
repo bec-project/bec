@@ -23,7 +23,7 @@ logger = bec_logger.logger
 class AtlasConnector:
 
     def __init__(
-        self, scihub: SciHub, connector: RedisConnector, redis_atlas: RedisConnector = None
+        self, scihub: SciHub, connector: RedisConnector, redis_atlas: RedisConnector | None = None
     ) -> None:
         self.scihub = scihub
         self.connector = connector
@@ -63,10 +63,14 @@ class AtlasConnector:
             return
 
         try:
+            if not self.host:
+                return  # no host configured
             if self.redis_atlas is None:
-                self.redis_atlas = RedisConnector(
-                    self.host, username=f"ingestor_{self.deployment_name}", password=self.atlas_key
+                self.redis_atlas = RedisConnector(self.host)
+                self.redis_atlas.authenticate(
+                    username=f"ingestor_{self.deployment_name}", password=self.atlas_key
                 )
+            # pylint: disable=protected-access
             self.redis_atlas._redis_conn.ping()
             logger.success("Connected to Atlas")
         # pylint: disable=broad-except

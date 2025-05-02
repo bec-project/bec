@@ -92,10 +92,10 @@ def test_login_psi_login(bec_access, access_control):
             local_login.assert_not_called()
 
 
-def test_auto_login_default(bec_access):
+def test_bec_service_login_default(bec_access):
     bec_access._info = _login_info()
 
-    bec_access._auto_login()
+    bec_access._bec_service_login()
     conn = bec_access.connector._redis_conn.connection_pool.connection_kwargs
     assert conn["username"] is None
     assert conn["password"] is None
@@ -179,6 +179,7 @@ def test_psi_login_success(mock_get, mock_post, mock_getpass, mock_input, bec_ac
     # Mock post response
     post_response = mock.MagicMock()
     post_response.json.return_value = "jwt_token"
+    post_response.status_code = 200
     mock_post.return_value = post_response
 
     # Mock get response
@@ -196,15 +197,15 @@ def test_psi_login_success(mock_get, mock_post, mock_getpass, mock_input, bec_ac
 
     assert result == "access_token"
     mock_post.assert_called_once_with(
-        "https://api.example.com/api/v1/login",
+        "https://api.example.com/api/v1/user/login",
         json={"username": "psi_user", "password": "psi_password"},
-        timeout=5,
+        timeout=15,
     )
     mock_get.assert_called_once_with(
         "https://api.example.com/api/v1/bec_access",
         params={"deployment_id": "test_deployment", "user": "test_account"},
         headers={"Authorization": "Bearer jwt_token"},
-        timeout=5,
+        timeout=15,
     )
 
 
@@ -233,8 +234,10 @@ def test_psi_login_error_response(mock_get, mock_post, mock_getpass, mock_input,
     bec_access._info.host = "https://api.example.com"
     bec_access._info.deployment = "test_deployment"
 
-    with pytest.raises(Exception, match="Access denied"):
+    with pytest.raises(BECAuthenticationError) as exc:
         bec_access._psi_login("test_account")
+
+    assert exc.value.args[0].startswith("An error occurred while logging in. Status code") is True
 
 
 @mock.patch("os.path.exists")
