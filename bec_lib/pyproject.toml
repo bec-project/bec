@@ -59,6 +59,7 @@ dev = [
 [project.scripts]
 bec-channel-monitor = "bec_lib.channel_monitor:channel_monitor_launch"
 bec-log-monitor = "bec_lib.channel_monitor:log_monitor_launch"
+bec-plugin-manager = "bec_lib.utils.plugin_manager.main:main"
 
 [project.entry-points.pytest11]
 bec_lib_fixtures = "bec_lib.tests.fixtures"
