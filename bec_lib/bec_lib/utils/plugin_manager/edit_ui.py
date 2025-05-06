@@ -54,7 +54,7 @@ def open_and_watch_ui_editor(widget_name: str):
         from bec_widgets.utils.bec_designer import open_designer
     except ImportError:
         logger.error("BEC Widgets must be installed to use the UI editor tool")
-        exit(-1)
+        exit(127)
 
     repo = Path(plugin_repo_path())
     widget_dir = repo / repo.name / "bec_widgets" / "widgets" / widget_name
