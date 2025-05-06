@@ -1,11 +1,13 @@
+import re
 import subprocess
 from pathlib import Path
 
+from bec_widgets.utils.bec_plugin_helper import get_all_plugin_widgets
+from bec_widgets.utils.plugin_utils import get_custom_classes
 from watchdog.events import (
     DirCreatedEvent,
     DirModifiedEvent,
     DirMovedEvent,
-    FileClosedEvent,
     FileCreatedEvent,
     FileModifiedEvent,
     FileMovedEvent,
@@ -25,6 +27,13 @@ class RecompileHandler(FileSystemEventHandler):
         super().__init__()
         self.in_file = str(in_file)
         self.out_file = str(out_file)
+        self._pyside_import_re = re.compile(r"from PySide6\.(.*) import ")
+        self._widget_import_re = re.compile(
+            r"^from ([a-zA-Z_]*) import ([a-zA-Z_]*)$", re.MULTILINE
+        )
+        self._widget_modules = {
+            c.name: c.module for c in (get_custom_classes("bec_widgets") + get_all_plugin_widgets())
+        }
 
     def on_created(self, event: DirCreatedEvent | FileCreatedEvent) -> None:
         self.recompile(event)
@@ -45,6 +54,30 @@ class RecompileHandler(FileSystemEventHandler):
             ["pyside6-uic", "--absolute-imports", self.in_file, "-o", self.out_file]
         )
         logger.success(f"compilation exited with code {code}")
+        if code == 0:
+            logger.success("updating imports...")
+            self._update_imports()
+
+    def _update_imports(self):
+        with open(self.out_file, "r+") as f:
+            initial = f.read()
+            f.seek(0)
+            qtpy_imports = re.sub(
+                self._pyside_import_re, lambda ob: f"from qtpy.{ob.group(1)} import ", initial
+            )
+            print(self._widget_modules)
+            print(re.findall(self._widget_import_re, qtpy_imports))
+            wdiget_imports = re.sub(
+                self._widget_import_re,
+                lambda ob: (
+                    f"from {module} import {ob.group(2)}"
+                    if (module := self._widget_modules.get(ob.group(2))) is not None
+                    else ob.group(1)
+                ),
+                qtpy_imports,
+            )
+            f.write(wdiget_imports)
+            f.truncate()
 
 
 def open_and_watch_ui_editor(widget_name: str):
@@ -54,7 +87,7 @@ def open_and_watch_ui_editor(widget_name: str):
         from bec_widgets.utils.bec_designer import open_designer
     except ImportError:
         logger.error("BEC Widgets must be installed to use the UI editor tool")
-        exit(-1)
+        exit(127)
 
     repo = Path(plugin_repo_path())
     widget_dir = repo / repo.name / "bec_widgets" / "widgets" / widget_name

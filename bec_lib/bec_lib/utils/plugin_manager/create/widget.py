@@ -52,14 +52,14 @@ def widget(
         logger.error(
             f"{name} is not a valid name for a widget (even after converting to {formatted_name}) - please enter something in snake_case"
         )
-        exit(-1)
+        exit(2)
     logger.info(f"Adding new widget {formatted_name} to the template...")
     try:
         repo = Path(plugin_repo_path())
         plugin_data = existing_data(repo, [ANSWER_KEYS.VERSION, ANSWER_KEYS.WIDGETS])
         if _widget_exists(plugin_data[ANSWER_KEYS.WIDGETS], formatted_name):
             logger.error(f"Widget {formatted_name} already exists!")
-            exit(-1)
+            exit(2)
         plugin_data[ANSWER_KEYS.WIDGETS].append({"name": formatted_name, "use_ui": use_ui})
         copier.run_update(
             repo,
@@ -73,7 +73,7 @@ def widget(
     except Exception:
         logger.error(traceback.format_exc())
         logger.error("exiting...")
-        exit(-1)
+        exit(1)
     logger.success(f"Added widget {formatted_name}!")
     if open_editor:
         open_and_watch_ui_editor(formatted_name)
