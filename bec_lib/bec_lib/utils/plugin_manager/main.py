@@ -5,13 +5,14 @@ from bec_lib.utils.plugin_manager import create
 from bec_lib.utils.plugin_manager.edit_ui import open_and_watch_ui_editor
 
 logger = bec_logger.logger
-_app = typer.Typer()
+_app = typer.Typer(rich_markup_mode="rich")
 _app.add_typer(create._app)
 
 
 @_app.command()
 def edit_ui(widget_name: str):
-    """Edit the ui for a given widget plugin"""
+    """Edit the .ui file for a given widget plugin in bec-designer. Will recompile the python module
+    for the file as changes are made."""
     open_and_watch_ui_editor(widget_name)
 
 
