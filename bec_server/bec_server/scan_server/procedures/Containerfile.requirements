@@ -8,7 +8,7 @@ FROM python:3.11-slim AS base
 # Set working directory - BEC deployment should be mounted here
 WORKDIR /bec
 
-FROM base AS bec_procedure_worker_requirements
+FROM base AS bec_procedure_requirements
 # Install dependencies - BEC release workflow should build this stage and deploy
 # it to the internal container registry
 

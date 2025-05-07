@@ -77,6 +77,8 @@ before_script:
     test -d bec || git clone --branch $CHILD_PIPELINE_BRANCH https://gitlab.psi.ch/bec/bec.git; cd bec;
     fi  
 
+
+
 formatter:
   stage: Formatter
   needs: []
@@ -529,6 +531,17 @@ semver:
   rules:
     - if: '$CI_COMMIT_REF_NAME == "main"'
   interruptible: true
+
+package:
+  stage: Deploy
+  script:
+    - CONTAINER_NAME=bec_procedure_requirements
+    - apt clean && apt update && apt install -y podman
+    - podman login gitea.psi.ch --username bec-gitea --password $PSI_GITEA_PACKAGE_WRITE
+    - VERSION=$(echo "import importlib.metadata; print(importlib.metadata.version('bec_lib'))" | python)a1
+    - podman build -f=bec_server/bec_server/scan_server/procedures/Containerfile.requirements --target=$CONTAINER_NAME -t="$CONTAINER_NAME:$VERSION" -v=$(pwd):/bec .
+    - podman push $CONTAINER_NAME:$VERSION  gitea.psi.ch/bec/$CONTAINER_NAME:$VERSION 
+
 
 dev-pages:
   stage: Deploy
