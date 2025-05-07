@@ -415,16 +415,26 @@ def test_config_add_remove_device(bec_client_lib):
         }
     }
     bec.config.send_config_request(action="add", config=config)
+    with pytest.raises(DeviceConfigError) as config_error:
+        bec.config.send_config_request(action="add", config=config)
+    assert config_error.match("Device new_device already exists")
     assert "new_device" in dev
 
     bec.config.send_config_request(action="remove", config={"new_device": {}})
     assert "new_device" not in dev
 
-    config = bec.connector.get(MessageEndpoints.device_config())
-    device_configs = config.content["resource"]
+    device_config_msg = bec.connector.get(MessageEndpoints.device_config())
+    device_configs = device_config_msg.content["resource"]
     available_devices = [dev["name"] for dev in device_configs]
     assert "new_device" not in available_devices
     assert "samx" in available_devices
+
+    config["new_device"]["deviceClass"] = "ophyd_devices.doesnt_exist"
+    with pytest.raises(DeviceConfigError) as config_error:
+        bec.config.send_config_request(action="add", config=config)
+    assert config_error.match("module 'ophyd_devices' has no attribute 'doesnt_exist'")
+    assert "new_device" not in dev
+    assert "samx" in dev
 
 
 def test_computed_signal(bec_client_lib):

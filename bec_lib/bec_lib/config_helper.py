@@ -58,7 +58,7 @@ class ConfigHelper:
             time_stamp = f"{datetime.datetime.now():%Y-%m-%d_%H-%M-%S}"
             if not self._base_path_recovery:
                 self._update_base_path_recovery()
-            if os.path.exists(self._base_path_recovery) is False:
+            if not os.path.exists(self._base_path_recovery):
                 self.writer_mixin.create_directory(self._base_path_recovery)
             fname = os.path.join(self._base_path_recovery, f"recovery_config_{time_stamp}.yaml")
             success = self._save_config_to_file(fname, raise_on_error=False)

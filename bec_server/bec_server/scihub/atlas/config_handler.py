@@ -4,7 +4,7 @@ import os
 import time
 import traceback
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
 import bec_lib
 from bec_lib import messages
@@ -126,10 +126,21 @@ class ConfigHandler:
         for dev, config in dev_configs.items():
             self._convert_to_db_config(dev, config)
             Device(**config)
+            if dev in self.device_manager.devices:
+                raise DeviceConfigError(f"Device {dev} already exists in the device manager.")
 
         rid = str(uuid.uuid4())
         self._update_device_server(rid, dev_configs, action="add")
-        accepted, server_response_msg = self._wait_for_device_server_update(rid)
+        accepted, server_response_msg = self._wait_for_device_server_update(
+            rid, timeout_time=min(300, 30 * len(dev_configs))
+        )
+
+        if "failed_devices" in server_response_msg.metadata:
+            # failed devices indicate that the server was able to initialize them but failed to
+            # connect to them
+            logger.warning(f"Failed devices: {server_response_msg.metadata['failed_devices']}")
+            msg.metadata["failed_devices"] = server_response_msg.metadata["failed_devices"]
+
         if accepted:
             # update config in redis
             self.add_devices_to_redis(dev_configs)
@@ -185,7 +196,9 @@ class ConfigHandler:
         msg = messages.DeviceConfigMessage(action=action, config=config, metadata={"RID": RID})
         self.connector.send(MessageEndpoints.device_server_config_request(), msg)
 
-    def _wait_for_device_server_update(self, RID: str, timeout_time=30) -> bool:
+    def _wait_for_device_server_update(
+        self, RID: str, timeout_time=30
+    ) -> Tuple[bool, messages.RequestResponseMessage]:
         timeout = timeout_time
         time_step = 0.05
         elapsed_time = 0

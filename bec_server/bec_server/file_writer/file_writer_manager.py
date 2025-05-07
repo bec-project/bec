@@ -131,12 +131,15 @@ class FileWriterManager(BECService):
         """
         Update the available devices.
         """
+        remove_devices = []
         for device in self.device_configuration:
             if (
                 device not in self.device_manager.devices
                 or not self.device_manager.devices[device].enabled
             ):
-                self.device_configuration.pop(device)
+                remove_devices.append(device)
+        for device in remove_devices:
+            self.device_configuration.pop(device)
 
     def refresh_device_configs(self) -> None:
         """
