@@ -4,17 +4,14 @@ import time
 from typing import TYPE_CHECKING, Generator, cast
 from unittest.mock import MagicMock, patch
 
+import podman
 import pytest
 
-import bec_server
-import bec_server.scan_server
-import bec_server.scan_server.procedures
-import bec_server.scan_server.procedures.manager
 from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.procedures import manager as manager_module
+from bec_server.scan_server.procedures.constants import PROCEDURE
 from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager
 
@@ -24,6 +21,12 @@ if TYPE_CHECKING:
 logger = bec_logger.logger
 
 # pylint: disable=protected-access
+
+try:
+    with podman.PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
+        client.info()
+except Exception:
+    pytest.skip(reason="podman not available in this environment!")
 
 
 @pytest.fixture
