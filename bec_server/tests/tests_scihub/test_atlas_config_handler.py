@@ -390,9 +390,9 @@ def test_config_handler_remove_devices_from_redis(config_handler):
 
 def test_config_handler_add_to_config(config_handler):
     config = {
-        "samx": {
+        "new_samx": {
             "deviceConfig": {},
-            "name": "samx",
+            "name": "new_samx",
             "enabled": True,
             "readoutPriority": "baseline",
             "deviceClass": "SimPositioner",
