@@ -542,7 +542,6 @@ package:
     - podman build -f=bec_server/bec_server/scan_server/procedures/Containerfile.requirements --target=$CONTAINER_NAME -t="$CONTAINER_NAME:$VERSION" -v=$(pwd):/bec .
     - podman push $CONTAINER_NAME:$VERSION  gitea.psi.ch/bec/$CONTAINER_NAME:$VERSION 
 
-
 dev-pages:
   stage: Deploy
   needs:
