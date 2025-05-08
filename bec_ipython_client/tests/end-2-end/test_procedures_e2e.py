@@ -31,7 +31,7 @@ except Exception:
 
 @pytest.fixture
 def client_logtool_and_manager(
-    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"]
+    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
 ) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
     server = MagicMock()
@@ -45,7 +45,7 @@ def client_logtool_and_manager(
 @pytest.mark.timeout(100)
 @patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 def test_happy_path_container_procedure_runner(
-    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager]
+    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
     test_args = (1, 2, 3)
     test_kwargs = {"a": "b", "c": "d"}

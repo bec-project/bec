@@ -127,7 +127,7 @@ def validate_endpoint(endpoint_arg_name: str):
     to the function is appropriate for the endpoint."""
 
     def decorator(
-        func: Callable[Concatenate[Any, str, P], Any]
+        func: Callable[Concatenate[Any, str, P], Any],
     ) -> Callable[Concatenate[Any, EndpointInfo, P], Any]:
         argspec = inspect.getfullargspec(func)
         try:
