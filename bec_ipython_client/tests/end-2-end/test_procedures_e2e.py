@@ -26,7 +26,7 @@ try:
     with podman.PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
         client.info()
 except Exception:
-    pytest.skip(reason="podman not available in this environment!")
+    pytest.skip(reason="podman not available in this environment!", allow_module_level=True)
 
 
 @pytest.fixture
