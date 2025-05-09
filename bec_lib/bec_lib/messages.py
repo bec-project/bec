@@ -1,20 +1,26 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
-import enum
 import time
 import warnings
 from copy import deepcopy
+from enum import Enum, auto
 from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
-from bec_server.scan_server.procedures.constants import ProcedureWorkerStatus
 
 
-class BECStatus(enum.Enum):
+class ProcedureWorkerStatus(Enum):
+    RUNNING = auto()
+    IDLE = auto()
+    FINISHED = auto()
+    DEAD = auto()  # worker lost communication with the container
+
+
+class BECStatus(Enum):
     """BEC status enum"""
 
     RUNNING = 2

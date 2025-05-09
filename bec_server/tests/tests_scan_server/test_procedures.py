@@ -11,6 +11,7 @@ from bec_lib.client import RedisConnector
 from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
+    ProcedureWorkerStatus,
     RequestResponseMessage,
 )
 from bec_lib.serialization import MsgpackSerialization
@@ -18,7 +19,6 @@ from bec_server.scan_server.procedures.constants import PROCEDURE, BecProcedure,
 from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager, ProcedureWorker
 from bec_server.scan_server.procedures.procedure_registry import _BUILTIN_PROCEDURES
-from bec_server.scan_server.procedures.worker_base import ProcedureWorkerStatus
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring

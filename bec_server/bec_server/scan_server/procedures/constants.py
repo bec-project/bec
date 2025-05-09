@@ -6,13 +6,6 @@ from pathlib import Path
 from typing import ParamSpec, Protocol, TypedDict, runtime_checkable
 
 
-class ProcedureWorkerStatus(Enum):
-    RUNNING = auto()
-    IDLE = auto()
-    FINISHED = auto()
-    DEAD = auto()  # worker lost communication with the container
-
-
 class ContainerWorkerEnv(TypedDict):
     redis_server: str
     queue: str
