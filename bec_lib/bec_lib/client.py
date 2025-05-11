@@ -362,7 +362,12 @@ class BECClient(BECService, UserScriptsMixin):
         msg = ServiceRequestMessage(action="restart")
         self.connector.send(MessageEndpoints.service_request(), msg)
         print("Server restart requested. Waiting for server to restart...")
-        time.sleep(3)  # wait for the service info to be updated
+
+        # Wait for the server to restart
+        # The message expiration time is set to 6 seconds, so we need to wait for a bit longer
+        # to make sure the server has restarted
+        time.sleep(7)
+
         logger.info("Requested server restart")
         for service in ["DeviceServer", "ScanServer", "ScanBundler", "SciHub", "FileWriterManager"]:
             print(f"Waiting for {service} to restart...")
