@@ -164,9 +164,12 @@ def get_device_info(
         # needed because ophyd signals have empty hints
         hints = {"fields": [obj.name]}
     else:
-        device_dict = get_devices_lazy_wait_for_connection(obj)
-        for _, info in device_dict.items():  # Set all to False
-            info[0].lazy_wait_for_connection = False
+        if not isinstance(obj, BECDeviceBase):
+            device_dict = get_devices_lazy_wait_for_connection(obj)
+            for _, info in device_dict.items():  # Set all to False
+                info[0].lazy_wait_for_connection = False
+        else:
+            device_dict = {}
         hints = obj.hints
         for _, info in device_dict.items():  # Set back to initial value
             info[0].lazy_wait_for_connection = info[1]
