@@ -20,6 +20,7 @@ from bec_lib.bec_yaml_loader import yaml_load
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import DeviceConfigWriter
 from bec_lib.logger import bec_logger
+from bec_lib.messages import ConfigAction
 from bec_lib.utils.import_utils import lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -128,7 +129,7 @@ class ConfigHelper:
             file.write(yaml.dump(out))
         return True
 
-    def send_config_request(self, action: str = "update", config=None) -> None:
+    def send_config_request(self, action: ConfigAction = "update", config=None) -> None:
         """
         send request to update config
         Returns:

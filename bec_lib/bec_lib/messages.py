@@ -639,6 +639,9 @@ class ScanBaselineMessage(BECMessage):
     data: dict
 
 
+ConfigAction = Literal["add", "set", "update", "reload", "remove"]
+
+
 class DeviceConfigMessage(BECMessage):
     """Message type for sending device config updates
 
@@ -650,9 +653,7 @@ class DeviceConfigMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "device_config_message"
-    action: Literal["add", "set", "update", "reload", "remove"] | None = Field(
-        default=None, validate_default=True
-    )
+    action: ConfigAction | None = Field(default=None, validate_default=True)
     config: dict | None = Field(default=None)
 
     @model_validator(mode="after")
