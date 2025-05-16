@@ -120,7 +120,6 @@ class AsyncWriter(threading.Thread):
     def _run(self) -> None:
         try:
             self.send_file_message(done=False, successful=False)
-            self.shutdown_event.clear()
             self.initialize_stream_keys()
             if not self.devices:
                 return
