@@ -1,0 +1,40 @@
+name: Sync PR to Project
+
+on:
+  pull_request:
+    types: [opened, edited, ready_for_review, converted_to_draft, reopened, synchronize]
+
+jobs:
+  sync-project:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      pull-requests: read
+      contents: read
+
+    env:
+        PROJECT_NUMBER: 3 # BEC Project
+        ORG: 'bec-project'
+        REPO: 'bec'
+        TOKEN: ${{ secrets.ADD_ISSUE_TO_PROJECT }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Set up python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r ./.github/scripts/pr_issue_sync/requirements.txt
+      - name: Sync PR to Project
+        run: |
+          python ./.github/scripts/pr_issue_sync/pr_issue_sync.py
