@@ -30,11 +30,11 @@ default_bump_level = 0
 
 [tool.semantic_release.remote]
 name = "origin"
-type = "gitlab"
-ignore_token_for_push = false
+type = "github"
+ignore_token_for_push = true
 
 [tool.semantic_release.remote.token]
-env = "GL_TOKEN"
+env = "GH_TOKEN"
 
 [tool.semantic_release.publish]
 dist_glob_patterns = ["dist/*"]
