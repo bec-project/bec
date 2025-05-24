@@ -34,6 +34,7 @@ dependencies = [
     "typeguard ~= 4.1, >=4.1.5",
     "prettytable~=3.9",
     "h5py~=3.10",
+    "python-dotenv~=1.0",
 ]
 
 
