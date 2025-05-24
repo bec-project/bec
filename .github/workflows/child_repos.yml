@@ -48,6 +48,67 @@ jobs:
           pip install pytest pytest-random-order
           pytest -v --maxfail=2 --junitxml=report.xml --random-order ./tests/unit_tests
 
+  # ophyd_devices:
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       shell: bash -el {0}
+
+  #   steps:
+  #     - name: Checkout Ophyd Devices
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: bec-project/ophyd_devices
+  #         ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+
+  #     - name: Install Ophyd Devices and dependencies
+  #       uses: ./.github/actions/ophyd_devices_install
+  #       with:
+  #         OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+  #         BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+  #         PYTHON_VERSION: '3.11'
+  #     - name: Run Pytest
+  #       run: |
+  #         cd ./ophyd_devices
+  #         pip install pytest pytest-random-order
+  #         pytest -v --maxfail=2 --junitxml=report.xml --random-order ./tests/unit_tests
+
+  plugin_repos:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    env: 
+      QTWEBENGINE_DISABLE_SANDBOX: 1
+      QT_QPA_PLATFORM: "offscreen"
+
+    strategy:
+      matrix:
+        beamline_repo: [
+          'https://gitlab.psi.ch/bec/csaxs_bec.git',
+          'https://gitlab.psi.ch/bec/debye_bec.git',
+          'https://gitlab.psi.ch/bec/pxi_bec.git',
+          'https://gitlab.psi.ch/bec/pxii_bec.git',
+          'https://gitlab.psi.ch/bec/pxiii_bec.git',
+        ]
+
+    steps:
+      - name: Checkout BEC Core
+        uses: actions/checkout@v4
+        with:
+          repository: bec-project/bec
+          ref: ${{ inputs.BEC_CORE_BRANCH }}
+
+      - name: Install and test a BEC plugin repository
+        uses: ./.github/actions/plugin_repo_tests
+        with:
+          BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+          BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
+          OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+          BEC_PLUGIN_REPO_URL: ${{ matrix.beamline_repo }}
+          PYTHON_VERSION: '3.11'
+
       
 
     
