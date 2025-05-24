@@ -185,9 +185,10 @@ def test_set_halt_disables_return_to_start(queuemanager_mock):
     )
     queue_manager.queues["primary"].active_instruction_queue.return_to_start = True
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
+        queue = queue_manager.queues["primary"].active_instruction_queue
         queue_manager.set_halt(scan_id="dummy", parameter={})
         set_abort.assert_called_once_with(scan_id="dummy", queue="primary")
-        assert queue_manager.queues["primary"].active_instruction_queue.return_to_start == False
+        assert queue.return_to_start is False
 
 
 def wait_to_reach_state(queue_manager, queue, state):
