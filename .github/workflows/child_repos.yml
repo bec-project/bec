@@ -86,11 +86,19 @@ jobs:
     strategy:
       matrix:
         beamline_repo: [
-          'https://gitlab.psi.ch/bec/csaxs_bec.git',
-          'https://gitlab.psi.ch/bec/debye_bec.git',
-          'https://gitlab.psi.ch/bec/pxi_bec.git',
-          'https://gitlab.psi.ch/bec/pxii_bec.git',
-          'https://gitlab.psi.ch/bec/pxiii_bec.git',
+          # 'https://gitlab.psi.ch/bec/csaxs_bec.git',
+          # 'https://gitlab.psi.ch/bec/debye_bec.git',
+          # 'https://gitlab.psi.ch/bec/pxi_bec.git',
+          # 'https://gitlab.psi.ch/bec/pxii_bec.git',
+          # 'https://gitlab.psi.ch/bec/pxiii_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          'https://gitea.psi.ch/bec/phoenix_bec.git',
         ]
 
     steps:
