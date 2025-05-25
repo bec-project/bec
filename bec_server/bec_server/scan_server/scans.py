@@ -402,6 +402,11 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self.burst_index = 0
         self._baseline_status = None
 
+        # flag to indicate if the scan has been closed; this is only needed as long
+        # as the close_scan method is not used everywhere. Once all scans use close_scan,
+        # this can be removed but for now, it provides a backward-compatible way to close the scan.
+        self._scan_closed = False
+
         self.start_pos = []
         self.positions = []
         self.num_pos = 0
@@ -495,6 +500,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     def close_scan(self):
         """close the scan"""
+        self._scan_closed = True
         yield from self.stubs.close_scan()
 
     def scan_core(self):
@@ -524,7 +530,11 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     def cleanup(self):
         """call the cleanup procedure"""
-        yield from self.close_scan()
+        if not self._scan_closed:
+            logger.warning(
+                "Closing the scan during cleanup is deprecated. Please call .close_scan() explicitly in your scan code."
+            )
+            yield from self.close_scan()
 
         # Check if there are any unchecked status objects left.
         # Their done status was not checked nor were they waited for
@@ -608,7 +618,8 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         yield from self.scan_core()
         yield from self.finalize()
         yield from self.unstage()
-        yield from self.cleanup()
+        yield from self.close_scan()
+        self.cleanup()
 
     @classmethod
     def scan(cls, *args, **kwargs):
@@ -1697,7 +1708,8 @@ class Acquire(ScanBase):
         yield from self.scan_core()
         yield from self.finalize()
         yield from self.unstage()
-        yield from self.cleanup()
+        yield from self.close_scan()
+        self.cleanup()
 
 
 class LineScan(ScanBase):
@@ -1856,5 +1868,6 @@ class CloseInteractiveScan(ScanComponent):
     def run(self):
         yield from self.finalize()
         yield from self.unstage()
-        yield from self.cleanup()
+        yield from self.close_scan()
+        self.cleanup()
         yield from self.stubs.close_scan_def()
