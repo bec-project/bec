@@ -91,15 +91,15 @@ jobs:
           # 'https://gitlab.psi.ch/bec/pxi_bec.git',
           # 'https://gitlab.psi.ch/bec/pxii_bec.git',
           # 'https://gitlab.psi.ch/bec/pxiii_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
-          'https://gitea.psi.ch/bec/phoenix_bec.git',
+          {url: 'https://gitea.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'https://gitea.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'https://gitea.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'https://gitea.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'https://gitea.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'https://gitea.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
         ]
+
+    name: Plugin ${{ matrix.beamline_repo.name }}
 
     steps:
       - name: Checkout BEC Core
@@ -114,7 +114,7 @@ jobs:
           BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
           BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
           OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
-          BEC_PLUGIN_REPO_URL: ${{ matrix.beamline_repo }}
+          BEC_PLUGIN_REPO_URL: ${{ matrix.beamline_repo.url }}
           PYTHON_VERSION: '3.11'
 
       
