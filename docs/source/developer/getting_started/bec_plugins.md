@@ -11,7 +11,7 @@ Plugins are commonly provided to BEC by installing them as a Python package. Cli
 
 ## Plugin Structure
 
-The following sections describe the structure of a BEC plugin. As plugins typically live on gitlab, we will use the following example structure of a "beamline_XX_bec" repository to explain the different parts of BEC plugins. Instead of creating the structure manually, you can also use the script located in BEC library to create the structure for you.
+The following sections describe the structure of a BEC plugin. As plugins typically live on Github/Gitlab/Gitea, we will use the following example structure of a "beamline_XX_bec" repository to explain the different parts of BEC plugins. Instead of creating the structure manually, you can also use the script located in BEC library to create the structure for you.
 ```bash
 python ./<path_to_bec>/bec/bec_lib/util_scripts/create_plugin_structure.py <path_to_new_plugin>
 ```

@@ -39,8 +39,8 @@ dev = [
 bec = "bec_ipython_client.main:main"
 
 [project.urls]
-"Bug Tracker" = "https://gitlab.psi.ch/bec/bec/issues"
-Homepage = "https://gitlab.psi.ch/bec/bec"
+"Bug Tracker" = "https://github.com/bec-project/bec/issues"
+Homepage = "https://github.com/bec-project/bec"
 
 [tool.hatch.build.targets.wheel]
 include = ["*"]

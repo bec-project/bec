@@ -14,12 +14,12 @@ RUN apt install git -y
 WORKDIR /code
 
 # clone the bec repo
-RUN git clone --branch ${BEC_CORE_BRANCH} https://gitlab.psi.ch/bec/bec.git
+RUN git clone --branch ${BEC_CORE_BRANCH} https://github.com/bec-project/bec.git
 
 ENV OPHYD_DEVICES_PATH=/code/bec/ophyd_devices
 
 WORKDIR /code/bec
-RUN git clone --branch ${OPHYD_DEVICES_BRANCH} https://gitlab.psi.ch/bec/ophyd_devices
+RUN git clone --branch ${OPHYD_DEVICES_BRANCH} https://github.com/bec-project/ophyd_devices
 WORKDIR /code/bec/ophyd_devices
 RUN pip install -e .
 WORKDIR /code/bec/pytest_bec_e2e

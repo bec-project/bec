@@ -4,7 +4,7 @@
 
 ## Related Issues
 
-[Cite any related issues or feature requests that are addressed or resolved by this merge request. Use the gitlab syntax for linking issues, for example, `fixes #123` or `closes #123`.]
+[Cite any related issues or feature requests that are addressed or resolved by this merge request. Use the Github syntax for linking issues, for example, `fixes #123` or `closes #123`.]
 
 ## Type of Change
 

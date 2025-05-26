@@ -25,16 +25,16 @@ In that sense, installing BEC in `[dev]` mode, is the right choice in case you l
 Clone the BEC repository and the ophyd devices repository. If you also want to work on BEC Widgets, you can clone the repository as well.
 
 ```bash
-git clone https://gitlab.psi.ch/bec/ophyd_devices.git
-git clone https://gitlab.psi.ch/bec/bec.git
+git clone https://github.com/bec-project/ophyd_devices.git
+git clone https://github.com/bec-project/bec.git
 
-git clone https://gitlab.psi.ch/bec/bec_widgets.git
+git clone https://github.com/bec-project/bec_widgets.git
 ```
 
 Additionally, if you have a BEC plugin repository, pull the repository as well.
 
 ```bash
-git clone https://gitlab.psi.ch/bec/<PLUGIN_REPO_NAME>.git
+git clone https://gitea.psi.ch/bec/<PLUGIN_REPO_NAME>.git
 ```
 
 ### Create a new Python environment

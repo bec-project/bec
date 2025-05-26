@@ -1,6 +1,6 @@
 # BEC Lib
 
-bec-lib is a Python library communicating with the [Beamline and Experiment Control (BEC)](https://gitlab.psi.ch/bec/bec) server. It is primarily used to build new BEC clients such as graphical user interfaces (GUIs) or command line interfaces (CLIs).
+bec-lib is a Python library communicating with the [Beamline and Experiment Control (BEC)](https://github.com/bec-project/bec) server. It is primarily used to build new BEC clients such as graphical user interfaces (GUIs) or command line interfaces (CLIs).
 
 ## Installation
 

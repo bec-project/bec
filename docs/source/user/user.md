@@ -17,7 +17,7 @@ Welcome to the User section of the BEC documentation! BEC is an experiment contr
 For detailed insights into BEC's underlying architecture, customization possibilities, or extensions to deployed systems at the beamline, please explore the [Developer](#developer) section. Enjoy exploring and experimenting with BEC!
 
 ```{important}
-If you have any questions or feature requests, please feel free to open an issue on the [GitLab](https://gitlab.psi.ch/bec/bec/-/issues?sort=created_date&state=opened). We are happy to help you with any questions you might have.
+If you have any questions or feature requests, please feel free to open an issue on [Github](https://github.com/bec-project/bec/issues). We are happy to help you with any questions you might have.
 ```
 
 ```{toctree}

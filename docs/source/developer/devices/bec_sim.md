@@ -122,6 +122,6 @@ bpm4i:
 ````
 ### Simulation configurations 
 We provide a couple of examples how to configure the various different devices for the simulation. 
-A range of examples can be found in the ophyd_devices repositroy for the [`ophyd_devices_simulation.yaml`](https://gitlab.psi.ch/bec/ophyd_devices/-/blob/main/ophyd_devices/configs/ophyd_devices_simulation.yaml).
+A range of examples can be found in the ophyd_devices repositroy for the [`ophyd_devices_simulation.yaml`](https://github.com/bec-project/ophyd_devices/blob/main/ophyd_devices/configs/ophyd_devices_simulation.yaml).
 Here, we've also added two examples for `DeviceProxy` classes that simulated certain scenarios. `hdf5_proxy` replays data from an h5 file, while `slit_proxy` allows us to simulate scanning the center position of two slits for a 2D camera. Please be aware that both simulations target a camera device, but there is currently a one-to-one mapping between the camera device and proxy. `BEC` will not allow you to add multiple proxies to the same camera device.
 

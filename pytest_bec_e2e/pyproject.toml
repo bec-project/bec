@@ -24,8 +24,8 @@ dependencies = [
 bec_end2end_fixtures = "pytest_bec_e2e.plugin"
 
 [project.urls]
-"Bug Tracker" = "https://gitlab.psi.ch/bec/bec/issues"
-Homepage = "https://gitlab.psi.ch/bec/bec"
+"Bug Tracker" = "https://github.com/bec-project/bec/issues"
+Homepage = "https://github.com/bec-project/bec"
 
 [tool.hatch.build.targets.wheel]
 include = ["*"]

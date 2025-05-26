@@ -21,12 +21,12 @@ curr:
   softwareTrigger: false
 ```
 
-More examples of device configurations can be found in the [Ophyd devices repository](https://gitlab.psi.ch/bec/ophyd_devices/-/tree/main/ophyd_devices/configs).
+More examples of device configurations can be found in the [Ophyd devices repository](https://github.com/bec-project/ophyd_devices/tree/main/ophyd_devices/configs).
 
 The following sections explain the different parts of the device configuration in more detail.
 
 * **deviceClass** \
-The device class specifies the type of the device. In the example above, the device class is `EpicsSignalRO`, which is a read-only signal based on EPICS. Another example is `EpicsMotor` for motors based on EPICS. For a full list of available device classes, please refer to the [Ophyd documentation](https://nsls-ii.github.io/ophyd/architecture.html#device-classes) and the [Ophyd devices repository](https://gitlab.psi.ch/bec/ophyd_devices).
+The device class specifies the type of the device. In the example above, the device class is `EpicsSignalRO`, which is a read-only signal based on EPICS. Another example is `EpicsMotor` for motors based on EPICS. For a full list of available device classes, please refer to the [Ophyd documentation](https://nsls-ii.github.io/ophyd/architecture.html#device-classes) and the [Ophyd devices repository](https://github.com/bec-project/ophyd_devices/).
 
 * **deviceConfig** \
 The device config contains the configuration of the device. In the example above, the device config contains the read PV (`read_pv`). The read PV is the PV that is read out by the device. In this case, the read PV is `ARIDI-PCT:CURRENT`. The device config can contain any configuration parameter that is supported by the device class. 
