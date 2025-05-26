@@ -2035,3 +2035,68 @@ def test_ContLineFlyScan(scan_assembler, ScanStubStatusMock):
             parameter={},
         ),
     ]
+
+
+def test_close_scan_implicitly(scan_assembler):
+    """
+    Test that the scan can be closed implicitly by calling the cleanup method.
+    This test can be safely removed once the close_scan method is removed from the cleanup method of the scan classes.
+    """
+
+    class CloseInteractiveScanTest(CloseInteractiveScan):
+        def run(self):
+            yield from self.finalize()
+            yield from self.unstage()
+            yield from self.cleanup()
+            yield from self.stubs.close_scan_def()
+
+    scan_msg = messages.ScanQueueMessage(
+        scan_type="close_interactive_scan",
+        parameter={"args": {"samx": []}, "kwargs": {"relative": True, "exp_time": 0.1}},
+        queue="primary",
+    )
+    args = unpack_scan_args(scan_msg.content["parameter"]["args"])
+    kwargs = scan_msg.content["parameter"]["kwargs"]
+    request = scan_assembler(
+        CloseInteractiveScanTest, *args, parameter=scan_msg.content["parameter"], **kwargs
+    )
+
+    request.start_pos = [0]
+    ref_list = list(request.run())
+    for ii, _ in enumerate(ref_list):
+        ref_list[ii].metadata.pop("device_instr_id", None)
+        if ref_list[ii].device and isinstance(ref_list[ii].device, list):
+            ref_list[ii].device = sorted(ref_list[ii].device)
+
+    assert ref_list == [
+        messages.DeviceInstructionMessage(
+            device="samx",
+            action="set",
+            parameter={"value": 0},
+            metadata={"readout_priority": "monitored"},
+        ),
+        messages.DeviceInstructionMessage(
+            device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+            action="complete",
+            parameter={},
+            metadata={"readout_priority": "monitored"},
+        ),
+        messages.DeviceInstructionMessage(
+            device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+            action="unstage",
+            parameter={},
+            metadata={},
+        ),
+        messages.DeviceInstructionMessage(
+            device=None,
+            action="close_scan",
+            parameter={},
+            metadata={"readout_priority": "monitored"},
+        ),
+        messages.DeviceInstructionMessage(
+            device=None,
+            action="close_scan_def",
+            parameter={},
+            metadata={"readout_priority": "monitored"},
+        ),
+    ]
