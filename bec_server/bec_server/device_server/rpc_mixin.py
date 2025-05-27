@@ -165,6 +165,7 @@ class RPCMixin:
 
         if isinstance(res, ophyd.StatusBase):
             res.__dict__["instruction"] = instr
+            res.__dict__["obj"] = obj
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], res)
             res = {
                 "type": "status",

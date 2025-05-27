@@ -187,7 +187,6 @@ class RequestHandler:
         """
         request_info = self.get_request(instr_id)
         if request_info is None:
-            logger.warning(f"Received status object for unknown instruction {instr_id}.")
             return
 
         if len(request_info["status_objects"]) != request_info["num_status_objects"]:
