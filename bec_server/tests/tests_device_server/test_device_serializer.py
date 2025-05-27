@@ -77,7 +77,6 @@ def test_get_device_info_with_runtime_modifiers():
 
     device = MyDeviceWithRuntimeModifiers(name="test")
     device_info = get_device_info(device)
-    assert len(device.on_stage.__code__.co_code) == 4
     assert device_info["device_info"]["runtime_modifiers"] == ["on_unstage", "on_pre_scan"]
 
     class MyDeviceWithoutRuntimeModifiers(PSIDeviceBase):

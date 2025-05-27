@@ -52,6 +52,13 @@ def get_runtime_modifiers(obj: Any) -> list:
     if not isinstance(obj, PSIDeviceBase):
         return []
 
+    def dummy_method():
+        """
+        Dummy method to check the default length of the code object.
+        """
+
+    default_length = len(dummy_method.__code__.co_code)
+
     # check if the method overrides the base class method
     runtime_modifiers = []
     for modifier in available_modifiers:
@@ -59,7 +66,7 @@ def get_runtime_modifiers(obj: Any) -> list:
         if not mod:
             continue
         code = list(mod.__code__.co_code)
-        if len(code) <= 4:  # 4 bytes is the minimum size of a function
+        if len(code) <= default_length:
             continue
         runtime_modifiers.append(modifier)
 
