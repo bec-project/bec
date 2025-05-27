@@ -64,9 +64,13 @@ class ScanStorage:
             # wait for all points to be received. Since this method will be called for every
             # update of the scan segments, we can also accept to write after the scan is finished
             _ready_to_write = self.scan_finished and (self.num_points == len(self.scan_segments))
-            logger.info(
-                f"Received number of segments: {len(self.scan_segments)}, Number of points (expected): {self.num_points},  Ready to write: {_ready_to_write}"
-            )
+            if not _ready_to_write:
+                monitored_devices = self.status_msg.readout_priority.get("monitored")
+                if not monitored_devices:
+                    logger.info(
+                        f"Received number of segments: {len(self.scan_segments)}, Number of points (expected): {self.num_points},  Ready to write: {_ready_to_write}"
+                    )
+                    return self.scan_finished
             return _ready_to_write
         return self.scan_finished and self.scan_number is not None
 
