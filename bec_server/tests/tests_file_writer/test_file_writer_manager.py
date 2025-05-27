@@ -69,8 +69,12 @@ def test_scan_segment_callback(file_writer_manager_mock):
     msg_bundle.append(msg)
     msg_raw = MessageObject(value=msg_bundle, topic="scan_segment")
 
-    file_manager._scan_segment_callback(msg_raw, parent=file_manager)
-    assert file_manager.scan_storage["scan_id"].scan_segments[1] == {"data": "data"}
+    with mock.patch.object(
+        file_writer_manager_mock, "check_storage_status"
+    ) as mock_check_storage_status:
+        file_manager._scan_segment_callback(msg_raw, parent=file_manager)
+        assert mock_check_storage_status.call_args == mock.call(scan_id="scan_id")
+        assert file_manager.scan_storage["scan_id"].scan_segments[1] == {"data": "data"}
 
 
 def test_scan_status_callback(file_writer_manager_mock):
@@ -85,8 +89,31 @@ def test_scan_status_callback(file_writer_manager_mock):
     )
     msg_raw = MessageObject(value=msg, topic="scan_status")
 
-    file_manager._scan_status_callback(msg_raw, parent=file_manager)
-    assert file_manager.scan_storage["scan_id"].scan_finished is True
+    with mock.patch.object(
+        file_writer_manager_mock, "check_storage_status"
+    ) as mock_check_storage_status:
+        file_manager._scan_status_callback(msg_raw, parent=file_manager)
+        assert mock_check_storage_status.call_args == mock.call(scan_id="scan_id")
+        assert file_manager.scan_storage["scan_id"].status_msg == msg
+        assert file_manager.scan_storage["scan_id"].scan_finished is True
+
+
+def test_check_storage_status(file_writer_manager_mock, scan_storage_mock):
+    file_manager = file_writer_manager_mock
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
+
+    with (
+        mock.patch.object(scan_storage_mock, "ready_to_write") as mock_ready_to_write,
+        mock.patch.object(file_manager, "update_baseline_reading") as mock_update_baseline,
+        mock.patch.object(file_manager, "update_file_references") as mock_update_file_references,
+        mock.patch.object(file_manager, "write_file") as mock_write_file,
+    ):
+        mock_ready_to_write.return_value = True
+        file_manager.check_storage_status(scan_id="scan_id")
+        assert mock_ready_to_write.called
+        assert mock_update_baseline.call_args == mock.call("scan_id")
+        assert mock_update_file_references.call_args == mock.call("scan_id")
+        assert mock_write_file.call_args == mock.call("scan_id")
 
 
 class MockWriter(HDF5FileWriter):
@@ -192,6 +219,9 @@ def test_update_scan_storage_with_status_ignores_none(file_writer_manager_mock):
 
 def test_ready_to_write(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
+    scan_storage_mock.status_msg = messages.ScanStatusMessage(
+        scan_id="scan_id", status="closed", info={}, readout_priority={"monitored": ["samx"]}
+    )
     file_manager.scan_storage["scan_id"] = scan_storage_mock
     file_manager.scan_storage["scan_id"].scan_finished = True
     file_manager.scan_storage["scan_id"].num_points = 1
@@ -202,13 +232,32 @@ def test_ready_to_write(file_writer_manager_mock, scan_storage_mock):
     file_manager.scan_storage["scan_id1"].num_points = 2
     file_manager.scan_storage["scan_id1"].scan_segments = {"0": {"data": np.zeros((10, 10))}}
     assert file_manager.scan_storage["scan_id1"].ready_to_write() is False
+    scan_storage_mock.status_msg = messages.ScanStatusMessage(
+        scan_id="scan_id", status="closed", info={}, readout_priority={"monitored": ["samx"]}
+    )
+    assert file_manager.scan_storage["scan_id1"].ready_to_write() is False
 
 
 def test_ready_to_write_forced(file_writer_manager_mock):
     file_manager = file_writer_manager_mock
     file_manager.scan_storage["scan_id"] = ScanStorage(10, "scan_id")
+    file_manager.scan_storage["scan_id"].status_msg = messages.ScanStatusMessage(
+        scan_id="scan_id", status="closed", info={}, readout_priority={"monitored": ["samx"]}
+    )
     file_manager.scan_storage["scan_id"].scan_finished = False
     file_manager.scan_storage["scan_id"].forced_finish = True
+    assert file_manager.scan_storage["scan_id"].ready_to_write() is True
+
+    # Test case with scan finished, but not forced and no moniotred devices
+    file_manager.scan_storage["scan_id"].forced_finish = False
+    file_manager.scan_storage["scan_id"].scan_finished = True
+    file_manager.scan_storage["scan_id"].status_msg = messages.ScanStatusMessage(
+        scan_id="scan_id", status="closed", info={}, readout_priority={"monitored": []}
+    )
+    assert file_manager.scan_storage["scan_id"].ready_to_write() is True
+    # Test enforce_sync is False
+    file_manager.scan_storage["scan_id"].scan_finished = True
+    file_manager.scan_storage["scan_id"].enforce_sync = False
     assert file_manager.scan_storage["scan_id"].ready_to_write() is True
 
 
