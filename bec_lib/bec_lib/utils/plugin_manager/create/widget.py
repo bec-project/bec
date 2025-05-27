@@ -12,7 +12,7 @@ from bec_lib.utils.plugin_manager._util import existing_data, git_stage_files, m
 from bec_lib.utils.plugin_manager.edit_ui import open_and_watch_ui_editor
 
 logger = bec_logger.logger
-_app = typer.Typer()
+_app = typer.Typer(rich_markup_mode="rich")
 
 
 def _commit_added_widget(repo: Path, name: str):
@@ -45,7 +45,11 @@ def widget(
         ),
     ] = True,
 ):
-    """Create a new widget plugin with the given name"""
+    """Create a new widget plugin with the given name.
+
+If [bold white]use_ui[/bold white] is set, a bec-designer .ui file will also be created. If \
+[bold white]open_editor[/bold white] is additionally set, the .ui file will be opened in \
+bec-designer and the compiled python version will be updated when changes are made."""
     if (formatted_name := name.lower().replace("-", "_")) != name:
         logger.warning(f"Adjusting widget name from {name} to {formatted_name}")
     if not formatted_name.isidentifier():
