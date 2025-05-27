@@ -9,3 +9,6 @@ myst-parser
 sphinx-design
 bec_server
 bec_ipython_client
+sphinxcontrib-typer
+selenium 
+webdriver-manager

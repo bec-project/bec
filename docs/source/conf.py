@@ -38,6 +38,7 @@ extensions = [
     "sphinx_copybutton",
     "myst_parser",
     "sphinx_design",
+    "sphinxcontrib.typer",
 ]
 
 myst_enable_extensions = [
@@ -56,7 +57,7 @@ myst_enable_extensions = [
     "tasklist",
 ]
 
-autosummary_generate = True  # Turn on sphinx.ext.autosummary
+autosummary_generate = False  # Turn on sphinx.ext.autosummary
 add_module_names = False  # Remove namespaces from class/method signatures
 autodoc_inherit_docstrings = True  # If no docstring, inherit from base class
 autodoc_mock_imports = ["pydantic"]
