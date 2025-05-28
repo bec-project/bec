@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from test_file_writer_manager import file_writer_manager_mock
 
+from bec_lib import messages
 from bec_server import file_writer
 from bec_server.file_writer import HDF5FileWriter
 from bec_server.file_writer.file_writer import HDF5Storage
@@ -39,6 +40,18 @@ def scan_storage_mock():
             "monitored": ["samx", "samy"],
             "async": ["mokev"],
         }
+    }
+    storage.file_references = {
+        "master": messages.FileMessage(
+            file_path="master.h5", is_master_file=True, done=False, successful=False
+        ),
+        "eiger": messages.FileMessage(
+            file_path="eiger.h5",
+            is_master_file=False,
+            done=True,
+            successful=True,
+            hinted_h5_entries={"entry": "/entry"},
+        ),
     }
     yield storage
 
@@ -81,6 +94,7 @@ def test_nexus_file_writer(hdf5_file_writer, scan_storage_mock):
         assert np.allclose(
             test_file["entry/collection/devices/samx/samx/value"][...], [0, 1, 2, 3, 4]
         )
+        assert test_file["entry/collection/file_references/eiger"] is not None
         # assert list(test_file["entry"]["sample"]) == ["x_translation"]
         # assert test_file["entry"]["sample"].attrs["NX_class"] == "NXsample"
         # assert test_file["entry"]["sample"]["x_translation"].attrs["units"] == "mm"
