@@ -314,10 +314,6 @@ class FileWriterManager(BECService):
 
         try:
             file_path = get_full_path(scan_status_msg=storage.status_msg, name=file_suffix)
-            self.connector.set_and_publish(
-                MessageEndpoints.public_file(scan_id, "master"),
-                messages.FileMessage(file_path=file_path, done=False, successful=False),
-            )
             successful = True
             logger.info(f"Writing to file {file_path}.")
 
@@ -325,6 +321,16 @@ class FileWriterManager(BECService):
             writte_devices = None if not self.async_writer else self.async_writer.written_devices
             write_mode = "w" if not writte_devices else "a"
             file_handle = storage.async_writer.file_handle if storage.async_writer else None
+
+            if write_mode == "w":
+                # If we are writing a new file, we need to set the file path
+                self.connector.set_and_publish(
+                    MessageEndpoints.public_file(scan_id, "master"),
+                    messages.FileMessage(
+                        file_path=file_path, done=False, successful=False, is_master_file=True
+                    ),
+                )
+
             self.file_writer.write(
                 file_path=file_path,
                 data=storage,
