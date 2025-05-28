@@ -672,6 +672,7 @@ class DeviceManagerDS(DeviceManagerBase):
             successful=successful,
             file_type=file_type,
             device_name=device_name,
+            is_master_file=False,
             hinted_h5_entries=hinted_h5_entries,
             metadata=metadata,
         )
