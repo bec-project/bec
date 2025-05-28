@@ -88,6 +88,23 @@ class DefaultFormat:
         configuration = collection.create_dataset("configuration", data=self.configuration)
         configuration.attrs["NX_class"] = "NXcollection"
 
+        # create file references
+        file_references = collection.create_group("file_references")
+        file_references.attrs["NX_class"] = "NXcollection"
+        for name, msg in self.file_references.items():
+            if name == "master":
+                continue
+            if msg.is_master_file:
+                continue
+            file_device = file_references.create_group(name=name)
+            if msg.hinted_h5_entries:
+                for entry_name, entry_path in msg.hinted_h5_entries.items():
+                    file_device.create_ext_link(
+                        name=entry_name, target=msg.file_path, entry=entry_path
+                    )
+            else:
+                file_device.create_ext_link(name="data", target=msg.file_path, entry="/")
+
     def format(self) -> None:
         """
         Prepare the NeXus file format.
