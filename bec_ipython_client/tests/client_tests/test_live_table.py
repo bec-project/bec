@@ -12,6 +12,23 @@ from bec_ipython_client.callbacks.live_table import LiveUpdatesTable, sort_devic
 from bec_ipython_client.callbacks.utils import ScanRequestMixin
 from bec_lib import messages
 from bec_lib.queue_items import QueueItem
+from bec_lib.scan_items import ScanItem
+from bec_lib.scan_manager import ScanManager
+from bec_lib.tests.utils import ConnectorMock
+
+# pylint: disable=missing-function-docstring
+
+
+@pytest.fixture
+def scan_item():
+    scan_manager = ScanManager(ConnectorMock(""))
+    return ScanItem(
+        scan_manager=scan_manager,
+        queue_id="queue_id",
+        scan_number=[1],
+        scan_id=["scan_id"],
+        status="status",
+    )
 
 
 @pytest.fixture
@@ -96,6 +113,32 @@ def test_wait_for_request_acceptance(client_with_grid_scan):
     live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
     with mock.patch.object(client.queue.queue_storage, "find_queue_item_by_requestID"):
         live_update.wait_for_request_acceptance()
+
+
+@pytest.mark.timeout(20)
+def test_run_update(bec_client_mock, scan_item):
+    request_msg = messages.ScanQueueMessage(
+        scan_type="grid_scan",
+        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    client = bec_client_mock
+    client.start()
+    data = messages.ScanMessage(point_id=0, scan_id="", data={}, metadata={})
+    live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+    live_update.scan_item = scan_item
+    scan_item.num_points = 2
+    scan_item.live_data = {0: data}
+    with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
+        live_update._run_update(1)
+        assert mock_print_table_data.called
+    scan_item.num_points = 2
+    scan_item.live_data = {}
+    scan_item.status = "closed"
+    with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
+        live_update._run_update(2)
+        assert not mock_print_table_data.called
 
 
 class ScanItemMock:
