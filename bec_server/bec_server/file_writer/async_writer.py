@@ -152,13 +152,14 @@ class AsyncWriter(threading.Thread):
             successful (bool): Whether the writing was successful
         """
         self.connector.set_and_publish(
-            MessageEndpoints.public_file(self.scan_id, "async"),
+            MessageEndpoints.public_file(self.scan_id, "master"),
             messages.FileMessage(
                 file_path=self.file_path,
                 done=done,
                 successful=successful,
-                devices=list(self.written_devices),
-                hinted_locations={device_name: device_name for device_name in self.written_devices},
+                hinted_h5_entries={
+                    device_name: device_name for device_name in self.written_devices
+                },
                 metadata={},
             ),
         )

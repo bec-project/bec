@@ -745,15 +745,9 @@ class FileMessage(BECMessage):
     done: bool
     successful: bool
     is_master_file: bool = Field(default=False)
-    device_name: str | None = Field(default=None)
+    device_name: str | list[str] | None = Field(default=None)
     file_type: str = "h5"
     hinted_h5_entries: dict[str, str] | None = None
-
-    @field_validator("is_master_file", mode="after")
-    @classmethod
-    def check_is_master_file(cls, v: bool):
-        """Validate is the FileMessage is for the master file"""
-        return cls.device_name is not None if v else False
 
 
 class FileContentMessage(BECMessage):
