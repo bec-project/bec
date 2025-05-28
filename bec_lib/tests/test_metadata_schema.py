@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from bec_lib import metadata_schema
 from bec_lib.messages import ScanQueueMessage
 from bec_lib.metadata_schema import BasicScanMetadata
+from bec_lib.scans import Scans
 
 TEST_DICT = {"foo": "bar", "baz": 123}
 
@@ -52,17 +53,19 @@ def test_creating_scan_queue_message_validates_metadata():
             ScanQueueMessage(
                 scan_type="fake_scan_with_extra_metadata",
                 parameter={},
-                metadata={"number_field", "string"},
+                metadata={"user_metadata": {"number_field": "string"}},
             )
         ScanQueueMessage(
-            scan_type="fake_scan_with_extra_metadata", parameter={}, metadata={"number_field": 123}
+            scan_type="fake_scan_with_extra_metadata",
+            parameter={},
+            metadata={"user_metadata": {"number_field": 123}},
         )
         msg_with_extra_keys = ScanQueueMessage(
             scan_type="fake_scan_with_extra_metadata",
             parameter={},
-            metadata={"number_field": 123, "extra": "data"},
+            metadata={"user_metadata": {"number_field": 123, "extra": "data"}},
         )
-        assert msg_with_extra_keys.metadata["extra"] == "data"
+        assert msg_with_extra_keys.metadata["user_metadata"]["extra"] == "data"
 
 
 def test_default_schema_is_used_as_fallback():
@@ -80,16 +83,40 @@ def test_default_schema_is_used_as_fallback():
                 _msg_not_matching_default_and_no_specified_schema = ScanQueueMessage(
                     scan_type="not associated with anything",
                     parameter={},
-                    metadata={"number_field": 123},
+                    metadata={"user_metadata": {"number_field": 123}},
                 )
             with pytest.raises(ValidationError):
                 _msg_matching_default_but_with_specified_schema = ScanQueueMessage(
                     scan_type="fake_scan_with_extra_metadata",
                     parameter={},
-                    metadata={"sample_name_long": "long string of text"},
+                    metadata={"user_metadata": {"sample_name_long": "long string of text"}},
                 )
             _msg_matching_default_and_no_specified_schema = ScanQueueMessage(
                 scan_type="not associated with anything",
                 parameter={},
-                metadata={"sample_name_long": "long string of text"},
+                metadata={"user_metadata": {"sample_name_long": "long string of text"}},
             )
+
+
+def test_prepare_scan_request_produces_conforming_message():
+    with patch.dict(metadata_schema._METADATA_SCHEMA_REGISTRY, TEST_REGISTRY, clear=True):
+        with pytest.raises(ValidationError):
+            Scans.prepare_scan_request(
+                scan_name="fake_scan_with_extra_metadata",
+                scan_info={"required_kwargs": []},
+                system_config={},
+            )
+        with pytest.raises(ValidationError):
+            Scans.prepare_scan_request(
+                scan_name="fake_scan_with_extra_metadata",
+                scan_info={"required_kwargs": []},
+                system_config={},
+                user_metadata={"number_field": "string"},
+            )
+        msg = Scans.prepare_scan_request(
+            scan_name="fake_scan_with_extra_metadata",
+            scan_info={"required_kwargs": []},
+            system_config={},
+            user_metadata={"number_field": 123},
+        )
+        assert msg.metadata["user_metadata"] == {"number_field": 123}

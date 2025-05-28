@@ -140,7 +140,7 @@ class ScanQueueMessage(BECMessage):
         leave it as a dict"""
         schema = get_metadata_schema_for_scan(data.scan_type)
         try:
-            schema.model_validate(data.metadata)
+            schema.model_validate(data.metadata.get("user_metadata", {}))
         except ValidationError as e:
             raise ValueError(
                 f"Scan metadata {data.metadata} does not conform to registered schema {schema}. \n Errors: {str(e)}"
