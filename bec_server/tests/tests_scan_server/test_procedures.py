@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import fakeredis
 import pytest
 
-from bec_lib.client import RedisConnector
+from bec_lib.client import BECClient, RedisConnector
 from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
@@ -30,6 +30,14 @@ from bec_server.scan_server.procedures.worker_base import ProcedureWorkerStatus
 
 
 LOG_MSG_PROC_NAME = "log execution message args"
+
+
+@pytest.fixture(autouse=True)
+def shutdown_client():
+    bec_client = BECClient()
+    bec_client.start()
+    yield
+    bec_client.shutdown()
 
 
 @pytest.fixture
