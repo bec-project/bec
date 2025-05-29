@@ -1,4 +1,5 @@
 import argparse
+import builtins
 import os
 import sys
 from importlib.metadata import version
@@ -7,7 +8,6 @@ from typing import Iterable, Literal, Tuple
 import IPython
 import redis
 import redis.exceptions
-import requests
 from IPython.terminal.ipapp import TerminalIPythonApp
 from IPython.terminal.prompts import Prompts, Token
 
@@ -16,7 +16,6 @@ from bec_ipython_client.bec_magics import BECMagics
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
 from bec_ipython_client.signals import ScanInterruption, SigintHandler
 from bec_lib import plugin_helper
-from bec_lib.acl_login import BECAuthenticationError
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import parse_cmdline_args
@@ -27,6 +26,10 @@ from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 
 logger = bec_logger.logger
+
+
+class BECNamespaceError(Exception):
+    """Exception raised when a user tries to overwrite protected namespace objects."""
 
 
 class CLIBECClient(BECClient):
@@ -136,12 +139,34 @@ class BECIPythonClient:
         self._refresh_ipython_username()
         self._load_magics()
         self._ip.events.register("post_run_cell", log_console)
+        self._ip.events.register("post_run_cell", self._protect_vars)
         self._ip.set_custom_exc((Exception,), _ip_exception_handler)  # register your handler
         # represent objects using __str__, if overwritten, otherwise use __repr__
         self._ip.display_formatter.formatters["text/plain"].for_type(
             object,
             lambda o, p, cycle: o.__str__ is object.__str__ and p.text(repr(o)) or p.text(str(o)),
         )
+
+    def _protect_vars(self, result):
+        """Protect variables from being overwritten by the user."""
+        if not self._ip:
+            return
+        # protect some variables from being overwritten
+        protected_vars = ["bec", "dev", "scans"]
+        for var in protected_vars:
+            obj = builtins.__dict__.get(var)
+            if obj is None:
+                # if the variable is not defined, skip it
+                continue
+            if var not in self._ip.user_ns:
+                self._ip.user_ns[var] = obj
+            if var in self._ip.user_ns and self._ip.user_ns[var] is not obj:
+                # if the variable is defined in the user namespace, but not equal to the original object,
+                # we overwrite it with the original object
+                self._ip.user_ns[var] = obj
+                raise BECNamespaceError(
+                    f"Overwriting core variable '{var}' is not allowed. Please use a different name instead."
+                )
 
     def _update_namespace_callback(self, action: Literal["add", "remove"], ns_objects: dict):
         """Callback to update the global namespace of ipython.
