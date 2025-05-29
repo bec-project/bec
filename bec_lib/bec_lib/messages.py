@@ -578,6 +578,51 @@ class DeviceMonitor1DMessage(BECMessage):
         raise ValueError(f"Invalid dimenson {v.ndim} for numpy array. Must be a 1D array.")
 
 
+class DevicePreviewMessage(BECMessage):
+    """
+    Message type for sending device preview updates from the device server.
+    The message is sent from the device_server to monitor data streams, usually at
+    a reduced rate compared to the full data stream.
+
+    Args:
+        device (str): Device name.
+        signal (str): Signal name, e.g. "image", "data", "preview".
+        data (np.ndarray): Numpy array data from the preview.
+        timestamp (float, optional): Timestamp of the message. Defaults to time.time().
+        metadata (dict, optional): Additional metadata.
+    """
+
+    msg_type: ClassVar[str] = "device_preview_message"
+    device: str
+    signal: str
+    data: np.ndarray
+    timestamp: float = Field(default_factory=time.time)
+    # Needed for pydantic to accept numpy arrays
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class DeviceUserROIMessage(BECMessage):
+    """
+    Message type for sending device user ROI updates to and from the device server.
+
+    Args:
+        device (str): Device name.
+        signal (str): Signal name associated with the ROI.
+        roi_type (str): Type of the ROI, e.g., 'rectangle', 'circle', 'polygon'.
+        roi (dict): Dictionary containing the ROI information, e.g., {"x": 100, "y": 200, "width": 50, "height": 50}.
+        metadata (dict, optional): Additional metadata.
+    """
+
+    msg_type: ClassVar[str] = "device_user_roi_message"
+    device: str
+    signal: str
+    roi_type: str = Field(description="Type of the ROI, e.g. 'rectangle', 'circle', 'polygon'")
+    roi: dict = Field(
+        description="Dictionary containing the ROI information, e.g. {'x': 100, 'y': 200, 'width': 50, 'height': 50}"
+    )
+    timestamp: float = Field(default_factory=time.time)
+
+
 class ScanMessage(BECMessage):
     """Message type for sending scan segment data from the scan bundler
 

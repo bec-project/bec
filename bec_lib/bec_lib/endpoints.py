@@ -438,6 +438,52 @@ class MessageEndpoints:
             message_op=MessageOp.STREAM,
         )
 
+    @staticmethod
+    def device_preview(device: str, signal: str):
+        """
+        Endpoint for device preview. This endpoint is used to publish a preview of a device
+        using a messages.DevicePreviewMessage message. The preview is typically used to broadcast
+        a data stream at a reduced frequency, e.g. for a live preview of a detector stream.
+        The device must implement the signal as a PreviewComponent, which also provides information
+        about the number of dimensions and if possible the shape of the data.
+
+        Args:
+            device (str): Device name, e.g. "samx".
+            signal (str): Signal name, e.g. "image_preview".
+
+        Returns:
+            EndpointInfo: Endpoint for device preview.
+        """
+        endpoint = f"{EndpointType.INFO.value}/devices/preview/{device}/{signal}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DevicePreviewMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def device_user_roi(device: str, signal: str):
+        """
+        Endpoint for device user ROI. This endpoint is used to publish a user-defined
+        region of interest (ROI) for a device using a messages.DeviceUserROIMessage message.
+        The ROI can be defined in a GUI or programmatically. The ROI is typically used to
+        send a region of interest to a device for processing.
+        The device must implement the signal as a UserROIComponent.
+
+        Args:
+            device (str): Device name, e.g. "samx".
+            signal (str): Signal name, e.g. "preview_roi".
+
+        Returns:
+            EndpointInfo: Endpoint for device user ROI.
+        """
+        endpoint = f"{EndpointType.USER.value}/devices/user_roi/{device}/{signal}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeviceUserROIMessage,
+            message_op=MessageOp.STREAM,
+        )
+
     # scan queue
     @staticmethod
     def scan_queue_modification():
