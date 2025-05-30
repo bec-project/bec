@@ -138,6 +138,7 @@ def get_device_info(
                     {
                         component_name: {
                             "component_name": component_name,
+                            "signal_class": signal_obj.__class__.__name__,
                             "obj_name": signal_obj.name,
                             "kind_int": signal_obj.kind.value,
                             "kind_str": signal_obj.kind.name,
