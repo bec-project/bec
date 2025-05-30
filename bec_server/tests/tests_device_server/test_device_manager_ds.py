@@ -226,6 +226,8 @@ def test_subscribe_to_device_events(dm_with_devices):
             dm_with_devices, "_obj_callback_device_monitor_1d"
         ) as mock_callback_device_monitor_1d:
             dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
+            assert obj.subscribe.call_count == 0
+            dm_with_devices._subscribe_to_bec_device_events(obj=obj)
             assert obj.subscribe.call_count == 2
             assert (
                 mock.call(mock_callback_file_event, event_type="file_event", run=False)
@@ -256,6 +258,35 @@ def test_subscribe_to_device_events(dm_with_devices):
         )
         with mock.patch.object(dm_with_devices, callback_name) as mock_callback:
             dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
+            dm_with_devices._subscribe_to_bec_device_events(obj=obj)
             assert obj.subscribe.call_args == mock.call(
                 mock_callback, event_type=event_type, run=False
             )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        messages.DevicePreviewMessage(
+            data=np.random.rand(10, 10), device="eiger", signal="preview"
+        ),
+        "some string",
+    ],
+)
+def test_device_manager_ds_obj_callback_preview(dm_with_devices, value):
+    device_manager = dm_with_devices
+    with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
+        device_manager._obj_callback_preview(obj=dm_with_devices.devices.eiger.obj, value=value)
+
+        if not isinstance(value, messages.DevicePreviewMessage):
+            mock_xadd.assert_not_called()
+        else:
+            mock_xadd.assert_called_once_with(
+                MessageEndpoints.device_preview(device="eiger", signal="preview"),
+                {"data": value},
+                max_size=100,  # Assuming a default max size
+            )
+
+    #
