@@ -14,7 +14,7 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Dict, Literal, NamedTuple, Tuple
 
 import h5py
-import hdf5plugin
+import hdf5plugin  # Required to ensure compatibility with HDF5 files using plugins
 from _collections_abc import dict_items, dict_keys
 from prettytable import PrettyTable
 
