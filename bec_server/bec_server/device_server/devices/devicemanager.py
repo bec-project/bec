@@ -16,6 +16,7 @@ import ophyd
 import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
 from ophyd.signal import EpicsSignalBase
+from ophyd_devices.utils.bec_signals import FileEventSignal, PreviewSignal, ProgressSignal
 from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
@@ -354,6 +355,9 @@ class DeviceManagerDS(DeviceManagerBase):
         if not hasattr(obj, "event_types"):
             return opaas_obj
         self._subscribe_to_device_events(obj, opaas_obj)
+        self._subscribe_to_bec_device_events(obj)
+        self._subscribe_to_auto_monitors(obj)
+        self._subscribe_to_bec_signals(obj)
 
         return opaas_obj
 
@@ -364,6 +368,21 @@ class DeviceManagerDS(DeviceManagerBase):
             obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
         elif "value" in obj.event_types:
             obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
+        if hasattr(obj, "motor_is_moving"):
+            obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)
+
+    def _subscribe_to_bec_device_events(self, obj: OphydObject):
+        """
+        Subscribe to BEC device events, such as device_monitor_2d, device_monitor_1d,
+        file_event, done_moving, flyer, and progress.
+
+        These events are deprecated and will be removed in the future. Use the
+        _subscribe_to_bec_signals method instead.
+
+        Args:
+            obj (OphydObject): Ophyd object to subscribe to BEC device events
+
+        """
         if "device_monitor_2d" in obj.event_types:
             obj.subscribe(
                 self._obj_callback_device_monitor_2d, event_type="device_monitor_2d", run=False
@@ -381,18 +400,49 @@ class DeviceManagerDS(DeviceManagerBase):
         if "progress" in obj.event_types:
             obj.subscribe(self._obj_callback_progress, event_type="progress", run=False)
 
-        if hasattr(obj, "motor_is_moving"):
-            obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)
+    def _subscribe_to_auto_monitors(self, obj: OphydObject):
+        """
+        If the component has set the _auto_monitor attribute to True,
+        subscribe to the readback or configuration signals.
 
-        if hasattr(obj, "component_names"):
-            for component_name in obj.component_names:
-                component = getattr(obj, component_name)
-                if not getattr(component, "_auto_monitor", False):
-                    continue
-                if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
-                    component.subscribe(self._obj_callback_readback, run=False)
-                elif component.kind == ophyd.Kind.config:
-                    component.subscribe(self._obj_callback_configuration, run=False)
+        Args:
+            obj (OphydObject): Ophyd object to subscribe to auto monitors
+        """
+
+        if not hasattr(obj, "component_names"):
+            return
+
+        for component_name in obj.component_names:
+            component = getattr(obj, component_name)
+            if not getattr(component, "_auto_monitor", False):
+                continue
+            if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
+                component.subscribe(self._obj_callback_readback, run=False)
+            elif component.kind == ophyd.Kind.config:
+                component.subscribe(self._obj_callback_configuration, run=False)
+
+    def _subscribe_to_bec_signals(self, obj: OphydObject):
+        """
+        Subscribe to BEC signals, such as PreviewSignal, ProgressSignal, FileEventSignal, etc.
+
+        Args:
+            obj (OphydObject): Ophyd object to subscribe to BEC signals
+
+        """
+        if not hasattr(obj, "walk_signals"):
+            # If the object does not have walk_components, it is likely a simple signal
+            return
+        signal_walk = obj.walk_signals()
+        for _ancestor, signal_name, signal in signal_walk:
+            if isinstance(signal, PreviewSignal):
+                signal.subscribe(callback=self._obj_callback_preview, run=False)
+                return
+            if isinstance(signal, FileEventSignal):
+                signal.subscribe(callback=self._obj_callback_file_event_signal, run=False)
+                return
+            if isinstance(signal, ProgressSignal):
+                signal.subscribe(callback=self._obj_callback_progress_signal, run=False)
+                return
 
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
@@ -504,6 +554,8 @@ class DeviceManagerDS(DeviceManagerBase):
         self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
     ):
         """
+        DEPRECATED: Use _obj_callback_preview instead.
+
         Callback for ophyd monitor events. Sends the data to redis.
         Introduces a check of the data size, and incoporates a limit which is defined in max_size (in MB)
 
@@ -540,6 +592,8 @@ class DeviceManagerDS(DeviceManagerBase):
         self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
     ):
         """
+        DEPRECATED: Use _obj_callback_preview instead.
+
         Callback for ophyd monitor events. Sends the data to redis.
         Introduces a check of the data size, and incoporates a limit which is defined in max_size (in MB)
 
@@ -571,6 +625,39 @@ class DeviceManagerDS(DeviceManagerBase):
                 stream_msg,
                 max_size=min(100, int(max_size // dsize)),
             )
+
+    def _obj_callback_preview(
+        self, *_args, obj: OphydObject, value: messages.DevicePreviewMessage, **kwargs
+    ):
+        """
+        Callback for preview events. Sends the data to redis.
+        Introduces a check of the data size, and incorporates a limit which is defined in max_size (in MB)
+
+        Args:
+            obj (OphydObject): ophyd object
+            value (np.ndarray): data from ophyd device
+        """
+        if not obj.connected:
+            return
+        if not isinstance(value, messages.DevicePreviewMessage):
+            return  # we expect a DevicePreviewMessage here
+
+        data = value.data
+        # Convert sizes from bytes to MB
+        dsize = len(data.tobytes()) / 1e6
+        max_size = 1000
+        if dsize > max_size:
+            logger.warning(
+                f"Data size of single message is too large to send, current max_size {max_size}."
+            )
+            return
+
+        stream_msg = {"data": value}
+        self.connector.xadd(
+            MessageEndpoints.device_preview(device=obj.root.name, signal=value.signal),
+            stream_msg,
+            max_size=min(100, int(max_size // dsize)),
+        )
 
     def _obj_callback_acq_done(self, *_args, **kwargs):
         device = kwargs["obj"].root.name
@@ -632,11 +719,33 @@ class DeviceManagerDS(DeviceManagerBase):
         pipe.execute()
 
     def _obj_callback_progress(self, *_args, obj, value, max_value, done, **kwargs):
+        """
+        DEPRECATED: Use _obj_callback_progress_signal instead.
+
+        Callback for progress events. Sends the data to redis.
+        """
         metadata = self.devices[obj.root.name].metadata
         msg = messages.ProgressMessage(
             value=value, max_value=max_value, done=done, metadata=metadata
         )
         self.connector.set_and_publish(MessageEndpoints.device_progress(obj.root.name), msg)
+
+    def _obj_callback_progress_signal(
+        self, *_args, obj: OphydObject, value: messages.ProgressMessage, **kwargs
+    ):
+        """
+        Callback for ProgressSignal events. Sends the data to redis.
+
+        Args:
+            obj (OphydObject): ophyd object
+            value (ProgressMessage): data from ophyd device
+        """
+        if not obj.connected:
+            return
+        if not isinstance(value, messages.ProgressMessage):
+            return
+        device_name = obj.root.name
+        self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), value)
 
     def _obj_callback_file_event(
         self,
@@ -649,7 +758,10 @@ class DeviceManagerDS(DeviceManagerBase):
         hinted_h5_entries: dict[str, str] | None = None,
         **kwargs,
     ):
-        """Callback for file events on devices. This callback set and publishes
+        """
+        DEPRECATED: Use _obj_callback_file_event_signal instead.
+
+        Callback for file events on devices. This callback set and publishes
         a file message to the file_event and public_file endpoints in Redis to inform
         the file writer and other services about externally created files.
 
@@ -680,5 +792,33 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.set_and_publish(MessageEndpoints.file_event(device_name), msg, pipe=pipe)
         self.connector.set_and_publish(
             MessageEndpoints.public_file(scan_id=scan_id, name=device_name), msg, pipe=pipe
+        )
+        pipe.execute()
+
+    def _obj_callback_file_event_signal(
+        self, *_args, obj: OphydObject, value: messages.FileMessage, **kwargs
+    ):
+        """
+        Callback for FileEventSignal events. Sends the data to redis.
+
+        Args:
+            obj (OphydObject): ophyd object
+            value (FileEventSignalMessage): data from ophyd device
+        """
+        if not obj.connected:
+            return
+        if not isinstance(value, messages.FileMessage):
+            return
+        device_name = obj.root.name
+
+        # Note: It is fine to use the metadata from the device object here,
+        # as it is safe to assume that the file event is emitted before a new scan starts.
+        metadata = self.devices[device_name].metadata
+        scan_id = metadata.get("scan_id")
+
+        pipe = self.connector.pipeline()
+        self.connector.set_and_publish(MessageEndpoints.file_event(device_name), value, pipe=pipe)
+        self.connector.set_and_publish(
+            MessageEndpoints.public_file(scan_id=scan_id, name=device_name), value, pipe=pipe
         )
         pipe.execute()
