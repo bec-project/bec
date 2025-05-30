@@ -16,7 +16,7 @@ import ophyd
 import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
 from ophyd.signal import EpicsSignalBase
-from ophyd_devices.utils.bec_signals import PreviewSignal
+from ophyd_devices.utils.bec_signals import FileEventSignal, PreviewSignal, ProgressSignal
 from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
@@ -437,6 +437,12 @@ class DeviceManagerDS(DeviceManagerBase):
             if isinstance(signal, PreviewSignal):
                 signal.subscribe(callback=self._obj_callback_preview, run=False)
                 return
+            if isinstance(signal, FileEventSignal):
+                signal.subscribe(callback=self._obj_callback_file_event_signal, run=False)
+                return
+            if isinstance(signal, ProgressSignal):
+                signal.subscribe(callback=self._obj_callback_progress_signal, run=False)
+                return
 
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
@@ -548,6 +554,8 @@ class DeviceManagerDS(DeviceManagerBase):
         self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
     ):
         """
+        DEPRECATED: Use _obj_callback_preview instead.
+
         Callback for ophyd monitor events. Sends the data to redis.
         Introduces a check of the data size, and incoporates a limit which is defined in max_size (in MB)
 
@@ -584,6 +592,8 @@ class DeviceManagerDS(DeviceManagerBase):
         self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
     ):
         """
+        DEPRECATED: Use _obj_callback_preview instead.
+
         Callback for ophyd monitor events. Sends the data to redis.
         Introduces a check of the data size, and incoporates a limit which is defined in max_size (in MB)
 
@@ -709,11 +719,33 @@ class DeviceManagerDS(DeviceManagerBase):
         pipe.execute()
 
     def _obj_callback_progress(self, *_args, obj, value, max_value, done, **kwargs):
+        """
+        DEPRECATED: Use _obj_callback_progress_signal instead.
+
+        Callback for progress events. Sends the data to redis.
+        """
         metadata = self.devices[obj.root.name].metadata
         msg = messages.ProgressMessage(
             value=value, max_value=max_value, done=done, metadata=metadata
         )
         self.connector.set_and_publish(MessageEndpoints.device_progress(obj.root.name), msg)
+
+    def _obj_callback_progress_signal(
+        self, *_args, obj: OphydObject, value: messages.ProgressMessage, **kwargs
+    ):
+        """
+        Callback for ProgressSignal events. Sends the data to redis.
+
+        Args:
+            obj (OphydObject): ophyd object
+            value (ProgressMessage): data from ophyd device
+        """
+        if not obj.connected:
+            return
+        if not isinstance(value, messages.ProgressMessage):
+            return
+        device_name = obj.root.name
+        self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), value)
 
     def _obj_callback_file_event(
         self,
@@ -726,7 +758,10 @@ class DeviceManagerDS(DeviceManagerBase):
         hinted_h5_entries: dict[str, str] | None = None,
         **kwargs,
     ):
-        """Callback for file events on devices. This callback set and publishes
+        """
+        DEPRECATED: Use _obj_callback_file_event_signal instead.
+
+        Callback for file events on devices. This callback set and publishes
         a file message to the file_event and public_file endpoints in Redis to inform
         the file writer and other services about externally created files.
 
@@ -757,5 +792,33 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.set_and_publish(MessageEndpoints.file_event(device_name), msg, pipe=pipe)
         self.connector.set_and_publish(
             MessageEndpoints.public_file(scan_id=scan_id, name=device_name), msg, pipe=pipe
+        )
+        pipe.execute()
+
+    def _obj_callback_file_event_signal(
+        self, *_args, obj: OphydObject, value: messages.FileMessage, **kwargs
+    ):
+        """
+        Callback for FileEventSignal events. Sends the data to redis.
+
+        Args:
+            obj (OphydObject): ophyd object
+            value (FileEventSignalMessage): data from ophyd device
+        """
+        if not obj.connected:
+            return
+        if not isinstance(value, messages.FileMessage):
+            return
+        device_name = obj.root.name
+
+        # Note: It is fine to use the metadata from the device object here,
+        # as it is safe to assume that the file event is emitted before a new scan starts.
+        metadata = self.devices[device_name].metadata
+        scan_id = metadata.get("scan_id")
+
+        pipe = self.connector.pipeline()
+        self.connector.set_and_publish(MessageEndpoints.file_event(device_name), value, pipe=pipe)
+        self.connector.set_and_publish(
+            MessageEndpoints.public_file(scan_id=scan_id, name=device_name), value, pipe=pipe
         )
         pipe.execute()
