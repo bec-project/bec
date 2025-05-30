@@ -12,8 +12,11 @@ from ophyd_devices import BECDeviceBase, ComputedSignal
 
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.device import DeviceBase
+from bec_lib.logger import bec_logger
 from bec_lib.numpy_encoder import numpy_encode
 from bec_lib.signature_serializer import signature_to_dict
+
+logger = bec_logger.logger
 
 
 def is_serializable(var: Any) -> bool:
@@ -162,7 +165,15 @@ def get_device_info(
         # needed because ophyd signals have empty hints
         hints = {"fields": [obj.name]}
     else:
+        if not isinstance(obj, BECDeviceBase):
+            device_dict = get_devices_lazy_wait_for_connection(obj)
+            for _, info in device_dict.items():  # Set all to False
+                info[0].lazy_wait_for_connection = False
+        else:
+            device_dict = {}
         hints = obj.hints
+        for _, info in device_dict.items():  # Set back to initial value
+            info[0].lazy_wait_for_connection = info[1]
 
     if connect:
         describe = obj.describe()
@@ -187,3 +198,32 @@ def get_device_info(
             "custom_user_access": user_access,
         },
     }
+
+
+def get_devices_lazy_wait_for_connection(
+    device: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase,
+    output: dict | None = None,
+) -> dict[str, tuple[PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, bool]]:
+    """
+    Get device and subdevices of a device.
+
+    Args:
+        device (PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase): device to get the devices from
+        output (dict | None): output dictionary to store the devices
+
+    Returns:
+        dict[str, tuple[PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, bool]]: Dictionary of devices with their lazy_wait_for_connection status.
+    """
+    if output is None:
+        output = {}
+    if hasattr(device, "lazy_wait_for_connection"):
+        output[device.name] = (device, device.lazy_wait_for_connection)
+    else:
+        logger.warning(f"Device {device.name} does not have lazy_wait_for_connection attribute")
+
+    for attr, cpt in device._sig_attrs.items():  # pylint: disable=protected-access
+        if issubclass(cpt.cls, Device):
+            output.update(
+                get_devices_lazy_wait_for_connection(getattr(device, attr), output=output)
+            )
+    return output
