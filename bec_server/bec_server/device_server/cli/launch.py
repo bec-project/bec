@@ -18,7 +18,7 @@ import threading
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
-from bec_server import device_server
+from bec_server.device_server.device_server import DeviceServer
 
 logger = bec_logger.logger
 bec_logger.level = bec_logger.LOGLEVEL.INFO
@@ -30,7 +30,7 @@ def main():
     """
     _, _, config = parse_cmdline_args()
 
-    s = device_server.DeviceServer(config, RedisConnector)
+    s = DeviceServer(config, RedisConnector)
     try:
         event = threading.Event()
         s.start()
