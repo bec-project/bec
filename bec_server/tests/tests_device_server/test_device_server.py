@@ -12,8 +12,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import BECStatus
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
-from bec_server.device_server import DeviceServer
-from bec_server.device_server.device_server import InvalidDeviceError
+from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
