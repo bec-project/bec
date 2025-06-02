@@ -7,8 +7,9 @@ import functools
 from typing import Any
 
 import msgpack
-from ophyd import Device, PositionerBase, Signal
+from ophyd import Device, Kind, PositionerBase, Signal
 from ophyd_devices import BECDeviceBase, ComputedSignal
+from ophyd_devices.utils.bec_signals import BECMessageSignal
 
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.device import DeviceBase
@@ -134,21 +135,46 @@ def get_device_info(
                     and not comp.doc.startswith("Component attribute\n::")
                     else ""
                 )
-                signals.update(
-                    {
-                        component_name: {
-                            "component_name": component_name,
-                            "signal_class": signal_obj.__class__.__name__,
-                            "obj_name": signal_obj.name,
-                            "kind_int": signal_obj.kind.value,
-                            "kind_str": signal_obj.kind.name,
-                            "doc": doc,
-                            "describe": signal_obj.describe().get(signal_obj.name, {}),
-                            # pylint: disable=protected-access
-                            "metadata": signal_obj._metadata,
+                if isinstance(signal_obj, BECMessageSignal):
+                    info = signal_obj.describe().get(signal_obj.name, {}).get("signal_info", {})
+                    if not info:
+                        continue
+                    for signal_name, kind in info.get("signals", []):
+                        if len(info.get("signals")) == 1:
+                            obj_name = signal_obj.name
+                        else:
+                            obj_name = "_".join([signal_obj.name, signal_name])
+                        signals.update(
+                            {
+                                signal_name: {
+                                    "component_name": component_name,
+                                    "signal_class": signal_obj.__class__.__name__,
+                                    "obj_name": obj_name,
+                                    "kind_int": kind,
+                                    "kind_str": Kind(kind).name,
+                                    "doc": doc,
+                                    "describe": signal_obj.describe().get(signal_obj.name, {}),
+                                    # pylint: disable=protected-access
+                                    "metadata": signal_obj._metadata,
+                                }
+                            }
+                        )
+                else:
+                    signals.update(
+                        {
+                            component_name: {
+                                "component_name": component_name,
+                                "signal_class": signal_obj.__class__.__name__,
+                                "obj_name": signal_obj.name,
+                                "kind_int": signal_obj.kind.value,
+                                "kind_str": signal_obj.kind.name,
+                                "doc": doc,
+                                "describe": signal_obj.describe().get(signal_obj.name, {}),
+                                # pylint: disable=protected-access
+                                "metadata": signal_obj._metadata,
+                            }
                         }
-                    }
-                )
+                    )
     sub_devices = []
 
     if hasattr(obj, "walk_subdevices") and connect:
