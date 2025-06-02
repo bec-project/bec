@@ -165,12 +165,9 @@ def get_device_info(
         # needed because ophyd signals have empty hints
         hints = {"fields": [obj.name]}
     else:
-        if not isinstance(obj, BECDeviceBase):
-            device_dict = get_devices_lazy_wait_for_connection(obj)
-            for _, info in device_dict.items():  # Set all to False
-                info[0].lazy_wait_for_connection = False
-        else:
-            device_dict = {}
+        device_dict = get_lazy_wait_for_connection(obj)
+        for _, info in device_dict.items():  # Set all to False
+            info[0].lazy_wait_for_connection = False
         hints = obj.hints
         for _, info in device_dict.items():  # Set back to initial value
             info[0].lazy_wait_for_connection = info[1]
@@ -200,22 +197,26 @@ def get_device_info(
     }
 
 
-def get_devices_lazy_wait_for_connection(
+def get_lazy_wait_for_connection(
     device: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase,
     output: dict | None = None,
 ) -> dict[str, tuple[PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, bool]]:
     """
-    Get device and subdevices of a device.
+    Method to retrieve the lazy_wait_for_connection attribute of a device and its subdevices. It returns
+    a dictionary with device names (device & subdevices) as keys and tuples of (device, lazy_wait_for_connection)
+    as values. If the device does not have the lazy_wait_for_connection attribute, it will log a warning.
 
     Args:
-        device (PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase): device to get the devices from
-        output (dict | None): output dictionary to store the devices
+        device (PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase): Device to check
+        output (dict | None): Output dictionary to store the results. If None, a new dictionary will be created.
 
     Returns:
-        dict[str, tuple[PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, bool]]: Dictionary of devices with their lazy_wait_for_connection status.
+        dict[str, tuple[PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, bool]]: Dictionary with device names as keys and tuples of (device, lazy_wait_for_connection) as values.
     """
     if output is None:
         output = {}
+    if isinstance(device, BECDeviceBase):
+        return output
     if hasattr(device, "lazy_wait_for_connection"):
         output[device.name] = (device, device.lazy_wait_for_connection)
     else:
@@ -223,7 +224,5 @@ def get_devices_lazy_wait_for_connection(
 
     for attr, cpt in device._sig_attrs.items():  # pylint: disable=protected-access
         if issubclass(cpt.cls, Device):
-            output.update(
-                get_devices_lazy_wait_for_connection(getattr(device, attr), output=output)
-            )
+            output.update(get_lazy_wait_for_connection(getattr(device, attr), output=output))
     return output
