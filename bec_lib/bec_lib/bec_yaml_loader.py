@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 
 import yaml
 
@@ -7,7 +8,10 @@ def include_constructor(loader, node):
     """
     Include another yaml file.
     """
-    filename = loader.construct_scalar(node)
+    filename = Path(loader.construct_scalar(node)).expanduser()
+    if not filename.is_absolute():
+        base_path = Path(loader.name).resolve().parent
+        filename = (base_path / filename).resolve(strict=False)
     with open(filename, "r", encoding="utf-8") as file_in:
         return {"__include__": {"data": yaml_load(file_in), "filename": filename}}
 

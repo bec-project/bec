@@ -84,9 +84,7 @@ def test_load_yaml_single_include_with_conflict(capfd, test_file1):
     assert len(out) == 1
     assert out["eiger"]["deviceClass"] == "ophyd_devices.SimCamera"
     out, _ = capfd.readouterr()
-    assert (
-        "Warning: Multiple definitions for key eiger. Using the one from ./test_file2.yaml." in out
-    )
+    assert "Warning: Multiple definitions for key eiger. Using the one from" in out
 
 
 def test_load_yaml_multi_include(test_file1, test_file2, test_file3):
