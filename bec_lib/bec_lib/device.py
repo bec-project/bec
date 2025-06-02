@@ -433,6 +433,13 @@ class DeviceBase:
     def _parse_info(self):
         if self._info.get("signals"):
             for signal_name, signal_info in self._info.get("signals", {}).items():
+                if (
+                    not signal_info.get("describe", {})
+                    .get("signal_info", {})
+                    .get("rpc_access", True)
+                ):
+                    continue
+
                 setattr(
                     self,
                     signal_name,
