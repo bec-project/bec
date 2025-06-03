@@ -42,6 +42,13 @@ failure_device:
   readOnly: false
   readoutPriority: baseline
 
+bec_signals_device:
+  deviceClass: ophyd_devices.sim.sim_test_devices.SimCameraWithPSIComponents
+  deviceConfig:
+  enabled: true
+  readOnly: false
+  readoutPriority: baseline
+
 ############################################################
 ####################### User motors ########################
 ############################################################
