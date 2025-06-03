@@ -16,7 +16,7 @@ import ophyd
 import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
 from ophyd.signal import EpicsSignalBase
-from ophyd_devices.utils.bec_signals import FileEventSignal, PreviewSignal, ProgressSignal
+from ophyd_devices.utils.bec_signals import BECMessageSignal
 from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
@@ -27,6 +27,7 @@ from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.utils.rpc_utils import rgetattr
+from bec_server.device_server.bec_message_handler import BECMessageHandler
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.device_serializer import get_device_info
 
@@ -93,6 +94,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self._config_update_handler_cls = config_update_handler
         self.config_update_handler = None
         self.failed_devices = {}
+        self._bec_message_handler = BECMessageHandler(self)
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -433,16 +435,9 @@ class DeviceManagerDS(DeviceManagerBase):
             # If the object does not have walk_components, it is likely a simple signal
             return
         signal_walk = obj.walk_signals()
-        for _ancestor, signal_name, signal in signal_walk:
-            if isinstance(signal, PreviewSignal):
-                signal.subscribe(callback=self._obj_callback_preview, run=False)
-                return
-            if isinstance(signal, FileEventSignal):
-                signal.subscribe(callback=self._obj_callback_file_event_signal, run=False)
-                return
-            if isinstance(signal, ProgressSignal):
-                signal.subscribe(callback=self._obj_callback_progress_signal, run=False)
-                return
+        for _ancestor, _signal_name, signal in signal_walk:
+            if isinstance(signal, BECMessageSignal):
+                signal.subscribe(callback=self._obj_callback_bec_message_signal, run=False)
 
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
@@ -626,39 +621,6 @@ class DeviceManagerDS(DeviceManagerBase):
                 max_size=min(100, int(max_size // dsize)),
             )
 
-    def _obj_callback_preview(
-        self, *_args, obj: OphydObject, value: messages.DevicePreviewMessage, **kwargs
-    ):
-        """
-        Callback for preview events. Sends the data to redis.
-        Introduces a check of the data size, and incorporates a limit which is defined in max_size (in MB)
-
-        Args:
-            obj (OphydObject): ophyd object
-            value (np.ndarray): data from ophyd device
-        """
-        if not obj.connected:
-            return
-        if not isinstance(value, messages.DevicePreviewMessage):
-            return  # we expect a DevicePreviewMessage here
-
-        data = value.data
-        # Convert sizes from bytes to MB
-        dsize = len(data.tobytes()) / 1e6
-        max_size = 1000
-        if dsize > max_size:
-            logger.warning(
-                f"Data size of single message is too large to send, current max_size {max_size}."
-            )
-            return
-
-        stream_msg = {"data": value}
-        self.connector.xadd(
-            MessageEndpoints.device_preview(device=obj.root.name, signal=value.signal),
-            stream_msg,
-            max_size=min(100, int(max_size // dsize)),
-        )
-
     def _obj_callback_acq_done(self, *_args, **kwargs):
         device = kwargs["obj"].root.name
         status = 0
@@ -730,23 +692,6 @@ class DeviceManagerDS(DeviceManagerBase):
         )
         self.connector.set_and_publish(MessageEndpoints.device_progress(obj.root.name), msg)
 
-    def _obj_callback_progress_signal(
-        self, *_args, obj: OphydObject, value: messages.ProgressMessage, **kwargs
-    ):
-        """
-        Callback for ProgressSignal events. Sends the data to redis.
-
-        Args:
-            obj (OphydObject): ophyd object
-            value (ProgressMessage): data from ophyd device
-        """
-        if not obj.connected:
-            return
-        if not isinstance(value, messages.ProgressMessage):
-            return
-        device_name = obj.root.name
-        self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), value)
-
     def _obj_callback_file_event(
         self,
         *_args,
@@ -795,30 +740,18 @@ class DeviceManagerDS(DeviceManagerBase):
         )
         pipe.execute()
 
-    def _obj_callback_file_event_signal(
-        self, *_args, obj: OphydObject, value: messages.FileMessage, **kwargs
+    def _obj_callback_bec_message_signal(
+        self, *_args, obj: OphydObject, value: messages.BECMessage, **kwargs
     ):
         """
-        Callback for FileEventSignal events. Sends the data to redis.
+        Callback for BECMessageSignal events. Sends the data to redis.
 
         Args:
             obj (OphydObject): ophyd object
-            value (FileEventSignalMessage): data from ophyd device
+            value (BECMessageSignal): data from ophyd device
         """
         if not obj.connected:
             return
-        if not isinstance(value, messages.FileMessage):
+        if not isinstance(value, messages.BECMessage):
             return
-        device_name = obj.root.name
-
-        # Note: It is fine to use the metadata from the device object here,
-        # as it is safe to assume that the file event is emitted before a new scan starts.
-        metadata = self.devices[device_name].metadata
-        scan_id = metadata.get("scan_id")
-
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.file_event(device_name), value, pipe=pipe)
-        self.connector.set_and_publish(
-            MessageEndpoints.public_file(scan_id=scan_id, name=device_name), value, pipe=pipe
-        )
-        pipe.execute()
+        self._bec_message_handler.emit(obj, value)

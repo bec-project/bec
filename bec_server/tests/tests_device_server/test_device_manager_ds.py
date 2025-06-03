@@ -270,42 +270,31 @@ def test_subscribe_to_device_events(dm_with_devices):
     [
         None,
         messages.DevicePreviewMessage(
-            data=np.random.rand(10, 10), device="eiger", signal="preview"
+            data=np.random.rand(10, 10), device="bec_signals_device", signal="preview"
         ),
         "some string",
     ],
 )
 def test_device_manager_ds_obj_callback_preview(dm_with_devices, value):
     device_manager = dm_with_devices
+    device = dm_with_devices.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
-        device_manager._obj_callback_preview(obj=dm_with_devices.devices.eiger.obj, value=value)
+        device_manager._obj_callback_bec_message_signal(obj=device.preview, value=value)
 
         if not isinstance(value, messages.DevicePreviewMessage):
             mock_xadd.assert_not_called()
         else:
+            rot90 = device.preview.num_rotation_90
+            transpose = device.preview.transpose
+            if rot90:
+                value.data = np.rot90(value.data, k=rot90, axes=(0, 1))
+            if transpose:
+                value.data = np.transpose(value.data)
             mock_xadd.assert_called_once_with(
-                MessageEndpoints.device_preview(device="eiger", signal="preview"),
+                MessageEndpoints.device_preview(device="bec_signals_device", signal="preview"),
                 {"data": value},
                 max_size=100,  # Assuming a default max size
             )
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_device_manager_ds_obj_callback_preview_disabled_device(dm_with_devices):
-    device_manager = dm_with_devices
-    eiger = device_manager.devices.eiger
-    with mock.patch.object(
-        type(eiger.obj), "connected", new_callable=mock.PropertyMock
-    ) as mock_connected:
-        mock_connected.return_value = False
-        with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
-            device_manager._obj_callback_preview(
-                obj=eiger.obj,
-                value=messages.DevicePreviewMessage(
-                    data=np.random.rand(10, 10), device="eiger", signal="preview"
-                ),
-            )
-            mock_xadd.assert_not_called()  # No call should be made for disabled devices
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -326,38 +315,14 @@ def test_device_manager_ds_obj_callback_preview_disabled_device(dm_with_devices)
 )
 def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices, value):
     device_manager = dm_with_devices
+    device = dm_with_devices.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
-        device_manager._obj_callback_file_event_signal(
-            obj=dm_with_devices.devices.eiger.obj, value=value
-        )
+        device_manager._obj_callback_bec_message_signal(obj=device.file_event, value=value)
 
         if not isinstance(value, messages.FileMessage):
             mock_set_and_publish.assert_not_called()
         else:
             assert mock_set_and_publish.call_count == 2
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_device_manager_ds_obj_callback_file_even_signal_disabled_device(dm_with_devices):
-    device_manager = dm_with_devices
-    eiger = device_manager.devices.eiger
-    with mock.patch.object(
-        type(eiger.obj), "connected", new_callable=mock.PropertyMock
-    ) as mock_connected:
-        mock_connected.return_value = False
-        with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
-            device_manager._obj_callback_file_event_signal(
-                obj=eiger.obj,
-                value=messages.FileMessage(
-                    file_path="some/path/to/file.h5",
-                    done=True,
-                    successful=True,
-                    hinted_h5_entries={"my_entry": "entry/data/data"},
-                    is_master_file=False,
-                    metadata={"user_info": "my_info"},
-                ),
-            )
-            mock_set_and_publish.assert_not_called()  # No call should be made for disabled devices
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -371,10 +336,9 @@ def test_device_manager_ds_obj_callback_file_even_signal_disabled_device(dm_with
 )
 def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices, value):
     device_manager = dm_with_devices
+    device = dm_with_devices.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
-        device_manager._obj_callback_progress_signal(
-            obj=dm_with_devices.devices.eiger.obj, value=value
-        )
+        device_manager._obj_callback_bec_message_signal(obj=device.progress, value=value)
 
         if not isinstance(value, messages.ProgressMessage):
             mock_set_and_publish.assert_not_called()
@@ -385,16 +349,16 @@ def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices, value):
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_device_manager_ds_obj_callback_progress_signal_disabled_device(dm_with_devices):
     device_manager = dm_with_devices
-    eiger = device_manager.devices.eiger
+    device = dm_with_devices.devices.bec_signals_device.obj
     with mock.patch.object(
-        type(eiger.obj), "connected", new_callable=mock.PropertyMock
+        type(device.progress), "connected", new_callable=mock.PropertyMock
     ) as mock_connected:
         mock_connected.return_value = False
-        with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
-            device_manager._obj_callback_progress_signal(
-                obj=eiger.obj,
+        with mock.patch.object(device_manager._bec_message_handler, "emit") as mock_emit:
+            device_manager._obj_callback_bec_message_signal(
+                obj=device.progress,
                 value=messages.ProgressMessage(
                     value=1, max_value=2, done=False, metadata={"scan_id": "12345"}
                 ),
             )
-            mock_set_and_publish.assert_not_called()
+            mock_emit.assert_not_called()
