@@ -362,3 +362,27 @@ def test_device_manager_ds_obj_callback_progress_signal_disabled_device(dm_with_
                 ),
             )
             mock_emit.assert_not_called()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        messages.DeviceMessage(
+            signals={"async_signal": {"value": np.random.rand(10), "timestamp": time.time()}}
+        ),
+        "some string",
+    ],
+)
+def test_device_manager_ds_obj_callback_async_signal(dm_with_devices, value):
+    device_manager = dm_with_devices
+    device = dm_with_devices.devices.bec_signals_device.obj
+    dm_with_devices.devices.bec_signals_device.metadata = {"scan_id": "12345"}
+    with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
+        device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=value)
+
+        if not isinstance(value, messages.DeviceMessage):
+            mock_xadd.assert_not_called()
+        else:
+            mock_xadd.assert_called_once()
