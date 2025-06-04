@@ -142,11 +142,13 @@ def get_device_info(
                     for signal_name, kind in info.get("signals", []):
                         if len(info.get("signals")) == 1:
                             obj_name = signal_obj.name
+                            comp_name = component_name
                         else:
                             obj_name = "_".join([signal_obj.name, signal_name])
+                            comp_name = ".".join([component_name, signal_name])
                         signals.update(
                             {
-                                signal_name: {
+                                comp_name: {
                                     "component_name": component_name,
                                     "signal_class": signal_obj.__class__.__name__,
                                     "obj_name": obj_name,
