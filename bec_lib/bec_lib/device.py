@@ -877,10 +877,20 @@ class Device(OphydInterfaceBase):
                 if kind in signal_info.get("kind_str")
             }
         kind_added = False
+        bec_signals = []
         for kind in ["hinted", "normal", "config", "omitted"]:
             if kind_added:
                 table.add_row()
+
             for signal_name, signal_info in signals_grouped[kind].items():
+                if (
+                    signal_info.get("describe", {})
+                    .get("source", "")
+                    .startswith("BECMessageSignal:")
+                ):
+                    bec_signals.append((signal_name, signal_info))
+                    continue
+
                 table.add_row(
                     signal_name,
                     signal_info.get("obj_name"),
@@ -890,6 +900,21 @@ class Device(OphydInterfaceBase):
                     signal_info.get("doc"),
                 )
                 kind_added = True
+        if bec_signals:
+            table.add_row()
+            table.add_section()
+            table.add_row("BECMessageSignals", "", "", "", "", "", style="bold")
+            table.add_section()
+            for signal_name, signal_info in bec_signals:
+                table.add_row(
+                    signal_name,
+                    signal_info.get("obj_name"),
+                    signal_info.get("kind_str"),
+                    signal_info.get("describe", {}).get("source"),
+                    signal_info.get("describe", {}).get("dtype"),
+                    signal_info.get("doc"),
+                )
+
         console = Console()
         console.print(table)
 
