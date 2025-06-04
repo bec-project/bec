@@ -459,11 +459,6 @@ class DeviceManagerBase:
         self.config_helper = ConfigHelper(self.connector, self._service._service_name)
         self._status_cb = status_cb if isinstance(status_cb, list) else [status_cb]
 
-    @property
-    def producer(self):
-        # will show the deprecation warning
-        return self.connector.producer()
-
     def initialize(self, bootstrap_server) -> None:
         """
         Initialize the DeviceManager by starting all connectors.

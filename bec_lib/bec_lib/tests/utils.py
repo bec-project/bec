@@ -734,9 +734,6 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             pipe._pipe_buffer.append(("lrange", (topic, index, msgs), {}))
             return
 
-    def producer(self):
-        return self
-
     def execute_pipeline(self, pipeline):
         pipeline.execute()
 
