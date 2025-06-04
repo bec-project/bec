@@ -393,6 +393,28 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def device_async_signal(scan_id: str, device: str, signal: str):
+        """
+        Endpoint for receiving an async device signal over Redis streams.
+        This endpoint is used by the device server to publish async device
+        signals using a messages.DeviceMessage. In addition to scan metadata,
+        the message metadata contains information on how to concatenate multiple readings.
+        Further keyword arguments for GUI handling might be attached.
+
+        Args:
+            scan_id (str): unique scan identifier
+            device (str): Device name, e.g. "mcs".
+            signal (str): Signal name, e.g. "image".
+
+        Returns:
+            EndpointInfo: Endpoint for device async signal of the specified device and signal.
+        """
+        endpoint = f"{EndpointType.INFO.value}/devices/async_signal/{scan_id}/{device}/{signal}"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.DeviceMessage, message_op=MessageOp.STREAM
+        )
+
+    @staticmethod
     def device_monitor_2d(device: str):
         """
         Endpoint for device monitoring of 2D detectors.
