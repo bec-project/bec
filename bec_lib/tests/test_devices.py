@@ -764,3 +764,24 @@ def test_device_summary_empty_signals(dev):
         # Verify table is created but empty
         assert table.title == "empty_device - Summary of Available Signals"
         assert len([row for row in table.rows if row]) == 0
+
+
+def test_device_summary_bec_signals(dm_with_devices):
+    """Test that BEC signals are correctly included in the summary."""
+    dev = dm_with_devices.devices
+    with mock.patch("rich.console.Console.print") as mock_print:
+        with mock.patch("rich.table.Table.add_row") as mock_add_row:
+            dev.eiger.summary()
+            mock_add_row.assert_has_calls(
+                [
+                    mock.call(
+                        "preview",
+                        "eiger_preview",
+                        "hinted",
+                        "BECMessageSignal:eiger_preview",
+                        "DevicePreviewMessage",
+                        "",
+                    )
+                ]
+            )
+            assert mock_print.call_count == 1
