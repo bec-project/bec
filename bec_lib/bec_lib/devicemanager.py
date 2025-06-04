@@ -9,7 +9,7 @@ import copy
 import re
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, Literal
 
 from rich.console import Console
 from rich.table import Table
@@ -716,6 +716,27 @@ class DeviceManagerBase:
         if not isinstance(self._config, dict):
             return False
         return True
+
+    def get_bec_signals(
+        self,
+        signal_type: Literal["AsyncSignal", "FileEventSignal", "PreviewSignal", "ProgressSignal"],
+    ) -> list[tuple[str, str, dict]]:
+        """
+        Get a list of BEC signals of the specified type.
+
+        Args:
+            signal_type (str): Type of the signal to filter by.
+        Supported types are "AsyncSignal", "FileEventSignal", "PreviewSignal", and "ProgressSignal".
+
+        Returns:
+            list: List of tuples containing the device name, component name and the signal info.
+        """
+        signals = []
+        for device in self.devices.values():
+            for comp, signal_info in device._info.get("signals", {}).items():
+                if signal_info.get("signal_class") == signal_type:
+                    signals.append((device.name, comp, signal_info))
+        return signals
 
     def shutdown(self):
         """
