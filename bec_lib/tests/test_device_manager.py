@@ -5,7 +5,7 @@ from unittest import mock
 
 import pydantic
 import pytest
-import yaml
+import typeguard
 
 import bec_lib
 from bec_lib import messages
@@ -406,3 +406,15 @@ def test_disabled_device_not_in_monitored(dm_with_devices):
     assert "motor1_disabled" in dm_with_devices.devices
     monitored_devices = dm_with_devices.devices.monitored_devices()
     assert "motor1_disabled" not in [dev.name for dev in monitored_devices]
+
+
+def test_get_bec_signals(dm_with_devices):
+    device_manager = dm_with_devices
+    with pytest.raises(typeguard.TypeCheckError):
+        device_manager.get_bec_signals("non_existing_filter")
+
+    preview_signals = device_manager.get_bec_signals("PreviewSignal")
+    assert preview_signals
+    eiger = list(filter(lambda x: x[0] == "eiger", preview_signals))[0]
+    assert eiger[1] == "preview"
+    assert isinstance(eiger[2], dict)

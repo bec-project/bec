@@ -717,6 +717,7 @@ class DeviceManagerBase:
             return False
         return True
 
+    @typechecked
     def get_bec_signals(
         self,
         signal_type: Literal["AsyncSignal", "FileEventSignal", "PreviewSignal", "ProgressSignal"],
