@@ -12,7 +12,7 @@ from bec_lib.redis_connector import RedisConnector
 
 logger = bec_logger.logger
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 

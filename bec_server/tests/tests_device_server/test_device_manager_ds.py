@@ -386,3 +386,19 @@ def test_device_manager_ds_obj_callback_async_signal(dm_with_devices, value):
             mock_xadd.assert_not_called()
         else:
             mock_xadd.assert_called_once()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("metadata", [{}, {"scan_id": 12345}])  # Invalid scan_id type
+def test_device_manager_ds_obj_callback_async_signal_incomplete_info(dm_with_devices, metadata):
+    device_manager = dm_with_devices
+    device = dm_with_devices.devices.bec_signals_device.obj
+    dm_with_devices.devices.bec_signals_device.metadata = metadata
+
+    msg = messages.DeviceMessage(
+        signals={"async_signal": {"value": np.random.rand(10), "timestamp": time.time()}}
+    )
+    with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
+        device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=msg)
+
+        mock_xadd.assert_not_called()
