@@ -129,4 +129,5 @@ class BECMessageHandler:
             ),
             {"data": message},
             max_size=obj.signal_metadata.get("max_size", 1000),
+            expire=obj.signal_metadata.get("expire", 600),  # default to 10 minutes (600 seconds)
         )
