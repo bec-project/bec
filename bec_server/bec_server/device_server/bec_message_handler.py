@@ -52,6 +52,8 @@ class BECMessageHandler:
             return self._handle_progress_signal(obj, message)
         if isinstance(obj, bms.PreviewSignal):
             return self._handle_preview_signal(obj, message)
+        if isinstance(obj, bms.AsyncSignal):
+            return self._handle_async_signal(obj, message)
 
         raise TypeError(f"Unsupported signal type: {type(obj)}")
 
@@ -81,7 +83,7 @@ class BECMessageHandler:
 
     def _handle_preview_signal(self, obj: bms.PreviewSignal, message: messages.BECMessage):
         if not isinstance(message, messages.DevicePreviewMessage):
-            raise TypeError(f"Expected PreviewMessage, got {type(message)}")
+            raise TypeError(f"Expected DevicePreviewMessage, got {type(message)}")
 
         data = message.data
         # Convert sizes from bytes to MB
@@ -98,4 +100,33 @@ class BECMessageHandler:
             MessageEndpoints.device_preview(device=obj.root.name, signal=message.signal),
             stream_msg,
             max_size=min(100, int(max_size // dsize)),
+        )
+
+    def _handle_async_signal(self, obj: bms.AsyncSignal, message: messages.BECMessage):
+        if not isinstance(message, messages.DeviceMessage):
+            raise TypeError(f"Expected DeviceMessage, got {type(message)}")
+
+        device_name = obj.root.name
+        signal_name = obj.attr_name
+        metadata = self.devices[device_name].metadata
+        scan_id = metadata.get("scan_id")
+        if scan_id is None:
+            logger.warning(f"Scan ID is None for device {device_name} and signal {signal_name}.")
+            return
+        if not isinstance(scan_id, str):
+            logger.warning(
+                f"Scan ID is not a string for device {device_name} and signal {signal_name}."
+            )
+            return
+        if obj.signal_metadata is None:
+            logger.warning(
+                f"Signal metadata is None for device {device_name} and signal {signal_name}."
+            )
+            return
+        self.connector.xadd(
+            MessageEndpoints.device_async_signal(
+                scan_id=scan_id, device=device_name, signal=signal_name
+            ),
+            {"data": message},
+            max_size=obj.signal_metadata.get("max_size", 1000),
         )
