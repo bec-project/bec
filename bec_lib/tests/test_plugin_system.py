@@ -61,7 +61,7 @@ class TestPluginSystem:
         # run plugin generation script
         try:
             copier.run_copy(
-                "https://gitea.psi.ch/bec/bec_plugin_copier_template.git",
+                "https://github.com/bec-project/plugin_template_mirror.git",
                 str(TestPluginSystem._tmp_plugin_dir),
                 defaults=True,
                 data={
