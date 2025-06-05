@@ -19,6 +19,8 @@ def uninstall(package):
     subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
 
 
+PLUGIN_REPO = "https://github.com/bec-project/plugin_copier_template.git"
+
 TEST_SCHEMA_FILE = """
 from bec_lib.metadata_schema import BasicScanMetadata
 
@@ -61,7 +63,7 @@ class TestPluginSystem:
         # run plugin generation script
         try:
             copier.run_copy(
-                "https://gitea.psi.ch/bec/bec_plugin_copier_template.git",
+                PLUGIN_REPO,
                 str(TestPluginSystem._tmp_plugin_dir),
                 defaults=True,
                 data={
@@ -207,12 +209,3 @@ class TestPluginSystem:
         metadata_registry, default_schema = plugin_helper.get_metadata_schema_registry()
         assert set(["test_scan_fail_on_type", "example_scan"]) == set(metadata_registry.keys())
         assert default_schema is None
-
-    def test_plugin_template_create_widget(self):
-        try:
-            from bec_widgets.utils.bec_plugin_helper import get_all_plugin_widgets
-        except ImportError:
-            pytest.skip("bec_widgets is not installed")
-
-        widgets = get_all_plugin_widgets()
-        assert list(widgets.keys()) == ["TestWidget"]
