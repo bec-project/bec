@@ -1,5 +1,6 @@
 from unittest import mock
 
+from bec_lib import messages
 from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 
 
@@ -44,3 +45,12 @@ def test_atlas_connector_ingest_data(atlas_connector):
         mock_xadd.assert_called_once_with(
             "internal/deployment/test-deployment/ingest", {"data": "dummy_data"}, max_size=1000
         )
+
+
+def test_atlas_connector_update_available_endpoints(atlas_connector):
+    with mock.patch.object(atlas_connector.connector, "set") as mock_set:
+        atlas_connector.update_available_endpoints()
+        mock_set.assert_called_once()
+        msg = mock_set.mock_calls[0][1][1]
+        assert isinstance(msg, messages.AvailableResourceMessage)
+        assert "device_readback" in msg.resource

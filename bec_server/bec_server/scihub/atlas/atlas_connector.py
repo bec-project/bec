@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,7 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.signature_serializer import signature_to_dict
 
 from .atlas_forwarder import AtlasForwarder
 from .atlas_metadata_handler import AtlasMetadataHandler
@@ -47,6 +49,7 @@ class AtlasConnector:
             self.metadata_handler = AtlasMetadataHandler(self)
             self.atlas_forwarder = AtlasForwarder(self)
         self.update_acls()
+        self.update_available_endpoints()
 
     @property
     def config(self):
@@ -87,6 +90,10 @@ class AtlasConnector:
             logger.warning("Not connected to Atlas. Cannot ingest data.")
             return
 
+        if self.redis_atlas is None:
+            logger.error("Redis Atlas connection is not initialized.")
+            return
+
         self.redis_atlas.xadd(
             f"internal/deployment/{self.deployment_name}/ingest", data, max_size=1000
         )
@@ -103,6 +110,27 @@ class AtlasConnector:
 
         # Populate default ACLs
         self._populate_default_acls()
+
+    def update_available_endpoints(self):
+        """
+        Update the available endpoints in the connector.
+        """
+
+        endpoints = {}
+
+        for endpoint in dir(MessageEndpoints):
+            if endpoint.startswith("_"):
+                continue
+            endpoint_func = getattr(MessageEndpoints, endpoint)
+            if not callable(endpoint_func):
+                continue
+            endpoints[endpoint] = {
+                "signature": signature_to_dict(endpoint_func),
+                "doc": endpoint_func.__doc__,
+            }
+        self.connector.set(
+            MessageEndpoints.endpoint_info(), messages.AvailableResourceMessage(resource=endpoints)
+        )
 
     def _populate_default_acls(self):
         """

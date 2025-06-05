@@ -1122,3 +1122,17 @@ class ACLAccountsMessage(BECMessage):
     accounts: dict[
         str, dict[Literal["categories", "keys", "channels", "commands", "profile"], list[str] | str]
     ]
+
+
+class EndpointInfoMessage(BECMessage):
+    """
+    Message for endpoint information
+
+    Args:
+        endpoint (str): Endpoint URL
+        metadata (dict, optional): Additional metadata.
+    """
+
+    msg_type: ClassVar[str] = "endpoint_info_message"
+    endpoint: str
+    metadata: dict | None = Field(default_factory=dict)

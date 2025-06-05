@@ -1549,3 +1549,19 @@ class MessageEndpoints:
             message_type=messages.ACLAccountsMessage,
             message_op=MessageOp.KEY_VALUE,
         )
+
+    @staticmethod
+    def endpoint_info():
+        """
+        Endpoint for endpoint info. This endpoint is used to publish the endpoint info using a
+        messages.EndpointInfoMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for endpoint info.
+        """
+        endpoint = f"{EndpointType.PUBLIC.value}/endpoints"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.KEY_VALUE,
+        )
