@@ -10,6 +10,7 @@ import os
 import pathlib
 import time
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import yaml
@@ -31,6 +32,25 @@ else:
     DeviceConfigMessage = lazy_import_from("bec_lib.messages", ("DeviceConfigMessage",))
 
 logger = bec_logger.logger
+
+
+@dataclass(frozen=True)
+class _ConfigConstants:
+    NON_UPDATABLE = ("name", "deviceClass")
+    UPDATABLE = (
+        "description",
+        "deviceConfig",
+        "deviceTags",
+        "enabled",
+        "onFailure",
+        "readOnly",
+        "readoutPriority",
+        "softwareTrigger",
+        "userParameter",
+    )
+
+
+CONF = _ConfigConstants()
 
 
 class ConfigHelper:
@@ -129,10 +149,21 @@ class ConfigHelper:
             file.write(yaml.dump(out))
         return True
 
-    def send_config_request(self, action: ConfigAction = "update", config=None) -> None:
+    def send_config_request(
+        self,
+        action: ConfigAction = "update",
+        config: dict | None = None,
+        wait_for_response: bool = True,
+        timeout_s: float | None = None,
+    ) -> str:
         """
-        send request to update config
-        Returns:
+        Send a request to update config
+        Args:
+            action (ConfigAction): what to do with the config
+            config (dict | None): the config
+            wait_for_response (bool): whether to wait for the response, default True
+            timeout_s (float, optional): how long to wait for a response. Ignored if not waiting. Defaults to best effort calculated value based on message length.
+        Returns: request ID (str)
 
         """
         if action in ["update", "add", "set"] and not config:
@@ -143,8 +174,18 @@ class ConfigHelper:
             DeviceConfigMessage(action=action, config=config, metadata={"RID": RID}),
         )
 
-        reply = self.wait_for_config_reply(RID, timeout=min(300, len(config) * 30) + 2)
+        if wait_for_response:
+            timeout = timeout_s if timeout_s is not None else self.suggested_timeout_s(config)
+            logger.info(f"Waiting for reply with timeout {timeout} s")
+            reply = self.wait_for_config_reply(RID, timeout=timeout)
+            self.handle_update_reply(reply, RID)
+        return RID
 
+    @staticmethod
+    def suggested_timeout_s(config: dict):
+        return min(300, len(config) * 30) + 2
+
+    def handle_update_reply(self, reply: RequestResponseMessage, RID):
         if not reply.content["accepted"] and not reply.metadata.get("updated_config"):
             raise DeviceConfigError(
                 f"Failed to update the config: {reply.content['message']}. No devices were updated."

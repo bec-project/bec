@@ -10,6 +10,7 @@ import bec_lib
 from bec_lib import messages
 from bec_lib.atlas_models import Device, DevicePartial
 from bec_lib.bec_errors import DeviceConfigError
+from bec_lib.config_helper import CONF
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -239,17 +240,9 @@ class ConfigHandler:
         if not dev_config:
             return updated
 
-        available_keys = [
-            "readOnly",
-            "userParameter",
-            "onFailure",
-            "deviceTags",
-            "readoutPriority",
-            "softwareTrigger",
-        ]
         for key in dev_config:
-            if key not in available_keys:
-                raise DeviceConfigError(f"Unknown update key {key}.")
+            if key not in CONF.UPDATABLE:
+                raise DeviceConfigError(f"Cannot update key {key}!")
 
             self._validate_update({key: dev_config[key]})
             device._config[key] = dev_config[key]
