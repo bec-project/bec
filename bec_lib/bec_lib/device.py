@@ -13,10 +13,12 @@ import uuid
 from collections import defaultdict, namedtuple
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ConfigDict
 from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
 
+from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.queue_items import QueueItem
@@ -146,6 +148,17 @@ class Status:
                 raise RPCError(f"RPC call failed: {msg}")
 
 
+class _PermissiveDeviceModel(_DeviceModelCore):
+    model_config = ConfigDict(extra="allow")
+
+
+def set_device_config(device: "DeviceBase", config: dict | _PermissiveDeviceModel | None):
+    # device._config = config
+    device._config = (  # pylint: disable=protected-access
+        _PermissiveDeviceModel.model_validate(config).model_dump() if config is not None else None
+    )
+
+
 class DeviceBase:
     """
     The DeviceBase class is the base class for all devices that are controlled via
@@ -158,7 +171,7 @@ class DeviceBase:
         *,
         name: str,
         info: dict = None,
-        config: dict = None,
+        config: dict | _PermissiveDeviceModel | None = None,
         parent=None,
         signal_info: dict = None,
         class_name: str | None = None,
@@ -173,7 +186,7 @@ class DeviceBase:
         self.name = name
         self._class_name = class_name or object.__getattribute__(self, "__class__").__name__
         self._signal_info = signal_info
-        self._config = config
+        set_device_config(self, config)
         if info is None:
             info = {}
         self._info = info.get("device_info", {})
@@ -625,7 +638,7 @@ class DeviceBase:
     def user_parameter(self) -> dict:
         """get the user parameter for this device"""
         # pylint: disable=protected-access
-        return self.root._config.get("userParameter")
+        return self.root._config.get("userParameter", {})
 
     @typechecked
     def set_user_parameter(self, val: dict):

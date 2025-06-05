@@ -28,13 +28,9 @@ def make_all_fields_optional(model: Type[BM], model_name: str) -> Type[BM]:
     return create_model(model_name, **fields, __config__=model.model_config)
 
 
-class Device(BaseModel):
-    """
-    Represents a device in the BEC Atlas API. This model is also used by the SciHub service to
-    validate updates to the device configuration.
-    """
+class _DeviceModelCore(BaseModel):
+    """Represents the internal config values for a device"""
 
-    name: str
     enabled: bool
     deviceClass: str
     deviceConfig: dict | None = None
@@ -44,6 +40,15 @@ class Device(BaseModel):
     softwareTrigger: bool = False
     deviceTags: list[str] = []
     userParameter: dict = {}
+
+
+class Device(_DeviceModelCore):
+    """
+    Represents a device in the BEC Atlas API. This model is also used by the SciHub service to
+    validate updates to the device configuration.
+    """
+
+    name: str
 
 
 DevicePartial = make_all_fields_optional(Device, "DevicePartial")

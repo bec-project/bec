@@ -15,10 +15,19 @@ from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
 
+from bec_lib.atlas_models import Device as DeviceModel
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.callback_handler import EventType
 from bec_lib.config_helper import ConfigHelper
-from bec_lib.device import ComputedSignal, Device, DeviceBase, Positioner, ReadoutPriority, Signal
+from bec_lib.device import (
+    ComputedSignal,
+    Device,
+    DeviceBase,
+    Positioner,
+    ReadoutPriority,
+    Signal,
+    set_device_config,
+)
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.utils.import_utils import lazy_import_from
@@ -644,24 +653,26 @@ class DeviceManagerBase:
 
         base_class = info["device_info"]["device_base_class"]
         class_name = info["device_info"]["device_class"]
+
         if base_class == "device":
             logger.info(f"Adding new device {name}")
-            obj = Device(name=name, info=info, parent=self, class_name=class_name)
+            obj = Device(name=name, info=info, config=dev, parent=self, class_name=class_name)
         elif base_class == "positioner":
             logger.info(f"Adding new positioner {name}")
-            obj = Positioner(name=name, info=info, parent=self, class_name=class_name)
+            obj = Positioner(name=name, info=info, config=dev, parent=self, class_name=class_name)
         elif base_class == "signal":
             logger.info(f"Adding new signal {name}")
-            obj = Signal(name=name, info=info, parent=self, class_name=class_name)
+            obj = Signal(name=name, info=info, config=dev, parent=self, class_name=class_name)
         elif base_class == "computed_signal":
             logger.info(f"Adding new computed signal {name}")
-            obj = ComputedSignal(name=name, info=info, parent=self, class_name=class_name)
+            obj = ComputedSignal(
+                name=name, info=info, config=dev, parent=self, class_name=class_name
+            )
         else:
             logger.error(f"Trying to add new device {name} of type {base_class}")
             return
 
-        # pylint: disable=protected-access
-        obj._config = dev
+        set_device_config(obj, dev)
         self.devices._add_device(name, obj)
 
     def _remove_device(self, dev_name):

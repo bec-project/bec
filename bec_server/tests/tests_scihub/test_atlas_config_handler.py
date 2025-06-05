@@ -154,9 +154,16 @@ def test_config_handler_set_invalid_config_raises(config_handler):
             )
 
 
+BASIC_CONFIG = {
+    "enabled": True,
+    "deviceClass": "TestDevice",
+    "readoutPriority": ReadoutPriority.MONITORED.value,
+}
+
+
 def test_config_handler_update_config(config_handler):
     dev = config_handler.device_manager.devices
-    dev.samx = DeviceBase(name="samx", config={})
+    dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
     msg = messages.DeviceConfigMessage(
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
@@ -180,7 +187,7 @@ def test_config_handler_update_config(config_handler):
 
 def test_config_handler_update_config_not_updated(config_handler):
     dev = config_handler.device_manager.devices
-    dev.samx = DeviceBase(name="samx", config={})
+    dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
     msg = messages.DeviceConfigMessage(
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
@@ -202,7 +209,7 @@ def test_config_handler_update_config_not_updated(config_handler):
 
 def test_config_handler_update_device_config_enable(config_handler):
     dev = config_handler.device_manager.devices
-    dev.samx = DeviceBase(name="samx", config={})
+    dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
     with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
         with mock.patch.object(
             config_handler, "_wait_for_device_server_update", return_value=(True, mock.MagicMock())
@@ -218,7 +225,7 @@ def test_config_handler_update_device_config_enable(config_handler):
 
 def test_config_handler_update_device_config_deviceConfig(config_handler):
     dev = config_handler.device_manager.devices
-    dev.samx = DeviceBase(name="samx", config={"deviceConfig": {}})
+    dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | {"deviceConfig": {}})
     with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
         with mock.patch.object(
             config_handler, "_wait_for_device_server_update", return_value=(True, mock.MagicMock())
@@ -232,12 +239,14 @@ def test_config_handler_update_device_config_deviceConfig(config_handler):
                 # mock doesn't copy the data, hence the popped result:
                 update_dev_server.assert_called_once_with(rid, {device.name: {}})
                 wait.assert_called_once_with(rid)
-                assert dev.samx._config == {"deviceConfig": {"something": "to_update"}}
+                assert _all_in_a_in_b(
+                    {"deviceConfig": {"something": "to_update"}}, dev.samx._config
+                )
 
 
 def test_config_handler_update_device_config_misc(config_handler):
     dev = config_handler.device_manager.devices
-    dev.samx = DeviceBase(name="samx", config={})
+    dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
     with mock.patch.object(config_handler, "_validate_update") as validate_update:
         device = dev["samx"]
         config_handler._update_device_config(device, {"readOnly": True})
@@ -246,7 +255,7 @@ def test_config_handler_update_device_config_misc(config_handler):
 
 def test_config_handler_update_device_config_raise(config_handler):
     dev = config_handler.device_manager.devices
-    dev.samx = DeviceBase(name="samx", config={})
+    dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
     with mock.patch.object(config_handler, "_validate_update") as validate_update:
         device = dev["samx"]
         with pytest.raises(DeviceConfigError):
@@ -258,21 +267,21 @@ def test_config_handler_update_device_config_available_keys(config_handler, avai
         dev = config_handler.device_manager.devices
         if available_key in ["deviceConfig", "userParameter"]:
             init = {"something": "to_update"}
-            dev.samx = DeviceBase(name="samx", config={available_key: init})
+            dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | {available_key: init})
         elif available_key in ["softwareTrigger", "readOnly"]:
             init = True
-            dev.samx = DeviceBase(name="samx", config={available_key: init})
+            dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | {available_key: init})
         elif available_key in ["readoutPriority"]:
             init = ReadoutPriority.BASELINE
-            dev.samx = DeviceBase(name="samx", config={available_key: init})
+            dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | {available_key: init})
         elif available_key in ["onFailure"]:
             init = OnFailure.BUFFER
-            dev.samx = DeviceBase(name="samx", config={available_key: init})
+            dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | {available_key: init})
         elif available_key in ["deviceTags"]:
             init = ["something"]
-            dev.samx = DeviceBase(name="samx", config={available_key: init})
+            dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | {available_key: init})
         else:
-            dev.samx = DeviceBase(name="samx", config={})
+            dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
         with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
             with mock.patch.object(
                 config_handler,
@@ -304,7 +313,7 @@ def test_config_handler_update_device_config_available_keys(config_handler, avai
                     if available_key == "deviceConfig":
                         update_dev_server.assert_called_once_with(rid, {device.name: {}})
                         wait.assert_called_once_with(rid)
-                    assert dev.samx._config == {available_key: update}
+                    assert _all_in_a_in_b({available_key: update}, dev.samx._config)
 
 
 def test_config_handler_wait_for_device_server_update(config_handler):
@@ -327,18 +336,24 @@ def test_config_handler_wait_for_device_server_update_timeout(config_handler):
             mock_get.assert_called()
 
 
+def _all_in_a_in_b(a: dict, b: dict):
+    return {k: v for k, v in b.items() if k in a} == a
+
+
 def test_config_handler_update_config_in_redis(config_handler):
     with mock.patch.object(config_handler, "get_config_from_redis") as get_config:
         with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
             get_config.return_value = [{"name": "samx", "config": {}}]
             dev = config_handler.device_manager.devices
             dev.samx = DeviceBase(
-                name="samx", config={"deviceConfig": {"something": "to_update"}, "name": "samx"}
+                name="samx",
+                config=BASIC_CONFIG | {"deviceConfig": {"something": "to_update"}, "name": "samx"},
             )
             config_handler.update_config_in_redis(dev["samx"])
             get_config.assert_called_once()
-            set_config.assert_called_once_with(
-                [{"deviceConfig": {"something": "to_update"}, "name": "samx"}]
+            assert _all_in_a_in_b(
+                {"deviceConfig": {"something": "to_update"}, "name": "samx"},
+                set_config.call_args.args[0][0],
             )
 
 
@@ -417,7 +432,7 @@ def test_config_handler_remove_from_config(config_handler):
     msg = messages.DeviceConfigMessage(
         action="remove", config={"samx": {}}, metadata={"RID": "12345"}
     )
-    config_handler.device_manager.devices.samx = DeviceBase(name="samx", config={})
+    config_handler.device_manager.devices.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
     with mock.patch.object(config_handler, "remove_devices_from_redis") as remove_devices:
         with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
             with mock.patch.object(
