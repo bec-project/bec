@@ -244,36 +244,10 @@ class DeviceBase:
             return []
         return hints.get("fields", [])
 
-    def get_device_config(self):
-        """get the device config for this device"""
-        return self.root._config["deviceConfig"]
-
-    @property
-    def enabled(self):
-        """Returns True if the device is enabled, otherwise False."""
-        # pylint: disable=protected-access
-        return self.root._config["enabled"]
-
-    @enabled.setter
-    def enabled(self, val):
-        # pylint: disable=protected-access
-        self.update_config({"enabled": val})
-        self.root._config["enabled"] = val
-
     @property
     def root(self):
         """Returns the root object of the device tree."""
         return self._get_root_recursively(self)[0]
-
-    @property
-    def full_name(self):
-        """Returns the full name of the device or signal, separated by "_" e.g. samx_velocity"""
-        return self._compile_function_path().replace(".", "_")
-
-    @property
-    def dotted_name(self):
-        """Returns the full dotted name of the device or signal e.g. samx.velocity"""
-        return self._compile_function_path()
 
     def _prepare_rpc_msg(
         self, rpc_id: str, request_id: str, device: str, func_call: str, *args, **kwargs
@@ -509,6 +483,73 @@ class DeviceBase:
                 )
                 setattr(self, user_access_name, self._custom_rpc_methods[user_access_name])
 
+    def __eq__(self, other):
+        if isinstance(other, DeviceBase):
+            return other.name == self.name
+        return False
+
+    def __hash__(self):
+        return self.name.__hash__()
+
+    def __str__(self):
+        return self._compile_str(self)
+
+    @staticmethod
+    def _compile_str(obj: DeviceBase):
+        # pylint: disable=import-outside-toplevel
+        from bec_lib.devicemanager import DeviceManagerBase
+
+        class_name = obj._class_name
+
+        if isinstance(obj.parent, DeviceManagerBase):
+            # pylint: disable=protected-access
+            config = "".join(
+                [f"\t{key}: {val}\n" for key, val in obj._config.get("deviceConfig").items()]
+            )
+            separator = "--" * 10
+            return (
+                f"{class_name}(name={obj.name},"
+                f" enabled={obj.root.enabled}):\n{separator}\nDetails:\n\tDescription:"
+                f" {obj._config.get('description', obj.name)}\n\tStatus:"
+                f" {'enabled' if obj.root.enabled else 'disabled'}\n\tRead only:"
+                f" {obj.read_only}\n\tSoftware Trigger: {obj.root.software_trigger}\n\tLast recorded value:"
+                f" {obj.read(cached=True)}\n\tDevice class:"
+                f" {obj._config.get('deviceClass')}\n\treadoutPriority:"
+                f" {obj._config.get('readoutPriority')}\n\tDevice tags:"
+                f" {obj._config.get('deviceTags', [])}\n\tUser parameter:"
+                f" {obj._config.get('userParameter')}\n{separator}\nConfig:\n{config}"
+            )
+        return f"{class_name}(name={obj.name}, root_device={obj.root.name}, enabled={obj.root.enabled})"
+
+
+class DeviceBaseWithConfig(DeviceBase):
+
+    @property
+    def full_name(self):
+        """Returns the full name of the device or signal, separated by "_" e.g. samx_velocity"""
+        return self._compile_function_path().replace(".", "_")
+
+    @property
+    def dotted_name(self):
+        """Returns the full dotted name of the device or signal e.g. samx.velocity"""
+        return self._compile_function_path()
+
+    @property
+    def enabled(self):
+        """Returns True if the device is enabled, otherwise False."""
+        # pylint: disable=protected-access
+        return self.root._config["enabled"]
+
+    @enabled.setter
+    def enabled(self, val):
+        # pylint: disable=protected-access
+        self.update_config({"enabled": val})
+        self.root._config["enabled"] = val
+
+    def get_device_config(self):
+        """get the device config for this device"""
+        return self.root._config["deviceConfig"]
+
     def update_config(self, update: dict) -> None:
         """
         Updates the device configuration.
@@ -659,46 +700,8 @@ class DeviceBase:
         param.update(val)
         self.set_user_parameter(param)
 
-    def __eq__(self, other):
-        if isinstance(other, DeviceBase):
-            return other.name == self.name
-        return False
 
-    def __hash__(self):
-        return self.name.__hash__()
-
-    def __str__(self):
-        return self._compile_str(self)
-
-    @staticmethod
-    def _compile_str(obj: DeviceBase):
-        # pylint: disable=import-outside-toplevel
-        from bec_lib.devicemanager import DeviceManagerBase
-
-        class_name = obj._class_name
-
-        if isinstance(obj.parent, DeviceManagerBase):
-            # pylint: disable=protected-access
-            config = "".join(
-                [f"\t{key}: {val}\n" for key, val in obj._config.get("deviceConfig").items()]
-            )
-            separator = "--" * 10
-            return (
-                f"{class_name}(name={obj.name},"
-                f" enabled={obj.enabled}):\n{separator}\nDetails:\n\tDescription:"
-                f" {obj._config.get('description', obj.name)}\n\tStatus:"
-                f" {'enabled' if obj.enabled else 'disabled'}\n\tRead only:"
-                f" {obj.read_only}\n\tSoftware Trigger: {obj.software_trigger}\n\tLast recorded value:"
-                f" {obj.read(cached=True)}\n\tDevice class:"
-                f" {obj._config.get('deviceClass')}\n\treadoutPriority:"
-                f" {obj._config.get('readoutPriority')}\n\tDevice tags:"
-                f" {obj._config.get('deviceTags', [])}\n\tUser parameter:"
-                f" {obj._config.get('userParameter')}\n{separator}\nConfig:\n{config}"
-            )
-        return f"{class_name}(name={obj.name}, enabled={obj.enabled})"
-
-
-class OphydInterfaceBase(DeviceBase):
+class OphydInterfaceBase(DeviceBaseWithConfig):
     @rpc
     def trigger(self, rpc_id: str):
         """

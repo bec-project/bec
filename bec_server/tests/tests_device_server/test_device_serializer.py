@@ -50,6 +50,16 @@ class DummyDeviceWithConflictingUserAccess(Device):
         pass
 
 
+class DummyDeviceWithConflictingUserAccessProperty(Device):
+    """This device will be assigned a protected name"""
+
+    USER_ACCESS = ["enabled"]
+
+    @property
+    def enabled(self):
+        pass
+
+
 class DummyDeviceWithConflictingSubDevice(Device):
     """This device will be assigned a protected name"""
 
@@ -63,6 +73,7 @@ class DummyDeviceWithConflictingSubDevice(Device):
         DummyDeviceWithConflictingSignalNames(name="enabled"),
         DummyDeviceWithConflictingSubDevice(name="test"),
         DummyDeviceWithConflictingUserAccess(name="test"),
+        DummyDeviceWithConflictingUserAccessProperty(name="test"),
     ],
 )
 def test_get_device_info(obj):

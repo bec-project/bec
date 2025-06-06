@@ -22,7 +22,7 @@ from typeguard import typechecked
 from bec_lib import messages, plugin_helper
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
-from bec_lib.device import DeviceBase
+from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -34,7 +34,7 @@ from bec_server.device_server.devices.device_serializer import get_device_info
 logger = bec_logger.logger
 
 
-class DSDevice(DeviceBase):
+class DSDevice(DeviceBaseWithConfig):
     def __init__(self, name, obj, config, parent=None):
         super().__init__(name=name, config=config, parent=parent)
         self.obj = obj

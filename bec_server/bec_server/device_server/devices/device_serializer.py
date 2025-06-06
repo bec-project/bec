@@ -12,7 +12,7 @@ from ophyd_devices import BECDeviceBase, ComputedSignal
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 
 from bec_lib.bec_errors import DeviceConfigError
-from bec_lib.device import DeviceBase
+from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.logger import bec_logger
 from bec_lib.numpy_encoder import numpy_encode
 from bec_lib.signature_serializer import signature_to_dict
@@ -74,7 +74,7 @@ def get_custom_user_access_info(obj: Any, obj_interface: dict) -> dict:
 @functools.lru_cache(maxsize=2)
 def get_protected_class_methods():
     """get protected methods of the DeviceBase class"""
-    return [func for func in dir(DeviceBase) if not func.startswith("__")]
+    return [func for func in dir(DeviceBaseWithConfig) if not func.startswith("__")]
 
 
 def get_device_base_class(obj: Any) -> str:

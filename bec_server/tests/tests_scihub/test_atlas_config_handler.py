@@ -8,7 +8,7 @@ from pydantic import ValidationError
 import bec_lib
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
-from bec_lib.device import DeviceBase, OnFailure, ReadoutPriority
+from bec_lib.device import DeviceBaseWithConfig, OnFailure, ReadoutPriority
 from bec_lib.endpoints import MessageEndpoints
 
 dir_path = os.path.dirname(bec_lib.__file__)
@@ -165,7 +165,7 @@ BASIC_CONFIG = {
 def make_samx(config_handler):
     def _func(config: dict = {}):
         dev = config_handler.device_manager.devices
-        dev.samx = DeviceBase(name="samx", config=BASIC_CONFIG | config)
+        dev.samx = DeviceBaseWithConfig(name="samx", config=BASIC_CONFIG | config)
         return dev
 
     return _func
@@ -351,7 +351,7 @@ def test_config_handler_update_config_in_redis(config_handler):
         with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
             get_config.return_value = [{"name": "samx", "config": {}}]
             dev = config_handler.device_manager.devices
-            dev.samx = DeviceBase(
+            dev.samx = DeviceBaseWithConfig(
                 name="samx",
                 config=BASIC_CONFIG | {"deviceConfig": {"something": "to_update"}, "name": "samx"},
             )
@@ -438,7 +438,9 @@ def test_config_handler_remove_from_config(config_handler):
     msg = messages.DeviceConfigMessage(
         action="remove", config={"samx": {}}, metadata={"RID": "12345"}
     )
-    config_handler.device_manager.devices.samx = DeviceBase(name="samx", config=BASIC_CONFIG)
+    config_handler.device_manager.devices.samx = DeviceBaseWithConfig(
+        name="samx", config=BASIC_CONFIG
+    )
     with mock.patch.object(config_handler, "remove_devices_from_redis") as remove_devices:
         with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
             with mock.patch.object(

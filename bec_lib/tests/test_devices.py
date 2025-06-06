@@ -10,7 +10,7 @@ from bec_lib.device import (
     AdjustableMixin,
     ComputedSignal,
     Device,
-    DeviceBase,
+    DeviceBaseWithConfig,
     Positioner,
     ReadoutPriority,
     RPCError,
@@ -338,7 +338,7 @@ BASIC_CONFIG = {
 @pytest.fixture
 def dev_w_config():
     def _func(config: dict = {}):
-        return DeviceBase(
+        return DeviceBaseWithConfig(
             name="test", config=BASIC_CONFIG | config, parent=mock.MagicMock(spec=DeviceManagerBase)
         )
 
@@ -355,18 +355,20 @@ def device_obj(device_config: dict[str, Any]):
     yield dm.devices[device_config["name"]]
 
 
-def test_create_device_saves_config(device_obj: DeviceBase, device_config: dict[str, Any]):
+def test_create_device_saves_config(
+    device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]
+):
     assert {k: v for k, v in device_obj._config.items() if k in device_config} == device_config
 
 
-def test_device_enabled(device_obj: DeviceBase, device_config: dict[str, Any]):
+def test_device_enabled(device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]):
     assert device_obj.enabled == device_config["enabled"]
     device_config["enabled"] = False
     set_device_config(device_obj, device_config)
     assert device_obj.enabled == device_config["enabled"]
 
 
-def test_device_enable(device_obj: DeviceBase):
+def test_device_enable(device_obj: DeviceBaseWithConfig):
     with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         device_obj.enabled = True
         config_req.assert_called_once_with(
@@ -374,7 +376,7 @@ def test_device_enable(device_obj: DeviceBase):
         )
 
 
-def test_device_enable_set(device_obj: DeviceBase):
+def test_device_enable_set(device_obj: DeviceBaseWithConfig):
     with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         device_obj.read_only = False
         config_req.assert_called_once_with(
@@ -387,7 +389,9 @@ def test_device_enable_set(device_obj: DeviceBase):
     [({"in": 5}, None), ({"in": 5, "out": 10}, None), ({"5", "4"}, TypeCheckError)],
 )
 def test_device_set_user_parameter(
-    device_obj: DeviceBase, val: dict[str, int] | set[str], raised_error: None | TypeCheckError
+    device_obj: DeviceBaseWithConfig,
+    val: dict[str, int] | set[str],
+    raised_error: None | TypeCheckError,
 ):
     with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         if raised_error is None:
@@ -410,7 +414,7 @@ def test_device_set_user_parameter(
     ],
 )
 def test_device_update_user_parameter(
-    device_obj: DeviceBase,
+    device_obj: DeviceBaseWithConfig,
     user_param: dict[str, int] | None,
     val: dict[str, int] | set[str],
     out: dict[str, int] | None,
@@ -447,7 +451,7 @@ def test_status_wait_raises_timeout():
         status.wait(timeout=0.1)
 
 
-def test_device_set_device_config(dev_w_config: Callable[..., DeviceBase]):
+def test_device_set_device_config(dev_w_config: Callable[..., DeviceBaseWithConfig]):
     device = dev_w_config({"deviceConfig": {"tolerance": 1}})
     device.set_device_config({"tolerance": 2})
     assert device.get_device_config() == {"tolerance": 2}
@@ -455,7 +459,7 @@ def test_device_set_device_config(dev_w_config: Callable[..., DeviceBase]):
 
 
 @pytest.fixture
-def device_w_tags(dev_w_config: Callable[..., DeviceBase]):
+def device_w_tags(dev_w_config: Callable[..., DeviceBaseWithConfig]):
     yield (d := dev_w_config({"deviceTags": ["tag1", "tag2"]}))
     assert d.parent.config_helper.send_config_request.call_count == int(
         d.get_device_tags() != ["tag1", "tag2"]
@@ -492,7 +496,7 @@ def test_device_wm(device_w_tags):
         ({"read_only": False}, "read_only", False),
     ],
 )
-def test_properties(dev_w_config: Callable[..., DeviceBase], config, attr, value):
+def test_properties(dev_w_config: Callable[..., DeviceBaseWithConfig], config, attr, value):
     assert getattr(dev_w_config(config), attr) == value
 
 
@@ -503,7 +507,7 @@ def test_properties(dev_w_config: Callable[..., DeviceBase], config, attr, value
         ({"deviceConfig": {"tolerance": 1}}, "get_device_config", {"tolerance": 1}),
     ],
 )
-def test_methods(dev_w_config: Callable[..., DeviceBase], config, method, value):
+def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, method, value):
     assert getattr(dev_w_config(config), method)() == value
 
 
@@ -515,7 +519,9 @@ def test_methods(dev_w_config: Callable[..., DeviceBase], config, method, value)
         ({"read_only": False}, "read_only", True, True),
     ],
 )
-def test_properties_assign(dev_w_config: Callable[..., DeviceBase], config, attr, value, result):
+def test_properties_assign(
+    dev_w_config: Callable[..., DeviceBaseWithConfig], config, attr, value, result
+):
     device = dev_w_config(config)
     setattr(device, attr, value)
     assert getattr(device, attr) == result
@@ -577,7 +583,7 @@ def test_show_all():
 
     # Create a DeviceContainer with some mock Devices
     devs = DeviceContainer()
-    devs["dev1"] = DeviceBase(
+    devs["dev1"] = DeviceBaseWithConfig(
         name="dev1",
         config={
             "description": "Device 1",
@@ -589,7 +595,7 @@ def test_show_all():
         },
         parent=parent,
     )
-    devs["dev2"] = DeviceBase(
+    devs["dev2"] = DeviceBaseWithConfig(
         name="dev2",
         config={
             "description": "Device 2",
