@@ -795,3 +795,13 @@ def test_device_summary_bec_signals(dm_with_devices):
                 ]
             )
             assert mock_print.call_count == 1
+
+
+def test_device_str(dm_with_devices):
+    """Test that the device string representation includes the name and class."""
+    dev = dm_with_devices.devices.eiger
+    out = str(dev)
+    assert "SimCamera(name=eiger" in out
+    assert f"User parameter: {dev._config.get('userParameter')}" in out
+    assert f"Device tags: {dev._config.get('deviceTags')}" in out
+    assert f"Device class: {dev._config.get('deviceClass')}" in out
