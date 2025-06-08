@@ -103,7 +103,7 @@ def numpy_encode_list(obj, chain=None):
 
         return {"nd": True, "type": descr, "kind": kind, "shape": obj.shape, "data": obj.tolist()}
     if isinstance(obj, (np.bool_, np.number)):
-        return {"nd": False, "type": obj.dtype.str, "data": obj.data}
+        return {"nd": False, "type": obj.__class__.__name__, "data": obj.data.tolist()}
     if isinstance(obj, complex):
         return {"complex": True, "data": repr(obj)}
 
@@ -130,7 +130,8 @@ def numpy_decode_list(obj, chain=None):
                     descr = obj["type"]
                 return np.array(obj["data"], dtype=_unpack_dtype(descr)).reshape(obj["shape"])
             descr = obj["type"]
-            return np.array(obj["data"], dtype=_unpack_dtype(descr))[0]
+            numpy_dtype = getattr(np, descr)
+            return numpy_dtype(obj["data"])
         if "complex" in obj:
             return complex(tostr(obj["data"]))
         return obj if chain is None else chain(obj)
