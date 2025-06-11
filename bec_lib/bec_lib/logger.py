@@ -28,6 +28,7 @@ if TYPE_CHECKING:  # pragma: no cover
 else:
     loguru_logger = lazy_import_from("loguru", ("logger",))
     LogWriter = lazy_import_from("bec_lib.file_utils", ("LogWriter",))
+    RedisConnector = lazy_import_from("bec_lib.redis_connector", ("RedisConnector",))
 
 
 class LogLevel(int, enum.Enum):
@@ -98,8 +99,9 @@ class BECLogger:
     def configure(
         self,
         bootstrap_server: list,
-        connector_cls: type[RedisConnector],
         service_name: str,
+        connector: RedisConnector | None = None,
+        connector_cls: type[RedisConnector] | None = None,
         service_config: dict | None = None,
     ) -> None:
         """
@@ -107,8 +109,10 @@ class BECLogger:
 
         Args:
             bootstrap_server (list): List of bootstrap servers.
-            connector_cls (RedisConnector): Connector class.
             service_name (str): Name of the service to which the logger belongs.
+            connector (RedisConnector, optional): Connector instance. Defaults to None.
+            connector_cls (type[RedisConnector], optional): Connector class. Defaults to None.
+            service_config (dict, optional): Service configuration dictionary. Defaults to None.
         """
         if self._configured:
             # already configured, nothing to do - this can happen
@@ -119,11 +123,67 @@ class BECLogger:
             self._update_base_path(service_config)
         if os.path.exists(self._base_path) is False:
             self.writer_mixin.create_directory(self._base_path)
+
+        self.connector = self._get_connector(
+            connector=connector, connector_cls=connector_cls, bootstrap_server=bootstrap_server
+        )
+
         self.bootstrap_server = bootstrap_server
-        self.connector = connector_cls(bootstrap_server)
         self.service_name = service_name
         self._configured = True
         self._update_sinks()
+
+    def _get_connector(
+        self,
+        connector: RedisConnector | None = None,
+        connector_cls: type[RedisConnector] | None = None,
+        bootstrap_server: list | None = None,
+    ) -> RedisConnector:
+        """
+        Validate and return a RedisConnector instance.
+        This method checks if either a connector instance or a connector class is provided,
+        and if so, it initializes the connector with the provided bootstrap server.
+
+        Args:
+            connector (RedisConnector, optional): Connector instance. Defaults to None.
+            connector_cls (type[RedisConnector], optional): Connector class. Defaults to None.
+
+        Returns:
+            RedisConnector: Connector instance.
+
+        Raises:
+            ValueError: If neither connector nor connector_cls is provided, or if both are provided.
+            TypeError: If the provided connector is not an instance of RedisConnector,
+                       or if the connector_cls is not a subclass of RedisConnector.
+            ValueError: If bootstrap_server is not provided when using connector_cls.
+        """
+        if connector is None and connector_cls is None:
+            raise ValueError(
+                "Either connector or connector_cls must be provided to configure the logger."
+            )
+        if connector is not None and connector_cls is not None:
+            raise ValueError(
+                "Only one of connector or connector_cls should be provided to configure the logger."
+            )
+
+        # connector is already provided
+        if connector is not None:
+            if not isinstance(connector, RedisConnector):
+                raise TypeError(
+                    f"connector must be an instance of RedisConnector, got {type(connector)}"
+                )
+            return connector
+
+        # connector_cls is provided
+        if connector_cls is None:
+            raise ValueError("connector_cls must be provided when using connector_cls")
+        if not issubclass(connector_cls, RedisConnector):
+            raise TypeError(
+                f"connector_cls must be a subclass of RedisConnector, got {connector_cls}"
+            )
+        if not bootstrap_server:
+            raise ValueError("bootstrap_server must be provided when using connector_cls")
+        return connector_cls(bootstrap=bootstrap_server)
 
     def _update_base_path(self, service_config: dict | None = None):
         """

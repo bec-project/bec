@@ -182,7 +182,7 @@ class BECService:
     def _initialize_logger(self) -> None:
         bec_logger.configure(
             self.bootstrap_server,
-            self._connector_cls,
+            connector=self.connector,
             service_name=self._name,
             service_config=self._service_config.config["service_config"],
         )

@@ -6,7 +6,7 @@ import pytest
 
 from bec_lib.bec_errors import ServiceConfigError
 from bec_lib.logger import BECLogger
-from bec_lib.tests.utils import ConnectorMock
+from bec_lib.redis_connector import RedisConnector
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def test_configure(logger, tmp_path):
                 logger._base_path = tmp_path
                 logger.configure(
                     bootstrap_server=["localhost:9092"],
-                    connector_cls=ConnectorMock,
+                    connector=mock.MagicMock(spec=RedisConnector),
                     service_name="test",
                     service_config={"log_writer": {"base_path": f"{tmp_path}"}},
                 )
