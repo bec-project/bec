@@ -168,19 +168,17 @@ class BECLogger:
 
         # connector is already provided
         if connector is not None:
-            if not isinstance(connector, RedisConnector):
-                raise TypeError(
-                    f"connector must be an instance of RedisConnector, got {type(connector)}"
-                )
             return connector
 
         # connector_cls is provided
-        if connector_cls is None:
-            raise ValueError("connector_cls must be provided when using connector_cls")
-        if not issubclass(connector_cls, RedisConnector):
-            raise TypeError(
-                f"connector_cls must be a subclass of RedisConnector, got {connector_cls}"
-            )
+
+        # disabled for now, cf issue #522
+        # if connector_cls is None:
+        #     raise ValueError("connector_cls must be provided when using connector_cls")
+        # if not issubclass(connector_cls, RedisConnector):
+        #     raise TypeError(
+        #         f"connector_cls must be a subclass of RedisConnector, got {connector_cls}"
+        #     )
         if not bootstrap_server:
             raise ValueError("bootstrap_server must be provided when using connector_cls")
         return connector_cls(bootstrap=bootstrap_server)
