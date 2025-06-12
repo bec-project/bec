@@ -125,7 +125,7 @@ def test_parse_config_request_add_remove(dm_with_devices):
                 "tolerance": 0.01,
                 "update_frequency": 400,
             },
-            "deviceTags": ["user motors"],
+            "deviceTags": {"user motors"},
             "enabled": True,
             "readOnly": False,
             "name": "new_device",

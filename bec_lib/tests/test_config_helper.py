@@ -61,7 +61,7 @@ def test_config_helper_save_current_session():
                 "enabled": True,
                 "readOnly": False,
                 "deviceClass": "SimPositioner",
-                "deviceTags": ["user motors"],
+                "deviceTags": {"user motors"},
                 "deviceConfig": {
                     "delay": 1,
                     "labels": "pinz",
@@ -82,7 +82,7 @@ def test_config_helper_save_current_session():
                 "enabled": True,
                 "readOnly": False,
                 "deviceClass": "SimMonitor",
-                "deviceTags": ["beamline"],
+                "deviceTags": {"beamline"},
                 "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
                 "readoutPriority": "monitored",
                 "onFailure": "retry",
@@ -94,7 +94,7 @@ def test_config_helper_save_current_session():
         out_data = {
             "pinz": {
                 "deviceClass": "SimPositioner",
-                "deviceTags": ["user motors"],
+                "deviceTags": {"user motors"},
                 "enabled": True,
                 "readOnly": False,
                 "deviceConfig": {
@@ -110,7 +110,7 @@ def test_config_helper_save_current_session():
             },
             "transd": {
                 "deviceClass": "SimMonitor",
-                "deviceTags": ["beamline"],
+                "deviceTags": {"beamline"},
                 "enabled": True,
                 "readOnly": False,
                 "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
