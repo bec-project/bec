@@ -79,6 +79,18 @@ class BECMessageHandler:
             raise TypeError(f"Expected ProgressMessage, got {type(message)}")
 
         device_name = obj.root.name
+        metadata = self.devices[device_name].metadata
+        scan_id = metadata.get("scan_id")
+        if scan_id is None:
+            logger.warning(f"Scan ID is None for device {device_name}.")
+            return
+        if not isinstance(scan_id, str):
+            logger.warning(f"Scan ID is not a string for device {device_name}.")
+            return
+
+        if message.metadata is None:
+            message.metadata = {}
+        message.metadata.update({"scan_id": scan_id})
         self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), message)
 
     def _handle_preview_signal(self, obj: bms.PreviewSignal, message: messages.BECMessage):

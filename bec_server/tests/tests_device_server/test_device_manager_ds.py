@@ -327,16 +327,12 @@ def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices, value
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 @pytest.mark.parametrize(
-    "value",
-    [
-        None,
-        messages.ProgressMessage(value=1, max_value=2, done=False, metadata={"scan_id": "12345"}),
-        "some string",
-    ],
+    "value", [None, messages.ProgressMessage(value=1, max_value=2, done=False), "some string"]
 )
 def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices, value):
     device_manager = dm_with_devices
     device = dm_with_devices.devices.bec_signals_device.obj
+    dm_with_devices.devices.bec_signals_device.metadata = {"scan_id": "12345"}
     with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
         device_manager._obj_callback_bec_message_signal(obj=device.progress, value=value)
 
