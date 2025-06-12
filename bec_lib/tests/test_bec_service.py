@@ -30,11 +30,13 @@ class MagicMockConnector(RedisConnector):
 
 
 @contextlib.contextmanager
-def bec_service(config, connector_cls=None, **kwargs):
+def bec_service(config, connector_cls=None, connector=None, **kwargs):
     if connector_cls is None:
         connector_cls = MagicMockConnector
     with mock.patch("bec_lib.bec_service.BECAccess") as mock_access:
-        service = BECService(config=config, connector_cls=connector_cls, **kwargs)
+        service = BECService(
+            config=config, connector_cls=connector_cls, connector=connector, **kwargs
+        )
         try:
             yield service
         finally:
@@ -120,13 +122,13 @@ def test_bec_service_update_existing_services():
         messages.ServiceMetricMessage(name="service1", metrics={}),
         messages.ServiceMetricMessage(name="service2", metrics={}),
     ]
-    connector_cls = mock.MagicMock()
-    connector_cls().keys.return_value = service_keys
+    connector = mock.MagicMock(spec=RedisConnector)
+    connector.keys.return_value = service_keys
     msgs = service_msgs + service_metric_msgs
-    connector_cls().get.side_effect = [msg for msg in msgs]
+    connector.get.side_effect = [msg for msg in msgs]
     with bec_service(
         f"{os.path.dirname(bec_lib.__file__)}/tests/test_service_config.yaml",
-        connector_cls=connector_cls,
+        connector=connector,
         unique_service=True,
     ) as service:
         assert service._services_info == {"service1": service_msgs[0], "service2": service_msgs[1]}
@@ -145,14 +147,14 @@ def test_bec_service_update_existing_services_ignores_wrong_msgs():
         messages.StatusMessage(name="service1", status=BECStatus.RUNNING, info={}, metadata={}),
         None,
     ]
+    connector = mock.MagicMock(spec=RedisConnector)
     service_metric_msgs = [None, messages.ServiceMetricMessage(name="service2", metrics={})]
     msgs = service_msgs + service_metric_msgs
-    connector_cls = mock.MagicMock()
-    connector_cls().keys.return_value = service_keys
-    connector_cls().get.side_effect = [msg for msg in msgs]
+    connector.keys.return_value = service_keys
+    connector.get.side_effect = [msg for msg in msgs]
     with bec_service(
         f"{os.path.dirname(bec_lib.__file__)}/tests/test_service_config.yaml",
-        connector_cls=connector_cls,
+        connector=connector,
         unique_service=True,
     ) as service:
         assert service._services_info == {"service1": service_msgs[0]}
@@ -392,9 +394,7 @@ def test_wait_for_service():
         BECService, "service_status", new_callable=mock.PropertyMock
     ) as mock_update:
         mock_update.side_effect = service_status
-        service = BECService(
-            config=config, connector_cls=mock.MagicMock(spec=RedisConnector), wait_for_server=False
-        )
+        service = BECService(config=config, connector_cls=MagicMockConnector, wait_for_server=False)
         with mock.patch("bec_lib.bec_service.time.sleep") as mock_sleep:
             service.wait_for_service("ScanServer", BECStatus.RUNNING)
             mock_sleep.assert_called_once()
@@ -415,9 +415,7 @@ def test_wait_for_service_busy():
         BECService, "service_status", new_callable=mock.PropertyMock
     ) as mock_update:
         mock_update.side_effect = service_status
-        service = BECService(
-            config=config, connector_cls=mock.MagicMock(spec=RedisConnector), wait_for_server=False
-        )
+        service = BECService(config=config, connector_cls=MagicMockConnector, wait_for_server=False)
         with mock.patch("bec_lib.bec_service.time.sleep") as mock_sleep:
             service.wait_for_service("ScanServer", BECStatus.BUSY)
             mock_sleep.assert_called_once()
@@ -442,9 +440,7 @@ def test_wait_for_service_default():
         BECService, "service_status", new_callable=mock.PropertyMock
     ) as mock_update:
         mock_update.side_effect = service_status
-        service = BECService(
-            config=config, connector_cls=mock.MagicMock(spec=RedisConnector), wait_for_server=False
-        )
+        service = BECService(config=config, connector_cls=MagicMockConnector, wait_for_server=False)
         with mock.patch("bec_lib.bec_service.time.sleep") as mock_sleep:
             service.wait_for_service("ScanServer")
             mock_sleep.assert_called_once()
