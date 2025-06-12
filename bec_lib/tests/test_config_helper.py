@@ -142,7 +142,7 @@ def test_send_config_request(config_helper):
         accepted=True, message={"msg": "test"}
     )
     config_helper.wait_for_config_reply.assert_called_once_with(mock.ANY, timeout=32)
-    config_helper.wait_for_service_response.assert_called_once_with(mock.ANY)
+    config_helper.wait_for_service_response.assert_called_once_with(mock.ANY, 32)
 
 
 def test_send_config_request_raises_for_rejected_update(config_helper):
@@ -199,6 +199,22 @@ def test_wait_for_service_response_raises_timeout():
 
     with pytest.raises(DeviceConfigError):
         config_helper.wait_for_service_response("test", timeout=0.3)
+
+
+def test_wait_for_service_response_handles_one_by_one():
+    mock_msg_1, mock_msg_2, mock_msg_3 = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+    mock_msg_1.content = {"response": {"service": "DeviceServer"}}
+    mock_msg_2.content = {"response": {"service": "ScanServer"}}
+    mock_msg_3.content = {"response": {"service": "ServiceName123"}}
+
+    connector = mock.MagicMock()
+    config_helper = ConfigHelper(connector)
+    config_helper._service_name = "ServiceName123"
+    connector.lrange = mock.MagicMock(
+        side_effect=[(mock_msg_1,), (mock_msg_1, mock_msg_2), (mock_msg_1, mock_msg_2, mock_msg_3)]
+    )
+
+    config_helper.wait_for_service_response("test", timeout=0.3)
 
 
 def test_update_base_path_recovery():

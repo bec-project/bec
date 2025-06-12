@@ -178,14 +178,14 @@ class ConfigHelper:
             timeout = timeout_s if timeout_s is not None else self.suggested_timeout_s(config)
             logger.info(f"Waiting for reply with timeout {timeout} s")
             reply = self.wait_for_config_reply(RID, timeout=timeout)
-            self.handle_update_reply(reply, RID)
+            self.handle_update_reply(reply, RID, timeout)
         return RID
 
     @staticmethod
     def suggested_timeout_s(config: dict):
         return min(300, len(config) * 30) + 2
 
-    def handle_update_reply(self, reply: RequestResponseMessage, RID):
+    def handle_update_reply(self, reply: RequestResponseMessage, RID: str, timeout: int):
         if not reply.content["accepted"] and not reply.metadata.get("updated_config"):
             raise DeviceConfigError(
                 f"Failed to update the config: {reply.content['message']}. No devices were updated."
@@ -209,26 +209,25 @@ class ConfigHelper:
                 )
         finally:
             # wait for the device server and scan server to acknowledge the config change
-            self.wait_for_service_response(RID)
+            self.wait_for_service_response(RID, timeout)
 
-    def wait_for_service_response(self, RID: str, timeout=60) -> ServiceResponseMessage:
+    def wait_for_service_response(self, RID: str, timeout: float = 60) -> ServiceResponseMessage:
         """
         wait for service response
 
         Args:
             RID (str): request id
-            timeout (int, optional): timeout in seconds. Defaults to 10.
+            timeout (float, optional): timeout in seconds. Defaults to 60.
 
         Returns:
             ServiceResponseMessage: reply message
         """
-        elapsed_time = 0
-        max_time = timeout
+        start_time = time.monotonic()
         while True:
+            elapsed_time = time.monotonic() - start_time
             service_messages = self.connector.lrange(MessageEndpoints.service_response(RID), 0, -1)
             if not service_messages:
                 time.sleep(0.005)
-                elapsed_time += 0.005
             else:
                 ack_services = [
                     msg.content["response"]["service"]
@@ -240,7 +239,7 @@ class ConfigHelper:
                     checked_services.add(self._service_name)
                 if checked_services.issubset(set(ack_services)):
                     break
-            if elapsed_time > max_time:
+            if elapsed_time > timeout:  # type: ignore
                 if service_messages:
                     raise DeviceConfigError(
                         "Timeout reached whilst waiting for config change to be acknowledged."
@@ -252,25 +251,24 @@ class ConfigHelper:
                     " messages received."
                 )
 
-    def wait_for_config_reply(self, RID: str, timeout=60) -> RequestResponseMessage:
+    def wait_for_config_reply(self, RID: str, timeout: float = 60) -> RequestResponseMessage:
         """
         wait for config reply
 
         Args:
             RID (str): request id
-            timeout (int, optional): timeout in seconds. Defaults to 10.
+            timeout (int, optional): timeout in seconds. Defaults to 60.
 
         Returns:
             RequestResponseMessage: reply message
         """
-        start = 0
+        start = time.monotonic()
         while True:
+            elapsed_time = time.monotonic() - start
             msg = self.connector.get(MessageEndpoints.device_config_request_response(RID))
             if msg is None:
                 time.sleep(0.01)
-                start += 0.01
-
-                if start > timeout:
+                if elapsed_time > timeout:
                     raise DeviceConfigError("Timeout reached whilst waiting for config reply.")
                 continue
             return msg
