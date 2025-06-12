@@ -201,6 +201,22 @@ def test_wait_for_service_response_raises_timeout():
         config_helper.wait_for_service_response("test", timeout=0.3)
 
 
+def test_wait_for_service_response_handles_one_by_one():
+    mock_msg_1, mock_msg_2, mock_msg_3 = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+    mock_msg_1.content = {"response": {"service": "DeviceServer"}}
+    mock_msg_2.content = {"response": {"service": "ScanServer"}}
+    mock_msg_3.content = {"response": {"service": "ServiceName123"}}
+
+    connector = mock.MagicMock()
+    config_helper = ConfigHelper(connector)
+    config_helper._service_name = "ServiceName123"
+    connector.lrange = mock.MagicMock(
+        side_effect=[(mock_msg_1,), (mock_msg_1, mock_msg_2), (mock_msg_1, mock_msg_2, mock_msg_3)]
+    )
+
+    config_helper.wait_for_service_response("test", timeout=0.3)
+
+
 def test_update_base_path_recovery():
     with mock.patch("bec_lib.bec_service.SERVICE_CONFIG") as mock_service_config:
         with mock.patch("bec_lib.config_helper.DeviceConfigWriter") as mock_device_config_writer:
