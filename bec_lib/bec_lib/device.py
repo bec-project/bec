@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, namedtuple
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterable
 
 from pydantic import ConfigDict
 from rich.console import Console
@@ -577,10 +577,10 @@ class DeviceBaseWithConfig(DeviceBase):
         return self.root._config.get("deviceTags", [])
 
     @typechecked
-    def set_device_tags(self, val: list):
-        """set the device tags for this device"""
+    def set_device_tags(self, val: Iterable):
+        """set the device tags for this device - any duplicates will be discarded"""
         # pylint: disable=protected-access
-        self.root._config["deviceTags"] = val
+        self.root._config["deviceTags"] = set(val)
         return self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
         )
@@ -589,9 +589,7 @@ class DeviceBaseWithConfig(DeviceBase):
     def add_device_tag(self, val: str):
         """add a device tag for this device"""
         # pylint: disable=protected-access
-        if val in self.root._config["deviceTags"]:
-            return None
-        self.root._config["deviceTags"].append(val)
+        self.root._config["deviceTags"].add(val)
         return self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
         )
@@ -599,8 +597,6 @@ class DeviceBaseWithConfig(DeviceBase):
     def remove_device_tag(self, val: str):
         """remove a device tag for this device"""
         # pylint: disable=protected-access
-        if val not in self.root._config["deviceTags"]:
-            return None
         self.root._config["deviceTags"].remove(val)
         return self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}

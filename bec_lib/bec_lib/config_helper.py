@@ -23,6 +23,7 @@ from bec_lib.file_utils import DeviceConfigWriter
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ConfigAction
 from bec_lib.utils.import_utils import lazy_import_from
+from bec_lib.utils.json import ExtendedEncoder
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.messages import DeviceConfigMessage, RequestResponseMessage, ServiceResponseMessage
@@ -113,7 +114,7 @@ class ConfigHelper:
             try:
                 data = yaml_load(stream)
                 logger.trace(
-                    f"Loaded new config from disk: {json.dumps(data, sort_keys=True, indent=4)}"
+                    f"Loaded new config from disk: {json.dumps(data, sort_keys=True, indent=4, cls=ExtendedEncoder)}"
                 )
             except yaml.YAMLError as err:
                 logger.error(f"Error while loading config from disk: {repr(err)}")

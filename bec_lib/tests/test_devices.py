@@ -324,7 +324,7 @@ def device_config():
         "readoutPriority": "monitored",
         "deviceClass": "SimCamera",
         "deviceConfig": {"device_access": True, "labels": "eiger", "name": "eiger"},
-        "deviceTags": ["detector"],
+        "deviceTags": {"detector"},
     }
 
 
@@ -460,19 +460,17 @@ def test_device_set_device_config(dev_w_config: Callable[..., DeviceBaseWithConf
 
 @pytest.fixture
 def device_w_tags(dev_w_config: Callable[..., DeviceBaseWithConfig]):
-    yield (d := dev_w_config({"deviceTags": ["tag1", "tag2"]}))
-    assert d.parent.config_helper.send_config_request.call_count == int(
-        d.get_device_tags() != ["tag1", "tag2"]
-    )
+    yield dev_w_config({"deviceTags": {"tag1", "tag2"}})
 
 
 @pytest.mark.parametrize(
     ["method", "args", "result"],
     [
-        ("set_device_tags", ["tag3", "tag4"], ["tag3", "tag4"]),
-        ("add_device_tag", "tag3", ["tag1", "tag2", "tag3"]),
-        ("add_device_tag", "tag1", ["tag1", "tag2"]),
-        ("remove_device_tag", "tag1", ["tag2"]),
+        ("set_device_tags", {"tag3", "tag4"}, {"tag3", "tag4"}),
+        ("set_device_tags", ["tag3", "tag3", "tag3", "tag4"], {"tag3", "tag4"}),
+        ("add_device_tag", "tag3", {"tag1", "tag2", "tag3"}),
+        ("add_device_tag", "tag1", {"tag1", "tag2"}),
+        ("remove_device_tag", "tag1", {"tag2"}),
     ],
 )
 def test_set_device_tags(device_w_tags, method, args, result):
@@ -503,7 +501,7 @@ def test_properties(dev_w_config: Callable[..., DeviceBaseWithConfig], config, a
 @pytest.mark.parametrize(
     ["config", "method", "value"],
     [
-        ({"deviceTags": ["tag1", "tag2"]}, "get_device_tags", ["tag1", "tag2"]),
+        ({"deviceTags": {"tag1", "tag2"}}, "get_device_tags", {"tag1", "tag2"}),
         ({"deviceConfig": {"tolerance": 1}}, "get_device_config", {"tolerance": 1}),
     ],
 )
@@ -591,7 +589,7 @@ def test_show_all():
             "readOnly": False,
             "deviceClass": "Class1",
             "readoutPriority": "monitored",
-            "deviceTags": ["tag1", "tag2"],
+            "deviceTags": {"tag1", "tag2"},
         },
         parent=parent,
     )
@@ -603,7 +601,7 @@ def test_show_all():
             "readOnly": True,
             "deviceClass": "Class2",
             "readoutPriority": "baseline",
-            "deviceTags": ["tag3", "tag4"],
+            "deviceTags": {"tag3", "tag4"},
         },
         parent=parent,
     )
