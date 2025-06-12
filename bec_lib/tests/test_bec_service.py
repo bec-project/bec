@@ -24,10 +24,15 @@ from bec_lib.service_config import ServiceConfig
 dir_path = os.path.dirname(bec_lib.__file__)
 
 
+class MagicMockConnector(RedisConnector):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, redis_cls=mock.MagicMock, **kwargs)
+
+
 @contextlib.contextmanager
 def bec_service(config, connector_cls=None, **kwargs):
     if connector_cls is None:
-        connector_cls = mock.MagicMock()
+        connector_cls = MagicMockConnector
     with mock.patch("bec_lib.bec_service.BECAccess") as mock_access:
         service = BECService(config=config, connector_cls=connector_cls, **kwargs)
         try:
