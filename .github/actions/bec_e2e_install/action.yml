@@ -1,0 +1,66 @@
+name: "BEC e2e Install"
+description: "Install BEC and related os dependencies"
+inputs:
+  BEC_CORE_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of BEC Core to install"
+  OPHYD_DEVICES_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of Ophyd Devices to install"
+  BEC_WIDGETS_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of BEC Widgets to install"
+  PYTHON_VERSION: # id of input
+    required: false
+    default: "3.11"
+    description: "Python version to use"
+
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        auto-update-conda: true
+        auto-activate-base: true
+        python-version: ${{ inputs.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      shell: bash -el {0}
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y tmux
+
+    - name: Create subdirectory for e2e tests
+      shell: bash -el {0}
+      run: |
+        mkdir -p ./_e2e_test_checkout_/
+        echo -e "\033[35;1m Installing dependencies for branch ${{ inputs.BEC_CORE_BRANCH }} for BEC Core. \033[0;m";
+        echo -e "\033[35;1m Installing dependencies for branch ${{ inputs.OPHYD_DEVICES_BRANCH }} for ophyd_devices. \033[0;m"; 
+
+    - name: Checkout BEC Core
+      uses: actions/checkout@v4
+      with:
+        repository: bec-project/bec
+        ref: ${{ inputs.BEC_CORE_BRANCH }}
+        path: ./_e2e_test_checkout_/bec
+
+    - name: Checkout Ophyd Devices
+      uses: actions/checkout@v4
+      with:
+        repository: bec-project/ophyd_devices
+        ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+        path: ./_e2e_test_checkout_/ophyd_devices
+
+    - name: Install Depdendencies & run Pytest
+      shell: bash -el {0} # Needs to be bash -el {0} to work with conda
+      run: |
+        cd ./_e2e_test_checkout_/bec
+        source ./bin/install_bec_dev.sh -t
+        pip install -e ../ophyd_devices
+        pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end
+        
