@@ -61,7 +61,7 @@ def test_config_helper_save_current_session():
                 "enabled": True,
                 "readOnly": False,
                 "deviceClass": "SimPositioner",
-                "deviceTags": ["user motors"],
+                "deviceTags": {"user motors"},
                 "deviceConfig": {
                     "delay": 1,
                     "labels": "pinz",
@@ -82,7 +82,7 @@ def test_config_helper_save_current_session():
                 "enabled": True,
                 "readOnly": False,
                 "deviceClass": "SimMonitor",
-                "deviceTags": ["beamline"],
+                "deviceTags": {"beamline"},
                 "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
                 "readoutPriority": "monitored",
                 "onFailure": "retry",
@@ -94,7 +94,7 @@ def test_config_helper_save_current_session():
         out_data = {
             "pinz": {
                 "deviceClass": "SimPositioner",
-                "deviceTags": ["user motors"],
+                "deviceTags": {"user motors"},
                 "enabled": True,
                 "readOnly": False,
                 "deviceConfig": {
@@ -110,7 +110,7 @@ def test_config_helper_save_current_session():
             },
             "transd": {
                 "deviceClass": "SimMonitor",
-                "deviceTags": ["beamline"],
+                "deviceTags": {"beamline"},
                 "enabled": True,
                 "readOnly": False,
                 "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -199,6 +199,22 @@ def test_wait_for_service_response_raises_timeout():
 
     with pytest.raises(DeviceConfigError):
         config_helper.wait_for_service_response("test", timeout=0.3)
+
+
+def test_wait_for_service_response_handles_one_by_one():
+    mock_msg_1, mock_msg_2, mock_msg_3 = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+    mock_msg_1.content = {"response": {"service": "DeviceServer"}}
+    mock_msg_2.content = {"response": {"service": "ScanServer"}}
+    mock_msg_3.content = {"response": {"service": "ServiceName123"}}
+
+    connector = mock.MagicMock()
+    config_helper = ConfigHelper(connector)
+    config_helper._service_name = "ServiceName123"
+    connector.lrange = mock.MagicMock(
+        side_effect=[(mock_msg_1,), (mock_msg_1, mock_msg_2), (mock_msg_1, mock_msg_2, mock_msg_3)]
+    )
+
+    config_helper.wait_for_service_response("test", timeout=0.3)
 
 
 def test_update_base_path_recovery():

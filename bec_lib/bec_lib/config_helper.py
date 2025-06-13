@@ -23,6 +23,7 @@ from bec_lib.file_utils import DeviceConfigWriter
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ConfigAction
 from bec_lib.utils.import_utils import lazy_import_from
+from bec_lib.utils.json import ExtendedEncoder
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.messages import DeviceConfigMessage, RequestResponseMessage, ServiceResponseMessage
@@ -113,7 +114,7 @@ class ConfigHelper:
             try:
                 data = yaml_load(stream)
                 logger.trace(
-                    f"Loaded new config from disk: {json.dumps(data, sort_keys=True, indent=4)}"
+                    f"Loaded new config from disk: {json.dumps(data, sort_keys=True, indent=4, cls=ExtendedEncoder)}"
                 )
             except yaml.YAMLError as err:
                 logger.error(f"Error while loading config from disk: {repr(err)}")
@@ -211,24 +212,23 @@ class ConfigHelper:
             # wait for the device server and scan server to acknowledge the config change
             self.wait_for_service_response(RID)
 
-    def wait_for_service_response(self, RID: str, timeout=60) -> ServiceResponseMessage:
+    def wait_for_service_response(self, RID: str, timeout: float = 10) -> ServiceResponseMessage:
         """
         wait for service response
 
         Args:
             RID (str): request id
-            timeout (int, optional): timeout in seconds. Defaults to 10.
+            timeout (float, optional): timeout in seconds. Defaults to 10.
 
         Returns:
             ServiceResponseMessage: reply message
         """
-        elapsed_time = 0
-        max_time = timeout
+        start_time = time.monotonic()
         while True:
+            elapsed_time = time.monotonic() - start_time
             service_messages = self.connector.lrange(MessageEndpoints.service_response(RID), 0, -1)
             if not service_messages:
                 time.sleep(0.005)
-                elapsed_time += 0.005
             else:
                 ack_services = [
                     msg.content["response"]["service"]
@@ -240,7 +240,7 @@ class ConfigHelper:
                     checked_services.add(self._service_name)
                 if checked_services.issubset(set(ack_services)):
                     break
-            if elapsed_time > max_time:
+            if elapsed_time > timeout:  # type: ignore
                 if service_messages:
                     raise DeviceConfigError(
                         "Timeout reached whilst waiting for config change to be acknowledged."

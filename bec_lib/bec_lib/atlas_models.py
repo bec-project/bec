@@ -38,7 +38,7 @@ class _DeviceModelCore(BaseModel):
     description: str | None = None
     readOnly: bool = False
     softwareTrigger: bool = False
-    deviceTags: list[str] = []
+    deviceTags: set[str] = set()
     userParameter: dict = {}
 
 
