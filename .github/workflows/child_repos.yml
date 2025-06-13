@@ -18,6 +18,12 @@ on:
         default: 'main'
         type: string
 
+    secrets:
+      GITLAB_TOKEN:
+        description: 'GitLab token for CSAXS read access'
+        required: false
+
+
 
 jobs:
   bec-widgets:
@@ -70,6 +76,53 @@ jobs:
         run: |
           pip install pytest pytest-random-order
           pytest -v --maxfail=2 --junitxml=report.xml --random-order ./tests
+
+  plugin_repos:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    env: 
+      QTWEBENGINE_DISABLE_SANDBOX: 1
+      QT_QPA_PLATFORM: "offscreen"
+
+    strategy:
+      matrix:
+        beamline_repo: [
+          {url: 'gitlab.psi.ch/bec/addams_bec.git', 'name': 'addams_bec'},
+          {url: 'gitlab.psi.ch/bec/csaxs_bec.git', 'name': 'csaxs_bec'},
+          {url: 'gitlab.psi.ch/bec/debye_bec.git', 'name': 'debye_bec'},
+          {url: 'gitlab.psi.ch/bec/detector_group_bec.git', 'name': 'detector_group_bec'},
+          {url: 'gitlab.psi.ch/bec/microxas_bec.git', 'name': 'microxas_bec'},
+          {url: 'gitlab.psi.ch/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'gitlab.psi.ch/bec/pxi_bec.git', 'name': 'pxi_bec'},
+          {url: 'gitlab.psi.ch/bec/pxii_bec.git', 'name': 'pxii_bec'},
+          {url: 'gitlab.psi.ch/bec/sim_bec.git', 'name': 'sim_bec'},
+          {url: 'gitlab.psi.ch/bec/superxas_bec.git', 'name': 'superxas_bec'},
+          {url: 'gitlab.psi.ch/bec/tomcat_bec.git', 'name': 'tomcat_bec'},
+          {url: 'gitlab.psi.ch/bec/xtreme_bec.git', 'name': 'xtreme_bec'},
+        ]
+
+    name: Plugin ${{ matrix.beamline_repo.name }}
+
+    steps:
+      - name: Checkout BEC Core
+        uses: actions/checkout@v4
+        with:
+          repository: bec-project/bec
+          ref: ${{ inputs.BEC_CORE_BRANCH }}
+
+      - name: Install and test a BEC plugin repository
+        uses: ./.github/actions/plugin_repo_tests
+        with:
+          BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+          BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
+          OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+          BEC_PLUGIN_REPO_URL: ${{ matrix.beamline_repo.url }}
+          PYTHON_VERSION: '3.11'
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
 
       
 

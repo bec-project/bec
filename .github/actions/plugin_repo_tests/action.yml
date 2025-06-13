@@ -1,0 +1,117 @@
+name: "BEC Plugin Repo Tests"
+description: "Install and test a BEC plugin repository"
+inputs:
+  BEC_CORE_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of BEC Core to install"
+  OPHYD_DEVICES_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of Ophyd Devices to install"
+  BEC_WIDGETS_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of BEC Widgets to install"
+  BEC_PLUGIN_REPO_URL: # id of input
+    required: true
+    description: "URL of the BEC plugin repository to install"
+  BEC_PLUGIN_REPO_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of the BEC plugin repository to install"
+  PYTHON_VERSION: # id of input
+    required: false
+    default: "3.11"
+    description: "Python version to use"
+  GITLAB_TOKEN: # id of input
+    required: false
+    default: ""
+    description: "GitHub token to use for authentication (if needed)"
+
+runs:
+  using: "composite"
+  steps: # FULL_URL="https://oauth2:${{ inputs.GITLAB_TOKEN }}@${URL_CLEANED}"
+    - name: Checkout BEC Plugin Repository
+      shell: bash
+      id: plugin_checkout 
+      run: |
+        # Create a temporary directory for the plugin repository
+        mkdir -p ./_checkout_plugin_/
+        cd ./_checkout_plugin_/
+        git clone --depth 1 --branch ${{ inputs.BEC_PLUGIN_REPO_BRANCH }} https://oauth2:${{ inputs.GITLAB_TOKEN }}@${{ inputs.BEC_PLUGIN_REPO_URL }}
+        
+        cd ../
+        # get the plugin repository name from the installed directory
+        PLUGIN_REPO_NAME=$(basename ${{ inputs.BEC_PLUGIN_REPO_URL }} .git)
+        echo "PLUGIN_REPO_NAME=${PLUGIN_REPO_NAME}" >> $GITHUB_ENV
+        echo "Plugin repository name: $PLUGIN_REPO_NAME"
+
+        if ! find ./_checkout_plugin_/${PLUGIN_REPO_NAME}/tests -mindepth 1 -type f -name '*.py' | grep -q .; then
+            echo "No tests found. Skipping pytest."
+            echo "skip_tests=true" >> $GITHUB_OUTPUT
+        else
+            echo "Tests found. Proceeding with pytest."
+            echo "skip_tests=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      with:
+        python-version: ${{ inputs.PYTHON_VERSION }}
+
+    - name: Checkout BEC Core
+      uses: actions/checkout@v4
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      with:
+        repository: bec-project/bec
+        ref: ${{ inputs.BEC_CORE_BRANCH }}
+        path: ./_checkout_plugin_/bec
+
+    - name: Checkout Ophyd Devices
+      uses: actions/checkout@v4
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      with:
+        repository: bec-project/ophyd_devices
+        ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+        path: ./_checkout_plugin_/ophyd_devices
+
+    - name: Checkout BEC Widgets
+      uses: actions/checkout@v4
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      with:
+        repository: bec-project/bec_widgets
+        ref: ${{ inputs.BEC_WIDGETS_BRANCH }}
+        path: ./_checkout_plugin_/bec_widgets
+
+    - name: Install dependencies # Do we have this somewhere as an action?
+      shell: bash
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1 libegl1 x11-utils libxkbcommon-x11-0 libdbus-1-3 xvfb
+        sudo apt-get -y install libnss3 libxdamage1 libasound2t64 libatomic1 libxcursor1
+
+    - name: Install Python dependencies
+      shell: bash
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      run: |
+        pip install uv
+        # print the current directory to verify the structure
+        echo "Current directory: $(pwd)"
+        echo "Available directories: $(ls _checkout_plugin_)"
+        uv pip install --system -e ./_checkout_plugin_/ophyd_devices[dev]
+        uv pip install --system -e ./_checkout_plugin_/bec/bec_lib[dev]
+        uv pip install --system -e ./_checkout_plugin_/bec/bec_ipython_client[dev]
+        uv pip install --system -e ./_checkout_plugin_/bec/bec_server[dev]
+        uv pip install --system -e ./_checkout_plugin_/bec_widgets[dev]
+        uv pip install --system -e ./_checkout_plugin_/${PLUGIN_REPO_NAME}[dev]
+
+    - name: Run Pytest
+      shell: bash
+      if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
+      run: |
+        cd ./_checkout_plugin_/${PLUGIN_REPO_NAME}
+        echo -e "\033[35;1m Running pytest for plugin repository ${PLUGIN_REPO_NAME} \033[0;m"
+        pytest -v --maxfail=2 --random-order ./tests
