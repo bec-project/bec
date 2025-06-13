@@ -1,39 +1,34 @@
 name: Run Pytest with Coverage
-on: [workflow_call]
+on: 
+  workflow_call:
+    inputs:
+      BEC_CORE_BRANCH:
+        description: 'Branch of BEC Core to install'
+        required: false
+        default: 'main'
+        type: string
+      OPHYD_DEVICES_BRANCH:
+        description: 'Branch of Ophyd Devices to install'
+        required: false
+        default: 'main'
+        type: string
+      BEC_WIDGETS_BRANCH:
+        description: 'Branch of BEC Widgets to install'
+        required: false
+        default: 'main'
+        type: string
 
 jobs:
   pytest:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
-
-    env:
-      CHILD_PIPELINE_BRANCH: main  # Set the branch you want for ophyd_devices
-      BEC_CORE_BRANCH: main        # Set the branch you want for bec
-      OPHYD_DEVICES_BRANCH: main   # Set the branch you want for ophyd_devices
-      PROJECT_PATH: ${{ github.repository }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Conda
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Run E2E Tests
+        uses: ./.github/actions/bec_e2e_install
         with:
-            auto-update-conda: true
-            auto-activate-base: true
-            python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tmux
-
-      - name: Conda install and run pytest
-        run: |
-          echo -e "\033[35;1m Using branch $OPHYD_DEVICES_BRANCH of OPHYD_DEVICES \033[0;m";
-          git clone --branch $OPHYD_DEVICES_BRANCH https://github.com/bec-project/ophyd_devices.git
-          export OHPYD_DEVICES_PATH=$PWD/ophyd_devices
-          source ./bin/install_bec_dev.sh -t
-          pip install -e ./ophyd_devices
-          pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end
+          BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+          OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+          BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
+          PYTHON_VERSION: '3.11'
+          
