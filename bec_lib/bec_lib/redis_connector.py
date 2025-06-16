@@ -341,6 +341,7 @@ class RedisConnector:
             None,
         ] = None,
         severity: int = 0,
+        expire: float = 60,
         scope: str | None = None,
         rid: str | None = None,
         metadata: dict | None = None,
@@ -353,6 +354,7 @@ class RedisConnector:
             show_asap (bool, optional): show asap. Defaults to False.
             source (Literal[str], optional): Any of the services: "bec_ipython_client", "scan_server", "device_server", "scan_bundler", "file_writer", "scihub", "dap". Defaults to None.
             severity (int, optional): severity. Defaults to 0.
+            expire (float, optional): expire. Defaults to 60.
             rid (str, optional): request ID. Defaults to None.
             scope (str, optional): scope. Defaults to None.
             metadata (dict, optional): metadata. Defaults to None.
@@ -362,6 +364,7 @@ class RedisConnector:
             source=source,
             severity=severity,
             show_asap=show_asap,
+            expire=expire,
             scope=scope,
             RID=rid,
             metadata=metadata,
