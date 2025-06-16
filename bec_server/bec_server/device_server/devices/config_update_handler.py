@@ -83,12 +83,13 @@ class ConfigUpdateHandler:
         for dev, dev_config in msg.content["config"].items():
             device = self.device_manager.devices[dev]
             if "deviceConfig" in dev_config:
+                new_config = dev_config["deviceConfig"] or {}
                 # store old config
                 old_config = device._config["deviceConfig"].copy()
 
                 # apply config
                 try:
-                    self.device_manager.update_config(device.obj, dev_config["deviceConfig"])
+                    self.device_manager.update_config(device.obj, new_config)
                 except Exception as exc:
                     self.device_manager.update_config(device.obj, old_config)
                     raise DeviceConfigError(f"Error during object update. {exc}")
