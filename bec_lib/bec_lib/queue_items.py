@@ -248,4 +248,6 @@ class QueueStorage:
         if not queue_info:
             return
         queue_item = self.find_queue_item_by_ID(queue_info[0]["queue_id"])
+        if not queue_item:
+            return
         queue_item.update_with_client_message(client_message)
