@@ -316,6 +316,8 @@ class ClientInfoMessage(BECMessage):
         scope (str, optional): Scope of the message; Defaults to None. One can follow
                                a pattern to filter afterwards for specific client info; e.g. "scan", "rotation"
         severity (int, optional): severity level of the message (0: INFO, 1: WARNING, 2: ERROR); Defaults to 0
+        expire (float, optional): Time in seconds after which the message expires and should not be shown anymore.
+                                  Defaults to 60 seconds. Set it to 0 to never expire the message.
     """
 
     msg_type: ClassVar[str] = "client_info"
@@ -336,6 +338,11 @@ class ClientInfoMessage(BECMessage):
     severity: int = Field(
         default=0
     )  # TODO add enum for severity levels INFO = 0, WARNING = 1, ERROR = 2
+    expire: float = Field(
+        default=60.0,
+        description="Time in seconds after which the message expires and should not be shown "
+        "anymore. Defaults to 60 seconds. Set it to 0 to never expire the message.",
+    )
 
 
 class RequestResponseMessage(BECMessage):
