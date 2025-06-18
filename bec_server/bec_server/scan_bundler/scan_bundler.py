@@ -110,9 +110,9 @@ class ScanBundler(BECService):
             self._initialize_scan_container(msg)
             if scan_id not in self.scan_id_history:
                 self.scan_id_history.append(scan_id)
-        self.run_emitter("on_scan_status_update", msg)
         if msg.content.get("status") != "open":
             self._scan_status_modification(msg)
+        self.run_emitter("on_scan_status_update", msg)
 
     def _scan_status_modification(self, msg: messages.ScanStatusMessage):
         status = msg.content.get("status")

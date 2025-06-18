@@ -113,6 +113,7 @@ class BECEmitter(EmitterBase):
                 "scan_id": scan_id,
                 "RID": info.get("RID", ""),
                 "queue_id": info.get("queue_id", ""),
+                "status": self.scan_bundler.sync_storage[scan_id]["status"],
             },
         )
         self.scan_bundler.connector.set_and_publish(MessageEndpoints.scan_progress(), msg)
@@ -138,9 +139,23 @@ class BECEmitter(EmitterBase):
 
     def on_scan_status_update(self, status_msg: messages.ScanStatusMessage):
         if status_msg.status == "open":
+            # No need to update progress for an open scan. This is handled by the scan point emit.
             return
-        num_points = status_msg.info.get("num_points", 0) - 1
-        self._update_scan_progress(status_msg.scan_id, num_points, done=True)
+
+        num_points = max(status_msg.info.get("num_points", 0) - 1, 0)
+        if status_msg.status == "closed":
+            self._update_scan_progress(status_msg.scan_id, num_points, done=True)
+            return
+
+        sb = self.scan_bundler
+        if status_msg.scan_id not in sb.sync_storage:
+            logger.warning(
+                f"Cannot update scan progress: Scan {status_msg.scan_id} not found in sync storage."
+            )
+            return
+        storage = sb.sync_storage[status_msg.scan_id]
+        max_point = max(storage.get("sent", {0}))
+        self._update_scan_progress(status_msg.scan_id, max_point, done=True)
 
     def shutdown(self):
         if self._buffered_connector_thread:

@@ -159,3 +159,52 @@ def test_add_message(msg, endpoint, public):
     assert out_endpoint == endpoint
     assert out_public == public
     emitter.shutdown()
+
+
+@pytest.mark.parametrize(
+    "msg, sent, progress, ref_scan_id",
+    [
+        (
+            messages.ScanStatusMessage(scan_id="lkajsdlkj", status="open", info={"num_points": 10}),
+            {0, 1},
+            1,
+            "lkajsdlkj",
+        ),
+        (
+            messages.ScanStatusMessage(
+                scan_id="lkajsdlkj", status="closed", info={"num_points": 10}
+            ),
+            {0, 1},
+            9,  # 10 points, but sent 0 and 1, so progress is 9
+            "lkajsdlkj",
+        ),
+        (
+            messages.ScanStatusMessage(
+                scan_id="lkajsdlkj", status="aborted", info={"num_points": 10}
+            ),
+            {0, 1},
+            1,
+            "lkajsdlkj",
+        ),
+        (
+            messages.ScanStatusMessage(
+                scan_id="wrong_scan_id", status="aborted", info={"num_points": 10}
+            ),
+            {0, 1},
+            1,
+            "lkajsdlkj",  # This is a different scan_id, should not update progress
+        ),
+    ],
+)
+def test_bec_emitter_scan_status_update(bec_emitter_mock, msg, sent, progress, ref_scan_id):
+
+    sb = bec_emitter_mock.scan_bundler
+    sb.sync_storage[ref_scan_id] = {"info": {}, "status": msg.status, "sent": sent}
+    sb.sync_storage[ref_scan_id]["baseline"] = {}
+
+    with mock.patch.object(bec_emitter_mock, "_update_scan_progress") as update:
+        bec_emitter_mock.on_scan_status_update(msg)
+        if msg.status == "open" or msg.scan_id != ref_scan_id:
+            update.assert_not_called()
+        else:
+            update.assert_called_once_with(msg.scan_id, progress, done=True)
