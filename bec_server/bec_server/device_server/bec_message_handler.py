@@ -119,7 +119,7 @@ class BECMessageHandler:
             raise TypeError(f"Expected DeviceMessage, got {type(message)}")
 
         device_name = obj.root.name
-        signal_name = obj.attr_name
+        signal_name = obj.name
         metadata = self.devices[device_name].metadata
         scan_id = metadata.get("scan_id")
         if scan_id is None:
