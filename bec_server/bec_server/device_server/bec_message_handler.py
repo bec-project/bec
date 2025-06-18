@@ -123,10 +123,22 @@ class BECMessageHandler:
         device_name = obj.root.name
         signal_name = obj.name
 
-        scan_id = self._get_current_scan_id()
+        scan_status_msg = self._get_scan_status_message()
+        if scan_status_msg is None:
+            logger.warning(
+                f"Scan status message is None for device {device_name} and async signal {signal_name}."
+            )
+            return
+        scan_id = scan_status_msg.scan_id
         if scan_id is None:
             logger.warning(
-                f"Scan ID is None for device {device_name} and signal {signal_name}. Cannot emit async signal."
+                f"Scan ID is None for device {device_name} and async signal {signal_name}."
+            )
+            return
+        status = scan_status_msg.status
+        if status in ["closed", "aborted", "halted", None]:
+            logger.warning(
+                f"Cannot emit async signal {signal_name} for device {device_name} with status {status}."
             )
             return
 
