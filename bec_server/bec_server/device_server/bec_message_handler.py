@@ -62,10 +62,12 @@ class BECMessageHandler:
             raise TypeError(f"Expected FileMessage, got {type(message)}")
 
         device_name = obj.root.name
-        # Note: It is fine to use the metadata from the device object here,
-        # as it is safe to assume that the file event is emitted before a new scan starts.
-        metadata = self.devices[device_name].metadata
-        scan_id = metadata.get("scan_id")
+        scan_id = self._get_current_scan_id()
+        if scan_id is None:
+            logger.warning(
+                f"Scan ID is None for device {device_name} and file event signal. Cannot emit file event."
+            )
+            return
 
         pipe = self.connector.pipeline()
         self.connector.set_and_publish(MessageEndpoints.file_event(device_name), message, pipe=pipe)
@@ -79,18 +81,18 @@ class BECMessageHandler:
             raise TypeError(f"Expected ProgressMessage, got {type(message)}")
 
         device_name = obj.root.name
-        metadata = self.devices[device_name].metadata
-        scan_id = metadata.get("scan_id")
-        if scan_id is None:
-            logger.warning(f"Scan ID is None for device {device_name}.")
-            return
-        if not isinstance(scan_id, str):
-            logger.warning(f"Scan ID is not a string for device {device_name}.")
+        scan_status_msg = self._get_scan_status_message()
+        if scan_status_msg is None:
+            logger.warning(
+                f"Scan status message is None for device {device_name} and progress signal."
+            )
             return
 
         if message.metadata is None:
             message.metadata = {}
-        message.metadata.update({"scan_id": scan_id})
+        message.metadata.update(
+            {"scan_id": scan_status_msg.scan_id, "status": scan_status_msg.status}
+        )
         self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), message)
 
     def _handle_preview_signal(self, obj: bms.PreviewSignal, message: messages.BECMessage):
@@ -120,16 +122,14 @@ class BECMessageHandler:
 
         device_name = obj.root.name
         signal_name = obj.name
-        metadata = self.devices[device_name].metadata
-        scan_id = metadata.get("scan_id")
+
+        scan_id = self._get_current_scan_id()
         if scan_id is None:
-            logger.warning(f"Scan ID is None for device {device_name} and signal {signal_name}.")
-            return
-        if not isinstance(scan_id, str):
             logger.warning(
-                f"Scan ID is not a string for device {device_name} and signal {signal_name}."
+                f"Scan ID is None for device {device_name} and signal {signal_name}. Cannot emit async signal."
             )
             return
+
         if obj.signal_metadata is None:
             logger.warning(
                 f"Signal metadata is None for device {device_name} and signal {signal_name}."
@@ -143,3 +143,26 @@ class BECMessageHandler:
             max_size=obj.signal_metadata.get("max_size", 1000),
             expire=obj.signal_metadata.get("expire", 600),  # default to 10 minutes (600 seconds)
         )
+
+    def _get_scan_status_message(self) -> messages.ScanStatusMessage | None:
+        """
+        Get the current scan status message from the device manager.
+
+        Returns:
+            messages.ScanStatusMessage | None: The current scan status message, or None if not available.
+        """
+        if self.device_manager.scan_info is None or self.device_manager.scan_info.msg is None:
+            return None
+        return self.device_manager.scan_info.msg
+
+    def _get_current_scan_id(self) -> str | None:
+        """
+        Get the current scan ID from the device manager's scan info.
+
+        Returns:
+            str | None: The current scan ID, or None if not available.
+        """
+        scan_status_msg = self._get_scan_status_message()
+        if scan_status_msg is None or scan_status_msg.scan_id is None:
+            return None
+        return scan_status_msg.scan_id

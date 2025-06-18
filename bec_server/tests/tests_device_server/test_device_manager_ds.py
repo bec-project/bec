@@ -13,6 +13,21 @@ from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 # pylint: disable=protected-access
 
 
+@pytest.fixture
+def dm_with_devices_and_status(dm_with_devices):
+    """
+    Fixture that adds the scan_info message to the device manager
+    """
+    device_manager = dm_with_devices
+    with mock.patch.object(
+        device_manager.scan_info, "msg", new_callable=mock.PropertyMock
+    ) as mock_scan_info_msg:
+        mock_scan_info_msg.return_value = messages.ScanStatusMessage(
+            scan_id="12345", status="open", info={"num_points": 10, "RID": "RID123"}
+        )
+        yield device_manager
+
+
 class ControllerMock:
     def __init__(self, parent) -> None:
         self.parent = parent
@@ -313,9 +328,9 @@ def test_device_manager_ds_obj_callback_preview(dm_with_devices, value):
         "some string",
     ],
 )
-def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices, value):
-    device_manager = dm_with_devices
-    device = dm_with_devices.devices.bec_signals_device.obj
+def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices_and_status, value):
+    device_manager = dm_with_devices_and_status
+    device = device_manager.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
         device_manager._obj_callback_bec_message_signal(obj=device.file_event, value=value)
 
@@ -329,10 +344,9 @@ def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices, value
 @pytest.mark.parametrize(
     "value", [None, messages.ProgressMessage(value=1, max_value=2, done=False), "some string"]
 )
-def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices, value):
-    device_manager = dm_with_devices
-    device = dm_with_devices.devices.bec_signals_device.obj
-    dm_with_devices.devices.bec_signals_device.metadata = {"scan_id": "12345"}
+def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices_and_status, value):
+    device_manager = dm_with_devices_and_status
+    device = device_manager.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
         device_manager._obj_callback_bec_message_signal(obj=device.progress, value=value)
 
@@ -371,10 +385,9 @@ def test_device_manager_ds_obj_callback_progress_signal_disabled_device(dm_with_
         "some string",
     ],
 )
-def test_device_manager_ds_obj_callback_async_signal(dm_with_devices, value):
-    device_manager = dm_with_devices
-    device = dm_with_devices.devices.bec_signals_device.obj
-    dm_with_devices.devices.bec_signals_device.metadata = {"scan_id": "12345"}
+def test_device_manager_ds_obj_callback_async_signal(dm_with_devices_and_status, value):
+    device_manager = dm_with_devices_and_status
+    device = device_manager.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
         device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=value)
 
