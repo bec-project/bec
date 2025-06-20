@@ -12,8 +12,7 @@ try:
 
     @_app.command()
     def edit_ui(widget_name: str):
-        """Edit the .ui file for a given widget plugin in bec-designer. Will recompile the python module
-        for the file as changes are made."""
+        """Edit the .ui file for a given widget plugin in bec-designer. Will recompile the python module for the file as changes are made."""
         open_and_watch_ui_editor(widget_name)
 
 except ImportError:

@@ -1,5 +1,7 @@
 (developer)=
+
 # Developer
+
 Welcome to the developer/expert section of the BEC documentation! This section serves as a comprehensive resource for developers looking to delve into the underlying architecture of BEC (Beamline Experiment Control). Whether you are customizing BEC for specific beamlines or setups, exploring BEC plugins, integrating devices at the beamline, or actively participating in the development of core services, this documentation is tailored to meet your needs.
 
 ```{toctree}
@@ -9,15 +11,17 @@ hidden: true
 ---
 
 getting_started/getting_started.md
+plugin_manager/plugin_manager.md
 devices/devices.md
 user_interfaces/user_interfaces.md
 data_access/data_access.md
 scans/scans.md
 file_writer/file_writer.md
+
 glossary/
 ```
 
-***
+---
 
 ````{grid} 2
 :gutter: 5
@@ -89,6 +93,17 @@ Understand the basic structure of a scan in BEC and learn how to create a scan p
 ## File Writer
 
 Explore and understand BEC's file writer and how it can be configured.
+```
+
+```{grid-item-card}
+:link: developer.plugin_manager
+:link-type: ref
+:img-top: /assets/source_48dp.svg
+:text-align: center
+
+## Plugin manager
+
+Explore and understand BEC's plugin management tool (`bec-plugin-manager`) which can help you to create plugin scans, devices, and widgets in a plugin repository.
 ```
 
 ```{grid-item-card}

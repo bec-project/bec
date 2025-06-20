@@ -38,6 +38,7 @@ extensions = [
     "sphinx_copybutton",
     "myst_parser",
     "sphinx_design",
+    "sphinxcontrib.typer",
 ]
 
 myst_enable_extensions = [
