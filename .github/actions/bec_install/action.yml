@@ -1,5 +1,5 @@
-name: "BEC Widgets Install"
-description: "Install BEC Widgets and related os dependencies"
+name: "BEC Install"
+description: "Install BEC and related os dependencies"
 inputs:
   BEC_CORE_BRANCH: # id of input
     required: false
