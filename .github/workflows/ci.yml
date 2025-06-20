@@ -62,5 +62,3 @@ jobs:
       BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH || 'main' }}
       BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH || github.head_ref || github.sha}}
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
-    secrets:
-      GITLAB_TOKEN: ${{ secrets.GITLAB_READ_TOKEN }}

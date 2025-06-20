@@ -24,14 +24,10 @@ inputs:
     required: false
     default: "3.11"
     description: "Python version to use"
-  GITLAB_TOKEN: # id of input
-    required: false
-    default: ""
-    description: "GitHub token to use for authentication (if needed)"
 
 runs:
   using: "composite"
-  steps: # FULL_URL="https://oauth2:${{ inputs.GITLAB_TOKEN }}@${URL_CLEANED}"
+  steps:
     - name: Checkout BEC Plugin Repository
       shell: bash
       id: plugin_checkout 
@@ -39,7 +35,7 @@ runs:
         # Create a temporary directory for the plugin repository
         mkdir -p ./_checkout_plugin_/
         cd ./_checkout_plugin_/
-        git clone --depth 1 --branch ${{ inputs.BEC_PLUGIN_REPO_BRANCH }} https://oauth2:${{ inputs.GITLAB_TOKEN }}@${{ inputs.BEC_PLUGIN_REPO_URL }}
+        git clone --depth 1 --branch ${{ inputs.BEC_PLUGIN_REPO_BRANCH }} ${{ inputs.BEC_PLUGIN_REPO_URL }}
         
         cd ../
         # get the plugin repository name from the installed directory
