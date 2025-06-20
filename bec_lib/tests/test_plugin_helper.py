@@ -19,3 +19,9 @@ def test_get_plugin_class(class_spec, out_name):
 def test_get_plugin_class_module_not_found(class_spec):
     with pytest.raises((ModuleNotFoundError, AttributeError)):
         plugin_helper.get_plugin_class(class_spec, [bec_lib])
+
+
+def test_module_dist_info():
+    result = plugin_helper.module_dist_info("bec_lib")
+    assert result["dir_info"] == {"editable": True}
+    assert result["url"] is not None
