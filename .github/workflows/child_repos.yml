@@ -86,18 +86,18 @@ jobs:
     strategy:
       matrix:
         beamline_repo: [
-          {url: 'https://github.com/bec-project/bec/addams_bec.git', 'name': 'addams_bec'},
-          {url: 'https://github.com/bec-project/bec/csaxs_bec.git', 'name': 'csaxs_bec'},
-          {url: 'https://github.com/bec-project/bec/debye_bec.git', 'name': 'debye_bec'},
-          {url: 'https://github.com/bec-project/bec/detector_group_bec.git', 'name': 'detector_group_bec'},
-          {url: 'https://github.com/bec-project/bec/microxas_bec.git', 'name': 'microxas_bec'},
-          {url: 'https://github.com/bec-project/bec/phoenix_bec.git', 'name': 'phoenix_bec'},
-          {url: 'https://github.com/bec-project/bec/pxi_bec.git', 'name': 'pxi_bec'},
-          {url: 'https://github.com/bec-project/bec/pxii_bec.git', 'name': 'pxii_bec'},
-          {url: 'https://github.com/bec-project/bec/sim_bec.git', 'name': 'sim_bec'},
-          {url: 'https://github.com/bec-project/bec/superxas_bec.git', 'name': 'superxas_bec'},
-          {url: 'https://github.com/bec-project/bec/tomcat_bec.git', 'name': 'tomcat_bec'},
-          {url: 'https://github.com/bec-project/bec/xtreme_bec.git', 'name': 'xtreme_bec'},
+          {url: 'https://github.com/bec-project/addams_bec.git', 'name': 'addams_bec'},
+          {url: 'https://github.com/bec-project/csaxs_bec.git', 'name': 'csaxs_bec'},
+          {url: 'https://github.com/bec-project/debye_bec.git', 'name': 'debye_bec'},
+          {url: 'https://github.com/bec-project/detector_group_bec.git', 'name': 'detector_group_bec'},
+          {url: 'https://github.com/bec-project/microxas_bec.git', 'name': 'microxas_bec'},
+          {url: 'https://github.com/bec-project/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'https://github.com/bec-project/pxi_bec.git', 'name': 'pxi_bec'},
+          {url: 'https://github.com/bec-project/pxii_bec.git', 'name': 'pxii_bec'},
+          {url: 'https://github.com/bec-project/sim_bec.git', 'name': 'sim_bec'},
+          {url: 'https://github.com/bec-project/superxas_bec.git', 'name': 'superxas_bec'},
+          {url: 'https://github.com/bec-project/tomcat_bec.git', 'name': 'tomcat_bec'},
+          {url: 'https://github.com/bec-project/xtreme_bec.git', 'name': 'xtreme_bec'},
         ]
 
     name: Plugin ${{ matrix.beamline_repo.name }}
