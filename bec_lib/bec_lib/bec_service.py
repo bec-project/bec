@@ -179,7 +179,7 @@ class BECService:
             return False
         except RuntimeError as service_error:
             if elapsed_time > timeout_time:
-                raise RuntimeError from service_error
+                raise service_error
         return True
 
     def _initialize_logger(self) -> None:
