@@ -10,7 +10,7 @@ from bec_lib.logger import bec_logger
 logger = bec_logger.logger
 
 
-def existing_data(repo: Path, keys: list[str]):
+def existing_data(repo: Path, keys: list[str]) -> dict[str, str | list | dict]:
     answers_file = Path(repo) / ".copier-answers.yml"
     with open(answers_file) as f:
         old_answers = yaml.safe_load(f)

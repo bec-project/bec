@@ -209,3 +209,12 @@ class TestPluginSystem:
         metadata_registry, default_schema = plugin_helper.get_metadata_schema_registry()
         assert set(["test_scan_fail_on_type", "example_scan"]) == set(metadata_registry.keys())
         assert default_schema is None
+
+    def test_plugin_helper_finds_package_name(self):
+        name = plugin_helper.plugin_package_name()
+        assert name == TestPluginSystem._tmp_plugin_name
+
+    def test_plugin_helper_finds_package_path(self):
+        with pytest.raises(ValueError) as e:
+            plugin_helper.plugin_repo_path()
+            assert e.match("Plugin repo must be installed in editable mode")
