@@ -4,7 +4,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.utils.plugin_manager import create
 
 logger = bec_logger.logger
-_app = typer.Typer()
+_app = typer.Typer(name="bec-plugin-manager", rich_markup_mode="rich")
 _app.add_typer(create._app)
 
 try:
