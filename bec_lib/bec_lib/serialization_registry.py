@@ -55,6 +55,7 @@ class SerializationRegistry:
         if cls.__name__ in self._registry:
             raise ValueError(f"Codec for {cls} already registered.")
         self._registry[cls.__name__] = (cls, encoder, decoder)
+        self.get_codec.cache_clear()  # Clear the cache when a new codec is registered
 
     @lru_cache(maxsize=2000)
     def get_codec(self, cls: Type) -> tuple[Type, Callable, Callable] | None:
