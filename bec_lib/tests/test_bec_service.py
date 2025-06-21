@@ -240,6 +240,7 @@ def test_parse_cmdline_args_with_config():
                     "log_level": None,
                     "file_log_level": None,
                     "redis_log_level": None,
+                    "bec_server": None,
                 },
                 acl={},
             )
@@ -337,6 +338,40 @@ def test_parse_cmdline_args_with_invalid_log_level():
     """Test parse_cmdline_args with an invalid log level."""
     with mock.patch.object(sys, "argv", ["script.py", "--log-level", "INVALID"]):
         with pytest.raises(SystemExit):
+            parse_cmdline_args()
+
+
+def test_parse_cmdline_args_with_bec_server_url():
+    """Test parse_cmdline_args with a BEC server URL."""
+    with mock.patch.object(sys, "argv", ["script.py", "--bec-server", "localhost:8000"]):
+        args, extra_args, service_config = parse_cmdline_args()
+        assert not hasattr(extra_args, "bec_server")
+        assert args.bec_server == "localhost:8000"
+        assert service_config.redis == "localhost:8000"
+
+
+def test_parse_cmdline_args_with_bec_server_url_and_config():
+    """Test parse_cmdline_args with a BEC server URL and a config file."""
+    with mock.patch.object(
+        sys, "argv", ["script.py", "--bec-server", "localhost:8000", "--config", "test_config.yaml"]
+    ):
+        with pytest.raises(ValueError, match="cannot specify both"):
+            parse_cmdline_args()
+
+
+def test_parse_cmdline_args_with_bec_server_url_without_port():
+    """Test parse_cmdline_args with a BEC server URL without a port."""
+    with mock.patch.object(sys, "argv", ["script.py", "--bec-server", "localhost"]):
+        args, extra_args, service_config = parse_cmdline_args()
+        assert not hasattr(extra_args, "bec_server")
+        assert args.bec_server == "localhost"
+        assert service_config.redis == "localhost:6379"  # Default port
+
+
+def test_parse_cmdline_args_with_bec_server_url_invalid_port():
+    """Test parse_cmdline_args with an invalid BEC server URL."""
+    with mock.patch.object(sys, "argv", ["script.py", "--bec-server", "localhost:invalid_port"]):
+        with pytest.raises(ValueError, match="Invalid port number in Redis URL"):
             parse_cmdline_args()
 
 

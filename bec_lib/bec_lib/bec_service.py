@@ -52,6 +52,9 @@ def parse_cmdline_args(parser=None):
         parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--config", default="", help="path to the config file")
     parser.add_argument(
+        "--bec-server", default=None, help="BEC server URL (Redis server), e.g. 'localhost:6379'"
+    )
+    parser.add_argument(
         "--log-level",
         default=None,
         choices=["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"],
@@ -88,10 +91,33 @@ def parse_cmdline_args(parser=None):
     cli_args = vars(args)
     user = cli_args.pop("user")
     acl_config = {"username": user} if user else {}
+    redis_url = args.bec_server
 
-    if config_file:
+    if redis_url and config_file:
+        raise ValueError(
+            "You cannot specify both --bec-server-url and --config. "
+            "Please use one of them to set the Redis server URL."
+        )
+
+    if redis_url:
+        # If a Redis URL is provided, create a ServiceConfig with it
+        redis_data = {}
+        comps = redis_url.rsplit(":", 1)  # Split only on the last colon
+        if len(comps) == 1:
+            redis_data["host"] = comps[0]
+            redis_data["port"] = 6379
+        else:
+            redis_data["host"] = comps[0]
+            try:
+                redis_data["port"] = int(comps[1])
+            except ValueError:
+                raise ValueError(f"Invalid port number in Redis URL: {comps[1]}")
+
+        service_config = ServiceConfig(redis=redis_data, cmdline_args=cli_args, acl=acl_config)
+    elif config_file:
         service_config = ServiceConfig(config_file, cmdline_args=cli_args, acl=acl_config)
     else:
+        # If no config file or Redis URL is provided, use the default ServiceConfig
         service_config = ServiceConfig(cmdline_args=cli_args, acl=acl_config)
 
     return args, extra_args, service_config
