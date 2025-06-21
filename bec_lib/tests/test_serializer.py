@@ -177,3 +177,27 @@ def test_legacy_serialize(data):
     # Can be removed in the future, cf issue #516
     res = deprecated_msgpack.loads(deprecated_msgpack.dumps(data)) == data
     assert all(res) if isinstance(data, np.ndarray) else res
+
+
+def test_serializer_registry_cache_resets():
+    """
+    Test that adding a new codec resets the cache.
+    """
+
+    class DummyType:
+        pass
+
+    class DummyCodec(BECCodec):
+        obj_type = DummyType
+
+        @staticmethod
+        def encode(obj):
+            return {"dummy": "data"}
+
+        @staticmethod
+        def decode(type_name: str, data: dict):
+            return DummyType()
+
+    assert not msgpack.is_registered(DummyType)
+    msgpack.register_codec(DummyCodec)
+    assert msgpack.is_registered(DummyType)
