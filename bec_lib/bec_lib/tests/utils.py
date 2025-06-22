@@ -794,7 +794,9 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             return
         pass
 
-    def xread(self, topic, id=None, count=None, block=None, pipe=None, from_start=False):
+    def xread(
+        self, topic, id=None, count=None, block=None, pipe=None, from_start=False, user_id=None
+    ):
         if pipe:
             pipe._pipe_buffer.append(
                 ("xread", (topic, id, count, block), {"from_start": from_start})

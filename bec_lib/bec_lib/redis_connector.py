@@ -1170,6 +1170,7 @@ class RedisConnector:
         count: int | None = None,
         block: int | None = None,
         from_start=False,
+        user_id: str | None = None,
     ) -> list | None:
         """
         read from stream
@@ -1180,6 +1181,7 @@ class RedisConnector:
             count (int, optional): number of messages to read. Defaults to None, which means all.
             block (int, optional): block for x milliseconds. Defaults to None.
             from_start (bool, optional): read from start. Defaults to False.
+            user_id (str, optional): user id for the stream. Defaults to None.
 
         Returns:
             [list]: list of messages
@@ -1195,36 +1197,40 @@ class RedisConnector:
             >>> next_msg = redis.xread("test", key, count=1)
         """
         client = self._redis_conn
+        stream_key = topic if user_id is None else f"{topic}:{user_id}"
         if from_start:
-            self.stream_keys[topic] = "0-0"
-        if topic not in self.stream_keys:
+            self.stream_keys[stream_key] = "0-0"
+        if stream_key not in self.stream_keys:
             if id is None:
                 try:
                     msg = client.xrevrange(topic, "+", "-", count=1)
                     if msg:
                         msg = cast(list, msg)  # known issue in redis-py; using sync client
-                        self.stream_keys[topic] = msg[0][0].decode()
+                        self.stream_keys[stream_key] = msg[0][0].decode()
                         out = {}
                         for key, val in msg[0][1].items():
                             out[key.decode()] = MsgpackSerialization.loads(val)
                         return [out]
-                    self.stream_keys[topic] = "0-0"
+                    self.stream_keys[stream_key] = "0-0"
                 except redis.exceptions.ResponseError:
-                    self.stream_keys[topic] = "0-0"
+                    self.stream_keys[stream_key] = "0-0"
         if id is None:
-            id = self.stream_keys[topic]
+            id = self.stream_keys[stream_key]
 
         msg = client.xread({topic: id}, count=count, block=block)
-        return self._decode_stream_messages_xread(msg)
+        return self._decode_stream_messages_xread(msg, user_id=user_id)
 
-    def _decode_stream_messages_xread(self, msg):
+    def _decode_stream_messages_xread(self, msg, user_id: str | None = None) -> list | None:
         out = []
         for topic, msgs in msg:
             for index, record in msgs:
                 out.append(
                     {k.decode(): MsgpackSerialization.loads(msg) for k, msg in record.items()}
                 )
-                self.stream_keys[topic.decode()] = index
+                stream_key = topic.decode()
+                if user_id is not None:
+                    stream_key = f"{stream_key}:{user_id}"
+                self.stream_keys[stream_key] = index
         return out if out else None
 
     @validate_endpoint("topic")
