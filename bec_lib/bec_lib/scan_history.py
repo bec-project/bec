@@ -50,7 +50,9 @@ class ScanHistory:
         )
 
     def _load_data(self) -> None:
-        data = self._connector.xread(MessageEndpoints.scan_history(), from_start=True)
+        data = self._connector.xread(
+            MessageEndpoints.scan_history(), from_start=True, user_id="ScanHistoryLoader"
+        )
         if not data:
             return
         with self._scan_data_lock:
