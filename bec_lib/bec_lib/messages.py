@@ -660,6 +660,7 @@ class ScanHistoryMessage(BECMessage):
         end_time (float): End time of the scan.
         scan_name (str): Name of the scan.
         num_points (int): Number of points in the scan.
+        request_inputs (dict, optional): Inputs for the scan request, if available.
         metadata (dict, optional): Additional metadata.
 
     """
@@ -674,6 +675,7 @@ class ScanHistoryMessage(BECMessage):
     end_time: float
     scan_name: str
     num_points: int
+    request_inputs: dict | None = None
 
 
 class ScanBaselineMessage(BECMessage):

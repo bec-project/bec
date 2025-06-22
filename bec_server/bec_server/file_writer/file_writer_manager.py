@@ -376,6 +376,7 @@ class FileWriterManager(BECService):
             end_time=storage.end_time,
             num_points=storage.num_points,
             scan_name=storage.metadata.get("scan_name"),
+            request_inputs=storage.metadata.get("request_inputs", {}),
         )
         self.connector.xadd(
             topic=MessageEndpoints.scan_history(), msg_dict={"data": history_msg}, max_size=10000
