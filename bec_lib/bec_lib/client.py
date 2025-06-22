@@ -317,6 +317,9 @@ class BECClient(BECService, UserScriptsMixin):
             self.alarm_handler.shutdown()
         if self.bl_checks:
             self.bl_checks.stop()
+        if self.history is not None:
+            # pylint: disable=protected-access
+            self.history._shutdown()
         bec_logger.logger.remove()
         self.started = False
 
