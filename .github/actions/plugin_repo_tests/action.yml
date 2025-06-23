@@ -16,6 +16,9 @@ inputs:
   BEC_PLUGIN_REPO_URL: # id of input
     required: true
     description: "URL of the BEC plugin repository to install"
+  BEC_PLUGIN_REPO_NAME:
+    required: true
+    description: "Name of the BEC plugin repository to install"
   BEC_PLUGIN_REPO_BRANCH: # id of input
     required: false
     default: "main"
@@ -24,6 +27,9 @@ inputs:
     required: false
     default: "3.11"
     description: "Python version to use"
+  GH_READ_TOKEN: # id of input
+    required: true
+    description: "GitHub Read Token for accessing private repositories"
 
 runs:
   using: "composite"
@@ -35,11 +41,11 @@ runs:
         # Create a temporary directory for the plugin repository
         mkdir -p ./_checkout_plugin_/
         cd ./_checkout_plugin_/
-        git clone --depth 1 --branch ${{ inputs.BEC_PLUGIN_REPO_BRANCH }} ${{ inputs.BEC_PLUGIN_REPO_URL }}
-        
+        echo "Checking out BEC plugin repository from ${{ inputs.BEC_PLUGIN_REPO_URL }} on branch ${{ inputs.BEC_PLUGIN_REPO_BRANCH }}"
+        git clone --depth 1 --branch ${{ inputs.BEC_PLUGIN_REPO_BRANCH }} https://oauth2:${{ inputs.GH_READ_TOKEN }}@${{ inputs.BEC_PLUGIN_REPO_URL }}
         cd ../
         # get the plugin repository name from the installed directory
-        PLUGIN_REPO_NAME=$(basename ${{ inputs.BEC_PLUGIN_REPO_URL }} .git)
+        PLUGIN_REPO_NAME=${{ inputs.BEC_PLUGIN_REPO_NAME }}
         echo "PLUGIN_REPO_NAME=${PLUGIN_REPO_NAME}" >> $GITHUB_ENV
         echo "Plugin repository name: $PLUGIN_REPO_NAME"
 
