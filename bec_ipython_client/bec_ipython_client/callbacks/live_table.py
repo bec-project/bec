@@ -68,6 +68,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
             if print_table_data is not None
             else self.REPORT_TYPE == "scan_progress"
         )
+        self._devices_with_bad_precision = set()
 
     def wait_for_scan_to_start(self):
         """wait until the scan starts"""
@@ -226,6 +227,12 @@ class LiveUpdatesTable(LiveUpdatesBase):
                     )
                     break
 
+    def _warn_bad_precisions(self):
+        if self._devices_with_bad_precision != set():
+            for dev, prec in self._devices_with_bad_precision:
+                logger.warning(f"Device {dev} reported malformed precision of {prec}!")
+            self._devices_with_bad_precision = set()
+
     @property
     def _print_table_data(self) -> bool:
         """Checks if the table should be printed or not.
@@ -280,7 +287,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
                     else:
                         prec = getattr(obj, "precision", 2)
                         if not isinstance(prec, int) or prec < 1:
-                            logger.warning(f"Device {dev} reported malformed precision of {prec}!")
+                            self._devices_with_bad_precision.add((dev, prec))
                             prec = 2
                         signals_precisions.append((signal, prec))
             else:
@@ -309,6 +316,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 f"Scan {self.scan_item.scan_number} finished. Scan ID {self.scan_item.scan_id}. Elapsed time: {elapsed_time:.2f} s"
             )
         )
+        self._warn_bad_precisions()
 
     def process_request(self):
         """process the request and start the core loop for live updates"""
