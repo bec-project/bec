@@ -215,7 +215,10 @@ def test_print_table_data_hinted_value(client_with_grid_scan):
         assert mock_client_msgs.called
 
 
-def test_print_table_data_hinted_value_with_precision(client_with_grid_scan):
+@pytest.mark.parametrize(
+    ["prec", "expected_prec"], [(2, 2), (3, 3), (4, 4), (-1, 2), ("precision", 2)]
+)
+def test_print_table_data_hinted_value_with_precision(client_with_grid_scan, prec, expected_prec):
     client, request_msg = client_with_grid_scan
     response_msg = messages.RequestResponseMessage(
         accepted=True, message={"msg": ""}, metadata={"RID": "something"}
@@ -224,7 +227,7 @@ def test_print_table_data_hinted_value_with_precision(client_with_grid_scan):
     client.queue.request_storage.update_with_response(response_msg)
     live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
     client.device_manager.devices["samx"]._info["hints"] = {"fields": ["samx_hint"]}
-    client.device_manager.devices["samx"].precision = 2
+    client.device_manager.devices["samx"].precision = prec
     live_update.point_data = messages.ScanMessage(
         point_id=0,
         scan_id="",
@@ -239,12 +242,14 @@ def test_print_table_data_hinted_value_with_precision(client_with_grid_scan):
     ):
         live_update.dev_values = (len(live_update._get_header()) - 1) * [0]
         live_update.print_table_data()
-        mocked_table.get_row.assert_called_with("0", f"{0:.2f}")
+        mocked_table.get_row.assert_called_with("0", f"{0:.{expected_prec}f}")
 
 
 @pytest.mark.parametrize(
     "value,expected",
     [
+        (np.int32(1), "1.00"),
+        (np.float64(1.00000), "1.00"),
         (0, "0.00"),
         (1, "1.00"),
         (0.000, "0.00"),
