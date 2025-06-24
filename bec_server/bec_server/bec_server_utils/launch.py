@@ -65,7 +65,11 @@ def main():
     elif args.command == "restart":
         service_handler.restart()
     elif args.command == "attach":
-        server = libtmux.Server()
+        if os.path.exists("/tmp/tmux-shared/default"):
+            # if we have a shared socket, use it
+            server = libtmux.Server(socket_path="/tmp/tmux-shared/default")
+        else:
+            server = libtmux.Server()
         session = server.find_where({"session_name": "bec"})
         if session is None:
             print("No BEC session found")
@@ -74,4 +78,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+
+    sys.argv = ["bec-server", "start"]
     main()

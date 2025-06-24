@@ -33,7 +33,17 @@ def activate_venv(pane, service_name, service_path):
 
 
 def get_new_session(tmux_session_name, window_label):
-    tmux_server = libtmux.Server()
+    if os.environ.get("INVOCATION_ID"):
+        # running within systemd
+        os.makedirs("/tmp/tmux-shared", exist_ok=True)
+        os.chmod("/tmp/tmux-shared", 0o777)
+        tmux_server = libtmux.Server(socket_path="/tmp/tmux-shared/default")
+    elif os.path.exists("/tmp/tmux-shared/default"):
+        # if we have a shared socket, use it
+        tmux_server = libtmux.Server(socket_path="/tmp/tmux-shared/default")
+    else:
+        tmux_server = libtmux.Server()
+
     session = None
     for i in range(2):
         try:
@@ -48,6 +58,9 @@ def get_new_session(tmux_session_name, window_label):
             continue
         else:
             break
+    if os.environ.get("INVOCATION_ID") and os.path.exists("/tmp/tmux-shared/default"):
+        # running within systemd
+        os.chmod("/tmp/tmux-shared/default", 0o777)
     return session
 
 
@@ -96,7 +109,11 @@ def tmux_stop(session_name="bec"):
     """
     Stop the services from given session
     """
-    tmux_server = libtmux.Server()
+    if os.path.exists("/tmp/tmux-shared/default"):
+        # if we have a shared socket, use it
+        tmux_server = libtmux.Server(socket_path="/tmp/tmux-shared/default")
+    else:
+        tmux_server = libtmux.Server()
     avail_sessions = tmux_server.sessions.filter(session_name=session_name)
     if avail_sessions:
         session = avail_sessions[0]

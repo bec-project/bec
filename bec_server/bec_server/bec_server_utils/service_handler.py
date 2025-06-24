@@ -1,5 +1,6 @@
 import copy
 import functools
+import os
 import subprocess
 import sys
 import time
@@ -99,13 +100,15 @@ class ServiceHandler:
             out = subprocess.run(["systemctl", "list-unit-files", "bec-server.service"], check=True)
             if out.returncode == 0:
                 default_interface = "systemctl"
+                print("Using systemctl to communicate with the BEC server.")
             else:
                 default_interface = "tmux"
         except Exception:
             default_interface = "tmux"
 
-        # FIXME: auth error for systemctl prevents it from being used. For now, default to tmux
-        default_interface = "tmux"
+        if default_interface == "systemctl" and os.environ.get("INVOCATION_ID"):
+            # we are already within a systemd service, so we cannot use systemctl to start the BEC server
+            default_interface = "tmux"
 
         # check if we are on MacOS and if so, check if we have iTerm2 installed
         if sys.platform == "darwin":
@@ -174,7 +177,7 @@ class ServiceHandler:
         if self.interface == "iterm2":
             return []
         if self.interface == "systemctl":
-            subprocess.run(["systemctl", "start", "bec-server.service"], check=True)
+            subprocess.run(["sudo", "systemctl", "start", "bec-server.service"], check=True)
             return []
         if self.interface == "subprocess":
             return subprocess_start(self.bec_path, services)
@@ -194,7 +197,7 @@ class ServiceHandler:
         elif self.interface == "iterm2":
             pass
         elif self.interface == "systemctl":
-            subprocess.run(["systemctl", "stop", "bec-server.service"], check=True)
+            subprocess.run(["sudo", "systemctl", "stop", "bec-server.service"], check=True)
         elif self.interface == "subprocess":
             subprocess_stop(processes)
         else:
