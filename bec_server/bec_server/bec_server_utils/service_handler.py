@@ -171,13 +171,24 @@ class ServiceHandler:
             print("Starting BEC server using tmux...")
             tmux_start(self.bec_path, services)
             print(
-                f"{bcolors.OKCYAN}{bcolors.BOLD}Use `tmux attach -t bec` to attach to the BEC server. Once connected, use `ctrl+b d` to detach again.{bcolors.ENDC}"
+                f"{bcolors.OKCYAN}{bcolors.BOLD}Use `bec-server attach` to attach to the BEC server. Once connected, use `ctrl+b d` to detach again.{bcolors.ENDC}"
             )
             return []
         if self.interface == "iterm2":
             return []
         if self.interface == "systemctl":
-            subprocess.run(["sudo", "systemctl", "start", "bec-server.service"], check=True)
+            try:
+                subprocess.run(
+                    ["sudo", "-n", "systemctl", "start", "bec-server.service"], check=True
+                )
+            except Exception:
+                print(
+                    "Could not start the BEC server using systemctl. Trying to use tmux directly."
+                )
+                tmux_start(self.bec_path, services)
+                print(
+                    f"{bcolors.OKCYAN}{bcolors.BOLD}Use `bec-server attach` to attach to the BEC server. Once connected, use `ctrl+b d` to detach again.{bcolors.ENDC}"
+                )
             return []
         if self.interface == "subprocess":
             return subprocess_start(self.bec_path, services)
@@ -197,7 +208,14 @@ class ServiceHandler:
         elif self.interface == "iterm2":
             pass
         elif self.interface == "systemctl":
-            subprocess.run(["sudo", "systemctl", "stop", "bec-server.service"], check=True)
+            try:
+                subprocess.run(
+                    ["sudo", "-n", "systemctl", "stop", "bec-server.service"], check=True
+                )
+            except Exception:
+                print("Could not stop the BEC server using systemctl. Trying to use tmux directly.")
+                tmux_stop("bec-redis")
+                tmux_stop("bec")
         elif self.interface == "subprocess":
             subprocess_stop(processes)
         else:
