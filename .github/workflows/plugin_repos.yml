@@ -1,0 +1,79 @@
+name: Run pytest on plugin repositories
+on: 
+  workflow_call:
+    inputs:
+      BEC_WIDGETS_BRANCH:
+        description: 'Branch for BEC Widgets'
+        required: false
+        default: 'main'
+        type: string
+      BEC_CORE_BRANCH:
+        description: 'Branch for BEC Core'
+        required: false
+        default: 'main'
+        type: string
+      OPHYD_DEVICES_BRANCH:
+        description: 'Branch for Ophyd Devices'
+        required: false
+        default: 'main'
+        type: string
+      
+    secrets:
+      GH_READ_TOKEN:
+        required: true
+
+
+
+jobs:
+  plugin_repos:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    env: 
+      QTWEBENGINE_DISABLE_SANDBOX: 1
+      QT_QPA_PLATFORM: "offscreen"
+
+    strategy:
+      matrix:
+        beamline_repo: [
+          {url: 'github.com/bec-project/addams_bec.git', 'name': 'addams_bec'},
+          {url: 'github.com/bec-project/csaxs_bec.git', 'name': 'csaxs_bec'},
+          {url: 'github.com/bec-project/debye_bec.git', 'name': 'debye_bec'},
+          {url: 'github.com/bec-project/detector_group_bec.git', 'name': 'detector_group_bec'},
+          {url: 'github.com/bec-project/microxas_bec.git', 'name': 'microxas_bec'},
+          {url: 'github.com/bec-project/phoenix_bec.git', 'name': 'phoenix_bec'},
+          {url: 'github.com/bec-project/pxi_bec.git', 'name': 'pxi_bec'},
+          {url: 'github.com/bec-project/pxii_bec.git', 'name': 'pxii_bec'},
+          {url: 'github.com/bec-project/sim_bec.git', 'name': 'sim_bec'},
+          {url: 'github.com/bec-project/superxas_bec.git', 'name': 'superxas_bec'},
+          {url: 'github.com/bec-project/tomcat_bec.git', 'name': 'tomcat_bec'},
+          {url: 'github.com/bec-project/xtreme_bec.git', 'name': 'xtreme_bec'},
+          {url: 'github.com/bec-project/iss_bec.git', 'name': 'iss_bec'},
+        ]
+
+    name: Plugin ${{ matrix.beamline_repo.name }}
+
+    steps:
+      - name: Checkout BEC Core
+        uses: actions/checkout@v4
+        with:
+          repository: bec-project/bec
+          ref: ${{ inputs.BEC_CORE_BRANCH }}
+
+      - name: Install and test a BEC plugin repository
+        uses: ./.github/actions/plugin_repo_tests
+        with:
+          BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+          BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
+          OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+          BEC_PLUGIN_REPO_URL: ${{ matrix.beamline_repo.url }}
+          BEC_PLUGIN_REPO_NAME: ${{ matrix.beamline_repo.name }}
+          GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
+          PYTHON_VERSION: '3.11'
+
+      
+
+    
