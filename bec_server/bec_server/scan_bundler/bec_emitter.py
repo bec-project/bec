@@ -154,7 +154,8 @@ class BECEmitter(EmitterBase):
             )
             return
         storage = sb.sync_storage[status_msg.scan_id]
-        max_point = max(storage.get("sent", {0}))
+        sent_vals = storage.get("sent", {0}) or {0}
+        max_point = max(sent_vals)
         self._update_scan_progress(status_msg.scan_id, max_point, done=True)
 
     def shutdown(self):

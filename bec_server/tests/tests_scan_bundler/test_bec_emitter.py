@@ -194,6 +194,14 @@ def test_add_message(msg, endpoint, public):
             1,
             "lkajsdlkj",  # This is a different scan_id, should not update progress
         ),
+        (
+            messages.ScanStatusMessage(
+                scan_id="lkajsdlkj", status="aborted", info={"num_points": 10}
+            ),
+            {},
+            0,
+            "lkajsdlkj",  # This is a different scan_id, should not update progress
+        ),
     ],
 )
 def test_bec_emitter_scan_status_update(bec_emitter_mock, msg, sent, progress, ref_scan_id):
