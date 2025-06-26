@@ -286,7 +286,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
                         signals_precisions.append((None, None))
                     else:
                         prec = getattr(obj, "precision", 2)
-                        if not isinstance(prec, int) or prec < 1:
+                        if not isinstance(prec, int):
                             self._devices_with_bad_precision.add((dev, prec))
                             prec = 2
                         signals_precisions.append((signal, prec))
@@ -303,6 +303,10 @@ class LiveUpdatesTable(LiveUpdatesBase):
             return "N/A"
         val = signal.get("value")
         if isinstance(val, SupportsFloat) and not isinstance(val, np.ndarray):
+            if precision < 0:
+                # This is to cover the special case when EPICS returns a negative precision.
+                # More info: https://epics.anl.gov/tech-talk/2004/msg00434.php
+                return f"{float(val):.{-precision}g}"
             return f"{float(val):.{precision}f}"
         return str(val)
 

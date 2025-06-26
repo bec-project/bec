@@ -218,7 +218,7 @@ class TestLiveTable:
             assert mock_client_msgs.called
 
     @pytest.mark.parametrize(
-        ["prec", "expected_prec"], [(2, 2), (3, 3), (4, 4), (-1, 2), ("precision", 2)]
+        ["prec", "expected_prec"], [(2, 2), (3, 3), (4, 4), (-1, -1), (0, 0), ("precision", 2)]
     )
     def test_print_table_data_hinted_value_with_precision(
         self, client_with_grid_scan, prec, expected_prec
@@ -246,7 +246,10 @@ class TestLiveTable:
         ):
             live_update.dev_values = (len(live_update._get_header()) - 1) * [0]
             live_update.print_table_data()
-            mocked_table.get_row.assert_called_with("0", f"{0:.{expected_prec}f}")
+            if expected_prec < 0:
+                mocked_table.get_row.assert_called_with("0", f"{0:.{-expected_prec}g}")
+            else:
+                mocked_table.get_row.assert_called_with("0", f"{0:.{expected_prec}f}")
 
     @pytest.mark.parametrize(
         "value,expected",
@@ -330,7 +333,7 @@ class TestLiveTable:
                 live_update._print_client_msgs_all()
                 assert result.getvalue() == rtr1
 
-    @pytest.mark.parametrize(["prec", "warn"], [(2, False), (3, False), (-3, True)])
+    @pytest.mark.parametrize(["prec", "warn"], [(2, False), (3, False), ("wrong_prec", True)])
     @mock.patch("bec_ipython_client.callbacks.live_table.logger")
     def test_close_table_prints_warning_at_end(self, logger, client_with_grid_scan, prec, warn):
         client, request_msg = client_with_grid_scan
