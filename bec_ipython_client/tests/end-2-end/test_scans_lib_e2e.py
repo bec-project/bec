@@ -1,10 +1,14 @@
+import os
+import subprocess
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
 import yaml
 
+import bec_lib
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.devicemanager import DeviceConfigError
@@ -539,3 +543,24 @@ def test_image_analysis(bec_client_lib):
     assert (np.isclose(fit_res[1]["stats"]["mean"], 3.3, atol=0.5)).all()
     # Center of mass is not in the middle due to hot (fluctuating) pixels
     assert (np.isclose(fit_res[1]["stats"]["center_of_mass"], [49.5, 40.8], atol=2)).all()
+
+
+def test_change_account_script(bec_client_lib):
+    bec = bec_client_lib
+    bec.metadata.update({"unit_test": "test_change_account_script"})
+    dev = bec.device_manager.devices
+    account = bec.active_account
+    redis_host, port = bec._service_config.redis.split(":")
+    pgroup = "p12345"
+    try:
+        base_dir = Path(bec_lib.__file__).parent.parent.parent
+        set_account_dir = os.path.join(base_dir, "bin", "bec_set_account")
+        cmd = f"{set_account_dir}/bec-set-account"
+        subprocess.run(
+            [cmd, "--redis-host", redis_host, "--pgroup", pgroup, "--force", "true"], check=True
+        )
+        assert bec.active_account == pgroup
+    finally:
+        bec.connector.delete(MessageEndpoints.account())
+
+    assert bec.active_account == ""

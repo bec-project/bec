@@ -33,6 +33,7 @@ func main() {
 	// CLI flags
 	redisHost := flag.String("redis-host", "", "Redis host (e.g. awi-bec-001)")
 	pgroup := flag.String("pgroup", "", "Process group (e.g. p16602 )")
+	force := flag.Bool("force", false, "Force overwrite existing account without confirmation")
 	flag.Parse()
 
 	if *redisHost == "" {
@@ -62,13 +63,15 @@ func main() {
 			for k, v := range decoded.BecCodec.Data.Metadata {
 				fmt.Printf("%s: %s\n", k, v)
 		}
-
-		var input string
-		fmt.Print("Are you sure you want to overwrite it? [y/N]: ")
-		fmt.Scanln(&input)
-		if input != "y" && input != "Y" {
-			fmt.Println("Aborted, old account", decoded.BecCodec.Data.Value, "remains active.")
-			os.Exit(0)
+		
+		if !*force {
+			var input string
+			fmt.Print("Are you sure you want to overwrite it? [y/N]: ")
+			fmt.Scanln(&input)
+			if input != "y" && input != "Y" {
+				fmt.Println("Aborted, old account", decoded.BecCodec.Data.Value, "remains active.")
+				os.Exit(0)
+			}
 		}
 	}
 	} else if err != redis.Nil {
