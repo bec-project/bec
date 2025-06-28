@@ -36,7 +36,7 @@ def test_configure(logger, tmp_path):
 
 
 def test_update_base_path_correct_config(logger):
-    config = {"log_writer": {"base_path": "./"}}
+    config = {"log_writer": {"base_path": "./logs"}}
     assert logger._base_path is None
     logger._update_base_path(config)
     assert logger._base_path == os.path.join(str(Path("./").resolve()), "logs")

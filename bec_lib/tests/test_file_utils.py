@@ -60,7 +60,7 @@ def test_log_writer():
     """Device config writer fixture and ServiceConfigParser class"""
     with mock.patch("os.makedirs") as mock_make_dirs:
         with mock.patch("os.chmod") as mock_chmod:
-            lw = LogWriter(service_config={"base_path": "/tmp"})
+            lw = LogWriter(service_config={"base_path": "/tmp/logs"})
             assert mock_make_dirs.call_count == 1
             assert lw.directory == "/tmp/logs"
             mock_chmod.assert_called_once_with("/tmp/logs", int("0o771", 8))

@@ -170,10 +170,9 @@ def test_bec_service_default_config():
     with bec_service(config=config, unique_service=True) as service:
         bec_lib_path = str(Path(bec_lib.service_config.__file__).resolve().parent.parent.parent)
         if "nox" not in bec_lib_path:
-            assert (
-                os.path.abspath(service._service_config.service_config["file_writer"]["base_path"])
-                == bec_lib_path
-            )
+            assert os.path.abspath(
+                service._service_config.service_config["file_writer"]["base_path"]
+            ) == os.path.join(bec_lib_path, "data")
 
 
 def test_bec_service_show_global_vars(capsys):
