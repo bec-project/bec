@@ -19,8 +19,11 @@ DEFAULT_BASE_PATH = (
 DEFAULT_SERVICE_CONFIG = {
     "redis": {"host": os.environ.get("BEC_REDIS_HOST", "localhost"), "port": 6379},
     "service_config": {
-        "file_writer": {"plugin": "default_NeXus_format", "base_path": DEFAULT_BASE_PATH},
-        "log_writer": {"base_path": DEFAULT_BASE_PATH},
+        "file_writer": {
+            "plugin": "default_NeXus_format",
+            "base_path": os.path.join(DEFAULT_BASE_PATH, "data"),
+        },
+        "log_writer": {"base_path": os.path.join(DEFAULT_BASE_PATH, "logs")},
     },
     "acl": DEFAULT_BASE_PATH + "/.bec_acl.env",
 }
