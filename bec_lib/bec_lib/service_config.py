@@ -2,6 +2,7 @@
 This module provides a class to handle the service configuration.
 """
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -78,7 +79,7 @@ class ServiceConfig:
             return
 
         if not self.config_path:
-            self.config = DEFAULT_SERVICE_CONFIG
+            self.config = copy.deepcopy(DEFAULT_SERVICE_CONFIG)
             return
 
     def _load_urls(self, entry: str, required: bool = True):
