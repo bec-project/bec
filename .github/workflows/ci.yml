@@ -53,6 +53,11 @@ jobs:
     needs: [check_pr_status, formatter]
     if: needs.check_pr_status.outputs.branch-pr == ''
     uses: ./.github/workflows/end2end.yml
+    with:
+      BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH || 'main' }}
+      BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH || github.head_ref || github.sha}}
+      OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
+      PYTHON_VERSION: '3.11'
 
   child-repos:
     needs: [check_pr_status, formatter]
@@ -64,7 +69,7 @@ jobs:
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
 
   plugin-repos:
-    needs: [check_pr_status, formatter]
+    needs: [check_pr_status, formatter, unit-test, unit-test-matrix]
     if: needs.check_pr_status.outputs.branch-pr == ''
     uses: ./.github/workflows/plugin_repos.yml
     with:

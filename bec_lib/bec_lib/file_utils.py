@@ -65,8 +65,7 @@ class LogWriter:
         """
         self.service_config_parser = ServiceConfigParser(service_config)
         self._base_path = self.service_config_parser.get_base_path()
-        self._directory = os.path.join(self._base_path, "logs")
-        self.create_directory(self.directory)
+        self.create_directory(self._base_path)
 
     def create_directory(self, fname: str = None) -> None:
         """Create the log directory."""
@@ -79,7 +78,7 @@ class LogWriter:
         Returns:
             str: String representation of log directory
         """
-        return self._directory
+        return self._base_path
 
 
 class DeviceConfigWriter:

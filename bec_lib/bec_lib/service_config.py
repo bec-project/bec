@@ -2,6 +2,7 @@
 This module provides a class to handle the service configuration.
 """
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -19,8 +20,11 @@ DEFAULT_BASE_PATH = (
 DEFAULT_SERVICE_CONFIG = {
     "redis": {"host": os.environ.get("BEC_REDIS_HOST", "localhost"), "port": 6379},
     "service_config": {
-        "file_writer": {"plugin": "default_NeXus_format", "base_path": DEFAULT_BASE_PATH},
-        "log_writer": {"base_path": DEFAULT_BASE_PATH},
+        "file_writer": {
+            "plugin": "default_NeXus_format",
+            "base_path": os.path.join(DEFAULT_BASE_PATH, "data"),
+        },
+        "log_writer": {"base_path": os.path.join(DEFAULT_BASE_PATH, "logs")},
     },
     "acl": DEFAULT_BASE_PATH + "/.bec_acl.env",
 }
@@ -75,7 +79,7 @@ class ServiceConfig:
             return
 
         if not self.config_path:
-            self.config = DEFAULT_SERVICE_CONFIG
+            self.config = copy.deepcopy(DEFAULT_SERVICE_CONFIG)
             return
 
     def _load_urls(self, entry: str, required: bool = True):

@@ -306,7 +306,7 @@ def test_initialize_scan_info(scan_worker_mock, msg):
                 file_dir = "S00000-00999/S00002"
             else:
                 file_dir = f"S00000-00999/S00002_{suffix}"
-        file_components = os.path.abspath(os.path.join(base_path, "data", file_dir, "S00002")), "h5"
+        file_components = os.path.abspath(os.path.join(base_path, file_dir, "S00002")), "h5"
         assert worker.current_scan_info["file_components"] == file_components
 
 
@@ -744,7 +744,7 @@ def test_worker_update_instr_with_scan_report_update(msg, scan_worker_mock):
             "/data/raw/test_account",
             False,
         ),
-        ("/data/raw", None, "/data/raw/data", False),
+        ("/data/raw", None, "/data/raw", False),
         (
             "/data/$account/$sub_dir/raw",
             messages.VariableMessage(value="test_account"),
