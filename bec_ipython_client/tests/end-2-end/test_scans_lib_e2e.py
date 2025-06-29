@@ -1,4 +1,5 @@
 import os
+import platform
 import subprocess
 import threading
 import time
@@ -548,14 +549,18 @@ def test_image_analysis(bec_client_lib):
 def test_change_account_script(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_change_account_script"})
-    dev = bec.device_manager.devices
-    account = bec.active_account
-    redis_host, port = bec._service_config.redis.split(":")
+    redis_host, _ = bec._service_config.redis.split(":")
     pgroup = "p12345"
     try:
         base_dir = Path(bec_lib.__file__).parent.parent.parent
         set_account_dir = os.path.join(base_dir, "bin", "bec_set_account")
-        cmd = f"{set_account_dir}/bec-set-account"
+
+        # switch between darwin and linux command
+        if platform.system() == "Darwin":
+            cmd = f"{set_account_dir}/bec-set-account_mac_arm64"
+        else:
+            cmd = f"{set_account_dir}/bec-set-account"
+
         subprocess.run(
             [cmd, "--redis-host", redis_host, "--pgroup", pgroup, "--force", "true"], check=True
         )
