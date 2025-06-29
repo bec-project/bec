@@ -549,11 +549,15 @@ def test_image_analysis(bec_client_lib):
 def test_change_account_script(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_change_account_script"})
-    redis_host, _ = bec._service_config.redis.split(":")
+    redis_host, redis_port = bec._service_config.redis.split(":")
     pgroup = "p12345"
     try:
         base_dir = Path(bec_lib.__file__).parent.parent.parent
         set_account_dir = os.path.join(base_dir, "bin", "bec_set_account")
+        assert bec.connector.host == redis_host, "Redis host does not match the expected host"
+        assert bec.connector.port == redis_port, "Redis port does not match the expected port"
+
+        assert bec.connector.redis_server_is_running()
 
         # switch between darwin and linux command
         if platform.system() == "Darwin":
