@@ -64,7 +64,7 @@ jobs:
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
 
   plugin-repos:
-    needs: [check_pr_status, formatter]
+    needs: [check_pr_status, formatter, unit-test, unit-test-matrix]
     if: needs.check_pr_status.outputs.branch-pr == ''
     uses: ./.github/workflows/plugin_repos.yml
     with:
