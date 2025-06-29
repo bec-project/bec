@@ -17,6 +17,11 @@ on:
         required: false
         default: 'main'
         type: string
+      PYTHON_VERSION:
+        description: 'Python version to use'
+        required: false
+        default: '3.11'
+        type: string
 
 jobs:
   pytest:
@@ -30,5 +35,5 @@ jobs:
           BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
           OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
           BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
-          PYTHON_VERSION: '3.11'
+          PYTHON_VERSION: ${{ inputs.PYTHON_VERSION }}
           
