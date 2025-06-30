@@ -48,7 +48,14 @@ class AsyncWriter(threading.Thread):
 
     BASE_PATH = "/entry/collection/devices"
 
-    def __init__(self, file_path: str, scan_id: str, connector: RedisConnector, devices: list[str]):
+    def __init__(
+        self,
+        file_path: str,
+        scan_id: str,
+        scan_number: int,
+        connector: RedisConnector,
+        devices: list[str],
+    ):
         """
         Initialize the async writer
 
@@ -61,6 +68,7 @@ class AsyncWriter(threading.Thread):
         super().__init__(target=self._run, daemon=True, name="AsyncWriter")
         self.file_path = file_path
         self.scan_id = scan_id
+        self.scan_number = scan_number
         self.devices = devices
         self.connector = connector
         self.stream_keys = {}

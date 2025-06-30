@@ -10,7 +10,7 @@ from bec_server.file_writer.async_writer import AsyncWriter
 @pytest.fixture
 def async_writer(tmp_path, connected_connector):
     file_path = tmp_path / "test.nxs"
-    writer = AsyncWriter(file_path, "scan_id", connected_connector, ["monitor_async"])
+    writer = AsyncWriter(file_path, "scan_id", 1234, connected_connector, ["monitor_async"])
     writer.initialize_stream_keys()
     yield writer
 

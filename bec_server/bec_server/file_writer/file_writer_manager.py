@@ -187,6 +187,7 @@ class FileWriterManager(BECService):
             scan_storage.async_writer = AsyncWriter(
                 get_full_path(scan_status_msg=msg, name="master"),
                 scan_id=scan_id,
+                scan_number=msg.scan_number,
                 connector=self.connector,
                 devices=msg.readout_priority.get("async", []),
             )
