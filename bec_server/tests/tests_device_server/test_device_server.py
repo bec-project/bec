@@ -808,3 +808,75 @@ def test_stage_timeout_unstage_device(device_server_mock, instr):
         # Change the mock to return the resolved unstage status + unstage the device
         mock_unstage.side_effect = callback
         device_server._stage_device(instr, timeout_on_unstage=0.1)
+
+
+@pytest.mark.parametrize(
+    "instr",
+    [
+        messages.DeviceInstructionMessage(
+            device="samx",
+            action="unstage",
+            parameter={},
+            metadata={"stream": "primary", "device_instr_id": "diid"},
+        ),
+        messages.DeviceInstructionMessage(
+            device="test_device", action="kickoff", parameter={}, metadata={}
+        ),
+    ],
+)
+def test_get_metadata_for_alarm(device_server_mock, instr):
+    device_server = device_server_mock
+    metadata = device_server._get_metadata_for_alarm(instr)
+    assert metadata == instr.metadata
+
+
+def test_get_metadata_for_alarm_no_device_manager(device_server_mock):
+    device_server = device_server_mock
+    instr = messages.DeviceInstructionMessage(
+        device="test_device", action="kickoff", parameter={}, metadata={}
+    )
+    device_server.device_manager = None
+    metadata = device_server._get_metadata_for_alarm(instr)
+    assert metadata == instr.metadata
+
+
+def test_get_metadata_for_alarm_no_scan_info(device_server_mock):
+    device_server = device_server_mock
+    instr = messages.DeviceInstructionMessage(
+        device="test_device", action="kickoff", parameter={}, metadata={}
+    )
+    device_server.device_manager.scan_info = None
+    metadata = device_server._get_metadata_for_alarm(instr)
+    assert metadata == instr.metadata
+
+
+def test_get_metadata_for_alarm_no_scan_info_msg(device_server_mock):
+    device_server = device_server_mock
+    instr = messages.DeviceInstructionMessage(
+        device="test_device", action="kickoff", parameter={}, metadata={}
+    )
+    device_server.device_manager.scan_info.msg = None
+    metadata = device_server._get_metadata_for_alarm(instr)
+    assert metadata == instr.metadata
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        messages.ScanStatusMessage(
+            scan_id="12345", scan_number=1, status="open", info={}, metadata={}
+        ),
+        messages.ScanStatusMessage(
+            scan_id="12345", scan_number=1, status="open", info={}, metadata={}
+        ),
+    ],
+)
+def test_get_metadata_for_alarm_with_scan_info_msg(device_server_mock, msg):
+    device_server = device_server_mock
+    instr = messages.DeviceInstructionMessage(
+        device="test_device", action="kickoff", parameter={}, metadata={"scan_id": "12345"}
+    )
+    device_server.device_manager.scan_info.msg = msg
+    metadata = device_server._get_metadata_for_alarm(instr)
+    assert metadata["scan_id"] == msg.scan_id
+    assert metadata["scan_number"] == msg.scan_number

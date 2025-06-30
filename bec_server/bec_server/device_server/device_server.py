@@ -334,6 +334,34 @@ class DeviceServer(RPCMixin, BECService):
             if dev not in self.device_manager.devices:
                 raise InvalidDeviceError(f"There is no device with the name {dev}.")
 
+    def _get_metadata_for_alarm(
+        self, instruction: messages.DeviceInstructionMessage | None = None
+    ) -> dict:
+        """
+        Get the metadata for the current scan. This is used to add the scan ID and scan number to alarms.
+        Returns:
+            dict: Metadata dictionary with scan ID and scan number.
+        """
+        metadata = {}
+        if instruction is not None:
+            metadata.update(instruction.metadata)
+
+        if not self.device_manager:
+            return metadata
+
+        if not self.device_manager.scan_info:
+            return metadata
+
+        msg = self.device_manager.scan_info.msg
+
+        if not msg:
+            return metadata
+
+        scan_id_instruction = metadata.get("scan_id")
+        if msg.scan_id == scan_id_instruction and msg.scan_number is not None:
+            metadata["scan_number"] = msg.scan_number
+        return metadata
+
     def handle_device_instructions(self, msg: messages.DeviceInstructionMessage) -> None:
         """Parse a device instruction message and handle the requested action. Action
         types are set, read, rpc, kickoff or trigger.
@@ -386,7 +414,7 @@ class DeviceServer(RPCMixin, BECService):
                 source=instructions.content,
                 msg=content,
                 alarm_type=limit_error.__class__.__name__,
-                metadata=instructions.metadata,
+                metadata=self._get_metadata_for_alarm(msg),
             )
         except Exception as exc:  # pylint: disable=broad-except
             content = traceback.format_exc()
@@ -402,7 +430,7 @@ class DeviceServer(RPCMixin, BECService):
                     source=instructions.content,
                     msg=content,
                     alarm_type=exc.__class__.__name__,
-                    metadata=instructions.metadata,
+                    metadata=self._get_metadata_for_alarm(msg),
                 )
 
     @staticmethod
@@ -657,7 +685,7 @@ class DeviceServer(RPCMixin, BECService):
             alarm_type="Warning",
             source={"device": device, "method": method},
             msg=f"Failed to run {method} on device {device}.",
-            metadata={},
+            metadata=self._get_metadata_for_alarm(),
         )
         device_root = device.split(".")[0]
         ds_dev = self.device_manager.devices.get(device_root)

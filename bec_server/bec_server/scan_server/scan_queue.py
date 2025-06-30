@@ -824,6 +824,20 @@ class RequestBlockQueue:
                 self.scan_queue.queue_manager.parent.dataset_number += 1
         return
 
+    def _get_metadata_for_alarm(self):
+        """get the metadata for the alarm"""
+        metadata = {}
+        if self.active_rb is None:
+            return metadata
+        if self.active_rb.scan is None:
+            return metadata
+        if self.active_rb.scan_id is not None:
+            metadata["scan_id"] = self.active_rb.scan_id
+        if self.active_rb.scan_number is not None:
+            metadata["scan_number"] = self.active_rb.scan_number
+
+        return metadata
+
     def __iter__(self):
         return self
 
@@ -849,7 +863,7 @@ class RequestBlockQueue:
                 source=self.active_rb.msg.content,
                 msg=limit_error.args[0],
                 alarm_type=limit_error.__class__.__name__,
-                metadata={},
+                metadata=self._get_metadata_for_alarm(),
             )
             self.instruction_queue.stopped = True
             raise ScanAbortion from limit_error
@@ -862,7 +876,7 @@ class RequestBlockQueue:
                 source=self.active_rb.msg.content,
                 msg=content,
                 alarm_type=exc.__class__.__name__,
-                metadata={},
+                metadata=self._get_metadata_for_alarm(),
             )
             raise ScanAbortion from exc
 

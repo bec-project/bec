@@ -541,6 +541,10 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         # Their done status was not checked nor were they waited for
         # While this is not an error, it is a warning that the scan
         # might not have completed as expected.
+
+        metadata = {"scan_id": self.scan_id}
+        if self.scan_number is not None:
+            metadata["scan_number"] = self.scan_number
         unchecked_status_objects = self.stubs.get_remaining_status_objects(
             exclude_done=False, exclude_checked=True
         )
@@ -550,7 +554,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
                 source={"Scan": self.scan_name},
                 msg=f"Scan completed with unchecked status objects: {unchecked_status_objects}. Use .wait() or .done within the scan to check their status.",
                 alarm_type="ScanCleanupWarning",
-                metadata={},
+                metadata=metadata,
             )
 
         # Check if there are any remaining status objects that are not done.
@@ -564,7 +568,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
                 source={"Scan": self.scan_name},
                 msg=f"Scan completed with remaining status objects: {remaining_status_objects}",
                 alarm_type="ScanCleanupWarning",
-                metadata={},
+                metadata=metadata,
             )
             for obj in remaining_status_objects:
                 obj.wait()

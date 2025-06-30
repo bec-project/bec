@@ -347,6 +347,24 @@ class ScanWorker(threading.Thread):
             if set(readback.get("devices", [])) & set(instr_device):
                 instr.metadata["response"] = True
 
+    def _get_metadata_for_alarm(self) -> dict:
+        """
+        Get metadata for the alarm to be raised in case of an error.
+        This includes the scan ID and scan number if available.
+
+        Returns:
+            dict: Metadata dictionary with scan ID and scan number.
+        """
+        metadata = {}
+        if not self.current_scan_info:
+            return metadata
+
+        if self.current_scan_info.get("scan_id"):
+            metadata["scan_id"] = self.current_scan_info["scan_id"]
+        if self.current_scan_info.get("scan_number"):
+            metadata["scan_number"] = self.current_scan_info["scan_number"]
+        return metadata
+
     def _process_instructions(self, queue: InstructionQueueItem) -> None:
         """
         Process scan instructions and send DeviceInstructions to OPAAS.
@@ -397,7 +415,7 @@ class ScanWorker(threading.Thread):
                     source={"ScanWorker": "_process_instructions"},
                     msg=content,
                     alarm_type=exc_return_to_start.__class__.__name__,
-                    metadata={},
+                    metadata=self._get_metadata_for_alarm(),
                 )
                 raise ScanAbortion from exc
             raise ScanAbortion from exc
@@ -409,7 +427,7 @@ class ScanWorker(threading.Thread):
                 source={"ScanWorker": "_process_instructions"},
                 msg=content,
                 alarm_type=exc.__class__.__name__,
-                metadata={},
+                metadata=self._get_metadata_for_alarm(),
             )
             raise ScanAbortion from exc
         queue.is_active = False
@@ -522,7 +540,7 @@ class ScanWorker(threading.Thread):
                 source={"ScanWorker": "run"},
                 msg=content,
                 alarm_type=exc.__class__.__name__,
-                metadata={},
+                metadata=self._get_metadata_for_alarm(),
             )
             if self.queue_name in self.parent.queue_manager.queues:
                 self.parent.queue_manager.queues[self.queue_name].abort()

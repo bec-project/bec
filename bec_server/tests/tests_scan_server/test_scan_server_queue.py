@@ -7,6 +7,7 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
+from bec_server.scan_server.errors import LimitError, ScanAbortion
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
     InstructionQueueItem,
@@ -702,6 +703,39 @@ def test_pull_request_block_empyt_rb():
         with pytest.raises(StopIteration):
             req_block_queue._pull_request_block()
             rbqs.assert_not_called()
+
+
+@pytest.fixture(params=[LimitError, ScanAbortion])
+def request_block_queue_error(request):
+    req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
+    req_block_queue.active_rb = mock.MagicMock()
+    req_block_queue.active_rb.instructions.__next__.side_effect = request.param("Test error")
+    return req_block_queue, request.param
+
+
+@pytest.mark.parametrize(
+    "scan,scan_id,scan_number,metadata",
+    [
+        (None, None, None, {}),
+        (mock.MagicMock(), "scan_id", 1, {"scan_id": "scan_id", "scan_number": 1}),
+    ],
+)
+def test_request_block_queue_raises_alarm_on_error(
+    request_block_queue_error, scan, scan_id, scan_number, metadata
+):
+    req_block_queue, exc = request_block_queue_error
+    req_block_queue.active_rb.scan = scan
+    req_block_queue.active_rb.scan_id = scan_id
+    req_block_queue.active_rb.scan_number = scan_number
+    with pytest.raises(ScanAbortion):
+        next(req_block_queue)
+    req_block_queue.scan_queue.queue_manager.connector.raise_alarm.assert_called_once_with(
+        severity=Alarms.MAJOR,
+        source=req_block_queue.active_rb.msg.content,
+        msg=mock.ANY,
+        alarm_type=exc.__name__,
+        metadata=metadata,
+    )
 
 
 def test_queue_manager_get_active_scan_id(queuemanager_mock):

@@ -774,3 +774,20 @@ def test_worker_get_file_base_path(
         worker.parent._service_config.service_config["file_writer"][
             "base_path"
         ] = file_writer_base_path_orig
+
+
+@pytest.mark.parametrize(
+    "scan_info, out",
+    [
+        (None, {}),
+        ({}, {}),
+        ({"scan_id": "12345"}, {"scan_id": "12345"}),
+        ({"scan_number": 1}, {"scan_number": 1}),
+        ({"scan_id": "12345", "scan_number": 1}, {"scan_id": "12345", "scan_number": 1}),
+    ],
+)
+def test_worker_get_metadata_for_alarm(scan_worker_mock, scan_info, out):
+    worker = scan_worker_mock
+    worker.current_scan_info = scan_info
+    metadata = worker._get_metadata_for_alarm()
+    assert metadata == out

@@ -148,7 +148,7 @@ class AsyncWriter(threading.Thread):
                 alarm_type="AsyncWriterError",
                 source={"file_path": self.file_path},
                 msg=f"Error writing async data file {self.file_path}: {content}",
-                metadata={},
+                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
     def send_file_message(self, done: bool, successful: bool) -> None:
@@ -232,7 +232,7 @@ class AsyncWriter(threading.Thread):
                             alarm_type="ValueError",
                             source={"device": device_name},
                             msg=f"Unknown key: {key}. Data will not be written.",
-                            metadata={},
+                            metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                         )
 
         if write_replace:
@@ -276,7 +276,7 @@ class AsyncWriter(threading.Thread):
                 alarm_type="ValueError",
                 source={"device": signal_group.name},
                 msg=f"Unknown async update type: {update_type}. Data will not be written.",
-                metadata={},
+                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
     def _write_value_add(self, async_update: dict, signal_group: h5py.Group, value: Any):
@@ -333,7 +333,7 @@ class AsyncWriter(threading.Thread):
                     alarm_type="ValueError",
                     source={"device": signal_group.name},
                     msg=f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will not be written.",
-                    metadata={},
+                    metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 return
             signal_group["value"].resize((current_shape[0] + value.shape[0], *current_shape[1:]))
@@ -358,7 +358,7 @@ class AsyncWriter(threading.Thread):
                 alarm_type="ValueError",
                 source={"device": signal_group.name},
                 msg=f"Invalid max_shape for async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written.",
-                metadata={},
+                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
             return
 
@@ -386,7 +386,7 @@ class AsyncWriter(threading.Thread):
                         alarm_type="ValueError",
                         source={"device": signal_group.name, "slice": row_index},
                         msg=f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated.",
-                        metadata={},
+                        metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                     )
                     value = value[:, : max_shape[1]]
                 signal_group.create_dataset("value", data=value, maxshape=max_shape)
@@ -412,7 +412,7 @@ class AsyncWriter(threading.Thread):
                     alarm_type="ValueError",
                     source={"device": signal_group.name, "slice": row_index},
                     msg=f"Added data slice for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated.",
-                    metadata={},
+                    metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 value = value[: max_shape[1] - col_index]
             signal_group["value"].resize((row_index + 1, max_shape[1]))
