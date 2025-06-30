@@ -401,6 +401,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self.optim_trajectory = optim_trajectory
         self.burst_index = 0
         self._baseline_status = None
+        self.scan_number = None
 
         # flag to indicate if the scan has been closed; this is only needed as long
         # as the close_scan method is not used everywhere. Once all scans use close_scan,

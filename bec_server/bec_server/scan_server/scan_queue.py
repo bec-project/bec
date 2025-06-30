@@ -696,6 +696,8 @@ class RequestBlock:
         if not self.is_scan:
             return None
         self._scan_number = self._scan_server_scan_number + self.scan_ids_head()
+        if hasattr(self.scan, "scan_number"):
+            self.scan.scan_number = self._scan_number
         return None
 
     def scan_ids_head(self) -> int:
