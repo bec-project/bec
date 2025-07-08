@@ -188,6 +188,10 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer):
 
     file_writer.write("./test.h5", storage, configuration_data={})
 
+    data_info = file_writer.stored_data_info.get("samx")
+    assert data_info.get("samx").get("shape") == (2,)
+    assert data_info.get("samx_setpoint").get("shape") == (2,)
+    assert data_info.get("samx").get("dtype") == "float64"
     # open file and check that time stamps are correct
     with h5py.File("./test.h5", "r") as test_file:
         assert (

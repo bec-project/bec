@@ -77,7 +77,6 @@ class AsyncWriter(threading.Thread):
         self.append_shapes = {}
         self.written_devices = set()
         self.file_handle = None
-
         self.cursor = defaultdict(dict)
 
     def initialize_stream_keys(self):
@@ -136,7 +135,6 @@ class AsyncWriter(threading.Thread):
                 self.poll_and_write_data()
             # run one last time to get any remaining data
             self.poll_and_write_data(final=True)
-            # self.send_file_message(done=True, successful=True)
             logger.info(f"Finished writing async data file {self.file_path}")
         # pylint: disable=broad-except
         except Exception:

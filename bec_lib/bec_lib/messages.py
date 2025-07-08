@@ -661,6 +661,7 @@ class ScanHistoryMessage(BECMessage):
         scan_name (str): Name of the scan.
         num_points (int): Number of points in the scan.
         request_inputs (dict, optional): Inputs for the scan request, if available.
+        stored_data_info (dict[str, dict[str, _StoredDataInfo]], optional): Information about the stored data for each device in the scan.
         metadata (dict, optional): Additional metadata.
 
     """
@@ -676,6 +677,19 @@ class ScanHistoryMessage(BECMessage):
     scan_name: str
     num_points: int
     request_inputs: dict | None = None
+    stored_data_info: dict[str, dict[str, _StoredDataInfo]] | None = None
+
+
+class _StoredDataInfo(BaseModel):
+    """Internal class to store data info for each device in the scan history message
+
+    Args:
+        shape (tuple): Shape of the data for the device.
+        dtype (str, optional): Data type of the data for the device. Defaults to None.
+    """
+
+    shape: tuple[int, ...] = Field(default_factory=tuple)
+    dtype: str | None = None
 
 
 class ScanBaselineMessage(BECMessage):

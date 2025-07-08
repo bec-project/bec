@@ -5,6 +5,7 @@ import json
 import os
 import traceback
 import typing
+from collections import defaultdict
 
 import h5py
 
@@ -212,6 +213,7 @@ class HDF5FileWriter:
 
     def __init__(self, file_writer_manager):
         self.file_writer_manager = file_writer_manager
+        self.stored_data_info = defaultdict(dict)
 
     @staticmethod
     def _create_device_data_storage(data):
@@ -300,8 +302,35 @@ class HDF5FileWriter:
         file_handle = file_handle or h5py.File(file_path, mode=mode)
         try:
             HDF5StorageWriter.write(writer_storage, file_handle)
+            self.update_data_info(file_handle)
         finally:
             file_handle.close()
+
+    def update_data_info(self, file_handle: h5py.File):
+        """
+        Update the stored data information in the file handle.
+
+        Args:
+            file_handle (h5py.File): The HDF5 file handle to update.
+        """
+        device_group = file_handle.get("/entry/collection/devices")
+        for device_name, device_group in device_group.items():
+            if not isinstance(device_group, h5py.Group):
+                continue
+            for signal_name, signal_group in device_group.items():
+                if not isinstance(signal_group, h5py.Group):
+                    continue
+                if "value" in signal_group:
+                    value_dset = signal_group["value"]
+                    if not isinstance(value_dset, h5py.Dataset):
+                        continue
+                    value_dset_shape = value_dset.shape
+                    if value_dset_shape == ():
+                        value_dset_shape = (1,)
+                    self.stored_data_info[device_name][signal_name] = {
+                        "shape": value_dset_shape,
+                        "dtype": value_dset.dtype.name,
+                    }
 
 
 def dict_to_storage(storage, data):
