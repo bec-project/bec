@@ -20,7 +20,6 @@ from bec_lib.logger import bec_logger
 from .errors import LimitError, ScanAbortion
 from .instruction_handler import InstructionHandler
 from .scan_assembler import ScanAssembler
-from .scans import ScanBase
 
 logger = bec_logger.logger
 
@@ -552,6 +551,12 @@ class ScanQueue:
                         # we don't need to pause if there is no scan enqueued
                         self.status = ScanQueueStatus.RUNNING
                         logger.info("resetting queue status to running")
+                    if (
+                        len(self.queue) > 0
+                        and self.queue[0].status == InstructionQueueStatus.STOPPED
+                    ):
+                        # The next instruction queue is stopped, we can remove it
+                        break
                     self.signal_event.wait(0.1)
 
                 self.active_instruction_queue = self.queue[0]

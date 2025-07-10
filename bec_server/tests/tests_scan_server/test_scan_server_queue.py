@@ -449,6 +449,24 @@ def test_scan_queue_next_instruction_queue_does_not_pop(queuemanager_mock):
     assert len(queue.queue) == 1
 
 
+def test_scan_queue_next_instruction_queue_pops_stopped_elements(queuemanager_mock):
+    """
+    Test that the scan queue pops the stopped elements from the queue.
+    """
+    queue_manager = queuemanager_mock()
+    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue.queue.append(InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock()))
+    queue.queue.append(InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock()))
+    queue.queue[0].status = InstructionQueueStatus.STOPPED
+    queue.queue[1].status = InstructionQueueStatus.STOPPED
+    queue.status = ScanQueueStatus.PAUSED
+    queue.active_instruction_queue = queue.queue[0]
+    assert queue._next_instruction_queue() is True
+    assert len(queue.queue) == 1
+    assert queue._next_instruction_queue() is False
+    assert len(queue.queue) == 0
+
+
 def test_queue_manager_wait_for_queue_to_appear_in_history_raises_timeout(queuemanager_mock):
     queue_manager = queuemanager_mock()
     with pytest.raises(TimeoutError):
