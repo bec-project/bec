@@ -4,6 +4,7 @@ This module contains the ScanHistory class, which is used to manage the scan his
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import TYPE_CHECKING
 
@@ -58,6 +59,9 @@ class ScanHistory:
         with self._scan_data_lock:
             for entry in data:
                 msg: messages.ScanHistoryMessage = entry["data"]
+                if not os.access(msg.file_path, os.R_OK):
+                    # If the file is not readable, we skip adding it to the history
+                    continue
                 self._scan_data[msg.scan_id] = msg
                 self._scan_ids.append(msg.scan_id)
                 self._remove_oldest_scan()
@@ -73,6 +77,9 @@ class ScanHistory:
         # pylint: disable=protected-access
         with parent._scan_data_lock:
             msg: messages.ScanHistoryMessage = msg["data"]
+            if not os.access(msg.file_path, os.R_OK):
+                # If the file is not readable, we skip adding it to the history
+                return
             parent._scan_data[msg.scan_id] = msg
             parent._scan_ids.append(msg.scan_id)
             parent._remove_oldest_scan()

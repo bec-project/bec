@@ -1,4 +1,5 @@
 import time
+from unittest import mock
 
 import pytest
 
@@ -14,7 +15,7 @@ from bec_lib.scan_history import ScanHistory
 def scan_history_without_thread(connected_connector, file_history_messages):
     for msg in file_history_messages:
         connected_connector.xadd(MessageEndpoints.scan_history(), {"data": msg})
-    return ScanHistory(connector=connected_connector, load_threaded=False)
+    yield ScanHistory(connector=connected_connector, load_threaded=False)
 
 
 def test_scan_history_loads_messages(scan_history_without_thread, file_history_messages):
@@ -41,6 +42,7 @@ def test_scan_history_loads_messages(scan_history_without_thread, file_history_m
     assert container[1]._msg == file_history_messages[2]
 
 
+@pytest.mark.timeout(10)
 def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_history_messages):
     msg = [
         messages.ScanHistoryMessage(
@@ -66,12 +68,15 @@ def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_hist
             num_points=10,
         ),
     ]
-    scan_history_without_thread._max_scans = 2
-    for m in msg:
-        scan_history_without_thread._connector.xadd(MessageEndpoints.scan_history(), {"data": m})
+    with mock.patch("bec_lib.scan_history.os.access", return_value=True):
+        scan_history_without_thread._max_scans = 2
+        for m in msg:
+            scan_history_without_thread._connector.xadd(
+                MessageEndpoints.scan_history(), {"data": m}
+            )
 
-    while len(scan_history_without_thread._scan_ids) > 2:
-        time.sleep(0.1)
+        while len(scan_history_without_thread._scan_ids) > 2:
+            time.sleep(0.1)
 
     assert scan_history_without_thread.get_by_scan_number(1) is None
     assert scan_history_without_thread.get_by_scan_number(4)._msg == msg[0]
@@ -82,3 +87,53 @@ def test_scan_history_slices(scan_history_without_thread, file_history_messages)
     assert [scan._msg for scan in scan_history_without_thread[1:]] == file_history_messages[1:]
     assert [scan._msg for scan in scan_history_without_thread[-2:]] == file_history_messages[-2:]
     assert scan_history_without_thread[-1]._msg == file_history_messages[-1]
+
+
+@pytest.mark.timeout(10)
+def test_scan_history_filters_readable_files(
+    scan_history_without_thread, file_history_messages, tmp_path
+):
+    # Create a temporary file that is not readable
+    unreadable_file = tmp_path / "unreadable_file.txt"
+    unreadable_file.write_text("This file is not readable")
+    unreadable_file.chmod(0o000)  # Make it unreadable
+
+    readable_file = tmp_path / "readable_file.txt"
+    readable_file.write_text("This file is readable")
+    readable_file.chmod(0o644)  # Make it readable
+
+    # Add a message with the unreadable file path
+    unreadable_msg = messages.ScanHistoryMessage(
+        scan_id="scan_id_unreadable",
+        scan_number=5,
+        dataset_number=5,
+        file_path=str(unreadable_file),
+        exit_status="closed",
+        start_time=time.time(),
+        end_time=time.time(),
+        scan_name="line_scan",
+        num_points=10,
+    )
+    readable_msg = messages.ScanHistoryMessage(
+        scan_id="scan_id_readable",
+        scan_number=6,
+        dataset_number=6,
+        file_path=str(tmp_path / "readable_file.txt"),
+        exit_status="closed",
+        start_time=time.time(),
+        end_time=time.time(),
+        scan_name="line_scan",
+        num_points=10,
+    )
+    scan_history_without_thread._connector.xadd(
+        MessageEndpoints.scan_history(), {"data": unreadable_msg}
+    )
+    scan_history_without_thread._connector.xadd(
+        MessageEndpoints.scan_history(), {"data": readable_msg}
+    )
+
+    while scan_history_without_thread.get_by_scan_id("scan_id_readable") is None:
+        time.sleep(0.1)
+    # Verify that the unreadable file is not included in the history
+    assert scan_history_without_thread.get_by_scan_id("scan_id_unreadable") is None
+    assert scan_history_without_thread.get_by_scan_id("scan_id_readable")._msg == readable_msg
