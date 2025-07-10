@@ -287,7 +287,7 @@ def main():
         print(f"BEC IPython client: {version('bec_ipython_client')}")
         sys.exit(0)
 
-    if available_plugins and config.is_default():
+    if available_plugins:  # Plugin system always wins!
         # check if config is defined in a plugin;
         # in this case the plugin config takes precedence over
         # the default config

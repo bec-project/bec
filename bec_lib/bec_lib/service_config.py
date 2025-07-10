@@ -103,4 +103,4 @@ class ServiceConfig:
 
     def is_default(self):
         """Return whether config is DEFAULT_SERVICE_CONFIG"""
-        return self.config is DEFAULT_SERVICE_CONFIG
+        return self.config == DEFAULT_SERVICE_CONFIG
