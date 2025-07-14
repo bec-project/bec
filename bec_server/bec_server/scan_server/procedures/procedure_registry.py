@@ -45,3 +45,4 @@ def register(identifier: str, proc: BecProcedure):
         )
     if is_registered(identifier):
         raise ProcedureRegistryError(f"Procedure {proc} is already registered")
+    _PROCEDURE_REGISTRY[identifier] = proc

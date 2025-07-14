@@ -3,7 +3,7 @@ import traceback
 from http import HTTPStatus
 from typing import cast
 
-import podman
+from podman import PodmanClient
 from podman.domain.containers import Container
 from podman.errors import APIError
 
@@ -53,7 +53,7 @@ class ContainerProcedureWorker(ProcedureWorker):
     def _setup_execution_environment(self):
         image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:{PROCEDURE.BEC_VERSION}"
         try:
-            with podman.PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
+            with PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
                 if not client.images.exists(image_tag):
                     build_worker_image(client)
                 client.containers.create
@@ -113,11 +113,7 @@ class ContainerProcedureWorker(ProcedureWorker):
 
 
 def main():
-    """Replaces the main contents of Worker.work() - should be called as the container entrypoint"""
-    from bec_lib.logger import bec_logger
-
-    logger = bec_logger.logger
-
+    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
     logger.info(f"Container worker starting up")
     try:
         needed_keys = ContainerWorkerEnv.__annotations__.keys()
@@ -151,6 +147,14 @@ def main():
 
     logger.debug(f"ContainerWorker connecting to Redis at {conn.host}:{conn.port}")
 
+    try:
+        timeout_s = int(env["timeout_s"])
+    except ValueError as e:
+        logger.error(
+            f"{e} \n Failed to convert supplied timeout argument to an int. \n Using default timeout of 10 s."
+        )
+        timeout_s = PROCEDURE.WORKER.QUEUE_TIMEOUT_S
+
     def _push_status(status: ProcedureWorkerStatus):
         logger.debug(f"Updating container worker status to {status.name}")
         conn.rpush(
@@ -169,12 +173,12 @@ def main():
         logger.debug(f"ContainerWorker waiting for instructions on {endpoint_info}")
         while (
             item := conn.blocking_list_pop_to_set_add(
-                endpoint_info, active_procs_endpoint, timeout_s=int(env["timeout_s"])
+                endpoint_info, active_procs_endpoint, timeout_s=timeout_s
             )
         ) is not None:
             _push_status(ProcedureWorkerStatus.RUNNING)
             logger.debug(f"running task {item!r}")
-            _run_task(cast(ProcedureExecutionMessage, item))
+            _run_task(item)
             _push_status(ProcedureWorkerStatus.IDLE)
     except Exception as e:
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
