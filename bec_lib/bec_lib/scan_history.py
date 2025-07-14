@@ -8,18 +8,20 @@ import os
 import threading
 from typing import TYPE_CHECKING
 
+from bec_lib.callback_handler import EventType
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.scan_data_container import ScanDataContainer
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
+    from bec_lib.client import BECClient
     from bec_lib.redis_connector import RedisConnector
 
 
 class ScanHistory:
     """Class to manage the scan history."""
 
-    def __init__(self, connector: RedisConnector, load_threaded: bool = True) -> None:
+    def __init__(self, client: BECClient, load_threaded: bool = True) -> None:
         """
         Initialize the ScanHistory class.
 
@@ -28,7 +30,8 @@ class ScanHistory:
             load_threaded (bool, optional): Whether to load the scan history in a separate thread. Defaults to
                 True.
         """
-        self._connector = connector
+        self._connector = client.connector
+        self._client = client
         self._load_threaded = load_threaded
         self._scan_data = {}
         self._scan_ids = []
@@ -80,6 +83,7 @@ class ScanHistory:
             if not os.access(msg.file_path, os.R_OK):
                 # If the file is not readable, we skip adding it to the history
                 return
+            parent._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
             parent._scan_data[msg.scan_id] = msg
             parent._scan_ids.append(msg.scan_id)
             parent._remove_oldest_scan()

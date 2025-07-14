@@ -4,7 +4,10 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
+from bec_lib.callback_handler import EventType
+from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.redis_connector import RedisConnector
 from bec_lib.scan_history import ScanHistory
 
 # pylint: disable=protected-access
@@ -15,7 +18,9 @@ from bec_lib.scan_history import ScanHistory
 def scan_history_without_thread(connected_connector, file_history_messages):
     for msg in file_history_messages:
         connected_connector.xadd(MessageEndpoints.scan_history(), {"data": msg})
-    yield ScanHistory(connector=connected_connector, load_threaded=False)
+    client = BECClient(connector_cls=RedisConnector)
+    client.connector = connected_connector
+    yield ScanHistory(client=client, load_threaded=False)
 
 
 def test_scan_history_loads_messages(scan_history_without_thread, file_history_messages):
@@ -137,3 +142,24 @@ def test_scan_history_filters_readable_files(
     # Verify that the unreadable file is not included in the history
     assert scan_history_without_thread.get_by_scan_id("scan_id_unreadable") is None
     assert scan_history_without_thread.get_by_scan_id("scan_id_readable")._msg == readable_msg
+
+
+@pytest.mark.timeout(20)
+def test_scan_history_update_callback(scan_history_without_thread, file_history_messages):
+    """Test the scan history update callbacks."""
+    with mock.patch.object(
+        scan_history_without_thread._client.callbacks, "run"
+    ) as mock_callback_run:
+        for ii, msg in enumerate(file_history_messages):
+            scan_history_without_thread._connector.xadd(
+                MessageEndpoints.scan_history(), {"data": msg}
+            )
+            # Sleep is needed to ensure the message is processed
+            time.sleep(0.1)
+            while (
+                scan_history_without_thread.get_by_scan_id(msg.scan_id) is None
+            ):  # Wait for the message to be added
+                time.sleep(0.1)
+            mock_callback_run.assert_called_with(
+                event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg
+            )

@@ -214,7 +214,7 @@ class BECClient(BECService, UserScriptsMixin):
         self._start_alarm_handler()
         self.load_all_user_scripts()
         self.config = self.device_manager.config_helper
-        self.history = ScanHistory(self.connector)
+        self.history = ScanHistory(client=self)
         self.dap = DAPPlugins(self)
         self.bl_checks = BeamlineChecks(self)
         self.bl_checks.start()

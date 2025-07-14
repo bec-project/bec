@@ -19,12 +19,16 @@ logger = bec_logger.logger
 
 
 class EventType(str, enum.Enum):
-    """Event types"""
+    """Event types
+
+    SCAN_HISTORY_UPDATE: Update of the scan history, emits ScanhistoryMessages for history_msg arg.
+    """
 
     SCAN_SEGMENT = "scan_segment"
     SCAN_STATUS = "scan_status"
     NAMESPACE_UPDATE = "namespace_update"
     DEVICE_UPDATE = "device_update"
+    SCAN_HISTORY_UPDATE = "scan_history_update"
 
 
 class CallbackEntry:
