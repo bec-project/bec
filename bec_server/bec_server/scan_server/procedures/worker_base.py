@@ -18,8 +18,7 @@ class ProcedureWorker(ABC):
     Implement _setup_execution_environment(), _kill_process(), and _run_task() to create a functional worker.
     """
 
-    # TODO: Replace int timeut with float when possible https://github.com/redis/redis-py/issues/3379 # pylint: ignore
-    def __init__(self, server: str, queue: str, lifetime_s: int | None = None):
+    def __init__(self, server: str, queue: str, lifetime_s: float | None = None):
         """Start a worker to run procedures on the queue identified by `queue`. Should be used as a
         context manager to ensure that cleanup is handled on destruction. E.g.:
         ```
