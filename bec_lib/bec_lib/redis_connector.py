@@ -32,6 +32,7 @@ from typing import (
     Literal,
     ParamSpec,
     TypedDict,
+    TypeVar,
     cast,
 )
 
@@ -52,6 +53,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.alarm_handler import Alarms
 
 P = ParamSpec("P")
+_BecMsgT = TypeVar("_BecMsgT", bound=BECMessage)
 
 
 class PubSubMessage(TypedDict):
@@ -1281,11 +1283,11 @@ class RedisConnector:
 
     def blocking_list_pop_to_set_add(
         self,
-        list_endpoint: EndpointInfo,
+        list_endpoint: EndpointInfo[type[_BecMsgT]],
         set_endpoint: EndpointInfo,
         side: Literal["LEFT", "RIGHT"] = "LEFT",
         timeout_s: float | None = None,
-    ) -> BECMessage | None:
+    ) -> _BecMsgT | None:
         """Block for up to timeout seconds to pop an item from 'list_enpoint' on side `side`,
         and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
         """
