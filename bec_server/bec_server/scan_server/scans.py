@@ -1444,7 +1444,7 @@ class RoundROIScan(ScanBase):
     gui_config = {
         "Motor 1": ["motor_1", "width_1"],
         "Motor 2": ["motor_2", "width_2"],
-        "Shell Parametes": ["dr", "nth"],
+        "Shell Parameters": ["dr", "nth"],
         "Acquisition Parameters": ["exp_time", "relative", "burst_at_each_point"],
     }
 
