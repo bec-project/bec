@@ -14,7 +14,7 @@ logger = bec_logger.logger
 
 def _build_image(
     client: PodmanClient, buildargs: dict, path: str, file: str, volume: str, tag: str
-):
+):  # pragma: no cover
     build_kwargs = {
         "buildargs": buildargs,
         "path": path,
@@ -26,7 +26,7 @@ def _build_image(
     client.images.build(**build_kwargs)
 
 
-def build_base_image(client: PodmanClient):
+def build_base_image(client: PodmanClient):  # pragma: no cover
     """Build the procedure worker requirements image
 
     Args:
@@ -41,7 +41,7 @@ def build_base_image(client: PodmanClient):
     )
 
 
-def build_worker_image(client: PodmanClient):
+def build_worker_image(client: PodmanClient):  # pragma: no cover
     """Build the procedure worker image
 
     Args:
@@ -56,7 +56,7 @@ def build_worker_image(client: PodmanClient):
     )
 
 
-def build_base_image_standalone():
+def build_base_image_standalone():  # pragma: no cover
     """Build an image with the requirements for BEC installed, to reduce time
     spent building the final image"""
     with PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
