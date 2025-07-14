@@ -94,7 +94,7 @@ class ConfigUpdateHandler:
                     self.device_manager.update_config(device.obj, old_config)
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
-                if "limits" in dev_config["deviceConfig"]:
+                if "limits" in new_config:
                     limits = {
                         "low": {"value": device.obj.low_limit_travel.get()},
                         "high": {"value": device.obj.high_limit_travel.get()},

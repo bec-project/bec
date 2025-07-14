@@ -508,7 +508,12 @@ class DeviceManagerBase:
             for dev in config:
                 if "deviceConfig" in config[dev]:
                     logger.info(f"Updating device config for device {dev}.")
-                    self.devices[dev]._config["deviceConfig"].update(config[dev]["deviceConfig"])
+                    if config[dev]["deviceConfig"] is None:
+                        self.devices[dev]._config["deviceConfig"] = {}
+                    else:
+                        self.devices[dev]._config["deviceConfig"].update(
+                            config[dev]["deviceConfig"]
+                        )
                     logger.debug(
                         f"New config for device {dev}: {self.devices[dev]._config['deviceConfig']}"
                     )

@@ -224,7 +224,10 @@ class ConfigHandler:
             updated, msg = self._wait_for_device_server_update(request_id)
             if not updated:
                 raise DeviceConfigError(f"Failed to update device {device.name}. {msg.message}")
-            device._config["deviceConfig"].update(dev_config["deviceConfig"])
+            if dev_config["deviceConfig"] is None:
+                device._config["deviceConfig"] = {}
+            else:
+                device._config["deviceConfig"].update(dev_config["deviceConfig"])
             dev_config.pop("deviceConfig")
 
         if "enabled" in dev_config:

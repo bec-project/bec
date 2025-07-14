@@ -171,11 +171,10 @@ def make_samx(config_handler):
     return _func
 
 
-def test_config_handler_update_config(config_handler, make_samx):
+@pytest.mark.parametrize("config", [{"samx": {"enabled": True}}, {"samx": {"deviceConfig": None}}])
+def test_config_handler_update_config(config_handler, make_samx, config):
     dev = make_samx()
-    msg = messages.DeviceConfigMessage(
-        action="update", config={"samx": {"enabled": True}}, metadata={}
-    )
+    msg = messages.DeviceConfigMessage(action="update", config=config, metadata={})
     with mock.patch.object(
         config_handler, "_update_device_config", return_value=True
     ) as update_device_config:
@@ -185,7 +184,7 @@ def test_config_handler_update_config(config_handler, make_samx):
                     config_handler, "send_config_request_reply"
                 ) as send_config_request_reply:
                     config_handler._update_config(msg)
-                    update_device_config.assert_called_once_with(dev["samx"], {"enabled": True})
+                    update_device_config.assert_called_once_with(dev["samx"], config["samx"])
                     update_config_in_redis.assert_called_once_with(dev["samx"])
 
                     send_config.assert_called_once_with(msg)
