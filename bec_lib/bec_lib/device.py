@@ -503,9 +503,8 @@ class DeviceBase:
 
         if isinstance(obj.parent, DeviceManagerBase):
             # pylint: disable=protected-access
-            config = "".join(
-                [f"\t{key}: {val}\n" for key, val in obj._config.get("deviceConfig").items()]
-            )
+            deviceconfig_dict = obj._config.get("deviceConfig") or {}
+            config = "".join([f"\t{key}: {val}\n" for key, val in deviceconfig_dict.items()])
             separator = "--" * 10
             return (
                 f"{class_name}(name={obj.name},"

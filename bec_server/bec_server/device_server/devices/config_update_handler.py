@@ -83,26 +83,28 @@ class ConfigUpdateHandler:
         for dev, dev_config in msg.content["config"].items():
             device = self.device_manager.devices[dev]
             if "deviceConfig" in dev_config:
-                new_config = dev_config["deviceConfig"] or {}
-                # store old config
-                old_config = device._config["deviceConfig"].copy()
+                if dev_config["deviceConfig"] is None:
+                    self.device_manager.clear_config(device_obj)
+                else:
+                    # store old config
+                    old_config = device._config["deviceConfig"].copy()
 
-                # apply config
-                try:
-                    self.device_manager.update_config(device.obj, new_config)
-                except Exception as exc:
-                    self.device_manager.update_config(device.obj, old_config)
-                    raise DeviceConfigError(f"Error during object update. {exc}")
+                    # apply config
+                    try:
+                        self.device_manager.update_config(device.obj, dev_config["deviceConfig"])
+                    except Exception as exc:
+                        self.device_manager.update_config(device.obj, old_config)
+                        raise DeviceConfigError(f"Error during object update. {exc}")
 
-                if "limits" in new_config:
-                    limits = {
-                        "low": {"value": device.obj.low_limit_travel.get()},
-                        "high": {"value": device.obj.high_limit_travel.get()},
-                    }
-                    self.device_manager.connector.set_and_publish(
-                        MessageEndpoints.device_limits(device.name),
-                        messages.DeviceMessage(signals=limits),
-                    )
+                    if "limits" in dev_config["deviceConfig"]:
+                        limits = {
+                            "low": {"value": device.obj.low_limit_travel.get()},
+                            "high": {"value": device.obj.high_limit_travel.get()},
+                        }
+                        self.device_manager.connector.set_and_publish(
+                            MessageEndpoints.device_limits(device.name),
+                            messages.DeviceMessage(signals=limits),
+                        )
 
             if "enabled" in dev_config:
                 device._config["enabled"] = dev_config["enabled"]

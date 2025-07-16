@@ -45,6 +45,7 @@ def test_request_response(session_from_test_config, device_manager):
 def test_config_handler_update_config(dm_with_devices):
     device_manager = dm_with_devices
     handler = ConfigUpdateHandler(device_manager)
+    dm_with_devices.devices["bpm4i"]._config["deviceConfig"] = {"precision": 5}
 
     # bpm4i doesn't have a controller, so it should be destroyed
     msg = messages.DeviceConfigMessage(action="update", config={"bpm4i": {"enabled": False}})
@@ -58,6 +59,10 @@ def test_config_handler_update_config(dm_with_devices):
     assert device_manager.devices.bpm4i.enabled is True
     assert device_manager.devices.bpm4i.initialized is True
     assert device_manager.devices.bpm4i.obj._destroyed is False
+
+    msg = messages.DeviceConfigMessage(action="update", config={"bpm4i": {"deviceConfig": None}})
+    handler._update_config(msg)
+    assert device_manager.devices.bpm4i._config["deviceConfig"] == {}
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

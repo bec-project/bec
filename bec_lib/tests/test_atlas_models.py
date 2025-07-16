@@ -1,6 +1,7 @@
 import pytest
 from annotated_types import Lt, MaxLen
 from pydantic import BaseModel, Field, ValidationError
+from pydantic_core import PydanticUndefined
 
 from bec_lib.atlas_models import DevicePartial, make_all_fields_optional
 
@@ -9,6 +10,7 @@ def test_make_all_fields_optional():
     class TestModel(BaseModel):
         number: int = Field(23, lt=30)
         text: str = Field("hello", max_length=10)
+        dictionary: dict = Field(default_factory=dict)
         a: float
         b: float
         c: float
@@ -18,6 +20,7 @@ def test_make_all_fields_optional():
     assert OptionalTestModel.model_fields["number"].default == 23
     assert OptionalTestModel.model_fields["text"].default == "hello"
     assert OptionalTestModel.model_fields["a"].default is None
+    assert OptionalTestModel.model_fields["dictionary"].default is PydanticUndefined
 
     with pytest.raises(ValidationError):
         OptionalTestModel(number=31)
@@ -31,6 +34,7 @@ def test_make_all_fields_optional():
         "a": None,
         "b": None,
         "c": None,
+        "dictionary": {},
     }
 
 

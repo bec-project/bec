@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Tuple
 
 import bec_lib
 from bec_lib import messages
-from bec_lib.atlas_models import Device, DevicePartial
+from bec_lib.atlas_models import Device, DevicePartial, _DeviceModelCore
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.config_helper import CONF
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
@@ -72,23 +72,16 @@ class ConfigHandler:
         )
 
     def _set_config(self, msg: messages.DeviceConfigMessage):
-        config = msg.content["config"]
-        msg.metadata["updated_config"] = False
-
-        # make sure the config is valid before setting it in redis
-        for name, device in config.items():
-            self._convert_to_db_config(name, device)
-            Device(**device)
-        self.set_config_in_redis(list(config.values()))
-
+        assert msg.config is not None, "shouldn't be here if action is reload!"
+        self.set_config_in_redis(list(msg.config.values()))
         msg.metadata["updated_config"] = True
 
         # update the devices in the device server
         # if the server fails, the config is wrong
         request_id = str(uuid.uuid4())
-        self._update_device_server(request_id, config, action="reload")
+        self._update_device_server(request_id, msg.config, action="reload")
         accepted, server_response_msg = self._wait_for_device_server_update(
-            request_id, timeout_time=min(300, 30 * len(config))
+            request_id, timeout_time=min(300, 30 * len(msg.config))
         )
         if "failed_devices" in server_response_msg.metadata:
             # failed devices indicate that the server was able to initialize them but failed to
@@ -112,31 +105,25 @@ class ConfigHandler:
         )
         self.send_config(reload_msg)
 
-    def _convert_to_db_config(self, name: str, config: dict) -> None:
-        if not config.get("deviceConfig"):
-            config["deviceConfig"] = {}
-        config["name"] = name
-
     def _reload_config(self, msg: messages.DeviceConfigMessage):
         self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
         self.send_config(msg)
 
     def _add_to_config(self, msg: messages.DeviceConfigMessage):
-        dev_configs = msg.content["config"]
-
-        for dev, config in dev_configs.items():
-            self._convert_to_db_config(dev, config)
-            Device(**config)
-            if dev in self.device_manager.devices:
-                raise DeviceConfigError(f"Device {dev} already exists in the device manager.")
+        assert msg.config is not None, "should not be here if action was reload"
+        already_existing = msg.config.keys() & self.device_manager.devices.keys()
+        if already_existing:
+            raise DeviceConfigError(
+                f"Device(s) {already_existing} already exist in the device manager."
+            )
 
         rid = str(uuid.uuid4())
-        self._update_device_server(rid, dev_configs, action="add")
+        self._update_device_server(rid, msg.config, action="add")
         accepted, server_response_msg = self._wait_for_device_server_update(
-            rid, timeout_time=min(300, 30 * len(dev_configs))
+            rid, timeout_time=min(300, 30 * len(msg.config))
         )
 
-        if "failed_devices" in server_response_msg.metadata:
+        if "failed_devices" in server_response_msg.metadata.keys():
             # failed devices indicate that the server was able to initialize them but failed to
             # connect to them
             logger.warning(f"Failed devices: {server_response_msg.metadata['failed_devices']}")
@@ -306,12 +293,12 @@ class ConfigHandler:
         config = self.device_manager.connector.get(MessageEndpoints.device_config())
         return config.content["resource"]
 
-    def set_config_in_redis(self, config):
+    def set_config_in_redis(self, configs: list[_DeviceModelCore]):
         """
         Set the config in redis
 
         Args:
             config (list): List of device configs
         """
-        msg = messages.AvailableResourceMessage(resource=config)
+        msg = messages.AvailableResourceMessage(resource=[cfg.model_dump() for cfg in configs])
         self.device_manager.connector.set(MessageEndpoints.device_config(), msg)

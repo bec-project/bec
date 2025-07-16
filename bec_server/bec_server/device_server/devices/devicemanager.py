@@ -215,10 +215,13 @@ class DeviceManagerDS(DeviceManagerBase):
             self.connector.lpush(
                 MessageEndpoints.device_config_history(), current_config_msg, max_size=50
             )
-        msg = messages.AvailableResourceMessage(resource=[])
-        self.connector.set(MessageEndpoints.device_config(), msg)
-        reload_msg = messages.DeviceConfigMessage(action="reload", config={})
-        self.connector.send(MessageEndpoints.device_config_update(), reload_msg)
+        self.connector.set(
+            MessageEndpoints.device_config(), messages.AvailableResourceMessage(resource=[])
+        )
+        self.connector.send(
+            MessageEndpoints.device_config_update(),
+            messages.DeviceConfigMessage(action="reload", config=None),
+        )
 
     @staticmethod
     def update_config(obj: OphydObject, config: dict) -> None:

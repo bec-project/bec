@@ -10,6 +10,7 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
 
@@ -32,19 +33,7 @@ class BECMessage(BaseModel):
     """
 
     msg_type: ClassVar[str]
-    metadata: dict | None = Field(default_factory=dict)
-
-    @field_validator("metadata")
-    @classmethod
-    def check_metadata(cls, v):
-        """Validate the metadata, return empty dict if None
-
-        Args:
-            v (dict, None): Metadata dictionary
-        """
-        if v is None:
-            return {}
-        return v
+    metadata: dict = Field(default_factory=dict)
 
     @property
     def content(self):
@@ -714,7 +703,7 @@ class DeviceConfigMessage(BECMessage):
     """Message type for sending device config updates
 
     Args:
-        action (Literal['add', 'set', 'update', 'reload', or 'remove'] : Update of the device config.
+        action (Literal['add', 'set', 'update', 'reload', or 'remove']) : Update of the device config.
         config (dict, or None): Device config (add, set, update) or None (reload).
         metadata (dict, optional): Additional metadata.
 
@@ -722,15 +711,22 @@ class DeviceConfigMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_config_message"
     action: ConfigAction | None = Field(default=None, validate_default=True)
-    config: dict | None = Field(default=None)
+    config: dict[str, _DeviceModelCore | dict] | None = Field(default=None)
 
     @model_validator(mode="after")
-    @classmethod
-    def check_config(cls, values):
+    def check_config(self):
         """Validate the config"""
-        if values.action in ["add", "set", "update"] and not values.config:
-            raise ValueError(f"Invalid config {values.config}. Must be a dictionary")
-        return values
+        if self.action in ["add", "set"]:
+            try:
+                self.config = {
+                    k: _DeviceModelCore.model_validate(v) for k, v in self.config.items()
+                }
+            except:
+                raise ValueError('Must supply a complete config if the action is "add", "set"')
+        elif self.action == "update":
+            assert self.config is not None, "Must supply partial config for updates"
+            assert all(isinstance(v, dict) for v in self.config.values())
+        return self
 
 
 class LogMessage(BECMessage):
