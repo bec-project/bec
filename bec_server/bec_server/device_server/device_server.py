@@ -309,7 +309,17 @@ class DeviceServer(RPCMixin, BECService):
                 # don't stop devices that we haven't set
                 continue
             if hasattr(dev.obj, "stop"):
-                dev.obj.stop()
+                try:
+                    dev.obj.stop()
+                except Exception as exc:  # pylint: disable=broad-except
+                    content = traceback.format_exc()
+                    logger.error(content)
+                    self.connector.raise_alarm(
+                        severity=Alarms.WARNING,
+                        source={"device": dev.obj.name, "method": "stop"},
+                        msg=content,
+                        alarm_type=exc.__class__.__name__,
+                    )
         self.status = BECStatus.RUNNING
 
     def _assert_device_is_enabled(self, instructions: messages.DeviceInstructionMessage) -> None:
