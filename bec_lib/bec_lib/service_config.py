@@ -33,14 +33,16 @@ DEFAULT_SERVICE_CONFIG = {
 class ServiceConfig:
     def __init__(
         self,
-        config_path: str = None,
-        redis: dict = None,
-        service_config: dict = None,
-        config: dict = None,
+        config_path: str | None = None,
+        redis: dict | None = None,
+        service_config: dict | None = None,
+        config: dict | None = None,
+        config_name: str = "server",
         **kwargs,
     ) -> None:
         self.config_path = config_path
         self.config = config if config else {}
+        self.config_name = config_name
         if not self.config:
             self._load_config()
         if self.config:
@@ -60,10 +62,17 @@ class ServiceConfig:
             self.config[key] = val
 
     def _load_config(self):
+        """
+        Load the base configuration. There are four possible sources:
+        1. A file specified by `config_path`.
+        2. An environment variable `BEC_SERVICE_CONFIG` containing a JSON string.
+        3. The config stored in the deployment_configs directory, matching the defined config name.
+        4. The default configuration.
+        """
         if self.config_path:
             if not os.path.isfile(self.config_path):
                 raise FileNotFoundError(f"Config file {repr(self.config_path)} not found.")
-            with open(self.config_path, "r") as stream:
+            with open(self.config_path, "r", encoding="utf-8") as stream:
                 self.config = yaml.safe_load(stream)
                 logger.info(
                     "Loaded new config from disk:"
@@ -78,9 +87,20 @@ class ServiceConfig:
             )
             return
 
-        if not self.config_path:
-            self.config = copy.deepcopy(DEFAULT_SERVICE_CONFIG)
-            return
+        if self.config_name:
+            deployment_config_path = os.path.join(
+                DEFAULT_BASE_PATH, f"deployment_configs/{self.config_name}.yaml"
+            )
+            if os.path.exists(deployment_config_path):
+                with open(deployment_config_path, "r", encoding="utf-8") as stream:
+                    self.config = yaml.safe_load(stream)
+                    logger.info(
+                        "Loaded new config from deployment_configs:"
+                        f" {json.dumps(self.config, sort_keys=True, indent=4)}"
+                    )
+                return
+
+        self.config = copy.deepcopy(DEFAULT_SERVICE_CONFIG)
 
     def _load_urls(self, entry: str, required: bool = True):
         config = self.config.get(entry)
@@ -103,4 +123,4 @@ class ServiceConfig:
 
     def is_default(self):
         """Return whether config is DEFAULT_SERVICE_CONFIG"""
-        return self.config is DEFAULT_SERVICE_CONFIG
+        return self.config == DEFAULT_SERVICE_CONFIG

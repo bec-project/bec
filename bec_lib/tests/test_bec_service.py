@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 
 import bec_lib
 from bec_lib import messages
@@ -173,6 +174,33 @@ def test_bec_service_default_config():
             assert os.path.abspath(
                 service._service_config.service_config["file_writer"]["base_path"]
             ) == os.path.join(bec_lib_path, "data")
+
+
+def test_bec_service_deployment_config():
+    config = ServiceConfig()
+    assert config.config_name == "server"
+
+    config = ServiceConfig(config_name="test")
+    assert config.config_name == "test"
+
+
+def test_bec_service_loads_deployment_config(tmpdir):
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "service_config": {
+                "file_writer": {"plugin": "default_NeXus_format", "base_path": str(tmpdir)}
+            },
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        config = ServiceConfig(config_name="test")
+
+    assert config.service_config["file_writer"]["base_path"] == str(tmpdir)
+    assert config.redis == "localhost:1234"
 
 
 def test_bec_service_show_global_vars(capsys):
