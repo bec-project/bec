@@ -319,6 +319,7 @@ class DeviceServer(RPCMixin, BECService):
                         source={"device": dev.obj.name, "method": "stop"},
                         msg=content,
                         alarm_type=exc.__class__.__name__,
+                        metadata=self._get_metadata_for_alarm(None),
                     )
         self.status = BECStatus.RUNNING
 

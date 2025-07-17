@@ -106,6 +106,21 @@ def test_stop_devices(device_server_mock):
         device_server.stop_devices()
         stop.assert_called_once()
 
+    with mock.patch.object(dev.samy.obj, "stop", side_effect=Exception) as stop:
+        with mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm:
+            device_server.stop_devices()
+            stop.assert_called_once()
+            assert raise_alarm.call_count == 1
+            assert raise_alarm.call_args == mock.call(
+                severity=Alarms.WARNING,
+                source={"device": "samy", "method": "stop"},
+                msg=mock.ANY,
+                alarm_type=mock.ANY,
+                metadata=mock.ANY,
+            )
+            # If stop raises an exception, the device server must get back to running state
+            assert device_server.status == BECStatus.RUNNING
+
     with mock.patch.object(dev.motor1_disabled.obj, "stop") as stop:
         device_server.stop_devices()
         stop.assert_not_called()
