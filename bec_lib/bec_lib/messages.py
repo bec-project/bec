@@ -1159,3 +1159,19 @@ class EndpointInfoMessage(BECMessage):
     msg_type: ClassVar[str] = "endpoint_info_message"
     endpoint: str
     metadata: dict | None = Field(default_factory=dict)
+
+
+class ScriptExecutionInfoMessage(BECMessage):
+    """
+    Message for script execution
+
+    Args:
+        script_id (str): Unique identifier for the script
+        status (Literal["running", "completed", "failed"]): Execution status
+        result (Any, optional): Execution result. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "script_execution_message"
+    script_id: str
+    status: Literal["running", "completed", "failed"]
+    current_lines: list[int] | None = None
