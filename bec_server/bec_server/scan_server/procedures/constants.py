@@ -30,6 +30,12 @@ class ProcedureWorkerError(RuntimeError): ...
 class WorkerAlreadyExists(ProcedureWorkerError): ...
 
 
+class NoPodman(ProcedureWorkerError): ...
+
+
+class NoImage(ProcedureWorkerError): ...
+
+
 @dataclass(frozen=True)
 class _WORKER:
     MAX_WORKERS = 10
@@ -61,3 +67,11 @@ class _PROCEDURE:
 
 
 PROCEDURE = _PROCEDURE()
+
+
+class PodmanContainerStates(str, Enum):
+    CREATED = "created"
+    RUNNING = "running"
+    PAUSED = "paused"
+    STOPPED = "stopped"
+    EXITED = "exited"
