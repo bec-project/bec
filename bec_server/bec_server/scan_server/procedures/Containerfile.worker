@@ -1,5 +1,5 @@
 ARG BEC_VERSION
-FROM ghcr.io/bec-project/bec_requirements:${BEC_VERSION} AS bec_procedure_worker
+FROM ghcr.io/bec-project/bec_requirements:v${BEC_VERSION} AS bec_procedure_worker
 
 # deployment directory should be mounted at /bec
 
