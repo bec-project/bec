@@ -51,7 +51,7 @@ class ContainerProcedureWorker(ProcedureWorker):
         }
 
     def _setup_execution_environment(self):
-        image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:{PROCEDURE.BEC_VERSION}"
+        image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
         try:
             with PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
                 if not client.images.exists(image_tag):
