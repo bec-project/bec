@@ -19,11 +19,11 @@ def _build_image(
         "buildargs": buildargs,
         "path": path,
         "dockerfile": file,
-        "volume": volume,
+        "volume": [volume],
         "tag": tag,
     }
     logger.info(f"Building container: {build_kwargs}")
-    client.images.build(**build_kwargs)
+    return client.images.build(**build_kwargs)
 
 
 def build_base_image(client: PodmanClient):  # pragma: no cover
@@ -31,7 +31,7 @@ def build_base_image(client: PodmanClient):  # pragma: no cover
 
     Args:
         client (PodmanClient): an active podman socket client to execute the build"""
-    _build_image(
+    return _build_image(
         client,
         buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
         path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
@@ -46,7 +46,7 @@ def build_worker_image(client: PodmanClient):  # pragma: no cover
 
     Args:
         client (PodmanClient): an active podman socket client to execute the build"""
-    _build_image(
+    return _build_image(
         client,
         buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
         path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
@@ -60,4 +60,4 @@ def build_base_image_standalone():  # pragma: no cover
     """Build an image with the requirements for BEC installed, to reduce time
     spent building the final image"""
     with PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
-        build_base_image(client)
+        return build_base_image(client)
