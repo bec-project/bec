@@ -50,8 +50,6 @@ bec-scan-bundler = "bec_server.scan_bundler.cli.launch:main"
 bec-scihub = "bec_server.scihub.cli.launch:main"
 bec-server = "bec_server:main"
 bec-procedure-worker = "bec_server.scan_server.procedures.container_worker:main"
-bec-build-requirements-container = "bec_server.scan_server.procedures.container_utils:build_base_image_standalone"
-
 
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"

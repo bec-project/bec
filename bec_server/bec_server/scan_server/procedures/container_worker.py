@@ -1,11 +1,4 @@
 import os
-import traceback
-from http import HTTPStatus
-from typing import cast
-
-from podman import PodmanClient
-from podman.domain.containers import Container
-from podman.errors import APIError
 
 from bec_lib import messages
 from bec_lib.client import BECClient
@@ -18,18 +11,14 @@ from bec_server.scan_server.procedures import procedure_registry
 from bec_server.scan_server.procedures.constants import (
     PROCEDURE,
     ContainerWorkerEnv,
+    PodmanContainerStates,
     ProcedureWorkerError,
 )
-from bec_server.scan_server.procedures.container_utils import build_worker_image
+from bec_server.scan_server.procedures.container_utils import get_backend
+from bec_server.scan_server.procedures.protocol import ContainerCommandBackend
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 
 logger = bec_logger.logger
-
-
-class NoPodman(ProcedureWorkerError): ...
-
-
-class NoImage(ProcedureWorkerError): ...
 
 
 class ContainerProcedureWorker(ProcedureWorker):
@@ -51,36 +40,11 @@ class ContainerProcedureWorker(ProcedureWorker):
         }
 
     def _setup_execution_environment(self):
-        image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:{PROCEDURE.BEC_VERSION}"
-        try:
-            with PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
-                if not client.images.exists(image_tag):
-                    build_worker_image(client)
-                client.containers.create
-                self._container: Container = client.containers.run(
-                    image_tag,
-                    PROCEDURE.CONTAINER.COMMAND,
-                    detach=True,
-                    environment=self._worker_environment(),
-                    mounts=[
-                        {
-                            "source": str(PROCEDURE.CONTAINER.DEPLOYMENT_PATH),
-                            "target": "/bec",
-                            "type": "bind",
-                            "read_only": True,
-                        }
-                    ],
-                    pod="local_bec",
-                )  # type: ignore # running with detach returns container object
-        except APIError as e:
-            if e.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
-                raise ProcedureWorkerError(
-                    f"Got an internal server error from Podman service: {traceback.print_exception(e)}"
-                ) from e
-            # TODO handle a few more categories
-            raise NoPodman(
-                f"Could not connect to podman socket at {PROCEDURE.CONTAINER.PODMAN_URI} - is the systemd service running? Try `systemctl --user start podman.socket`."
-            ) from e
+        self._backend = get_backend()
+        image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
+        if not self._backend.image_exists(image_tag):
+            self._backend.build_worker_image()
+        self._container_id = self._backend.run(image_tag, self._worker_environment())
 
     def _run_task(self, item: ProcedureExecutionMessage):
         raise ProcedureWorkerError(
@@ -88,8 +52,11 @@ class ContainerProcedureWorker(ProcedureWorker):
         )
 
     def _kill_process(self):
-        if self._container.inspect()["State"]["Status"] not in ["exited", "stopped"]:
-            self._container.kill()
+        if self._backend.state(self._container_id) not in [
+            PodmanContainerStates.EXITED,
+            PodmanContainerStates.STOPPED,
+        ]:
+            self._backend.kill(self._container_id)
 
     def work(self):
         """block until the container is finished, listen for status updates in the meantime"""
@@ -97,7 +64,10 @@ class ContainerProcedureWorker(ProcedureWorker):
         # on timeout check if container is still running
 
         status_update = None
-        while self._container.inspect()["State"]["Status"] not in ["exited", "stopped"]:
+        while self._backend.state(self._container_id) not in [
+            PodmanContainerStates.EXITED,
+            PodmanContainerStates.STOPPED,
+        ]:
             status_update = self._conn.blocking_list_pop(
                 MessageEndpoints.procedure_worker_status_update(self._queue), timeout_s=1
             )
