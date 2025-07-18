@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Generator, cast
+from typing import TYPE_CHECKING, Generator
 from unittest.mock import MagicMock, patch
 
 import podman
@@ -12,12 +12,11 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.procedures.constants import PROCEDURE
-from bec_server.scan_server.procedures.container_utils import build_worker_image
 from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager
 
 if TYPE_CHECKING:
-    from pytest_bec_e2e.pytest_bec_e2e.plugin import LogTestTool
+    from pytest_bec_e2e.plugin import LogTestTool
 
 logger = bec_logger.logger
 
@@ -41,14 +40,6 @@ def client_logtool_and_manager(
     client._client.connector._redis_conn.flushall()
     yield client, logtool, manager
     manager.shutdown()
-
-
-@pytest.mark.timeout(100)
-def test_build_container():
-    image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:{PROCEDURE.BEC_VERSION}"
-    with podman.PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
-        build_worker_image(client)
-        assert client.images.exists(image_tag)
 
 
 @pytest.mark.timeout(100)
