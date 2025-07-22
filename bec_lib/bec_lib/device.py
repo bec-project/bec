@@ -19,6 +19,7 @@ from rich.table import Table
 from typeguard import typechecked
 
 from bec_lib.atlas_models import _DeviceModelCore
+from bec_lib.constants import DEVICE_NAME_SEPARATOR
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.queue_items import QueueItem
@@ -527,7 +528,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def full_name(self):
         """Returns the full name of the device or signal, separated by "_" e.g. samx_velocity"""
-        return self._compile_function_path().replace(".", "_")
+        return self._compile_function_path().replace(".", DEVICE_NAME_SEPARATOR)
 
     @property
     def dotted_name(self):
