@@ -213,7 +213,7 @@ class BECService:
             self.bootstrap_server,
             connector=self.connector,
             service_name=self._name,
-            service_config=self._service_config.config["service_config"],
+            service_config=self._service_config.config,
         )
 
     def _update_existing_services(self) -> None:

@@ -15,7 +15,7 @@ from bec_ipython_client import BECIPythonClient
 from bec_lib.client import BECClient
 from bec_lib.config_helper import ConfigHelper
 from bec_lib.redis_connector import RedisConnector
-from bec_lib.service_config import ServiceConfig
+from bec_lib.service_config import ServiceConfig, ServiceConfigModel
 from bec_lib.tests.utils import wait_for_empty_queue
 
 
@@ -34,27 +34,6 @@ _start_servers = False
 bec_servers_scope = (
     lambda fixture_name, config: config.getoption("--flush-redis") and "function" or "session"
 )
-
-services_config_template = """
-redis:
-  host: %(redis_host)s
-  port: %(redis_port)s
-mongodb:
-  host: "localhost"
-  port: 27017
-scibec:
-  host: http://localhost
-  port: 3030
-  beamline: TestBeamline
-service_config:
-  abort_on_ctrl_c: False
-  enforce_ACLs: False
-  file_writer:
-    plugin: default_NeXus_format
-    base_path: %(file_writer_base_path)s
-  log_writer:
-    base_path: %(file_writer_base_path)s
-"""
 
 
 def _check_path(file_path):
@@ -165,14 +144,12 @@ def bec_servers(
     # file_writer_path.mkdir(exist_ok=True)
     # 3) services config
     with open(bec_services_config_file_path, "w") as services_config_file:
-        services_config_file.write(
-            services_config_template
-            % {
-                "redis_host": redis_host,
-                "redis_port": redis_port,
-                "file_writer_base_path": file_writer_path,
-            }
+        service_config = ServiceConfigModel(
+            redis={"host": redis_host, "port": redis_port},
+            file_writer={"base_path": str(file_writer_path)},
         )
+
+        services_config_file.write(service_config.model_dump_json(indent=4))
 
     if _start_servers:
         from bec_server.bec_server_utils.service_handler import ServiceHandler

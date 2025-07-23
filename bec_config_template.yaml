@@ -1,19 +1,17 @@
 redis:
   host: localhost
   port: 6379
-mongodb:
-  host: localhost
-  port: 27017
-scibec:
-  host: http://localhost
-  port: 3030
-  beamline: MyBeamline
-service_config:
-  file_writer:
-    plugin: default_NeXus_format
-    base_path: ./ 
-  log_writer:
-    base_path: ./
-  scilog:
-    env_file: ./
-
+file_writer:
+  base_path: ./data
+log_writer:
+  base_path: ./logs
+user_scripts:
+  base_path: ./scripts
+user_macros:
+  base_path: ./macros
+widgets_settings:
+  base_path: ./widgets
+scilog:
+  env_file: ./
+acl:
+  acl_file: ./.bec_acl.env

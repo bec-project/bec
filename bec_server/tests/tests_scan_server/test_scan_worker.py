@@ -297,7 +297,7 @@ def test_initialize_scan_info(scan_worker_mock, msg):
         assert "samx" in worker.current_scan_info["readout_priority"]["monitored"]
         assert "samy" in worker.current_scan_info["readout_priority"]["baseline"]
 
-        base_path = worker.parent._service_config.service_config["file_writer"]["base_path"]
+        base_path = worker.parent._service_config.config["file_writer"]["base_path"]
         scan_nr = worker.current_scan_info["scan_number"]
         file_dir = msg.parameter["kwargs"]["system_config"]["file_directory"]
         suffix = msg.parameter["kwargs"]["system_config"]["file_suffix"]
@@ -757,11 +757,9 @@ def test_worker_get_file_base_path(
     scan_worker_mock, base_path, current_account_msg, expected_path, raises_error
 ):
     worker = scan_worker_mock
-    file_writer_base_path_orig = worker.parent._service_config.service_config["file_writer"][
-        "base_path"
-    ]
+    file_writer_base_path_orig = worker.parent._service_config.config["file_writer"]["base_path"]
     try:
-        worker.parent._service_config.service_config["file_writer"]["base_path"] = base_path
+        worker.parent._service_config.config["file_writer"]["base_path"] = base_path
         with mock.patch.object(worker.connector, "get", return_value=current_account_msg):
             if raises_error:
                 with pytest.raises(ValueError) as exc_info:
@@ -771,7 +769,7 @@ def test_worker_get_file_base_path(
                 assert file_path == expected_path
                 worker.connector.get.assert_called_once_with(MessageEndpoints.account())
     finally:
-        worker.parent._service_config.service_config["file_writer"][
+        worker.parent._service_config.config["file_writer"][
             "base_path"
         ] = file_writer_base_path_orig
 

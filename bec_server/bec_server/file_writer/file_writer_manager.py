@@ -90,7 +90,7 @@ class FileWriterManager(BECService):
         self.callbacks.register(
             event_type=EventType.DEVICE_UPDATE, callback=self._update_available_devices
         )
-        self.file_writer_config = self._service_config.service_config.get("file_writer")
+        self.file_writer_config = self._service_config.config.get("file_writer")
         self._start_device_manager()
         self.device_configuration = {}
         self.connector.register(

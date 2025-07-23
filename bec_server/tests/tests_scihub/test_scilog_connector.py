@@ -2,6 +2,7 @@ from unittest import mock
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.service_config import ServiceConfigModel
 from bec_server.scihub.scilog import SciLogConnector
 
 
@@ -17,7 +18,8 @@ def test_scilog_connector_with_env(SciHubMock):
             "SCILOG_USER": "dummy_user",
             "SCILOG_USER_SECRET": "dummy_user_secret",
         }
-        SciHubMock.config.service_config = {"scilog": {"env_file": "dummy_env_file"}}
+        config = ServiceConfigModel(scilog={"env_file": "dummy_env_file"}).model_dump()
+        SciHubMock.config.config = config
         with mock.patch("bec_server.scihub.scilog.scilog.requests") as mock_requests:
             mock_requests.post.return_value.ok = True
             mock_requests.post.return_value.json.return_value = {"token": "dummy_token"}

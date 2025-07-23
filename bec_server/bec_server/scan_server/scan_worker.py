@@ -276,7 +276,7 @@ class ScanWorker(threading.Thread):
             current_account = None
 
         # pylint: disable=protected-access
-        file_base_path = self.parent._service_config.service_config["file_writer"]["base_path"]
+        file_base_path = self.parent._service_config.config["file_writer"]["base_path"]
         if "$" not in file_base_path:
             # we deal with a normal string
             if current_account:

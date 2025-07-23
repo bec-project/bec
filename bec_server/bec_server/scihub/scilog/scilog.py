@@ -66,7 +66,7 @@ class SciLogConnector:
             self.set_bec_token(token)
 
     def _load_environment(self):
-        env_base = self.scihub.config.service_config.get("scilog", {}).get("env_file")
+        env_base = self.scihub.config.config.get("scilog", {}).get("env_file")
         if not env_base:
             return
         env_file = os.path.join(env_base, ".env")

@@ -15,7 +15,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import RedisConnector
-from bec_lib.service_config import ServiceConfig
+from bec_lib.service_config import DEFAULT_BASE_PATH, ServiceConfig
 
 # pylint: disable=no-member
 # pylint: disable=missing-function-docstring
@@ -165,14 +165,16 @@ def test_bec_service_default_config():
     with bec_service(
         f"{os.path.dirname(bec_lib.__file__)}/tests/test_service_config.yaml", unique_service=True
     ) as service:
-        assert service._service_config.service_config["file_writer"]["base_path"] == "./"
+        assert service._service_config.config["file_writer"]["base_path"] == os.path.join(
+            DEFAULT_BASE_PATH, "data"
+        )
 
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
     with bec_service(config=config, unique_service=True) as service:
         bec_lib_path = str(Path(bec_lib.service_config.__file__).resolve().parent.parent.parent)
         if "nox" not in bec_lib_path:
             assert os.path.abspath(
-                service._service_config.service_config["file_writer"]["base_path"]
+                service._service_config.config["file_writer"]["base_path"]
             ) == os.path.join(bec_lib_path, "data")
 
 
@@ -188,9 +190,7 @@ def test_bec_service_loads_deployment_config(tmpdir):
     with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
         deployment_config = {
             "redis": {"host": "localhost", "port": 1234},
-            "service_config": {
-                "file_writer": {"plugin": "default_NeXus_format", "base_path": str(tmpdir)}
-            },
+            "file_writer": {"base_path": str(tmpdir), "plugin": "custom_plugin"},
         }
         deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
         os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
@@ -199,7 +199,8 @@ def test_bec_service_loads_deployment_config(tmpdir):
 
         config = ServiceConfig(config_name="test")
 
-    assert config.service_config["file_writer"]["base_path"] == str(tmpdir)
+    assert config.model.file_writer.base_path == str(tmpdir)
+    assert config.model.file_writer.plugin == "custom_plugin"
     assert config.redis == "localhost:1234"
 
 

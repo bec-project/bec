@@ -96,7 +96,7 @@ class ConfigHelper:
         # pylint: disable=import-outside-toplevel
         from bec_lib.bec_service import SERVICE_CONFIG
 
-        service_cfg = SERVICE_CONFIG.config["service_config"].get("log_writer", None)
+        service_cfg = SERVICE_CONFIG.config.get("log_writer", None)
         if not service_cfg:
             raise ServiceConfigError(
                 f"ServiceConfig {service_cfg} must at least contain key with 'log_writer'"

@@ -9,6 +9,7 @@ import bec_lib
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError, ServiceConfigError
 from bec_lib.config_helper import ConfigHelper
+from bec_lib.service_config import ServiceConfigModel
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
@@ -220,8 +221,8 @@ def test_wait_for_service_response_handles_one_by_one():
 def test_update_base_path_recovery():
     with mock.patch("bec_lib.bec_service.SERVICE_CONFIG") as mock_service_config:
         with mock.patch("bec_lib.config_helper.DeviceConfigWriter") as mock_device_config_writer:
-            config = {"log_writer": {"base_path": "./"}}
-            mock_service_config.config = {"service_config": config}
+            config = ServiceConfigModel(**{"log_writer": {"base_path": "./"}}).model_dump()
+            mock_service_config.config = config
             connector = mock.MagicMock()
             config_helper = ConfigHelper(connector)
             dir_path = os.path.join(
@@ -231,6 +232,6 @@ def test_update_base_path_recovery():
             instance.return_value = dir_path
             config_helper._update_base_path_recovery()
             assert mock_device_config_writer.call_args == mock.call(config["log_writer"])
-            mock_service_config.config = {"service_config": {}}
+            mock_service_config.config = {}
             with pytest.raises(ServiceConfigError):
                 config_helper._update_base_path_recovery()

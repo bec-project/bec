@@ -2,12 +2,12 @@
 This module provides a class to handle the service configuration.
 """
 
-import copy
 import json
 import os
 from pathlib import Path
 
 import yaml
+from pydantic import BaseModel, Field
 
 from bec_lib.logger import bec_logger
 
@@ -17,51 +17,119 @@ DEFAULT_BASE_PATH = (
     str(Path(__file__).resolve().parent.parent.parent) if "site-packages" not in __file__ else "./"
 )
 
-DEFAULT_SERVICE_CONFIG = {
-    "redis": {"host": os.environ.get("BEC_REDIS_HOST", "localhost"), "port": 6379},
-    "service_config": {
-        "file_writer": {
-            "plugin": "default_NeXus_format",
-            "base_path": os.path.join(DEFAULT_BASE_PATH, "data"),
-        },
-        "log_writer": {"base_path": os.path.join(DEFAULT_BASE_PATH, "logs")},
-    },
-    "acl": DEFAULT_BASE_PATH + "/.bec_acl.env",
-}
+
+class RedisConfig(BaseModel):
+    """Redis configuration model."""
+
+    host: str = Field(default_factory=lambda: os.environ.get("BEC_REDIS_HOST", "localhost"))
+    port: int = 6379
+
+    @property
+    def url(self) -> str:
+        """Return the Redis URL."""
+        return f"{self.host}:{self.port}"
+
+
+class FileWriterConfig(BaseModel):
+    """File writer configuration model."""
+
+    plugin: str = "default_NeXus_format"
+    base_path: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "data"))
+
+
+class LogWriterConfig(BaseModel):
+    """Log writer configuration model."""
+
+    base_path: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "logs"))
+
+
+class UserMacrosConfig(BaseModel):
+    """User macros configuration model."""
+
+    base_path: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "macros"))
+
+
+class UserScriptsConfig(BaseModel):
+    """User scripts configuration model."""
+
+    base_path: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "scripts"))
+
+
+class BecWidgetsSettings(BaseModel):
+    """BEC widgets settings configuration model."""
+
+    base_path: str = Field(
+        default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "widgets_settings")
+    )
+
+
+class AtlasConfig(BaseModel):
+    """Atlas configuration model."""
+
+    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "atlas_env"))
+
+
+class SciLogConfig(BaseModel):
+    """SciLog configuration model."""
+
+    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "scilog_env"))
+
+
+class ACLConfig(BaseModel):
+    """ACL configuration model."""
+
+    acl_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, ".bec_acl.env"))
+    user: str | None = None
+
+
+class ServiceConfigModel(BaseModel):
+    """Service configuration model."""
+
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    file_writer: FileWriterConfig = Field(default_factory=FileWriterConfig)
+    log_writer: LogWriterConfig = Field(default_factory=LogWriterConfig)
+    user_macros: UserMacrosConfig = Field(default_factory=UserMacrosConfig)
+    user_scripts: UserScriptsConfig = Field(default_factory=UserScriptsConfig)
+    bec_widgets_settings: BecWidgetsSettings = Field(default_factory=BecWidgetsSettings)
+    atlas: AtlasConfig = Field(default_factory=AtlasConfig)
+    scilog: SciLogConfig = Field(default_factory=SciLogConfig)
+    acl: ACLConfig = Field(default_factory=ACLConfig)
+    abort_on_ctrl_c: bool = True
 
 
 class ServiceConfig:
+    """Service configuration handler using Pydantic models."""
+
     def __init__(
         self,
         config_path: str | None = None,
-        redis: dict | None = None,
-        service_config: dict | None = None,
         config: dict | None = None,
         config_name: str = "server",
         **kwargs,
     ) -> None:
         self.config_path = config_path
-        self.config = config if config else {}
         self.config_name = config_name
-        if not self.config:
-            self._load_config()
-        if self.config:
-            self._load_urls("redis", required=True)
-            self._load_urls("mongodb", required=False)
 
-        self._update_config(service_config=service_config, redis=redis, **kwargs)
+        # Load raw config dict first
+        raw_config = config if config else {}
+        if not raw_config:
+            raw_config = self._load_config()
 
-        self.service_config = self.config.get(
-            "service_config", DEFAULT_SERVICE_CONFIG["service_config"]
-        )
+        # Update with provided overrides
+        self._update_raw_config(raw_config, **kwargs)
 
-    def _update_config(self, **kwargs):
+        # Convert to Pydantic model
+        self._config_model = ServiceConfigModel(**raw_config)
+
+        self.config = self._config_model.model_dump()
+
+    def _update_raw_config(self, config: dict, **kwargs):
+        """Update raw config with provided overrides."""
         for key, val in kwargs.items():
-            if not val:
-                continue
-            self.config[key] = val
+            if val is not None:
+                config[key] = val
 
-    def _load_config(self):
+    def _load_config(self) -> dict:
         """
         Load the base configuration. There are four possible sources:
         1. A file specified by `config_path`.
@@ -73,19 +141,21 @@ class ServiceConfig:
             if not os.path.isfile(self.config_path):
                 raise FileNotFoundError(f"Config file {repr(self.config_path)} not found.")
             with open(self.config_path, "r", encoding="utf-8") as stream:
-                self.config = yaml.safe_load(stream)
+                config = yaml.safe_load(stream)
                 logger.info(
                     "Loaded new config from disk:"
-                    f" {json.dumps(self.config, sort_keys=True, indent=4)}"
+                    f" {json.dumps(config, sort_keys=True, indent=4)}"
                 )
-            return
-        if os.environ.get("BEC_SERVICE_CONFIG"):
-            self.config = json.loads(os.environ.get("BEC_SERVICE_CONFIG"))
+            return config
+
+        _env_config = os.environ.get("BEC_SERVICE_CONFIG")
+        if _env_config and isinstance(_env_config, str):
+            config = json.loads(_env_config)
             logger.info(
                 "Loaded new config from environment:"
-                f" {json.dumps(self.config, sort_keys=True, indent=4)}"
+                f" {json.dumps(config, sort_keys=True, indent=4)}"
             )
-            return
+            return config
 
         if self.config_name:
             deployment_config_path = os.path.join(
@@ -93,34 +163,43 @@ class ServiceConfig:
             )
             if os.path.exists(deployment_config_path):
                 with open(deployment_config_path, "r", encoding="utf-8") as stream:
-                    self.config = yaml.safe_load(stream)
+                    config = yaml.safe_load(stream)
                     logger.info(
                         "Loaded new config from deployment_configs:"
-                        f" {json.dumps(self.config, sort_keys=True, indent=4)}"
+                        f" {json.dumps(config, sort_keys=True, indent=4)}"
                     )
-                return
+                return config
 
-        self.config = copy.deepcopy(DEFAULT_SERVICE_CONFIG)
-
-    def _load_urls(self, entry: str, required: bool = True):
-        config = self.config.get(entry)
-        if config:
-            return f"{config['host']}:{config['port']}"
-
-        if required:
-            raise ValueError(
-                f"The provided config does not specify the url (host and port) for {entry}."
-            )
-        return ""
+        return {}
 
     @property
     def redis(self):
-        return self._load_urls("redis", required=True)
+        """Get Redis URL."""
+        return self.model.redis.url
+
+    @property
+    def service_config(self) -> dict:
+        """
+        Backward compatibility method to access the service configuration.
+        Deprecated in favor of using the Pydantic model directly.
+
+        See issue https://github.com/bec-project/bec/issues/572 for details.
+        """
+        logger.warning(
+            "Accessing service_config directly is deprecated. Use the Pydantic model instead."
+        )
+        return self.config
 
     @property
     def abort_on_ctrl_c(self):
-        return self.service_config.get("abort_on_ctrl_c", True)
+        """Get abort_on_ctrl_c setting."""
+        return self.model.abort_on_ctrl_c
+
+    @property
+    def model(self) -> ServiceConfigModel:
+        """Get the Pydantic model."""
+        return self._config_model
 
     def is_default(self):
-        """Return whether config is DEFAULT_SERVICE_CONFIG"""
-        return self.config == DEFAULT_SERVICE_CONFIG
+        """Return whether config is the default configuration."""
+        return self.config == ServiceConfigModel().model_dump()
