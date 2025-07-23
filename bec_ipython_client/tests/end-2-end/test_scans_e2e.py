@@ -110,8 +110,8 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
     if not bec.connector._messages_queue.empty():
         print("Waiting for messages to be processed")
         time.sleep(0.5)
-    current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod_x"]["value"]
-    current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod_y"]["value"]
+    current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod-x"]["value"]
+    current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod-y"]["value"]
     assert np.isclose(
         current_pos_hexapod_x, 10, atol=dev.hexapod._config["deviceConfig"].get("tolerance", 0.5)
     )
@@ -122,8 +122,8 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
     if not bec.connector._messages_queue.empty():
         print("Waiting for messages to be processed")
         time.sleep(0.5)
-    current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod_x"]["value"]
-    current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod_y"]["value"]
+    current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod-x"]["value"]
+    current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod-y"]["value"]
     captured = capsys.readouterr()
     ref_out_hexapod_x = (
         f"━━━━━━━━━━ {current_pos_hexapod_x:10.2f} /      10.00 / 100 % 0:00:00 0:00:00"
@@ -492,11 +492,11 @@ def test_file_writer(bec_ipython_client_fixture):
         assert all(file_data == stream_data)
 
         assert (
-            file["entry"]["collection"]["configuration"]["samx"]["samx_velocity"]["value"][...]
+            file["entry"]["collection"]["configuration"]["samx"]["samx-velocity"]["value"][...]
             == 98
         )
         assert (
-            file["entry"]["collection"]["configuration"]["samy"]["samy_velocity"]["value"][...]
+            file["entry"]["collection"]["configuration"]["samy"]["samy-velocity"]["value"][...]
             == 101
         )
 
@@ -780,7 +780,7 @@ def test_async_data(bec_ipython_client_fixture):
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
     while True:
-        waveform_data = s1.scan.data.devices.waveform.waveform_waveform.read()
+        waveform_data = s1.scan.data.devices.waveform["waveform-waveform"].read()
         if len(waveform_data["value"]) == 10:
             break
     np.testing.assert_array_equal(waveform_data["value"], amplitude * np.ones((10, 10)))
@@ -788,7 +788,7 @@ def test_async_data(bec_ipython_client_fixture):
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
     while True:
-        waveform_data = s1.scan.data.devices.waveform.waveform_waveform.read()
+        waveform_data = s1.scan.data.devices.waveform["waveform-waveform"].read()
         if len(waveform_data["value"]) == 100:
             break
     np.testing.assert_array_equal(waveform_data["value"], amplitude * np.ones(100))
