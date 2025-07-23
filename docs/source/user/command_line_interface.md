@@ -298,20 +298,20 @@ Type:      function
 ```
 The shell printout provides information about the scan signature, parameters, as well as a syntax example at the bottom.
 
-### How to write a script
+### How to write a macro
 -----------------------
 
-Scripts are user defined functions that can be executed from the BEC console (CLI). 
-They are stored in the ``scripts`` folder and can be edited with any text editor. 
-The scripts are loaded automatically on startup of the BEC console but can also be reloaded by typing ``bec.load_all_user_scripts()`` in the command-line.
-This command will load scripts from three locations: 
+Macros are user defined functions that can be executed from the BEC console (CLI). 
+They are stored in the ``macros`` folder and can be edited with any text editor. 
+The macros are loaded automatically on startup of the BEC console but can also be reloaded by typing ``bec.load_all_user_macros()`` in the command-line.
+This command will load macros from three locations: 
 
-1. from `~/bec/scripts/` in your home directory, 
-1. from the beamline plugin directory, e.g. `/csaxs_bec/csaxs_bec/scripts/`
-1. from `bec/bec_lib/scripts/` (only useful if you have the entire source code of BEC installed locally).
+1. from `~/bec/macros/` in your home directory, 
+1. from the beamline plugin directory, e.g. `/csaxs_bec/csaxs_bec/macros/`
+1. from `bec/bec_lib/macros/` (only useful if you have the entire source code of BEC installed locally).
 
 
-An example of a user script could be a function to move a specific motor to a predefined position:
+An example of a user macro could be a function to move a specific motor to a predefined position:
 
 ```python 
     def samx_in():
@@ -340,13 +340,19 @@ A slightly more complex example could be a sequence of scans that are executed i
         close_shutter()
 ```
 
-This script can be executed by typing ``overnight_scan()`` in the BEC console and would execute the following sequence of commands:
+This macro can be executed by typing ``overnight_scan()`` in the BEC console and would execute the following sequence of commands:
 
 1. Open the shutter
 2. Move the sample in
 3. Perform 10 line scans on the sample
 4. Move the sample out
 5. Close the shutter
+
+Macros can be very useful to automate repetitive tasks or to create complex sequences of commands that can be executed with a single command.
+
+```{important}
+As macros are loaded automatically, they should not contain any command outside of a function definition to avoid executing code unintentionally.
+```
 
 ### Create a custom scan
 
