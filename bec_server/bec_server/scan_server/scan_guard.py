@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import traceback
+import uuid
 from typing import TYPE_CHECKING
 
 from bec_lib import messages
@@ -153,7 +154,7 @@ class ScanGuard:
         )
         self.device_manager.connector.send(sqrr, rrm)
 
-    def _handle_scan_request(self, msg):
+    def _handle_scan_request(self, msg: messages.ScanQueueMessage):
         """
         Perform validity checks on the scan request and reply with a 'scan_request_response'.
         If the scan is accepted it will be enqueued.
@@ -170,7 +171,37 @@ class ScanGuard:
             logger.info(f"Request was rejected: {scan_status.message}")
             return
 
+        if msg.scan_type == "device_rpc":
+            func = msg.content.get("parameter", {}).get("func", "")
+            if func in ["get", "read"] or func.endswith(".get") or func.endswith(".read"):
+                logger.info("Scan request is a read operation, not enqueuing.")
+                self._direct_device_rpc(msg)
+                return
         self._append_to_scan_queue(msg)
+
+    def _direct_device_rpc(self, msg: messages.ScanQueueMessage):
+        """
+        Directly send a device RPC request without enqueuing.
+        Args:
+            msg: ScanQueueMessage containing the RPC request
+        """
+        device = msg.content.get("parameter", {}).get("device")
+        if not device:
+            logger.error("No device specified for RPC request.")
+            return
+        logger.info(f"Directly sending device RPC request for device {device}")
+        params = msg.content.get("parameter", {})
+        if not params:
+            logger.error("No parameters provided for device RPC request.")
+            return
+        instr = messages.DeviceInstructionMessage(
+            device=device,
+            action="rpc",
+            parameter=params,
+            metadata={"device_instr_id": str(uuid.uuid4())},
+        )
+
+        self.connector.send(MessageEndpoints.device_instructions(), instr)
 
     def _handle_scan_modification_request(self, msg):
         """

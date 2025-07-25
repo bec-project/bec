@@ -237,19 +237,6 @@ def test_scan_queue_modification_request_callback(scan_guard_mock):
         handle.assert_called_once_with(msg)
 
 
-# def test_scan_queue_modification_request_callback_wrong_msg(scan_guard_mock):
-#    sg = scan_guard_mock
-#    msg = messages.ScanQueueMessage(
-#        scan_type="fermat_scan",
-#        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
-#        queue="primary",
-#    )
-#    msg_obj = MessageObject(MessageEndpoints.scan_queue_modification(), msg)
-#    with mock.patch.object(sg, "_handle_scan_modification_request") as handle:
-#        sg._scan_queue_modification_request_callback(msg_obj, sg)
-#        handle.assert_not_called()
-
-
 def test_send_scan_request_response(scan_guard_mock):
     sg = scan_guard_mock
     with mock.patch.object(sg.device_manager.connector, "send") as send:
@@ -272,6 +259,73 @@ def test_handle_scan_request(scan_guard_mock):
             valid.return_value = ScanStatus(accepted=True, message="")
             sg._handle_scan_request(msg)
             append.assert_called_once_with(msg)
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        messages.ScanQueueMessage(
+            metadata={"RID": "ed2c85e4-d1ed-44d3-a1ed-ec99ea5991a2", "response": True},
+            scan_type="device_rpc",
+            parameter={
+                "device": "samx",
+                "rpc_id": "0e5c0ca1-e471-4e30-bb45-b94d4b713e2f",
+                "func": "read",
+                "args": [],
+                "kwargs": {},
+            },
+            queue="primary",
+        ),
+        messages.ScanQueueMessage(
+            metadata={"RID": "4be1449d-af68-457f-8e86-24fd9ddca803", "response": True},
+            scan_type="device_rpc",
+            parameter={
+                "device": "hexapod",
+                "rpc_id": "bc5fc2c3-540c-4881-b84e-89ba2c4ed3aa",
+                "func": "x.read",
+                "args": [],
+                "kwargs": {},
+            },
+            queue="primary",
+        ),
+        messages.ScanQueueMessage(
+            metadata={"RID": "ed2c85e4-d1ed-44d3-a1ed-ec99ea5991a2", "response": True},
+            scan_type="device_rpc",
+            parameter={
+                "device": "samx",
+                "rpc_id": "0e5c0ca1-e471-4e30-bb45-b94d4b713e2f",
+                "func": "get",
+                "args": [],
+                "kwargs": {},
+            },
+            queue="primary",
+        ),
+        messages.ScanQueueMessage(
+            metadata={"RID": "4be1449d-af68-457f-8e86-24fd9ddca803", "response": True},
+            scan_type="device_rpc",
+            parameter={
+                "device": "hexapod",
+                "rpc_id": "bc5fc2c3-540c-4881-b84e-89ba2c4ed3aa",
+                "func": "x.get",
+                "args": [],
+                "kwargs": {},
+            },
+            queue="primary",
+        ),
+    ],
+)
+def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
+    """
+    Ensure that the .read and .get RPCs are bypassed in the scan guard.
+    """
+    sg = scan_guard_mock
+    with mock.patch.object(sg.connector, "send") as send:
+        with mock.patch.object(sg, "_is_valid_scan_request") as valid:
+            with mock.patch.object(sg, "_append_to_scan_queue") as append:
+                valid.return_value = ScanStatus(accepted=True, message="")
+                sg._handle_scan_request(msg)
+                append.assert_not_called()
+                send.assert_called_once_with(MessageEndpoints.device_instructions(), mock.ANY)
 
 
 def test_handle_scan_request_rejected(scan_guard_mock):
