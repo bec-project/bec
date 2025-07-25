@@ -146,7 +146,41 @@ class TestLiveTable:
             live_update._run_update(1)
             assert mock_print_table_data.called
         scan_item.num_points = 2
+        scan_item.live_data = {0: data, 1: data}
+        scan_item.status = "closed"
+        with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
+            live_update._run_update(2)
+            assert mock_print_table_data.called
+
+    @pytest.mark.timeout(20)
+    def test_run_update_without_monitored_devices(self, bec_client_mock, scan_item):
+        request_msg = messages.ScanQueueMessage(
+            scan_type="grid_scan",
+            parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+            queue="primary",
+            metadata={"RID": "something"},
+        )
+        client = bec_client_mock
+        client.start()
+        data = messages.ScanMessage(point_id=0, scan_id="", data={}, metadata={})
+        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update.scan_item = scan_item
+        scan_item.num_points = 2
+        scan_item.live_data = {0: data}
+        with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
+            live_update._run_update(1)
+            assert mock_print_table_data.called
+        scan_item.num_points = 2
         scan_item.live_data = {}
+        scan_item.status_message = messages.ScanStatusMessage(
+            readout_priority={"monitored": [], "baseline": ["samx"]},
+            scan_id="scan_id",
+            scan_number=1,
+            scan_type="step",
+            scan_report_devices=[],
+            status="closed",
+            info={},
+        )
         scan_item.status = "closed"
         with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
             live_update._run_update(2)

@@ -221,7 +221,14 @@ class LiveUpdatesTable(LiveUpdatesBase):
                     break
                 if self.point_id > self.scan_item.num_points:
                     raise RuntimeError("Received more points than expected.")
+
                 if len(self.scan_item.live_data) == 0 and self.scan_item.status == "closed":
+                    msg = self.scan_item.status_message
+                    if not msg:
+                        continue
+                    if msg.readout_priority.get("monitored", []):
+                        continue
+
                     logger.warning(
                         f"\n Scan {self.scan_item.scan_number} finished. No monitored devices enabled, please check your config."
                     )
