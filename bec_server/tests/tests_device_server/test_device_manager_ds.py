@@ -7,7 +7,7 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
