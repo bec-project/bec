@@ -44,7 +44,20 @@ class ContainerProcedureWorker(ProcedureWorker):
         image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
         if not self._backend.image_exists(image_tag):
             self._backend.build_worker_image()
-        self._container_id = self._backend.run(image_tag, self._worker_environment())
+        self._container_id = self._backend.run(
+            image_tag,
+            self._worker_environment(),
+            [
+                {
+                    "source": str(PROCEDURE.CONTAINER.DEPLOYMENT_PATH),
+                    "target": "/bec",
+                    "type": "bind",
+                    "read_only": True,
+                }
+            ],
+            PROCEDURE.CONTAINER.COMMAND,
+            pod_name=PROCEDURE.CONTAINER.POD_NAME,
+        )
 
     def _run_task(self, item: ProcedureExecutionMessage):
         raise ProcedureWorkerError(

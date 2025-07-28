@@ -1,11 +1,12 @@
-"""Utilities to build BEC container images"""
+"""Utilities to build and run BEC container images"""
 
 import json
 import subprocess
 import traceback
 from http import HTTPStatus
 from itertools import chain
-from typing import Iterator, cast
+from pathlib import Path
+from typing import Iterator, Literal, cast
 
 from podman import PodmanClient
 from podman.domain.containers import Container
@@ -22,13 +23,39 @@ from bec_server.scan_server.procedures.constants import (
 from bec_server.scan_server.procedures.protocol import (
     ContainerCommandBackend,
     ContainerCommandOutput,
+    VolumeSpec,
 )
 
 logger = bec_logger.logger
 
 
 def get_backend() -> ContainerCommandBackend:
-    return PodmanApiUtils()
+    """Get the currently selected backend for executing podman commands"""
+    return PodmanCliUtils()
+    # return PodmanApiUtils()
+
+
+class _PodmanUtilsBase(ContainerCommandBackend):
+
+    def build_requirements_image(self):  # pragma: no cover
+        """Build the procedure worker requirements image"""
+        return self._build_image(
+            buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
+            path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
+            file=PROCEDURE.CONTAINER.REQUIREMENTS_CONTAINERFILE_NAME,
+            volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro:z",
+            tag=f"{PROCEDURE.CONTAINER.REQUIREMENTS_IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
+        )
+
+    def build_worker_image(self):  # pragma: no cover
+        """Build the procedure worker image"""
+        return self._build_image(
+            buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
+            path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
+            file=PROCEDURE.CONTAINER.WORKER_CONTAINERFILE_NAME,
+            volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro:z",
+            tag=f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
+        )
 
 
 class PodmanApiOutput(ContainerCommandOutput):
@@ -39,7 +66,7 @@ class PodmanApiOutput(ContainerCommandOutput):
         return "\n".join(str(json.loads(line).values()) for line in self._command_output)
 
 
-class PodmanApiUtils(ContainerCommandBackend):
+class PodmanApiUtils(_PodmanUtilsBase):
 
     # See https://docs.podman.io/en/latest/_static/api.html#tag/images/operation/ImageBuildLibpod
     # for libpod API specs
@@ -62,43 +89,23 @@ class PodmanApiUtils(ContainerCommandBackend):
             logger.info(f"Building container: {build_kwargs}")
             return PodmanApiOutput(client.images.build(**build_kwargs)[1])
 
-    def build_requirements_image(self):  # pragma: no cover
-        """Build the procedure worker requirements image"""
-        return self._build_image(
-            buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
-            path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
-            file=PROCEDURE.CONTAINER.REQUIREMENTS_CONTAINERFILE_NAME,
-            volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro",
-            tag=f"{PROCEDURE.CONTAINER.REQUIREMENTS_IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
-        )
-
-    def build_worker_image(self):  # pragma: no cover
-        """Build the procedure worker image"""
-        return self._build_image(
-            buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
-            path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
-            file=PROCEDURE.CONTAINER.WORKER_CONTAINERFILE_NAME,
-            volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro",
-            tag=f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
-        )
-
-    def run(self, image_tag: str, environment: ContainerWorkerEnv):
+    def run(
+        self,
+        image_tag: str,
+        environment: ContainerWorkerEnv,
+        volumes: list[VolumeSpec],
+        command: str,
+        pod_name: str | None = None,
+    ) -> str:
         with PodmanClient(base_url=self.uri) as client:
             try:
                 self._container = client.containers.run(
                     image_tag,
-                    PROCEDURE.CONTAINER.COMMAND,
+                    command,
                     detach=True,
                     environment=environment,
-                    mounts=[
-                        {
-                            "source": str(PROCEDURE.CONTAINER.DEPLOYMENT_PATH),
-                            "target": "/bec",
-                            "type": "bind",
-                            "read_only": True,
-                        }
-                    ],
-                    pod="local_bec",
+                    mounts=volumes,
+                    pod=pod_name,
                 )  # type: ignore # running with detach returns container object
             except APIError as e:
                 if e.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
@@ -127,8 +134,8 @@ class PodmanApiUtils(ContainerCommandBackend):
             return PodmanContainerStates(status)
 
 
-def _build_args_from_dict(buildargs: dict[str, str]) -> list[str]:
-    return list(chain(*(("--build-arg", f"{k}={v}") for k, v in buildargs.items())))
+def _multi_args_from_dict(argname: str, args: dict[str, str]) -> list[str]:
+    return list(chain(*((argname, f"{k}={v}") for k, v in args.items())))
 
 
 class PodmanCliOutput(ContainerCommandOutput):
@@ -139,13 +146,63 @@ class PodmanCliOutput(ContainerCommandOutput):
         return self._command_output
 
 
-class PodmanCliUtils(ContainerCommandBackend):
+class PodmanCliUtils(_PodmanUtilsBase):
+
+    def _run_and_capture_error(self, *args: str):
+        logger.debug(f"Running {args}")
+        output = subprocess.run([*args], capture_output=True)
+        if output.returncode != 0:
+            raise ProcedureWorkerError(f"Container failed to build with error {output.stderr}")
+        return output.stdout
+
+    def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
+        return json.loads(
+            self._run_and_capture_error("podman", subcom, "list", "--all", "--format", "json")
+        )
+
     def _build_image(
         self, buildargs: dict, path: str, file: str, volume: str, tag: str
     ) -> PodmanCliOutput:
-        _buildargs = ...
-        output = subprocess.run(["podman", "build", "/dev/null"], capture_output=True)
-        return PodmanCliOutput(output.stdout.decode())
+        _buildargs = _multi_args_from_dict("--build-arg", buildargs)
+        _containerfile = str(Path(path) / file)
+        output = self._run_and_capture_error(
+            "podman", "build", *_buildargs, "-f", _containerfile, "-t", tag, "-v", volume
+        )
+        return PodmanCliOutput(output.decode())
 
-    def build_requirements_image(self) -> ContainerCommandOutput: ...
-    def build_worker_image(self) -> ContainerCommandOutput: ...
+    def image_exists(self, image_tag) -> bool:
+        def _matches_tag(names: list[str]):
+            return any(name.split("/")[-1] == image_tag for name in names)
+
+        return any(_matches_tag(image.get("Names", [])) for image in self._podman_ls_json("image"))
+
+    def run(
+        self,
+        image_tag: str,
+        environment: ContainerWorkerEnv,
+        volumes: list[VolumeSpec],
+        command: str,
+        pod_name: str | None = None,
+    ) -> str:
+        _volumes = [
+            f"{vol['source']}:{vol['target']}{':ro' if vol['read_only'] else ''}" for vol in volumes
+        ]
+        _volume_args = list(chain(*(("-v", vol) for vol in _volumes)))
+        _environment = _multi_args_from_dict("-e", environment)  # type: ignore # this is actually a dict[str, str]
+        _pod_arg = ["--pod", pod_name] if pod_name else []
+        return (
+            self._run_and_capture_error(
+                "podman", "run", *_environment, "-d", *_volume_args, *_pod_arg, image_tag, command
+            )
+            .decode()
+            .strip()
+        )
+
+    def kill(self, id: str):
+        self._run_and_capture_error("podman", "kill", id)
+        self._run_and_capture_error("podman", "rm", id)
+
+    def state(self, id: str) -> PodmanContainerStates | None:
+        for container in self._podman_ls_json():
+            if container["Id"] == id or container["Id"].startswith(id):
+                return PodmanContainerStates(container["State"])

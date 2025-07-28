@@ -22,12 +22,6 @@ logger = bec_logger.logger
 
 # pylint: disable=protected-access
 
-try:
-    with podman.PodmanClient(base_url=PROCEDURE.CONTAINER.PODMAN_URI) as client:
-        client.info()
-except Exception:
-    pytest.skip(reason="podman socket not available in this environment!", allow_module_level=True)
-
 
 @pytest.fixture
 def client_logtool_and_manager(
@@ -57,6 +51,11 @@ def test_happy_path_container_procedure_runner(
         identifier="log execution message args", args_kwargs=(test_args, test_kwargs)
     )
     conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
+
+    start = time.monotonic()
+    while manager.active_workers == {}:
+        if (time.monotonic() - start) > 5:
+            raise TimeoutError()
 
     for _ in range(1000):
         time.sleep(0.1)
