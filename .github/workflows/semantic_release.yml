@@ -129,7 +129,7 @@ jobs:
           BEC_VERSION=${{ steps.version.outputs.bec_version }}
         archs: amd64, aarch64
         extra-args: |
-          -v ${{ github.workspace }}:/bec:ro
+          -v ${{ github.workspace }}:/bec:ro:z
   
     - name: Push to registry
       id: container-push
