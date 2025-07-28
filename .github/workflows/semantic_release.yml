@@ -102,6 +102,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Setup tools
+      run: sudo apt update && sudo apt install qemu-user-static
+
     - name: Get version
       id: version
       run: |
@@ -120,6 +123,7 @@ jobs:
           ./bec_server/bec_server/scan_server/procedures/Containerfile.requirements
         build-args: |
           BEC_VERSION=${{ steps.version.outputs.bec_version }}
+        archs: amd64, aarch64
         extra-args: |
           -v ${{ github.workspace }}:/bec:ro
   
