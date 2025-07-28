@@ -139,6 +139,8 @@ class DeviceManagerDS(DeviceManagerBase):
                     self.initialize_device(dev, config, obj)
                 # pylint: disable=broad-except
                 except Exception:
+                    if name not in self.devices:
+                        raise
                     msg = traceback.format_exc()
                     logger.warning(f"Failed to initialize device {name}: {msg}")
                     self.failed_devices[name] = msg

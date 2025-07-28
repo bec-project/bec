@@ -130,16 +130,25 @@ def get_device_info(
     Returns:
         dict: updated device info
     """
-    protected_names = get_protected_class_methods()
+    # Check if the object namespace is valid
 
+    protected_names = get_protected_class_methods()
     user_access = get_custom_user_access_info(obj, {})
     if set(user_access.keys()) & set(protected_names):
         raise DeviceConfigError(
             f"User access method name {set(user_access.keys()) & set(protected_names)} is protected and cannot be used. Please rename the method."
         )
-
+    # Collect signals and their metadata
     signals = {}  # []
     if hasattr(obj, "component_names") and connect:
+        # Read attrs are only available if the device is connected, thus we can only deactivate the device
+        if hasattr(obj, "read_attrs"):
+            signal_names = [read_attr_name.replace(".", "_") for read_attr_name in obj.read_attrs]
+            unique_signal_names = set(signal_names)
+            if len(unique_signal_names) < len(signal_names):
+                raise DeviceConfigError(
+                    f"Signal names of {obj.name} must be unique, found duplicates. All signal names: {signal_names}. \n Unique signal names: {unique_signal_names}."
+                )
         walk = obj.walk_components()
         for _ancestor, component_name, comp in walk:
             if get_device_base_class(getattr(obj, component_name)) == "signal":
