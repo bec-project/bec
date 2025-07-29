@@ -36,6 +36,7 @@ class ScanHistory:
         self._scan_data = {}
         self._scan_ids = []
         self._scan_data_lock = threading.RLock()
+        self._scan_history_loaded_event = threading.Event()
         self._loaded = False
         self._loading_thread = None
         self._max_scans = 10000
@@ -58,6 +59,7 @@ class ScanHistory:
             MessageEndpoints.scan_history(), from_start=True, user_id="ScanHistoryLoader"
         )
         if not data:
+            self._scan_history_loaded_event.set()
             return
         with self._scan_data_lock:
             for entry in data:
@@ -68,6 +70,7 @@ class ScanHistory:
                 self._scan_data[msg.scan_id] = msg
                 self._scan_ids.append(msg.scan_id)
                 self._remove_oldest_scan()
+        self._scan_history_loaded_event.set()
 
     def _remove_oldest_scan(self) -> None:
         while len(self._scan_ids) > self._max_scans:
