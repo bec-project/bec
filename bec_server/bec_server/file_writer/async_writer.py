@@ -55,6 +55,7 @@ class AsyncWriter(threading.Thread):
         scan_number: int,
         connector: RedisConnector,
         devices: list[str],
+        async_signals: list[tuple[str, str, dict]],
     ):
         """
         Initialize the async writer
@@ -64,6 +65,9 @@ class AsyncWriter(threading.Thread):
             scan_id (str): The scan id
             connector (RedisConnector): The redis connector
             devices (list[str]): The list of devices to write data for
+            scan_number (int): The scan number
+            async_signals (list[tuple[str, str, dict]]): List of async signals
+                Each tuple contains (device_name, component_name and the signal info)
         """
         super().__init__(target=self._run, daemon=True, name="AsyncWriter")
         self.file_path = file_path
@@ -71,6 +75,7 @@ class AsyncWriter(threading.Thread):
         self.scan_number = scan_number
         self.devices = devices
         self.connector = connector
+        self.async_signals = async_signals
         self.stream_keys = {}
         self.shutdown_event = threading.Event()
         self.device_data_replace = {}
@@ -89,8 +94,17 @@ class AsyncWriter(threading.Thread):
             ).endpoint
             key = "0-0"
             self.stream_keys[topic] = key
+        for device_name, component_name, signal_info in self.async_signals:
+            saved = signal_info.get("describe", {}).get("signal_info", {}).get("saved", False)
+            if not saved:
+                continue
+            topic = MessageEndpoints.device_async_signal(
+                scan_id=self.scan_id, device=device_name, signal=signal_info["obj_name"]
+            ).endpoint
+            key = "0-0"
+            self.stream_keys[topic] = key
 
-    def poll_data(self, poll_timeout: int | None = 500) -> dict:
+    def poll_data(self, poll_timeout: int | None = 500) -> dict | None:
         """
         Poll the redis stream for new data.
 
@@ -102,16 +116,40 @@ class AsyncWriter(threading.Thread):
         out = self.connector._redis_conn.xread(self.stream_keys, block=poll_timeout)
         return self._decode_stream_messages_xread(out)
 
-    def _decode_stream_messages_xread(self, msg) -> dict:
+    def _decode_stream_messages_xread(self, msg) -> dict | None:
         out = defaultdict(list)
         for topic, msgs in msg:
             for index, record in msgs:
-                device_name = topic.decode().split("/")[-1]
+                device_name = self._get_device_name_from_topic(topic.decode())
                 for _, msg_entry in record.items():
                     device_msg: messages.DeviceMessage = MsgpackSerialization.loads(msg_entry)
-                    out[device_name] = device_msg
+                    out[device_name].append(device_msg)
                 self.stream_keys[topic.decode()] = index
         return out if out else None
+
+    def _get_device_name_from_topic(self, topic: str) -> str:
+        """
+        Extract the device name from the topic.
+
+        Args:
+            topic (str): The topic to extract the device name from
+
+        Returns:
+            str: The device name
+        """
+        device_async_pattern = MessageEndpoints.device_async_readback(
+            scan_id=self.scan_id, device=""
+        ).endpoint
+        if topic.startswith(device_async_pattern):
+            return topic[len(device_async_pattern) :].split("/")[0]
+        device_async_signal_pattern = MessageEndpoints.device_async_signal(
+            scan_id=self.scan_id, device="", signal=""
+        ).endpoint.removesuffix("/")
+        if topic.startswith(device_async_signal_pattern):
+            return topic[len(device_async_signal_pattern) :].split("/")[0]
+        raise ValueError(
+            f"Topic {topic} does not match any known async pattern. Cannot extract device name."
+        )
 
     def poll_and_write_data(self, final: bool = False) -> None:
         """
@@ -128,7 +166,7 @@ class AsyncWriter(threading.Thread):
         try:
             self.send_file_message(done=False, successful=False)
             self.initialize_stream_keys()
-            if not self.devices:
+            if not self.devices and not self.async_signals:
                 return
             # self.register_async_callbacks()
             while not self.shutdown_event.is_set():
@@ -177,14 +215,14 @@ class AsyncWriter(threading.Thread):
         self.shutdown_event.set()
 
     def write_data(
-        self, data: list[dict[str, messages.DeviceMessage]], write_replace: bool = False
+        self, data: dict[str, list[messages.DeviceMessage]], write_replace: bool = False
     ) -> None:
         """
         Write data to the file. If write_replace is True, write also async data with
         aggregation set to replace.
 
         Args:
-            data (list[dict]): List of dictionaries containing data from devices
+            data (dict[str, list[messages.DeviceMessage]]): Dictionary containing lists of messages from devices
             write_replace (bool, optional): Write data with aggregation set to replace. This is
                 typically used only after the scan is complete. Defaults to False.
 
@@ -204,34 +242,35 @@ class AsyncWriter(threading.Thread):
                 f.create_group(group_name)
             device_group = f[group_name]
 
-            signals = data_container.signals
-            async_update = data_container.metadata["async_update"]
+            for msg in data_container:
+                signals = msg.signals
+                async_update = msg.metadata["async_update"]
 
-            for signal_name, signal_data in signals.items():
-                # create the device signal group if it doesn't exist
-                # -> /entry/collections/devices/<device_name>/<signal_name>
-                if signal_name not in device_group:
-                    signal_group = device_group.create_group(signal_name)
-                    signal_group.attrs["NX_class"] = "NXdata"
-                    signal_group.attrs["signal"] = "value"
-                else:
-                    signal_group = device_group[signal_name]
+                for signal_name, signal_data in signals.items():
+                    # create the device signal group if it doesn't exist
+                    # -> /entry/collections/devices/<device_name>/<signal_name>
+                    if signal_name not in device_group:
+                        signal_group = device_group.create_group(signal_name)
+                        signal_group.attrs["NX_class"] = "NXdata"
+                        signal_group.attrs["signal"] = "value"
+                    else:
+                        signal_group = device_group[signal_name]
 
-                for key, value in signal_data.items():
+                    for key, value in signal_data.items():
 
-                    if key == "value":
-                        self.write_value_data(signal_group, value, async_update)
-                    elif key == "timestamp":
-                        self.write_timestamp_data(signal_group, value)
-                    else:  # pragma: no cover
-                        # this should never happen as the keys are fixed in the pydantic model
-                        self.connector.raise_alarm(
-                            severity=Alarms.WARNING,
-                            alarm_type="ValueError",
-                            source={"device": device_name},
-                            msg=f"Unknown key: {key}. Data will not be written.",
-                            metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
-                        )
+                        if key == "value":
+                            self.write_value_data(signal_group, value, async_update)
+                        elif key == "timestamp":
+                            self.write_timestamp_data(signal_group, value)
+                        else:  # pragma: no cover
+                            # this should never happen as the keys are fixed in the pydantic model
+                            self.connector.raise_alarm(
+                                severity=Alarms.WARNING,
+                                alarm_type="ValueError",
+                                source={"device": device_name},
+                                msg=f"Unknown key: {key}. Data will not be written.",
+                                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
+                            )
 
         if write_replace:
             for group_name, value in self.device_data_replace.items():
