@@ -34,6 +34,8 @@ except Exception:
 else:
     if bec.started and BECGuiClient is not None:
         gui = bec.gui = BECGuiClient()
+        if _main_dict["args"].gui_id:
+            gui.connect_to_gui_server(_main_dict["args"].gui_id)
         if not _main_dict["args"].nogui:
             gui.start()
 
