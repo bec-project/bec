@@ -18,7 +18,12 @@ from bec_lib.serialization import MsgpackSerialization
 from bec_server.scan_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
 from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager, ProcedureWorker
-from bec_server.scan_server.procedures.procedure_registry import _BUILTIN_PROCEDURES
+from bec_server.scan_server.procedures.procedure_registry import (
+    _BUILTIN_PROCEDURES,
+    ProcedureRegistryError,
+    callable_from_execution_message,
+    register,
+)
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -242,3 +247,23 @@ def test_builtin_procedure_scan_execution(_, Client):
 def test_builtin_procedures_are_bec_procedures():
     for proc in _BUILTIN_PROCEDURES.values():
         assert isinstance(proc, BecProcedure)
+
+
+def test_callable_from_message():
+    with pytest.raises(ProcedureRegistryError) as e:
+        callable_from_execution_message(
+            ProcedureExecutionMessage(identifier="doesn't exist", queue="primary")
+        )
+    assert e.match("No registered procedure")
+
+
+def test_register_rejects_wrong_type():
+    with pytest.raises(ProcedureRegistryError) as e:
+        register("test", "test")
+    assert e.match("not a valid procedure")
+
+
+def test_register_rejects_already_registered():
+    with pytest.raises(ProcedureRegistryError) as e:
+        register("run scan", lambda *_, **__: None)
+    assert e.match("already registered")

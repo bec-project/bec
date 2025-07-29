@@ -4,11 +4,13 @@ from unittest import mock
 import pytest
 
 import bec_lib.messages as bec_messages
+from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import EndpointInfo, EndpointType, MessageEndpoints, MessageOp
 from bec_lib.messages import (
     AlarmMessage,
     BECMessage,
+    BECStatus,
     BundleMessage,
     ClientInfoMessage,
     ProcedureExecutionMessage,
@@ -513,3 +515,16 @@ def test_list_pop_to_sadd_rejects_wrong_message_for_set(
     )
     with pytest.raises(IncompatibleMessageForEndpoint):
         connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
+
+
+def test_blocking_list_pop(connector):
+    msg = messages.StatusMessage(name="test", status=BECStatus.BUSY, info={})
+    connector._redis_conn.blpop.return_value = [None, MsgpackSerialization.dumps(msg)]
+    result = connector.blocking_list_pop("topic")
+    connector._redis_conn.blpop.assert_called_once_with(["topic"], timeout=None)
+    assert result == msg
+    connector._redis_conn.brpop.assert_not_called()
+
+    connector._redis_conn.brpop.return_value = None
+    connector.blocking_list_pop("topic", side="RIGHT")
+    connector._redis_conn.brpop.assert_called_once()

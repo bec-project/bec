@@ -1,3 +1,5 @@
+import time
+
 from bec_lib.client import BECClient
 from bec_lib.logger import bec_logger
 from bec_lib.scan_report import ScanReport
@@ -10,6 +12,11 @@ def log_message_args_kwargs(*args, **kwargs):
     logger.info(
         f"Builtin procedure log_message_args_kwargs called with args: {args} and kwargs: {kwargs}"
     )
+
+
+def sleep(*, time_s):
+    """Sleep for time_s seconds. Intended for testing."""
+    time.sleep(time_s)
 
 
 def run_scan(scan_name: str, args: tuple, parameters: dict, *, bec: BECClient):

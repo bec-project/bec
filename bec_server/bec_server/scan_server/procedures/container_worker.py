@@ -40,7 +40,7 @@ class ContainerProcedureWorker(ProcedureWorker):
         }
 
     def _setup_execution_environment(self):
-        self._backend = get_backend()
+        self._backend: ContainerCommandBackend = get_backend()
         image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
         if not self._backend.image_exists(image_tag):
             self._backend.build_worker_image()
