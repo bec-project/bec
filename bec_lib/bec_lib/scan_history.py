@@ -70,7 +70,11 @@ class ScanHistory:
                 self._scan_data[msg.scan_id] = msg
                 self._scan_ids.append(msg.scan_id)
                 self._remove_oldest_scan()
-        self._scan_history_loaded_event.set()
+            self._client.callbacks.run(
+                event_type=EventType.SCAN_HISTORY_LOADED,
+                history_msgs=[self._scan_data[scan_id] for scan_id in self._scan_ids],
+            )
+            self._scan_history_loaded_event.set()
 
     def _remove_oldest_scan(self) -> None:
         while len(self._scan_ids) > self._max_scans:
