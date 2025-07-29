@@ -13,7 +13,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass
 from importlib.metadata import version as importlib_version
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import psutil
 import tomli
@@ -40,7 +40,7 @@ logger = bec_logger.logger
 SERVICE_CONFIG = None
 
 
-def parse_cmdline_args(parser=None):
+def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | str = "server"):
     """Return (parsed args, extra args, ServiceConfig object), the latter being initialized from command line arguments
 
     Extra args are those passed on the command line, which are not known by the parser
@@ -113,12 +113,18 @@ def parse_cmdline_args(parser=None):
             except ValueError:
                 raise ValueError(f"Invalid port number in Redis URL: {comps[1]}")
 
-        service_config = ServiceConfig(redis=redis_data, cmdline_args=cli_args, acl=acl_config)
+        service_config = ServiceConfig(
+            redis=redis_data, cmdline_args=cli_args, acl=acl_config, config_name=config_name
+        )
     elif config_file:
-        service_config = ServiceConfig(config_file, cmdline_args=cli_args, acl=acl_config)
+        service_config = ServiceConfig(
+            config_file, cmdline_args=cli_args, acl=acl_config, config_name=config_name
+        )
     else:
         # If no config file or Redis URL is provided, use the default ServiceConfig
-        service_config = ServiceConfig(cmdline_args=cli_args, acl=acl_config)
+        service_config = ServiceConfig(
+            cmdline_args=cli_args, acl=acl_config, config_name=config_name
+        )
 
     return args, extra_args, service_config
 

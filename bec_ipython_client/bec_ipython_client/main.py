@@ -278,7 +278,7 @@ def main():
         if hasattr(plugin["module"], "extend_command_line_args"):
             plugin["module"].extend_command_line_args(parser)
 
-    args, left_args, config = parse_cmdline_args(parser)
+    args, left_args, config = parse_cmdline_args(parser, config_name="client")
 
     # remove already parsed args from command line args
     sys.argv = sys.argv[:1] + left_args
