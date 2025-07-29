@@ -140,18 +140,13 @@ def get_device_info(
         )
     # Collect signals and their metadata
     signals = {}  # []
+
     if hasattr(obj, "component_names") and connect:
-        # Read attrs are only available if the device is connected, thus we can only deactivate the device
-        if hasattr(obj, "read_attrs"):
-            signal_names = [read_attr_name.replace(".", "_") for read_attr_name in obj.read_attrs]
-            unique_signal_names = set(signal_names)
-            if len(unique_signal_names) < len(signal_names):
-                raise DeviceConfigError(
-                    f"Signal names of {obj.name} must be unique, found duplicates. All signal names: {signal_names}. \n Unique signal names: {unique_signal_names}."
-                )
+        signal_names = []
         walk = obj.walk_components()
         for _ancestor, component_name, comp in walk:
             if get_device_base_class(getattr(obj, component_name)) == "signal":
+
                 if component_name in protected_names:
                     raise DeviceConfigError(
                         f"Signal name {component_name} is protected and cannot be used. Please rename the signal."
@@ -190,12 +185,13 @@ def get_device_info(
                             }
                         )
                 else:
+                    obj_name = signal_obj.name
                     signals.update(
                         {
                             component_name: {
                                 "component_name": component_name,
                                 "signal_class": signal_obj.__class__.__name__,
-                                "obj_name": signal_obj.name,
+                                "obj_name": obj_name,
                                 "kind_int": signal_obj.kind.value,
                                 "kind_str": signal_obj.kind.name,
                                 "doc": doc,
@@ -205,6 +201,13 @@ def get_device_info(
                             }
                         }
                     )
+                signal_names.append(obj_name)
+        # Read attrs are only available if the device is connected
+        unique_signal_names = set(signal_names)
+        if len(unique_signal_names) < len(signal_names):
+            raise DeviceConfigError(
+                f"Signal names of {obj.name} must be unique, found duplicates. All signal names: {signal_names}. \n Unique signal names: {unique_signal_names}."
+            )
     sub_devices = []
 
     if hasattr(obj, "walk_subdevices") and connect:

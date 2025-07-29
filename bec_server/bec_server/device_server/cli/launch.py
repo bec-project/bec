@@ -23,7 +23,7 @@ from bec_lib.redis_connector import RedisConnector
 from bec_server.device_server.device_server import DeviceServer
 
 logger = bec_logger.logger
-bec_logger.level = bec_logger.LOGLEVEL.DEBUG
+bec_logger.level = bec_logger.LOGLEVEL.INFO
 
 
 # ---- Forward ophyd logs to bec_logger.logger ----
