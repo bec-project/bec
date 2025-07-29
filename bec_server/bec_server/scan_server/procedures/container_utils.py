@@ -133,6 +133,9 @@ class PodmanApiUtils(_PodmanUtilsBase):
                 return None
             return PodmanContainerStates(status)
 
+    def logs(self, id: str) -> list[str]:
+        return NotImplemented
+
 
 def _multi_args_from_dict(argname: str, args: dict[str, str]) -> list[str]:
     return list(chain(*((argname, f"{k}={v}") for k, v in args.items())))
@@ -153,11 +156,13 @@ class PodmanCliUtils(_PodmanUtilsBase):
         output = subprocess.run([*args], capture_output=True)
         if output.returncode != 0:
             raise ProcedureWorkerError(f"Container failed to build with error {output.stderr}")
-        return output.stdout
+        return output
 
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
         return json.loads(
-            self._run_and_capture_error("podman", subcom, "list", "--all", "--format", "json")
+            self._run_and_capture_error(
+                "podman", subcom, "list", "--all", "--format", "json"
+            ).stdout
         )
 
     def _build_image(
@@ -168,7 +173,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
         output = self._run_and_capture_error(
             "podman", "build", *_buildargs, "-f", _containerfile, "-t", tag, "-v", volume
         )
-        return PodmanCliOutput(output.decode())
+        return PodmanCliOutput(output.stdout.decode())
 
     def image_exists(self, image_tag) -> bool:
         def _matches_tag(names: list[str]):
@@ -194,13 +199,16 @@ class PodmanCliUtils(_PodmanUtilsBase):
             self._run_and_capture_error(
                 "podman", "run", *_environment, "-d", *_volume_args, *_pod_arg, image_tag, command
             )
-            .decode()
+            .stdout.decode()
             .strip()
         )
 
     def kill(self, id: str):
         self._run_and_capture_error("podman", "kill", id)
         self._run_and_capture_error("podman", "rm", id)
+
+    def logs(self, id: str) -> list[str]:
+        return self._run_and_capture_error("podman", "logs", id).stderr.decode().splitlines()
 
     def state(self, id: str) -> PodmanContainerStates | None:
         for container in self._podman_ls_json():
