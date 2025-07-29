@@ -72,6 +72,11 @@ class DummyDeviceWithConflictingDuplicateSignalNames(Device):
     signal = Cpt(MyDevice, "signal", lazy=True)
     signal_custom = Cpt(MyDevice, "custom", lazy=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Imitate Positioner behavior with conflicting signal names
+        self.signal_custom.custom.name = self.signal_custom.name
+
 
 @pytest.mark.parametrize(
     "obj",
