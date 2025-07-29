@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Generator
+from importlib.metadata import version
+from typing import TYPE_CHECKING, Callable, Generator
 from unittest.mock import MagicMock, patch
 
-import podman
 import pytest
 
 from bec_ipython_client.main import BECIPythonClient
@@ -12,6 +12,7 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.procedures.constants import PROCEDURE
+from bec_server.scan_server.procedures.container_utils import get_backend
 from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager
 
@@ -22,6 +23,10 @@ logger = bec_logger.logger
 
 # pylint: disable=protected-access
 
+# Random order disabled for this module so that the test for building the worker container runs first
+# and we can use lower timeouts for the remaining tests
+pytestmark = pytest.mark.random_order(disabled=True)
+
 
 @pytest.fixture
 def client_logtool_and_manager(
@@ -31,9 +36,51 @@ def client_logtool_and_manager(
     server = MagicMock()
     server.bootstrap_server = f"{client.connector.host}:{client.connector.port}"
     manager = ProcedureManager(server, ContainerProcedureWorker)
-    client._client.connector._redis_conn.flushall()
     yield client, logtool, manager
     manager.shutdown()
+
+
+def _wait_while(cond: Callable[[], bool], timeout_s):
+    start = time.monotonic()
+    while cond():
+        if (time.monotonic() - start) > timeout_s:
+            raise TimeoutError()
+        time.sleep(0.01)
+
+
+@pytest.mark.timeout(100)
+def test_building_worker_image():
+    podman_utils = get_backend()
+    build = podman_utils.build_worker_image()
+    assert len(build._command_output.splitlines()[-1]) == 64
+    assert podman_utils.image_exists(f"bec_procedure_worker:v{version('bec_lib')}")
+
+
+@pytest.mark.timeout(100)
+@patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+def test_procedure_runner_spawns_worker(
+    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
+):
+    client, _, manager = client_logtool_and_manager
+    assert manager.active_workers == {}
+    endpoint = MessageEndpoints.procedure_request()
+    msg = messages.ProcedureRequestMessage(
+        identifier="sleep", args_kwargs=((), {"time_s": 2}), queue="test"
+    )
+
+    logs = []
+
+    def cb(worker: ContainerProcedureWorker):
+        nonlocal logs
+        logs = worker._backend.logs(worker._container_id)
+
+    manager.add_callback("test", cb)
+    client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
+
+    _wait_while(lambda: manager.active_workers == {}, 5)
+    _wait_while(lambda: manager.active_workers != {}, 20)
+
+    assert logs != []
 
 
 @pytest.mark.timeout(100)
@@ -52,15 +99,8 @@ def test_happy_path_container_procedure_runner(
     )
     conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
-    start = time.monotonic()
-    while manager.active_workers == {}:
-        if (time.monotonic() - start) > 5:
-            raise TimeoutError()
-
-    for _ in range(1000):
-        time.sleep(0.1)
-        if manager.active_workers == {}:
-            break
+    _wait_while(lambda: manager.active_workers == {}, 5)
+    _wait_while(lambda: manager.active_workers != {}, 20)
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")

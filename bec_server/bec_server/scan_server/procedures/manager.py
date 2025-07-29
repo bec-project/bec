@@ -4,7 +4,7 @@ import atexit
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
-from typing import Any, TypedDict
+from typing import Any, Callable, TypedDict
 
 from pydantic import ValidationError
 
@@ -51,6 +51,7 @@ class ProcedureManager:
         )
         atexit.register(self.executor.shutdown)
 
+        self._callbacks: dict[str, list[Callable[[ProcedureWorker], Any]]] = {}
         self._worker_cls = worker_type
         self._conn = RedisConnector([self._parent.bootstrap_server])
         self._reply_endpoint = MessageEndpoints.procedure_request_response()
@@ -77,6 +78,19 @@ class ProcedureManager:
             self._ack(False, f"{e}")
             return None
         return message_obj
+
+    def add_callback(self, queue: str, cb: Callable[[ProcedureWorker], Any]):
+        """Add a callback to run on the worker when it is finished."""
+        if self._callbacks.get(queue) is None:
+            self._callbacks[queue] = []
+        self._callbacks[queue].append(cb)
+
+    def _run_callbacks(self, queue: str):
+        if (worker := self.active_workers[queue]["worker"]) is None:
+            return
+        for cb in self._callbacks.get(queue, []):
+            cb(worker)
+        self._callbacks[queue] = []
 
     def process_queue_request(self, msg: dict[str, Any]):
         """Read a `ProcedureRequestMessage` and if it is valid, create a corresponding `ProcedureExecutionMessage`.
@@ -105,6 +119,7 @@ class ProcedureManager:
         def cleanup_worker(fut):
             with self.lock:
                 logger.debug(f"cleaning up worker {fut} for queue {queue}...")
+                self._run_callbacks(queue)
                 del self.active_workers[queue]
 
         with self.lock:
