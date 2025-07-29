@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.54.1 (2025-07-29)
+
+### Bug Fixes
+
+- Build container only on release
+  ([`cdd2bdb`](https://github.com/bec-project/bec/commit/cdd2bdb1af3b7cf5b59f9b3da2f62158ca2b58eb))
+
+### Refactoring
+
+- **scan-hisotry**: Add event to indicate that scan history was loaded from redis
+  ([`a6d7133`](https://github.com/bec-project/bec/commit/a6d71337a864aeffae0e16eb9e78d330bfd41467))
+
+- **service config**: Restructured service config
+  ([`7fd2d0f`](https://github.com/bec-project/bec/commit/7fd2d0f4811dc900d3eafd5874683cdd3be8470e))
+
+
 ## v3.54.0 (2025-07-29)
 
 ### Bug Fixes
