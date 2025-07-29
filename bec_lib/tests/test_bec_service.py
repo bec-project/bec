@@ -271,6 +271,7 @@ def test_parse_cmdline_args_with_config():
                     "bec_server": None,
                 },
                 acl={},
+                config_name="server",
             )
 
 
