@@ -271,6 +271,12 @@ def main():
     )
     parser.add_argument("--version", action="store_true", default=False)
     parser.add_argument("--nogui", action="store_true", default=False)
+    parser.add_argument(
+        "--gui-id",
+        action="store",
+        default=None,
+        help="ID of the GUI to connect to, if not set, a new GUI will be created",
+    )
     parser.add_argument("--dont-wait-for-server", action="store_true", default=False)
     parser.add_argument("--post-startup-file", action="store", default=None)
 

@@ -30,6 +30,7 @@ try:
   import sys
   print(completer.all_completions('bec.'), flush=True)
   print(completer.all_completions('BECIP'), flush=True)
+  print(_main_dict["args"].gui_id, flush=True)
 finally:
   import os
   import signal
@@ -41,6 +42,8 @@ finally:
             sys.executable,
             main.__file__,
             "--nogui",
+            "--gui-id",
+            "test_gui_id",
             "--dont-wait-for-server",
             "--post-startup-file",
             file_to_execute,
@@ -58,6 +61,7 @@ finally:
     assert (
         "BECIPythonClient" not in output_lines[1]
     )  # just to ensure something we don't want is really not there
+    assert "test_gui_id" in output
 
 
 def test_bec_load_hli_tab_completion(tmpdir):
