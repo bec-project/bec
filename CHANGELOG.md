@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.55.0 (2025-07-30)
+
+### Bug Fixes
+
+- **gui**: Always create the gui object
+  ([`3f0430b`](https://github.com/bec-project/bec/commit/3f0430b7a172985181f0ce4fcdbc65817599a428))
+
+- **service config**: Forward the config name
+  ([`c1cb95e`](https://github.com/bec-project/bec/commit/c1cb95ebf7da7018dca9774ba83319ab0389447a))
+
+### Features
+
+- **ipython**: Add option to specify the gui id as cli arg
+  ([`b530a8f`](https://github.com/bec-project/bec/commit/b530a8f068ab430347e3083f6da47c512f51c304))
+
+### Refactoring
+
+- **callback-handler**: Add scan history updated callback
+  ([`8003eff`](https://github.com/bec-project/bec/commit/8003eff93034dad49691c0bc4d7bed78213c9896))
+
+
 ## v3.54.1 (2025-07-29)
 
 ### Bug Fixes
