@@ -91,11 +91,11 @@ def test_read_use_read(dev: Any):
 def test_read_nested_device(dev: Any):
     with mock.patch.object(dev.dyn_signals.root.parent.connector, "get") as mock_get:
         data = {
-            "dyn_signals_messages_message1": {"value": 0, "timestamp": 1701105880.0716832},
-            "dyn_signals_messages_message2": {"value": 0, "timestamp": 1701105880.071722},
-            "dyn_signals_messages_message3": {"value": 0, "timestamp": 1701105880.071739},
-            "dyn_signals_messages_message4": {"value": 0, "timestamp": 1701105880.071753},
-            "dyn_signals_messages_message5": {"value": 0, "timestamp": 1701105880.071766},
+            "dyn_signals-messages-message1": {"value": 0, "timestamp": 1701105880.0716832},
+            "dyn_signals-messages-message2": {"value": 0, "timestamp": 1701105880.071722},
+            "dyn_signals-messages-message3": {"value": 0, "timestamp": 1701105880.071739},
+            "dyn_signals-messages-message4": {"value": 0, "timestamp": 1701105880.071753},
+            "dyn_signals-messages-message5": {"value": 0, "timestamp": 1701105880.071766},
         }
         mock_get.return_value = messages.DeviceMessage(
             signals=data, metadata={"scan_id": "scan_id", "scan_type": "scan_type"}
