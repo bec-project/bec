@@ -6,20 +6,11 @@ from typing import cast
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import ProcedureExecutionMessage
+from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus
 from bec_lib.redis_connector import RedisConnector
+from bec_server.scan_server.procedures.constants import PROCEDURE
 
 logger = bec_logger.logger
-
-MAX_WORKERS = 10
-queue_TIMEOUT_S = 10
-MANAGER_SHUTDOWN_TIMEOUT_S = 2
-DEFAULT_QUEUE = "primary"
-
-
-class ProcedureWorkerStatus(Enum):
-    RUNNING = auto()
-    IDLE = auto()
 
 
 class ProcedureWorker(ABC):
@@ -27,8 +18,7 @@ class ProcedureWorker(ABC):
     Implement _setup_execution_environment(), _kill_process(), and _run_task() to create a functional worker.
     """
 
-    # TODO: Replace int timeut with float when possible https://github.com/redis/redis-py/issues/3379 # pylint: ignore
-    def __init__(self, server: str, queue: str, lifetime_s: int | None = None):
+    def __init__(self, server: str, queue: str, lifetime_s: float | None = None):
         """Start a worker to run procedures on the queue identified by `queue`. Should be used as a
         context manager to ensure that cleanup is handled on destruction. E.g.:
         ```
@@ -41,11 +31,12 @@ class ProcedureWorker(ABC):
             queue (str): name of the queue to listen to execution messages on
             lifetime_s (int): how long to stay alive with nothing in the queue"""
 
+        self._queue = queue
         self.key = MessageEndpoints.procedure_execution(queue)
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
         self.status = ProcedureWorkerStatus.IDLE
         self._conn = RedisConnector([server])
-        self._lifetime_s = lifetime_s or queue_TIMEOUT_S
+        self._lifetime_s = lifetime_s or PROCEDURE.WORKER.QUEUE_TIMEOUT_S
         self.client_id = self._conn.client_id()
 
         self._setup_execution_environment()
@@ -93,3 +84,4 @@ class ProcedureWorker(ABC):
         finally:
             if item is not None:
                 self._conn.remove_from_set(self._active_procs_endpoint, item)
+            self.status = ProcedureWorkerStatus.FINISHED
