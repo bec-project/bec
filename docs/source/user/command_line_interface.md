@@ -303,7 +303,7 @@ The shell printout provides information about the scan signature, parameters, as
 
 Macros are user defined functions that can be executed from the BEC console (CLI). 
 They are stored in the ``macros`` folder and can be edited with any text editor. 
-The macros are loaded automatically on startup of the BEC console but can also be reloaded by typing ``bec.load_all_user_macros()`` in the command-line.
+The macros are loaded automatically on startup of the BEC console but can also be reloaded by typing ``bec.macros.load_all_user_macros()`` in the command-line.
 This command will load macros from three locations: 
 
 1. from `~/bec/macros/` in your home directory, 
