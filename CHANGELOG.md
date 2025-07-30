@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.55.1 (2025-07-30)
+
+### Bug Fixes
+
+- **device-manager**: Improve failed serialization handling, fix duplicate signal names
+  ([`f88eb8b`](https://github.com/bec-project/bec/commit/f88eb8bc824694162ccdf91dd69c1e9cf2b9381f))
+
+- **device-server**: Add InterceptHandler for ophyd logs
+  ([`f5a3ee7`](https://github.com/bec-project/bec/commit/f5a3ee7bb28c1787aa33908e4e5beac6fbc9f266))
+
+
 ## v3.55.0 (2025-07-30)
 
 ### Bug Fixes
