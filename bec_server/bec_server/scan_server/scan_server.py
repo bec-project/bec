@@ -8,6 +8,7 @@ from bec_lib.bec_service import BECService
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.scan_number_container import ScanNumberContainer
 from bec_lib.service_config import ServiceConfig
 
 from .scan_assembler import ScanAssembler
@@ -61,6 +62,7 @@ class ScanServer(BECService):
         self.connector.register(MessageEndpoints.alarm(), cb=self._alarm_callback, parent=self)
 
     def _reset_scan_number(self):
+        self.scan_number_container = ScanNumberContainer(self.connector)
         if self.connector.get(MessageEndpoints.scan_number()) is None:
             self.scan_number = 1
         if self.connector.get(MessageEndpoints.dataset_number()) is None:
@@ -77,44 +79,22 @@ class ScanServer(BECService):
     @property
     def scan_number(self) -> int:
         """get the current scan number"""
-        msg = self.connector.get(MessageEndpoints.scan_number())
-        if msg is None:
-            logger.warning("Failed to retrieve scan number from redis.")
-            return -1
-        if not isinstance(msg, messages.VariableMessage):
-            # This is a temporary fix for the scan number being stored as a string
-            # in the redis database. This will be removed in the future.
-            num = int(msg)
-            self.scan_number = num
-            return num
-        return int(msg.value)
+        return self.scan_number_container.scan_number
 
     @scan_number.setter
     def scan_number(self, val: int):
         """set the current scan number"""
-        msg = messages.VariableMessage(value=val)
-        self.connector.set(MessageEndpoints.scan_number(), msg)
+        self.scan_number_container.scan_number = val
 
     @property
     def dataset_number(self) -> int:
         """get the current dataset number"""
-        msg = self.connector.get(MessageEndpoints.dataset_number())
-        if msg is None:
-            logger.warning("Failed to retrieve dataset number from redis.")
-            return -1
-        if not isinstance(msg, messages.VariableMessage):
-            # This is a temporary fix for the dataset number being stored as a string
-            # in the redis database. This will be removed in the future.
-            num = int(msg)
-            self.dataset_number = num
-            return num
-        return int(msg.value)
+        return self.scan_number_container.dataset_number
 
     @dataset_number.setter
     def dataset_number(self, val: int):
         """set the current dataset number"""
-        msg = messages.VariableMessage(value=val)
-        self.connector.set(MessageEndpoints.dataset_number(), msg)
+        self.scan_number_container.dataset_number = val
 
     def shutdown(self) -> None:
         """shutdown the scan server"""

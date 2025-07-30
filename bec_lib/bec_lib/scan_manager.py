@@ -17,6 +17,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.queue_items import QueueStorage
 from bec_lib.request_items import RequestStorage
 from bec_lib.scan_items import ScanStorage
+from bec_lib.scan_number_container import ScanNumberContainer
 
 logger = bec_logger.logger
 
@@ -38,6 +39,7 @@ class ScanManager:
         self.queue_storage = QueueStorage(scan_manager=self)
         self.request_storage = RequestStorage(scan_manager=self)
         self.scan_storage = ScanStorage(scan_manager=self)
+        self._scan_number_container = ScanNumberContainer(connector)
 
         self.connector.register(
             topics=MessageEndpoints.scan_queue_status(), cb=self._scan_queue_status_callback
@@ -217,40 +219,24 @@ class ScanManager:
     @property
     def next_scan_number(self):
         """get the next scan number from redis"""
-        msg = self.connector.get(MessageEndpoints.scan_number())
-        if msg is None:
-            logger.warning("Failed to retrieve scan number from redis.")
-            return -1
-        if not isinstance(msg, messages.VariableMessage):
-            # this is a temporary fix for providing backwards compatibility
-            return int(msg)
-        return int(msg.value)
+        return self._scan_number_container.scan_number
 
     @next_scan_number.setter
     @typechecked
     def next_scan_number(self, val: int):
         """set the next scan number in redis"""
-        msg = messages.VariableMessage(value=val)
-        return self.connector.set(MessageEndpoints.scan_number(), msg)
+        self._scan_number_container.scan_number = val
 
     @property
     def next_dataset_number(self):
         """get the next dataset number from redis"""
-        msg = self.connector.get(MessageEndpoints.dataset_number())
-        if msg is None:
-            logger.warning("Failed to retrieve dataset number from redis.")
-            return -1
-        if not isinstance(msg, messages.VariableMessage):
-            # this is a temporary fix for providing backwards compatibility
-            return int(msg)
-        return int(msg.value)
+        return self._scan_number_container.dataset_number
 
     @next_dataset_number.setter
     @typechecked
     def next_dataset_number(self, val: int):
         """set the next dataset number in redis"""
-        msg = messages.VariableMessage(value=val)
-        return self.connector.set(MessageEndpoints.dataset_number(), msg)
+        self._scan_number_container.dataset_number = val
 
     def _scan_queue_status_callback(self, msg, **_kwargs) -> None:
         queue_status = msg.value
