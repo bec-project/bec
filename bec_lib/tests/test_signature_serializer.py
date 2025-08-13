@@ -1,6 +1,5 @@
 import inspect
 from typing import Literal, Union
-from unittest import mock
 
 import numpy as np
 import pytest
@@ -30,9 +29,28 @@ def test_signature_serializer():
     assert sig == inspect.signature(test_func)
 
 
+def test_signature_serializer_merged_literals():
+    def test_func(a: Literal[1, 2, 3] | None = None):
+        pass
+
+    params = signature_to_dict(test_func)
+    assert params == [
+        {
+            "name": "a",
+            "kind": "POSITIONAL_OR_KEYWORD",
+            "default": None,
+            "annotation": {"Literal": (1, 2, 3, None)},
+        }
+    ]
+
+
 def test_signature_serializer_with_literals():
     def test_func(
-        a, b: Literal[1, 2, 3] = 1, c: None | np.ndarray = None, d: None | np.ndarray | float = None
+        a,
+        b: Literal["test", None],
+        c: Literal[1, 2, 3] = 1,
+        d: None | np.ndarray = None,
+        e: None | np.ndarray | float = None,
     ):
         pass
 
@@ -42,17 +60,23 @@ def test_signature_serializer_with_literals():
         {
             "name": "b",
             "kind": "POSITIONAL_OR_KEYWORD",
+            "default": "_empty",
+            "annotation": {"Literal": ("test", None)},
+        },
+        {
+            "name": "c",
+            "kind": "POSITIONAL_OR_KEYWORD",
             "default": 1,
             "annotation": {"Literal": (1, 2, 3)},
         },
         {
-            "name": "c",
+            "name": "d",
             "kind": "POSITIONAL_OR_KEYWORD",
             "default": None,
             "annotation": "NoneType | ndarray",
         },
         {
-            "name": "d",
+            "name": "e",
             "kind": "POSITIONAL_OR_KEYWORD",
             "default": None,
             "annotation": "NoneType | ndarray | float",

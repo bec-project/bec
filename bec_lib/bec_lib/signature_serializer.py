@@ -4,19 +4,51 @@ This module contains functions to serialize and deserialize function signatures.
 
 from __future__ import annotations
 
-import ast
 import builtins
 import inspect
-import operator
-import sys
 import types
 from collections.abc import Callable
-from typing import Any, Literal, Union
+from typing import Any, List, Literal, Union
 
 import numpy as np
 
 from bec_lib.device import DeviceBase
 from bec_lib.scan_items import ScanItem
+
+
+def _merge_union_types(serialized_vals: List[Any]) -> Any:
+    """
+    Merge union types with Literal types.
+
+    If any of the serialized values is a Literal dict, merge all other types into it.
+    Otherwise, return a string representation of the union.
+
+    Args:
+        serialized_vals (List[Any]): List of serialized types
+
+    Returns:
+        Any: Merged representation of the union
+    """
+    literal_dict = None
+    for x in serialized_vals:
+        if isinstance(x, dict) and "Literal" in x:
+            literal_dict = x
+            break
+    if literal_dict is None:
+        return " | ".join(serialized_vals)
+
+    # Add non-dictionary values directly
+    non_dict_values = []
+    for x in serialized_vals:
+        if not isinstance(x, dict):
+            # Convert 'NoneType' to None for literals
+            if x == "NoneType":
+                non_dict_values.append(None)
+            else:
+                non_dict_values.append(x)
+    if non_dict_values:
+        literal_dict["Literal"] = literal_dict["Literal"] + tuple(non_dict_values)
+    return literal_dict
 
 
 def serialize_dtype(dtype: type) -> Any:
@@ -32,28 +64,23 @@ def serialize_dtype(dtype: type) -> Any:
     if hasattr(dtype, "__name__"):
         name = dtype.__name__
         # changed in python 3.10. Refactor this when we upgrade
-        if name not in ["Literal", "Union"]:
+        if name not in ["Literal", "Union", "Optional"]:
             return name
     if hasattr(dtype, "__module__"):
         if dtype.__module__ == "typing":
             if dtype.__class__.__name__ == "_UnionGenericAlias":
-                return " | ".join([serialize_dtype(x) for x in dtype.__args__])
+                serialized_vals = [serialize_dtype(x) for x in dtype.__args__]
+                return _merge_union_types(serialized_vals)
             if dtype.__class__.__name__ == "_LiteralGenericAlias":
                 return {"Literal": dtype.__args__}
         elif dtype.__module__ == "types":
             if dtype.__class__ == types.UnionType:
-                return " | ".join([serialize_dtype(x) for x in dtype.__args__])
+                serialized_vals = [serialize_dtype(x) for x in dtype.__args__]
+                return _merge_union_types(serialized_vals)
     if isinstance(dtype, str):
-        if sys.version_info[:3] >= (3, 10):
-            return dtype
-        # remove this when we upgrade to python 3.10
-        ####
-        if dtype.startswith("typing.Literal["):
-            return {"Literal": ast.literal_eval(dtype[15:-1])}
-        if dtype.startswith("Literal["):
-            return {"Literal": ast.literal_eval(dtype[8:-1])}
+        if dtype.startswith("typing.Literal[") or dtype.startswith("Literal["):
+            return serialize_dtype(eval(dtype))
         return dtype
-        ####
     raise ValueError(f"Unknown dtype {dtype}")
 
 
@@ -73,7 +100,6 @@ def deserialize_dtype(dtype: Any) -> type:
     if isinstance(dtype, dict):
         if "Literal" in dtype:
             # remove this when we upgrade to python 3.11
-
             #### remove this section
             literal = Literal[str(dtype)]
             literal.__args__ = dtype["Literal"]
