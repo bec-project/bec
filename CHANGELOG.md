@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.55.2 (2025-08-18)
+
+### Bug Fixes
+
+- **serializer**: Fix signature serialization for literals
+  ([`825399a`](https://github.com/bec-project/bec/commit/825399a3ea1aed1457839de6f8dc0c8f26965671))
+
+
 ## v3.55.1 (2025-07-30)
 
 ### Bug Fixes
