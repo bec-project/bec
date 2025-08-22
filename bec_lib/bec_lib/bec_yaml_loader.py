@@ -25,7 +25,7 @@ def bec_loader():
     return loader
 
 
-def yaml_load(stream: io.TextIOWrapper | str) -> dict:
+def yaml_load(stream: io.TextIOWrapper | str, process_includes: bool = True) -> dict:
     """
     Load a yaml file with the ability to include other yaml files.
 
@@ -38,21 +38,35 @@ def yaml_load(stream: io.TextIOWrapper | str) -> dict:
 
     if isinstance(stream, str):
         with open(stream, "r", encoding="utf-8") as file_in:
-            return _parse_data_stream(file_in)
+            return _parse_data_stream(file_in, process_includes)
     else:
-        return _parse_data_stream(stream)
+        return _parse_data_stream(stream, process_includes)
 
 
-def _parse_data_stream(stream: io.TextIOWrapper) -> dict:
+def _strip_includes(d: dict):
+    for k, v in dict(d).items():
+        if "__include__" in v:
+            del d[k]
+        elif isinstance(v, list):
+            if len(v) == 1:
+                del d[k]
+            else:
+                d[k] = list(filter(lambda item: "__include__" not in item, v))
+
+
+def _parse_data_stream(stream: io.TextIOWrapper, process_includes: bool = True) -> dict:
     out = yaml.load(stream, Loader=bec_loader())
     included = []
-    for k, v in out.items():
-        if "__include__" in v:
-            included.append((k, v))
-        elif isinstance(v, list):
-            for item in v:
-                if "__include__" in item:
-                    included.append((k, item))
+    if not process_includes:
+        _strip_includes(out)
+    else:
+        for k, v in out.items():
+            if "__include__" in v:
+                included.append((k, v))
+            elif isinstance(v, list):
+                for item in v:
+                    if "__include__" in item:
+                        included.append((k, item))
     for k, v in included:
         if k in out:
             out.pop(k)
