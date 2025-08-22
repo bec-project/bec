@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.56.0 (2025-08-22)
+
+### Bug Fixes
+
+- **ipython**: Replace deprecated gui.start with gui.show
+  ([`a648494`](https://github.com/bec-project/bec/commit/a648494b0f94e042306482d0c67e13949475a631))
+
+### Features
+
+- **service config**: Add support for deployment configs in parent directory
+  ([`c8a873b`](https://github.com/bec-project/bec/commit/c8a873b6a7e698921527a7c19b009eb3e09356c3))
+
+
 ## v3.55.2 (2025-08-18)
 
 ### Bug Fixes
