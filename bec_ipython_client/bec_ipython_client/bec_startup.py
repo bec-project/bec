@@ -37,7 +37,7 @@ else:
         if _main_dict["args"].gui_id:
             gui.connect_to_gui_server(_main_dict["args"].gui_id)
         if not _main_dict["args"].nogui:
-            gui.start()
+            gui.show()
 
     _available_plugins = plugin_helper.get_ipython_client_startup_plugins(state="post")
     if _available_plugins:
