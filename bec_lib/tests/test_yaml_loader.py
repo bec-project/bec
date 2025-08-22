@@ -109,3 +109,26 @@ def test_load_yaml_multi_include(test_file1, test_file2, test_file3):
     assert "samy" in out
     assert "eiger" in out
     assert len(out) == 3
+
+
+def test_load_yaml_skip_includes(test_file1, test_file2, test_file3):
+    # sastt:
+    #   - !include /Users/wakonig_k/software/work/csaxs-bec/csaxs_bec/device_configs/bec_device_config_sastt.yaml
+    include_str = "sastt:\n  - !include ./test_file2.yaml\n  - !include ./test_file3.yaml"
+    output_file_1 = test_file1 + "\n" + include_str
+    output_file_2 = test_file2
+    output_file_3 = test_file3
+    with open("test_file_1.yaml", "w", encoding="utf-8") as file:
+        file.write(output_file_1)
+    with open("test_file2.yaml", "w", encoding="utf-8") as file:
+        file.write(output_file_2)
+    with open("test_file3.yaml", "w", encoding="utf-8") as file:
+        file.write(output_file_3)
+    try:
+        out = yaml_load("test_file_1.yaml", process_includes=False)
+    finally:
+        _remove_files(["test_file_1.yaml", "test_file2.yaml", "test_file3.yaml"])
+
+    assert len(out) == 2
+    assert "samx" not in out
+    assert "__include__" not in out
