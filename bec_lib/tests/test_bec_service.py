@@ -204,6 +204,31 @@ def test_bec_service_loads_deployment_config(tmpdir):
     assert config.redis == "localhost:1234"
 
 
+def test_bec_service_loads_parent_deployment_config(tmpdir):
+    """
+    Test to ensure that the check for deployment configs also considers the parent directory
+    """
+    # create dir tmp/subdir
+    subdir = str(tmpdir.join("subdir"))
+    os.makedirs(subdir)
+
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", subdir):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "file_writer": {"base_path": subdir, "plugin": "custom_plugin"},
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        config = ServiceConfig(config_name="test")
+
+    assert config.model.file_writer.base_path == subdir
+    assert config.model.file_writer.plugin == "custom_plugin"
+    assert config.redis == "localhost:1234"
+
+
 def test_bec_service_show_global_vars(capsys):
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
     with bec_service(config=config, unique_service=True) as service:
