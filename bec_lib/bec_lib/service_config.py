@@ -158,10 +158,18 @@ class ServiceConfig:
             return config
 
         if self.config_name:
-            deployment_config_path = os.path.join(
-                DEFAULT_BASE_PATH, f"deployment_configs/{self.config_name}.yaml"
+            path_candidates = [
+                os.path.join(DEFAULT_BASE_PATH, "deployment_configs", f"{self.config_name}.yaml"),
+                os.path.join(
+                    os.path.dirname(DEFAULT_BASE_PATH),
+                    "deployment_configs",
+                    f"{self.config_name}.yaml",
+                ),
+            ]
+            deployment_config_path = next(
+                (path for path in path_candidates if os.path.exists(path)), None
             )
-            if os.path.exists(deployment_config_path):
+            if deployment_config_path is not None:
                 with open(deployment_config_path, "r", encoding="utf-8") as stream:
                     config = yaml.safe_load(stream)
                     logger.info(
