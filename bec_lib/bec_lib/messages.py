@@ -1,10 +1,10 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
-import enum
 import time
 import warnings
 from copy import deepcopy
+from enum import Enum, auto
 from typing import Any, ClassVar, Literal
 
 import numpy as np
@@ -13,7 +13,14 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
 
-class BECStatus(enum.Enum):
+class ProcedureWorkerStatus(Enum):
+    RUNNING = auto()
+    IDLE = auto()
+    FINISHED = auto()
+    DEAD = auto()  # worker lost communication with the container
+
+
+class BECStatus(Enum):
     """BEC status enum"""
 
     RUNNING = 2
@@ -1115,6 +1122,20 @@ class ProcedureExecutionMessage(BECMessage):
     identifier: str
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
+
+
+class ProcedureWorkerStatusMessage(BECMessage):
+    """Message type for sending procedure worker status updates
+
+    Args:
+        worker_queue (str): Worker queue ID
+        status (str): Worker status
+
+    """
+
+    msg_type: ClassVar[str] = "procedure_worker_status_message"
+    worker_queue: str
+    status: ProcedureWorkerStatus
 
 
 class LoginInfoMessage(BECMessage):
