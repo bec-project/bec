@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.57.0 (2025-08-25)
+
+### Features
+
+- Add option to skip includes in yaml
+  ([`cac143c`](https://github.com/bec-project/bec/commit/cac143c2b6286238c191328572395c33e3425403))
+
+
 ## v3.56.0 (2025-08-22)
 
 ### Bug Fixes
