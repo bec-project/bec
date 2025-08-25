@@ -29,6 +29,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.plugin_helper import _get_available_plugins
 from bec_lib.scan_history import ScanHistory
+from bec_lib.script_executor import ScriptExecutor
 from bec_lib.service_config import ServiceConfig
 from bec_lib.user_macros import UserMacros
 from bec_lib.utils.import_utils import lazy_import_from
@@ -392,3 +393,7 @@ class BECClient(BECService):
         self._load_scans()
         self.device_manager._load_session()
         print("Server restarted successfully.")
+
+    def _run_script(self, script_id: str):
+        executor = ScriptExecutor(self.connector)
+        executor(script_id)

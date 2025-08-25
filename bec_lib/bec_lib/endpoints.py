@@ -1587,3 +1587,33 @@ class MessageEndpoints:
             message_type=messages.AvailableResourceMessage,
             message_op=MessageOp.KEY_VALUE,
         )
+
+    @staticmethod
+    def script_execution_info(script_id: str):
+        """
+        Endpoint for script execution info. This endpoint is used to publish the script execution
+        info using a messages.ScriptExecutionInfoMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for script execution info.
+        """
+        endpoint = f"{EndpointType.INFO.value}/scripts/execution_info/{script_id}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ScriptExecutionInfoMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
+    def script_content(script_id: str):
+        """
+        Endpoint for script content. This endpoint is used to publish the script content
+        using a messages.VariableMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for script content.
+        """
+        endpoint = f"{EndpointType.INFO.value}/scripts/content/{script_id}"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
+        )
