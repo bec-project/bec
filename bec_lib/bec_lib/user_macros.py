@@ -37,6 +37,7 @@ class UserMacros:
     def __init__(self, client: BECClient) -> None:
         self._macros = {}
         self._client = client
+        self._macro_path = client._service_config.model.user_macros.base_path
 
     def load_all_user_macros(self) -> None:
         try:
@@ -61,6 +62,10 @@ class UserMacros:
         user_macro_dir = os.path.join(os.path.expanduser("~"), "bec", "macros")
         if os.path.exists(user_macro_dir):
             macro_files.extend(glob.glob(os.path.abspath(os.path.join(user_macro_dir, "*.py"))))
+
+        config_macro_dir = os.path.expanduser(self._macro_path)
+        if os.path.exists(config_macro_dir):
+            macro_files.extend(glob.glob(os.path.abspath(os.path.join(config_macro_dir, "*.py"))))
 
         # load macros from the plugins
         plugins = importlib.metadata.entry_points(group="bec")

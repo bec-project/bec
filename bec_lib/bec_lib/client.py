@@ -148,7 +148,6 @@ class BECClient(BECService):
         self._initialized = True
         self._username = ""
         self._system_user = ""
-        self.macros = UserMacros(self)
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
@@ -196,6 +195,7 @@ class BECClient(BECService):
                 prompt_for_acl=prompt_for_acl,
             )
             builtins.bec = self._parent
+            self.macros = UserMacros(self)
             self._start_services()
             default_namespace = {"dev": self.device_manager.devices, "scans": self.scans_namespace}
             self.callbacks.run(
