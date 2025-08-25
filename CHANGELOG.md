@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.58.0 (2025-08-25)
+
+### Bug Fixes
+
+- **macros**: Add support for loading macros based on the service config
+  ([`4fbba9e`](https://github.com/bec-project/bec/commit/4fbba9e708a514e365e597822f5a0fcd04878910))
+
+### Features
+
+- **user macros**: Ensure macros do not execute code upon loading
+  ([`6d282a9`](https://github.com/bec-project/bec/commit/6d282a9aa9c45e9750f0676e261c61beb8c21563))
+
+### Refactoring
+
+- Rename user scripts to user macros
+  ([`de4b941`](https://github.com/bec-project/bec/commit/de4b941340592f11af61cd25ee7aac60e0871abb))
+
+
 ## v3.57.0 (2025-08-25)
 
 ### Features
