@@ -49,16 +49,14 @@ def test_scan_manager_next_scan_number_failed(scan_manager):
     assert scan_manager.next_scan_number == -1
 
 
-def test_scan_manager_next_scan_number_with_int(scan_manager):
-    scan_manager.connector.get.return_value = 3
-    assert scan_manager.next_scan_number == 3
-
-
 def test_scan_manager_next_scan_number_setter(scan_manager):
-    scan_manager.next_scan_number = 3
-    scan_manager.connector.set.assert_called_once_with(
-        MessageEndpoints.scan_number(), messages.VariableMessage(value=3)
-    )
+    with mock.patch.object(
+        scan_manager.connector, "get", return_value=messages.VariableMessage(value={"": 2})
+    ):
+        scan_manager.next_scan_number = 3
+        scan_manager.connector.set.assert_called_once_with(
+            MessageEndpoints.scan_number(), messages.VariableMessage(value={"": 3})
+        )
 
 
 def test_scan_manager_next_dataset_number(scan_manager):
@@ -71,16 +69,14 @@ def test_scan_manager_next_dataset_number_failed(scan_manager):
     assert scan_manager.next_dataset_number == -1
 
 
-def test_scan_manager_next_dataset_number_with_int(scan_manager):
-    scan_manager.connector.get.return_value = 3
-    assert scan_manager.next_dataset_number == 3
-
-
 def test_scan_manager_next_dataset_number_setter(scan_manager):
-    scan_manager.next_dataset_number = 3
-    scan_manager.connector.set.assert_called_once_with(
-        MessageEndpoints.dataset_number(), messages.VariableMessage(value=3)
-    )
+    with mock.patch.object(
+        scan_manager.connector, "get", return_value=messages.VariableMessage(value={"": 2})
+    ):
+        scan_manager.next_dataset_number = 3
+        scan_manager.connector.set.assert_called_once_with(
+            MessageEndpoints.dataset_number(), messages.VariableMessage(value={"": 3})
+        )
 
 
 def test_scan_manager_request_scan_abortion(scan_manager):
