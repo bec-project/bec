@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.60.0 (2025-08-26)
+
+### Features
+
+- **async writer**: Add support for async signals
+  ([`fc98085`](https://github.com/bec-project/bec/commit/fc980850e2ec2de9d98767cbb8a0a30c1d193bf6))
+
+
 ## v3.59.0 (2025-08-26)
 
 ### Features
