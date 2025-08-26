@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.59.0 (2025-08-26)
+
+### Features
+
+- **scan number**: Sync the scan number and dataset number with the account name
+  ([`7e79426`](https://github.com/bec-project/bec/commit/7e794261bd25499653798d6269ec15a9779f4324))
+
+
 ## v3.58.0 (2025-08-25)
 
 ### Bug Fixes
