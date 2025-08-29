@@ -1,11 +1,16 @@
 import json
 from copy import copy
-from typing import Literal
 
 import pytest
 from pydantic import ValidationError
 
-from bec_lib.atlas_models import DeviceHashModel, DictHashInclusion, HashableDevice, HashInclusion
+from bec_lib.atlas_models import (
+    DeviceHashModel,
+    DictHashInclusion,
+    HashableDevice,
+    HashableDeviceSet,
+    HashInclusion,
+)
 from bec_lib.utils.json import ExtendedEncoder
 
 TEST_DEVICE_DICT = {
@@ -316,3 +321,93 @@ def test_is_variant(hash_model: DeviceHashModel, is_equal: bool, is_variant: boo
     )
     assert (device_1 == device_2) is is_equal
     assert device_1.is_variant(device_2) is is_variant
+
+
+@pytest.mark.parametrize(
+    "kwargs_1, kwargs_2, kwargs_3, kwargs_4, n",
+    [
+        ({}, {}, {}, {}, 1),
+        ({}, {}, {}, {"deviceConfig": {"a": 1}}, 1),
+        ({}, {}, {}, {"name": "test_device_2"}, 2),
+        ({}, {}, {"name": "test_device_2"}, {"deviceClass": "OtherDeviceClass"}, 3),
+    ],
+)
+def test_hashable_device_set_merges_equal(kwargs_1, kwargs_2, kwargs_3, kwargs_4, n):
+    item_1 = HashableDevice(**_test_device_dict(**kwargs_1))
+    item_2 = HashableDevice(**_test_device_dict(**kwargs_2))
+    item_3 = HashableDevice(**_test_device_dict(**kwargs_3))
+    item_4 = HashableDevice(**_test_device_dict(**kwargs_4))
+
+    test_set = HashableDeviceSet((item_1, item_2, item_3, item_4))
+    assert len(test_set) == n
+
+
+def test_hashable_device_set_or_adds_sources():
+    item_1 = HashableDevice(**_test_device_dict())
+    item_1._source_files = {"a", "b"}
+    item_2 = HashableDevice(**_test_device_dict())
+    item_2._source_files = {"c", "d"}
+
+    set_1 = HashableDeviceSet((item_1,))
+    set_2 = HashableDeviceSet((item_2,))
+
+    combined = set_1 | set_2
+    assert len(combined) == 1
+    assert combined.pop()._source_files == {"a", "b", "c", "d"}
+
+
+def test_hashable_device_set_or_adds_tags():
+    hash_model = DeviceHashModel(
+        deviceConfig=DictHashInclusion(field_inclusion=HashInclusion.INCLUDE)
+    )
+    item_1 = HashableDevice(
+        **_test_device_dict(deviceTags={"tag1"}, deviceConfig={"param": "value"}),
+        hash_model=hash_model,
+    )
+    item_1._source_files = {"a", "b"}
+    item_2 = HashableDevice(
+        **_test_device_dict(deviceTags={"tag2"}, deviceConfig={"param": "value"}),
+        hash_model=hash_model,
+    )
+    item_2._source_files = {"c", "d"}
+    item_3 = HashableDevice(
+        **_test_device_dict(deviceTags={"tag3"}, deviceConfig={"param": "other_value"}),
+        hash_model=hash_model,
+    )
+    item_3._source_files = {"q"}
+
+    set_1 = HashableDeviceSet((item_1,))
+    set_2 = HashableDeviceSet((item_2,))
+    set_3 = HashableDeviceSet((item_3,))
+
+    combined = sorted(set_1 | set_2 | set_3, key=lambda hd: hd.deviceConfig["param"])
+    assert len(combined) == 2
+    assert combined[0]._source_files == {"q"}
+    assert combined[0].deviceTags == {"tag3"}
+    assert combined[1]._source_files == {"a", "b", "c", "d"}
+    assert combined[1].deviceTags == {"tag1", "tag2"}
+
+
+def test_hashable_device_set_or_adds_variants():
+    hash_model = DeviceHashModel()
+    item_1 = HashableDevice(
+        **_test_device_dict(deviceTags={"tag1"}, deviceConfig={"param": "value"}),
+        hash_model=hash_model,
+    )
+    item_2 = HashableDevice(
+        **_test_device_dict(deviceTags={"tag3"}, deviceConfig={"param": "other_value"}),
+        hash_model=hash_model,
+    )
+
+    assert item_1.is_variant(item_2)
+
+    set_1 = HashableDeviceSet((item_1,))
+    set_2 = HashableDeviceSet((item_2,))
+
+    combined = set_1 | set_2
+    assert len(combined) == 1
+    combined_device: HashableDevice = combined.pop()
+    assert combined_device.variants != set()
+    assert HashableDevice.model_validate(combined_device.variants.pop())._variant_info() == {
+        "deviceConfig": {"param": "other_value"}
+    }
