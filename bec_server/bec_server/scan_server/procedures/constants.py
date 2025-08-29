@@ -5,6 +5,8 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import ParamSpec, Protocol, TypedDict, runtime_checkable
 
+import bec_lib
+
 
 class ContainerWorkerEnv(TypedDict):
     redis_server: str
@@ -47,7 +49,7 @@ class _WORKER:
 class _CONTAINER:
     PODMAN_URI = "unix:///run/user/1000/podman/podman.sock"
     IMAGE_NAME = "bec_procedure_worker"
-    DEPLOYMENT_PATH = Path(os.getcwd())  # FIXME make this more robust
+    DEPLOYMENT_PATH = Path(os.path.dirname(bec_lib.__file__)) / "../../"
     CONTAINERFILE_LOCATION = (  # Directory where `Containerfile` lives
         DEPLOYMENT_PATH / "bec_server/bec_server/scan_server/procedures/"
     )
