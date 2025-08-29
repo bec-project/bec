@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from textwrap import dedent
-from typing import Literal, Optional, Type, TypeVar
+from typing import AbstractSet, Literal, Optional, Type, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, create_model, model_validator
 from pydantic_core import PydanticUndefined
@@ -210,16 +210,37 @@ class HashableDevice(Device):
         return True
 
     def add_sources(self, other: HashableDevice):
+        """Update the set of source files from another device"""
         self._source_files.update(other._source_files)
 
     def add_tags(self, other: HashableDevice):
+        """Update the set of tags from another device"""
         self.deviceTags.update(other.deviceTags)
 
     def add_names(self, other: HashableDevice):
+        """Update the set of names from another device"""
         self.names.update(other.names)
 
-    def add_variants(self, other: HashableDevice):
-        self.variants.update(other.variants)
+    def add_variant(self, other: HashableDevice):
+        """Add another device as a variant of this one."""
+        self.variants.add(other.as_normal_device())
+
+
+class HashableDeviceSet(set):
+    def __or__(self, value: AbstractSet[HashableDevice]) -> HashableDeviceSet:
+        for item in self:
+            if item in value:
+                for other_item in value:
+                    if other_item == item:
+                        item.add_sources(other_item)
+                        item.add_tags(other_item)
+                        item.add_names(other_item)
+                        if other_item.is_variant(item):
+                            item.add_variant(other_item)
+        for other_item in value:
+            if other_item not in self:
+                self.add(other_item)
+        return self
 
 
 DevicePartial = make_all_fields_optional(Device, "DevicePartial")
