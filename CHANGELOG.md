@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.61.0 (2025-09-01)
+
+### Features
+
+- **scripts**: Add script executor
+  ([`6055ca6`](https://github.com/bec-project/bec/commit/6055ca6ddd1a112892d34cba84987764714e6c1a))
+
+
 ## v3.60.0 (2025-08-26)
 
 ### Features
