@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 import uuid
 from typing import TYPE_CHECKING, Literal
 
@@ -25,7 +26,9 @@ def upload_script(connector: RedisConnector, script_content: str) -> str:
 
     script_id = str(uuid.uuid4())
     connector.set(
-        MessageEndpoints.script_content(script_id), messages.VariableMessage(value=script_content)
+        MessageEndpoints.script_content(script_id),
+        messages.VariableMessage(value=script_content),
+        expire=86400,
     )
     return script_id
 
@@ -49,10 +52,14 @@ class ScriptExecutor:
         return msg.value if msg else None
 
     def _send_status(
-        self, script_id: str, status: Literal["running", "completed", "failed"], current_lines=None
+        self,
+        script_id: str,
+        status: Literal["running", "completed", "failed", "aborted"],
+        current_lines=None,
+        tb=None,
     ):
         msg = messages.ScriptExecutionInfoMessage(
-            script_id=script_id, status=status, current_lines=current_lines
+            script_id=script_id, status=status, current_lines=current_lines, traceback=tb
         )
         self.connector.send(MessageEndpoints.script_execution_info(script_id), msg)
 
@@ -77,8 +84,26 @@ class ScriptExecutor:
             compiled_code = compile(script_text, f"<script {script_id}>", "exec")
             exec(compiled_code)
         except Exception as e:
-            self._send_status(script_id, "failed")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            tb_frames = traceback.extract_tb(exc_tb)
+
+            # Find frame with <script> and remove everything before it
+            script_frame = next(
+                (f for f in tb_frames if f.filename == f"<script {script_id}>"), None
+            )
+            if script_frame:
+                tb_frames = tb_frames[tb_frames.index(script_frame) :]
+
+            # Format the remaining traceback
+            formatted_tb = "".join(traceback.format_list(tb_frames))
+            # Add exception type and message
+            formatted_exc = (
+                formatted_tb + f"{exc_type.__name__ if exc_type else 'Unknown'}: {exc_value}\n"
+            )
+            self._send_status(script_id, "failed", tb=formatted_exc)
             raise e
+        except KeyboardInterrupt:
+            self._send_status(script_id, "aborted")
         else:
             self._send_status(script_id, "completed")
         finally:

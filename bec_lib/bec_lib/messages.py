@@ -1188,11 +1188,13 @@ class ScriptExecutionInfoMessage(BECMessage):
 
     Args:
         script_id (str): Unique identifier for the script
-        status (Literal["running", "completed", "failed"]): Execution status
-        result (Any, optional): Execution result. Defaults to None.
+        status (Literal["running", "completed", "failed", "aborted"]): Execution status
+        current_lines (list[int], optional): Current line numbers being executed. Defaults to None.
+        traceback (str, optional): Traceback information. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "script_execution_message"
     script_id: str
-    status: Literal["running", "completed", "failed"]
+    status: Literal["running", "completed", "failed", "aborted"]
     current_lines: list[int] | None = None
+    traceback: str | None = None
