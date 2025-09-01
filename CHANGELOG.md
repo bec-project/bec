@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.63.0 (2025-09-01)
+
+### Documentation
+
+- **plugin_manager**: Add usage docs
+  ([`1dc1ec9`](https://github.com/bec-project/bec/commit/1dc1ec9e735c3c748c84a325e8d3321830682e20))
+
+### Features
+
+- **script executor**: Improve message interface for aborted scripts
+  ([`8505826`](https://github.com/bec-project/bec/commit/85058265081b7f5313cbbeb89535c92f3445e8f2))
+
+
 ## v3.62.0 (2025-09-01)
 
 ### Bug Fixes
