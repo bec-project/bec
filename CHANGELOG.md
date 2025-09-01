@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v3.62.0 (2025-09-01)
+
+### Bug Fixes
+
+- Adjust deployment dir for container utils
+  ([`ba6db18`](https://github.com/bec-project/bec/commit/ba6db18ce42ab862b3221fbebfa283c907e97399))
+
+- Deprecation warning
+  ([`b8e3e24`](https://github.com/bec-project/bec/commit/b8e3e24eec6b6b1fd3454fa90d88957e54e52abf))
+
+- Remove import risking circularity
+  ([`e7fdf69`](https://github.com/bec-project/bec/commit/e7fdf6924808354d74639d6d7cd64b438da53210))
+
+### Code Style
+
+- Fix typo
+  ([`db75656`](https://github.com/bec-project/bec/commit/db75656248e4ebfdc5a6b4938d9f393a043d04fa))
+
+### Continuous Integration
+
+- Add pod for procedure containers to e2e test setup
+  ([`0d8c202`](https://github.com/bec-project/bec/commit/0d8c202395bca4c7c5804c401f783536a18bc361))
+
+### Features
+
+- Add blocking list pop to RedisConnector
+  ([`aadf6f6`](https://github.com/bec-project/bec/commit/aadf6f6fe0cc8b7509974629a0ab61f7cb3231b9))
+
+- Podman CLI backend
+  ([`43459c7`](https://github.com/bec-project/bec/commit/43459c7d8651460304d5909fae2d0b7f54174c6d))
+
+- Refactor container utils with generic base
+  ([`9d1e601`](https://github.com/bec-project/bec/commit/9d1e601f092cd2b06eb12ce9ce4d875039aac310))
+
+- **procedures**: Add container procedure worker
+  ([`7f4379b`](https://github.com/bec-project/bec/commit/7f4379be1ac1fe0336026ae2986d4b99d3ab41f4))
+
+- Adds utilities to build a requirements container image and a worker container image - Adds a
+  container based worker running the local python/bec environment (read-only mounted!) - Build the
+  worker container from the requirements if necessary
+
+### Testing
+
+- Unit tests for container worker
+  ([`20296e2`](https://github.com/bec-project/bec/commit/20296e2fc3556c40bf91cdd4b6dc55cfe0fc7140))
+
+
 ## v3.61.0 (2025-09-01)
 
 ### Features
