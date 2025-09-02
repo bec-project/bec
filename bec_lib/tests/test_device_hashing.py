@@ -28,6 +28,23 @@ def _test_device_dict(extra={}, **kwargs):
     return new
 
 
+def test_hash_caching():
+
+    model = HashableDevice(**_test_device_dict())
+    assert model._hash_cache is None
+
+    hash_ = hash(model)
+    assert model._hash_cache is not None
+
+    model.deviceClass = "Something Else"
+    assert model._hash_cache is None
+
+    modified_hash = hash(model)
+    assert model._hash_cache is not None
+
+    assert hash_ != modified_hash
+
+
 @pytest.mark.parametrize(
     "init_kwargs, valid",
     [
@@ -167,8 +184,8 @@ def test_roundtrip_normal_device():
 )
 def test_hash_input_generation(hash_model: DeviceHashModel, extra_fields: dict, expected: dict):
     device = HashableDevice(**_test_device_dict(extra_fields), hash_model=hash_model)
-    hash_input = device._hash_input()
-    expected_input = json.dumps(expected, sort_keys=True, cls=ExtendedEncoder)
+    hash_input = device._hash_input(device._hashing_data())
+    expected_input = json.dumps(expected, sort_keys=True, cls=ExtendedEncoder).encode()
     assert hash_input == expected_input
 
 

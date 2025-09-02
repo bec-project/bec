@@ -6,10 +6,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
 from enum import Enum
-from textwrap import dedent
-from typing import AbstractSet, Literal, Optional, Type, TypeVar
+from typing import AbstractSet, Any, Literal, Optional, Type, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, create_model, model_validator
 from pydantic_core import PydanticUndefined
@@ -126,7 +124,14 @@ class Device(_DeviceModelCore):
     name: str
 
 
-class HashableDevice(Device):
+_ModelDumpKeys = list[str]
+_ModelDumpDict = dict[str, Any]
+_HashModelShallowItems = list[tuple[str, HashInclusion | DictHashInclusion]]
+_RawDataCache = tuple[_ModelDumpKeys, _ModelDumpDict, _HashModelShallowItems]
+
+
+class HashableDevice(Device, validate_assignment=True):
+
     hash_model: DeviceHashModel = DeviceHashModel()
 
     names: set[str] = Field(default_factory=set, exclude=True)
@@ -138,32 +143,76 @@ class HashableDevice(Device):
         self.names.add(self.name)
         return self
 
-    def as_normal_device(self):
-        return Device.model_validate(self)
+    #############################################
+    ############### Hashing Logic ###############
+    #############################################
 
-    def _hash_input(self):
-        data = self.model_dump(exclude_defaults=True)
-        hash_keys: dict[str, HashInclusion | DictHashInclusion] = self.hash_model.shallow_dump()
-        for field_name, hash_inclusion in hash_keys.items():
-            if field_name in data:
+    # We can't use lru_cache, cached_property or similar, because they will try to cache `self`
+    # and recurse infinitely. Fortunately it is easy enough to manage. Maybe this can be removed
+    # if we don't allow assignment and store calculated hashes on first init.
+
+    @model_validator(mode="after")
+    def _clear_caches(self):
+        """On assignment to any field, this validator will be called and reset caches."""
+        self._raw_data_cache = None
+        self._hash_input_cache = None
+        self._hash_cache = None
+        return self
+
+    _raw_data_cache: None | _RawDataCache = PrivateAttr(default=None)
+
+    def _hashing_data(self) -> _RawDataCache:
+        """Store and return the raw data used for calculating the device hash."""
+        if self._raw_data_cache is not None:
+            return self._raw_data_cache
+        model_data = self.model_dump(exclude_defaults=True)
+        self._raw_data_cache = (
+            list(model_data.keys()),
+            model_data,
+            list(self.hash_model.shallow_dump().items()),
+        )
+        return self._raw_data_cache
+
+    _hash_input_cache: None | bytes = PrivateAttr(default=None)
+
+    @staticmethod
+    def _mutate_data_dict(
+        data_keys: _ModelDumpKeys, data_dict: _ModelDumpDict, hash_keys: _HashModelShallowItems
+    ):
+        """Delete anything which shouldn't be included in the model dump, based on the hash model"""
+        for field_name, hash_inclusion in hash_keys:
+            if field_name in data_keys:
                 if hash_inclusion in [HashInclusion.EXCLUDE, HashInclusion.VARIANT]:
-                    del data[field_name]
+                    del data_dict[field_name]
                 elif isinstance(hash_inclusion, DictHashInclusion):
                     if hash_inclusion.field_inclusion in [
                         HashInclusion.EXCLUDE,
                         HashInclusion.VARIANT,
                     ]:
-                        del data[field_name]
+                        del data_dict[field_name]
                     elif hash_inclusion.inclusion_keys is not None:
-                        data[field_name] = {
+                        data_dict[field_name] = {
                             k: v
-                            for k, v in data[field_name].items()
+                            for k, v in data_dict[field_name].items()
                             if k in hash_inclusion.inclusion_keys
                         }
-        return json.dumps(data, sort_keys=True, cls=ExtendedEncoder)
+
+    def _hash_input(self, raw_data: _RawDataCache) -> bytes:
+        """Make bytes object to hash by dumping the remaining data to json, deterministically ordered"""
+        if self._hash_input_cache is not None:
+            return self._hash_input_cache
+        data_keys, data_dict, hash_keys = raw_data
+        self._mutate_data_dict(data_keys, data_dict, hash_keys)
+        self._hash_input_cache = json.dumps(data_dict, sort_keys=True, cls=ExtendedEncoder).encode()
+        return self._hash_input_cache
+
+    _hash_cache: None | int = PrivateAttr(default=None)
 
     def __hash__(self) -> int:
-        return int(hashlib.md5(self._hash_input().encode()).hexdigest(), 16)
+        if self._hash_cache is not None:
+            return self._hash_cache
+        self._hash_cache = int(hashlib.md5(self._hash_input(self._hashing_data())).hexdigest(), 16)
+        return self._hash_cache
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, self.__class__):
@@ -171,6 +220,10 @@ class HashableDevice(Device):
         if hash(self) == hash(value):
             return True
         return False
+
+    #############################################
+    ############### Variant Logic ###############
+    #############################################
 
     def _variant_info(self) -> dict:
         """Returns the content of this model instance relevant for device variants"""
@@ -208,6 +261,13 @@ class HashableDevice(Device):
         if self._variant_info() == other._variant_info():
             return False  # devices are completely identical
         return True
+
+    #############################################
+    ################## Utility ##################
+    #############################################
+
+    def as_normal_device(self):
+        return Device.model_validate(self)
 
     def add_sources(self, other: HashableDevice):
         """Update the set of source files from another device"""
