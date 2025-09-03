@@ -111,7 +111,7 @@ class DeviceHashModel(BaseModel, frozen=True):
     softwareTrigger: HashInclusion = HashInclusion.EXCLUDE
     userParameter: DictHashInclusion = DictHashInclusion()
 
-    def shallow_dump(self) -> dict[str, HashInclusion | DictHashInclusion]:
+    def shallow_dump(self) -> dict[str, _InclusionT]:
         return {k: getattr(self, k) for k in self.__class__.model_fields}
 
 
@@ -126,7 +126,8 @@ class Device(_DeviceModelCore):
 
 _ModelDumpKeys = list[str]
 _ModelDumpDict = dict[str, Any]
-_HashModelShallowItems = list[tuple[str, HashInclusion | DictHashInclusion]]
+_InclusionT = HashInclusion | DictHashInclusion
+_HashModelShallowItems = list[tuple[str, _InclusionT]]
 _RawDataCache = tuple[_ModelDumpKeys, _ModelDumpDict, _HashModelShallowItems]
 
 
@@ -181,21 +182,19 @@ class HashableDevice(Device, validate_assignment=True):
     ):
         """Delete anything which shouldn't be included in the model dump, based on the hash model"""
         for field_name, hash_inclusion in hash_keys:
-            if field_name in data_keys:
-                if hash_inclusion in [HashInclusion.EXCLUDE, HashInclusion.VARIANT]:
-                    del data_dict[field_name]
-                elif isinstance(hash_inclusion, DictHashInclusion):
-                    if hash_inclusion.field_inclusion in [
-                        HashInclusion.EXCLUDE,
-                        HashInclusion.VARIANT,
-                    ]:
-                        del data_dict[field_name]
-                    elif hash_inclusion.inclusion_keys is not None:
-                        data_dict[field_name] = {
-                            k: v
-                            for k, v in data_dict[field_name].items()
-                            if k in hash_inclusion.inclusion_keys
-                        }
+            if field_name not in data_keys or hash_inclusion == HashInclusion.INCLUDE:
+                continue
+            if hash_inclusion in (HashInclusion.EXCLUDE, HashInclusion.VARIANT):
+                del data_dict[field_name]
+                continue
+            if hash_inclusion.field_inclusion in (HashInclusion.EXCLUDE, HashInclusion.VARIANT):
+                del data_dict[field_name]
+            elif hash_inclusion.inclusion_keys is not None:
+                data_dict[field_name] = {
+                    k: v
+                    for k, v in data_dict[field_name].items()
+                    if k in hash_inclusion.inclusion_keys
+                }
 
     def _hash_input(self, raw_data: _RawDataCache) -> bytes:
         """Make bytes object to hash by dumping the remaining data to json, deterministically ordered"""
@@ -230,27 +229,29 @@ class HashableDevice(Device, validate_assignment=True):
         data = self.model_dump(exclude=["hash_model"])
         for field_name, hash_inclusion in self.hash_model.shallow_dump().items():
             # Keep everything with HashInclusion.VARIANT but don't delete DictHashInclusion
+            if hash_inclusion == HashInclusion.VARIANT:
+                continue
             if hash_inclusion in (HashInclusion.INCLUDE, HashInclusion.EXCLUDE):
                 del data[field_name]
-            elif isinstance(hash_inclusion, DictHashInclusion):
-                # Get rid of it if we include or exclude the whole field or some combination thereof
-                if hash_inclusion.field_inclusion == HashInclusion.EXCLUDE:
-                    del data[field_name]
-                elif hash_inclusion.field_inclusion == HashInclusion.INCLUDE and (
-                    # Including the whole field:
-                    hash_inclusion.inclusion_keys is None
-                    # Including some and excluding the rest:
-                    or hash_inclusion.remainder_inclusion == HashInclusion.EXCLUDE
-                ):
-                    del data[field_name]
-                # If the remainder policy is set, strip the the keys which are included
-                elif hash_inclusion.remainder_inclusion == HashInclusion.VARIANT:
-                    # inclusion_keys must be specified if remainder_inclusion is not None
-                    data[field_name] = {
-                        k: v
-                        for k, v in data[field_name].items()
-                        if k not in hash_inclusion.inclusion_keys
-                    }
+                continue
+            # Get rid of it if we include or exclude the whole field or some combination thereof
+            if hash_inclusion.field_inclusion == HashInclusion.EXCLUDE:
+                del data[field_name]
+            elif hash_inclusion.field_inclusion == HashInclusion.INCLUDE and (
+                # Including the whole field:
+                hash_inclusion.inclusion_keys is None
+                # Including some and excluding the rest:
+                or hash_inclusion.remainder_inclusion == HashInclusion.EXCLUDE
+            ):
+                del data[field_name]
+            # If the remainder policy is set, strip the the keys which are included
+            elif hash_inclusion.remainder_inclusion == HashInclusion.VARIANT:
+                # inclusion_keys must be specified if remainder_inclusion is not None
+                data[field_name] = {
+                    k: v
+                    for k, v in data[field_name].items()
+                    if k not in hash_inclusion.inclusion_keys
+                }
                 # ignore the case where field_inclusion is VARIANT, keep the whole field
         return data
 
@@ -289,14 +290,15 @@ class HashableDevice(Device, validate_assignment=True):
 class HashableDeviceSet(set):
     def __or__(self, value: AbstractSet[HashableDevice]) -> HashableDeviceSet:
         for item in self:
-            if item in value:
-                for other_item in value:
-                    if other_item == item:
-                        item.add_sources(other_item)
-                        item.add_tags(other_item)
-                        item.add_names(other_item)
-                        if other_item.is_variant(item):
-                            item.add_variant(other_item)
+            if item not in value:
+                continue
+            for other_item in value:
+                if other_item == item:
+                    item.add_sources(other_item)
+                    item.add_tags(other_item)
+                    item.add_names(other_item)
+                    if other_item.is_variant(item):
+                        item.add_variant(other_item)
         for other_item in value:
             if other_item not in self:
                 self.add(other_item)
