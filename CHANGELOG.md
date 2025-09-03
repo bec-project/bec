@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.64.0 (2025-09-03)
+
+### Code Style
+
+- Early returns in hash data algo
+  ([`b5a17f5`](https://github.com/bec-project/bec/commit/b5a17f522584ac4493129a644b820704470fdb71))
+
+### Features
+
+- Add a set subclass to manage HashableDevices
+  ([`242262b`](https://github.com/bec-project/bec/commit/242262bdea319192318aeacc4204d73bc659b0a6))
+
+- Add device config hashing and variant model
+  ([`da85cea`](https://github.com/bec-project/bec/commit/da85ceabf962e7df11e3cacdfbb0d5c0ab43cf5a))
+
+### Performance Improvements
+
+- Cache device hash calculation
+  ([`3e38b27`](https://github.com/bec-project/bec/commit/3e38b2758bc810c8ef95dc46055ee95374e98d30))
+
+
 ## v3.63.0 (2025-09-01)
 
 ### Documentation
