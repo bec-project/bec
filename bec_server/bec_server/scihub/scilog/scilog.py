@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 import requests
@@ -32,7 +31,7 @@ class SciLogConnector:
         self._load_environment()
         self._start_scilog_update()
 
-    def get_token(self) -> str:
+    def get_token(self) -> str | None:
         """get a new scilog token"""
         response = requests.post(
             f"{self.host}/users/login",
@@ -41,7 +40,7 @@ class SciLogConnector:
         )
         if response.ok:
             return response.json()["token"]
-        return None
+        return
 
     def set_bec_token(self, token: str) -> None:
         """set the scilog token in redis"""
@@ -66,18 +65,17 @@ class SciLogConnector:
             self.set_bec_token(token)
 
     def _load_environment(self):
-        env_base = self.scihub.config.config.get("scilog", {}).get("env_file")
-        if not env_base:
-            return
-        env_file = os.path.join(env_base, ".env")
+        env_file = self.scihub.config.config.get("scilog", {}).get("env_file", "")
         config = dotenv_values(env_file)
-        self._update_config(**config)
+        if isinstance(config, dict):
+            self._update_config(**config)
 
+    # pylint: disable=invalid-name
     def _update_config(
         self,
-        SCILOG_DEFAULT_HOST: str = None,
-        SCILOG_USER: str = None,
-        SCILOG_USER_SECRET: str = None,
+        SCILOG_DEFAULT_HOST: str | None = None,
+        SCILOG_USER: str | None = None,
+        SCILOG_USER_SECRET: str | None = None,
         **kwargs,
     ) -> None:
         self.host = SCILOG_DEFAULT_HOST

@@ -66,13 +66,13 @@ class BecWidgetsSettings(BaseModel):
 class AtlasConfig(BaseModel):
     """Atlas configuration model."""
 
-    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "atlas_env"))
+    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, ".atlas.env"))
 
 
 class SciLogConfig(BaseModel):
     """SciLog configuration model."""
 
-    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "scilog_env"))
+    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, ".scilog.env"))
 
 
 class ACLConfig(BaseModel):
