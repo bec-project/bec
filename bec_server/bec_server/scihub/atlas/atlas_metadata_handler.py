@@ -37,7 +37,7 @@ class AtlasMetadataHandler:
     def _handle_scan_status(msg, *, parent, **_kwargs) -> None:
         msg = msg.value
         try:
-            parent.update_scan_status({"data": msg})
+            parent.update_scan_status({"scan_status": msg})
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
