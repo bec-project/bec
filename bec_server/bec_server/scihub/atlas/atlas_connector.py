@@ -172,8 +172,7 @@ class AtlasConnector:
         )
 
     def _load_environment(self):
-        env_base = self.scihub.config.config.get("atlas", {}).get("env_file", "")
-        env_file = os.path.join(env_base, ".env")
+        env_file = self.scihub.config.config.get("atlas", {}).get("env_file", "")
         if not os.path.exists(env_file):
             # check if there is an env file in the parent directory
             current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
