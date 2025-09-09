@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.64.3 (2025-09-09)
+
+### Bug Fixes
+
+- Ensure container image exists before e2e tests
+  ([`503861d`](https://github.com/bec-project/bec/commit/503861d0a03b86a878f9a23415ccd29e29053252))
+
+
 ## v3.64.2 (2025-09-09)
 
 ### Bug Fixes
