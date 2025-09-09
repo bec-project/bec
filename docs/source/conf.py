@@ -39,6 +39,7 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinxcontrib.typer",
+    "sphinxcontrib.autodoc_pydantic",
 ]
 
 myst_enable_extensions = [
@@ -60,15 +61,19 @@ myst_enable_extensions = [
 autosummary_generate = True  # Turn on sphinx.ext.autosummary
 add_module_names = False  # Remove namespaces from class/method signatures
 autodoc_inherit_docstrings = True  # If no docstring, inherit from base class
-autodoc_mock_imports = ["pydantic"]
 set_type_checking_flag = True  # Enable 'expensive' imports for sphinx_autodoc_typehints
 autoclass_content = "both"  # Include both class docstring and __init__
+
+# Formatting for pydantic models
+autodoc_pydantic_model_show_json = True
+autodoc_pydantic_settings_show_json = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 language = "Python"
+
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
