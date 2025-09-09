@@ -8,6 +8,7 @@ from bec_lib.dap_plugin_objects import DAPPluginObject, LmfitService1D
 from bec_lib.dap_plugins import DAPPlugins
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.scan_data_container import ScanDataContainer
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_report import ScanReport
 
@@ -384,18 +385,21 @@ class ScanReportMock(ScanReport):
 @pytest.mark.parametrize(
     "input",
     [
-        "scan_id",
+        "scan_id_1",
         ScanItem(
             scan_manager=mock.MagicMock(),
             queue_id="queue_id",
-            scan_id="scan_id",
+            scan_id="scan_id_1",
             scan_number=1,
             status="closed",
         ),
-        ScanReportMock("scan_id"),
+        ScanReportMock("scan_id_1"),
+        "scan_data_container",
     ],
 )
-def test_dap_plugin_fit_input(dap, input):
+def test_dap_plugin_fit_input(dap, input, file_history_messages, mock_file):
+    if isinstance(input, str) and input == "scan_data_container":
+        input = ScanDataContainer(file_path=mock_file, msg=file_history_messages[0])
     with mock.patch.object(dap.GaussianModel, "_wait_for_dap_response") as mock_wait:
         dap.GaussianModel.fit(input)
         request_id = dap._parent.connector.set_and_publish.call_args[0][1].metadata["RID"]
@@ -405,7 +409,7 @@ def test_dap_plugin_fit_input(dap, input):
                 dap_cls="LmfitService1D",
                 dap_type="on_demand",
                 config={
-                    "args": ["scan_id"],
+                    "args": ["scan_id_1"],
                     "kwargs": {},
                     "class_args": [],
                     "class_kwargs": {"model": "GaussianModel"},
