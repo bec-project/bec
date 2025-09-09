@@ -15,6 +15,7 @@ from typeguard import typechecked
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.lmfit_serializer import serialize_param_object
+from bec_lib.scan_data_container import ScanDataContainer
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_report import ScanReport
 from bec_lib.utils.import_utils import lazy_import
@@ -70,6 +71,8 @@ class DAPPluginObjectBase:
                 converted_args.append(arg.scan_id)
             elif isinstance(arg, ScanReport):
                 converted_args.append(arg.scan.scan_id)
+            elif isinstance(arg, ScanDataContainer):
+                converted_args.append(arg._msg.scan_id)
             else:
                 converted_args.append(arg)
         args = converted_args
@@ -79,6 +82,8 @@ class DAPPluginObjectBase:
                 converted_kwargs[key] = val.scan_id
             elif isinstance(val, ScanReport):
                 converted_kwargs[key] = val.scan.scan_id
+            elif isinstance(val, ScanDataContainer):
+                converted_kwargs[key] = val._msg.scan_id
             elif isinstance(val, lmfit.Parameter):
                 converted_kwargs[key] = serialize_param_object(val)
             else:
