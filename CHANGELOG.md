@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.64.2 (2025-09-09)
+
+### Bug Fixes
+
+- **dap**: Fix support for fitting bec history data
+  ([`85f5d17`](https://github.com/bec-project/bec/commit/85f5d17adeb12cd675fb892985233706d1092e10))
+
+
 ## v3.64.1 (2025-09-09)
 
 ### Bug Fixes
