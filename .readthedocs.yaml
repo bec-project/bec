@@ -23,3 +23,9 @@ sphinx:
 python:
    install:
    - requirements: docs/source/requirements.txt
+   - method: pip
+     path: ./bec_lib
+   - method: pip
+     path: ./bec_ipython_client
+   - method: pip
+     path: ./bec_server

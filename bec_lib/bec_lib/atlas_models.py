@@ -7,30 +7,26 @@ from __future__ import annotations
 import hashlib
 import json
 from enum import Enum
-from typing import AbstractSet, Any, Literal, Optional, Type, TypeVar
+from typing import AbstractSet, Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, create_model, model_validator
 from pydantic_core import PydanticUndefined
 
 from bec_lib.utils.json import ExtendedEncoder
 
-BM = TypeVar("BM", bound=BaseModel)
+_BM = TypeVar("BM", bound=BaseModel)
 
 
-def make_all_fields_optional(model: Type[BM], model_name: str) -> Type[BM]:
+def make_all_fields_optional(model: type[_BM], model_name: str) -> type[_BM]:
     """Convert all fields in a Pydantic model to Optional."""
-
     fields = {}
-
     for name, field in model.model_fields.items():
-        default = field.default if field.default is not PydanticUndefined else None
-        # pylint: disable=protected-access
-        fields_info = field._attributes_set
-        fields_info["annotation"] = Optional[field.annotation]
-        fields_info["default"] = default
-        fields[name] = (Optional[field.annotation], Field(**fields_info))
-
-    return create_model(model_name, **fields, __config__=model.model_config)
+        field_info = field._attributes_set
+        field_info.pop("annotation", None)
+        field_info["default"] = field.default if field.default is not PydanticUndefined else None
+        fields[name] = (field.annotation | None, Field(**field_info))
+    new_model = create_model(model_name, **fields, __config__=model.model_config)
+    return new_model
 
 
 class _DeviceModelCore(BaseModel):
@@ -59,7 +55,7 @@ class DictHashInclusion(BaseModel, frozen=True):
     remainder_inclusion: HashInclusion | None = None
 
     @model_validator(mode="after")
-    def _check_compat(self) -> DictHashInclusion:
+    def check_compatibility(self) -> DictHashInclusion:
         if self.field_inclusion != HashInclusion.INCLUDE and self.inclusion_keys is not None:
             raise ValueError("You may only select specific keys if the field is included.")
         if self.remainder_inclusion == HashInclusion.INCLUDE:

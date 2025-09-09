@@ -5,6 +5,7 @@ recommonmark
 sphinx-toolbox
 pydata-sphinx-theme
 sphinx-copybutton
+autodoc_pydantic
 myst-parser
 sphinx-design
 bec_server
