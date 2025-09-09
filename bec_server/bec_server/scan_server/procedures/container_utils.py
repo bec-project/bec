@@ -155,7 +155,12 @@ class PodmanCliUtils(_PodmanUtilsBase):
         logger.debug(f"Running {args}")
         output = subprocess.run([*args], capture_output=True)
         if output.returncode != 0:
-            raise ProcedureWorkerError(f"Container failed to build with error {output.stderr}")
+            raise ProcedureWorkerError(
+                "Container shell command: \n"
+                f"    {args}"
+                "\n failed with output:"
+                f"{output.stderr}"
+            )
         return output
 
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):

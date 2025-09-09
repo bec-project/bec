@@ -63,5 +63,6 @@ runs:
         source ./bin/install_bec_dev.sh -t
         pip install -e ../ophyd_devices
         podman pod create --net host local_bec
+        python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
         pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/
         
