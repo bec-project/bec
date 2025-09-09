@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.64.4 (2025-09-09)
+
+### Bug Fixes
+
+- **env**: Make env file names consistent
+  ([`2d144fc`](https://github.com/bec-project/bec/commit/2d144fc51a989de54db030981c392a6d9d28bf5d))
+
+
 ## v3.64.3 (2025-09-09)
 
 ### Bug Fixes
