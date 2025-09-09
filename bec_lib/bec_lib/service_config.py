@@ -78,7 +78,7 @@ class SciLogConfig(BaseModel):
 class ACLConfig(BaseModel):
     """ACL configuration model."""
 
-    acl_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, ".bec_acl.env"))
+    env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, ".bec_acl.env"))
     user: str | None = None
 
 

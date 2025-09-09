@@ -14,4 +14,4 @@ widgets_settings:
 scilog:
   env_file: ./
 acl:
-  acl_file: ./.bec_acl.env
+  env_file: ./.bec_acl.env
