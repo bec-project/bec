@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.64.1 (2025-09-09)
+
+### Bug Fixes
+
+- **atlas**: Scope ingestion messages by stream keys
+  ([`fea8c86`](https://github.com/bec-project/bec/commit/fea8c86c96fd464d4449b340740b3f256410def9))
+
+- **scihub**: Unify env var access
+  ([`3619a84`](https://github.com/bec-project/bec/commit/3619a8460df3494ca961464a85b9565ed9f2b4e6))
+
+
 ## v3.64.0 (2025-09-03)
 
 ### Code Style
