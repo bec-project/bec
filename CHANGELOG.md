@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.64.5 (2025-09-10)
+
+### Bug Fixes
+
+- Add autodoc_pydantic to sphinx req and ext
+  ([`8571bf7`](https://github.com/bec-project/bec/commit/8571bf7b6beaefb23932205fc7a59b77c21bba0b))
+
+
 ## v3.64.4 (2025-09-09)
 
 ### Bug Fixes
