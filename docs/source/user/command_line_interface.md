@@ -273,6 +273,9 @@ This also includes live plotting of data.
 
 BEC has various different type of scans, for instance `scans.grid_scan`, `scans.list_scan`, which you can explore in the simulation. 
 
+Default scans will provide a live-table view of the monitored signals in the command-line interface as well as a progress bar. To disable the live-table view, you can pass an additional argument `show_live_table=False` to the scan command.
+To fully disable all live updates, use `hide_report=True`. 
+
 #### Explore docstring documentation 
 What can be very convenient while exploring built-in scans, is using the [Ipython syntax](https://ipython.readthedocs.io/en/stable/interactive/tutorial.html) `?` to print out all sort of useful information about an object, e.g. for `scans.list_scan` 
 
