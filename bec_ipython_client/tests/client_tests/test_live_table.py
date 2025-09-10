@@ -111,7 +111,9 @@ class TestLiveTable:
         data = messages.ScanMessage(
             point_id=0, scan_id="", data={}, metadata={"scan_report_devices": scan_report_devices}
         )
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         devices = live_update.get_devices_from_scan_data(data)
         assert devices[0 : len(scan_report_devices)] == scan_report_devices
 
@@ -123,7 +125,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         with mock.patch.object(client.queue.queue_storage, "find_queue_item_by_requestID"):
             live_update.wait_for_request_acceptance()
 
@@ -138,7 +142,9 @@ class TestLiveTable:
         client = bec_client_mock
         client.start()
         data = messages.ScanMessage(point_id=0, scan_id="", data={}, metadata={})
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         live_update.scan_item = scan_item
         scan_item.num_points = 2
         scan_item.live_data = {0: data}
@@ -163,7 +169,9 @@ class TestLiveTable:
         client = bec_client_mock
         client.start()
         data = messages.ScanMessage(point_id=0, scan_id="", data={}, metadata={})
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         live_update.scan_item = scan_item
         scan_item.num_points = 2
         scan_item.live_data = {0: data}
@@ -193,7 +201,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         live_update.point_data = messages.ScanMessage(
             point_id=0,
             scan_id="",
@@ -212,7 +222,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         live_update.point_data = messages.ScanMessage(
             point_id=0,
             scan_id="",
@@ -231,7 +243,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         client.device_manager.devices["samx"]._info["hints"] = {"fields": ["samx_hint"]}
         client.device_manager.devices["samx"].precision = 3
         live_update.point_data = messages.ScanMessage(
@@ -263,7 +277,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         client.device_manager.devices["samx"]._info["hints"] = {"fields": ["samx_hint"]}
         client.device_manager.devices["samx"].precision = prec
         live_update.point_data = messages.ScanMessage(
@@ -312,7 +328,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         live_update.point_data = messages.ScanMessage(
             point_id=0,
             scan_id="",
@@ -355,7 +373,9 @@ class TestLiveTable:
             "find_queue_item_by_requestID",
             return_value=mock_queue_item,
         ):
-            live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+            live_update = LiveUpdatesTable(
+                client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+            )
             live_update.wait_for_request_acceptance()
             result = StringIO()
             with redirect_stdout(result):
@@ -376,7 +396,9 @@ class TestLiveTable:
         )
         client.queue.request_storage.update_with_request(request_msg)
         client.queue.request_storage.update_with_response(response_msg)
-        live_update = LiveUpdatesTable(client, {"scan_progress": 10}, request_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
         client.device_manager.devices["samx"]._info["hints"] = {"fields": ["samx_hint"]}
         client.device_manager.devices["samx"].precision = prec
         live_update.point_data = messages.ScanMessage(
