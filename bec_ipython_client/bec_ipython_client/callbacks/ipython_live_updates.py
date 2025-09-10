@@ -49,7 +49,7 @@ class IPythonLiveUpdates:
         """
         scan_type = self._active_request.content["scan_type"]
         if scan_type in ["open_scan_def", "close_scan_def"]:
-            self._process_instruction({"scan_progress": 0})
+            self._process_instruction({"scan_progress": {"points": 0, "show_table": True}})
             return
         if scan_type == "close_scan_group":
             return

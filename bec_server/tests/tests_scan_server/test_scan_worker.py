@@ -204,7 +204,7 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
                             assert worker.scan_motors == ["bpm4i"]
                         init_mock.assert_called_once_with(active_rb, instr, corr_num_points)
                         assert active_rb.scan_report_instructions == [
-                            {"scan_progress": corr_num_points}
+                            {"scan_progress": {"points": corr_num_points, "show_table": True}}
                         ]
                         queue_status_mock.assert_called_once()
                         send_mock.assert_called_once_with("open")
@@ -697,7 +697,7 @@ def test_worker_update_instr_with_scan_report_no_update_with_report(msg, scan_wo
     arb = worker.current_instruction_queue_item.active_request_block = mock.MagicMock(
         spec=RequestBlock
     )
-    arb.scan_report_instructions = [{"scan_progress": 10}]
+    arb.scan_report_instructions = [{"scan_progress": {"points": 10, "show_table": True}}]
     with mock.patch.object(worker, "forward_instruction") as forward_mock:
         worker._instruction_step(msg)
         worker.update_instr_with_scan_report(msg)

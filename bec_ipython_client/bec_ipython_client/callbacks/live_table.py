@@ -182,7 +182,9 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 break
             self.check_alarms()
 
-        self._run_update(self.report_instruction[self.REPORT_TYPE])
+        show_table = self.report_instruction[self.REPORT_TYPE].get("show_table", True)
+        self._print_table_data = show_table
+        self._run_update(self.report_instruction[self.REPORT_TYPE]["points"])
 
     def _run_update(self, target_num_points: int):
         """run the update loop with the progress bar

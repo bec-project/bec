@@ -85,7 +85,9 @@ class ScanWorker(threading.Thread):
             if not self.scan_report_instructions or not self.scan_report_instructions[-1].get(
                 "device_progress"
             ):
-                self.scan_report_instructions.append({"scan_progress": num_points})
+                self.scan_report_instructions.append(
+                    {"scan_progress": {"points": num_points, "show_table": True}}
+                )
         self.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
         self._send_scan_status("open")
