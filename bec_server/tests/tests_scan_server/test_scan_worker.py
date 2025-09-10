@@ -191,6 +191,7 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
                     ) as queue_status_mock:
                         active_rb = queue_mock.active_request_block
                         active_rb.scan_report_instructions = []
+                        active_rb.scan.show_live_table = True
                         worker.open_scan(instr)
 
                         if not scan_id:

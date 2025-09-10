@@ -378,6 +378,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         optim_trajectory: Literal["corridor", None] = None,
         monitored: list = None,
         return_to_start: bool = False,
+        show_live_table: bool = True,
         metadata: dict = None,
         **kwargs,
     ):
@@ -399,6 +400,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self.burst_at_each_point = burst_at_each_point
         self.frames_per_trigger = frames_per_trigger
         self.optim_trajectory = optim_trajectory
+        self.show_live_table = show_live_table
         self.burst_index = 0
         self._baseline_status = None
         self.scan_number = None
