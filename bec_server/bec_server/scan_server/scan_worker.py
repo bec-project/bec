@@ -86,7 +86,12 @@ class ScanWorker(threading.Thread):
                 "device_progress"
             ):
                 self.scan_report_instructions.append(
-                    {"scan_progress": {"points": num_points, "show_table": True}}
+                    {
+                        "scan_progress": {
+                            "points": num_points,
+                            "show_table": active_rb.scan.show_live_table,
+                        }
+                    }
                 )
         self.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
