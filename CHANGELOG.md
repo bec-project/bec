@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.65.0 (2025-09-10)
+
+### Documentation
+
+- **user**: Add command for hiding the live table
+  ([`25b58f9`](https://github.com/bec-project/bec/commit/25b58f9ead8652c00b3465218917a6454e045a83))
+
+### Features
+
+- Add parameter to scan progress to hide the live table
+  ([`4ff1aff`](https://github.com/bec-project/bec/commit/4ff1aff1ae8cbb13d1616633b74ec8863f839f07))
+
+- **scans**: Add kwarg to scan base to disable live table
+  ([`f091bb7`](https://github.com/bec-project/bec/commit/f091bb76f188de1e6d8a9ca2b6960df83c3d7b91))
+
+
 ## v3.64.5 (2025-09-10)
 
 ### Bug Fixes
