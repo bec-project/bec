@@ -19,6 +19,11 @@ def test_shell_optimization():
             min_length = len(optim_positions)
 
 
+@pytest.fixture(params=["shell", "corridor", "corridor_density", "nearest"])
+def path_optimizer(request):
+    yield request.param
+
+
 @pytest.mark.parametrize(
     "positions_orig",
     [
@@ -216,11 +221,23 @@ def test_shell_optimization():
         ),
     ],
 )
-def test_corridor_optimization(positions_orig):
+def test_corridor_optimization(positions_orig, path_optimizer):
     optim = PathOptimizerMixin()
-    optim_positions = optim.optimize_corridor(positions_orig, num_iterations=20)
+    if path_optimizer == "corridor":
+        optim_positions = optim.optimize_corridor(positions_orig, num_iterations=20)
+    elif path_optimizer == "corridor_density":
+        optim_positions = optim.optimize_corridor(
+            positions_orig, num_iterations=20, corridor_estimation="density"
+        )
+    elif path_optimizer == "shell":
+        optim_positions = optim.optimize_shell(positions_orig, num_iterations=20)
+    elif path_optimizer == "nearest":
+        optim_positions = optim.optimize_nearest_neighbor(positions_orig)
     assert optim.get_path_length(optim_positions) < optim.get_path_length(positions_orig)
     assert len(positions_orig) == len(optim_positions)
+    print(
+        f"Reduced path for method {path_optimizer} by {optim.get_path_length(optim_positions)/optim.get_path_length(positions_orig)} %"
+    )
 
     # from matplotlib import pyplot as plt
 
@@ -228,3 +245,12 @@ def test_corridor_optimization(positions_orig):
     # plt.plot(positions_orig[:, 0], positions_orig[:, 1], "r-x")
     # plt.plot(optim_positions[:, 0], optim_positions[:, 1], "g-x")
     # plt.show()
+
+
+def test_optimize_corridor_raises_corridor_estimation():
+    optim = PathOptimizerMixin()
+    positions_orig = get_fermat_spiral_pos(-5, 5, -5, 5, 0.5)
+    with pytest.raises(ValueError):
+        optim.optimize_corridor(
+            positions_orig, num_iterations=10, corridor_estimation="invalid_method"
+        )
