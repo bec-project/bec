@@ -933,7 +933,7 @@ class FermatSpiralScan(ScanBase):
     gui_config = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2"],
-        "Movement Parameters": ["step", "spiral_type", "relative"],
+        "Movement Parameters": ["step", "spiral_type", "relative", "optim_trajectory"],
         "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
     }
 
