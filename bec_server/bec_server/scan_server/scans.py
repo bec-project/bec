@@ -375,7 +375,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         relative: bool = False,
         burst_at_each_point: int = 1,
         frames_per_trigger: int = 1,
-        optim_trajectory: Literal["corridor", None] = None,
+        optim_trajectory: Literal["corridor", "shell", "nearest", "auto", None] = None,
         monitored: list = None,
         return_to_start: bool = False,
         show_live_table: bool = True,
@@ -458,12 +458,47 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         """Calculate the positions"""
 
     def _optimize_trajectory(self):
+        """Optimize the trajectory using the selected optimization method."""
         if not self.optim_trajectory:
             return
+
+        # Get preferred directions from scan parameters if available
+        preferred_directions = getattr(self, "preferred_directions", None)
+
         if self.optim_trajectory == "corridor":
-            self.positions = self.optimize_corridor(self.positions)
+            # For corridor optimization, we use the primary axis preferred direction
+            if preferred_directions and len(preferred_directions) > 0:
+                primary_axis = getattr(self, "sort_axis", 1)
+                preferred_direction = (
+                    preferred_directions[primary_axis]
+                    if len(preferred_directions) > primary_axis
+                    else None
+                )
+                self.positions = self.optimize_corridor(
+                    self.positions,
+                    num_iterations=5,
+                    sort_axis=primary_axis,
+                    preferred_direction=preferred_direction,
+                )
+            else:
+                self.positions = self.optimize_corridor(self.positions, num_iterations=5)
             return
-        return
+
+        if self.optim_trajectory == "shell":
+            self.positions = self.optimize_shell(self.positions, num_iterations=5)
+            return
+
+        if self.optim_trajectory == "nearest":
+            self.positions = self.optimize_nearest_neighbor(self.positions)
+            return
+
+        if self.optim_trajectory == "auto":
+            # Use the preferred direction optimizer with specified directions
+            axis_weights = getattr(self, "axis_weights", [10, 1])
+            self.positions = self.optimize_preferred_direction(
+                self.positions, preferred_directions=preferred_directions, axis_weights=axis_weights
+            )
+            return
 
     def prepare_positions(self):
         """prepare the positions for the scan"""
@@ -934,7 +969,12 @@ class FermatSpiralScan(ScanBase):
         "Device 1": ["motor1", "start_motor1", "stop_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2"],
         "Movement Parameters": ["step", "spiral_type", "relative"],
-        "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
+        "Acquisition Parameters": [
+            "exp_time",
+            "settling_time",
+            "burst_at_each_point",
+            "optim_trajectory",
+        ],
     }
 
     def __init__(
@@ -951,7 +991,7 @@ class FermatSpiralScan(ScanBase):
         relative: bool = False,
         burst_at_each_point: int = 1,
         spiral_type: float = 0,
-        optim_trajectory: Literal["corridor", None] = None,
+        optim_trajectory: Literal["corridor", "shell", "nearest", "auto", None] = None,
         **kwargs,
     ):
         """
