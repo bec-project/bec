@@ -3,7 +3,6 @@ from __future__ import annotations
 import inspect
 import threading
 import time
-from typing import TYPE_CHECKING
 
 import lmfit
 import numpy as np
@@ -13,10 +12,8 @@ from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.lmfit_serializer import deserialize_param_object, serialize_lmfit_params
 from bec_lib.logger import bec_logger
+from bec_lib.scan_items import ScanItem
 from bec_server.data_processing.dap_service import DAPError, DAPServiceBase
-
-if TYPE_CHECKING:
-    from bec_lib.scan_items import ScanItem
 
 logger = bec_logger.logger
 
