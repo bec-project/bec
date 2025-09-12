@@ -173,7 +173,7 @@ class BECClient(BECService):
     @property
     def active_account(self) -> str:
         """get the currently active target (e)account"""
-        msg = self.connector.get(MessageEndpoints.account())
+        msg = self.connector.get_last(MessageEndpoints.account(), "data")
         if msg:
             return msg.value
         return ""

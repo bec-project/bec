@@ -41,7 +41,7 @@ class LogbookConnector:
             return
         scilog_creds = msg.credentials
 
-        account_msg = self.connector.get(MessageEndpoints.account())
+        account_msg = self.connector.get_last(MessageEndpoints.account(), "data")
         if not account_msg:
             return
         account = account_msg.value

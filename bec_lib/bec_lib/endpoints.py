@@ -1231,7 +1231,7 @@ class MessageEndpoints:
         """
         endpoint = f"{EndpointType.INFO.value}/account"
         return EndpointInfo(
-            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
+            endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.STREAM
         )
 
     # data processing

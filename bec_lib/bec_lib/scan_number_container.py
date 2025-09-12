@@ -20,7 +20,7 @@ class ScanNumberContainer:
 
     def _current_account(self) -> str:
         """Get the current account from the redis connector."""
-        account = self.connector.get(MessageEndpoints.account())
+        account = self.connector.get_last(MessageEndpoints.account(), "data")
         if account is None:
             return ""
         return account.value if isinstance(account.value, str) else ""
