@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.66.0 (2025-09-12)
+
+### Features
+
+- Change account to redis stream
+  ([`3c2e9d4`](https://github.com/bec-project/bec/commit/3c2e9d4b4f19649fbc8149f3c0330b24155628fe))
+
+
 ## v3.65.0 (2025-09-10)
 
 ### Documentation
