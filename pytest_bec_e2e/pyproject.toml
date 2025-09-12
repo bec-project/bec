@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "pytest-bec-e2e"
 version = "3.66.0"
 description = "BEC pytest plugin for end-to-end tests"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
