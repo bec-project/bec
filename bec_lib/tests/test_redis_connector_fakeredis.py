@@ -5,12 +5,13 @@ from unittest import mock
 import pytest
 import redis
 from redis.client import Pipeline
-from test_redis_connector import TestMessage
 
 from bec_lib import messages
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_lib.serialization import MsgpackSerialization
+
+from .test_redis_connector import TestMessage
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
