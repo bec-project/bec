@@ -761,14 +761,16 @@ def test_worker_get_file_base_path(
     file_writer_base_path_orig = worker.parent._service_config.config["file_writer"]["base_path"]
     try:
         worker.parent._service_config.config["file_writer"]["base_path"] = base_path
-        with mock.patch.object(worker.connector, "get", return_value=current_account_msg):
+        with mock.patch.object(worker.connector, "get_last", return_value=current_account_msg):
             if raises_error:
                 with pytest.raises(ValueError) as exc_info:
                     worker._get_file_base_path()
             else:
                 file_path = worker._get_file_base_path()
                 assert file_path == expected_path
-                worker.connector.get.assert_called_once_with(MessageEndpoints.account())
+                worker.connector.get_last.assert_called_once_with(
+                    MessageEndpoints.account(), "data"
+                )
     finally:
         worker.parent._service_config.config["file_writer"][
             "base_path"

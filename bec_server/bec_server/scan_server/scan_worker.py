@@ -259,7 +259,7 @@ class ScanWorker(threading.Thread):
         The account name is retrieved from the current account message.
         If the account name is not found, an empty string will be used.
         """
-        current_account_msg = self.connector.get(MessageEndpoints.account())
+        current_account_msg = self.connector.get_last(MessageEndpoints.account(), "data")
         if current_account_msg:
             current_account = current_account_msg.value
             if not isinstance(current_account, str):

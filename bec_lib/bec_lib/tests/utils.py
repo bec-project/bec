@@ -815,3 +815,6 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
 
     def redis_server_is_running(self):
         return True
+
+    def get_last(self, topic, key):
+        return None

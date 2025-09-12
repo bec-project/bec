@@ -204,7 +204,7 @@ def test_bec_ipython_client_property_access(ipython_client):
                 client.start()
 
                 with mock.patch.object(client._client, "connector") as mock_connector:
-                    mock_connector.get.return_value = messages.VariableMessage(value="account")
+                    mock_connector.get_last.return_value = messages.VariableMessage(value="account")
                     assert client._client.active_account == "account"
 
                     with pytest.raises(AttributeError):

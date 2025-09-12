@@ -220,9 +220,14 @@ class BECClientPrompt(Prompts):
             next_scan_number = str(self.client.queue.next_scan_number)
         except Exception:
             next_scan_number = "?"
+
+        if self.client.active_account:
+            username = f"{self.client.active_account} | {self.username}"
+        else:
+            username = self.username
         return [
             (status_led, "\u2022"),
-            (Token.Prompt, " " + self.username),
+            (Token.Prompt, " " + username),  # BEC ACL username and pgroup
             (Token.Prompt, "@" + self.session_name),
             (Token.Prompt, " ["),
             (Token.PromptNum, str(self.shell.execution_count)),
