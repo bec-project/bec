@@ -6,85 +6,64 @@ from __future__ import annotations
 
 import builtins
 import inspect
+import itertools
 import types
 from collections.abc import Callable
-from typing import Any, List, Literal, Union
+from typing import Generator, Literal, Union, get_type_hints
 
 import numpy as np
 
 from bec_lib.device import DeviceBase
 from bec_lib.scan_items import ScanItem
 
-
-def _merge_union_types(serialized_vals: List[Any]) -> Any:
-    """
-    Merge union types with Literal types.
-
-    If any of the serialized values is a Literal dict, merge all other types into it.
-    Otherwise, return a string representation of the union.
-
-    Args:
-        serialized_vals (List[Any]): List of serialized types
-
-    Returns:
-        Any: Merged representation of the union
-    """
-    literal_dict = None
-    for x in serialized_vals:
-        if isinstance(x, dict) and "Literal" in x:
-            literal_dict = x
-            break
-    if literal_dict is None:
-        return " | ".join(serialized_vals)
-
-    # Add non-dictionary values directly
-    non_dict_values = []
-    for x in serialized_vals:
-        if not isinstance(x, dict):
-            # Convert 'NoneType' to None for literals
-            if x == "NoneType":
-                non_dict_values.append(None)
-            else:
-                non_dict_values.append(x)
-    if non_dict_values:
-        literal_dict["Literal"] = literal_dict["Literal"] + tuple(non_dict_values)
-    return literal_dict
+_special_types = {DeviceBase, ScanItem}
 
 
-def serialize_dtype(dtype: type) -> Any:
-    """
-    Convert a dtype to a string.
-
-    Args:
-        dtype (type): Data type
-
-    Returns:
-        str: String representation of the data type
-    """
-    if hasattr(dtype, "__name__"):
-        name = dtype.__name__
-        # changed in python 3.10. Refactor this when we upgrade
-        if name not in ["Literal", "Union", "Optional"]:
-            return name
-    if hasattr(dtype, "__module__"):
-        if dtype.__module__ == "typing":
-            if dtype.__class__.__name__ == "_UnionGenericAlias":
-                serialized_vals = [serialize_dtype(x) for x in dtype.__args__]
-                return _merge_union_types(serialized_vals)
-            if dtype.__class__.__name__ == "_LiteralGenericAlias":
-                return {"Literal": dtype.__args__}
-        elif dtype.__module__ == "types":
-            if dtype.__class__ == types.UnionType:
-                serialized_vals = [serialize_dtype(x) for x in dtype.__args__]
-                return _merge_union_types(serialized_vals)
-    if isinstance(dtype, str):
-        if dtype.startswith("typing.Literal[") or dtype.startswith("Literal["):
-            return serialize_dtype(eval(dtype))
-        return dtype
-    raise ValueError(f"Unknown dtype {dtype}")
+def _serialize_dtype(dtype: type) -> Generator[str | dict, None, None]:
+    if dtype is None or dtype is types.NoneType:
+        yield "NoneType"
+    if (name := getattr(dtype, "__name__", None)) and isinstance(dtype, type):
+        if name in builtins.__dict__ or name in np.__dict__ or name in _special_types:
+            yield name
+    if dtype.__class__.__name__ == "_UnionGenericAlias" or dtype.__class__ == types.UnionType:
+        yield from itertools.chain.from_iterable(_serialize_dtype(x) for x in dtype.__args__)  # type: ignore
+    if dtype.__class__.__name__ == "_LiteralGenericAlias":
+        yield {"Literal": dtype.__args__}  # type: ignore
 
 
-def deserialize_dtype(dtype: Any) -> type:
+def _merge_literals(vals: Generator[str | dict, None, None]) -> Generator[str | dict, None, None]:
+    _literal_args = []
+    for val in vals:
+        if val == "NoneType":
+            _literal_args.append(None)
+            continue
+        if not isinstance(val, dict):
+            yield val
+        else:
+            _literal_args.extend(val["Literal"])
+    if _literal_args == [None]:
+        yield "NoneType"
+    elif _literal_args:
+        yield {"Literal": tuple(_literal_args)}
+
+
+def serialize_dtype(dtype: type) -> list[str | dict] | str | dict:
+    type_list = list(_merge_literals(_serialize_dtype(dtype)))
+    return (type_list[0] if len(type_list) == 1 else type_list) or "_empty"
+
+
+def _deser_simple_type(dtype):
+    if hasattr(builtins, dtype):
+        return getattr(builtins, dtype)
+    if hasattr(np, dtype):
+        return getattr(np, dtype)
+    if dtype == "DeviceBase":
+        return DeviceBase
+    if dtype == "ScanItem":
+        return ScanItem
+
+
+def deserialize_dtype(dtype: list | dict | str):
     """
     Convert a serialized dtype to a type.
 
@@ -94,39 +73,17 @@ def deserialize_dtype(dtype: Any) -> type:
     Returns:
         type: Data type
     """
+    if isinstance(dtype, list):
+        return Union[*(deserialize_dtype(t) for t in dtype)]
+    if isinstance(dtype, dict):
+        return Literal[*dtype["Literal"]]
     if dtype == "_empty":
         # pylint: disable=protected-access
         return inspect._empty
-    if isinstance(dtype, dict):
-        if "Literal" in dtype:
-            # remove this when we upgrade to python 3.11
-            #### remove this section
-            literal = Literal[str(dtype)]
-            literal.__args__ = dtype["Literal"]
-            return literal
-            #### remove this section
-
-            #### add this section when we upgrade to python 3.11
-            # return Literal[*dtype["Literal"]]
-            #### add this section when we upgrade to python 3.11
-
-        raise ValueError(f"Unknown dtype {dtype}")
-    if isinstance(dtype, str) and "|" in dtype:
-        entries = [deserialize_dtype(x.strip()) for x in dtype.split("|")]
-        return Union[tuple(entries)]
-
     if dtype == "NoneType":
         return None
-    builtin_type = builtins.__dict__.get(dtype)
-    if builtin_type:
-        return builtin_type
-    if dtype == "DeviceBase":
-        return DeviceBase
-    if dtype == "ScanItem":
-        return ScanItem
-    if hasattr(np, dtype):
-        return getattr(np, dtype)
-    return None
+    if simple_dtype := _deser_simple_type(dtype):
+        return simple_dtype
 
 
 def signature_to_dict(func: Callable, include_class_obj=False) -> list[dict]:
@@ -142,16 +99,23 @@ def signature_to_dict(func: Callable, include_class_obj=False) -> list[dict]:
     """
     out = []
     params = inspect.signature(func).parameters
+    try:
+        type_hints = get_type_hints(func)
+    except NameError as e:
+        raise TypeError(
+            f"Couldn't find annotated type {e.name}. The type you annotate with must be available in the local scope! Check it is not hidden by TYPE_CHECKING."
+        ) from e
     for param_name, param in params.items():
         if not include_class_obj and param_name == "self" or param_name == "cls":
             continue
         # pylint: disable=protected-access
+        param_typehint = type_hints.get(param_name)
         out.append(
             {
                 "name": param_name,
                 "kind": param.kind.name,
                 "default": param.default if param.default != inspect._empty else "_empty",
-                "annotation": serialize_dtype(param.annotation),
+                "annotation": serialize_dtype(param_typehint) if param_typehint else "_empty",
             }
         )
     return out
