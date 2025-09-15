@@ -15,13 +15,11 @@ from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_server.scan_server.instruction_handler import InstructionHandler
 
 from .errors import LimitError, ScanAbortion
 from .path_optimization import PathOptimizerMixin
 from .scan_stubs import ScanStubs
-
-if TYPE_CHECKING:
-    from bec_server.scan_server.instruction_handler import InstructionHandler
 
 logger = bec_logger.logger
 
