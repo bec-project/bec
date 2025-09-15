@@ -127,6 +127,10 @@ def get_ipython_client_startup_plugins(state: Literal["pre", "post"]) -> dict:
     return modules
 
 
+def plugins_installed() -> int:
+    return len(importlib.metadata.entry_points(group="bec"))
+
+
 def plugin_package_name():
     """Get the package and module name of the installed plugin repository. Raises ValueError if no
     plugin is installed or more than one plugin is installed."""
