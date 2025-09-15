@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.67.0 (2025-09-15)
+
+### Chores
+
+- Deprecate 3.10, add 3.13
+  ([`1be40f2`](https://github.com/bec-project/bec/commit/1be40f2e807b162f1b9608df312b41ae7f2be765))
+
+### Features
+
+- Util function to check plguins
+  ([`c375233`](https://github.com/bec-project/bec/commit/c3752337fa9f571eaaf39a84ee50b00123c1954f))
+
+
 ## v3.66.0 (2025-09-12)
 
 ### Features
