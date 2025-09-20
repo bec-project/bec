@@ -32,7 +32,7 @@ def hdf5_file_writer(file_writer_manager_mock_with_dm):
 
 
 @pytest.fixture
-def scan_storage_mock():
+def scan_storage_mock(tmp_path):
     storage = ScanStorage("2", "scan_id-string")
     storage.metadata = {
         "readout_priority": {
@@ -41,18 +41,24 @@ def scan_storage_mock():
             "async": ["mokev"],
         }
     }
+    eiger_h5_path = f"{tmp_path}/eiger.h5"
+    with h5py.File(eiger_h5_path, "w") as f:
+        entry = f.create_group("entry")
+        data = entry.create_group("data")
+        data.create_dataset("detector_data", data=np.random.rand(10, 10))
     storage.file_references = {
         "master": messages.FileMessage(
             file_path="master.h5", is_master_file=True, done=False, successful=False
         ),
         "eiger": messages.FileMessage(
-            file_path="eiger.h5",
+            file_path=eiger_h5_path,
             is_master_file=False,
             done=True,
             successful=True,
             hinted_h5_entries={"entry": "/entry"},
         ),
     }
+
     yield storage
 
 
@@ -185,6 +191,11 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer):
     storage.metadata = metadata
     storage.start_time = 1679226971.564235
     storage.end_time = 1679226971.580867
+    storage.file_references = {
+        "non_existing_file": messages.FileMessage(
+            file_path="", done=True, successful=True, is_master_file=False, file_type="h5"
+        )
+    }
 
     file_writer.write("./test.h5", storage, configuration_data={})
 
@@ -203,6 +214,7 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer):
             test_file["entry"].attrs["end_time"]
             == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
         )
+        assert "non_existing_file" not in test_file["entry/collection/file_references"].keys()
 
 
 def test_load_format_from_plugin(tmp_path, hdf5_file_writer):

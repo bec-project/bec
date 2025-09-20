@@ -279,9 +279,16 @@ class HDF5FileWriter:
             logger.error(f"Plugin {requested_plugin} not found. Using default plugin.")
             writer_format_cls = default_NeXus_format
 
-        for file_ref in data.file_references.values():
+        file_refs_to_remove = []
+        for device_name, file_ref in data.file_references.items():
+            if not os.path.exists(file_ref.file_path):
+                logger.warning(f"File reference {file_ref.file_path} does not exist.")
+                file_refs_to_remove.append(device_name)
+                continue
             rel_path = os.path.relpath(file_ref.file_path, os.path.dirname(file_path))
             file_ref.file_path = rel_path
+        for device_name in file_refs_to_remove:
+            data.file_references.pop(device_name, None)
 
         writer_storage = writer_format_cls(
             storage=HDF5Storage(),
