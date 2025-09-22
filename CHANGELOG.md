@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.67.1 (2025-09-22)
+
+### Bug Fixes
+
+- **file-writer**: Bugfix for non-existing filepath in file_ref
+  ([`6584580`](https://github.com/bec-project/bec/commit/65845800d7ca8dd78e1c48cd2c31d462e27befef))
+
+
 ## v3.67.0 (2025-09-15)
 
 ### Chores

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytest-bec-e2e"
-version = "3.67.0"
+version = "3.67.1"
 description = "BEC pytest plugin for end-to-end tests"
 requires-python = ">=3.11"
 classifiers = [
