@@ -15,7 +15,6 @@ from bec_lib.scan_data_container import ScanDataContainer
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
     from bec_lib.client import BECClient
-    from bec_lib.redis_connector import RedisConnector
 
 
 class ScanHistory:
@@ -26,7 +25,7 @@ class ScanHistory:
         Initialize the ScanHistory class.
 
         Args:
-            connector (RedisConnector): The redis connector.
+            client (BECClient): The BEC client providing the redis connector.
             load_threaded (bool, optional): Whether to load the scan history in a separate thread. Defaults to
                 True.
         """
@@ -35,6 +34,7 @@ class ScanHistory:
         self._load_threaded = load_threaded
         self._scan_data = {}
         self._scan_ids = []
+        self._scan_numbers = []
         self._scan_data_lock = threading.RLock()
         self._scan_history_loaded_event = threading.Event()
         self._loaded = False
@@ -69,6 +69,7 @@ class ScanHistory:
                     continue
                 self._scan_data[msg.scan_id] = msg
                 self._scan_ids.append(msg.scan_id)
+                self._scan_numbers.append(msg.scan_number)
                 self._remove_oldest_scan()
             self._client.callbacks.run(
                 event_type=EventType.SCAN_HISTORY_LOADED,
@@ -81,6 +82,8 @@ class ScanHistory:
             scan_id = self._scan_ids[0]
             self._scan_data.pop(scan_id, None)
             self._scan_ids.pop(0)
+            if self._scan_numbers:
+                self._scan_numbers.pop(0)
 
     @staticmethod
     def _on_scan_history_update(msg: dict, parent: ScanHistory) -> None:
@@ -93,17 +96,18 @@ class ScanHistory:
             parent._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
             parent._scan_data[msg.scan_id] = msg
             parent._scan_ids.append(msg.scan_id)
+            parent._scan_numbers.append(msg.scan_number)
             parent._remove_oldest_scan()
 
-    def get_by_scan_id(self, scan_id: str) -> ScanDataContainer:
+    def get_by_scan_id(self, scan_id: str) -> ScanDataContainer | None:
         """Get the scan data by scan ID."""
         with self._scan_data_lock:
-            target_id = self._scan_data.get(scan_id, {})
+            target_id = self._scan_data.get(scan_id)
             if not target_id:
                 return None
             return ScanDataContainer(file_path=target_id.file_path, msg=target_id)
 
-    def get_by_scan_number(self, scan_number: str) -> ScanDataContainer:
+    def get_by_scan_number(self, scan_number: str) -> ScanDataContainer | None:
         """Get the scan data by scan number."""
         with self._scan_data_lock:
             for scan in self._scan_data.values():
@@ -111,10 +115,10 @@ class ScanHistory:
                     return ScanDataContainer(file_path=scan.file_path, msg=scan)
         return None
 
-    def get_by_dataset_number(self, dataset_number: str) -> list[ScanDataContainer]:
+    def get_by_dataset_number(self, dataset_number: str) -> list[ScanDataContainer] | None:
         """Get the scan data by dataset number."""
         with self._scan_data_lock:
-            out = []
+            out: list[ScanDataContainer] = []
             for scan in self._scan_data.values():
                 if scan.dataset_number == dataset_number:
                     out.append(ScanDataContainer(file_path=scan.file_path, msg=scan))
