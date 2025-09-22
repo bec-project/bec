@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.67.2 (2025-09-22)
+
+### Bug Fixes
+
+- **fermat_scan**: Add optim_trajectory to movement parameters
+  ([`f67f1f4`](https://github.com/bec-project/bec/commit/f67f1f4d6559233efcbfc15d68e3f5b287e7af95))
+
+
 ## v3.67.1 (2025-09-22)
 
 ### Bug Fixes
