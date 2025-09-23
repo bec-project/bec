@@ -46,6 +46,12 @@ def test_scan_history_loads_messages(scan_history_without_thread, file_history_m
     assert container[0]._msg == file_history_messages[1]
     assert container[1]._msg == file_history_messages[2]
 
+    assert scan_history_without_thread._scan_numbers == [1, 2, 3]
+    assert [
+        scan_history_without_thread._scan_data[sid].scan_number
+        for sid in scan_history_without_thread._scan_ids
+    ] == scan_history_without_thread._scan_numbers
+
 
 @pytest.mark.timeout(10)
 def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_history_messages):
@@ -85,6 +91,17 @@ def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_hist
 
     assert scan_history_without_thread.get_by_scan_number(1) is None
     assert scan_history_without_thread.get_by_scan_number(4)._msg == msg[0]
+
+    assert (
+        len(scan_history_without_thread._scan_numbers)
+        == len(scan_history_without_thread._scan_ids)
+        == 2
+    )
+    assert scan_history_without_thread._scan_numbers == [4, 5]
+    assert [
+        scan_history_without_thread._scan_data[sid].scan_number
+        for sid in scan_history_without_thread._scan_ids
+    ] == scan_history_without_thread._scan_numbers
 
 
 def test_scan_history_slices(scan_history_without_thread, file_history_messages):
@@ -142,6 +159,11 @@ def test_scan_history_filters_readable_files(
     # Verify that the unreadable file is not included in the history
     assert scan_history_without_thread.get_by_scan_id("scan_id_unreadable") is None
     assert scan_history_without_thread.get_by_scan_id("scan_id_readable")._msg == readable_msg
+
+    # New: ensure unreadable scan_number wasn't appended, readable was
+    nums = scan_history_without_thread._scan_numbers
+    assert 5 not in nums
+    assert nums[-1] == 6
 
 
 @pytest.mark.timeout(20)
