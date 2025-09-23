@@ -418,6 +418,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
         for component_name in obj.component_names:
             component = getattr(obj, component_name)
+            if hasattr(component, "component_names"):
+                self._subscribe_to_auto_monitors(component)
+                continue
             if not getattr(component, "_auto_monitor", False):
                 continue
             if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
