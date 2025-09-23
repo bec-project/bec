@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.67.3 (2025-09-23)
+
+### Bug Fixes
+
+- Rework signature serializer
+  ([`90acf3d`](https://github.com/bec-project/bec/commit/90acf3de76b5c495b27a2fb007aebc85a6a8d4f4))
+
+- **devicemanager**: Add support for nested resolution of auto monitors
+  ([`d429e3f`](https://github.com/bec-project/bec/commit/d429e3f5baad1ad71ed74760fffedc1d04f3f5fc))
+
+
 ## v3.67.2 (2025-09-22)
 
 ### Bug Fixes
