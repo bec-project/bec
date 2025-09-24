@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.68.0 (2025-09-24)
+
+### Features
+
+- **scan_history**: All scan numbers listed in ScanHistory
+  ([`e86af1c`](https://github.com/bec-project/bec/commit/e86af1c9eeb1cc6dc864de0e25d97a86c40c6aff))
+
+### Testing
+
+- **scan_history**: Test extended
+  ([`f573ace`](https://github.com/bec-project/bec/commit/f573acecc2f72131a79dfaee50fed84d1d1814ec))
+
+
 ## v3.67.4 (2025-09-24)
 
 ### Bug Fixes
