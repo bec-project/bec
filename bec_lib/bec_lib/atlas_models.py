@@ -23,7 +23,11 @@ def make_all_fields_optional(model: type[_BM], model_name: str) -> type[_BM]:
     for name, field in model.model_fields.items():
         field_info = field._attributes_set
         field_info.pop("annotation", None)
-        field_info["default"] = field.default if field.default is not PydanticUndefined else None
+        if "default_factory" not in field_info:
+            # default_factory and default are mutually exclusive
+            field_info["default"] = (
+                field.default if field.default is not PydanticUndefined else None
+            )
         fields[name] = (field.annotation | None, Field(**field_info))
     new_model = create_model(model_name, **fields, __config__=model.model_config)
     return new_model
