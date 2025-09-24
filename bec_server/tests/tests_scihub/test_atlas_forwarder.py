@@ -13,6 +13,7 @@ def forwarder(atlas_connector):
 
 def test_atlas_forwarder_registers_state_and_request(forwarder):
     assert list(forwarder.atlas_connector.redis_atlas._topics_cb) == [
+        "internal/deployment/test-deployment/deployment_info",
         "internal/deployment/test-deployment/*/state",
         "internal/deployment/test-deployment/request",
     ]

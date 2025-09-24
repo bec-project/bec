@@ -7,8 +7,9 @@ process the data and store it in the database.
 from __future__ import annotations
 
 import traceback
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
@@ -26,24 +27,83 @@ class AtlasMetadataHandler:
     def __init__(self, atlas_connector: AtlasConnector) -> None:
         self.atlas_connector = atlas_connector
         self._scan_status_register = None
+        self._account = None
+        self._start_account_subscription()
         self._start_scan_subscription()
+        self._start_scan_history_subscription()
+
+    def _start_account_subscription(self):
+        self.atlas_connector.connector.register(
+            MessageEndpoints.account(), cb=self._handle_account_info, parent=self, from_start=True
+        )
+        self.atlas_connector.redis_atlas.register(
+            f"internal/deployment/{self.atlas_connector.deployment_name}/deployment_info",
+            cb=self._handle_atlas_account_update,
+            parent=self,
+            from_start=True,
+        )
 
     def _start_scan_subscription(self):
         self._scan_status_register = self.atlas_connector.connector.register(
             MessageEndpoints.scan_status(), cb=self._handle_scan_status, parent=self
         )
 
+    def _start_scan_history_subscription(self):
+        self._scan_history_register = self.atlas_connector.connector.register(
+            MessageEndpoints.scan_history(), cb=self._handle_scan_history, parent=self
+        )
+
+    @staticmethod
+    def _handle_atlas_account_update(msg, *, parent, **_kwargs) -> None:
+        if not isinstance(msg, dict) or "data" not in msg:
+            logger.error(f"Invalid account message received from Atlas: {msg}")
+            return
+        msg = cast(messages.VariableMessage, msg["data"])
+        parent._account = msg.value
+        parent._update_local_account(msg.value)
+
+    def _update_local_account(self, account: str) -> None:
+        """
+        Update the local account if it differs from the current one.
+        """
+        if self._account != account:
+            msg = messages.VariableMessage(value=account)
+            self.atlas_connector.connector.xadd(
+                MessageEndpoints.account(), {"data": msg}, max_size=1
+            )
+            logger.info(f"Updated local account to: {account}")
+
+    @staticmethod
+    def _handle_account_info(msg, *, parent, **_kwargs) -> None:
+        if not isinstance(msg, dict) or "data" not in msg:
+            logger.error(f"Invalid account message received: {msg}")
+            return
+        msg = cast(messages.VariableMessage, msg["data"])
+        parent._account = msg.value
+        parent.send_atlas_update({"account": msg})
+        logger.info(f"Updated account to: {parent._account}")
+
     @staticmethod
     def _handle_scan_status(msg, *, parent, **_kwargs) -> None:
         msg = msg.value
         try:
-            parent.update_scan_status({"scan_status": msg})
+            parent.send_atlas_update({"scan_status": msg})
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update scan status: {content}")
 
-    def update_scan_status(self, msg: dict) -> None:
+    @staticmethod
+    def _handle_scan_history(msg, *, parent, **_kwargs) -> None:
+        msg = msg["data"]
+        try:
+            parent.send_atlas_update({"scan_history": msg})
+        # pylint: disable=broad-except
+        except Exception:
+            content = traceback.format_exc()
+            logger.exception(f"Failed to update scan history: {content}")
+
+    def send_atlas_update(self, msg: dict) -> None:
         """
         Update the scan status in Atlas
         """
