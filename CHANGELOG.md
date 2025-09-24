@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.67.4 (2025-09-24)
+
+### Bug Fixes
+
+- Ensure default_factory is mutually exclusive with default in make_all_fields_optional
+  ([`554db36`](https://github.com/bec-project/bec/commit/554db36c86290d2c93fcb04abfc7ae2792dccf0e))
+
+
 ## v3.67.3 (2025-09-23)
 
 ### Bug Fixes
