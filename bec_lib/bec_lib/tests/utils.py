@@ -4,11 +4,13 @@ import builtins
 import copy
 import os
 import time
-from typing import TYPE_CHECKING
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Literal
 
 import bec_lib
 from bec_lib import messages
 from bec_lib.client import BECClient
+from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -55,7 +57,7 @@ class ScansMock(Scans):
     def _import_scans(self):
         pass
 
-    def open_scan_def(self):
+    def open_scan_def(self, *args, device_manager=None, monitored: list | None = None, **kwargs):
         pass
 
     def close_scan_def(self):
@@ -64,14 +66,56 @@ class ScansMock(Scans):
     def close_scan_group(self):
         pass
 
-    def umv(self):
+    def umv(self, *args, relative=False, **kwargs):
+        pass
+
+    def mv(self, *args, relative=False, **kwargs):
+        pass
+
+    def line_scan(
+        self,
+        *args,
+        exp_time: float = 0,
+        steps: int = None,
+        relative: bool = False,
+        burst_at_each_point: int = 1,
+        **kwargs,
+    ):
+        pass
+
+    def fermat_scan(
+        self,
+        motor1: DeviceBase,
+        start_motor1: float,
+        stop_motor1: float,
+        motor2: DeviceBase,
+        start_motor2: float,
+        stop_motor2: float,
+        step: float = 0.1,
+        exp_time: float = 0,
+        settling_time: float = 0,
+        relative: bool = False,
+        burst_at_each_point: int = 1,
+        spiral_type: float = 0,
+        optim_trajectory: Literal["corridor", None] = None,
+        **kwargs,
+    ):
         pass
 
 
 class ClientMock(BECClient):
     def _load_scans(self):
         self.scans = ScansMock(self)
-        builtins.scans = self.scans
+        builtins.__dict__["scans"] = self.scans
+        self.scans_namespace = SimpleNamespace(
+            line_scan=self.scans.line_scan,
+            mv=self.scans.mv,
+            umv=self.scans.umv,
+            fermat_scan=self.scans.fermat_scan,
+            open_scan_def=self.scans.open_scan_def,
+            close_scan_def=self.scans.close_scan_def,
+            close_scan_group=self.scans.close_scan_group,
+        )
 
     # def _start_services(self):
     #     pass
