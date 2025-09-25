@@ -82,6 +82,7 @@ def bec_client_mock(dm_with_devices):
         ServiceConfig(redis={"host": "host", "port": 123}, scibec={"host": "host", "port": 123}),
         ConnectorMock,
         wait_for_server=False,
+        forced=True,
     )
     client.start()
     device_manager = dm_with_devices
