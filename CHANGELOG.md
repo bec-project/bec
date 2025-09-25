@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.68.1 (2025-09-25)
+
+### Bug Fixes
+
+- **serializer**: Fix serializer for simple bec types
+  ([`ab614fb`](https://github.com/bec-project/bec/commit/ab614fba4d05e75fadf0fb103a905b5611dc6aff))
+
+
 ## v3.68.0 (2025-09-24)
 
 ### Features
