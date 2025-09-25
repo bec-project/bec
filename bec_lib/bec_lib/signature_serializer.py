@@ -23,7 +23,7 @@ def _serialize_dtype(dtype: type) -> Generator[str | dict, None, None]:
     if dtype is None or dtype is types.NoneType:
         yield "NoneType"
     if (name := getattr(dtype, "__name__", None)) and isinstance(dtype, type):
-        if name in builtins.__dict__ or name in np.__dict__ or name in _special_types:
+        if name in builtins.__dict__ or name in np.__dict__ or dtype in _special_types:
             yield name
     if dtype.__class__.__name__ == "_UnionGenericAlias" or dtype.__class__ == types.UnionType:
         yield from itertools.chain.from_iterable(_serialize_dtype(x) for x in dtype.__args__)  # type: ignore

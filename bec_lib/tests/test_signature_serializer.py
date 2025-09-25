@@ -4,6 +4,8 @@ from typing import Literal, Optional, Union
 import numpy as np
 import pytest
 
+from bec_lib.device import DeviceBase
+from bec_lib.scan_items import ScanItem
 from bec_lib.signature_serializer import (
     deserialize_dtype,
     dict_to_signature,
@@ -116,6 +118,9 @@ def test_signature_serializer_with_literals():
         (Literal[1, 2, 3], {"Literal": (1, 2, 3)}),
         (Union[int, str], ["int", "str"]),
         (Optional[str], ["str", "NoneType"]),
+        (DeviceBase, "DeviceBase"),
+        (ScanItem, "ScanItem"),
+        (np.ndarray, "ndarray"),
     ],
 )
 def test_serialize_dtype(dtype_in, dtype_out):
@@ -132,6 +137,11 @@ def test_serialize_dtype(dtype_in, dtype_out):
         ("_empty", inspect._empty),
         ({"Literal": (1, 2, 3)}, Literal[1, 2, 3]),
         (["int", "str"], Union[int, str]),
+        (["str", "NoneType"], Optional[str]),
+        ("NoneType", None),
+        ("DeviceBase", DeviceBase),
+        ("ScanItem", ScanItem),
+        ("ndarray", np.ndarray),
     ],
 )
 def test_deserialize_dtype(dtype_in, dtype_out):
