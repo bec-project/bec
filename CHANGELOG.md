@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.68.2 (2025-09-25)
+
+### Bug Fixes
+
+- **history**: Allow list of scans by scan number
+  ([`1c80f09`](https://github.com/bec-project/bec/commit/1c80f09cea3bbb9dcf8386cc0df292dc7b2b6b85))
+
+
 ## v3.68.1 (2025-09-25)
 
 ### Bug Fixes

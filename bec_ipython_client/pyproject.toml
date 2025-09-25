@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bec_ipython_client"
-version = "3.68.1"
+version = "3.68.2"
 description = "BEC IPython client"
 requires-python = ">=3.11"
 classifiers = [
