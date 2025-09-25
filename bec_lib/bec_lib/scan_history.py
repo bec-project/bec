@@ -107,13 +107,18 @@ class ScanHistory:
                 return None
             return ScanDataContainer(file_path=target_id.file_path, msg=target_id)
 
-    def get_by_scan_number(self, scan_number: str) -> ScanDataContainer | None:
+    def get_by_scan_number(
+        self, scan_number: int
+    ) -> ScanDataContainer | list[ScanDataContainer] | None:
         """Get the scan data by scan number."""
+        out = []
         with self._scan_data_lock:
             for scan in self._scan_data.values():
                 if scan.scan_number == scan_number:
-                    return ScanDataContainer(file_path=scan.file_path, msg=scan)
-        return None
+                    out.append(ScanDataContainer(file_path=scan.file_path, msg=scan))
+        if len(out) == 1:
+            return out[0]
+        return out if out else None
 
     def get_by_dataset_number(self, dataset_number: str) -> list[ScanDataContainer] | None:
         """Get the scan data by dataset number."""

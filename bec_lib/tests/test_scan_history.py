@@ -185,3 +185,47 @@ def test_scan_history_update_callback(scan_history_without_thread, file_history_
             mock_callback_run.assert_called_with(
                 event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg
             )
+
+
+@pytest.mark.timeout(20)
+def test_scan_history_multiple_scan_numbers(scan_history_without_thread, file_history_messages):
+    """Test the scan history update callbacks."""
+    msgs = [
+        messages.ScanHistoryMessage(
+            scan_id="scan_id_1_a",
+            scan_number=1,
+            dataset_number=4,
+            file_path="file_path",
+            exit_status="closed",
+            start_time=time.time(),
+            end_time=time.time(),
+            scan_name="line_scan",
+            num_points=10,
+        ),
+        messages.ScanHistoryMessage(
+            scan_id="scan_id_1_b",
+            scan_number=1,
+            dataset_number=5,
+            file_path="file_path",
+            exit_status="closed",
+            start_time=time.time(),
+            end_time=time.time(),
+            scan_name="line_scan",
+            num_points=10,
+        ),
+    ]
+    with mock.patch("bec_lib.scan_history.os.access", return_value=True):
+        for m in msgs:
+            scan_history_without_thread._connector.xadd(
+                MessageEndpoints.scan_history(), {"data": m}
+            )
+
+        while len(scan_history_without_thread._scan_ids) < len(file_history_messages) + len(msgs):
+            time.sleep(0.1)
+
+    containers = scan_history_without_thread.get_by_scan_number(1)
+    assert isinstance(containers, list)
+    assert len(containers) == 3  # 1 from fixture + 2 new
+    assert containers[0]._msg == file_history_messages[0]
+    assert containers[1]._msg == msgs[0]
+    assert containers[2]._msg == msgs[1]
