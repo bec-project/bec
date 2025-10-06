@@ -705,13 +705,13 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         """
 
     def read(
-        self, cached=True, use_readback=True, filter_to_hints=False
+        self, cached=False, use_readback=True, filter_to_hints=False
     ) -> dict[str, dict[str, Any]] | None:
         """
         Reads the device.
 
         Args:
-            cached (bool, optional): If True, the cached value is returned. Defaults to True.
+            cached (bool, optional): If True, the cached value is returned. Defaults to False.
             use_readback (bool, optional): If True, the readback value is returned, otherwise the read value. Defaults to True.
             filter_to_hints (bool, optional): If True, the readback value is filtered to the hinted values. Defaults to False.
 
@@ -739,12 +739,12 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
             signals = {key: val for key, val in signals.items() if key in self._hints}
         return self._filter_rpc_signals(signals)
 
-    def read_configuration(self, cached=True) -> dict[str, dict[str, Any]] | None:
+    def read_configuration(self, cached=False) -> dict[str, dict[str, Any]] | None:
         """
         Reads the device configuration.
 
         Args:
-            cached (bool, optional): If True, the cached value is returned. Defaults to True.
+            cached (bool, optional): If True, the cached value is returned. Defaults to False.
         """
 
         is_signal, is_config_signal, cached = self._get_rpc_signal_info(cached)
@@ -793,9 +793,12 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         """Describes the device configuration."""
         return self._info.get("describe_configuration", {})
 
-    def get(self, cached=True):
+    def get(self, cached=False) -> Any:
         """
         Gets the device value.
+
+        Args:
+            cached (bool, optional): If True, the cached value is returned. Defaults to False
         """
 
         is_signal = self._signal_info is not None
@@ -806,7 +809,7 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
                 return par(**res.get("values"))
             return res
 
-        ret = self.read()
+        ret = self.read(cached=cached)
         if ret is None:
             return None
         return ret.get(self._signal_info.get("obj_name"), {}).get("value")
