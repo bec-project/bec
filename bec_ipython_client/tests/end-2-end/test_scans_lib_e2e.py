@@ -108,12 +108,10 @@ def test_config_updates(bec_client_lib):
     assert dev.rt_controller.limits == [-50, 50]
 
     dev.rt_controller.velocity.set(10).wait()
+    assert dev.rt_controller.velocity.read(cached=True)["rt_controller_velocity"]["value"] == 10
     assert dev.rt_controller.velocity.read()["rt_controller_velocity"]["value"] == 10
-    assert dev.rt_controller.velocity.read(cached=False)["rt_controller_velocity"]["value"] == 10
     assert dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
-    assert (
-        dev.rt_controller.read_configuration(cached=False)["rt_controller_velocity"]["value"] == 10
-    )
+    assert dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
 
     dev.rt_controller.velocity.put(5)
     assert dev.rt_controller.velocity.get() == 5
@@ -454,7 +452,7 @@ def test_computed_signal(bec_client_lib):
     dev.pseudo_signal1.set_compute_method(compute_signal1)
     dev.pseudo_signal1.set_input_signals()
 
-    assert dev.pseudo_signal1.read(cached=False)["pseudo_signal1"]["value"] == 5
+    assert dev.pseudo_signal1.read()["pseudo_signal1"]["value"] == 5
 
 
 def test_cached_device_readout(bec_client_lib):
@@ -476,13 +474,13 @@ def test_cached_device_readout(bec_client_lib):
 
     dev.samx.velocity.put(orig_velocity)
 
-    data = dev.hexapod.x.readback.read(cached=False)
+    data = dev.hexapod.x.readback.read()
     timestamp = data["hexapod_x"]["timestamp"]
     data = dev.hexapod.x.readback.read(cached=True)
     assert data["hexapod_x"]["timestamp"] == timestamp
 
     # check that .get also updates the cache
-    dev.hexapod.x.readback.get(cached=False)
+    dev.hexapod.x.readback.get()
     timestamp_2 = dev.hexapod.x.readback.read(cached=True)["hexapod_x"]["timestamp"]
     assert timestamp_2 != timestamp
 

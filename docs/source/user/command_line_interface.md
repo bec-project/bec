@@ -113,8 +113,8 @@ In both cases, a nested dictionary is returned with value/timestamp pairs for ea
 The current position of `samx` is accessed `dev.samx.read()['samx']['value']`.
 
 ```{note}
-The default behaviour for `.read` and `.read_configuration` is to read the last recorded value from redis, i.e. `cached=True`.
-However, we can force an update by using `dev.samx.read(cached=False)` which will introduce additional overhead. 
+The default behaviour of `.read` and `.read_configuration` is to read the last recorded value directly from the device, i.e. `cached=False`.
+However, depending on the device and the underlying hardware, frequent polling may be detrimental or even put the device in an unresponsive state. For this reason, cached can be set to `True` to read the last recorded value from redis. Especially for devices that have EPICS auto-monitor enabled, this is much faster and more efficient without missing any updates.
 Signals of type `omitted` are currently not stored in redis, nor are they read from the device using e.g.`dev.samx.read()` and therefore must
 be read out directly using e.g. `dev.samx.my_omitted_signal.read()`.
 ```
