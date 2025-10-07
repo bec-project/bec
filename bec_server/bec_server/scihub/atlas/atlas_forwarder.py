@@ -26,14 +26,21 @@ class AtlasForwarder:
         self._start_deployment_cleanup_loop()
 
     def _start_deployment_subscription(self):
+        if not self.atlas_connector.deployment_name:
+            return
+        if not self.atlas_connector.redis_atlas:
+            return
         self.atlas_connector.redis_atlas.register(
-            patterns=f"internal/deployment/{self.atlas_connector.deployment_name}/*/state",
-            # patterns="*",
+            patterns=MessageEndpoints.atlas_websocket_state(
+                self.atlas_connector.deployment_name, "*"
+            ),
             cb=self._update_deployment_subscriptions,
             parent=self,
         )
         self.atlas_connector.redis_atlas.register(
-            patterns=f"internal/deployment/{self.atlas_connector.deployment_name}/request",
+            patterns=MessageEndpoints.atlas_deployment_request(
+                self.atlas_connector.deployment_name
+            ),
             cb=self._on_redis_request,
             parent=self,
         )
@@ -45,13 +52,17 @@ class AtlasForwarder:
         self._deployment_cleanup_thread.start()
 
     def _deployment_cleanup_loop(self):
+        if not self.atlas_connector.deployment_name:
+            return
+        if not self.atlas_connector.redis_atlas:
+            return
         while not self._shutdown_event.is_set():
             endpoints = self.atlas_connector.redis_atlas.keys(
-                f"internal/deployment/{self.atlas_connector.deployment_name}/*/state"
+                MessageEndpoints.atlas_websocket_state(self.atlas_connector.deployment_name, "*")
             )
             if endpoints:
                 data = self.atlas_connector.redis_atlas.mget(endpoints)
-                for msg in data:
+                for msg in data:  # type: ignore
                     self.update_deployment_state(msg)
             self._shutdown_event.wait(60)
 
