@@ -500,7 +500,7 @@ class RedisConnector:
     def register(
         self,
         topics: str | list[str] | EndpointInfo | list[EndpointInfo] | None = None,
-        patterns: str | list[str] | None = None,
+        patterns: str | list[str] | EndpointInfo | list[EndpointInfo] | None = None,
         cb: Callable | None = None,
         start_thread: bool = True,
         from_start: bool = False,
@@ -512,7 +512,7 @@ class RedisConnector:
 
         Args:
             topics (str, list, EndpointInfo, list[EndpointInfo], optional): topic or list of topics. Defaults to None. The topic should be a valid message endpoint in BEC and can be a string or an EndpointInfo object.
-            patterns (str, list, optional): pattern or list of patterns. Defaults to None. In contrast to topics, patterns may contain "*" wildcards. The evaluated patterns should be a valid pub/sub message endpoint in BEC
+            patterns (str, list, EndpointInfo, list[EndpointInfo], optional): pattern or list of patterns. Defaults to None. In contrast to topics, patterns may contain "*" wildcards. The evaluated patterns should be a valid pub/sub message endpoint in BEC
             cb (callable, optional): callback. Defaults to None.
             start_thread (bool, optional): start the dispatcher thread. Defaults to True.
             from_start (bool, optional): for streams only: return data from start on first reading. Defaults to False.
