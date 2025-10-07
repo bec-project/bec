@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.69.0 (2025-10-07)
+
+### Bug Fixes
+
+- **redis connector**: Improve type hints
+  ([`6a2b2ea`](https://github.com/bec-project/bec/commit/6a2b2ea963f6bc52e28fe0850323b43c9438449e))
+
+### Features
+
+- Add endpoint for atlas websocket states and deployment requests
+  ([`5e5c960`](https://github.com/bec-project/bec/commit/5e5c960c1f5567d5514f5bda28fbc8b73b5dcc7a))
+
+- Update account in atlas
+  ([`2533b74`](https://github.com/bec-project/bec/commit/2533b744b7a424cedad4f0b06329d8d121d68131))
+
+### Testing
+
+- **scans**: Improve fixture signatures
+  ([`d4f4143`](https://github.com/bec-project/bec/commit/d4f41430e728ecd9d906b0b3e0cd3d883fa94e34))
+
+
 ## v3.68.2 (2025-09-25)
 
 ### Bug Fixes
