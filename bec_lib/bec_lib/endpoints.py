@@ -1632,3 +1632,30 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
         )
+
+    @staticmethod
+    def atlas_websocket_state(deployment_name: str, host_id: str):
+        """
+        Endpoint for the websocket state information, containing the users and their subscriptions
+        per backend host.
+
+        Returns:
+            EndpointInfo: Endpoint for websocket state.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/{host_id}/state"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.SET_PUBLISH
+        )
+
+    @staticmethod
+    def atlas_deployment_request(deployment_name: str):
+        """
+        Endpoint for receiving requests for a particular deployment to perform redis operations.
+
+        Returns:
+            EndpointInfo: Endpoint for deployment request.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/request"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.SET_PUBLISH
+        )
