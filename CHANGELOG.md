@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.69.1 (2025-10-07)
+
+### Bug Fixes
+
+- **device**: Update default cached behavior for read methods to False
+  ([`1a42a0e`](https://github.com/bec-project/bec/commit/1a42a0e27720f382b0063105fbfe291f4bdbe620))
+
+
 ## v3.69.0 (2025-10-07)
 
 ### Bug Fixes
