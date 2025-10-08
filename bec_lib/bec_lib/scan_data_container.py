@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import datetime
+import functools
 import importlib
 import time
 from collections import deque, namedtuple
@@ -110,6 +111,46 @@ def retry_file_access(func):
         raise RuntimeError("Error accessing file.")
 
     return wrapper
+
+
+@functools.lru_cache(maxsize=100)
+def get_hdf5_structure_from_file(file_path: str) -> dict:
+    """
+    Get the structure of an HDF5 file. The method caches the result of the last 100 files.
+    Args:
+        file_path (str): The path to the HDF5 file.
+
+    Returns:
+        dict: The structure of the HDF5 file.
+    """
+    with h5py.File(file_path, "r") as f:
+        return _get_hdf5_structure(f)
+
+
+def _get_hdf5_structure(group: h5py.Group) -> dict:
+    """
+    Recursively get the structure of the HDF5 file.
+
+    Args:
+        group (h5py.Group): The group to get the structure from.
+
+    Returns:
+        dict: The structure of the HDF5 file.
+    """
+    out = {}
+    for key, value in group.items():
+        if value is None:
+            continue
+        if isinstance(value, h5py.Group):
+            out[key] = _get_hdf5_structure(value)
+        else:
+            out[key] = {
+                "type": "dataset",
+                "shape": value.shape,
+                "dtype": value.dtype,
+                "mem_size": value.size * value.dtype.itemsize,
+            }
+    return out
 
 
 class FileReference:
@@ -227,33 +268,7 @@ class FileReference:
         Returns:
             dict: The structure of the HDF5 file.
         """
-        with h5py.File(self.file_path, "r") as f:
-            return self._get_hdf5_structure(f)
-
-    def _get_hdf5_structure(self, group: h5py.Group) -> dict:
-        """
-        Recursively get the structure of the HDF5 file.
-
-        Args:
-            group (h5py.Group): The group to get the structure from.
-
-        Returns:
-            dict: The structure of the HDF5 file.
-        """
-        out = {}
-        for key, value in group.items():
-            if value is None:
-                continue
-            if isinstance(value, h5py.Group):
-                out[key] = self._get_hdf5_structure(value)
-            else:
-                out[key] = {
-                    "type": "dataset",
-                    "shape": value.shape,
-                    "dtype": value.dtype,
-                    "mem_size": value.size * value.dtype.itemsize,
-                }
-        return out
+        return get_hdf5_structure_from_file(self.file_path)
 
 
 class AttributeDict(dict):
