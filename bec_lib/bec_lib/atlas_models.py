@@ -38,12 +38,13 @@ class _DeviceModelCore(BaseModel):
 
     enabled: bool
     deviceClass: str
-    deviceConfig: dict | None = None
     readoutPriority: Literal["monitored", "baseline", "async", "on_request", "continuous"]
+    deviceConfig: dict | None = None
     description: str | None = None
+    deviceTags: set[str] = set()
+    onFailure: Literal["buffer", "retry", "raise"] = "retry"
     readOnly: bool = False
     softwareTrigger: bool = False
-    deviceTags: set[str] = set()
     userParameter: dict = {}
 
 
@@ -109,6 +110,7 @@ class DeviceHashModel(BaseModel, frozen=True):
     description: HashInclusion = HashInclusion.EXCLUDE
     readOnly: HashInclusion = HashInclusion.EXCLUDE
     softwareTrigger: HashInclusion = HashInclusion.EXCLUDE
+    onFailure: HashInclusion = HashInclusion.EXCLUDE
     userParameter: DictHashInclusion = DictHashInclusion()
 
     def shallow_dump(self) -> dict[str, _InclusionT]:
