@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.69.2 (2025-10-08)
+
+### Bug Fixes
+
+- **history**: Fix cache for h5 structure access
+  ([`6c85069`](https://github.com/bec-project/bec/commit/6c85069df700bb417afcd1de126723315220353d))
+
+### Build System
+
+- Exclude pydantic 2.12.0
+  ([`999e09e`](https://github.com/bec-project/bec/commit/999e09ec41ddefbccbcc54b54c31162381408d7b))
+
+
 ## v3.69.1 (2025-10-07)
 
 ### Bug Fixes
