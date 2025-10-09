@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.69.3 (2025-10-09)
+
+### Bug Fixes
+
+- **atlas-model**: Add onFailure to _DeviceModelCore
+  ([`91050c9`](https://github.com/bec-project/bec/commit/91050c93d303e09f6190177ec4d5c06b30d217a2))
+
+
 ## v3.69.2 (2025-10-08)
 
 ### Bug Fixes
