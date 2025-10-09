@@ -19,6 +19,11 @@ def test_shell_optimization():
             min_length = len(optim_positions)
 
 
+@pytest.fixture(params=["shell", "corridor", "nearest"])
+def path_optimizer(request):
+    yield request.param
+
+
 @pytest.mark.parametrize(
     "positions_orig",
     [
@@ -216,11 +221,19 @@ def test_shell_optimization():
         ),
     ],
 )
-def test_corridor_optimization(positions_orig):
+def test_corridor_optimization(positions_orig, path_optimizer):
     optim = PathOptimizerMixin()
-    optim_positions = optim.optimize_corridor(positions_orig, num_iterations=20)
+    if path_optimizer == "corridor":
+        optim_positions = optim.optimize_corridor(positions_orig, num_iterations=20)
+    elif path_optimizer == "shell":
+        optim_positions = optim.optimize_shell(positions_orig, num_iterations=20)
+    elif path_optimizer == "nearest":
+        optim_positions = optim.optimize_nearest_neighbor(positions_orig)
     assert optim.get_path_length(optim_positions) < optim.get_path_length(positions_orig)
     assert len(positions_orig) == len(optim_positions)
+    print(
+        f"Reduced path for method {path_optimizer} by {optim.get_path_length(optim_positions)/optim.get_path_length(positions_orig)} %"
+    )
 
     # from matplotlib import pyplot as plt
 
