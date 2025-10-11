@@ -325,7 +325,7 @@ class BECClient(BECService):
         bec_logger.logger.remove()
         self.started = False
 
-    def _print_available_commands(self, title: str, data: tuple) -> None:
+    def _print_available_commands(self, title: str, data: list[tuple[str, str]]) -> None:
         console = Console()
         table = Table(title=title)
         table.add_column("Name", justify="center")
@@ -334,18 +334,18 @@ class BECClient(BECService):
             table.add_row(name, descr)
         console.print(table)
 
-    def _print_user_script_commands(self) -> None:
-        data = self._get_user_script_commands()
-        self._print_available_commands("User scripts", data)
+    def _print_macro_commands(self) -> None:
+        data = self._get_macro_commands()
+        self._print_available_commands("User macros", data)
 
-    def _get_user_script_commands(self) -> list:
+    def _get_macro_commands(self) -> list[tuple[str, str]]:
         avail_commands = []
-        for name, val in self._scripts.items():
+        for name, val in self.macros._update_handler.macros.items():
             descr = self._get_description_from_doc_string(val["cls"].__doc__)
             avail_commands.append((name, descr))
         return avail_commands
 
-    def _get_scan_commands(self) -> list:
+    def _get_scan_commands(self) -> list[tuple[str, str]]:
         avail_commands = []
         for name, scan in self.scans._available_scans.items():
             descr = self._get_description_from_doc_string(scan.scan_info["doc"])
@@ -357,7 +357,7 @@ class BECClient(BECService):
         self._print_available_commands("Scans", data)
 
     def show_all_commands(self):
-        self._print_user_script_commands()
+        self._print_macro_commands()
         self._print_scan_commands()
 
     @staticmethod
