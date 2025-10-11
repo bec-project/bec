@@ -1634,6 +1634,21 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def macro_update():
+        """
+        Endpoint for macro update. This endpoint is used to notify clients about macro updates.
+        It uses a messages.MacroUpdateMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for macro update.
+
+        """
+        endpoint = f"{EndpointType.USER.value}/macros/update"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.MacroUpdateMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
     def atlas_websocket_state(deployment_name: str, host_id: str):
         """
         Endpoint for the websocket state information, containing the users and their subscriptions

@@ -1198,3 +1198,28 @@ class ScriptExecutionInfoMessage(BECMessage):
     status: Literal["running", "completed", "failed", "aborted"]
     current_lines: list[int] | None = None
     traceback: str | None = None
+
+
+class MacroUpdateMessage(BECMessage):
+    """
+    Message for macro updates
+
+    Args:
+    """
+
+    msg_type: ClassVar[str] = "macro_update_message"
+    update_type: Literal["add", "remove", "reload", "reload_all"]
+    macro_name: str | None = None
+    file_path: str | None = None
+
+    metadata: dict | None = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    @classmethod
+    def check_macro(cls, values):
+        """Validate the macro update message"""
+        if values.update_type in ["add", "remove", "reload"] and not values.macro_name:
+            raise ValueError("macro_name must be provided for add, remove and reload actions")
+        if values.update_type == "add" and not values.file_path:
+            raise ValueError("file_path must be provided for add actions")
+        return values
