@@ -2,6 +2,10 @@ class ScanAbortion(Exception):
     pass
 
 
+class ScanHalting(Exception):
+    pass
+
+
 class LimitError(Exception):
     pass
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from bec_lib import messages
 from bec_lib.logger import bec_logger
 
-from .errors import ScanAbortion
+from .errors import ScanHalting
 from .scans import RequestBase, ScanBase, unpack_scan_args
 
 logger = bec_logger.logger
@@ -120,4 +120,4 @@ class ScanAssembler:
             logger.error(
                 f"Failed to initialize the scan class of type {scan_cls.__name__}. {content}"
             )
-            raise ScanAbortion(content) from exc
+            raise ScanHalting(content) from exc

@@ -13,7 +13,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
 
-from .errors import ScanAbortion
+from .errors import ScanAbortion, ScanHalting
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
 from .scan_stubs import ScanStubStatus
 
@@ -183,6 +183,8 @@ class ScanWorker(threading.Thread):
             time.sleep(0.1)
         if self.status == InstructionQueueStatus.STOPPED:
             raise ScanAbortion
+        if self.status == InstructionQueueStatus.HALTED:
+            raise ScanHalting
 
     def _initialize_scan_info(
         self, active_rb: RequestBlock, instr: messages.DeviceInstructionMessage, num_points: int
@@ -401,8 +403,11 @@ class ScanWorker(threading.Thread):
                     continue
                 self._exposure_time = getattr(queue.active_request_block.scan, "exp_time", None)
                 self._instruction_step(instr)
-        except ScanAbortion as exc:
+        except (ScanAbortion, ScanHalting) as exc:
+            halted = exc.__class__ == ScanHalting
             if queue.stopped or not (queue.return_to_start and queue.active_request_block):
+                if halted:
+                    raise ScanHalting from exc
                 raise ScanAbortion from exc
             queue.stopped = True
             try:
@@ -424,7 +429,9 @@ class ScanWorker(threading.Thread):
                     alarm_type=exc_return_to_start.__class__.__name__,
                     metadata=self._get_metadata_for_alarm(),
                 )
-                raise ScanAbortion from exc
+                raise ScanHalting from exc
+            if halted:
+                raise ScanHalting from exc
             raise ScanAbortion from exc
         except Exception as exc:
             content = traceback.format_exc()
@@ -436,7 +443,7 @@ class ScanWorker(threading.Thread):
                 alarm_type=exc.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(),
             )
-            raise ScanAbortion from exc
+            raise ScanHalting from exc
         queue.is_active = False
         queue.status = InstructionQueueStatus.COMPLETED
         self.current_instruction_queue_item = None
@@ -522,16 +529,18 @@ class ScanWorker(threading.Thread):
                         if not queue.stopped:
                             queue.append_to_queue_history()
 
-                except ScanAbortion:
+                except (ScanAbortion, ScanHalting) as exc:
                     content = traceback.format_exc()
                     logger.error(content)
+                    halted = exc.__class__ == ScanHalting
                     queue.queue.increase_scan_number()
-                    if queue.return_to_start:
-                        self._send_scan_status("aborted")
-                    else:
-                        self._send_scan_status("halted")
+                    self._send_scan_status("halted" if halted else "aborted")
                     logger.info(f"Scan aborted: {queue.queue_id}")
-                    queue.status = InstructionQueueStatus.STOPPED
+                    queue.status = (
+                        InstructionQueueStatus.STOPPED
+                        if not halted
+                        else InstructionQueueStatus.HALTED
+                    )
                     queue.append_to_queue_history()
                     self.cleanup()
                     self.parent.queue_manager.queues[self.queue_name].abort()

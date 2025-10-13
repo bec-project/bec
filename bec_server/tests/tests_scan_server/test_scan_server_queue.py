@@ -7,7 +7,7 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
-from bec_server.scan_server.errors import LimitError, ScanAbortion
+from bec_server.scan_server.errors import LimitError, ScanAbortion, ScanHalting
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
     InstructionQueueItem,
@@ -176,7 +176,7 @@ def test_set_halt(queuemanager_mock):
     queue_manager = queuemanager_mock()
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue_manager.set_halt(scan_id="dummy", parameter={})
-        set_abort.assert_called_once_with(scan_id="dummy", queue="primary")
+        set_abort.assert_called_once_with(scan_id="dummy", queue="primary", halted=True)
 
 
 def test_set_halt_disables_return_to_start(queuemanager_mock):
@@ -188,7 +188,7 @@ def test_set_halt_disables_return_to_start(queuemanager_mock):
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue = queue_manager.queues["primary"].active_instruction_queue
         queue_manager.set_halt(scan_id="dummy", parameter={})
-        set_abort.assert_called_once_with(scan_id="dummy", queue="primary")
+        set_abort.assert_called_once_with(scan_id="dummy", queue="primary", halted=True)
         assert queue.return_to_start is False
 
 
@@ -745,7 +745,7 @@ def test_request_block_queue_raises_alarm_on_error(
     req_block_queue.active_rb.scan = scan
     req_block_queue.active_rb.scan_id = scan_id
     req_block_queue.active_rb.scan_number = scan_number
-    with pytest.raises(ScanAbortion):
+    with pytest.raises(ScanHalting):
         next(req_block_queue)
     req_block_queue.scan_queue.queue_manager.connector.raise_alarm.assert_called_once_with(
         severity=Alarms.MAJOR,
