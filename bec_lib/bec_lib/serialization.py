@@ -15,7 +15,6 @@ from bec_lib import messages as messages_module
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECMessage
 from bec_lib.serialization_registry import SerializationRegistry
-from bec_lib.serialization_registry_v1 import msgpack as deprecated_msgpack
 
 logger = bec_logger.logger
 
@@ -44,9 +43,6 @@ class BECMessagePack(SerializationRegistry):
         out = msgpack_module.unpackb(
             raw_bytes, raw=False, strict_map_key=True, object_hook=self.decode
         )
-        if isinstance(out, msgpack_module.ExtType):
-            # unpacking did not work, try using the legacy msgpack decoder
-            return deprecated_msgpack.loads(raw_bytes)
         return out
 
 
