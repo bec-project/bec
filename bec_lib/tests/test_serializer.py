@@ -11,7 +11,6 @@ from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.serialization import MsgpackSerialization, json_ext, msgpack
-from bec_lib.serialization_registry_v1 import msgpack as deprecated_msgpack
 
 
 @pytest.fixture(params=[json_ext, msgpack, MsgpackSerialization])
@@ -130,53 +129,6 @@ def test_serializer_encoding_on_failure():
     finally:
         # Unregister the codec to avoid side effects on other tests
         msgpack._registry.pop("DummyModel")
-
-
-def test_legacy_serializer():
-    # Can be removed in the future, cf issue #516
-    msg = messages.DeviceMessage(
-        signals={"hroz": {"value": 0, "timestamp": 1708336264.5731058}}, metadata={}
-    )
-    raw = deprecated_msgpack.dumps(msg)
-    assert msgpack.loads(raw) == msg
-
-
-@pytest.mark.parametrize(
-    "data",
-    [
-        {"a": 1, "b": 2},
-        "hello",
-        1,
-        1.0,
-        [1, 2, 3],
-        np.array([1, 2, 3]),
-        {1, 2, 3},
-        {
-            "hroz": {
-                "hroz": {"value": 0, "timestamp": 1708336264.5731058},
-                "hroz_setpoint": {"value": 0, "timestamp": 1708336264.573121},
-            }
-        },
-        MessageEndpoints.progress("test"),
-        messages.DeviceMessage,
-        float,
-        messages.RawMessage(data={"a": 1, "b": 2}),
-        messages.BECStatus.RUNNING,
-        messages.DeviceMessage(
-            signals={
-                "hroz": {
-                    "value": np.random.rand(10).astype(np.uint32),
-                    "timestamp": 1708336264.5731058,
-                }
-            },
-            metadata={},
-        ),
-    ],
-)
-def test_legacy_serialize(data):
-    # Can be removed in the future, cf issue #516
-    res = deprecated_msgpack.loads(deprecated_msgpack.dumps(data)) == data
-    assert all(res) if isinstance(data, np.ndarray) else res
 
 
 def test_serializer_registry_cache_resets():
