@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.71.0 (2025-10-14)
+
+### Bug Fixes
+
+- **client**: Fix show_all_commands
+  ([`5dc830c`](https://github.com/bec-project/bec/commit/5dc830c07bb985c959af57aea376c1051eacfc02))
+
+### Features
+
+- **macros**: Add support to sync macros across clients
+  ([`163e953`](https://github.com/bec-project/bec/commit/163e95383a855edc285db960ab3f7a0adb8a797b))
+
+### Refactoring
+
+- Remove bec_lib macros
+  ([`6e20970`](https://github.com/bec-project/bec/commit/6e2097066fb2914450d316e00e265644a47e0041))
+
+
 ## v3.70.0 (2025-10-14)
 
 ### Features
