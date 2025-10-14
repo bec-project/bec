@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.69.4 (2025-10-14)
+
+### Bug Fixes
+
+- Pydantic pin
+  ([`182ae33`](https://github.com/bec-project/bec/commit/182ae330354160b601a88a43f58b6f0a470f45b8))
+
+
 ## v3.69.3 (2025-10-09)
 
 ### Bug Fixes
