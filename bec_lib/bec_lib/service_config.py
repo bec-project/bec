@@ -4,6 +4,8 @@ This module provides a class to handle the service configuration.
 
 import json
 import os
+import re
+from getpass import getuser
 from pathlib import Path
 
 import yaml
@@ -146,6 +148,7 @@ class ServiceConfig:
                     "Loaded new config from disk:"
                     f" {json.dumps(config, sort_keys=True, indent=4)}"
                 )
+            config = self._parse_config_from_file(config)
             return config
 
         _env_config = os.environ.get("BEC_SERVICE_CONFIG")
@@ -176,9 +179,43 @@ class ServiceConfig:
                         "Loaded new config from deployment_configs:"
                         f" {json.dumps(config, sort_keys=True, indent=4)}"
                     )
+                config = self._parse_config_from_file(config)
                 return config
 
         return {}
+
+    def _parse_config_from_file(self, config: dict) -> dict:
+        """
+        Parse the configuration loaded from a file, by checking for username-specific
+        base paths and replacing $account with the current username.
+
+        Args:
+            config (dict): The raw configuration dictionary.
+        Returns:
+            dict: The parsed configuration dictionary with user-specific paths.
+        """
+        for _, val in config.items():
+            if not isinstance(val, dict):
+                continue
+            if "base_path" not in val or not isinstance(val["base_path"], dict):
+                continue
+            default = val["base_path"].pop("*", None)
+            for username_regex, path in val["base_path"].items():
+                regex = re.compile(username_regex)
+                if regex.match(getuser()):
+                    if "$username" in path:
+                        path = path.replace("$username", getuser())
+                    val["base_path"] = path
+
+                    break
+            else:
+                if default:
+                    val["base_path"] = default
+                else:
+                    raise ValueError(
+                        f"No matching base_path for user {getuser()} and no default (*) provided."
+                    )
+        return config
 
     @property
     def redis(self):
