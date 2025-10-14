@@ -309,9 +309,9 @@ They are stored in the ``macros`` folder and can be edited with any text editor.
 The macros are loaded automatically on startup of the BEC console but can also be reloaded by typing ``bec.macros.load_all_user_macros()`` in the command-line.
 This command will load macros from three locations: 
 
-1. from `~/bec/macros/` in your home directory, 
+1. from `~/bec/macros/` in your home directory,
+1. from the path specified in the client config for your beamline, e.g. `bec/macros` in your raw data directory, and 
 1. from the beamline plugin directory, e.g. `/csaxs_bec/csaxs_bec/macros/`
-1. from `bec/bec_lib/macros/` (only useful if you have the entire source code of BEC installed locally).
 
 
 An example of a user macro could be a function to move a specific motor to a predefined position:

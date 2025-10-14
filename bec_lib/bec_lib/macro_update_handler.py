@@ -110,10 +110,6 @@ class MacroUpdateHandler:
         """
         self.forget_all_user_macros()
 
-        # load all macros from the macros directory
-        current_path = pathlib.Path(__file__).parent.resolve()
-        macro_files = glob.glob(os.path.abspath(os.path.join(current_path, "../macros/*.py")))
-
         # load all macros from the user's macro directory in the home directory
         user_macro_dir = os.path.join(os.path.expanduser("~"), "bec", "macros")
         if os.path.exists(user_macro_dir):
