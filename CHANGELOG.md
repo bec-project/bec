@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.70.0 (2025-10-14)
+
+### Features
+
+- **serializer**: Remove legacy serializer
+  ([`65b39f3`](https://github.com/bec-project/bec/commit/65b39f3bd9c290a3d22031b67c1f3f775e319d5a))
+
+
 ## v3.69.4 (2025-10-14)
 
 ### Bug Fixes
