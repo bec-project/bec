@@ -204,6 +204,53 @@ def test_bec_service_loads_deployment_config(tmpdir):
     assert config.redis == "localhost:1234"
 
 
+def test_bec_service_loads_deployment_config_with_regex_no_match(tmpdir):
+    """
+    Test to ensure that a specified regex not matching the username loads the default config
+    """
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "file_writer": {
+                "base_path": {"^e\\d{5}$": "/sls/x12sa/data/$account/raw", "*": str(tmpdir)},
+                "plugin": "custom_plugin",
+            },
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        config = ServiceConfig(config_name="test")
+
+    assert config.model.file_writer.base_path == str(tmpdir)
+
+
+def test_bec_service_loads_deployment_config_with_regex_match(tmpdir):
+    """
+    Test to ensure that a specified regex matching the username loads the correct config
+    """
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "log_writer": {
+                "base_path": {"^e\\d{5}$": "/sls/x12sa/data/$username/raw", "*": str(tmpdir)},
+                "plugin": "custom_plugin",
+            },
+            "file_writer": {"base_path": "/sls/x12sa/data/$account/raw"},
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        with mock.patch("bec_lib.service_config.getuser", return_value="e12345"):
+            config = ServiceConfig(config_name="test")
+
+    assert config.model.log_writer.base_path == "/sls/x12sa/data/e12345/raw"
+    assert config.model.file_writer.base_path == "/sls/x12sa/data/$account/raw"
+
+
 def test_bec_service_loads_parent_deployment_config(tmpdir):
     """
     Test to ensure that the check for deployment configs also considers the parent directory
