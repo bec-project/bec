@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.72.1 (2025-10-15)
+
+### Bug Fixes
+
+- **macros**: Initialize list of macros
+  ([`201a6b6`](https://github.com/bec-project/bec/commit/201a6b648be3f32db28450daa4c2ff68be06489c))
+
+
 ## v3.72.0 (2025-10-15)
 
 ### Features
