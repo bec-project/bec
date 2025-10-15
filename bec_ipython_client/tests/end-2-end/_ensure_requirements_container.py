@@ -8,14 +8,14 @@ image_name = (
 )
 podman = PodmanCliUtils()
 
-for i in range(1, 4):
+for i in range(1, 6):
     try:
         output = podman._run_and_capture_error("podman", "pull", image_name)
         print("successfully pulled requirements image for current version")
         exit(0)
     except ProcedureWorkerError as e:
         print(e)
-        print("retrying in 2 minutes...")
-        sleep(120)
+        print("retrying in 5 minutes...")
+        sleep(5 * 60)
 print(f"No more retries. Check if {image_name} actually exists!")
 exit(1)
