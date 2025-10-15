@@ -690,3 +690,91 @@ def test_load_macro_overwrite_builtin(macros, tmpdir):
     # Verify that the built-in print function was not overwritten
     assert macros._update_handler.macros.get("print") is None
     assert builtins.print is print  # Ensure built-in print is unchanged
+
+
+def test_load_all_user_macros_basic(macros, tmpdir, monkeypatch):
+    """Test the load_all_user_macros method with mocked directories."""
+    # Create temporary directories and files
+    user_macro_dir = tmpdir.mkdir("bec").mkdir("macros")
+    config_macro_dir = tmpdir.mkdir("config_macros")
+
+    # Create test macro files
+    user_macro1 = user_macro_dir.join("user_macro1.py")
+    user_macro1.write(
+        """
+def user_function1():
+    '''User macro function 1'''
+    return 'user1'
+"""
+    )
+
+    user_macro2 = user_macro_dir.join("user_macro2.py")
+    user_macro2.write(
+        """
+def user_function2():
+    '''User macro function 2'''
+    return 'user2'
+"""
+    )
+
+    config_macro1 = config_macro_dir.join("config_macro1.py")
+    config_macro1.write(
+        """
+def config_function1():
+    '''Config macro function 1'''
+    return 'config1'
+"""
+    )
+
+    # Mock the path expansion and existence checks
+    def mock_expanduser(path):
+        if path == "~":
+            return str(tmpdir)
+        elif path.startswith("~/"):
+            return str(tmpdir.join(path[2:]))
+        return path
+
+    def mock_exists(path):
+        if "bec/macros" in path:
+            return True
+        elif str(config_macro_dir) in path:
+            return True
+        return False
+
+    # Mock the _macro_path to point to our test config directory
+    macros._update_handler._macro_path = str(config_macro_dir)
+
+    # Apply mocks
+    monkeypatch.setattr("os.path.expanduser", mock_expanduser)
+    monkeypatch.setattr("os.path.exists", mock_exists)
+
+    # Mock importlib.metadata.entry_points to return no plugins
+    mock_entry_points = mock.MagicMock()
+    mock_entry_points.return_value = []
+    monkeypatch.setattr("importlib.metadata.entry_points", mock_entry_points)
+
+    # Mock the forget_all_user_macros method to track if it's called
+    with mock.patch.object(macros._update_handler, "forget_all_user_macros") as mock_forget:
+        # Call the method under test
+        macros._update_handler.load_all_user_macros()
+
+        # Verify forget_all_user_macros was called first
+        mock_forget.assert_called_once()
+
+    # Verify all expected macros were loaded
+    assert "user_function1" in macros._update_handler.macros
+    assert "user_function2" in macros._update_handler.macros
+    assert "config_function1" in macros._update_handler.macros
+
+    # Verify the functions work correctly
+    assert macros._update_handler.macros["user_function1"]["cls"]() == "user1"
+    assert macros._update_handler.macros["user_function2"]["cls"]() == "user2"
+    assert macros._update_handler.macros["config_function1"]["cls"]() == "config1"
+
+    # Verify functions are added to builtins
+    assert hasattr(builtins, "user_function1")
+    assert hasattr(builtins, "user_function2")
+    assert hasattr(builtins, "config_function1")
+    assert getattr(builtins, "user_function1")() == "user1"
+    assert getattr(builtins, "user_function2")() == "user2"
+    assert getattr(builtins, "config_function1")() == "config1"

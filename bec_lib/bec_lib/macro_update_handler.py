@@ -109,6 +109,7 @@ class MacroUpdateHandler:
         to inform clients about added objects in the namesapce.
         """
         self.forget_all_user_macros()
+        macro_files = []
 
         # load all macros from the user's macro directory in the home directory
         user_macro_dir = os.path.join(os.path.expanduser("~"), "bec", "macros")
