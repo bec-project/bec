@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.72.0 (2025-10-15)
+
+### Features
+
+- **service-config**: Add user-specific base path parsing in ServiceConfig
+  ([`3de6be4`](https://github.com/bec-project/bec/commit/3de6be46c911aeee2975f9a39d031e2951365b0d))
+
+
 ## v3.71.0 (2025-10-14)
 
 ### Bug Fixes
