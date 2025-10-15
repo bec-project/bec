@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.72.2 (2025-10-15)
+
+### Bug Fixes
+
+- Increase timeout for requirements image to exist
+  ([`2105d95`](https://github.com/bec-project/bec/commit/2105d9570c1eebd2ad5ec40e14c1d36add3aef63))
+
+
 ## v3.72.1 (2025-10-15)
 
 ### Bug Fixes
