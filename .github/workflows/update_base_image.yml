@@ -1,0 +1,40 @@
+name: Update base linux container image
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 0" # Weekly on Sunday morning
+
+jobs:
+  update_base_image:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+    
+      - name: Setup tools
+        run: sudo apt update && sudo apt install qemu-user-static
+
+      - name: Buildah build
+        id: container-build
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: bec_linux_base
+          tags: ${{ github.sha }} latest
+          containerfiles: |
+            ./bec_server/bec_server/scan_server/procedures/Containerfile.bec_linux_base
+          archs: amd64, aarch64
+
+      - name: Push to registry
+        id: container-push
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.container-build.outputs.image }}
+          tags: ${{ steps.container-build.outputs.tags }}
+          registry: ghcr.io/bec-project
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}

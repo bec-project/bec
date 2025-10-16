@@ -1,0 +1,16 @@
+FROM python:3.11-slim AS bec_linux_base
+
+# This image should be built and pushed to the container repo on release
+# The result is used in Containerfile.worker to create the local worker image 
+# for any given deployment
+
+# Set working directory - BEC deployment should be mounted here
+WORKDIR /bec
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    tmux \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip wheel
+RUN pip install uv
