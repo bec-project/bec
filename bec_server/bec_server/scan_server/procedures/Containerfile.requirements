@@ -1,21 +1,6 @@
-# Base image
-FROM python:3.11-slim AS base
-
-# This image should be built and pushed to the container repo on release
-# The result is used in Containerfile.worker to create the local worker image 
-# for any given deployment
-
-# Set working directory - BEC deployment should be mounted here
-WORKDIR /bec
-
-FROM base AS bec_requirements
+FROM ghcr.io/bec-project/bec_linux_base AS bec_requirements
 # Install dependencies - BEC release workflow should build this stage and deploy
 # it to the internal container registry
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    tmux \
-    && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip wheel
 RUN pip install uv
