@@ -112,7 +112,7 @@ def test_process_request_happy_paths(process_request_manager, message: Procedure
     assert queue in endpoint.endpoint
     assert execution_msg.identifier == message.identifier
     process_request_manager.spawn.assert_called()
-    assert queue in process_request_manager.active_workers.keys()
+    assert queue in process_request_manager._active_workers.keys()
 
 
 def test_process_request_failure(process_request_manager):
@@ -120,7 +120,7 @@ def test_process_request_failure(process_request_manager):
     process_request_manager._ack.assert_not_called()
     process_request_manager._conn.rpush.assert_not_called()
     process_request_manager.spawn.assert_not_called()
-    assert process_request_manager.active_workers == {}
+    assert process_request_manager._active_workers == {}
 
 
 class UnlockableWorker(ProcedureWorker):
@@ -162,13 +162,13 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     # trigger the running of the test message
     procedure_manager.process_queue_request(message)  # type: ignore
-    assert queue in procedure_manager.active_workers.keys()
+    assert queue in procedure_manager._active_workers.keys()
 
     # spawn method should be added as a future
-    _wait_until(procedure_manager.active_workers[queue]["future"].running)
+    _wait_until(procedure_manager._active_workers[queue]["future"].running)
     # and then create the worker
-    _wait_until(lambda: procedure_manager.active_workers[queue].get("worker") is not None)
-    worker = procedure_manager.active_workers[queue]["worker"]
+    _wait_until(lambda: procedure_manager._active_workers[queue].get("worker") is not None)
+    worker = procedure_manager._active_workers[queue]["worker"]
     assert isinstance(worker, UnlockableWorker)
     _wait_until(lambda: worker.status == ProcedureWorkerStatus.RUNNING)
 
@@ -185,7 +185,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
         worker.event_2.set()
         _wait_until(lambda: worker.status == ProcedureWorkerStatus.FINISHED)
     # spawn deletes the worker queue
-    _wait_until(lambda: len(procedure_manager.active_workers) == 0)
+    _wait_until(lambda: len(procedure_manager._active_workers) == 0)
 
 
 @patch("bec_server.scan_server.procedures.worker_base.RedisConnector", MagicMock())
