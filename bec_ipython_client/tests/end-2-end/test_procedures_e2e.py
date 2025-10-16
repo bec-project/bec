@@ -62,7 +62,7 @@ def test_procedure_runner_spawns_worker(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
     client, _, manager = client_logtool_and_manager
-    assert manager.active_workers == {}
+    assert manager._active_workers == {}
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
         identifier="sleep", args_kwargs=((), {"time_s": 2}), queue="test"
@@ -77,8 +77,8 @@ def test_procedure_runner_spawns_worker(
     manager.add_callback("test", cb)
     client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
-    _wait_while(lambda: manager.active_workers == {}, 5)
-    _wait_while(lambda: manager.active_workers != {}, 20)
+    _wait_while(lambda: manager._active_workers == {}, 5)
+    _wait_while(lambda: manager._active_workers != {}, 20)
 
     assert logs != []
 
@@ -91,7 +91,7 @@ def test_happy_path_container_procedure_runner(
     test_args = (1, 2, 3)
     test_kwargs = {"a": "b", "c": "d"}
     client, logtool, manager = client_logtool_and_manager
-    assert manager.active_workers == {}
+    assert manager._active_workers == {}
     conn = client.connector
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
@@ -99,8 +99,8 @@ def test_happy_path_container_procedure_runner(
     )
     conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
-    _wait_while(lambda: manager.active_workers == {}, 5)
-    _wait_while(lambda: manager.active_workers != {}, 20)
+    _wait_while(lambda: manager._active_workers == {}, 5)
+    _wait_while(lambda: manager._active_workers != {}, 20)
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")

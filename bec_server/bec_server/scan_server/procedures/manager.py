@@ -45,7 +45,7 @@ class ProcedureManager:
 
         self._parent = parent
         self.lock = RLock()
-        self.active_workers: dict[str, ProcedureWorkerEntry] = {}
+        self._active_workers: dict[str, ProcedureWorkerEntry] = {}
         self.executor = ThreadPoolExecutor(
             max_workers=PROCEDURE.WORKER.MAX_WORKERS, thread_name_prefix="user_procedure_"
         )
@@ -86,7 +86,7 @@ class ProcedureManager:
         self._callbacks[queue].append(cb)
 
     def _run_callbacks(self, queue: str):
-        if (worker := self.active_workers[queue]["worker"]) is None:
+        if (worker := self._active_workers[queue]["worker"]) is None:
             return
         for cb in self._callbacks.get(queue, []):
             cb(worker)
@@ -106,7 +106,7 @@ class ProcedureManager:
         self._ack(True, f"Running procedure {message_obj.identifier}")
         queue = message_obj.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
         endpoint = MessageEndpoints.procedure_execution(queue)
-        logger.debug(f"active workers: {self.active_workers}, worker requested: {queue}")
+        logger.debug(f"active workers: {self._active_workers}, worker requested: {queue}")
         self._conn.rpush(
             endpoint,
             endpoint.message_type(
@@ -120,14 +120,14 @@ class ProcedureManager:
             with self.lock:
                 logger.debug(f"cleaning up worker {fut} for queue {queue}...")
                 self._run_callbacks(queue)
-                del self.active_workers[queue]
+                del self._active_workers[queue]
 
         with self.lock:
-            if queue not in self.active_workers:
+            if queue not in self._active_workers:
                 new_worker = self.executor.submit(self.spawn, queue=queue)
                 new_worker.add_done_callback(_log_on_end)
                 new_worker.add_done_callback(cleanup_worker)
-                self.active_workers[queue] = {"worker": None, "future": new_worker}
+                self._active_workers[queue] = {"worker": None, "future": new_worker}
 
     def spawn(self, queue: str):
         """Spawn a procedure worker future which listens to a given queue, i.e. procedure queue list in Redis.
@@ -135,13 +135,13 @@ class ProcedureManager:
         Args:
             queue (str): name of the queue to spawn a worker for"""
 
-        if queue in self.active_workers and self.active_workers[queue]["worker"] is not None:
+        if queue in self._active_workers and self._active_workers[queue]["worker"] is not None:
             raise WorkerAlreadyExists(
-                f"Queue {queue} already has an active worker in {self.active_workers}!"
+                f"Queue {queue} already has an active worker in {self._active_workers}!"
             )
         with self._worker_cls(self._server, queue, PROCEDURE.WORKER.QUEUE_TIMEOUT_S) as worker:
             with self.lock:
-                self.active_workers[queue]["worker"] = worker
+                self._active_workers[queue]["worker"] = worker
             worker.work()
 
     def shutdown(self):
@@ -152,7 +152,7 @@ class ProcedureManager:
         )
         self._conn.shutdown()
         # cancel futures by hand to give us the opportunity to detatch them from redis if they have started
-        for entry in self.active_workers.values():
+        for entry in self._active_workers.values():
             cancelled = entry["future"].cancel()
             if not cancelled:
                 # unblock any waiting workers and let them shutdown
@@ -160,7 +160,7 @@ class ProcedureManager:
                     # redis unblock executor.client_id
                     worker.abort()
         futures.wait(
-            (entry["future"] for entry in self.active_workers.values()),
+            (entry["future"] for entry in self._active_workers.values()),
             timeout=PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S,
         )
         self.executor.shutdown()
