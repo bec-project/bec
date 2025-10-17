@@ -45,6 +45,10 @@ class ProcedureManager:
 
         self._parent = parent
         self.lock = RLock()
+
+        self._conn = RedisConnector([self._parent.bootstrap_server])
+        self._startup()
+
         self._active_workers: dict[str, ProcedureWorkerEntry] = {}
         self.executor = ThreadPoolExecutor(
             max_workers=PROCEDURE.WORKER.MAX_WORKERS, thread_name_prefix="user_procedure_"
@@ -53,11 +57,16 @@ class ProcedureManager:
 
         self._callbacks: dict[str, list[Callable[[ProcedureWorker], Any]]] = {}
         self._worker_cls = worker_type
-        self._conn = RedisConnector([self._parent.bootstrap_server])
         self._reply_endpoint = MessageEndpoints.procedure_request_response()
         self._server = f"{self._conn.host}:{self._conn.port}"
 
         self._conn.register(MessageEndpoints.procedure_request(), None, self.process_queue_request)
+
+    def _startup(self):
+        # If the server is restarted, clear any pending requests, they'll have to be resubmitted
+        self._conn.delete(MessageEndpoints.procedure_request())
+        # Move anything from existing execution queues into unfinished
+        previously_active_queues = self._conn
 
     def _ack(self, accepted: bool, msg: str):
         logger.info(f"procedure accepted: {accepted}, message: {msg}")

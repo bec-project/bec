@@ -299,3 +299,15 @@ def test_manager_status_api(_conn, procedure_manager):
     for w in procedure_manager._active_workers.values():
         w["worker"].event_2.set()
     _wait_until(lambda: procedure_manager.active_workers() == [])
+
+
+def test_startup(procedure_manager: ProcedureManager):
+    _msgs = [
+        ProcedureRequestMessage(identifier="test1", queue="test1"),
+        ProcedureRequestMessage(identifier="test1", queue="test1"),
+    ]
+    msgs = iter(_msgs)
+    procedure_manager._validate_request = lambda msg: next(msgs)
+    for _ in range(len(_msgs)):
+        procedure_manager.process_queue_request({})
+    procedure_manager._conn.lrange
