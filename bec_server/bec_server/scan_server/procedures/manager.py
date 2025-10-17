@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import ProcedureRequestMessage, RequestResponseMessage
+from bec_lib.messages import ProcedureRequestMessage, ProcedureWorkerStatus, RequestResponseMessage
 from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.procedures import procedure_registry
 from bec_server.scan_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
@@ -164,3 +164,14 @@ class ProcedureManager:
             timeout=PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S,
         )
         self.executor.shutdown()
+
+    def active_workers(self) -> list[str]:
+        with self.lock:
+            return list(self._active_workers.keys())
+
+    def worker_statuses(self) -> dict[str, ProcedureWorkerStatus]:
+        with self.lock:
+            return {
+                q: w["worker"].status if w["worker"] is not None else ProcedureWorkerStatus.NONE
+                for q, w in self._active_workers.items()
+            }
