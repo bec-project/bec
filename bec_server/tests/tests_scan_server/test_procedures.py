@@ -267,3 +267,35 @@ def test_register_rejects_already_registered():
     with pytest.raises(ProcedureRegistryError) as e:
         register("run scan", lambda *_, **__: None)
     assert e.match("already registered")
+
+
+def _yield_once():
+    yield "value"
+    while True:
+        yield None
+
+
+@patch(
+    "bec_server.scan_server.procedures.worker_base.RedisConnector",
+    side_effect=lambda *_: MagicMock(
+        blocking_list_pop_to_set_add=MagicMock(side_effect=_yield_once())
+    ),
+)
+def test_manager_status_api(_conn, procedure_manager):
+    procedure_manager._worker_cls = UnlockableWorker
+    for message in PROCESS_REQUEST_TEST_CASES:
+        procedure_manager.process_queue_request(message)
+    _wait_until(lambda: procedure_manager.active_workers() == ["primary", "queue2"])
+    _wait_until(
+        lambda: procedure_manager.worker_statuses()
+        == {"primary": ProcedureWorkerStatus.RUNNING, "queue2": ProcedureWorkerStatus.RUNNING}
+    )
+    for w in procedure_manager._active_workers.values():
+        w["worker"].event_1.set()
+    _wait_until(
+        lambda: procedure_manager.worker_statuses()
+        == {"primary": ProcedureWorkerStatus.IDLE, "queue2": ProcedureWorkerStatus.IDLE}
+    )
+    for w in procedure_manager._active_workers.values():
+        w["worker"].event_2.set()
+    _wait_until(lambda: procedure_manager.active_workers() == [])
