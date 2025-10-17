@@ -8,6 +8,7 @@ import fakeredis
 import pytest
 
 from bec_lib.client import BECClient, RedisConnector
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
@@ -310,4 +311,4 @@ def test_startup(procedure_manager: ProcedureManager):
     procedure_manager._validate_request = lambda msg: next(msgs)
     for _ in range(len(_msgs)):
         procedure_manager.process_queue_request({})
-    procedure_manager._conn.lrange
+    assert procedure_manager._conn.lrange(MessageEndpoints.procedure_execution("test1"), 0, -1) == 2
