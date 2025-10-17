@@ -8,6 +8,7 @@ import fakeredis
 import pytest
 
 from bec_lib.client import BECClient, RedisConnector
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
@@ -112,7 +113,7 @@ def test_process_request_happy_paths(process_request_manager, message: Procedure
     assert queue in endpoint.endpoint
     assert execution_msg.identifier == message.identifier
     process_request_manager.spawn.assert_called()
-    assert queue in process_request_manager.active_workers.keys()
+    assert queue in process_request_manager._active_workers.keys()
 
 
 def test_process_request_failure(process_request_manager):
@@ -120,7 +121,7 @@ def test_process_request_failure(process_request_manager):
     process_request_manager._ack.assert_not_called()
     process_request_manager._conn.rpush.assert_not_called()
     process_request_manager.spawn.assert_not_called()
-    assert process_request_manager.active_workers == {}
+    assert process_request_manager._active_workers == {}
 
 
 class UnlockableWorker(ProcedureWorker):
@@ -162,13 +163,13 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     # trigger the running of the test message
     procedure_manager.process_queue_request(message)  # type: ignore
-    assert queue in procedure_manager.active_workers.keys()
+    assert queue in procedure_manager._active_workers.keys()
 
     # spawn method should be added as a future
-    _wait_until(procedure_manager.active_workers[queue]["future"].running)
+    _wait_until(procedure_manager._active_workers[queue]["future"].running)
     # and then create the worker
-    _wait_until(lambda: procedure_manager.active_workers[queue].get("worker") is not None)
-    worker = procedure_manager.active_workers[queue]["worker"]
+    _wait_until(lambda: procedure_manager._active_workers[queue].get("worker") is not None)
+    worker = procedure_manager._active_workers[queue]["worker"]
     assert isinstance(worker, UnlockableWorker)
     _wait_until(lambda: worker.status == ProcedureWorkerStatus.RUNNING)
 
@@ -185,7 +186,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
         worker.event_2.set()
         _wait_until(lambda: worker.status == ProcedureWorkerStatus.FINISHED)
     # spawn deletes the worker queue
-    _wait_until(lambda: len(procedure_manager.active_workers) == 0)
+    _wait_until(lambda: len(procedure_manager._active_workers) == 0)
 
 
 @patch("bec_server.scan_server.procedures.worker_base.RedisConnector", MagicMock())
@@ -267,3 +268,47 @@ def test_register_rejects_already_registered():
     with pytest.raises(ProcedureRegistryError) as e:
         register("run scan", lambda *_, **__: None)
     assert e.match("already registered")
+
+
+def _yield_once():
+    yield "value"
+    while True:
+        yield None
+
+
+@patch(
+    "bec_server.scan_server.procedures.worker_base.RedisConnector",
+    side_effect=lambda *_: MagicMock(
+        blocking_list_pop_to_set_add=MagicMock(side_effect=_yield_once())
+    ),
+)
+def test_manager_status_api(_conn, procedure_manager):
+    procedure_manager._worker_cls = UnlockableWorker
+    for message in PROCESS_REQUEST_TEST_CASES:
+        procedure_manager.process_queue_request(message)
+    _wait_until(lambda: procedure_manager.active_workers() == ["primary", "queue2"])
+    _wait_until(
+        lambda: procedure_manager.worker_statuses()
+        == {"primary": ProcedureWorkerStatus.RUNNING, "queue2": ProcedureWorkerStatus.RUNNING}
+    )
+    for w in procedure_manager._active_workers.values():
+        w["worker"].event_1.set()
+    _wait_until(
+        lambda: procedure_manager.worker_statuses()
+        == {"primary": ProcedureWorkerStatus.IDLE, "queue2": ProcedureWorkerStatus.IDLE}
+    )
+    for w in procedure_manager._active_workers.values():
+        w["worker"].event_2.set()
+    _wait_until(lambda: procedure_manager.active_workers() == [])
+
+
+def test_startup(procedure_manager: ProcedureManager):
+    _msgs = [
+        ProcedureRequestMessage(identifier="test1", queue="test1"),
+        ProcedureRequestMessage(identifier="test1", queue="test1"),
+    ]
+    msgs = iter(_msgs)
+    procedure_manager._validate_request = lambda msg: next(msgs)
+    for _ in range(len(_msgs)):
+        procedure_manager.process_queue_request({})
+    assert procedure_manager._conn.lrange(MessageEndpoints.procedure_execution("test1"), 0, -1) == 2
