@@ -19,6 +19,7 @@ class ProcedureWorkerStatus(Enum):
     IDLE = auto()
     FINISHED = auto()
     DEAD = auto()  # worker lost communication with the container
+    NONE = auto()  # worker doesn't exist in manager, caught during creation and cleanup
 
 
 class BECStatus(Enum):
