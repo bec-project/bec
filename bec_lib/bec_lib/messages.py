@@ -5,7 +5,8 @@ import time
 import warnings
 from copy import deepcopy
 from enum import Enum, auto
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Self
+from uuid import uuid4
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -1213,18 +1214,67 @@ class ProcedureRequestMessage(BECMessage):
     queue: str | None = None
 
 
+class ProcedureQNotifMessage(BECMessage):
+    """Message type for notifying watchers of changes to queues"""
+
+    msg_type: ClassVar[str] = "procedure_queue_notif_message"
+    queue_name: str
+    queue_type: Literal["execution", "unhandled"]
+
+
 class ProcedureExecutionMessage(BECMessage):
     """Message type for sending procedure execution instructions to the scheduler
 
     Sent by the  user to the procedure_request topic. It will be consumed by the scan server.
         Args:
             identifier (str): name of the procedure registered with the server
+            queue (str): the procedure queue this execution belongs to
+            args_kwargs (tuple[tuple[Any, ...], dict[str, Any]]): arguments for the procedure function
     """
 
     msg_type: ClassVar[str] = "procedure_execution_message"
     identifier: str
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
+    execution_id: str = Field(default_factory=lambda: str(uuid4()))
+
+
+class ProcedureAbortMessage(BECMessage):
+    """Message type to request aborting a procedure or procedure queue
+
+    One and only one of the args should be supplied.
+        Args:
+            queue (str | None): the procedure queue to abort
+            execution_id (str | None): the procedure execution to abort
+            abort_all (bool | None): abort all procedures if true
+    """
+
+    msg_type: ClassVar[str] = "procedure_abort_message"
+    queue: str | None = None
+    execution_id: str | None = None
+    abort_all: bool | None = None
+
+    @model_validator(mode="after")
+    def mutually_exclusive(self) -> Self:
+        if (self.queue, self.execution_id, self.abort_all).count(None) != 2:
+            raise ValueError(
+                "Please only supply one argument! Supplied: \n"
+                f"    {self.queue=}, {self.execution_id=}, {self.abort_all=}"
+            )
+        return self
+
+
+class ProcedureClearUnhandledMessage(ProcedureAbortMessage):
+    """Message type to request clearing an unhandled procedure or procedure queue
+
+    One and only one of the args should be supplied.
+        Args:
+            queue (str | None): the procedure queue to abort
+            execution_id (str | None): the procedure execution to abort
+            abort_all (bool | None): abort all procedures if true
+    """
+
+    ...
 
 
 class ProcedureWorkerStatusMessage(BECMessage):
@@ -1233,12 +1283,21 @@ class ProcedureWorkerStatusMessage(BECMessage):
     Args:
         worker_queue (str): Worker queue ID
         status (str): Worker status
-
+        current_execution_id (str | None): ID of the current job, only allowed for RUNNING
     """
 
     msg_type: ClassVar[str] = "procedure_worker_status_message"
     worker_queue: str
     status: ProcedureWorkerStatus
+    current_execution_id: str | None = None
+
+    @model_validator(mode="after")
+    def check_id(self) -> Self:
+        if self.current_execution_id is not None and self.status != ProcedureWorkerStatus.RUNNING:
+            raise ValueError("Adding an execution ID is only valid for the RUNNING status")
+        if self.current_execution_id is None and self.status == ProcedureWorkerStatus.RUNNING:
+            raise ValueError("Adding an execution ID is mandatory for the RUNNING status")
+        return self
 
 
 class LoginInfoMessage(BECMessage):
