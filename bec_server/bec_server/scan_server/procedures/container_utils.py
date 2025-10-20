@@ -96,6 +96,7 @@ class PodmanApiUtils(_PodmanUtilsBase):
         volumes: list[VolumeSpec],
         command: str,
         pod_name: str | None = None,
+        container_name: str | None = None,
     ) -> str:
         with PodmanClient(base_url=self.uri) as client:
             try:
@@ -106,6 +107,7 @@ class PodmanApiUtils(_PodmanUtilsBase):
                     environment=environment,
                     mounts=volumes,
                     pod=pod_name,
+                    name=container_name,
                 )  # type: ignore # running with detach returns container object
             except APIError as e:
                 if e.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
@@ -151,8 +153,9 @@ class PodmanCliOutput(ContainerCommandOutput):
 
 class PodmanCliUtils(_PodmanUtilsBase):
 
-    def _run_and_capture_error(self, *args: str):
-        logger.debug(f"Running {args}")
+    def _run_and_capture_error(self, *args: str, log: bool = True):
+        if log:
+            logger.debug(f"Running {args}")
         output = subprocess.run([*args], capture_output=True)
         if output.returncode != 0:
             raise ProcedureWorkerError(
@@ -166,7 +169,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
         return json.loads(
             self._run_and_capture_error(
-                "podman", subcom, "list", "--all", "--format", "json"
+                "podman", subcom, "list", "--all", "--format", "json", log=False
             ).stdout
         )
 
@@ -193,6 +196,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
         volumes: list[VolumeSpec],
         command: str,
         pod_name: str | None = None,
+        container_name: str | None = None,
     ) -> str:
         _volumes = [
             f"{vol['source']}:{vol['target']}{':ro' if vol['read_only'] else ''}" for vol in volumes
@@ -200,22 +204,39 @@ class PodmanCliUtils(_PodmanUtilsBase):
         _volume_args = list(chain(*(("-v", vol) for vol in _volumes)))
         _environment = _multi_args_from_dict("-e", environment)  # type: ignore # this is actually a dict[str, str]
         _pod_arg = ["--pod", pod_name] if pod_name else []
+        _name_arg = ["--replace", "--name", container_name] if container_name else []
         return (
             self._run_and_capture_error(
-                "podman", "run", *_environment, "-d", *_volume_args, *_pod_arg, image_tag, command
+                "podman",
+                "run",
+                *_environment,
+                "-d",
+                *_name_arg,
+                *_volume_args,
+                *_pod_arg,
+                image_tag,
+                command,
             )
             .stdout.decode()
             .strip()
         )
 
     def kill(self, id: str):
-        self._run_and_capture_error("podman", "kill", id)
-        self._run_and_capture_error("podman", "rm", id)
+        try:
+            self._run_and_capture_error("podman", "kill", id)
+        except ProcedureWorkerError as e:
+            logger.error(e)
 
     def logs(self, id: str) -> list[str]:
-        return self._run_and_capture_error("podman", "logs", id).stderr.decode().splitlines()
+        try:
+            return self._run_and_capture_error("podman", "logs", id).stderr.decode().splitlines()
+        except ProcedureWorkerError as e:
+            logger.error(e)
+            return [f"No logs found for container {id}\n"]
 
     def state(self, id: str) -> PodmanContainerStates | None:
         for container in self._podman_ls_json():
             if container["Id"] == id or container["Id"].startswith(id):
+                if names := container.get("Names"):
+                    logger.debug(f"Container {names[0]} status: {container['State']}")
                 return PodmanContainerStates(container["State"])

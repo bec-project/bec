@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from threading import Event
 from typing import cast
 
 from bec_lib.endpoints import MessageEndpoints
@@ -8,6 +9,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus
 from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.procedures.constants import PROCEDURE
+from bec_server.scan_server.procedures.helper import BackendProcedureHelper
 
 logger = bec_logger.logger
 
@@ -35,8 +37,11 @@ class ProcedureWorker(ABC):
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
         self.status = ProcedureWorkerStatus.IDLE
         self._conn = RedisConnector([server])
+        self._helper = BackendProcedureHelper(self._conn)
         self._lifetime_s = lifetime_s or PROCEDURE.WORKER.QUEUE_TIMEOUT_S
         self.client_id = self._conn.client_id()
+        self._current_execution_id: str | None = None
+        self._aborted = Event()
 
         self._setup_execution_environment()
 
@@ -61,7 +66,14 @@ class ProcedureWorker(ABC):
     def _setup_execution_environment(self): ...
 
     def abort(self):
+        """Abort the entire worker"""
+        self._aborted.set()
         self._kill_process()
+
+    @abstractmethod
+    def abort_execution(self, execution_id: str):
+        """Abort the execution with the given id"""
+        ...
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._kill_process()
@@ -75,9 +87,10 @@ class ProcedureWorker(ABC):
                     self.key, self._active_procs_endpoint, timeout_s=self._lifetime_s
                 )
             ) is not None:
-                self.status = ProcedureWorkerStatus.RUNNING
-                self._run_task(cast(ProcedureExecutionMessage, item))
-                self.status = ProcedureWorkerStatus.IDLE
+                if not self._aborted.is_set():
+                    self.status = ProcedureWorkerStatus.RUNNING
+                    self._run_task(cast(ProcedureExecutionMessage, item))
+                    self.status = ProcedureWorkerStatus.IDLE
         except Exception as e:
             logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
         finally:

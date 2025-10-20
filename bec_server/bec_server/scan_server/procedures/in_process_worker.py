@@ -12,7 +12,7 @@ from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 
 class InProcessProcedureWorker(ProcedureWorker):
     """A simple in-process procedure worker. Be careful with this, it should only run trusted code.
-    Intended for built-in procedures like those to run a single scan."""
+    Intended for built-in procedures like those to run a single scan, or testing."""
 
     def _setup_execution_environment(self):
         from bec_lib.logger import bec_logger
@@ -45,3 +45,7 @@ class InProcessProcedureWorker(ProcedureWorker):
         self.logger.info(
             f"In-process procedure worker for queue {self.key.endpoint} timed out after {self._lifetime_s} s, shutting down"
         )
+
+    def abort_execution(self, execution_id: str):
+        """Abort the execution with the given id"""
+        ...  # No nice way to abort a running function, don't use this class for such things
