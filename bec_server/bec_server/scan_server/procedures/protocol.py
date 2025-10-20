@@ -11,7 +11,6 @@ class VolumeSpec(TypedDict):
 
 
 class ContainerCommandOutput(Protocol):
-
     def pretty_print(self) -> str: ...
 
 
@@ -30,6 +29,7 @@ class ContainerCommandBackend(Protocol):
         volumes: list[VolumeSpec],
         command: str,
         pod_name: str | None = None,
+        container_name: str | None = None,
     ) -> str: ...
     def kill(self, id: str): ...
     def logs(self, id: str) -> list[str]: ...

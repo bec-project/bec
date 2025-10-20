@@ -138,6 +138,7 @@ def test_api_utils_run(api_utils: tuple[PodmanApiUtils, MagicMock]):
         environment={"a": "b"},
         mounts=[{"source": "a", "target": "b", "read_only": True, "type": "bind"}],
         pod=None,
+        name=None,
     )
 
 
@@ -185,7 +186,7 @@ def test_cli_kill(cli_utils: tuple[PodmanCliUtils, MagicMock]):
     utils, run_mock = cli_utils
     run_mock.reset_mock()
     utils.kill("test")
-    assert run_mock.call_count == 2
+    assert run_mock.call_count == 1
 
 
 def test_cli_get_state(cli_utils_with_fake_container_json: PodmanCliUtils):

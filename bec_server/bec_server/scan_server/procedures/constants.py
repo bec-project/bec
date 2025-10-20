@@ -77,4 +77,5 @@ class PodmanContainerStates(str, Enum):
     RUNNING = "running"
     PAUSED = "paused"
     STOPPED = "stopped"
+    STOPPING = "stopping"
     EXITED = "exited"
