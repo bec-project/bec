@@ -1111,7 +1111,7 @@ class RedisConnector:
     def xadd(
         self,
         topic: str,
-        msg_dict: dict,
+        msg_dict: dict | BECMessage,
         max_size=None,
         pipe: Pipeline | None = None,
         expire: int | None = None,
@@ -1121,7 +1121,7 @@ class RedisConnector:
 
         Args:
             topic (str): redis topic
-            msg_dict (dict): message to add
+            msg_dict (dict | BECMessage): message to add
             max_size (int, optional): max size of stream. Defaults to None.
             pipe (Pipeline, optional): redis pipe. Defaults to None.
             expire (int, optional): expire time. Defaults to None.
@@ -1137,7 +1137,8 @@ class RedisConnector:
         else:
             client = self._redis_conn
 
-        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
+        msg = msg_dict.model_dump() if isinstance(msg_dict, BECMessage) else msg_dict
+        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg.items()}
 
         if max_size:
             client.xadd(topic, msg_dict, maxlen=max_size)

@@ -15,6 +15,7 @@ from bec_server.scan_server.procedures.constants import (
     ProcedureWorkerError,
 )
 from bec_server.scan_server.procedures.container_utils import get_backend
+from bec_server.scan_server.procedures.helper import BackendProcedureHelper
 from bec_server.scan_server.procedures.protocol import ContainerCommandBackend
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 
@@ -34,7 +35,7 @@ class ContainerProcedureWorker(ProcedureWorker):
         minimum necessary, or things which are only necessary for the functioning of the worker,
         and other information should be passed through redis"""
         return {
-            "redis_server": f"{self._conn.host}:{self._conn.port}",
+            "redis_server": f"redis:{self._conn.port}",
             "queue": self._queue,
             "timeout_s": str(self._lifetime_s),
         }
@@ -42,6 +43,7 @@ class ContainerProcedureWorker(ProcedureWorker):
     def _setup_execution_environment(self):
         self._backend: ContainerCommandBackend = get_backend()
         image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
+        self.container_name = f"bec_procedure_{PROCEDURE.BEC_VERSION}_{self._queue}"
         if not self._backend.image_exists(image_tag):
             self._backend.build_worker_image()
         self._container_id = self._backend.run(
@@ -57,6 +59,7 @@ class ContainerProcedureWorker(ProcedureWorker):
             ],
             PROCEDURE.CONTAINER.COMMAND,
             pod_name=PROCEDURE.CONTAINER.POD_NAME,
+            container_name=self.container_name,
         )
 
     def _run_task(self, item: ProcedureExecutionMessage):
@@ -64,12 +67,16 @@ class ContainerProcedureWorker(ProcedureWorker):
             f"Container worker _run_task() called with {item} - this should never happen!"
         )
 
-    def _kill_process(self):
-        if self._backend.state(self._container_id) not in [
+    def _ending_or_ended(self):
+        return self._backend.state(self._container_id) in [
             PodmanContainerStates.EXITED,
             PodmanContainerStates.STOPPED,
-        ]:
-            self._backend.kill(self._container_id)
+            PodmanContainerStates.STOPPING,
+        ]
+
+    def _kill_process(self):
+        if not self._ending_or_ended():
+            self._backend.kill(self.container_name)
 
     def work(self):
         """block until the container is finished, listen for status updates in the meantime"""
@@ -77,27 +84,37 @@ class ContainerProcedureWorker(ProcedureWorker):
         # on timeout check if container is still running
 
         status_update = None
-        while self._backend.state(self._container_id) not in [
-            PodmanContainerStates.EXITED,
-            PodmanContainerStates.STOPPED,
-        ]:
+        while not self._ending_or_ended():
             status_update = self._conn.blocking_list_pop(
-                MessageEndpoints.procedure_worker_status_update(self._queue), timeout_s=1
+                MessageEndpoints.procedure_worker_status_update(self._queue), timeout_s=0.2
             )
             if status_update is not None:
                 if not isinstance(status_update, messages.ProcedureWorkerStatusMessage):
                     raise ProcedureWorkerError(f"Received unexpected message {status_update}")
                 self.status = status_update.status
+                self._current_execution_id = status_update.current_execution_id
                 logger.info(
                     f"Container worker '{self._queue}' status update: {status_update.status.name}"
                 )
             # TODO: we probably do want to handle some kind of timeout here but we don't know how
             # long a running procedure should actually take - it could theoretically be infinite
+        if self.status != ProcedureWorkerStatus.FINISHED:
+            self.status = ProcedureWorkerStatus.DEAD
+
+    def abort_execution(self, execution_id: str):
+        """Abort the execution with the given id. Has no effect if the given ID is not the current job"""
+        if execution_id == self._current_execution_id:
+            self._backend.kill(self._container_id)
+            self._helper.remove_from_active.by_exec_id(execution_id)
+            logger.info(
+                f"Aborting execution {execution_id}, restarting worker for queue: {self._queue}"
+            )
+            self._setup_execution_environment()
 
 
 def main():
     """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
-    logger.info(f"Container worker starting up")
+    logger.info("Container worker starting up")
     try:
         needed_keys = ContainerWorkerEnv.__annotations__.keys()
         logger.debug(f"Checking for environment variables: {needed_keys}")
@@ -125,6 +142,7 @@ def main():
 
     endpoint_info = MessageEndpoints.procedure_execution(env["queue"])
     conn = RedisConnector(env["redis_server"])
+    helper = BackendProcedureHelper(conn)
     active_procs_endpoint = MessageEndpoints.active_procedure_executions()
     status_endpoint = MessageEndpoints.procedure_worker_status_update(env["queue"])
 
@@ -138,11 +156,13 @@ def main():
         )
         timeout_s = PROCEDURE.WORKER.QUEUE_TIMEOUT_S
 
-    def _push_status(status: ProcedureWorkerStatus):
+    def _push_status(status: ProcedureWorkerStatus, id: str | None = None):
         logger.debug(f"Updating container worker status to {status.name}")
         conn.rpush(
             status_endpoint,
-            messages.ProcedureWorkerStatusMessage(worker_queue=env["queue"], status=status),
+            messages.ProcedureWorkerStatusMessage(
+                worker_queue=env["queue"], status=status, current_execution_id=id
+            ),
         )
 
     def _run_task(item: ProcedureExecutionMessage):
@@ -159,9 +179,16 @@ def main():
                 endpoint_info, active_procs_endpoint, timeout_s=timeout_s
             )
         ) is not None:
-            _push_status(ProcedureWorkerStatus.RUNNING)
+            _push_status(ProcedureWorkerStatus.RUNNING, item.execution_id)
+            helper.notify_watchers(env["queue"], queue_type="execution")
             logger.debug(f"running task {item!r}")
-            _run_task(item)
+            try:
+                _run_task(item)
+            except Exception as e:
+                logger.error(f"Encountered error running procedure {item}")
+                logger.error(e)
+            finally:
+                helper.remove_from_active.by_exec_id(item.execution_id)
             _push_status(ProcedureWorkerStatus.IDLE)
     except Exception as e:
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
@@ -170,7 +197,7 @@ def main():
         _push_status(ProcedureWorkerStatus.FINISHED)
         client.shutdown()
         if item is not None:  # in this case we are here due to an exception, not a timeout
-            conn.remove_from_set(active_procs_endpoint, item)
+            helper.remove_from_active.by_exec_id(item.execution_id)
 
 
 if __name__ == "__main__":

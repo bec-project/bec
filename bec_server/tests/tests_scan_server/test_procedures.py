@@ -1,6 +1,7 @@
 import threading
 import time
 from functools import partial
+from itertools import starmap
 from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,7 @@ import fakeredis
 import pytest
 
 from bec_lib.client import BECClient, RedisConnector
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
@@ -15,6 +17,7 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.serialization import MsgpackSerialization
+from bec_lib.service_config import ServiceConfig
 from bec_server.scan_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
 from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager, ProcedureWorker
@@ -32,11 +35,16 @@ from bec_server.scan_server.procedures.procedure_registry import (
 
 
 LOG_MSG_PROC_NAME = "log execution message args"
+FAKEREDIS_HOST = "127.0.0.1"
+FAKEREDIS_PORT = 6380
 
 
 @pytest.fixture(autouse=True)
 def shutdown_client():
-    bec_client = BECClient()
+    bec_client = BECClient(
+        config=ServiceConfig(config={"redis": {"host": FAKEREDIS_HOST, "port": FAKEREDIS_PORT}}),
+        connector_cls=partial(RedisConnector, redis_cls=fakeredis.FakeRedis),
+    )
     bec_client.start()
     yield
     bec_client.shutdown()
@@ -45,7 +53,7 @@ def shutdown_client():
 @pytest.fixture
 def procedure_manager():
     server = MagicMock()
-    server.bootstrap_server = "localhost:1"
+    server.bootstrap_server = f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}"
     with patch(
         "bec_server.scan_server.procedures.manager.RedisConnector",
         partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
@@ -104,7 +112,7 @@ def process_request_manager(procedure_manager: ProcedureManager):
 
 @pytest.mark.parametrize("message", PROCESS_REQUEST_TEST_CASES)
 def test_process_request_happy_paths(process_request_manager, message: ProcedureRequestMessage):
-    process_request_manager.process_queue_request(message)
+    process_request_manager._process_queue_request(message)
     process_request_manager._ack.assert_called_with(True, f"Running procedure {message.identifier}")
     process_request_manager._conn.rpush.assert_called()
     endpoint, execution_msg = process_request_manager._conn.rpush.call_args.args
@@ -116,7 +124,7 @@ def test_process_request_happy_paths(process_request_manager, message: Procedure
 
 
 def test_process_request_failure(process_request_manager):
-    process_request_manager.process_queue_request(None)
+    process_request_manager._process_queue_request(None)
     process_request_manager._ack.assert_not_called()
     process_request_manager._conn.rpush.assert_not_called()
     process_request_manager.spawn.assert_not_called()
@@ -131,6 +139,7 @@ class UnlockableWorker(ProcedureWorker):
         self.event_1 = threading.Event()
         self.event_2 = threading.Event()
 
+    def abort_execution(self, execution_id: str): ...
     def _setup_execution_environment(self): ...
     def _kill_process(self): ...
     def _run_task(self, item):
@@ -161,7 +170,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     # trigger the running of the test message
-    procedure_manager.process_queue_request(message)  # type: ignore
+    procedure_manager._process_queue_request(message)  # type: ignore
     assert queue in procedure_manager._active_workers.keys()
 
     # spawn method should be added as a future
@@ -259,7 +268,7 @@ def test_callable_from_message():
 
 def test_register_rejects_wrong_type():
     with pytest.raises(ProcedureRegistryError) as e:
-        register("test", "test")
+        register("test", "test")  # type: ignore
     assert e.match("not a valid procedure")
 
 
@@ -284,7 +293,7 @@ def _yield_once():
 def test_manager_status_api(_conn, procedure_manager):
     procedure_manager._worker_cls = UnlockableWorker
     for message in PROCESS_REQUEST_TEST_CASES:
-        procedure_manager.process_queue_request(message)
+        procedure_manager._process_queue_request(message)
     _wait_until(lambda: procedure_manager.active_workers() == ["primary", "queue2"])
     _wait_until(
         lambda: procedure_manager.worker_statuses()
@@ -299,3 +308,130 @@ def test_manager_status_api(_conn, procedure_manager):
     for w in procedure_manager._active_workers.values():
         w["worker"].event_2.set()
     _wait_until(lambda: procedure_manager.active_workers() == [])
+
+
+_ManagerWithMsgs = tuple[ProcedureManager, list[ProcedureExecutionMessage]]
+
+
+@pytest.fixture
+def manager_with_test_msgs(procedure_manager: ProcedureManager):
+    procedure_manager._conn._redis_conn.flushdb()
+    contents = [
+        ("test_identifier_1", "queue1", ((), {})),
+        ("test_identifier_2", "queue1", ((), {})),
+        ("test_identifier_1", "queue2", ((), {})),
+        ("test_identifier_2", "queue2", ((), {})),
+    ]
+    msgs = iter(
+        ProcedureRequestMessage(identifier=c[0], queue=c[1], args_kwargs=c[2]) for c in contents
+    )
+    procedure_manager._validate_request = lambda msg: next(msgs)
+    for _ in range(len(contents)):
+        procedure_manager._process_queue_request({})
+    return (
+        procedure_manager,
+        [
+            ProcedureExecutionMessage(metadata={}, identifier=c[0], queue=c[1], args_kwargs=c[2])
+            for c in contents
+        ],
+    )
+
+
+def _eq_except_id(a: ProcedureExecutionMessage, b: ProcedureExecutionMessage):
+    return a.identifier == b.identifier and a.queue == b.queue and a.args_kwargs == b.args_kwargs
+
+
+def _all_eq_except_id(a: list[ProcedureExecutionMessage], b: list[ProcedureExecutionMessage]):
+    if len(a) != len(b):
+        return False
+    return all(starmap(_eq_except_id, zip(a, b)))
+
+
+@pytest.mark.parametrize("queue", ["queue1", "queue2"])
+@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+def test_startup(manager_with_test_msgs: _ManagerWithMsgs, queue: str):
+    procedure_manager, expected = manager_with_test_msgs
+    queue_expected = list(filter(lambda msg: msg.queue == queue, expected))
+
+    execution_list = procedure_manager._helper.get.exec_queue(queue)
+    assert _all_eq_except_id(execution_list, queue_expected)
+
+    procedure_manager._startup()
+
+    # on startup, the manager should move active queues to unhandled queues
+    execution_list = procedure_manager._helper.get.exec_queue(queue)
+    unhandled_execution_list = procedure_manager._conn.lrange(
+        MessageEndpoints.unhandled_procedure_execution(queue), 0, -1
+    )
+    assert execution_list == []
+    assert _all_eq_except_id(unhandled_execution_list, queue_expected)
+
+
+@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
+    procedure_manager, expected = manager_with_test_msgs
+    remaining_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
+    aborted_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
+
+    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
+    assert _all_eq_except_id(q1_execution_list, aborted_expected)
+    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
+    assert _all_eq_except_id(q2_execution_list, remaining_expected)
+
+    procedure_manager._process_abort({"queue": "queue1"})
+
+    # on abort, the manager should move active queues to unhandled queues
+    # this should happen for q1 and not q2
+    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
+    unhandled_execution_list = procedure_manager._conn.lrange(
+        MessageEndpoints.unhandled_procedure_execution("queue1"), 0, -1
+    )
+    assert _all_eq_except_id(q2_execution_list, remaining_expected)
+    assert _all_eq_except_id(unhandled_execution_list, aborted_expected)
+
+
+@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
+    procedure_manager, expected = manager_with_test_msgs
+    q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
+    q2_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
+
+    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
+    assert _all_eq_except_id(
+        q1_execution_list, list(filter(lambda msg: msg.queue == "queue1", q1_expected))
+    )
+    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
+    assert _all_eq_except_id(q2_execution_list, q2_expected)
+
+    procedure_manager._process_abort({"execution_id": q2_execution_list[1].execution_id})
+
+    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
+    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
+    assert _all_eq_except_id(q1_execution_list, q1_expected)
+    assert _all_eq_except_id(q2_execution_list, [q2_expected[0]])
+
+
+@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
+    procedure_manager, expected = manager_with_test_msgs
+    q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
+    q2_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
+
+    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
+    assert _all_eq_except_id(
+        q1_execution_list, list(filter(lambda msg: msg.queue == "queue1", q1_expected))
+    )
+    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
+    assert _all_eq_except_id(q2_execution_list, q2_expected)
+
+    procedure_manager._process_abort({"abort_all": True})
+
+    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
+    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
+    q1_unhandled_list = procedure_manager._helper.get.unhandled_queue("queue1")
+    q2_unhandled_list = procedure_manager._helper.get.unhandled_queue("queue2")
+
+    assert q1_execution_list == []
+    assert q2_execution_list == []
+    assert _all_eq_except_id(q1_unhandled_list, q1_expected)
+    assert _all_eq_except_id(q2_unhandled_list, q2_expected)

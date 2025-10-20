@@ -11,7 +11,6 @@ from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.procedures.constants import PROCEDURE
 from bec_server.scan_server.procedures.container_utils import get_backend
 from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager
@@ -52,7 +51,7 @@ def _wait_while(cond: Callable[[], bool], timeout_s):
 def test_building_worker_image():
     podman_utils = get_backend()
     build = podman_utils.build_worker_image()
-    assert len(build._command_output.splitlines()[-1]) == 64
+    assert len(build._command_output.splitlines()[-1]) == 64  # type: ignore
     assert podman_utils.image_exists(f"bec_procedure_worker:v{version('bec_lib')}")
 
 
@@ -75,7 +74,7 @@ def test_procedure_runner_spawns_worker(
         logs = worker._backend.logs(worker._container_id)
 
     manager.add_callback("test", cb)
-    client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
+    client.connector.xadd(topic=endpoint, msg_dict=msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     _wait_while(lambda: manager._active_workers != {}, 20)
@@ -97,7 +96,7 @@ def test_happy_path_container_procedure_runner(
     msg = messages.ProcedureRequestMessage(
         identifier="log execution message args", args_kwargs=(test_args, test_kwargs)
     )
-    conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
+    conn.xadd(topic=endpoint, msg_dict=msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     _wait_while(lambda: manager._active_workers != {}, 20)
