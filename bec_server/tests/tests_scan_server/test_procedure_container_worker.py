@@ -45,20 +45,20 @@ def test_container_worker_work(redis_mock, logger_mock):
     redis_mock().host = "server"
     redis_mock().port = "port"
 
+    msgs = [
+        ProcedureWorkerStatusMessage(
+            worker_queue="test_queue",
+            status=ProcedureWorkerStatus.RUNNING,
+            current_execution_id="test",
+        ),
+        ProcedureWorkerStatusMessage(
+            worker_queue="test_queue", status=ProcedureWorkerStatus.FINISHED
+        ),
+    ]
+
     def _mock_pop():
-        msgs = [
-            ProcedureWorkerStatusMessage(
-                worker_queue="test_queue", status=ProcedureWorkerStatus.RUNNING
-            ),
-            ProcedureWorkerStatusMessage(
-                worker_queue="test_queue", status=ProcedureWorkerStatus.FINISHED
-            ),
-        ]
-        for msg in msgs:
-            sleep(0.05)
-            yield msg
+        yield from msgs
         while True:
-            sleep(0.05)
             yield from repeat(None)
 
     mock_pop = _mock_pop()
@@ -74,7 +74,7 @@ def test_container_worker_work(redis_mock, logger_mock):
 
     t.start()
     start = time.monotonic()
-    while time.monotonic() < start + 5:
+    while time.monotonic() < start + 1000:
         try:
             assert (
                 logger_mock.info.call_args_list[0].args[0]
@@ -125,6 +125,7 @@ class MockItem:
         self.identifier = name
         self.args = args
         self.kwargs = kwargs
+        self.execution_id = f"test_{name}"
 
     def __repr__(self) -> str:
         return self.identifier

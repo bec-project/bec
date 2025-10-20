@@ -43,7 +43,7 @@ class MessageOp(list[str], enum.Enum):
     STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last", "delete"]
     LIST = ["lpush", "lrange", "lrem", "rpush", "ltrim", "keys", "delete", "blocking_list_pop"]
     KEY_VALUE = ["set", "get", "delete", "keys"]
-    SET = ["remove_from_set", "get_set_members"]
+    SET = ["remove_from_set", "get_set_members", "delete"]
 
 
 MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]")
@@ -1420,8 +1420,8 @@ class MessageEndpoints:
     @staticmethod
     def procedure_request() -> EndpointInfo:
         """
-        Endpoint for scan queue request. This endpoint is used to request the new scans.
-        The request is sent using a messages.ScanQueueMessage message.
+        Endpoint for requesting new procedures.
+        The request is sent using a messages.ProcedureRequestMessage message.
 
         Returns:
             EndpointInfo: Endpoint for scan queue request.
@@ -1468,6 +1468,25 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def unhandled_procedure_execution(queue_id: str):
+        """
+        Endpoint for procedure executions which were pending when the manager was shutdown.
+        Messages from procedure_execution are moved here on manager startup.
+        The request is sent using a messages.ProcedureExecutionMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request.
+        """
+        endpoint = (
+            f"{EndpointType.INTERNAL.value}/procedures/unhandled_procedure_execution/{queue_id}"
+        )
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureExecutionMessage,
+            message_op=MessageOp.LIST,
+        )
+
+    @staticmethod
     def active_procedure_executions():
         """
         Endpoint for finished procedure executions or querying currently running procedures.
@@ -1484,6 +1503,36 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def procedure_abort():
+        """
+        Endpoint to request aborting a running procedure
+
+        Returns:
+            EndpointInfo: Endpoint for set of active procedure executions.
+        """
+        endpoint = f"{EndpointType.INFO.value}/procedures/abort"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureAbortMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def procedure_clear_unhandled():
+        """
+        Endpoint to request aborting a running procedure
+
+        Returns:
+            EndpointInfo: Endpoint for set of active procedure executions.
+        """
+        endpoint = f"{EndpointType.INFO.value}/procedures/clear_unhandled"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureClearUnhandledMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def procedure_worker_status_update(queue_id: str):
         """
         Endpoint for status updates of out-of-process procedure workers.
@@ -1496,6 +1545,21 @@ class MessageEndpoints:
             endpoint=endpoint,
             message_type=messages.ProcedureWorkerStatusMessage,
             message_op=MessageOp.LIST,
+        )
+
+    @staticmethod
+    def procedure_queue_notif():
+        """
+        PubSub channel for a consumer (e.g. BEC widgets) to be notified of changes to a procedure queue
+
+        Returns:
+            EndpointInfo: Endpoint for procedure queue updates for given queue.
+        """
+        endpoint = f"{EndpointType.INFO.value}/procedures/queue_notif"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureQNotifMessage,
+            message_op=MessageOp.SEND,
         )
 
     @staticmethod
