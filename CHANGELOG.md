@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.72.3 (2025-10-20)
+
+### Performance Improvements
+
+- Split container build into linux base and reqs
+  ([`320b6c2`](https://github.com/bec-project/bec/commit/320b6c2aefaad962ff1e8a698b3bf29590c0a9a2))
+
+
 ## v3.72.2 (2025-10-15)
 
 ### Bug Fixes
