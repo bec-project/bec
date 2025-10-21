@@ -466,19 +466,37 @@ class DeviceManagerDS(DeviceManagerBase):
         obj.initialized = False
 
     @staticmethod
-    def connect_device(obj, wait_for_all=False):
-        """establish a connection to a device"""
+    def connect_device(
+        obj: ophyd.OphydObject, wait_for_all: bool = False, timeout: float = 30, force: bool = False
+    ):
+        """
+        Establish a connection to a device.
+
+        Args:
+            obj (OphydObject): The device object to connect to.
+            wait_for_all (bool): Whether to wait for all signals to connect.
+                                 Default is False
+            timeout (float): Timeout in seconds for the connection attempt to all signals.
+                             Default is 30 seconds.
+            force (bool): If True, forces reconnection even if already connected.
+                          Relevant for devices inheriting from ADBase as they are always connected.
+                          Default is False.
+
+        Raises:
+            ConnectionError: If the connection could not be established.
+        """
+
         try:
-            if obj.connected:
+            if not force and obj.connected:
                 return
             if hasattr(obj, "controller"):
                 obj.controller.on()
                 return
             if hasattr(obj, "wait_for_connection"):
                 try:
-                    obj.wait_for_connection(all_signals=wait_for_all, timeout=30)
+                    obj.wait_for_connection(all_signals=wait_for_all, timeout=timeout)
                 except TypeError:
-                    obj.wait_for_connection(timeout=30)
+                    obj.wait_for_connection(timeout=timeout)
                 return
             logger.error(
                 f"Device {obj.name} does not implement the socket controller interface nor"

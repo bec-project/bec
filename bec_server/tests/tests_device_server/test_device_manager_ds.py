@@ -95,6 +95,25 @@ def test_connect_device(dm_with_devices, obj, raises_error):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_connect_device_with_kwargs(dm_with_devices):
+    """Test connect with timeout, wait_for_all and force"""
+    device_manager = dm_with_devices
+    obj = EpicsDeviceMock()
+
+    with mock.patch.object(obj, "wait_for_connection") as mock_wait_for_connection:
+        device_manager.connect_device(obj, wait_for_all=True)
+        mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=30)
+        mock_wait_for_connection.reset_mock()
+        assert obj.connected is False
+        obj._connected = True
+        device_manager.connect_device(obj, wait_for_all=True, timeout=10, force=False)
+        mock_wait_for_connection.assert_not_called()
+        assert obj.connected is True
+        device_manager.connect_device(obj, wait_for_all=True, timeout=10, force=True)
+        mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=10)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_disable_unreachable_devices(device_manager, session_from_test_config):
     def get_config_from_mock():
         device_manager._session = copy.deepcopy(session_from_test_config)
