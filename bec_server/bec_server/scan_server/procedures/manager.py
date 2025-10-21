@@ -6,12 +6,12 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
 from typing import Any, Callable, TypedDict
 
-from pydantic import ValidationError
-
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureRequestMessage, ProcedureWorkerStatus, RequestResponseMessage
 from bec_lib.redis_connector import RedisConnector
+from pydantic import ValidationError
+
 from bec_server.scan_server.procedures import procedure_registry
 from bec_server.scan_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
