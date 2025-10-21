@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.72.4 (2025-10-21)
+
+### Bug Fixes
+
+- **devicemanager**: Add kwarg for timeout and "force" connection test
+  ([`5a4d737`](https://github.com/bec-project/bec/commit/5a4d737112ba42b90a073baae51d286589128fd6))
+
+
 ## v3.72.3 (2025-10-20)
 
 ### Performance Improvements
