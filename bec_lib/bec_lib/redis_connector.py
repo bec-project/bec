@@ -1038,6 +1038,23 @@ class RedisConnector:
         return ret
 
     @validate_endpoint("topic")
+    def lrem(self, topic: str, count: int, msg, pipe: Pipeline | None = None):
+        """Removes the first count occurrences of elements equal to element from the list stored at key.
+        The count argument influences the operation in the following ways:
+            count > 0: Remove elements equal to element moving from head to tail.
+            count < 0: Remove elements equal to element moving from tail to head.
+            count = 0: Remove all elements equal to element.
+        For example, LREM list -2 "hello" will remove the last two occurrences of "hello" in the list stored at list.
+
+        Returns the number of items removed
+        """
+
+        client = pipe if pipe is not None else self._redis_conn
+        if isinstance(msg, BECMessage):
+            msg = MsgpackSerialization.dumps(msg)
+        return client.lrem(topic, count, msg)
+
+    @validate_endpoint("topic")
     def set_and_publish(
         self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None
     ) -> None:
