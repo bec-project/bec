@@ -568,3 +568,17 @@ def test_redis_connector_message_alternated_pass(connected_connector):
 
     assert msg_received == [data_to_check]
     assert msg_received == [data_original]
+
+
+def test_lrem(connected_connector: RedisConnector):
+    conn, ep = connected_connector, MessageEndpoints.procedure_execution
+    msgs = [
+        messages.ProcedureExecutionMessage(identifier=_id, queue="primary", args_kwargs=((), {}))
+        for _id in ("a", "b", "c")
+    ]
+    for msg in msgs:
+        conn.rpush(ep(msg.queue), msg)
+    assert len(conn.lrange(ep("primary"), 0, -1)) == 3
+    conn.lrem(ep(msgs[1].queue), 0, msgs[1])
+    list_contents = conn.lrange(ep("primary"), 0, -1)
+    assert list_contents == [msgs[0], msgs[2]]
