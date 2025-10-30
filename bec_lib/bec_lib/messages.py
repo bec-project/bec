@@ -714,15 +714,15 @@ class ScanBaselineMessage(BECMessage):
     data: dict
 
 
-ConfigAction = Literal["add", "set", "update", "reload", "remove"]
+ConfigAction = Literal["add", "set", "update", "reload", "remove", "reset"]
 
 
 class DeviceConfigMessage(BECMessage):
     """Message type for sending device config updates
 
     Args:
-        action (Literal['add', 'set', 'update', 'reload', or 'remove'] : Update of the device config.
-        config (dict, or None): Device config (add, set, update) or None (reload).
+        action (Literal['add', 'set', 'update', 'reload', 'reset' or 'remove'] : Update of the device config.
+        config (dict, or None): Device config (add, set, update) or None (reload, reset).
         metadata (dict, optional): Additional metadata.
 
     """

@@ -182,11 +182,31 @@ class ConfigHelper:
             self.handle_update_reply(reply, RID, timeout)
         return RID
 
+    def reset_config(self, wait_for_response: bool = True, timeout_s: float | None = None) -> None:
+        """
+        Send a request to reset config to default
+        Args:
+            wait_for_response (bool): whether to wait for the response, default True
+            timeout_s (float, optional): how long to wait for a response. Ignored if not waiting. Defaults to best effort calculated value based on message length.
+        Returns: None
+        """
+        RID = str(uuid.uuid4())
+        self.connector.send(
+            MessageEndpoints.device_config_request(),
+            DeviceConfigMessage(action="reset", config=None, metadata={"RID": RID}),
+        )
+
+        if wait_for_response:
+            timeout = timeout_s if timeout_s is not None else 120
+            logger.info(f"Waiting for reply with timeout {timeout} s")
+            reply = self.wait_for_config_reply(RID, timeout=timeout)
+            self.handle_update_reply(reply, RID, timeout)
+
     @staticmethod
     def suggested_timeout_s(config: dict):
         return min(300, len(config) * 30) + 2
 
-    def handle_update_reply(self, reply: RequestResponseMessage, RID: str, timeout: int):
+    def handle_update_reply(self, reply: RequestResponseMessage, RID: str, timeout: float):
         if not reply.content["accepted"] and not reply.metadata.get("updated_config"):
             raise DeviceConfigError(
                 f"Failed to update the config: {reply.content['message']}. No devices were updated."
