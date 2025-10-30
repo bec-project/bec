@@ -56,7 +56,7 @@ def test_user_macro_forget(macros):
 def test_load_user_macro(macros):
     mock_run = macros._client.callbacks.run
     builtins.__dict__["dev"] = macros
-    dummy_func.__module__ = "macros"
+    dummy_func.__module__ = "macros_dummy_file"
     with mock.patch.object(
         macros._update_handler,
         "load_macro_module",
