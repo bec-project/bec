@@ -10,6 +10,8 @@ import inspect
 import os
 from typing import TYPE_CHECKING, Any, Literal
 
+import slugify
+
 from bec_lib import messages
 from bec_lib.callback_handler import EventType
 from bec_lib.endpoints import MessageEndpoints
@@ -164,7 +166,9 @@ class MacroUpdateHandler:
             return []
 
         # If safe, load the module
-        module_spec = importlib.util.spec_from_file_location("macros", file)
+        module_suffix = os.path.basename(file)
+        module_suffix = slugify.slugify(module_suffix, separator="_")
+        module_spec = importlib.util.spec_from_file_location(f"macros_{module_suffix}", file)
         if module_spec is None or module_spec.loader is None:
             logger.error(f"Failed to create module spec for {file}")
             return []
@@ -265,7 +269,7 @@ class MacroUpdateHandler:
             if not callable(cls):
                 continue
             # ignore imported classes
-            if cls.__module__ != "macros":
+            if not cls.__module__.startswith("macros_"):
                 continue
             macros_in_file[name] = {
                 "cls": cls,
