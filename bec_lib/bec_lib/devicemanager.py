@@ -696,8 +696,10 @@ class DeviceManagerBase:
             msg (DeviceConfigMessage): Config message
 
         """
-        if msg.content["action"] not in ["update", "add", "remove", "reload", "set"]:
-            raise DeviceConfigError("Action must be either add, remove, update, set or reload.")
+        if msg.content["action"] not in ["update", "add", "remove", "reload", "set", "reset"]:
+            raise DeviceConfigError(
+                "Action must be either add, remove, update, set, reload or reset."
+            )
         if msg.content["action"] in ["update", "add", "remove", "set"]:
             if not msg.content["config"]:
                 raise DeviceConfigError(

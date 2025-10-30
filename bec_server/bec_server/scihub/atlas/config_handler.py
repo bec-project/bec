@@ -52,6 +52,8 @@ class ConfigHandler:
                 self._add_to_config(msg)
             if msg.content["action"] == "remove":
                 self._remove_from_config(msg)
+            if msg.content["action"] == "reset":
+                self._reset_config(msg)
 
         except Exception:
             content = traceback.format_exc()
@@ -120,6 +122,16 @@ class ConfigHandler:
     def _reload_config(self, msg: messages.DeviceConfigMessage):
         self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
         self.send_config(msg)
+
+    def _reset_config(self, msg: messages.DeviceConfigMessage):
+        # set the config in redis to empty
+        self.set_config_in_redis([])
+
+        self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
+
+        # tell all services to reload the config
+        reload_msg = messages.DeviceConfigMessage(action="reload", config={}, metadata=msg.metadata)
+        self.send_config(reload_msg)
 
     def _add_to_config(self, msg: messages.DeviceConfigMessage):
         dev_configs = msg.content["config"]

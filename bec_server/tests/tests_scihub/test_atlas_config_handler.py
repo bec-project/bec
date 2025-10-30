@@ -65,6 +65,17 @@ def test_parse_config_request_set(config_handler):
         set_config.assert_called_once_with(msg)
 
 
+def test_parse_config_request_reset(config_handler):
+    msg = messages.DeviceConfigMessage(action="reset", config=None, metadata={})
+    with (
+        mock.patch.object(config_handler, "_reset_config") as reset_config,
+        mock.patch.object(config_handler.device_manager, "check_request_validity") as req_validity,
+    ):
+        config_handler.parse_config_request(msg)
+        req_validity.assert_called_once_with(msg)
+        reset_config.assert_called_once_with(msg)
+
+
 def test_parse_config_request_exception(config_handler):
     msg = messages.DeviceConfigMessage(
         action="update", config={"samx": {"enabled": True}}, metadata={}
@@ -453,3 +464,14 @@ def test_config_handler_remove_from_config(config_handler):
                     req_reply.assert_called_once_with(
                         accepted=True, error_msg=None, metadata={"RID": "12345"}
                     )
+
+
+def test_config_handler_reset_config(config_handler):
+    msg = messages.DeviceConfigMessage(action="reset", config=None, metadata={"RID": "12345"})
+    with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
+        with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
+            config_handler._reset_config(msg)
+            set_config.assert_called_once_with([])
+            req_reply.assert_called_once_with(
+                accepted=True, error_msg=None, metadata={"RID": "12345"}
+            )
