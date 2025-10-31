@@ -29,7 +29,7 @@ def test_container_worker_init(redis_mock):
     redis_mock().port = "port"
     worker = ContainerProcedureWorker(server="server:port", queue="test_queue", lifetime_s=1)
     assert worker._worker_environment() == {
-        "redis_server": "server:port",
+        "redis_server": "redis:port",
         "queue": "test_queue",
         "timeout_s": "1",
     }
@@ -100,7 +100,7 @@ def test_container_worker_work(redis_mock, logger_mock):
 
 @patch("bec_server.scan_server.procedures.container_worker.logger")
 def test_main_exits_without_env_variables(logger_mock):
-    with patch.dict(os.environ, clear=True):
+    with patch.dict(os.environ, clear=True), pytest.raises(SystemExit):
         container_worker_main()
     assert "Missing environment variable " in logger_mock.error.call_args.args[0]
 

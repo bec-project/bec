@@ -1,7 +1,9 @@
 from typing import Literal
 
+from bec_lib.endpoints import EndpointInfo
 from bec_lib.endpoints import MessageEndpoints as ME
 from bec_lib.logger import bec_logger
+from bec_lib.messages import BECMessage
 from bec_lib.messages import ProcedureAbortMessage as AbrtMsg
 from bec_lib.messages import ProcedureClearUnhandledMessage as ClrMsg
 from bec_lib.messages import ProcedureExecutionMessage as ExecMsg
@@ -18,32 +20,35 @@ class _HelperBase:
 
 
 class _Request(_HelperBase):
+    def _xadd(self, ep: EndpointInfo, msg: BECMessage):
+        self._conn.xadd(ep, msg.model_dump())
+
     def procedure(self, msg: ReqMsg):
-        self._conn.xadd(ME.procedure_request(), msg)
+        self._xadd(ME.procedure_request(), msg)
 
     def abort_execution(self, execution_id: str):
         """Send a message requesting an abort of execution_id"""
-        return self._conn.xadd(ME.procedure_abort(), AbrtMsg(execution_id=execution_id))
+        return self._xadd(ME.procedure_abort(), AbrtMsg(execution_id=execution_id))
 
     def abort_queue(self, queue: str):
         """Send a message requesting an abort of execution_id"""
-        return self._conn.xadd(ME.procedure_abort(), AbrtMsg(queue=queue))
+        return self._xadd(ME.procedure_abort(), AbrtMsg(queue=queue))
 
     def abort_all(self):
         """Send a message requesting an abort of execution_id"""
-        return self._conn.xadd(ME.procedure_abort(), AbrtMsg(abort_all=True))
+        return self._xadd(ME.procedure_abort(), AbrtMsg(abort_all=True))
 
     def clear_unhandled_execution(self, execution_id: str):
         """Send a message requesting an abort of execution_id"""
-        return self._conn.xadd(ME.procedure_clear_unhandled(), ClrMsg(execution_id=execution_id))
+        return self._xadd(ME.procedure_clear_unhandled(), ClrMsg(execution_id=execution_id))
 
     def clear_unhandled_queue(self, queue: str):
         """Send a message requesting an abort of execution_id"""
-        return self._conn.xadd(ME.procedure_clear_unhandled(), ClrMsg(queue=queue))
+        return self._xadd(ME.procedure_clear_unhandled(), ClrMsg(queue=queue))
 
     def clear_all_unhandled(self):
         """Send a message requesting an abort of execution_id"""
-        return self._conn.xadd(ME.procedure_clear_unhandled(), ClrMsg(abort_all=True))
+        return self._xadd(ME.procedure_clear_unhandled(), ClrMsg(abort_all=True))
 
 
 class _Get(_HelperBase):

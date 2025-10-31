@@ -50,7 +50,7 @@ _T = TypeVar("_T", bound=BECMessage)
 
 def _resolve_dict(msg: dict[str, Any] | _T, MsgType: type[_T]) -> _T:
     if isinstance(msg, dict):
-        return MsgType.model_validate(msg.get("data"))
+        return MsgType.model_validate(msg)
     return msg
 
 

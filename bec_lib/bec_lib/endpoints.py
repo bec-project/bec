@@ -1479,7 +1479,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for scan queue request.
         """
-        endpoint = f"{EndpointType.INTERNAL.value}/procedures/procedure_execution/{queue_id}"
+        endpoint = f"{EndpointType.INFO.value}/procedures/procedure_execution/{queue_id}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureExecutionMessage,
@@ -1496,9 +1496,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for scan queue request.
         """
-        endpoint = (
-            f"{EndpointType.INTERNAL.value}/procedures/unhandled_procedure_execution/{queue_id}"
-        )
+        endpoint = f"{EndpointType.INFO.value}/procedures/unhandled_procedure_execution/{queue_id}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureExecutionMessage,
@@ -1529,7 +1527,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for set of active procedure executions.
         """
-        endpoint = f"{EndpointType.INFO.value}/procedures/abort"
+        endpoint = f"{EndpointType.USER.value}/procedures/abort"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureAbortMessage,
@@ -1539,12 +1537,12 @@ class MessageEndpoints:
     @staticmethod
     def procedure_clear_unhandled():
         """
-        Endpoint to request aborting a running procedure
+        Endpoint to request removing an aborted procedure
 
         Returns:
             EndpointInfo: Endpoint for set of active procedure executions.
         """
-        endpoint = f"{EndpointType.INFO.value}/procedures/clear_unhandled"
+        endpoint = f"{EndpointType.USER.value}/procedures/clear_unhandled"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureClearUnhandledMessage,
@@ -1579,6 +1577,19 @@ class MessageEndpoints:
             endpoint=endpoint,
             message_type=messages.ProcedureQNotifMessage,
             message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
+    def procedure_logs(queue: str):
+        """
+        Endpoint for logs for a given procedure queue
+
+        Returns:
+            EndpointInfo: Endpoint for procedure queue updates for given queue.
+        """
+        endpoint = f"{EndpointType.INFO.value}/procedures/logs/{queue}"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.STREAM
         )
 
     @staticmethod
