@@ -1038,6 +1038,23 @@ class RedisConnector:
         return ret
 
     @validate_endpoint("topic")
+    def lrem(self, topic: str, count: int, msg, pipe: Pipeline | None = None):
+        """Removes the first count occurrences of elements equal to element from the list stored at key.
+        The count argument influences the operation in the following ways:
+            count > 0: Remove elements equal to element moving from head to tail.
+            count < 0: Remove elements equal to element moving from tail to head.
+            count = 0: Remove all elements equal to element.
+        For example, LREM list -2 "hello" will remove the last two occurrences of "hello" in the list stored at list.
+
+        Returns the number of items removed
+        """
+
+        client = pipe if pipe is not None else self._redis_conn
+        if isinstance(msg, BECMessage):
+            msg = MsgpackSerialization.dumps(msg)
+        return client.lrem(topic, count, msg)
+
+    @validate_endpoint("topic")
     def set_and_publish(
         self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None
     ) -> None:
@@ -1094,7 +1111,7 @@ class RedisConnector:
     def xadd(
         self,
         topic: str,
-        msg_dict: dict,
+        msg_dict: dict | BECMessage,
         max_size=None,
         pipe: Pipeline | None = None,
         expire: int | None = None,
@@ -1104,7 +1121,7 @@ class RedisConnector:
 
         Args:
             topic (str): redis topic
-            msg_dict (dict): message to add
+            msg_dict (dict | BECMessage): message to add
             max_size (int, optional): max size of stream. Defaults to None.
             pipe (Pipeline, optional): redis pipe. Defaults to None.
             expire (int, optional): expire time. Defaults to None.
@@ -1120,7 +1137,8 @@ class RedisConnector:
         else:
             client = self._redis_conn
 
-        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
+        msg = {"data": msg_dict} if isinstance(msg_dict, BECMessage) else msg_dict
+        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg.items()}
 
         if max_size:
             client.xadd(topic, msg_dict, maxlen=max_size)
