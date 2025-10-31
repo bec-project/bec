@@ -1179,7 +1179,7 @@ class RedisConnector:
     def xadd(
         self,
         topic: str,
-        msg_dict: dict | BECMessage,
+        msg_dict: dict,
         max_size=None,
         pipe: Pipeline | None = None,
         expire: int | None = None,
@@ -1205,8 +1205,7 @@ class RedisConnector:
         else:
             client = self._redis_conn
 
-        msg = msg_dict.model_dump() if isinstance(msg_dict, BECMessage) else msg_dict
-        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg.items()}
+        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
 
         if max_size:
             client.xadd(topic, msg_dict, maxlen=max_size)

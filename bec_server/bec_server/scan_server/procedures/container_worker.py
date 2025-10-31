@@ -1,10 +1,14 @@
 import os
+import sys
+from contextlib import redirect_stdout
+from typing import AnyStr, TextIO
 
+from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import LogLevel, bec_logger
-from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus
+from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus, RawMessage
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_server.scan_server.procedures import procedure_registry
@@ -20,6 +24,28 @@ from bec_server.scan_server.procedures.protocol import ContainerCommandBackend
 from bec_server.scan_server.procedures.worker_base import ProcedureWorker
 
 logger = bec_logger.logger
+
+
+class RedisOutputDiverter(TextIO):
+    def __init__(self, conn: RedisConnector, queue: str):
+
+        self._conn = conn
+        self._ep = MessageEndpoints.procedure_logs(queue)
+        self._conn.delete(self._ep)
+
+    def write(self, data: AnyStr):
+        if data:
+            self._conn.xadd(self._ep, {"data": RawMessage(data=str(data))})
+        return len(data)
+
+    def flush(self): ...
+
+    @property
+    def encoding(self):
+        return "utf-8"
+
+    def close(self):
+        return
 
 
 class ContainerProcedureWorker(ProcedureWorker):
@@ -112,8 +138,7 @@ class ContainerProcedureWorker(ProcedureWorker):
             self._setup_execution_environment()
 
 
-def main():
-    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
+def _setup():
     logger.info("Container worker starting up")
     try:
         needed_keys = ContainerWorkerEnv.__annotations__.keys()
@@ -121,7 +146,7 @@ def main():
         env: ContainerWorkerEnv = {k: os.environ[k] for k in needed_keys}  # type: ignore
     except KeyError as e:
         logger.error(f"Missing environment variable needed by container worker: {e}")
-        return
+        exit(1)
 
     bec_logger.level = LogLevel.DEBUG
     bec_logger._console_log = True
@@ -134,19 +159,26 @@ def main():
 
     host, port = env["redis_server"].split(":")
     redis = {"host": host, "port": port}
-    client = BECClient(config=ServiceConfig(redis=redis))
+
+    client = BECIPythonClient(config=ServiceConfig(redis=redis))
+    logger.debug("starting client")
     client.start()
 
     logger.info(f"ContainerWorker started container for queue {env['queue']}")
     logger.debug(f"ContainerWorker environment: {env}")
 
-    endpoint_info = MessageEndpoints.procedure_execution(env["queue"])
     conn = RedisConnector(env["redis_server"])
+    logger.debug(f"ContainerWorker {env['queue']} connected to Redis at {conn.host}:{conn.port}")
     helper = BackendProcedureHelper(conn)
+
+    return env, helper, client, conn
+
+
+def _main(env, helper, client, conn):
+
+    exec_endpoint = MessageEndpoints.procedure_execution(env["queue"])
     active_procs_endpoint = MessageEndpoints.active_procedure_executions()
     status_endpoint = MessageEndpoints.procedure_worker_status_update(env["queue"])
-
-    logger.debug(f"ContainerWorker connecting to Redis at {conn.host}:{conn.port}")
 
     try:
         timeout_s = int(env["timeout_s"])
@@ -173,10 +205,10 @@ def main():
     _push_status(ProcedureWorkerStatus.IDLE)
     item = None
     try:
-        logger.debug(f"ContainerWorker waiting for instructions on {endpoint_info}")
+        logger.debug(f"ContainerWorker waiting for instructions on {exec_endpoint}")
         while (
             item := conn.blocking_list_pop_to_set_add(
-                endpoint_info, active_procs_endpoint, timeout_s=timeout_s
+                exec_endpoint, active_procs_endpoint, timeout_s=timeout_s
             )
         ) is not None:
             _push_status(ProcedureWorkerStatus.RUNNING, item.execution_id)
@@ -200,5 +232,16 @@ def main():
             helper.remove_from_active.by_exec_id(item.execution_id)
 
 
-if __name__ == "__main__":
-    main()
+def main():
+    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
+
+    env, helper, client, conn = _setup()
+    output_diverter = RedisOutputDiverter(conn, env["queue"])
+    with redirect_stdout(output_diverter):
+        logger.add(
+            output_diverter,
+            level=LogLevel.SUCCESS,
+            format=bec_logger.formatting(is_container=True),
+            filter=bec_logger.filter(),
+        )
+        _main(env, helper, client, conn)
