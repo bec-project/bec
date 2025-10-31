@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pytest
 from pydantic import ValidationError
 
@@ -14,7 +16,15 @@ class GoodScan(ScanBase):  # pragma: no cover
         "stop": ScanArgType.FLOAT,
     }
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {"Scan Parameters": ["steps", "exp_time", "relative", "burst_at_each_point"]}
+    gui_config = {
+        "Scan Parameters": [
+            "steps",
+            "exp_time",
+            "relative",
+            "burst_at_each_point",
+            "optim_trajectory",
+        ]
+    }
 
     def __init__(
         self,
@@ -23,6 +33,7 @@ class GoodScan(ScanBase):  # pragma: no cover
         steps: int = None,
         relative: bool = False,
         burst_at_each_point: int = 1,
+        optim_trajectory: Literal["path", None] = None,
         **kwargs,
     ):
         """
