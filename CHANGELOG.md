@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.73.0 (2025-10-31)
+
+### Features
+
+- **config**: Add config reset
+  ([`01cb8f2`](https://github.com/bec-project/bec/commit/01cb8f256a3e0ebd6c2423b0a28f2ca8b385fa42))
+
+
 ## v3.72.4 (2025-10-21)
 
 ### Bug Fixes
