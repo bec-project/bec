@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.73.1 (2025-10-31)
+
+### Bug Fixes
+
+- **macro_update_handler**: Avoid shadowing the imported module
+  ([`fecbab8`](https://github.com/bec-project/bec/commit/fecbab8e9b99da326356090bf85747fe294ec127))
+
+
 ## v3.73.0 (2025-10-31)
 
 ### Features
