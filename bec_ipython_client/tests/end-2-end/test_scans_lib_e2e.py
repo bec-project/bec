@@ -108,10 +108,10 @@ def test_config_updates(bec_client_lib):
     assert dev.rt_controller.limits == [-50, 50]
 
     dev.rt_controller.velocity.set(10).wait()
-    assert dev.rt_controller.velocity.read(cached=True)["rt_controller_velocity"]["value"] == 10
-    assert dev.rt_controller.velocity.read()["rt_controller_velocity"]["value"] == 10
-    assert dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
-    assert dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
+    assert dev.rt_controller.velocity.read(cached=True)["rt_controller-velocity"]["value"] == 10
+    assert dev.rt_controller.velocity.read()["rt_controller-velocity"]["value"] == 10
+    assert dev.rt_controller.read_configuration()["rt_controller-velocity"]["value"] == 10
+    assert dev.rt_controller.read_configuration()["rt_controller-velocity"]["value"] == 10
 
     dev.rt_controller.velocity.put(5)
     assert dev.rt_controller.velocity.get() == 5
@@ -470,22 +470,22 @@ def test_cached_device_readout(bec_client_lib):
     assert data == 10
 
     config = dev.samx.read_configuration()
-    assert config["samx_velocity"]["value"] == 10
+    assert config["samx-velocity"]["value"] == 10
 
     dev.samx.velocity.put(orig_velocity)
 
     data = dev.hexapod.x.readback.read()
-    timestamp = data["hexapod_x"]["timestamp"]
+    timestamp = data["hexapod-x"]["timestamp"]
     data = dev.hexapod.x.readback.read(cached=True)
-    assert data["hexapod_x"]["timestamp"] == timestamp
+    assert data["hexapod-x"]["timestamp"] == timestamp
 
     # check that .get also updates the cache
     dev.hexapod.x.readback.get()
-    timestamp_2 = dev.hexapod.x.readback.read(cached=True)["hexapod_x"]["timestamp"]
+    timestamp_2 = dev.hexapod.x.readback.read(cached=True)["hexapod-x"]["timestamp"]
     assert timestamp_2 != timestamp
 
     dev.hexapod.x.readback.get(cached=True)
-    timestamp_3 = dev.hexapod.x.readback.read(cached=True)["hexapod_x"]["timestamp"]
+    timestamp_3 = dev.hexapod.x.readback.read(cached=True)["hexapod-x"]["timestamp"]
     assert timestamp_3 == timestamp_2
 
 

@@ -22,6 +22,7 @@ from typeguard import typechecked
 from bec_lib import messages, plugin_helper
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
+from bec_lib.constants import DEVICE_NAME_SEPARATOR
 from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
@@ -298,6 +299,8 @@ class DeviceManagerDS(DeviceManagerBase):
         class_params_and_config_keys = class_params & config.keys()
 
         init_kwargs = {key: config.pop(key) for key in class_params_and_config_keys}
+        if issubclass(dev_cls, ophyd.Device):
+            init_kwargs["child_name_separator"] = DEVICE_NAME_SEPARATOR
         device_access = config.pop("device_access", None)
         if device_access or (device_access is None and config.get("device_mapping")):
             init_kwargs["device_manager"] = device_manager
