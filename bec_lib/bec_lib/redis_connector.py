@@ -1137,7 +1137,7 @@ class RedisConnector:
         else:
             client = self._redis_conn
 
-        msg = msg_dict.model_dump() if isinstance(msg_dict, BECMessage) else msg_dict
+        msg = {"data": msg_dict} if isinstance(msg_dict, BECMessage) else msg_dict
         msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg.items()}
 
         if max_size:
