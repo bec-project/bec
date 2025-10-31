@@ -17,7 +17,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
-from .errors import LimitError, ScanAbortion
+from .errors import LimitError, ScanHalting
 from .instruction_handler import InstructionHandler
 from .scan_assembler import ScanAssembler
 
@@ -40,6 +40,7 @@ def requires_queue(fcn):
 
 
 class InstructionQueueStatus(Enum):
+    HALTED = -2
     STOPPED = -1
     PENDING = 0
     IDLE = 1
@@ -262,7 +263,9 @@ class QueueManager:
         self.queues[queue].worker_status = InstructionQueueStatus.RUNNING
 
     @requires_queue
-    def set_abort(self, scan_id=None, queue="primary", parameter: dict = None) -> None:
+    def set_abort(
+        self, scan_id=None, queue="primary", parameter: dict = None, halted=False
+    ) -> None:
         """abort the scan and remove it from the queue. This will leave the queue in a paused state after the cleanup"""
         que = self.queues[queue]
         if scan_id is not None:
@@ -278,7 +281,9 @@ class QueueManager:
         with AutoResetCM(que):
             if que.queue:
                 que.status = ScanQueueStatus.PAUSED
-            que.worker_status = InstructionQueueStatus.STOPPED
+            que.worker_status = (
+                InstructionQueueStatus.STOPPED if not halted else InstructionQueueStatus.HALTED
+            )
             self.stop_all_devices()
 
     @requires_queue
@@ -287,7 +292,8 @@ class QueueManager:
         instruction_queue = self.queues[queue].active_instruction_queue
         if instruction_queue:
             instruction_queue.return_to_start = False
-        self.set_abort(scan_id=scan_id, queue=queue)
+            instruction_queue.halted = True
+        self.set_abort(scan_id=scan_id, queue=queue, halted=True)
 
     @requires_queue
     def set_clear(self, scan_id=None, queue="primary", parameter: dict = None) -> None:
@@ -871,7 +877,7 @@ class RequestBlockQueue:
                 metadata=self._get_metadata_for_alarm(),
             )
             self.instruction_queue.stopped = True
-            raise ScanAbortion from limit_error
+            raise ScanHalting from limit_error
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
@@ -883,7 +889,7 @@ class RequestBlockQueue:
                 alarm_type=exc.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(),
             )
-            raise ScanAbortion from exc
+            raise ScanHalting from exc
 
 
 class InstructionQueueItem:
