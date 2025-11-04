@@ -31,3 +31,7 @@ def run_scan(scan_name: str, args: tuple, parameters: dict, *, bec: BECClient):
         raise ValueError(f"Scan {scan_name} doesn't exist in this client!")
     scan_report: ScanReport = scan(*args, **parameters)
     scan_report.wait()
+
+
+def run_script(script_id: str, *, bec: BECClient):
+    bec._run_script(script_id)

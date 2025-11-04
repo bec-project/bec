@@ -1,3 +1,4 @@
+import inspect
 import os
 import sys
 from contextlib import redirect_stdout
@@ -136,6 +137,11 @@ class ContainerProcedureWorker(ProcedureWorker):
             )
             self._setup_execution_environment()
 
+    def logs(self):
+        if self._container_id is None:
+            return [""]
+        return self._backend.logs(self._container_id)
+
 
 def _setup():
     logger.info("Container worker starting up")
@@ -158,7 +164,9 @@ def _setup():
 
     host, port = env["redis_server"].split(":")
     redis = {"host": host, "port": port}
+
     client = BECClient(config=ServiceConfig(redis=redis))
+    logger.debug("starting client")
     client.start()
 
     logger.info(f"ContainerWorker started container for queue {env['queue']}")
@@ -195,9 +203,13 @@ def _main(env, helper, client, conn):
         )
 
     def _run_task(item: ProcedureExecutionMessage):
-        procedure_registry.callable_from_execution_message(item)(
-            *item.args_kwargs[0], **item.args_kwargs[1]
-        )
+        kwargs = item.args_kwargs[1]
+        proc_func = procedure_registry.callable_from_execution_message(item)
+        if bec_arg := inspect.signature(proc_func).parameters.get("bec"):
+            if bec_arg.kind == bec_arg.KEYWORD_ONLY and bec_arg.annotation.__name__ == "BECClient":
+                logger.debug(f"Injecting BEC client argument for {item}")
+                kwargs["bec"] = client
+        procedure_registry.callable_from_execution_message(item)(*item.args_kwargs[0], **kwargs)
 
     _push_status(ProcedureWorkerStatus.IDLE)
     item = None
