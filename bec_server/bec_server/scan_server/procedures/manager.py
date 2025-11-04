@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+from collections import deque
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
@@ -68,6 +69,7 @@ class ProcedureManager:
 
         logger.success("Initialising procedure manager...")
 
+        self._logs = deque([], maxlen=1000)
         self._conn = RedisConnector([self._parent.bootstrap_server])
         self._helper = BackendProcedureHelper(self._conn)
         self._startup()
@@ -250,6 +252,7 @@ class ProcedureManager:
             with self.lock:
                 self._active_workers[queue]["worker"] = worker
             worker.work()
+            self._logs.extend(worker.logs())
 
     def shutdown(self):
         """Shutdown the procedure manager. Unregisters from the request endpoint, cancel any

@@ -1,9 +1,10 @@
-from typing import Any, Callable, Iterable, Iterator
+from typing import Iterable
 
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_server.scan_server.procedures.builtin_procedures import (
     log_message_args_kwargs,
     run_scan,
+    run_script,
     sleep,
 )
 from bec_server.scan_server.procedures.constants import BecProcedure
@@ -12,6 +13,7 @@ _BUILTIN_PROCEDURES: dict[str, BecProcedure] = {
     "log execution message args": log_message_args_kwargs,
     "run scan": run_scan,
     "sleep": sleep,
+    "run_script": run_script,
 }
 
 _PROCEDURE_REGISTRY: dict[str, BecProcedure] = {} | _BUILTIN_PROCEDURES
