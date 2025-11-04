@@ -65,6 +65,9 @@ class ProcedureWorker(ABC):
     @abstractmethod
     def _setup_execution_environment(self): ...
 
+    def logs(self) -> list[str]:
+        return [""]
+
     def abort(self):
         """Abort the entire worker"""
         self._aborted.set()

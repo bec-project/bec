@@ -74,7 +74,7 @@ def test_procedure_runner_spawns_worker(
         logs = worker._backend.logs(worker._container_id)
 
     manager.add_callback("test", cb)
-    client.connector.xadd(topic=endpoint, msg_dict=msg)
+    client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     _wait_while(lambda: manager._active_workers != {}, 20)
@@ -96,14 +96,17 @@ def test_happy_path_container_procedure_runner(
     msg = messages.ProcedureRequestMessage(
         identifier="log execution message args", args_kwargs=(test_args, test_kwargs)
     )
-    conn.xadd(topic=endpoint, msg_dict=msg)
+    conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     _wait_while(lambda: manager._active_workers != {}, 20)
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")
-    assert logtool.is_present_in_any_message("ContainerWorker started container for queue primary")
+    assert "test string" in "\n".join(manager._logs)
+    assert logtool.is_present_in_any_message(
+        "ContainerWorker started container for queue primary"
+    ), f"Log content relating to procedures: {manager}"
     res, msg = logtool.are_present_in_order(
         [
             "Container worker 'primary' status update: IDLE",
