@@ -3,7 +3,7 @@ from collections import namedtuple
 from unittest import mock
 
 import pytest
-from ophyd import Device, Kind, Signal, Staged, StatusBase
+from ophyd import Device, DeviceStatus, Kind, Signal, Staged, StatusBase
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -257,3 +257,21 @@ def test_process_rpc_instruction_set_attribute_on_sub_device(rpc_cls, dev_mock, 
     rpc_cls.device_manager.devices = {"device": dev_mock}
     rpc_cls.process_rpc_instruction(instr)
     rpc_cls.device_manager.devices["device"].obj.user_setpoint.attr_value == 5
+
+
+def test_set_config_signal_updates_cache(rpc_cls, dev_mock, instr):
+    instr_params = {"func": "velocity.set", "args": [10]}
+    rpc_cls.device_manager.devices = {"device": dev_mock}
+    rpc_cls._update_cache = mock.MagicMock()
+    rpc_cls._get_result_from_rpc = mock.MagicMock()
+    rpc_cls._get_result_from_rpc.return_value = DeviceStatus(
+        device=dev_mock.obj, done=True, success=True
+    )
+    instr = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter=instr_params,
+        metadata={"RID": "RID", "device_instr_id": "diid"},
+    )
+    rpc_cls.process_rpc_instruction(instr=instr)
+    rpc_cls._update_cache.assert_called_once_with(dev_mock.obj.velocity, instr)

@@ -472,6 +472,10 @@ def test_cached_device_readout(bec_client_lib):
     config = dev.samx.read_configuration()
     assert config["samx_velocity"]["value"] == 10
 
+    dev.samx.velocity.set(20).wait()
+    data = dev.samx.velocity.get()
+    assert data == 20
+
     dev.samx.velocity.put(orig_velocity)
 
     data = dev.hexapod.x.readback.read()

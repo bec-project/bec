@@ -156,6 +156,25 @@ class RPCMixin:
                 instr_params.get("func").split(".put")[0],
             )
             self._update_cache(obj, instr)
+        elif instr_params.get("func") == "set" or instr_params.get("func").endswith(".set"):
+            if instr_params.get("func") == "set":
+                obj = self.device_manager.devices[device_root].obj
+            else:
+                obj = rgetattr(
+                    self.device_manager.devices[device_root].obj,
+                    instr_params.get("func").split(".set")[0],
+                )
+            if not isinstance(res, ophyd.StatusBase) or res.done:
+                self._update_cache(obj, instr)
+            else:
+                # for set operations that return a Status object, we update the cache
+                # when the status object is done
+                def _update_cache_on_set_done(
+                    status_obj, rpc_mixin_self=self, obj=obj, instr=instr
+                ):
+                    rpc_mixin_self._update_cache(obj, instr)
+
+                res.add_callback(_update_cache_on_set_done)
         elif instr_params.get("func").endswith(".get"):
             obj = rgetattr(
                 self.device_manager.devices[device_root].obj,
