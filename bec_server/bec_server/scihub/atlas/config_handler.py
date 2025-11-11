@@ -27,6 +27,8 @@ dir_path = os.path.abspath(os.path.join(os.path.dirname(bec_lib.__file__), "./co
 
 
 class ConfigHandler:
+    """Handles device configuration requests and updates."""
+
     def __init__(self, atlas_connector: AtlasConnector, connector: RedisConnector) -> None:
         self.atlas_connector = atlas_connector
         self.connector = connector
@@ -78,10 +80,21 @@ class ConfigHandler:
     #################################################################
 
     def _update_config(self, msg: messages.DeviceConfigMessage):
+        """
+        Update the currently available config with the provided one.
+        If the device does not exist, it is skipped.
+
+        Args:
+            msg (messages.DeviceConfigMessage): Config update message
+
+        """
         updated = False
         dev_configs = msg.content["config"]
 
         for dev, config in dev_configs.items():
+            if dev not in self.device_manager.devices:
+                continue
+
             device = self.device_manager.devices[dev]
             updated = self._update_device_config(device, config.copy())
             if updated:
