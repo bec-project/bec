@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.73.2 (2025-11-11)
+
+### Bug Fixes
+
+- **rpc**: Update config cache on set commands
+  ([`6e4d2ca`](https://github.com/bec-project/bec/commit/6e4d2ca0c72b237db8333e5b350e95bd3d4f82e8))
+
+### Refactoring
+
+- **rpc**: Move mixin to composition; cleanup
+  ([`3b49df6`](https://github.com/bec-project/bec/commit/3b49df63631e222d90cc00a64842612ec71f7952))
+
+
 ## v3.73.1 (2025-10-31)
 
 ### Bug Fixes
