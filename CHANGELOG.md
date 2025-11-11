@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.73.3 (2025-11-11)
+
+### Bug Fixes
+
+- **update config**: Skip devices that do not exist during update
+  ([`fdc5518`](https://github.com/bec-project/bec/commit/fdc551899d337336ac7a06125b5f5fdb6f977be4))
+
+### Documentation
+
+- **config handler**: Improve docs
+  ([`60f04e4`](https://github.com/bec-project/bec/commit/60f04e489d362a656f7b5784e49c2aa91ff6baa1))
+
+### Refactoring
+
+- **config_handler**: Re-order methods
+  ([`dd45d2e`](https://github.com/bec-project/bec/commit/dd45d2ee6af380ce9614f46fd8d7dc1f9182e774))
+
+
 ## v3.73.2 (2025-11-11)
 
 ### Bug Fixes
