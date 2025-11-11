@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, namedtuple
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 from pydantic import ConfigDict
 from rich.console import Console
@@ -995,7 +995,13 @@ class Signal(AdjustableMixin, OphydInterfaceBase):
 
 class ComputedSignal(Signal):
 
-    def set_compute_method(self, method: callable) -> None:
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._num_args_method = None
+        self._num_signals = None
+        self._header = "# Do not update the method manually. This method was set via the set_compute_method function.\n"
+
+    def set_compute_method(self, method: Callable) -> None:
         """Set the compute method for the ComputedSignal.
 
         We allow users to use two additional packages which are imported to simplify computations:
@@ -1013,8 +1019,25 @@ class ComputedSignal(Signal):
         if not callable(method):
             raise ValueError("The compute method must be callable.")
 
-        method = inspect.getsource(method)
-        self.update_config({"deviceConfig": {"compute_method": method}})
+        # check if it is a bound method
+        if hasattr(method, "__self__") and method.__self__ is not None:
+            raise ValueError("The compute method must be an unbound function, not a bound method.")
+
+        # check if it is a lambda function
+        if method.__name__ == "<lambda>":
+            raise ValueError("The compute method cannot be a lambda function.")
+
+        method_code = inspect.getsource(method)
+        self._num_args_method = len(inspect.signature(method).parameters)
+
+        self.update_config({"deviceConfig": {"compute_method": self._header + method_code}})
+        if self._num_signals is None:
+            return
+        if self._num_args_method != self._num_signals:
+            print(
+                f"Warning: The number of input signals ({self._num_signals}) does not match "
+                f"the number of arguments in the compute method ({self._num_args_method}). Please update the input signals accordingly."
+            )
 
     def set_input_signals(self, *signals) -> None:
         """Set input signals for compute method.
@@ -1030,8 +1053,36 @@ class ComputedSignal(Signal):
             return
         if not all(isinstance(signal, Signal) for signal in signals):
             raise ValueError("All input signals must be of type Signal.")
-        signals = [signal.full_name for signal in signals]
+        signals = [signal.dotted_name for signal in signals]
         self.update_config({"deviceConfig": {"input_signals": signals}})
+        self._num_signals = len(signals)
+        if self._num_args_method is None:
+            return
+        if self._num_args_method != self._num_signals:
+            print(
+                f"Warning: The number of input signals ({self._num_signals}) does not match "
+                f"the number of arguments in the compute method ({self._num_args_method}). Please update the compute method accordingly."
+            )
+
+    def show_all(self):
+        """Show all information about the ComputedSignal."""
+        console = Console()
+        table = Table(title=f"{self.name} - ComputedSignal Information")
+        table.add_column("Property")
+        table.add_column("Value")
+
+        config = self._config.get("deviceConfig", {})
+        compute_method = config.get("compute_method", "Not set")
+        input_signals = config.get("input_signals", [])
+
+        compute_method = compute_method.replace(self._header, "").strip()
+
+        table.add_row("Compute Method", compute_method if compute_method else "Not set")
+        table.add_row(
+            "Input Signals", ", ".join(input_signals) if input_signals else "No input signals set"
+        )
+
+        console.print(table)
 
 
 class Positioner(AdjustableMixin, Device):

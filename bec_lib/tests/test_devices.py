@@ -668,10 +668,60 @@ def test_computed_signal_set_compute_method():
         update_config.assert_called_once_with(
             {
                 "deviceConfig": {
-                    "compute_method": '    def my_compute_method():\n        return "a + b"\n'
+                    "compute_method": comp_signal._header
+                    + '    def my_compute_method():\n        return "a + b"\n'
                 }
             }
         )
+
+
+def test_computed_signal_set_bound_method_raises_error():
+    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+
+    class MyClass:
+        def my_method(self):
+            return "a + b"
+
+    my_instance = MyClass()
+
+    with pytest.raises(ValueError) as excinfo:
+        comp_signal.set_compute_method(my_instance.my_method)
+    assert "bound method" in str(excinfo.value)
+
+
+def test_computed_signal_set_lambda_raises_error():
+    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+
+    with pytest.raises(ValueError) as excinfo:
+        comp_signal.set_compute_method(lambda: "a + b")
+    assert "lambda function" in str(excinfo.value)
+
+
+def test_computed_signal_show_all():
+    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+    comp_signal._config = {
+        "deviceConfig": {
+            "input_signals": ["a", "b"],
+            "compute_method": "def compute():\n    return a + b\n",
+        }
+    }
+    with mock.patch("rich.console.Console.print") as mock_print:
+        comp_signal.show_all()
+        table = mock_print.call_args[0][0]
+        assert table.title == "comp_signal - ComputedSignal Information"
+        assert [col.header for col in table.columns] == ["Property", "Value"]
+
+        cells = []
+        for column in table.columns:
+            for cell in column.cells:
+                cells.append(cell)
+
+        assert cells == [
+            "Compute Method",
+            "Input Signals",
+            "def compute():\n    return a + b",
+            "a, b",
+        ]
 
 
 def test_computed_signal_set_signals():
