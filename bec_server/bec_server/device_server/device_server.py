@@ -21,7 +21,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
-from bec_server.device_server.rpc_mixin import RPCMixin
+from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import RedisConnector
@@ -235,7 +235,7 @@ class RequestHandler:
         self.connector.send(MessageEndpoints.device_instructions_response(), response_msg)
 
 
-class DeviceServer(RPCMixin, BECService):
+class DeviceServer(BECService):
     """DeviceServer using ophyd as a service
     This class is intended to provide a thin wrapper around ophyd and the devicemanager. It acts as the entry point for other services
     """
@@ -248,6 +248,7 @@ class DeviceServer(RPCMixin, BECService):
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._start_device_manager()
         self.requests_handler = RequestHandler(self)
+        self.rpc_handler = RPCHandler(self)
 
     def _start_device_manager(self):
         self.device_manager = DeviceManagerDS(self, status_cb=self.update_status)
@@ -323,7 +324,16 @@ class DeviceServer(RPCMixin, BECService):
                     )
         self.status = BECStatus.RUNNING
 
-    def _assert_device_is_enabled(self, instructions: messages.DeviceInstructionMessage) -> None:
+    def assert_device_is_enabled(self, instructions: messages.DeviceInstructionMessage) -> None:
+        """
+        Assert that the device(s) in the instructions are enabled.
+
+        Args:
+            instructions (messages.DeviceInstructionMessage): The device instruction message.
+
+        Raises:
+            DisabledDeviceError: If any of the devices are disabled.
+        """
         devices = instructions.content["device"]
 
         if isinstance(devices, str):
@@ -334,7 +344,16 @@ class DeviceServer(RPCMixin, BECService):
             if not self.device_manager.devices[dev].enabled:
                 raise DisabledDeviceError(f"Cannot access disabled device {dev}.")
 
-    def _assert_device_is_valid(self, instructions: messages.DeviceInstructionMessage) -> None:
+    def assert_device_is_valid(self, instructions: messages.DeviceInstructionMessage) -> None:
+        """
+        Assert that the device(s) in the instructions are valid.
+
+        Args:
+            instructions (messages.DeviceInstructionMessage): The device instruction message.
+
+        Raises:
+            InvalidDeviceError: If any of the devices are invalid.
+        """
         devices = instructions.content["device"]
         if not devices:
             raise InvalidDeviceError("At least one device must be specified.")
@@ -387,10 +406,10 @@ class DeviceServer(RPCMixin, BECService):
             if not instructions.content["device"]:
                 return
             action = instructions.content["action"]
-            self._assert_device_is_valid(instructions)
+            self.assert_device_is_valid(instructions)
             if action != "rpc":
                 # rpc has its own error handling
-                self._assert_device_is_enabled(instructions)
+                self.assert_device_is_enabled(instructions)
             self._update_device_metadata(instructions)
 
             if action == "set":
@@ -398,7 +417,7 @@ class DeviceServer(RPCMixin, BECService):
             elif action == "read":
                 self._read_device(instructions)
             elif action == "rpc":
-                self.run_rpc(instructions)
+                self.rpc_handler.run_rpc(instructions)
             elif action == "kickoff":
                 self._kickoff_device(instructions)
             elif action == "complete":
@@ -433,7 +452,7 @@ class DeviceServer(RPCMixin, BECService):
                 instructions.metadata["device_instr_id"], success=False, error_message=content
             )
             if action == "rpc":
-                self._send_rpc_exception(exc, instructions)
+                self.rpc_handler._send_rpc_exception(exc, instructions)
             else:
                 logger.error(content)
                 self.connector.raise_alarm(
@@ -629,7 +648,8 @@ class DeviceServer(RPCMixin, BECService):
             devices = [devices]
 
         if not new_status:
-            return self._read_and_update_devices(devices, instr.metadata)
+            self._read_and_update_devices(devices, instr.metadata)
+            return
 
         self.requests_handler.add_request(instr, num_status_objects=0)
         self._read_and_update_devices(devices, instr.metadata)
@@ -739,38 +759,37 @@ class DeviceServer(RPCMixin, BECService):
         for dev in devices:
             status = None
             obj = self.device_manager.devices[dev].obj
-            if hasattr(obj, "_staged"):
-                # pylint: disable=protected-access
-                if obj._staged == Staged.yes:
-                    logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
-                    status = self.device_manager.devices[dev].obj.unstage()
-                    if isinstance(status, StatusBase):
-                        for ii in range(3):
-                            try:
-                                status.wait(timeout=timeout_on_unstage)
-                                status = None  # Set status None and break the loop since unstage is successful
-                                break
-                            except ophyd_errors.WaitTimeoutError:
-                                logger.warning(
-                                    f"Unstaging device {dev} still running, {timeout_on_unstage*(ii+1)} seconds passed."
-                                )
-                        if status is not None:
-                            raise ValueError(
-                                f"Unstaging device {dev} failed to finish in 30 seconds"
+
+            if not hasattr(obj, "_staged"):
+                continue
+
+            # pylint: disable=protected-access
+            if obj._staged == Staged.yes:
+                logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
+                status = self.device_manager.devices[dev].obj.unstage()
+                if isinstance(status, StatusBase):
+                    for ii in range(3):
+                        try:
+                            status.wait(timeout=timeout_on_unstage)
+                            status = None  # Set status None and break the loop since unstage is successful
+                            break
+                        except ophyd_errors.WaitTimeoutError:
+                            logger.warning(
+                                f"Unstaging device {dev} still running, {timeout_on_unstage*(ii+1)} seconds passed."
                             )
-                status = self.device_manager.devices[dev].obj.stage()
-                if status is None or isinstance(status, list):
-                    continue
-                if not isinstance(status, StatusBase):
-                    raise ValueError(
-                        f"The stage method of {dev} does not return a StatusBase object."
-                    )
-                num_status_objects += 1
-                status.__dict__["instruction"] = instr
-                status.__dict__["obj"] = obj
-                status.__dict__["status"] = 1
-                status.add_callback(self._device_staged_callback)
-                self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
+                    if status is not None:
+                        raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")
+            status = self.device_manager.devices[dev].obj.stage()
+            if status is None or isinstance(status, list):
+                continue
+            if not isinstance(status, StatusBase):
+                raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")
+            num_status_objects += 1
+            status.__dict__["instruction"] = instr
+            status.__dict__["obj"] = obj
+            status.__dict__["status"] = 1
+            status.add_callback(self._device_staged_callback)
+            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
 

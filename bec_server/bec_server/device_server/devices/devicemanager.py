@@ -232,39 +232,44 @@ class DeviceManagerDS(DeviceManagerBase):
 
         """
         if hasattr(obj, "_update_device_config"):
-            obj._update_device_config(config)
-        else:
-            for config_key, config_value in config.items():
-                # first handle the ophyd exceptions...
-                if config_key == "limits":
-                    if hasattr(obj, "low_limit_travel") and hasattr(obj, "high_limit_travel"):
-                        low_limit_status = obj.low_limit_travel.set(config_value[0])
-                        high_limit_status = obj.high_limit_travel.set(config_value[1])
-                        low_limit_status.wait()
-                        high_limit_status.wait()
-                        continue
-                if config_key == "labels":
-                    if not config_value:
-                        config_value = set()
-                    # pylint: disable=protected-access
-                    obj._ophyd_labels_ = set(config_value)
-                    continue
-                if not hasattr(obj, config_key):
-                    raise DeviceConfigError(
-                        f"Unknown config parameter {config_key} for device of type"
-                        f" {obj.__class__.__name__}."
-                    )
+            # If the device has implemented its own config update method, use it
+            # pylint: disable=protected-access
+            obj._update_device_config(config)  # type: ignore
+            return
 
-                config_attr = getattr(obj, config_key)
-                if isinstance(config_attr, ophyd.Signal):
-                    config_attr.set(config_value)
-                elif callable(config_attr):
-                    config_attr(config_value)
-                else:
-                    setattr(obj, config_key, config_value)
+        for config_key, config_value in config.items():
+            # first handle the ophyd exceptions...
+            if config_key == "limits":
+                if hasattr(obj, "low_limit_travel") and hasattr(obj, "high_limit_travel"):
+                    low_limit_status = obj.low_limit_travel.set(config_value[0])  # type: ignore
+                    high_limit_status = obj.high_limit_travel.set(config_value[1])  # type: ignore
+                    low_limit_status.wait()
+                    high_limit_status.wait()
+                    continue
+            if config_key == "labels":
+                if not config_value:
+                    config_value = set()
+                # pylint: disable=protected-access
+                obj._ophyd_labels_ = set(config_value)
+                continue
+            if not hasattr(obj, config_key):
+                raise DeviceConfigError(
+                    f"Unknown config parameter {config_key} for device of type"
+                    f" {obj.__class__.__name__}."
+                )
+
+            config_attr = getattr(obj, config_key)
+            if isinstance(config_attr, ophyd.Signal):
+                config_attr.set(config_value)
+            elif callable(config_attr):
+                config_attr(config_value)
+            else:
+                setattr(obj, config_key, config_value)
 
     @staticmethod
-    def construct_device_obj(dev: dict, device_manager: DeviceManagerDS) -> (OphydObject, dict):
+    def construct_device_obj(
+        dev: dict, device_manager: DeviceManagerDS
+    ) -> tuple[OphydObject, dict]:
         """
         Construct a device object from a device config dictionary.
 
@@ -373,7 +378,7 @@ class DeviceManagerDS(DeviceManagerBase):
         elif "value" in obj.event_types:
             obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
         if hasattr(obj, "motor_is_moving"):
-            obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)
+            obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)  # type: ignore
 
     def _subscribe_to_bec_device_events(self, obj: OphydObject):
         """
@@ -416,7 +421,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if not hasattr(obj, "component_names"):
             return
 
-        for component_name in obj.component_names:
+        for component_name in obj.component_names:  # type: ignore
             component = getattr(obj, component_name)
             if hasattr(component, "component_names"):
                 self._subscribe_to_auto_monitors(component)
@@ -439,7 +444,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if not hasattr(obj, "walk_signals"):
             # If the object does not have walk_components, it is likely a simple signal
             return
-        signal_walk = obj.walk_signals()
+        signal_walk = obj.walk_signals()  # type: ignore
         for _ancestor, _signal_name, signal in signal_walk:
             if isinstance(signal, BECMessageSignal):
                 signal.subscribe(callback=self._obj_callback_bec_message_signal, run=False)
@@ -490,13 +495,13 @@ class DeviceManagerDS(DeviceManagerBase):
             if not force and obj.connected:
                 return
             if hasattr(obj, "controller"):
-                obj.controller.on()
+                obj.controller.on()  # type: ignore
                 return
             if hasattr(obj, "wait_for_connection"):
                 try:
-                    obj.wait_for_connection(all_signals=wait_for_all, timeout=timeout)
+                    obj.wait_for_connection(all_signals=wait_for_all, timeout=timeout)  # type: ignore
                 except TypeError:
-                    obj.wait_for_connection(timeout=timeout)
+                    obj.wait_for_connection(timeout=timeout)  # type: ignore
                 return
             logger.error(
                 f"Device {obj.name} does not implement the socket controller interface nor"

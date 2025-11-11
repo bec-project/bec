@@ -178,10 +178,10 @@ def test_assert_device_is_enabled(device_server_mock, instr):
     for dev in devices:
         if not device_server.device_manager.devices[dev].enabled:
             with pytest.raises(Exception) as exc_info:
-                device_server._assert_device_is_enabled(instr)
+                device_server.assert_device_is_enabled(instr)
             assert exc_info.value.args[0] == f"Cannot access disabled device {dev}."
         else:
-            device_server._assert_device_is_enabled(instr)
+            device_server.assert_device_is_enabled(instr)
 
 
 @pytest.mark.parametrize(
@@ -213,7 +213,7 @@ def test_assert_device_is_valid(device_server_mock, instr):
 
     if not devices:
         with pytest.raises(InvalidDeviceError):
-            device_server._assert_device_is_valid(instr)
+            device_server.assert_device_is_valid(instr)
         return
 
     if not isinstance(devices, list):
@@ -222,10 +222,10 @@ def test_assert_device_is_valid(device_server_mock, instr):
     for dev in devices:
         if dev not in device_server.device_manager.devices:
             with pytest.raises(InvalidDeviceError) as exc_info:
-                device_server._assert_device_is_valid(instr)
+                device_server.assert_device_is_valid(instr)
             assert exc_info.value.args[0] == f"There is no device with the name {dev}."
         else:
-            device_server._assert_device_is_enabled(instr)
+            device_server.assert_device_is_enabled(instr)
 
 
 @pytest.mark.parametrize(
@@ -243,9 +243,9 @@ def test_assert_device_is_valid(device_server_mock, instr):
 def test_handle_device_instructions_set(device_server_mock, instructions):
     device_server = device_server_mock
 
-    with mock.patch.object(device_server, "_assert_device_is_valid") as assert_device_is_valid_mock:
+    with mock.patch.object(device_server, "assert_device_is_valid") as assert_device_is_valid_mock:
         with mock.patch.object(
-            device_server, "_assert_device_is_enabled"
+            device_server, "assert_device_is_enabled"
         ) as assert_device_is_enabled_mock:
             with mock.patch.object(
                 device_server, "_update_device_metadata"
@@ -262,7 +262,7 @@ def test_handle_device_instructions_set(device_server_mock, instructions):
 
 def test_handle_device_instruction_raises_alarm(device_server_mock):
     device_server = device_server_mock
-    with mock.patch.object(device_server, "_assert_device_is_enabled", side_effect=RuntimeError):
+    with mock.patch.object(device_server, "assert_device_is_enabled", side_effect=RuntimeError):
         with mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm:
             device_server.handle_device_instructions(mock.MagicMock())
             raise_alarm.assert_called_once_with(
@@ -332,14 +332,14 @@ def test_handle_device_instructions_read(device_server_mock, instructions):
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_handle_device_instructions_rpc(device_server_mock, instructions):
     device_server = device_server_mock
-    with mock.patch.object(device_server, "_assert_device_is_valid") as assert_device_is_valid_mock:
+    with mock.patch.object(device_server, "assert_device_is_valid") as assert_device_is_valid_mock:
         with mock.patch.object(
-            device_server, "_assert_device_is_enabled"
+            device_server, "assert_device_is_enabled"
         ) as assert_device_is_enabled_mock:
             with mock.patch.object(
                 device_server, "_update_device_metadata"
             ) as update_device_metadata_mock:
-                with mock.patch.object(device_server, "run_rpc") as rpc_mock:
+                with mock.patch.object(device_server.rpc_handler, "run_rpc") as rpc_mock:
                     device_server.handle_device_instructions(instructions)
                     rpc_mock.assert_called_once_with(instructions)
 
