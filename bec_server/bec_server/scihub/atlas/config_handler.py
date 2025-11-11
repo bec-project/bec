@@ -73,6 +73,29 @@ class ConfigHandler:
             MessageEndpoints.device_config_request_response(request_id), msg, expire=60
         )
 
+    #################################################################
+    ############### Config Actions ##################################
+    #################################################################
+
+    def _update_config(self, msg: messages.DeviceConfigMessage):
+        updated = False
+        dev_configs = msg.content["config"]
+
+        for dev, config in dev_configs.items():
+            device = self.device_manager.devices[dev]
+            updated = self._update_device_config(device, config.copy())
+            if updated:
+                self.update_config_in_redis(device)
+
+        # send updates to services
+        if updated:
+            self.send_config(msg)
+            self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
+
+    def _reload_config(self, msg: messages.DeviceConfigMessage):
+        self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
+        self.send_config(msg)
+
     def _set_config(self, msg: messages.DeviceConfigMessage):
         config = msg.content["config"]
         msg.metadata["updated_config"] = False
@@ -112,25 +135,6 @@ class ConfigHandler:
             error_msg=f"{server_response_msg.message} Error during loading. The config will be flushed",
             metadata=msg.metadata,
         )
-        self.send_config(reload_msg)
-
-    def _convert_to_db_config(self, name: str, config: dict) -> None:
-        if not config.get("deviceConfig"):
-            config["deviceConfig"] = {}
-        config["name"] = name
-
-    def _reload_config(self, msg: messages.DeviceConfigMessage):
-        self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
-        self.send_config(msg)
-
-    def _reset_config(self, msg: messages.DeviceConfigMessage):
-        # set the config in redis to empty
-        self.set_config_in_redis([])
-
-        self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
-
-        # tell all services to reload the config
-        reload_msg = messages.DeviceConfigMessage(action="reload", config={}, metadata=msg.metadata)
         self.send_config(reload_msg)
 
     def _add_to_config(self, msg: messages.DeviceConfigMessage):
@@ -190,20 +194,19 @@ class ConfigHandler:
             metadata=msg.metadata,
         )
 
-    def _update_config(self, msg: messages.DeviceConfigMessage):
-        updated = False
-        dev_configs = msg.content["config"]
+    def _reset_config(self, msg: messages.DeviceConfigMessage):
+        # set the config in redis to empty
+        self.set_config_in_redis([])
 
-        for dev, config in dev_configs.items():
-            device = self.device_manager.devices[dev]
-            updated = self._update_device_config(device, config.copy())
-            if updated:
-                self.update_config_in_redis(device)
+        self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
 
-        # send updates to services
-        if updated:
-            self.send_config(msg)
-            self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
+        # tell all services to reload the config
+        reload_msg = messages.DeviceConfigMessage(action="reload", config={}, metadata=msg.metadata)
+        self.send_config(reload_msg)
+
+    ##################################################################
+    ############### Device Server Handling ############################
+    ##################################################################
 
     def _update_device_server(self, RID: str, config: dict, action="update") -> None:
         msg = messages.DeviceConfigMessage(action=action, config=config, metadata={"RID": RID})
@@ -262,8 +265,21 @@ class ConfigHandler:
 
         return updated
 
+    ###################################################################
+    ############### Config Validation and Conversion ##################
+    ###################################################################
+
     def _validate_update(self, update: dict) -> None:
         DevicePartial(**update)
+
+    def _convert_to_db_config(self, name: str, config: dict) -> None:
+        if not config.get("deviceConfig"):
+            config["deviceConfig"] = {}
+        config["name"] = name
+
+    ##################################################################
+    ############### Redis Config Handling ############################
+    ##################################################################
 
     def update_config_in_redis(self, device: DeviceBaseWithConfig):
         """
