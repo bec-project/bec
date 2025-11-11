@@ -106,10 +106,20 @@ class ConfigHandler:
             self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
 
     def _reload_config(self, msg: messages.DeviceConfigMessage):
+        """
+        Reload the config in all services.
+        Args:
+            msg (messages.DeviceConfigMessage): Config reload message
+        """
         self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
         self.send_config(msg)
 
     def _set_config(self, msg: messages.DeviceConfigMessage):
+        """
+        Replace the config with the provided one.
+        Args:
+            msg (messages.DeviceConfigMessage): Config set message
+        """
         config = msg.content["config"]
         msg.metadata["updated_config"] = False
 
@@ -151,6 +161,11 @@ class ConfigHandler:
         self.send_config(reload_msg)
 
     def _add_to_config(self, msg: messages.DeviceConfigMessage):
+        """
+        Add devices to the current config. If the device already exists, an error is raised.
+        Args:
+            msg (messages.DeviceConfigMessage): Config add message
+        """
         dev_configs = msg.content["config"]
 
         for dev, config in dev_configs.items():
@@ -185,6 +200,11 @@ class ConfigHandler:
         )
 
     def _remove_from_config(self, msg: messages.DeviceConfigMessage):
+        """
+        Remove devices from the current config. If the device does not exist, an error is raised.
+        Args:
+            msg (messages.DeviceConfigMessage): Config remove message
+        """
         dev_configs = msg.content["config"]
 
         for dev in dev_configs:
@@ -208,6 +228,11 @@ class ConfigHandler:
         )
 
     def _reset_config(self, msg: messages.DeviceConfigMessage):
+        """
+        Reset the config to an empty one.
+        Args:
+            msg (messages.DeviceConfigMessage): Config reset message
+        """
         # set the config in redis to empty
         self.set_config_in_redis([])
 
