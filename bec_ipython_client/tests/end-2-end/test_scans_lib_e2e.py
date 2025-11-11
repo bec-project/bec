@@ -461,19 +461,19 @@ def test_cached_device_readout(bec_client_lib):
     dev = bec.device_manager.devices
 
     dev.samx.setpoint.put(5)
-    data = dev.samx.setpoint.get()
+    data = dev.samx.setpoint.get(cached=True)
     assert data == 5
 
-    orig_velocity = dev.samx.velocity.get()
+    orig_velocity = dev.samx.velocity.get(cached=True)
     dev.samx.velocity.put(10)
-    data = dev.samx.velocity.get()
+    data = dev.samx.velocity.get(cached=True)
     assert data == 10
 
-    config = dev.samx.read_configuration()
+    config = dev.samx.read_configuration(cached=True)
     assert config["samx_velocity"]["value"] == 10
 
     dev.samx.velocity.set(20).wait()
-    data = dev.samx.velocity.get()
+    data = dev.samx.velocity.get(cached=True)
     assert data == 20
 
     dev.samx.velocity.put(orig_velocity)
