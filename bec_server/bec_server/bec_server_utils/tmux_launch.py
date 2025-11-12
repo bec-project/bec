@@ -1,5 +1,4 @@
 import os
-import signal
 import time
 
 import libtmux
@@ -105,25 +104,59 @@ def tmux_start(bec_path: str, services: dict):
         session.set_option("mouse", "on")
 
 
-def tmux_stop(session_name="bec"):
+def tmux_stop(session_name="bec", timeout=5):
     """
-    Stop the services from given session
+    Stop the services from the given tmux session.
+
+    1. Send Ctrl+C (SIGINT) to all panes.
+    2. Wait up to `timeout` seconds for processes to exit.
+    3. Kill remaining processes if not exited.
+    4. Kill the tmux session.
     """
+    # connect to tmux server
     if os.path.exists("/tmp/tmux-shared/default"):
-        # if we have a shared socket, use it
         tmux_server = libtmux.Server(socket_path="/tmp/tmux-shared/default")
     else:
         tmux_server = libtmux.Server()
+
     avail_sessions = tmux_server.sessions.filter(session_name=session_name)
-    if avail_sessions:
-        session = avail_sessions[0]
-        for bash_pid in map(int, [p.pane_pid for p in session.panes]):
-            # bash_pid is tmux "bash -c" (= primary) pid for the pane
-            for proc in psutil.Process(bash_pid).children():
-                # there should be only 1 child pid
-                os.kill(proc.pid, signal.SIGTERM)
+    if not avail_sessions:
+        return
+
+    session = avail_sessions[0]
+
+    # collect all child PIDs for panes
+    all_children = []
+    for bash_pid in map(int, [p.pane_pid for p in session.panes]):
         try:
-            session.kill_session()
-        except LibTmuxException:
-            # session exits itself if no more panes
+            parent_proc = psutil.Process(bash_pid)
+            children = parent_proc.children(recursive=True)
+            all_children.extend(children)
+        except psutil.NoSuchProcess:
+            continue
+
+    # Send Ctrl+C to each pane
+    for pane in session.panes:
+        pane.send_keys("^C")  # sends SIGINT via tmux
+
+    # Wait for processes to exit
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        alive = [p for p in all_children if p.is_running()]
+        if not alive:
+            break
+        time.sleep(0.1)
+
+    # Kill remaining processes forcefully
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.NoSuchProcess:
             pass
+
+    # Kill tmux session
+    try:
+        session.kill_session()
+    except LibTmuxException:
+        # session may already exit itself if all panes are gone
+        pass
