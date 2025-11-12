@@ -783,3 +783,14 @@ class DeviceManagerDS(DeviceManagerBase):
         if not isinstance(value, messages.BECMessage):
             return
         self._bec_message_handler.emit(obj, value)
+
+    def shutdown(self):
+        """Shutdown the device manager and disconnect all devices"""
+        for device in self.devices.values():
+            try:
+                logger.info(f"Disconnecting device {device.name}")
+                self.disconnect_device(device.obj)
+            except Exception:
+                logger.error(f"Failed to disconnect device {device.name}: {traceback.format_exc()}")
+        self.devices.flush()
+        super().shutdown()
