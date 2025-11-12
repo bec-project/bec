@@ -67,6 +67,7 @@ class _PROCEDURE:
     CONTAINER = _CONTAINER()
     MANAGER_SHUTDOWN_TIMEOUT_S = 2
     BEC_VERSION = version("bec_lib")
+    REDIS_HOST = "redis"
 
 
 PROCEDURE = _PROCEDURE()
