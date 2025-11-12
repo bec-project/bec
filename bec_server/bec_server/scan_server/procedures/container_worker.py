@@ -62,7 +62,7 @@ class ContainerProcedureWorker(ProcedureWorker):
         minimum necessary, or things which are only necessary for the functioning of the worker,
         and other information should be passed through redis"""
         return {
-            "redis_server": f"redis:{self._conn.port}",
+            "redis_server": f"{PROCEDURE.REDIS_HOST}:{self._conn.port}",
             "queue": self._queue,
             "timeout_s": str(self._lifetime_s),
         }

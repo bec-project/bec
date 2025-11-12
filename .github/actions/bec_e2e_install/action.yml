@@ -62,7 +62,7 @@ runs:
         cd ./_e2e_test_checkout_/bec
         source ./bin/install_bec_dev.sh -t
         pip install -e ../ophyd_devices
-        podman pod create --add-host redis:host-gateway local_bec
+        podman pod create --network=host local_bec
         python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
         pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/
         
