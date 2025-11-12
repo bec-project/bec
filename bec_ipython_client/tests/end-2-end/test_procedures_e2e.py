@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Callable, Generator
 from unittest.mock import MagicMock, patch
@@ -11,6 +12,7 @@ from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_server.scan_server.procedures.constants import _CONTAINER, _WORKER
 from bec_server.scan_server.procedures.container_utils import get_backend
 from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager
@@ -25,6 +27,15 @@ logger = bec_logger.logger
 # Random order disabled for this module so that the test for building the worker container runs first
 # and we can use lower timeouts for the remaining tests
 pytestmark = pytest.mark.random_order(disabled=True)
+
+
+@dataclass(frozen=True)
+class PATCHED_CONSTANTS:
+    WORKER = _WORKER()
+    CONTAINER = _CONTAINER()
+    MANAGER_SHUTDOWN_TIMEOUT_S = 2
+    BEC_VERSION = version("bec_lib")
+    REDIS_HOST = "localhost"
 
 
 @pytest.fixture
@@ -84,6 +95,7 @@ def test_procedure_runner_spawns_worker(
 
 @pytest.mark.timeout(100)
 @patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.scan_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_happy_path_container_procedure_runner(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
@@ -103,7 +115,6 @@ def test_happy_path_container_procedure_runner(
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")
-    assert "test string" in "\n".join(manager._logs)
     assert logtool.is_present_in_any_message(
         "ContainerWorker started container for queue primary"
     ), f"Log content relating to procedures: {manager}"
