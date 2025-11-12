@@ -129,7 +129,7 @@ class DeviceManagerDS(DeviceManagerBase):
             for dev in self._session["devices"]:
                 name = dev.get("name")
                 enabled = dev.get("enabled")
-                logger.info(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
+                logger.debug(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
                 dev_cls = self._get_device_class(dev.get("deviceClass"))
                 if issubclass(dev_cls, (opd.DeviceProxy, opd.ComputedSignal)):
                     delayed_init.append(dev)
