@@ -369,7 +369,7 @@ class RedisConnector:
             expire=expire,
             scope=scope,
             RID=rid,
-            metadata=metadata,
+            metadata=metadata or {},
         )
         self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
 
