@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.74.0 (2025-11-13)
+
+### Bug Fixes
+
+- **BECMessage**: Fix type hints for metadata
+  ([`2ce32a5`](https://github.com/bec-project/bec/commit/2ce32a5fa9aa9dcfab826acb2b287c4bd6eb3923))
+
+### Build System
+
+- **ophyd_devices**: Update min version to 1.29.7
+  ([`2e251e7`](https://github.com/bec-project/bec/commit/2e251e70dda14a54f1a36166b5a7545ab25a1c74))
+
+### Features
+
+- **messages**: Add async update validation model
+  ([`c728924`](https://github.com/bec-project/bec/commit/c728924c1041223c58c0143eab4b79b606ba21d8))
+
+
 ## v3.73.3 (2025-11-11)
 
 ### Bug Fixes
