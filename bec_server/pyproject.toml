@@ -20,7 +20,7 @@ dependencies = [
     "msgpack~=1.0",
     "numpy>=1.24, <3.0",
     "ophyd~=1.9",
-    "ophyd_devices>=1.21.0, <2.0",
+    "ophyd_devices>=1.29.7, <2.0",
     "podman>=5.4",
     "psutil",
     "pydantic~=2.8",
