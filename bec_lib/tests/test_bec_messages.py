@@ -379,9 +379,7 @@ def test_CredentialsMessage():
 
 
 def test_DeviceInstructionMessage():
-    msg = messages.DeviceInstructionMessage(
-        device="samx", action="set", parameter={"set": 0.5}, metadata=None
-    )
+    msg = messages.DeviceInstructionMessage(device="samx", action="set", parameter={"set": 0.5})
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg

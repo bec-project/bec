@@ -39,7 +39,7 @@ class BECMessage(BaseModel):
     """
 
     msg_type: ClassVar[str]
-    metadata: dict | None = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
 
     @field_validator("metadata")
     @classmethod
@@ -49,9 +49,7 @@ class BECMessage(BaseModel):
         Args:
             v (dict, None): Metadata dictionary
         """
-        if v is None:
-            return {}
-        return v
+        return v or {}
 
     @property
     def content(self):
