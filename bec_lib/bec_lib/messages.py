@@ -449,6 +449,98 @@ class DeviceMessage(BECMessage):
     msg_type: ClassVar[str] = "device_message"
     signals: dict[str, dict[Literal["value", "timestamp"], Any]]
 
+    @field_validator("metadata")
+    @classmethod
+    def check_metadata(cls, v):
+        """Validate the metadata, return empty dict if None
+
+        Args:
+            v (dict, None): Metadata dictionary
+        """
+        if not v:
+            return {}
+        if "async_update" in v:
+            DeviceAsyncUpdate.model_validate(v["async_update"])
+        return v
+
+
+class DeviceAsyncUpdate(BaseModel):
+    """Model for validating async update metadata sent with device data.
+
+    The async update metadata controls how data is aggregated into datasets during a scan:
+    - add: Appends data to the existing dataset along the first axis
+    - add_slice: Appends a slice of data at a specific index (max 2D datasets)
+    - replace: Replaces the existing dataset (written after scan completion)
+
+    Args:
+        type (Literal["add", "add_slice", "replace"]): Type of async update operation
+        max_shape (list[int | None], optional): Maximum shape of the dataset. Required for 'add' and 'add_slice' types.
+                                                 Use None for unlimited dimensions. E.g., [None] for 1D unlimited.
+                                                 None values must only appear at the beginning (e.g., [None, 1024] is valid, [1024, None] is not).
+                                                 When all dimensions are None, maximum is 2 dimensions (e.g., [None, None] is valid, [None, None, None] is not).
+                                                 For 'add_slice' type, max_shape cannot exceed two dimensions.
+        index (int, optional): Row index for 'add_slice' operations. Required only for 'add_slice' type.
+
+    Examples:
+        >>> DeviceAsyncUpdate(type="add", max_shape=[None])
+        >>> DeviceAsyncUpdate(type="add", max_shape=[None, 1024, 1024])
+        >>> DeviceAsyncUpdate(type="add_slice", max_shape=[None, 1024], index=5)
+        >>> DeviceAsyncUpdate(type="replace")
+    """
+
+    type: Literal["add", "add_slice", "replace"]
+    max_shape: list[int | None] | None = None
+    index: int | None = None
+
+    @model_validator(mode="after")
+    @classmethod
+    def validate_async_update(cls, values):
+        """Validate that required fields are present based on update type and constraints"""
+        if values.type in ["add", "add_slice"]:
+            if values.max_shape is None or len(values.max_shape) == 0:
+                raise ValueError(
+                    f"max_shape is required and cannot be empty for async update type '{values.type}'"
+                )
+
+        # Validate that None values only appear at the beginning of max_shape
+        # i.e., once a non-None value is found, no None values can appear after it
+        if values.max_shape is not None:
+            non_none_found = False
+            for i, dim in enumerate(values.max_shape):
+                if dim is not None:
+                    if not isinstance(dim, int) or dim <= 0:
+                        raise ValueError(
+                            f"Invalid max_shape {values.max_shape}: all non-None dimensions must be positive integers. "
+                            f"Found {dim} at index {i}."
+                        )
+                    non_none_found = True
+                elif non_none_found:
+                    raise ValueError(
+                        f"Invalid max_shape {values.max_shape}: None values must only appear at the beginning. "
+                        f"Found None at index {i} after non-None value."
+                    )
+
+            # If all dimensions are None, maximum is 2 dimensions
+            if all(dim is None for dim in values.max_shape):
+                if len(values.max_shape) > 2:
+                    raise ValueError(
+                        f"Invalid max_shape {values.max_shape}: when all dimensions are None, "
+                        f"maximum number of dimensions is 2, got {len(values.max_shape)}"
+                    )
+
+        if values.type == "add_slice":
+            if values.index is None:
+                raise ValueError("index is required for async update type 'add_slice'")
+            if not isinstance(values.index, int) or (values.index < -1):
+                raise ValueError(
+                    f"index must be an integer >= -1 for async update type 'add_slice', got {values.index}"
+                )
+            if values.max_shape is not None and len(values.max_shape) > 2:
+                raise ValueError(
+                    f"max_shape for async update type 'add_slice' cannot exceed two dimensions, got {len(values.max_shape)} dimensions"
+                )
+        return values
+
 
 class DeviceRPCMessage(BECMessage):
     """Message type for sending device RPC return values from the device server
