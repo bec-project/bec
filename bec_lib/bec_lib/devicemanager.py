@@ -650,16 +650,16 @@ class DeviceManagerBase:
         class_name = info["device_info"]["device_class"]
 
         if base_class == "device":
-            logger.info(f"Adding new device {name}")
+            logger.debug(f"Adding new device {name}")
             obj = Device(name=name, info=info, config=dev, parent=self, class_name=class_name)
         elif base_class == "positioner":
-            logger.info(f"Adding new positioner {name}")
+            logger.debug(f"Adding new positioner {name}")
             obj = Positioner(name=name, info=info, config=dev, parent=self, class_name=class_name)
         elif base_class == "signal":
-            logger.info(f"Adding new signal {name}")
+            logger.debug(f"Adding new signal {name}")
             obj = Signal(name=name, info=info, config=dev, parent=self, class_name=class_name)
         elif base_class == "computed_signal":
-            logger.info(f"Adding new computed signal {name}")
+            logger.debug(f"Adding new computed signal {name}")
             obj = ComputedSignal(
                 name=name, info=info, config=dev, parent=self, class_name=class_name
             )

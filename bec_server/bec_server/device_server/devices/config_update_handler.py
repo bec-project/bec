@@ -146,7 +146,7 @@ class ConfigUpdateHandler:
         dm: DeviceManagerDS = self.device_manager
         for dev, dev_config in msg.content["config"].items():
             name = dev_config["name"]
-            logger.info(f"Adding device {name}")
+            logger.debug(f"Adding device {name}")
             if dev in dm.devices:
                 continue  # tbd what to do here: delete and add new device?
             obj, config = dm.construct_device_obj(dev_config, device_manager=dm)
@@ -167,7 +167,7 @@ class ConfigUpdateHandler:
 
         """
         for dev in msg.content["config"]:
-            logger.info(f"Removing device {dev}")
+            logger.debug(f"Removing device {dev}")
             if dev not in self.device_manager.devices:
                 continue
             device = self.device_manager.devices[dev]

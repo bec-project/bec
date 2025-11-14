@@ -300,7 +300,7 @@ class ScanBundler(BECService):
 
             scan_id = metadata.get("scan_id")
             if not scan_id:
-                logger.info("Received device message without scan_id")
+                logger.debug("Received device message without scan_id")
                 return
 
             signal = msg.content.get("signals")

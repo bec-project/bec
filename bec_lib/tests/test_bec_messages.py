@@ -243,6 +243,31 @@ def test_ProcedureWorkerStatusMessage():
     assert res_loaded == msg
 
 
+def test_ProcedureWorkerStatusMessage_validation():
+    with pytest.raises(pydantic.ValidationError) as e:
+        messages.ProcedureWorkerStatusMessage(
+            worker_queue="background tasks",
+            status=messages.ProcedureWorkerStatus.RUNNING,
+            metadata={"RID": "1234"},
+        )
+    assert e.match("Adding an execution ID is mandatory")
+    with pytest.raises(pydantic.ValidationError) as e:
+        messages.ProcedureWorkerStatusMessage(
+            worker_queue="background tasks",
+            status=messages.ProcedureWorkerStatus.IDLE,
+            metadata={"RID": "1234"},
+            current_execution_id="test",
+        )
+    assert e.match("Adding an execution ID is only valid")
+
+
+def test_ProcedureAbortMessage_validation():
+    with pytest.raises(pydantic.ValidationError) as e:
+        messages.ProcedureAbortMessage(queue="test", execution_id="test")
+    assert e.match("only supply one argument")
+    messages.ProcedureAbortMessage(queue="test")
+
+
 def test_FileMessage():
     msg = messages.FileMessage(
         device_name="samx",
