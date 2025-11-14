@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.74.1 (2025-11-14)
+
+### Bug Fixes
+
+- **computed signal**: Fix signal parsing for computed signals; various minor improvements
+  ([`51a5caa`](https://github.com/bec-project/bec/commit/51a5caa732aa10a6f2e3f83bc4199a79dda93924))
+
+### Continuous Integration
+
+- Adjust coverage command
+  ([`81fab0d`](https://github.com/bec-project/bec/commit/81fab0d0b1ea9191f6096e14ac78f1e52fb6999b))
+
+
 ## v3.74.0 (2025-11-13)
 
 ### Bug Fixes
