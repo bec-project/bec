@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.74.2 (2025-11-14)
+
+### Bug Fixes
+
+- **redis_connector**: Bespoke backend server cannot be copied
+  ([`0c748a0`](https://github.com/bec-project/bec/commit/0c748a00c9010f65fdb0f7676518ad33da4cc97f))
+
+- **redis_connector**: Support string endpoints in try/except
+  ([`220ed09`](https://github.com/bec-project/bec/commit/220ed09d1d1307ae80e01b6ad679746b3e2afff9))
+
+
 ## v3.74.1 (2025-11-14)
 
 ### Bug Fixes
