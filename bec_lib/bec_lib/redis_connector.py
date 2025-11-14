@@ -271,7 +271,9 @@ class RedisConnector:
         """
         if password is None:
             password = "null"
-        old_kwargs = copy.deepcopy(self._redis_conn.connection_pool.connection_kwargs)
+        conn_kwargs = self._redis_conn.connection_pool.connection_kwargs.copy()
+        conn_kwargs.pop("server", None)  # server is not serializable
+        old_kwargs = copy.deepcopy(conn_kwargs)
         try:
             self._close_pubsub()
             self._redis_conn.connection_pool.reset()
@@ -281,7 +283,7 @@ class RedisConnector:
             self._restart_pubsub()
         except redis.exceptions.RedisError as exc:
             self._redis_conn.connection_pool.reset()
-            self._redis_conn.connection_pool.connection_kwargs = old_kwargs
+            self._redis_conn.connection_pool.connection_kwargs.update(old_kwargs)
             raise exc
 
     def _close_pubsub(self):
