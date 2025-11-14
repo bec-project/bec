@@ -168,8 +168,11 @@ def validate_endpoint(endpoint_arg_name: str):
             except redis.exceptions.NoPermissionError as exc:
                 # the default NoPermissionError message is not very informative as it does not
                 # contain any information about the endpoint that caused the error
+                endpoint_str = (
+                    endpoint.endpoint if isinstance(endpoint, EndpointInfo) else str(endpoint)
+                )
                 raise redis.exceptions.NoPermissionError(
-                    f"Permission denied for endpoint {endpoint.endpoint}"
+                    f"Permission denied for endpoint {endpoint_str}"
                 ) from exc
 
         _fix_docstring_for_ipython(wrapper, endpoint_arg_name)
