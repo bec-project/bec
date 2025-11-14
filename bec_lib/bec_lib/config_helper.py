@@ -167,8 +167,10 @@ class ConfigHelper:
         Returns: request ID (str)
 
         """
-        if action in ["update", "add", "set"] and not config:
+        if action in ["update", "add"] and not config:
             raise DeviceConfigError(f"Config cannot be empty for an {action} request.")
+        if action == "set":
+            config = config or {}  # coerce None
         RID = str(uuid.uuid4())
         self.connector.send(
             MessageEndpoints.device_config_request(),
