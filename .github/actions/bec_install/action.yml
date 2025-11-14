@@ -39,8 +39,16 @@ runs:
     - name: Install Python dependencies
       shell: bash
       run: |
-        pip install uv
-        uv pip install --system -e ./ophyd_devices[dev]
-        uv pip install --system -e ./bec/bec_lib[dev]
-        uv pip install --system -e ./bec/bec_ipython_client[dev]
-        uv pip install --system -e ./bec/bec_server[dev]
+        pip install uv build
+
+        # Build wheels for each package
+        python -m build --wheel ./ophyd_devices
+        python -m build --wheel ./bec/bec_lib
+        python -m build --wheel ./bec/bec_ipython_client
+        python -m build --wheel ./bec/bec_server
+
+        # Install from wheels with dev dependencies
+        uv pip install --system ./ophyd_devices[dev] ./ophyd_devices/dist/*.whl
+        uv pip install --system ./bec/bec_lib[dev] ./bec/bec_lib/dist/*.whl
+        uv pip install --system ./bec/bec_ipython_client[dev] ./bec/bec_ipython_client/dist/*.whl
+        uv pip install --system ./bec/bec_server[dev] ./bec/bec_server/dist/*.whl
