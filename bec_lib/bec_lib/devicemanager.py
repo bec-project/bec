@@ -445,22 +445,19 @@ class ScanInfo:
 
 
 class DeviceManagerBase:
-    devices = DeviceContainer()
-    _config = {}  # valid config
-    _session = {}
-    _request = None  # requested config
-    _request_config_parsed = None  # parsed config request
-    _response = None  # response message
-
-    _connector_base_register = {}
-    config_helper = None
-    scan_info = None
-    _device_cls = DeviceBase
-    _status_cb = []
 
     def __init__(
         self, service: BECService, status_cb: list[Callable] | Callable | None = None
     ) -> None:
+        self.devices = DeviceContainer()
+        self._config = {}  # valid config
+        self._session = {}
+        self._request = None  # requested config
+        self._request_config_parsed = None  # parsed config request
+        self._response = None  # response message
+        self._connector_base_register = {}
+        self._device_cls = DeviceBase
+
         self._service = service
         self.parent = service  # for backwards compatibility; will be removed in the future
         self.connector = self._service.connector
