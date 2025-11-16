@@ -157,7 +157,7 @@ class LiveScanData(dict):
 
     def __init__(self, *args, **kwargs):
         self.devices = collections.defaultdict(DeviceData)
-        self.messages = collections.defaultdict()
+        self.messages: dict[int, messages.ScanMessage] = {}
         super().__init__(*args, **kwargs)
 
     def get(self, index: Any, default=None) -> Any:
@@ -191,13 +191,13 @@ class LiveScanData(dict):
         super().__delitem__(__key)
         del self.__dict__[__key]
 
-    def set(self, index: Any, message: messages.BECMessage) -> None:
+    def set(self, index: Any, message: messages.ScanMessage) -> None:
         """
         Set the scan data at the given index to the values in the given content.
 
         Args:
             index(int): the index of the scan point
-            content(dict): the content to store
+            message(messages.ScanMessage): the scan message containing the data to store
 
         """
         if not isinstance(index, int):
