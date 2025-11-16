@@ -6,6 +6,7 @@ from typeguard import TypeCheckError
 
 from bec_lib import messages
 from bec_lib.client import BECClient
+from bec_lib.config_helper import ConfigHelper
 from bec_lib.device import (
     AdjustableMixin,
     ComputedSignal,
@@ -338,9 +339,9 @@ BASIC_CONFIG = {
 @pytest.fixture
 def dev_w_config():
     def _func(config: dict = {}):
-        return DeviceBaseWithConfig(
-            name="test", config=BASIC_CONFIG | config, parent=mock.MagicMock(spec=DeviceManagerBase)
-        )
+        dm_base = DeviceManagerBase(mock.MagicMock())
+        dm_base.config_helper = mock.MagicMock(spec=ConfigHelper)
+        return DeviceBaseWithConfig(name="test", config=BASIC_CONFIG | config, parent=dm_base)
 
     return _func
 
@@ -479,11 +480,9 @@ def test_set_device_tags(device_w_tags, method, args, result):
 
 
 def test_device_wm(device_w_tags):
-    with mock.patch.object(
-        device_w_tags.parent.devices, "wm", new_callable=mock.PropertyMock
-    ) as wm:
+    with mock.patch.object(DeviceContainer, "wm") as mock_wm:
         _ = device_w_tags.wm
-        device_w_tags.parent.devices.wm.assert_called_once()
+        mock_wm.assert_called_once_with(device_w_tags.name)
 
 
 @pytest.mark.parametrize(

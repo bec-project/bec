@@ -107,7 +107,6 @@ class TestLiveTable:
     )
     def test_get_devices_from_scan_data(self, bec_client_mock, request_msg, scan_report_devices):
         client = bec_client_mock
-        client.start()
         data = messages.ScanMessage(
             point_id=0, scan_id="", data={}, metadata={"scan_report_devices": scan_report_devices}
         )
