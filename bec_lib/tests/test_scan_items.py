@@ -23,7 +23,7 @@ def scan_item():
         queue_id="queue_id",
         scan_number=[1],
         scan_id=["scan_id"],
-        status="status",
+        status="open",
     )
 
 
@@ -185,7 +185,7 @@ def test_update_with_scan_status_last_scan_number():
     with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
         mock_find_scan.return_value = mock.MagicMock()
         scan_manager.scan_storage.update_with_scan_status(
-            messages.ScanStatusMessage(scan_id="scan_id", status="aborted", info={"scan_number": 1})
+            messages.ScanStatusMessage(scan_id="scan_id", status="aborted", scan_number=1, info={})
         )
         assert scan_manager.scan_storage.last_scan_number == 1
 
@@ -198,7 +198,7 @@ def test_update_with_scan_status_updates_start_time():
         mock_find_scan.return_value = scan_item
         scan_manager.scan_storage.update_with_scan_status(
             messages.ScanStatusMessage(
-                scan_id="scan_id", status="open", info={"scan_number": 1}, timestamp=10
+                scan_id="scan_id", status="open", scan_number=1, info={}, timestamp=10
             )
         )
         assert scan_item.start_time == 10
@@ -212,7 +212,7 @@ def test_update_with_scan_status_does_not_update_start_time():
         scan_item.start_time = 0
         scan_manager.scan_storage.update_with_scan_status(
             messages.ScanStatusMessage(
-                scan_id="scan_id", status="closed", info={"scan_number": 1}, timestamp=10
+                scan_id="scan_id", status="closed", scan_number=1, info={}, timestamp=10
             )
         )
         assert scan_item.start_time == 0
@@ -226,7 +226,7 @@ def test_update_with_scan_status_updates_end_time():
         mock_find_scan.return_value = scan_item
         scan_manager.scan_storage.update_with_scan_status(
             messages.ScanStatusMessage(
-                scan_id="scan_id", status="closed", info={"scan_number": 1}, timestamp=10
+                scan_id="scan_id", status="closed", scan_number=1, info={}, timestamp=10
             )
         )
         assert scan_item.end_time == 10
@@ -240,7 +240,7 @@ def test_update_with_scan_status_does_not_update_end_time():
         scan_item.end_time = 0
         scan_manager.scan_storage.update_with_scan_status(
             messages.ScanStatusMessage(
-                scan_id="scan_id", status="open", info={"scan_number": 1}, timestamp=10
+                scan_id="scan_id", status="open", scan_number=1, info={}, timestamp=10
             )
         )
         assert scan_item.end_time == 0
@@ -256,7 +256,9 @@ def test_update_with_scan_status_updates_num_points():
             messages.ScanStatusMessage(
                 scan_id="scan_id",
                 status="closed",
-                info={"scan_number": 1, "num_points": 10},
+                scan_number=1,
+                num_points=10,
+                info={},
                 timestamp=10,
             )
         )
@@ -274,7 +276,9 @@ def test_update_with_scan_status_updates_scan_number():
             messages.ScanStatusMessage(
                 scan_id="scan_id",
                 status="closed",
-                info={"scan_number": 1, "num_points": 10},
+                info={},
+                scan_number=1,
+                num_points=10,
                 timestamp=10,
             )
         )
@@ -292,7 +296,9 @@ def test_update_with_scan_status_does_not_update_scan_number():
             messages.ScanStatusMessage(
                 scan_id="scan_id",
                 status="closed",
-                info={"scan_number": 1, "num_points": 10},
+                scan_number=1,
+                num_points=10,
+                info={},
                 timestamp=10,
             )
         )
@@ -310,7 +316,9 @@ def test_update_with_scan_status_adds_scan_def_id():
             messages.ScanStatusMessage(
                 scan_id="scan_id",
                 status="open",
-                info={"scan_number": 1, "num_points": 10, "scan_def_id": "scan_def_id"},
+                scan_number=1,
+                num_points=10,
+                info={"scan_def_id": "scan_def_id"},
                 timestamp=10,
             )
         )
@@ -328,7 +336,9 @@ def test_update_with_scan_status_removes_scan_def_id():
             messages.ScanStatusMessage(
                 scan_id="scan_id",
                 status="closed",
-                info={"scan_number": 1, "num_points": 10, "scan_def_id": "scan_def_id"},
+                scan_number=1,
+                num_points=10,
+                info={"scan_def_id": "scan_def_id"},
                 timestamp=10,
             )
         )
