@@ -36,7 +36,8 @@ def _convert_to_db_config(yaml_config: dict) -> None:
 
 
 @pytest.fixture
-def fakeredis_connector(connected_connector):
+def fakeredis_connector(connected_connector, **kwargs):
+    connected_connector.set_retry_enabled(False)
     return lambda x: connected_connector
 
 

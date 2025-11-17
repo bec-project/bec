@@ -170,6 +170,8 @@ class BECService:
         self._start_metrics_emitter()
         self._wait_for_server()
         self._version = None
+        if self.connector.can_connect():
+            self.connector.set_retry_enabled(True)
 
     @property
     def _service_name(self):

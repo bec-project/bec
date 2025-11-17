@@ -729,6 +729,8 @@ class SignalMock:  # pragma: no cover
 
 
 class ConnectorMock(RedisConnector):  # pragma: no cover
+    RETRY_ON_TIMEOUT = 0
+
     def __init__(self, bootstrap_server: list[str] | str = "localhost:0000", store_data=True):
         if isinstance(bootstrap_server, list):
             bootstrap_server = bootstrap_server[0]

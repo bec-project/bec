@@ -11,6 +11,7 @@ import copy
 import inspect
 import itertools
 import queue
+import socket
 import sys
 import threading
 import time
@@ -39,7 +40,9 @@ from typing import (
 import louie
 import redis.client
 import redis.exceptions
+from redis.backoff import ExponentialBackoff
 from redis.client import Pipeline, Redis
+from redis.retry import Retry
 
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
@@ -224,6 +227,8 @@ class RedisConnector:
     a simple interface to send and receive messages from a redis server.
     """
 
+    RETRY_ON_TIMEOUT: int = 20
+
     def __init__(self, bootstrap: list[str] | str, redis_cls: type[Redis] = Redis, **kwargs):
         """
         Initialize the connector
@@ -236,7 +241,22 @@ class RedisConnector:
             bootstrap[0].split(":") if isinstance(bootstrap, list) else bootstrap.split(":")
         )
 
-        self._redis_conn = redis_cls(host=self.host, port=int(self.port))
+        retry_policy = self._get_retry_policy()
+
+        # patch for redis-py issue where pub/sub connections are not "retried" properly
+        # see https://github.com/redis/redis-py/issues/3203
+
+        def redis_connect_func(_redis_conn):
+            _redis_conn.retry.call_with_retry(
+                do=lambda: _redis_conn.on_connect_check_health(check_health=True), fail=lambda: None
+            )
+
+        self._redis_conn = redis_cls(
+            host=self.host,
+            port=int(self.port),
+            redis_connect_func=redis_connect_func,
+            retry=retry_policy,
+        )
 
         # main pubsub connection
         self._pubsub_conn = self._redis_conn.pubsub()
@@ -305,6 +325,37 @@ class RedisConnector:
         if self._events_listener_thread is None:
             self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
             self._events_listener_thread.start()
+
+    def _get_retry_policy(self) -> Retry:
+        """
+        Get the retry policy for the redis connection.
+        Note that the retries are set to 0 and can be updated later using set_retry_enabled().
+
+        Returns:
+            Retry: The retry policy object.
+        """
+        return Retry(
+            ExponentialBackoff(cap=300),
+            retries=0,
+            supported_errors=(
+                redis.exceptions.TimeoutError,
+                redis.exceptions.ConnectionError,
+                ConnectionRefusedError,
+                OSError,
+                socket.timeout,
+            ),
+        )
+
+    def set_retry_enabled(self, enabled: bool):
+        """
+        Enable or disable retry on timeout
+
+        Args:
+            enabled (bool): enable or disable retry
+        """
+        retry_policy = self._redis_conn.get_retry() or self._get_retry_policy()
+        retry_policy.update_retries(self.RETRY_ON_TIMEOUT if enabled else 0)
+        self._redis_conn.set_retry(retry_policy)
 
     def shutdown(self):
         """
@@ -1338,9 +1389,13 @@ class RedisConnector:
     def redis_server_is_running(self) -> bool:
         """Check if the redis server is running"""
         try:
+            retry = self._redis_conn.get_retry()
+            self._redis_conn.set_retry(None)
             self._redis_conn.ping()
         except (redis.exceptions.AuthenticationError, redis.exceptions.ResponseError):
             return True
-        except redis.exceptions.ConnectionError:
+        except Exception:
             return False
+        finally:
+            self._redis_conn.set_retry(retry)
         return True

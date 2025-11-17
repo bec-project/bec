@@ -27,13 +27,14 @@ def bec_client_singleton_reset():
     BECClient._reset_singleton()
 
 
-def fake_redis_server(host, port):
+def fake_redis_server(host, port, **kwargs):
     redis = fakeredis.FakeRedis()
     return redis
 
 
 @pytest.fixture
 def connected_connector():
+    RedisConnector.RETRY_ON_TIMEOUT = 0
     connector = RedisConnector("localhost:1", redis_cls=fake_redis_server)
     connector._redis_conn.flushall()
     try:
