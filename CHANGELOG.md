@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v3.74.3 (2025-11-17)
+
+### Bug Fixes
+
+- **device server**: Disconnect devices on shutdown
+  ([`4dcff32`](https://github.com/bec-project/bec/commit/4dcff32feeffe0c4091b3bef5e6688ee39908921))
+
+- **tmux**: Send sigint before killing panes to gracefully shut down services
+  ([`96bf2e9`](https://github.com/bec-project/bec/commit/96bf2e99822fd4eec3d7ccc576cc5e06b6ca0ca6))
+
+### Refactoring
+
+- **devicemanager**: Remove move class attributes to instance
+  ([`b222524`](https://github.com/bec-project/bec/commit/b2225248ffd5a7dac5763b567abb846c2423222f))
+
+- **live_scan_data**: Fix type hints
+  ([`6ffde30`](https://github.com/bec-project/bec/commit/6ffde308c966d441f4a400b883fc27a7e5517265))
+
+- **scan item**: Minor type hint improvements
+  ([`132c733`](https://github.com/bec-project/bec/commit/132c7333b3a8aeb66bb3beee343003ca868e6b63))
+
+
 ## v3.74.2 (2025-11-14)
 
 ### Bug Fixes
