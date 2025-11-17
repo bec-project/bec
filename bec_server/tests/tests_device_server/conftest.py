@@ -20,7 +20,7 @@ from bec_lib.redis_connector import RedisConnector
 ### THREADS FOR DEVICE SERVER TESTS (LIKE BEFORE...)
 
 
-def fake_redis_server(host, port):
+def fake_redis_server(host, port, **kwargs):
     redis = fakeredis.FakeRedis()
     return redis
 

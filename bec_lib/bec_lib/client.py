@@ -173,10 +173,14 @@ class BECClient(BECService):
     @property
     def active_account(self) -> str:
         """get the currently active target (e)account"""
-        msg = self.connector.get_last(MessageEndpoints.account(), "data")
-        if msg:
-            return msg.value
-        return ""
+        try:
+            # We wrap this in a try-except to avoid issues on startup if Redis is not reachable
+            msg = self.connector.get_last(MessageEndpoints.account(), "data")
+            if msg:
+                return msg.value
+            return ""
+        except Exception:
+            return ""
 
     def start(self):
         """start the client"""

@@ -14,7 +14,7 @@ def threads_check(threads_check):
     bec_logger.logger.remove()
 
 
-def fake_redis_server(host, port):
+def fake_redis_server(host, port, **kwargs):
     redis = fakeredis.FakeRedis()
     return redis
 
