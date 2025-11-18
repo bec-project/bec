@@ -1506,7 +1506,7 @@ class MessageEndpoints:
         Endpoint to request aborting a running procedure
 
         Returns:
-            EndpointInfo: Endpoint for set of active procedure executions.
+            EndpointInfo: Endpoint to request procedure abortion.
         """
         endpoint = f"{EndpointType.USER.value}/procedures/abort"
         return EndpointInfo(
@@ -1521,7 +1521,7 @@ class MessageEndpoints:
         Endpoint to request removing an aborted procedure
 
         Returns:
-            EndpointInfo: Endpoint for set of active procedure executions.
+            EndpointInfo: Endpoint to request removing aborted procedures.
         """
         endpoint = f"{EndpointType.USER.value}/procedures/clear_unhandled"
         return EndpointInfo(
