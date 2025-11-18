@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from string import Template
 from typing import Callable, Literal, Union
 
@@ -12,7 +13,21 @@ import redis
 
 from bec_lib.service_config import ServiceConfig
 from bec_server.bec_server_utils.subprocess_launch import subprocess_start, subprocess_stop
-from bec_server.bec_server_utils.tmux_launch import tmux_start, tmux_stop
+from bec_server.bec_server_utils.tmux_launch import (
+    tmux_restart_service,
+    tmux_start,
+    tmux_start_service,
+    tmux_stop,
+    tmux_stop_service,
+)
+
+
+class ServiceOperation(str, Enum):
+    """Enum for service operations."""
+
+    STARTING = "Starting"
+    STOPPING = "Stopping"
+    RESTARTING = "Restarting"
 
 
 class bcolors:
@@ -212,3 +227,124 @@ class ServiceHandler:
         print("Restarting BEC server...")
         self.stop()
         self.start()
+
+    def _validate_service(self, service_name: str) -> tuple[bool, ServiceDesc | None]:
+        """
+        Validate that a service name exists in the available services.
+
+        Args:
+            service_name (str): Name of the service to validate
+
+        Returns:
+            tuple: (is_valid: bool, service_config: ServiceDesc or None)
+        """
+        if service_name not in self.SERVICES:
+            print(
+                f"{bcolors.FAIL}Error: Unknown service '{service_name}'. Available services: {', '.join(self.SERVICES.keys())}{bcolors.ENDC}"
+            )
+            return False, None
+
+        service_config = copy.deepcopy(self.SERVICES[service_name])
+        if self.config_path:
+            service_config.command += f" --config {self.config_path}"
+
+        return True, service_config
+
+    def _handle_service_operation(
+        self,
+        service_name: str,
+        operation: ServiceOperation,
+        tmux_func: Callable,
+        require_config: bool = True,
+    ) -> bool:
+        """
+        Handle a service operation (start, stop, restart) with common validation and execution logic.
+
+        Args:
+            service_name (str): Name of the service
+            operation (ServiceOperation): Operation type (STARTING, STOPPING, RESTARTING)
+            tmux_func (Callable): Function to call for tmux interface
+            require_config (bool): Whether the operation requires service config
+
+        Returns:
+            bool: True if operation was successful, False otherwise
+        """
+        is_valid, service_config = self._validate_service(service_name)
+        if not is_valid:
+            return False
+
+        if self.interface == "tmux":
+            print(f"{operation.value} {service_name}...")
+            if require_config:
+                success = tmux_func(self.bec_path, service_name, service_config)
+            else:
+                success = tmux_func(service_name)
+
+            if success:
+                print(
+                    f"{bcolors.OKGREEN}Successfully {operation.value.lower()} {service_name}{bcolors.ENDC}"
+                )
+            else:
+                print(
+                    f"{bcolors.FAIL}Failed to {operation.value.lower()} {service_name}. Service not found in tmux session.{bcolors.ENDC}"
+                )
+            return success
+        elif self.interface == "systemctl" and operation == ServiceOperation.RESTARTING:
+            print(
+                f"{bcolors.WARNING}Warning: {operation.value} individual services is not supported with systemctl. Please {operation.value.lower()} the entire BEC server.{bcolors.ENDC}"
+            )
+            return False
+        elif (
+            self.interface in ("iterm2", "subprocess") and operation == ServiceOperation.RESTARTING
+        ):
+            print(
+                f"{bcolors.WARNING}Warning: {operation.value} individual services is not supported with {self.interface}. Please {operation.value.lower()} the entire BEC server.{bcolors.ENDC}"
+            )
+            return False
+        else:
+            print(
+                f"{bcolors.WARNING}Warning: {operation.value} individual services is only supported with tmux interface.{bcolors.ENDC}"
+            )
+            return False
+
+    def restart_service(self, service_name: str) -> bool:
+        """
+        Restart a single service using the available interface.
+
+        Args:
+            service_name (str): Name of the service to restart (e.g., "scan_server", "device_server")
+
+        Returns:
+            bool: True if service was restarted successfully, False otherwise
+        """
+        return self._handle_service_operation(
+            service_name, ServiceOperation.RESTARTING, tmux_restart_service, require_config=True
+        )
+
+    def start_service(self, service_name: str) -> bool:
+        """
+        Start a single service using the available interface.
+
+        Args:
+            service_name (str): Name of the service to start (e.g., "scan_server", "device_server")
+
+        Returns:
+            bool: True if service was started successfully, False otherwise
+        """
+        return self._handle_service_operation(
+            service_name, ServiceOperation.STARTING, tmux_start_service, require_config=True
+        )
+
+    def stop_service(self, service_name: str) -> bool:
+        """
+        Stop a single service using the available interface.
+
+        Args:
+            service_name (str): Name of the service to stop (e.g., "scan_server", "device_server")
+
+        Returns:
+            bool: True if service was stopped successfully, False otherwise
+        """
+        return self._handle_service_operation(
+            service_name, ServiceOperation.STOPPING, tmux_stop_service, require_config=False
+        )

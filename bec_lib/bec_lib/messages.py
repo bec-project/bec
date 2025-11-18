@@ -1178,11 +1178,13 @@ class ServiceRequestMessage(BECMessage):
 
     Args:
         action (Literal["restart"]): Action to be executed by the service
+        service_name (str | None): Name of the service to be restarted. If None, all services will be restarted.
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "service_request_message"
     action: Literal["restart"]
+    service_name: str | None = None
 
 
 class ProcedureRequestMessage(BECMessage):

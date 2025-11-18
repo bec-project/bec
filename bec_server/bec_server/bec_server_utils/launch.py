@@ -29,7 +29,19 @@ def main():
         default=None,
         help="Interface to use (tmux, iterm2, systemctl, subprocess)",
     )
-    command.add_parser("stop", help="Stop the BEC server")
+    start.add_argument(
+        "--service",
+        type=str,
+        default=None,
+        help="Start a specific service only (e.g., scan_server, device_server)",
+    )
+    stop = command.add_parser("stop", help="Stop the BEC server")
+    stop.add_argument(
+        "--service",
+        type=str,
+        default=None,
+        help="Stop a specific service only (e.g., scan_server, device_server)",
+    )
     restart = command.add_parser("restart", help="Restart the BEC server")
     restart.add_argument(
         "--config", type=str, default=None, help="Path to the BEC service config file"
@@ -39,6 +51,12 @@ def main():
         type=str,
         default=None,
         help="Interface to use (tmux, iterm2, systemctl, subprocess)",
+    )
+    restart.add_argument(
+        "--service",
+        type=str,
+        default=None,
+        help="Restart a specific service only (e.g., scan_server, device_server)",
     )
     command.add_parser("attach", help="Open the currently running BEC server session")
 
@@ -59,11 +77,20 @@ def main():
         no_persistence=args.no_persistence if "no_persistence" in args else False,
     )
     if args.command == "start":
-        service_handler.start()
+        if hasattr(args, "service") and args.service:
+            service_handler.start_service(args.service)
+        else:
+            service_handler.start()
     elif args.command == "stop":
-        service_handler.stop()
+        if hasattr(args, "service") and args.service:
+            service_handler.stop_service(args.service)
+        else:
+            service_handler.stop()
     elif args.command == "restart":
-        service_handler.restart()
+        if hasattr(args, "service") and args.service:
+            service_handler.restart_service(args.service)
+        else:
+            service_handler.restart()
     elif args.command == "attach":
         if os.path.exists("/tmp/tmux-shared/default"):
             # if we have a shared socket, use it
