@@ -9,7 +9,7 @@ import copy
 import re
 import traceback
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Callable, Iterable, Literal
 
 from rich.console import Console
 from rich.table import Table
@@ -562,9 +562,9 @@ class DeviceManagerBase:
         )
 
     def _add_action(self, config) -> None:
-        for dev, dev_config in config.items():
-            msg = self._get_device_info(dev)
-            self._add_device(dev_config, msg)
+        self._add_multiple_devices_with_log(
+            (dev_config, self._get_device_info(dev)) for dev, dev_config in config.items()
+        )
 
     def _reload_action(self) -> None:
         logger.info("Reloading config.")
@@ -639,33 +639,38 @@ class DeviceManagerBase:
             return []
         return devices.content["resource"]
 
-    def _add_device(self, dev: dict, msg: DeviceInfoMessage):
+    def _add_multiple_devices_with_log(self, devices: Iterable[tuple[dict, DeviceInfoMessage]]):
+        logs = (self._add_device(*conf_msg) for conf_msg in devices if conf_msg is not None)
+        logger.info(f"Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
+
+    def _add_device(self, dev: dict, msg: DeviceInfoMessage) -> tuple[str, str] | None:
         name = msg.content["device"]
         info = msg.content["info"]
 
         base_class = info["device_info"]["device_base_class"]
         class_name = info["device_info"]["device_class"]
 
-        if base_class == "device":
-            logger.info(f"Adding new device {name}")
+        if base_class == (t := "device"):
             obj = Device(name=name, info=info, config=dev, parent=self, class_name=class_name)
-        elif base_class == "positioner":
-            logger.info(f"Adding new positioner {name}")
+        elif base_class == (t := "positioner"):
             obj = Positioner(name=name, info=info, config=dev, parent=self, class_name=class_name)
-        elif base_class == "signal":
-            logger.info(f"Adding new signal {name}")
+        elif base_class == (t := "signal"):
             obj = Signal(name=name, info=info, config=dev, parent=self, class_name=class_name)
-        elif base_class == "computed_signal":
-            logger.info(f"Adding new computed signal {name}")
+        elif base_class == (t := "computed_signal"):
             obj = ComputedSignal(
                 name=name, info=info, config=dev, parent=self, class_name=class_name
             )
         else:
             logger.error(f"Trying to add new device {name} of type {base_class}")
-            return
+            return None
 
         set_device_config(obj, dev)
-        self.devices._add_device(name, obj)
+        try:
+            self.devices._add_device(name, obj)
+        except Exception:
+            logger.error(f"Failed to load device {dev}: {traceback.format_exc()}")
+
+        return (name, t)
 
     def _remove_device(self, dev_name):
         if dev_name in self.devices:
@@ -673,14 +678,9 @@ class DeviceManagerBase:
 
     def _load_session(self, _device_cls=None):
         if self._is_config_valid():
-            for dev in self._session["devices"]:
-                # pylint: disable=broad-except
-                try:
-                    msg = self._get_device_info(dev.get("name"))
-                    self._add_device(dev, msg)
-                except Exception:
-                    content = traceback.format_exc()
-                    logger.error(f"Failed to load device {dev}: {content}")
+            self._add_multiple_devices_with_log(
+                (dev, self._get_device_info(dev.get("name"))) for dev in self._session["devices"]
+            )
 
     def _get_device_info(self, device_name) -> DeviceInfoMessage:
         return self.connector.get(MessageEndpoints.device_info(device_name))
