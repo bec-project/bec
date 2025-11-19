@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 import os
 import time
+from typing import TYPE_CHECKING
 
 import libtmux
 import psutil
 from libtmux.exc import LibTmuxException
+
+if TYPE_CHECKING:
+    from bec_server.bec_server_utils.service_handler import ServiceDesc
 
 
 def activate_venv(pane: libtmux.Pane, service_name: str, service_path: str) -> None:
@@ -73,7 +79,7 @@ def get_new_session(tmux_session_name: str, window_label: str) -> libtmux.Sessio
     return session
 
 
-def tmux_start(bec_path: str, services: dict) -> None:
+def tmux_start(bec_path: str, services: dict[str, ServiceDesc]) -> None:
     """
     Launch services in a tmux session. All services are launched in separate panes.
     Services config dict contains "tmux_session_name" (default: "bec") and "window_label" (default: "BEC server",
@@ -81,12 +87,16 @@ def tmux_start(bec_path: str, services: dict) -> None:
 
     Args:
         bec_path (str): Path to the BEC source code
-        services (dict): Dictionary of services to launch. Keys are the service names, values are path and command templates.
+        services (dict[str, ServiceDesc]): Dictionary of services to launch. Keys are the service names, values are path and command templates.
 
     """
-    sessions = {}
+    sessions: dict[str, libtmux.Session] = {}
+    session_windows: dict[str, libtmux.Window] = {}
+
     for service, service_config in services.items():
         tmux_session_name = service_config.tmux_session.name
+        separate_window = service_config.separate_window
+
         if tmux_session_name not in sessions:
             tmux_window_label = service_config.tmux_session.window_label
             session = get_new_session(tmux_session_name, tmux_window_label)
@@ -94,16 +104,26 @@ def tmux_start(bec_path: str, services: dict) -> None:
                 raise RuntimeError(f"Failed to create tmux session '{tmux_session_name}'")
             pane = session.attached_window.active_pane
             sessions[tmux_session_name] = session
+            if not separate_window:
+                session_windows[tmux_session_name] = session.attached_window
         else:
             session = sessions[tmux_session_name]
-            pane = session.attached_window.split_window(vertical=False)
+            if separate_window:
+                # Create a new window for this service
+                window = session.new_window(window_name=service)
+                pane = window.active_pane
+            else:
+                # Split the current window to create a new pane
+                if tmux_session_name not in session_windows:
+                    session_windows[tmux_session_name] = session.attached_window
+                pane = session_windows[tmux_session_name].split_window(vertical=False)
 
         if pane is None:
             raise RuntimeError(f"Failed to create pane for service '{service}'")
 
         # Set pane title to service name for easy identification
-        session.attached_window.set_window_option("pane-border-status", "top")
-        session.attached_window.set_window_option("pane-border-format", "#{pane_title}")
+        pane.window.set_window_option("pane-border-status", "top")
+        pane.window.set_window_option("pane-border-format", "#{pane_title}")
         pane.cmd("select-pane", "-T", service)
 
         activate_venv(
@@ -118,8 +138,11 @@ def tmux_start(bec_path: str, services: dict) -> None:
         if callable(wait_func):
             wait_func()
 
+    # Apply tiled layout only to windows with multiple panes (not separate windows)
+    for window in session_windows.values():
+        window.select_layout("tiled")
+
     for session in sessions.values():
-        session.attached_window.select_layout("tiled")
         session.mouse_all_flag = True
         session.set_option("mouse", "on")
 

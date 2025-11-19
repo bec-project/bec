@@ -48,6 +48,7 @@ bec-file-writer = "bec_server.file_writer.cli.launch:main"
 bec-scan-server = "bec_server.scan_server.cli.launch:main"
 bec-scan-bundler = "bec_server.scan_bundler.cli.launch:main"
 bec-scihub = "bec_server.scihub.cli.launch:main"
+bec-supervisor = "bec_server.bec_server_utils.cli.launch:main"
 bec-server = "bec_server:main"
 bec-procedure-worker = "bec_server.scan_server.procedures.container_worker:main"
 

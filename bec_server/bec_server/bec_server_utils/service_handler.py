@@ -12,6 +12,7 @@ from typing import Callable, Literal, Union
 import redis
 
 from bec_lib.service_config import ServiceConfig
+from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.bec_server_utils.subprocess_launch import subprocess_start, subprocess_stop
 from bec_server.bec_server_utils.tmux_launch import (
     tmux_restart_service,
@@ -58,14 +59,16 @@ class ServiceDesc:
     command: str
     tmux_session: TmuxSession = field(default_factory=TmuxSession)
     wait_func: Union[Callable, None] = None
+    separate_window: bool = False
 
     def __eq__(self, other):
-        if isinstance(other, ServiceDesc):
-            if other.path.template == self.path.template and self.command == other.command:
-                if self.tmux_session.name == other.tmux_session.name:
-                    if self.wait_func == other.wait_func:
-                        return True
-        return False
+        if not isinstance(other, ServiceDesc):
+            return False
+        comp = ["path.template", "command", "tmux_session.name", "wait_func", "separate_window"]
+        for attr in comp:
+            if rgetattr(other, attr) != rgetattr(self, attr):
+                return False
+        return True
 
 
 class ServiceHandler:
@@ -81,6 +84,9 @@ class ServiceHandler:
         "file_writer": ServiceDesc(Template("$base_path/file_writer"), "bec-file-writer"),
         "scihub": ServiceDesc(Template("$base_path/scihub"), "bec-scihub"),
         "data_processing": ServiceDesc(Template("$base_path/data_processing"), "bec-dap"),
+        "supervisor": ServiceDesc(
+            Template("$base_path/bec_server_utils"), "bec-supervisor", separate_window=True
+        ),
     }
 
     def __init__(
@@ -201,14 +207,27 @@ class ServiceHandler:
             f"Unsupported interface: {self.interface}. Supported interfaces are: tmux, iterm2, systemctl, subprocess"
         )
 
-    def stop(self, processes=None):
+    def stop(self, processes=None, skip_services: list[str] | None = None):
         """
         Stop the BEC server using the available interface.
+
+        Args:
+            processes: List of processes to stop (for subprocess interface)
+            skip_services: List of service names to skip stopping
         """
+        skip_services = skip_services or []
         print("Stopping BEC server...")
+        if skip_services:
+            print(f"Skipping services: {', '.join(skip_services)}")
         if self.interface == "tmux":
             tmux_stop("bec-redis")
-            tmux_stop("bec")
+            if skip_services:
+                # Stop individual services except the ones to skip
+                for service_name in self.SERVICES.keys():
+                    if service_name not in skip_services:
+                        tmux_stop_service(service_name, "bec")
+            else:
+                tmux_stop("bec")
         elif self.interface == "iterm2":
             pass
         elif self.interface == "systemctl":
@@ -220,12 +239,15 @@ class ServiceHandler:
                 f"Unsupported interface: {self.interface}. Supported interfaces are: tmux, iterm2, systemctl, subprocess"
             )
 
-    def restart(self):
+    def restart(self, skip_services: list[str] | None = None):
         """
         Restart the BEC server using the available interface.
+
+        Args:
+            skip_services: List of service names to skip restarting
         """
         print("Restarting BEC server...")
-        self.stop()
+        self.stop(skip_services=skip_services)
         self.start()
 
     def _validate_service(self, service_name: str) -> tuple[bool, ServiceDesc | None]:
@@ -289,21 +311,9 @@ class ServiceHandler:
                     f"{bcolors.FAIL}Failed to {operation.value.lower()} {service_name}. Service not found in tmux session.{bcolors.ENDC}"
                 )
             return success
-        elif self.interface == "systemctl" and operation == ServiceOperation.RESTARTING:
-            print(
-                f"{bcolors.WARNING}Warning: {operation.value} individual services is not supported with systemctl. Please {operation.value.lower()} the entire BEC server.{bcolors.ENDC}"
-            )
-            return False
-        elif (
-            self.interface in ("iterm2", "subprocess") and operation == ServiceOperation.RESTARTING
-        ):
-            print(
-                f"{bcolors.WARNING}Warning: {operation.value} individual services is not supported with {self.interface}. Please {operation.value.lower()} the entire BEC server.{bcolors.ENDC}"
-            )
-            return False
         else:
             print(
-                f"{bcolors.WARNING}Warning: {operation.value} individual services is only supported with tmux interface.{bcolors.ENDC}"
+                f"{bcolors.FAIL}Error: Service operations are only supported with the 'tmux' interface.{bcolors.ENDC}"
             )
             return False
 
