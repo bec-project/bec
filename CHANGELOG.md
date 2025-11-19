@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.75.0 (2025-11-19)
+
+### Features
+
+- **redis connector**: Retry with exp backoff
+  ([`1468927`](https://github.com/bec-project/bec/commit/146892738c9f5287c67dde59442a6dbd2a572112))
+
+### Refactoring
+
+- Condense device logs for proxy manager
+  ([`86840ef`](https://github.com/bec-project/bec/commit/86840efee882256328b8906cef98234265fc1141))
+
+
 ## v3.74.3 (2025-11-17)
 
 ### Bug Fixes
