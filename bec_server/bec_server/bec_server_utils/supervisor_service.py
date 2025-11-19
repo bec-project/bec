@@ -80,9 +80,14 @@ class SupervisorService(BECService):
         """
         if service_name:
             logger.info(f"Restarting service '{service_name}' through supervisor")
+            # Note: We use --interface tmux to ensure that we skip systemctl and subprocess interfaces,
+            # which does not support restarting individual services.
             command = f"{self.command} restart --service {service_name} --interface tmux"
         else:
             logger.info("Restarting all services through supervisor")
+            # Note: Here, we do not need to specify the interface. If we are in tmux,
+            # we skip the supervisor service. For systemctl, the supervisor service does
+            # not need to be kept alive during restart as systemctl is sufficiently isolated.
             command = f"{self.command} restart --skip-service supervisor"
 
         # pylint: disable=subprocess-popen-preexec-fn
