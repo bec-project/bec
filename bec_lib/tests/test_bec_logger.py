@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 
 from bec_lib.bec_errors import ServiceConfigError
-from bec_lib.logger import BECLogger
+from bec_lib.logger import BECLogger, LogLevel
 from bec_lib.redis_connector import RedisConnector
 
 
@@ -47,3 +47,54 @@ def test_update_base_path_wrong_config(logger):
     assert logger._base_path is None
     with pytest.raises(ServiceConfigError):
         logger._update_base_path(config)
+
+
+@pytest.mark.parametrize(
+    "log_level,sink, expected_level",
+    [
+        (
+            LogLevel.DEBUG,
+            "all",
+            {
+                "_redis_log_level": LogLevel.DEBUG,
+                "_file_log_level": LogLevel.DEBUG,
+                "_stderr_log_level": LogLevel.DEBUG,
+            },
+        ),
+        (
+            LogLevel.INFO,
+            "redis",
+            {
+                "_redis_log_level": LogLevel.INFO,
+                "_file_log_level": LogLevel.INFO,
+                "_stderr_log_level": LogLevel.INFO,
+            },
+        ),
+        (
+            LogLevel.ERROR,
+            "file",
+            {
+                "_redis_log_level": LogLevel.INFO,
+                "_file_log_level": LogLevel.ERROR,
+                "_stderr_log_level": LogLevel.INFO,
+            },
+        ),
+        (
+            LogLevel.WARNING,
+            "stderr",
+            {
+                "_redis_log_level": LogLevel.INFO,
+                "_file_log_level": LogLevel.INFO,
+                "_stderr_log_level": LogLevel.WARNING,
+            },
+        ),
+    ],
+)
+def test_set_log_level(logger, log_level, sink, expected_level):
+    # set the initial log level to INFO
+    logger.level = LogLevel.INFO
+    logger._configured = True
+
+    logger.set_log_level(log_level, sink)
+    for key, value in expected_level.items():
+        assert getattr(logger, key) == value

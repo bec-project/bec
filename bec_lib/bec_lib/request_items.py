@@ -129,12 +129,12 @@ class RequestStorage:
             request_item = self.find_request_by_ID(response_msg.metadata.get("RID"))
             if request_item:
                 request_item.update_with_response(response_msg)
-                logger.debug("Scan queue request exists. Updating with response.")
+                logger.trace("Scan queue request exists. Updating with response.")
                 return
 
             # it could be that the response arrived before the request
             self.storage.append(RequestItem.from_response(self.scan_manager, response_msg))
-            logger.debug("Scan queue request does not exist. Creating from response.")
+            logger.trace("Scan queue request does not exist. Creating from response.")
 
     def update_with_request(self, request_msg: messages.ScanQueueMessage) -> None:
         """create or update request item based on a new ScanQueueMessage (i.e. request message)"""

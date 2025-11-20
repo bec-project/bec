@@ -250,7 +250,6 @@ class ScanManager:
 
     def _scan_queue_request_response_callback(self, msg, **_kwargs) -> None:
         response = msg.value
-        logger.debug(response)
         self.request_storage.update_with_response(response)
 
     def _client_msg_callback(self, msg: dict, **_kwargs) -> None:

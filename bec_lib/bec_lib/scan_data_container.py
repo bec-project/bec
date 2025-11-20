@@ -657,7 +657,7 @@ class ScanDataContainer:
         self._load_device_group("monitored", self._info)
         self._load_device_group("async", self._info, grouped_cache=False)
         self._loaded_devices = True
-        logger.debug(f"devices loaded in {time.time() - _start:.2f} s")
+        logger.trace(f"devices loaded in {time.time() - _start:.2f} s")
 
     def _load_device_group(
         self,

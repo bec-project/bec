@@ -256,7 +256,6 @@ class BECService:
 
     def _update_service_info(self):
         while not self._service_info_event.wait(timeout=3):
-            logger.trace("Updating service info")
             try:
                 self._send_service_status()
             except Exception:

@@ -78,7 +78,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
             if self.scan_item.status == "closed":
                 break
             if queue_pos is None:
-                logger.debug(f"Could not find queue entry for scan_id {self.scan_item.scan_id}")
+                logger.trace(f"Could not find queue entry for scan_id {self.scan_item.scan_id}")
                 continue
             if queue_pos == 0:
                 break
@@ -213,7 +213,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
                     self.bec.callbacks.poll()
                     self.scan_item.poll_callbacks()
                 else:
-                    logger.debug("waiting for new data point")
+                    logger.trace("waiting for new data point")
                     time.sleep(0.1)
 
                 if not self.scan_item.num_points:

@@ -11,7 +11,7 @@ import os
 import sys
 import traceback
 from itertools import takewhile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 # TODO: Importing bec_lib, instead of `from bec_lib.messages import LogMessage`, avoids potential
 # logger <-> messages circular import. But there could be a better solution.
@@ -422,6 +422,29 @@ class BECLogger:
         self._redis_log_level = val
         self._file_log_level = val
         self._stderr_log_level = val
+        self._update_sinks()
+
+    def set_log_level(self, val: LogLevel, sink: Literal["all", "redis", "file", "stderr"] = "all"):
+        """
+        Set the log level for a specific sink.
+
+        Args:
+            val (LogLevel): Log level.
+            sink (str, optional): Sink name. Defaults to "all".
+                Options are: "all", "redis", "file", "stderr".
+        """
+        if sink == "all":
+            self._redis_log_level = val
+            self._file_log_level = val
+            self._stderr_log_level = val
+        elif sink == "redis":
+            self._redis_log_level = val
+        elif sink == "file":
+            self._file_log_level = val
+        elif sink == "stderr":
+            self._stderr_log_level = val
+        else:
+            raise ValueError(f"Unknown sink: {sink}")
         self._update_sinks()
 
     def _file_opener(self, path: str, mode: int, **kwargs):

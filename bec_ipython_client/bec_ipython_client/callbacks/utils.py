@@ -138,22 +138,22 @@ class ScanRequestMixin:
         Returns:
             RequestItem: scan queue request
         """
-        logger.debug("Waiting for request ID")
+        logger.trace("Waiting for request ID")
         start = time.time()
         while self.request_storage.find_request_by_ID(self.RID) is None:
             time.sleep(0.1)
             check_alarms(self.bec)
-        logger.debug(f"Waiting for request ID finished after {time.time()-start} s.")
+        logger.trace(f"Waiting for request ID finished after {time.time()-start} s.")
         return self.request_storage.find_request_by_ID(self.RID)
 
     def _wait_for_scan_request_decision(self):
         """wait for a scan queuest decision"""
-        logger.debug("Waiting for decision")
+        logger.trace("Waiting for decision")
         start = time.time()
         while self.scan_queue_request.decision_pending:
             time.sleep(0.1)
             check_alarms(self.bec)
-        logger.debug(f"Waiting for decision finished after {time.time()-start} s.")
+        logger.trace(f"Waiting for decision finished after {time.time()-start} s.")
 
     def wait(self):
         """wait for the request acceptance"""
