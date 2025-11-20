@@ -64,6 +64,7 @@ class BECLogger:
         "<green>{service_name} | {{time:YYYY-MM-DD HH:mm:ss.SSS}}</green> | <level>{{level}}</level> |"
         " <level>{{thread.name}} ({{thread.id}})</level> | <cyan>{{extra[stack]}}</cyan> - <level>{{message}}</level>\n"
     )
+    CONTAINER_FORMAT = "{{time:YYYY-MM-DD HH:mm:ss.SSS}} | {{level}} | {{message}}\n"
     LOGLEVEL = LogLevel
 
     _logger = None
@@ -224,18 +225,21 @@ class BECLogger:
             # because it depends on the connector
             pass
 
-    def get_format(self, level: LogLevel = None, is_stderr=False) -> str:
+    def get_format(self, level: LogLevel = None, is_stderr=False, is_container=False) -> str:
         """
         Get the format for a specific log level.
 
         Args:
             level (LogLevel, optional): Log level. Defaults to None. If None, the current log level will be used.
             is_stderr (bool, optional): Whether the log is for stderr. Defaults to False.
+            is_container (bool, optional): Simple logging for procedure container. Defaults to False.
 
         Returns:
             str: Log format.
         """
         service_name = self.service_name if self.service_name else ""
+        if is_container:
+            return self.CONTAINER_FORMAT.format()
         if level is None:
             level = self.level
         if level > self.LOGLEVEL.DEBUG:
@@ -246,15 +250,16 @@ class BECLogger:
             return self.DEBUG_FORMAT.format(service_name=service_name)
         return self.TRACE_FORMAT.format(service_name=service_name)
 
-    def formatting(self, is_stderr=False):
+    def formatting(self, is_stderr=False, is_container=False):
         """
         Format the log message.
 
         Args:
             record (dict): Log record.
+            is_container (bool, optional): Simple logging for procedure container. Defaults to False.
 
         Returns:
-            dict: Formatted log record.
+            str: Log format.
         """
 
         def _update_record(record):
@@ -269,7 +274,7 @@ class BECLogger:
 
         def _format(record):
             level = _update_record(record)
-            return self.get_format(level)
+            return self.get_format(level, is_container=is_container)
 
         def _format_stderr(record):
             level = _update_record(record)
