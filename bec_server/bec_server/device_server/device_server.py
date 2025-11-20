@@ -469,7 +469,7 @@ class DeviceServer(BECService):
         parent.executor.submit(parent.handle_device_instructions, msg.value)
 
     def _trigger_device(self, instr: messages.DeviceInstructionMessage) -> None:
-        logger.debug(f"Trigger device: {instr}")
+        logger.trace(f"Trigger device: {instr}")
         devices = instr.content["device"]
         if not isinstance(devices, list):
             devices = [devices]
@@ -484,7 +484,7 @@ class DeviceServer(BECService):
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
     def _kickoff_device(self, instr: messages.DeviceInstructionMessage) -> None:
-        logger.debug(f"Kickoff device: {instr}")
+        logger.trace(f"Kickoff device: {instr}")
 
         obj = self.device_manager.devices.get(instr.content["device"]).obj
         kickoff_args = inspect.getfullargspec(obj.kickoff).args
@@ -517,7 +517,7 @@ class DeviceServer(BECService):
             if not hasattr(obj, "complete"):
                 continue
             num_status_objects += 1
-            logger.debug(f"Completing device: {dev}")
+            logger.trace(f"Completing device: {dev}")
             status = obj.complete()
             if status is None:
                 raise InvalidDeviceError(
@@ -541,7 +541,7 @@ class DeviceServer(BECService):
             raise DisabledDeviceError(
                 f"Setting the device {device_obj.name} is currently disabled."
             )
-        logger.debug(f"Setting device: {instr}")
+        logger.trace(f"Setting device: {instr}")
         val = instr.content["parameter"]["value"]
         sub_id = None
         if child_access:
@@ -621,7 +621,7 @@ class DeviceServer(BECService):
             dev_msg = messages.DeviceReqStatusMessage(
                 device=device_name, success=status.success, metadata=metadata
             )
-            logger.debug(f"req status for device {device_name}: {status.success}")
+            logger.trace(f"req status for device {device_name}: {status.success}")
             self.connector.set(
                 MessageEndpoints.device_req_status(device_name), dev_msg, pipe, expire=18000
             )
@@ -681,7 +681,7 @@ class DeviceServer(BECService):
                 pipe,
             )
         pipe.execute()
-        logger.debug(
+        logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time()-start)*1000} ms"
         )
         return signal_container
@@ -705,7 +705,7 @@ class DeviceServer(BECService):
                 pipe,
             )
         pipe.execute()
-        logger.debug(
+        logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time()-start)*1000} ms"
         )
         return signal_container

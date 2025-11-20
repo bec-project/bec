@@ -41,17 +41,17 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
         self.check_alarms()
         status = self.bec.connector.get(MessageEndpoints.device_progress(device_names[0]))
         if not status:
-            logger.debug("waiting for new data point")
+            logger.trace("waiting for new data point")
             time.sleep(0.1)
             return False
         if status.metadata.get("scan_id") != self.scan_item.scan_id:
-            logger.debug("waiting for new data point")
+            logger.trace("waiting for new data point")
             time.sleep(0.1)
             return False
 
         point_id = status.content.get("value")
         if point_id is None:
-            logger.debug("waiting for new data point")
+            logger.trace("waiting for new data point")
             time.sleep(0.1)
             return False
 

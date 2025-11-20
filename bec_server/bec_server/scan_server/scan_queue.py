@@ -529,7 +529,7 @@ class ScanQueue:
                     and len(self.queue) > 0
                     and self.queue[0].status != InstructionQueueStatus.PENDING
                 ):
-                    logger.info(f"Removing queue item {self.queue[0].describe()} from queue")
+                    logger.debug(f"Removing queue item {self.queue[0].describe()} from queue")
                     self.queue.popleft()
                     self.queue_manager.send_queue_status()
 
@@ -933,7 +933,7 @@ class InstructionQueueItem:
     def status(self, val: InstructionQueueStatus) -> None:
         """update the status of the instruction queue. By doing so, it will
         also update its worker and publish the updated queue."""
-        logger.info(
+        logger.debug(
             f"Setting status of instruction queue {self.queue_id} to {val.name} from thread {threading.current_thread().name}"
         )
         self._status = val

@@ -110,12 +110,10 @@ class ConfigHelper:
         if pathlib.Path(file_path).suffix not in (".yaml", ".yml"):
             raise NotImplementedError
 
+        logger.info(f"Loading config from file: {file_path}")
         with open(file_path, "r", encoding="utf-8") as stream:
             try:
                 data = yaml_load(stream)
-                logger.trace(
-                    f"Loaded new config from disk: {json.dumps(data, sort_keys=True, indent=4, cls=ExtendedEncoder)}"
-                )
             except yaml.YAMLError as err:
                 logger.error(f"Error while loading config from disk: {repr(err)}")
 

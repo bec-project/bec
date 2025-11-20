@@ -92,7 +92,6 @@ class ScanBundler(BECService):
 
     def _scan_queue_callback(self, msg, **_kwargs):
         msg = msg.value
-        logger.trace(msg)
         self.current_queue = msg.content["queue"]["primary"].get("info")
 
     def _scan_status_callback(self, msg, **_kwargs):
