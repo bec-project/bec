@@ -167,6 +167,47 @@ def test_write_file_raises_alarm_on_error(file_writer_manager_mock, scan_storage
             mock_connector.raise_alarm.assert_called_once()
 
 
+def test_write_file_renames_tmp_file(file_writer_manager_mock, scan_storage_mock):
+    file_manager = file_writer_manager_mock
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
+
+    with mock.patch("bec_server.file_writer.file_writer_manager.get_full_path") as mock_filename:
+        mock_filename.return_value = "test_scan.h5"
+        # replace NexusFileWriter with MockWriter
+        file_manager.file_writer = MockWriter(file_manager)
+
+        # Mock os.rename to track its calls
+        with mock.patch("os.rename") as mock_rename, mock.patch("os.path.exists") as mock_exists:
+            mock_exists.return_value = True  # Simulate that the .tmp file exists
+            file_manager.write_file("scan_id")
+            tmp_file_path = "test_scan.tmp"
+            final_file_path = "test_scan.h5"
+            mock_rename.assert_called_once_with(tmp_file_path, final_file_path)
+
+
+def test_write_file_renames_tmp_file_on_exception(file_writer_manager_mock, scan_storage_mock):
+    file_manager = file_writer_manager_mock
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
+
+    with mock.patch("bec_server.file_writer.file_writer_manager.get_full_path") as mock_filename:
+        mock_filename.return_value = "test_scan.h5"
+        # replace NexusFileWriter with MockWriter
+        file_manager.file_writer = MockWriter(file_manager)
+
+        # Mock os.rename to track its calls
+        with mock.patch("os.rename") as mock_rename, mock.patch("os.path.exists") as mock_exists:
+            mock_exists.return_value = True  # Simulate that the .tmp file exists
+            # Force an exception during writing
+            file_manager.file_writer.write = mock.Mock(side_effect=Exception("error"))
+            try:
+                file_manager.write_file("scan_id")
+            except Exception:
+                pass  # Ignore the exception for this test
+            tmp_file_path = "test_scan.tmp"
+            final_file_path = "test_scan.h5"
+            mock_rename.assert_called_once_with(tmp_file_path, final_file_path)
+
+
 def test_update_baseline_reading(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
     file_manager.scan_storage["scan_id"] = scan_storage_mock
