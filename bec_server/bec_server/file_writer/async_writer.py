@@ -70,7 +70,8 @@ class AsyncWriter(threading.Thread):
                 Each tuple contains (device_name, component_name and the signal info)
         """
         super().__init__(target=self._run, daemon=True, name="AsyncWriter")
-        self.file_path = file_path
+        self.file_path = file_path if isinstance(file_path, str) else str(file_path)
+        self.tmp_file_path = self.file_path.replace(".h5", ".tmp")
         self.scan_id = scan_id
         self.scan_number = scan_number
         self.devices = devices
@@ -173,23 +174,24 @@ class AsyncWriter(threading.Thread):
                 self.poll_and_write_data()
             # run one last time to get any remaining data
             self.poll_and_write_data(final=True)
-            logger.info(f"Finished writing async data file {self.file_path}")
+            logger.info(f"Finished writing async data file {self.tmp_file_path}")
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
             # self.send_file_message(done=True, successful=False)
-            logger.error(f"Error writing async data file {self.file_path}: {content}")
+            logger.error(f"Error writing async data file {self.tmp_file_path}: {content}")
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 alarm_type="AsyncWriterError",
-                source={"file_path": self.file_path},
-                msg=f"Error writing async data file {self.file_path}: {content}",
+                source={"file_path": self.tmp_file_path},
+                msg=f"Error writing async data file {self.tmp_file_path}: {content}",
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
     def send_file_message(self, done: bool, successful: bool) -> None:
         """
         Send a file message to inform other services about current writing status
+        We will send the final file name, not the temporary one.
 
         Args:
             done (bool): Whether the writing is done
@@ -228,7 +230,7 @@ class AsyncWriter(threading.Thread):
 
         """
         if self.file_handle is None:
-            self.file_handle = h5py.File(self.file_path, "w")
+            self.file_handle = h5py.File(self.tmp_file_path, "w")
 
         f = self.file_handle
 
