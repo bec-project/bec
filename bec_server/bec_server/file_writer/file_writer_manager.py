@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 import traceback
@@ -323,7 +324,6 @@ class FileWriterManager(BECService):
         try:
             file_path = get_full_path(scan_status_msg=storage.status_msg, name=file_suffix)
             successful = True
-            logger.info(f"Writing to file {file_path}.")
 
             # If we've already written device data, we need to append to the file
             writte_devices = None if not self.async_writer else self.async_writer.written_devices
@@ -363,6 +363,11 @@ class FileWriterManager(BECService):
             # make sure that the file is closed
             if file_handle:
                 file_handle.close()
+            # Rename the .tmp file to the final .h5 file
+            tmp_file_path = file_path.replace(".h5", ".tmp")
+            if os.path.exists(tmp_file_path):
+                logger.info(f"Renaming temporary file {tmp_file_path} to final file {file_path}.")
+                os.rename(tmp_file_path, file_path)
         logger.info(f"Writing to file {file_path} took {time.time() - start_time:.2f} seconds.")
 
         self.scan_storage.pop(scan_id)

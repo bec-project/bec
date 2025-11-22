@@ -281,6 +281,10 @@ class HDF5FileWriter:
 
         file_refs_to_remove = []
         for device_name, file_ref in data.file_references.items():
+            if file_ref.file_path == file_path:
+                # avoid self-referencing file links
+                file_refs_to_remove.append(device_name)
+                continue
             if not os.path.exists(file_ref.file_path):
                 logger.warning(f"File reference {file_ref.file_path} does not exist.")
                 file_refs_to_remove.append(device_name)
@@ -306,8 +310,12 @@ class HDF5FileWriter:
         msg = messages.FileContentMessage(**msg_data)
         self.file_writer_manager.connector.set_and_publish(MessageEndpoints.file_content(), msg)
 
-        file_handle = file_handle or h5py.File(file_path, mode=mode)
+        # Write to temporary file first
+        tmp_file_path = file_path.replace(".h5", ".tmp")
+
+        file_handle = file_handle or h5py.File(tmp_file_path, mode=mode)
         try:
+            logger.info(f"Writing to file {tmp_file_path}.")
             HDF5StorageWriter.write(writer_storage, file_handle)
             self.update_data_info(file_handle)
         finally:
