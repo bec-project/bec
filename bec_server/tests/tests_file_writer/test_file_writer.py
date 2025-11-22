@@ -204,7 +204,7 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer):
     assert data_info.get("samx_setpoint").get("shape") == (2,)
     assert data_info.get("samx").get("dtype") == "float64"
     # open file and check that time stamps are correct
-    with h5py.File("./test.h5", "r") as test_file:
+    with h5py.File("./test.tmp", "r") as test_file:
         assert (
             test_file["entry"].attrs["start_time"]
             == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()
@@ -234,7 +234,7 @@ def test_load_format_from_plugin(tmp_path, hdf5_file_writer):
             }
         }
         file_writer.write(f"{tmp_path}/test.h5", data, configuration_data={})
-    with h5py.File(f"{tmp_path}/test.h5", "r") as test_file:
+    with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert test_file["entry"].attrs["definition"] == "NXsas"
 
 
@@ -254,7 +254,7 @@ def test_load_format_from_plugin_uses_default(tmp_path, hdf5_file_writer, scan_s
             "anotherPlugin": cSAXSFormat,
         }
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
-    with h5py.File(f"{tmp_path}/test.h5", "r") as test_file:
+    with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert "definition" not in test_file["entry"].attrs
 
 
@@ -269,5 +269,5 @@ def test_load_format_from_plugin_uses_plugin(tmp_path, hdf5_file_writer, scan_st
     ) as mock_get_file_writer_plugins:
         mock_get_file_writer_plugins.return_value = {"cSAXS": cSAXSFormat}
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
-    with h5py.File(f"{tmp_path}/test.h5", "r") as test_file:
+    with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert test_file["entry"].attrs["definition"] == "NXsas"
