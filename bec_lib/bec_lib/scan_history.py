@@ -64,6 +64,11 @@ class ScanHistory:
         with self._scan_data_lock:
             for entry in data:
                 msg: messages.ScanHistoryMessage = entry["data"]
+                if not hasattr(msg, "file_path"):
+                    # Even though the new ScanHistoryMessage should always have a file_path attribute, we add
+                    # this check to maintain compatibility with older messages.
+                    # Can be removed after a few versions.
+                    continue
                 if not os.access(msg.file_path, os.R_OK):
                     # If the file is not readable, we skip adding it to the history
                     continue
