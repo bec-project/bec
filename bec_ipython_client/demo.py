@@ -23,7 +23,7 @@ scans = bec.scans
 
 
 logger.success("Started BECClient")
-scans.umv(dev.samx, 5, relative=True)
+scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 
 # with scans.interactive_scan() as scan:
 #     for ii in range(10):
@@ -226,4 +226,5 @@ scans.umv(dev.samx, 5, relative=True)
 # event = threading.Event()
 # event.wait()
 print("eos")
+bec.shutdown()
 # p.join()
