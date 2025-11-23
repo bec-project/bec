@@ -223,6 +223,8 @@ class IPythonLiveUpdates:
                 flush=True,
             )
         available_blocks = self._available_req_blocks(queue, request)
+        if not available_blocks:
+            return False
         req_block = available_blocks[self._request_block_index[req_id]]
         if req_block["content"]["scan_type"] in [
             "open_scan_def",
