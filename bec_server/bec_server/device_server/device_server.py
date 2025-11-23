@@ -618,18 +618,17 @@ class DeviceServer(BECService):
         if status.instruction.metadata.get("response"):
             # if the user requested a response on a single status object, we need to send it
             # to the device_req_status_container
+            request_id = status.instruction.metadata["RID"]
             dev_msg = messages.DeviceReqStatusMessage(
-                device=device_name, success=status.success, metadata=metadata
+                device=device_name, success=status.success, request_id=request_id, metadata=metadata
             )
             logger.trace(f"req status for device {device_name}: {status.success}")
-            self.connector.set(
-                MessageEndpoints.device_req_status(device_name), dev_msg, pipe, expire=18000
-            )
-            self.connector.lpush(
-                MessageEndpoints.device_req_status_container(status.instruction.metadata["RID"]),
-                dev_msg,
-                pipe,
-                expire=18000,
+
+            self.connector.xadd(
+                MessageEndpoints.device_req_status(request_id),
+                {"data": dev_msg},
+                pipe=pipe,
+                expire=60,
             )
         pipe.execute()
 

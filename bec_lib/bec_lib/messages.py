@@ -580,6 +580,7 @@ class DeviceReqStatusMessage(BECMessage):
     Args:
         device (str): Device name.
         success (bool): True if the request was successful.
+        request_id (str): Request ID.
         metadata (dict, optional): Additional metadata.
 
     """
@@ -587,6 +588,7 @@ class DeviceReqStatusMessage(BECMessage):
     msg_type: ClassVar[str] = "device_req_status_message"
     device: str
     success: bool
+    request_id: str
 
 
 class DeviceInfoMessage(BECMessage):

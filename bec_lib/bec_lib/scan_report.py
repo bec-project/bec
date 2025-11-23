@@ -24,9 +24,9 @@ class ScanReport:
     """Scan Report class that provides a convenient way to access the status of a scan request."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: BECClient | None = None
         self.request: RequestItem | None = None
-        self._queue_item = None
+        self._queue_item: QueueItem | None = None
 
     @classmethod
     def from_request(
@@ -97,10 +97,16 @@ class ScanReport:
 
     def _get_mv_status(self) -> bool:
         """get the status of a move request"""
+        if not self.request:
+            return False
         motors = list(self.request.request.content["parameter"]["args"].keys())
-        request_status = self._client.device_manager.connector.lrange(
-            MessageEndpoints.device_req_status_container(self.request.requestID), 0, -1
+        request_status: list[dict[str, messages.DeviceReqStatusMessage]] | None = (
+            self._client.device_manager.connector.xread(
+                MessageEndpoints.device_req_status(self.request.requestID), from_start=True
+            )
         )
+        if request_status is None:
+            return False
         if len(request_status) == len(motors):
             return True
         return False

@@ -173,41 +173,22 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_req_status(device: str):
+    def device_req_status(request_id: str):
         """
         Endpoint for device request status. This endpoint is used by the device server to publish
         the device request status using a messages.DeviceReqStatusMessage message.
 
         Args:
-            device (str): Device name, e.g. "samx".
+            request_id (str): Request ID.
 
         Returns:
-            EndpointInfo: Endpoint for device request status of the specified device.
+            EndpointInfo: Endpoint for device request status of the specified request ID.
         """
-        endpoint = f"{EndpointType.INFO.value}/devices/req_status/{device}"
+        endpoint = f"{EndpointType.INFO.value}/devices/req_status/{request_id}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.DeviceReqStatusMessage,
-            message_op=MessageOp.KEY_VALUE,
-        )
-
-    @staticmethod
-    def device_req_status_container(RID: str):
-        """
-        Endpoint for device request status container. This endpoint is used by the device server to publish
-        the device request status using a messages.DeviceReqStatusMessage message.
-
-        Args:
-            RID (str): Request ID.
-
-        Returns:
-            EndpointInfo: Endpoint for device request status container.
-        """
-        endpoint = f"{EndpointType.INFO.value}/devices/req_status_container/{RID}"
-        return EndpointInfo(
-            endpoint=endpoint,
-            message_type=messages.DeviceReqStatusMessage,
-            message_op=MessageOp.LIST,
+            message_op=MessageOp.STREAM,
         )
 
     @staticmethod

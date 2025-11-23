@@ -146,7 +146,7 @@ def test_DeviceStatusMessage():
 
 
 def test_DeviceReqStatusMessage():
-    msg = messages.DeviceReqStatusMessage(device="samx", success=True, metadata={"RID": "1234"})
+    msg = messages.DeviceReqStatusMessage(device="samx", success=True, request_id="1234")
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
