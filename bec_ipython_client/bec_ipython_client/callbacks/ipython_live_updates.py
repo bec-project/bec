@@ -151,11 +151,14 @@ class IPythonLiveUpdates:
                 scan_request = ScanRequestMixin(self.client, request.metadata["RID"])
                 scan_request.wait()
 
+                # After .wait, we can be sure that the queue item is available, so we can
+                assert scan_request.scan_queue_request is not None
+
                 # get the corresponding queue item
-                while not scan_request.request_storage.storage[-1].queue:
+                while not scan_request.scan_queue_request.queue:
                     time.sleep(0.01)
 
-                self._current_queue = queue = scan_request.request_storage.storage[-1].queue
+                self._current_queue = queue = scan_request.scan_queue_request.queue
                 self._request_block_id = req_id = self._active_request.metadata.get("RID")
 
                 while queue.status not in ["COMPLETED", "ABORTED", "HALTED"]:
