@@ -110,25 +110,42 @@ def test_scan_report_aborts_on_ctrl_c(scan_report):
 
 
 @pytest.mark.parametrize(
-    "lrange_return, expected",
+    "xread_return, expected",
     [
-        ([], False),
-        ([messages.DeviceRPCMessage(device="samx", return_val=5, out="done", success=True)], False),
+        (None, False),
         (
             [
-                messages.DeviceRPCMessage(device="samx", return_val=5, out="done", success=True),
-                messages.DeviceRPCMessage(device="samy", return_val=5, out="done", success=True),
+                {
+                    "data": messages.DeviceRPCMessage(
+                        device="samx", return_val=5, out="done", success=True
+                    )
+                }
+            ],
+            False,
+        ),
+        (
+            [
+                {
+                    "data": messages.DeviceRPCMessage(
+                        device="samx", return_val=5, out="done", success=True
+                    )
+                },
+                {
+                    "data": messages.DeviceRPCMessage(
+                        device="samy", return_val=5, out="done", success=True
+                    )
+                },
             ],
             True,
         ),
     ],
 )
-def test_scan_report_get_mv_status(scan_report, lrange_return, expected):
+def test_scan_report_get_mv_status(scan_report, xread_return, expected):
     scan_report.request.request = messages.ScanQueueMessage(
         scan_type="mv", parameter={"args": {"samx": [5], "samy": [5]}}
     )
-    with mock.patch.object(scan_report._client.device_manager.connector, "lrange") as mock_lrange:
-        mock_lrange.return_value = lrange_return
+    with mock.patch.object(scan_report._client.device_manager.connector, "xread") as mock_xread:
+        mock_xread.return_value = xread_return
         assert scan_report._get_mv_status() == expected
 
 

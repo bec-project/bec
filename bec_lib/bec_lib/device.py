@@ -95,27 +95,33 @@ class Status:
             RID (str): Request ID
         """
         self._connector = connector
-        self._RID = RID
-        self._event = threading.Event()
-        self._thread_event = threading.Event()
+        self._request_id = RID
+        self._status_done = threading.Event()
         self._device_req_thread = None
-        self._request_status = None
+        self._request_status: messages.DeviceReqStatusMessage | None = None
+        self._connector.register(
+            MessageEndpoints.device_req_status(self._request_id),
+            cb=self._on_status_update,
+            parent=self,
+            from_start=True,
+        )
 
     def __eq__(self, __value: object) -> bool:
         if isinstance(__value, Status):
-            return self._RID == __value._RID
+            return self._request_id == __value._request_id
         return False
 
-    def _wait_device_req(self):
-        while self._thread_event.is_set() is False:
-            request_status = self._connector.lrange(
-                MessageEndpoints.device_req_status_container(self._RID), 0, -1
-            )
-            if request_status:
-                self._request_status = request_status
-                self._event.set()
-                break
-            time.sleep(0.01)
+    @staticmethod
+    def _on_status_update(msg: dict[str, messages.DeviceReqStatusMessage], parent: Status):
+        # pylint: disable=protected-access
+        parent._request_status = msg["data"]
+        parent._set_done()
+
+    def _set_done(self):
+        self._status_done.set()
+        self._connector.unregister(
+            MessageEndpoints.device_req_status(self._request_id), cb=self._on_status_update
+        )
 
     def wait(self, timeout=None, raise_on_failure=True):
         """
@@ -127,25 +133,17 @@ class Status:
             raise_on_failure (bool, optional): If True, an RPCError is raised if the request fails. Defaults to True.
         """
         try:
-            self._device_req_thread = threading.Thread(
-                target=self._wait_device_req, daemon=True, name=f"device_req_thread_{self._RID}"
-            )
-            self._device_req_thread.start()
 
-            if not self._event.wait(timeout):
+            if not self._status_done.wait(timeout):
                 raise TimeoutError("The request has not been completed within the specified time.")
         finally:
-            self._thread_event.set()
-            self._device_req_thread.join()
-            self._event.clear()
-            self._thread_event.clear()
+            self._set_done()
 
         if not raise_on_failure or self._request_status is None:
             return
 
-        for msg in self._request_status:
-            if not msg.success:
-                raise RPCError(f"RPC call failed: {msg}")
+        if self._request_status is not None and not self._request_status.success:
+            raise RPCError(f"RPC call failed: {self._request_status}")
 
 
 class _PermissiveDeviceModel(_DeviceModelCore):

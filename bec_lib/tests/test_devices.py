@@ -268,15 +268,15 @@ def test_handle_rpc_response_returns_status(dev: Any, bec_client_mock: ClientMoc
         device="samx", return_val={"type": "status", "RID": "request_id"}, out="done", success=True
     )
     assert dev.samx._handle_rpc_response(msg) == Status(
-        bec_client_mock.device_manager, "request_id"
+        bec_client_mock.device_manager.connector, "request_id"
     )
 
 
 def test_rpc_status_raises_error(dev: Any):
-    msg = messages.DeviceReqStatusMessage(device="samx", success=False, metadata={})
+    msg = messages.DeviceReqStatusMessage(device="samx", success=False, request_id="request_id")
     connector = mock.MagicMock()
     status = Status(connector, "request_id")
-    connector.lrange.return_value = [msg]
+    status._on_status_update({"data": msg}, parent=status)
     with pytest.raises(RPCError):
         status.wait(raise_on_failure=True)
 
@@ -436,20 +436,19 @@ def test_device_update_user_parameter(
 def test_status_wait():
     connector = mock.MagicMock()
 
-    connector.lrange.side_effect = [
-        [],
-        [messages.DeviceReqStatusMessage(device="test", success=True, metadata={})],
-    ]
-    status = Status(connector, "test")
-    status.wait()
+    status = Status(connector, "test_rid")
 
-
-def test_status_wait_raises_timeout():
-    connector = mock.MagicMock()
-    connector.lrange.return_value = False
-    status = Status(connector, "test")
     with pytest.raises(TimeoutError):
-        status.wait(timeout=0.1)
+        status.wait(0.1)
+    status._on_status_update(
+        {
+            "data": messages.DeviceReqStatusMessage(
+                device="test_device", success=True, request_id="test_rid"
+            )
+        },
+        parent=status,
+    )
+    status.wait()
 
 
 def test_device_set_device_config(dev_w_config: Callable[..., DeviceBaseWithConfig]):
