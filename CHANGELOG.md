@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v3.76.0 (2025-11-24)
+
+### Bug Fixes
+
+- **demo**: Ensure proper shutdown
+  ([`d75843f`](https://github.com/bec-project/bec/commit/d75843f249b6c9c5bf0e140ab2b88f5222d6f33c))
+
+- **live updates**: Skip empty request blocks
+  ([`802987c`](https://github.com/bec-project/bec/commit/802987ce55c0083932b1fce8537bfb3ff3e78897))
+
+- **scan worker**: Change error logging to critical for unrecoverable errors
+  ([`1d889f2`](https://github.com/bec-project/bec/commit/1d889f22474ca1481be27246b64be83d762d3cd9))
+
+### Features
+
+- **live updates**: Move device req status to streams; improvements to live updates
+  ([`88083c8`](https://github.com/bec-project/bec/commit/88083c8f85e997c1fb3dfb427fa9b60cc1a8280a))
+
+### Refactoring
+
+- **live updates**: Minor type hint improvements
+  ([`6c8a16a`](https://github.com/bec-project/bec/commit/6c8a16ae6442a13d5b6bcf2d86d89701e33f18c3))
+
+
 ## v3.75.1 (2025-11-24)
 
 ### Bug Fixes
