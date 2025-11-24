@@ -19,6 +19,8 @@ from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig, ServiceConfigModel
 from bec_lib.tests.utils import wait_for_empty_queue
 
+RedisConnector.RETRY_ON_TIMEOUT = 1
+
 
 class LogTestTool:
     def __init__(self, client: BECIPythonClient):
