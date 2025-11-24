@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.75.1 (2025-11-24)
+
+### Bug Fixes
+
+- **pytest redis connector**: Set retry on timeout to 1
+  ([`b3ed443`](https://github.com/bec-project/bec/commit/b3ed44333c7b6fccfe4008fa70140311eacb5f3b))
+
+### Refactoring
+
+- Reducing log verbosity
+  ([`9473e86`](https://github.com/bec-project/bec/commit/9473e867b15d925fadd8fcb93953a3101e76a97f))
+
+
 ## v3.75.0 (2025-11-19)
 
 ### Features
