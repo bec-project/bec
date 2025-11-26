@@ -40,6 +40,7 @@ FAKEREDIS_PORT = 6380
 
 
 @pytest.fixture(autouse=True)
+@patch("bec_lib.bec_service.BECAccess", MagicMock)
 def shutdown_client():
     bec_client = BECClient(
         config=ServiceConfig(config={"redis": {"host": FAKEREDIS_HOST, "port": FAKEREDIS_PORT}}),
