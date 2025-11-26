@@ -9,6 +9,9 @@
 **/*.egg*
 **/*.env
 
+# bec_widgets saved profiles
+widgets_settings/profiles/*
+
 # recovery_config files
 recovery_config_*
 
