@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.76.1 (2025-11-26)
+
+### Bug Fixes
+
+- Add bec_widgets profiles to .gitignore
+  ([`1fbc17e`](https://github.com/bec-project/bec/commit/1fbc17e2e980f5ab1520db3eaae0701ee241885c))
+
+
 ## v3.76.0 (2025-11-24)
 
 ### Bug Fixes
