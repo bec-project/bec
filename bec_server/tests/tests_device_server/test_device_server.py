@@ -115,6 +115,7 @@ def test_stop_devices(device_server_mock):
                 severity=Alarms.WARNING,
                 source={"device": "samy", "method": "stop"},
                 msg=mock.ANY,
+                compact_msg=mock.ANY,
                 alarm_type=mock.ANY,
                 metadata=mock.ANY,
             )
@@ -266,7 +267,12 @@ def test_handle_device_instruction_raises_alarm(device_server_mock):
         with mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm:
             device_server.handle_device_instructions(mock.MagicMock())
             raise_alarm.assert_called_once_with(
-                severity=Alarms.MAJOR, source=ANY, msg=ANY, alarm_type=ANY, metadata=ANY
+                severity=Alarms.MAJOR,
+                source=ANY,
+                msg=ANY,
+                compact_msg=ANY,
+                alarm_type=ANY,
+                metadata=ANY,
             )
 
 
@@ -292,8 +298,9 @@ def test_handle_device_instructions_limit_error(device_server_mock, instructions
 
             alarm_mock.assert_called_once_with(
                 severity=Alarms.MAJOR,
-                source=instructions.content,
+                source={"device": None, "instruction": instructions.content},
                 msg=ANY,
+                compact_msg=ANY,
                 alarm_type="LimitError",
                 metadata=instructions.metadata,
             )
@@ -465,7 +472,7 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
             assert status.done is True
             assert send_response_mock.call_count == 2
             assert send_response_mock.call_args == mock.call(
-                "diid", True, done=True, error_message=None, result=None
+                "diid", True, done=True, error_info=None, result=None
             )
 
 

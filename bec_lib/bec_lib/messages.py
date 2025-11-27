@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from typing_extensions import TypedDict
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
@@ -423,11 +424,18 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
+class ErrorInfo(TypedDict):
+    error_message: str
+    compact_error_message: str | None
+    exception_type: str
+    device: str | None
+
+
 class DeviceInstructionResponse(BECMessage):
     msg_type: ClassVar[str] = "device_instruction_response"
     device: str | list[str] | None
     status: Literal["completed", "running", "error"]
-    error_message: str | None = None
+    error_info: ErrorInfo | None = None
     instruction: DeviceInstructionMessage
     instruction_id: str
     result: Any | None = None
@@ -857,6 +865,7 @@ class AlarmMessage(BECMessage):
         alarm_type (str): Type of alarm.
         source (dict): Source of the problem.
         msg (str): Problem description.
+        compact_msg (str, optional): Optional compact message for quick display.
         metadata (dict, optional): Additional metadata.
 
     """
@@ -866,6 +875,7 @@ class AlarmMessage(BECMessage):
     alarm_type: str
     source: dict
     msg: str
+    compact_msg: str | None = None
 
 
 class StatusMessage(BECMessage):

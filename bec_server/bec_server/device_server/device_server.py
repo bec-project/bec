@@ -141,14 +141,20 @@ class RequestHandler:
         status_obj.add_callback(self.on_status_object_update)
         self._update_instruction(instr_id)
 
-    def set_finished(self, instr_id: str, success: bool = None, error_message=None, result=None):
+    def set_finished(
+        self,
+        instr_id: str,
+        success: bool = None,
+        error_info: messages.ErrorInfo | None = None,
+        result=None,
+    ):
         """
         Set the request to finished.
 
         Args:
             instr_id(str): The ID of the instruction.
             success(bool): Whether the instruction was successful. Defaults to None.
-            error_message(str): The error message if the instruction failed. Defaults to None.
+            error_info(messages.ErrorInfo, optional): Error information. Defaults to None.
         """
         with self._lock:
             request_info = self.get_request(instr_id)
@@ -163,7 +169,7 @@ class RequestHandler:
                 else:
                     success = True
             self.send_device_instruction_response(
-                instr_id, success, done=True, error_message=error_message, result=result
+                instr_id, success, done=True, error_info=error_info, result=result
             )
             self.remove_request(instr_id)
 
@@ -198,12 +204,26 @@ class RequestHandler:
             ]
             if any(exceptions):
                 error = next(val for val in exceptions if val)
-                self.set_finished(instr_id, success=False, error_message=str(error))
+                self.set_finished(
+                    instr_id,
+                    success=False,
+                    error_info={
+                        "error_message": traceback.format_exc(),
+                        "compact_error_message": traceback.format_exc(limit=0),
+                        "exception_type": error.__class__.__name__,
+                        "device": self.parent.get_device_from_exception(error),
+                    },
+                )
             else:
                 self.set_finished(instr_id, success=True)
 
     def send_device_instruction_response(
-        self, instr_id: str, success: bool, done: bool, error_message=None, result=None
+        self,
+        instr_id: str,
+        success: bool,
+        done: bool,
+        error_info: messages.ErrorInfo | None = None,
+        result=None,
     ):
         """
         Send a request status message.
@@ -212,7 +232,7 @@ class RequestHandler:
             instr_id(str): The ID of the instruction.
             success(bool): Whether the instruction was successful.
             done(bool): Whether the instruction is done.
-            error_message(str): The error message if the instruction failed. Defaults to None.
+            error_info(messages.ErrorInfo, optional): Error information. Defaults to None.
             result(Any): The result of the instruction. Defaults to None.
         """
         metadata = self._storage[instr_id]["instr"].metadata
@@ -222,11 +242,10 @@ class RequestHandler:
         else:
             status = ResponseState.ERROR if done else ResponseState.RUNNING
 
-        error_message = error_message if error_message else "An error occurred."
         response_msg = messages.DeviceInstructionResponse(
             device=self._storage[instr_id]["instr"].content["device"],
             status=status.value,
-            error_message=error_message if status == ResponseState.ERROR else None,
+            error_info=error_info,
             instruction_id=instr_id,
             instruction=self._storage[instr_id]["instr"],
             result=result,
@@ -319,6 +338,7 @@ class DeviceServer(BECService):
                         severity=Alarms.WARNING,
                         source={"device": dev.obj.name, "method": "stop"},
                         msg=content,
+                        compact_msg=traceback.format_exc(limit=0),
                         alarm_type=exc.__class__.__name__,
                         metadata=self._get_metadata_for_alarm(None),
                     )
@@ -434,34 +454,72 @@ class DeviceServer(BECService):
                 logger.warning(f"Received unknown device instruction: {instructions}")
         except ophyd_errors.LimitError as limit_error:
             content = traceback.format_exc()
+            compact_msg = traceback.format_exc(limit=0)
+            error_info: messages.ErrorInfo = {
+                "error_message": content,
+                "compact_error_message": compact_msg,
+                "exception_type": limit_error.__class__.__name__,
+                "device": self.get_device_from_exception(limit_error),
+            }
             self.requests_handler.set_finished(
-                instructions.metadata["device_instr_id"], success=False, error_message=content
+                instructions.metadata["device_instr_id"], success=False, error_info=error_info
             )
 
             logger.error(content)
             self.connector.raise_alarm(
                 severity=Alarms.MAJOR,
-                source=instructions.content,
+                source={"device": error_info["device"], "instruction": instructions.content},
                 msg=content,
+                compact_msg=traceback.format_exc(limit=0),
                 alarm_type=limit_error.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(msg),
             )
         except Exception as exc:  # pylint: disable=broad-except
             content = traceback.format_exc()
-            self.requests_handler.set_finished(
-                instructions.metadata["device_instr_id"], success=False, error_message=content
-            )
+            compact_msg = traceback.format_exc(limit=0)
+            error_info: messages.ErrorInfo = {
+                "error_message": content,
+                "compact_error_message": compact_msg,
+                "exception_type": exc.__class__.__name__,
+                "device": self.get_device_from_exception(exc),
+            }
             if action == "rpc":
                 self.rpc_handler._send_rpc_exception(exc, instructions)
             else:
                 logger.error(content)
                 self.connector.raise_alarm(
                     severity=Alarms.MAJOR,
-                    source=instructions.content,
+                    source={"device": error_info["device"], "instruction": instructions.content},
                     msg=content,
+                    compact_msg=traceback.format_exc(limit=0),
                     alarm_type=exc.__class__.__name__,
                     metadata=self._get_metadata_for_alarm(msg),
                 )
+            self.requests_handler.set_finished(
+                instructions.metadata["device_instr_id"], success=False, error_info=error_info
+            )
+
+    @staticmethod
+    def get_device_from_exception(exc: Exception) -> str | None:
+        """Try to extract the device name from an exception message.
+
+        Args:
+            exc (Exception): The exception to extract the device name from.
+        Returns:
+            str | None: The device name if found, otherwise None.
+        """
+        if not hasattr(exc, "__traceback__"):
+            return None
+        tb = exc.__traceback__
+        while tb:
+            frame = tb.tb_frame
+            local_vars = frame.f_locals
+            if "self" in local_vars:
+                obj = local_vars["self"]
+                if isinstance(obj, ophyd.OphydObject):
+                    return obj.dotted_name or obj.name
+            tb = tb.tb_next
+        return None
 
     @staticmethod
     def instructions_callback(msg, *, parent, **_kwargs) -> None:
@@ -715,6 +773,7 @@ class DeviceServer(BECService):
             alarm_type="Warning",
             source={"device": device, "method": method},
             msg=f"Failed to run {method} on device {device}.",
+            compact_msg=traceback.format_exc(limit=0),
             metadata=self._get_metadata_for_alarm(),
         )
         device_root = device.split(".")[0]

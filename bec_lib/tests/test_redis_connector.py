@@ -63,21 +63,49 @@ def test_redis_connector_send_client_info(connector):
 
 
 @pytest.mark.parametrize(
-    "severity, alarm_type, source, msg, metadata",
+    "severity, alarm_type, source, msg, compact_msg, metadata",
     [
-        [Alarms.MAJOR, "alarm", {"source": "test"}, "content1", {"metadata": "metadata1"}],
-        [Alarms.MINOR, "alarm", {"source": "test"}, "content1", {"metadata": "metadata1"}],
-        [Alarms.WARNING, "alarm", {"source": "test"}, "content1", {"metadata": "metadata1"}],
+        [
+            Alarms.MAJOR,
+            "alarm",
+            {"source": "test"},
+            "content1",
+            "compact_msg",
+            {"metadata": "metadata1"},
+        ],
+        [
+            Alarms.MINOR,
+            "alarm",
+            {"source": "test"},
+            "content1",
+            "compact_msg",
+            {"metadata": "metadata1"},
+        ],
+        [
+            Alarms.WARNING,
+            "alarm",
+            {"source": "test"},
+            "content1",
+            "compact_msg",
+            {"metadata": "metadata1"},
+        ],
     ],
 )
-def test_redis_connector_raise_alarm(connector, severity, alarm_type, source, msg, metadata):
+def test_redis_connector_raise_alarm(
+    connector, severity, alarm_type, source, msg, compact_msg, metadata
+):
     with mock.patch.object(connector, "set_and_publish", return_value=None):
-        connector.raise_alarm(severity, alarm_type, source, msg, metadata)
+        connector.raise_alarm(severity, alarm_type, source, msg, compact_msg, metadata)
 
         connector.set_and_publish.assert_called_once_with(
             MessageEndpoints.alarm(),
             AlarmMessage(
-                severity=severity, alarm_type=alarm_type, source=source, msg=msg, metadata=metadata
+                severity=severity,
+                alarm_type=alarm_type,
+                source=source,
+                msg=msg,
+                compact_msg=compact_msg,
+                metadata=metadata,
             ),
         )
 

@@ -70,7 +70,7 @@ def test_device_server_init(device_server):
                 metadata={"device_instr_id": "test"},
                 device="samx",
                 status="completed",
-                error_message=None,
+                error_info=None,
                 instruction=messages.DeviceInstructionMessage(
                     device="samx",
                     action="set",
@@ -92,7 +92,12 @@ def test_device_server_init(device_server):
                 metadata={"device_instr_id": "test"},
                 device="samx",
                 status="error",
-                error_message="position=-5000 not within limits (-50, 50)",
+                error_info={
+                    "error_message": "position=-5000 not within limits (-50, 50)",
+                    "compact_error_message": "position=-5000 not within limits (-50, 50)",
+                    "exception_type": "DeviceInstructionError",
+                    "device": "samx",
+                },
                 instruction=messages.DeviceInstructionMessage(
                     device="samx",
                     action="set",
@@ -121,10 +126,16 @@ def test_device_server_set(device_server, msg, response):
 
     wait_event.wait(10)
     out = message.value
-    orig_error_message = out.error_message
-    response_error_message = response.error_message
-    out.error_message = mock.ANY
-    response.error_message = mock.ANY
+    created_error_info = out.error_info
+    original_error_info = response.error_info
+
+    # Set the error_info to None to compare the rest of the message
+    out.error_info = None
+    response.error_info = None
+
+    # Compare the rest of the message
     assert message.value == response
+
+    # Now compare the error_info separately
     if out.status == "error":
-        assert response_error_message in orig_error_message
+        assert original_error_info["error_message"] in created_error_info["error_message"]

@@ -430,7 +430,13 @@ class RedisConnector:
         self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
 
     def raise_alarm(
-        self, severity: Alarms, alarm_type: str, source: dict[str, Any], msg: str, metadata: dict
+        self,
+        severity: Alarms,
+        alarm_type: str,
+        source: dict[str, Any],
+        msg: str,
+        compact_msg: str | None = None,
+        metadata: dict | None = None,
     ):
         """
         Raise an alarm
@@ -451,8 +457,14 @@ class RedisConnector:
                 metadata={"test": 1}
             )
         """
+        bec_logger.logger.info(f"Setting alarm: {alarm_type} - {msg}")
         alarm_msg = AlarmMessage(
-            severity=severity, alarm_type=alarm_type, source=source, msg=msg, metadata=metadata
+            severity=severity,
+            alarm_type=alarm_type,
+            source=source,
+            msg=msg,
+            compact_msg=compact_msg,
+            metadata=metadata,
         )
         self.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
 

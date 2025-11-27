@@ -17,7 +17,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
-from .errors import LimitError, ScanAbortion
+from .errors import DeviceInstructionError, LimitError, ScanAbortion
 from .instruction_handler import InstructionHandler
 from .scan_assembler import ScanAssembler
 
@@ -79,15 +79,13 @@ class QueueManager:
             self.queues[scan_queue].insert(msg, position=position)
         # pylint: disable=broad-except
         except Exception as exc:
-            if len(exc.args) > 0:
-                content = exc.args[0]
-            else:
-                content = ""
+            content = traceback.format_exc()
             logger.error(content)
             self.connector.raise_alarm(
                 severity=Alarms.MAJOR,
                 source=msg.content,
                 msg=content,
+                compact_msg=traceback.format_exc(limit=0),
                 alarm_type=exc.__class__.__name__,
                 metadata=msg.metadata,
             )
@@ -867,11 +865,23 @@ class RequestBlockQueue:
                 severity=Alarms.MAJOR,
                 source=self.active_rb.msg.content,
                 msg=limit_error.args[0],
+                compact_msg=traceback.format_exc(limit=0),
                 alarm_type=limit_error.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(),
             )
             self.instruction_queue.stopped = True
             raise ScanAbortion from limit_error
+        except DeviceInstructionError as exc:
+            logger.error(exc.message)
+            self.scan_queue.queue_manager.connector.raise_alarm(
+                severity=Alarms.MAJOR,
+                source={"device": exc.device, "instruction": self.active_rb.msg.content},
+                msg=exc.traceback,
+                compact_msg=exc.compact_message,
+                alarm_type=exc.exception_type,
+                metadata=self._get_metadata_for_alarm(),
+            )
+            raise ScanAbortion from exc
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
@@ -880,6 +890,7 @@ class RequestBlockQueue:
                 severity=Alarms.MAJOR,
                 source=self.active_rb.msg.content,
                 msg=content,
+                compact_msg=traceback.format_exc(limit=0),
                 alarm_type=exc.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(),
             )

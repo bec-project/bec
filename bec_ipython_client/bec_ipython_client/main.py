@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 import argparse
+import collections
+import functools
 import os
 import sys
 from importlib.metadata import version
@@ -10,6 +14,10 @@ import redis.exceptions
 import requests
 from IPython.terminal.ipapp import TerminalIPythonApp
 from IPython.terminal.prompts import Prompts, Token
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from rich.traceback import Traceback
 
 from bec_ipython_client.beamline_mixin import BeamlineMixin
 from bec_ipython_client.bec_magics import BECMagics
@@ -79,6 +87,7 @@ class BECIPythonClient:
         self._client.callbacks.register(
             event_type=EventType.NAMESPACE_UPDATE, callback=self._update_namespace_callback
         )
+        self._alarm_history = collections.deque(maxlen=100)
 
     def __getattr__(self, name):
         return getattr(self._client, name)
@@ -136,7 +145,7 @@ class BECIPythonClient:
         self._refresh_ipython_username()
         self._load_magics()
         self._ip.events.register("post_run_cell", log_console)
-        self._ip.set_custom_exc((Exception,), _ip_exception_handler)  # register your handler
+        self._ip.set_custom_exc((Exception,), self._create_exception_handler())
         # represent objects using __str__, if overwritten, otherwise use __repr__
         self._ip.display_formatter.formatters["text/plain"].for_type(
             object,
@@ -187,10 +196,63 @@ class BECIPythonClient:
             pass
         self._client.shutdown()
 
+    def _create_exception_handler(self):
+        return functools.partial(_ip_exception_handler, parent=self)
 
-def _ip_exception_handler(self, etype, evalue, tb, tb_offset=None):
-    if issubclass(etype, (AlarmBase, ScanInterruption, DeviceConfigError)):
-        print(f"\x1b[31m BEC alarm:\x1b[0m {evalue}")
+    def show_last_alarm(self, offset: int = 0):
+        """
+        Show the last alarm raised in this session with rich formatting.
+        """
+        try:
+            alarm: AlarmBase = self._alarm_history[-1 - offset][1]
+        except IndexError:
+            print("No alarm has been raised in this session.")
+            return
+
+        console = Console()
+
+        # --- HEADER ---
+        header = Text()
+        header.append("Alarm Raised\n", style="bold red")
+        header.append(f"Severity: {alarm.severity.name}\n", style="bold")
+        header.append(f"Type: {alarm.alarm_type}\n", style="bold")
+        if alarm.alarm.source.get("device"):
+            header.append(f"Device: {alarm.alarm.source['device']}\n", style="bold")
+
+        console.print(Panel(header, title="Alarm Info", border_style="red", expand=False))
+
+        # --- SHOW SUMMARY
+        if alarm.alarm.compact_msg:
+            console.print(
+                Panel(
+                    Text(alarm.alarm.compact_msg, style="yellow"),
+                    title="Summary",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
+
+        # --- SHOW FULL TRACEBACK
+        tb_str = alarm.alarm.msg
+        if tb_str:
+            try:
+                console.print(tb_str)
+            except Exception:
+                # fallback in case msg is not a traceback
+                console.print(Panel(tb_str, title="Message", border_style="cyan"))
+
+
+def _ip_exception_handler(
+    self, etype, evalue, tb, tb_offset=None, parent: BECIPythonClient = None, **kwargs
+):
+    if issubclass(etype, AlarmBase):
+        parent._alarm_history.append((etype, evalue, tb, tb_offset))
+        print("\x1b[31m BEC alarm:\x1b[0m")
+        evalue.pretty_print()
+        print("For more details, use 'bec.show_last_alarm()'")
+        return
+    if issubclass(etype, (ScanInterruption, DeviceConfigError)):
+        print(f"\x1b[31m {evalue.__class__.__name__}:\x1b[0m {evalue}")
         return
     if issubclass(etype, redis.exceptions.NoPermissionError):
         # pylint: disable=protected-access

@@ -123,7 +123,8 @@ def test_queuemanager_add_to_queue_error_send_alarm(queuemanager_mock):
             connector.raise_alarm.assert_called_once_with(
                 severity=Alarms.MAJOR,
                 source=msg.content,
-                msg="dummy",
+                msg=mock.ANY,
+                compact_msg=mock.ANY,
                 alarm_type="KeyError",
                 metadata={"RID": "something"},
             )
@@ -385,26 +386,8 @@ def test_invalid_scan_specified_in_message(queuemanager_mock):
         connector.raise_alarm.assert_called_once_with(
             severity=Alarms.MAJOR,
             source=msg.content,
-            msg="fake test scan which does not exist!",
-            alarm_type="KeyError",
-            metadata={"RID": "something"},
-        )
-
-
-def test_invalid_scan_specified_in_message(queuemanager_mock):
-    queue_manager = queuemanager_mock()
-    msg = messages.ScanQueueMessage(
-        scan_type="fake test scan which does not exist!",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
-    with mock.patch.object(queue_manager, "connector") as connector:
-        queue_manager.add_to_queue(scan_queue="dummy", msg=msg)
-        connector.raise_alarm.assert_called_once_with(
-            severity=Alarms.MAJOR,
-            source=msg.content,
-            msg="fake test scan which does not exist!",
+            msg=mock.ANY,
+            compact_msg="KeyError: 'fake test scan which does not exist!'\n",
             alarm_type="KeyError",
             metadata={"RID": "something"},
         )
@@ -751,6 +734,7 @@ def test_request_block_queue_raises_alarm_on_error(
         severity=Alarms.MAJOR,
         source=req_block_queue.active_rb.msg.content,
         msg=mock.ANY,
+        compact_msg=mock.ANY,
         alarm_type=exc.__name__,
         metadata=metadata,
     )

@@ -185,6 +185,7 @@ class AsyncWriter(threading.Thread):
                 alarm_type="AsyncWriterError",
                 source={"file_path": self.tmp_file_path},
                 msg=f"Error writing async data file {self.tmp_file_path}: {content}",
+                compact_msg=traceback.format_exc(limit=0),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
@@ -266,11 +267,13 @@ class AsyncWriter(threading.Thread):
                             self.write_timestamp_data(signal_group, value)
                         else:  # pragma: no cover
                             # this should never happen as the keys are fixed in the pydantic model
+                            msg = f"Unknown key: {key}. Data will not be written."
                             self.connector.raise_alarm(
                                 severity=Alarms.WARNING,
                                 alarm_type="ValueError",
                                 source={"device": device_name},
-                                msg=f"Unknown key: {key}. Data will not be written.",
+                                msg=msg,
+                                compact_msg=msg,
                                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                             )
 
@@ -310,11 +313,13 @@ class AsyncWriter(threading.Thread):
             # store the data to be written after the scan is complete
             self.device_data_replace[signal_group.name] = value
         else:
+            msg = f"Unknown async update type: {update_type}. Data will not be written."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 alarm_type="ValueError",
                 source={"device": signal_group.name},
-                msg=f"Unknown async update type: {update_type}. Data will not be written.",
+                msg=msg,
+                compact_msg=msg,
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
@@ -367,11 +372,13 @@ class AsyncWriter(threading.Thread):
         else:
             current_shape = signal_group["value"].shape
             if max_shape[1] is not None and value.shape[1] > max_shape[1]:
+                msg = f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will not be written."
                 self.connector.raise_alarm(
                     severity=Alarms.WARNING,
                     alarm_type="ValueError",
                     source={"device": signal_group.name},
-                    msg=f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will not be written.",
+                    msg=msg,
+                    compact_msg=msg,
                     metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 return
@@ -392,11 +399,13 @@ class AsyncWriter(threading.Thread):
 
         if len(max_shape) != 2:
             # We currently only support 2D datasets for the 'add_slice' async update type
+            msg = f"Invalid max_shape for async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 alarm_type="ValueError",
                 source={"device": signal_group.name},
-                msg=f"Invalid max_shape for async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written.",
+                msg=msg,
+                compact_msg=msg,
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
             return
@@ -420,11 +429,13 @@ class AsyncWriter(threading.Thread):
                 if value.ndim < len(max_shape):
                     value = value.reshape((1,) + value.shape)
                 if value.shape[1] > max_shape[1]:
+                    msg = f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated."
                     self.connector.raise_alarm(
                         severity=Alarms.WARNING,
                         alarm_type="ValueError",
                         source={"device": signal_group.name, "slice": row_index},
-                        msg=f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated.",
+                        msg=msg,
+                        compact_msg=msg,
                         metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                     )
                     value = value[:, : max_shape[1]]
@@ -446,11 +457,13 @@ class AsyncWriter(threading.Thread):
         else:
             col_index = self.cursor[signal_group.name].get(row_index, 0)
             if col_index + len(value) > max_shape[1]:
+                msg = f"Added data slice for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated."
                 self.connector.raise_alarm(
                     severity=Alarms.WARNING,
                     alarm_type="ValueError",
                     source={"device": signal_group.name, "slice": row_index},
-                    msg=f"Added data slice for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated.",
+                    msg=msg,
+                    compact_msg=msg,
                     metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 value = value[: max_shape[1] - col_index]
