@@ -421,6 +421,7 @@ class ScanWorker(threading.Thread):
                     severity=Alarms.MAJOR,
                     source={"ScanWorker": "_process_instructions"},
                     msg=content,
+                    compact_msg=traceback.format_exc(limit=0),
                     alarm_type=exc_return_to_start.__class__.__name__,
                     metadata=self._get_metadata_for_alarm(),
                 )
@@ -433,6 +434,7 @@ class ScanWorker(threading.Thread):
                 severity=Alarms.MAJOR,
                 source={"ScanWorker": "_process_instructions"},
                 msg=content,
+                compact_msg=traceback.format_exc(limit=0),
                 alarm_type=exc.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(),
             )
@@ -546,6 +548,7 @@ class ScanWorker(threading.Thread):
                 severity=Alarms.MAJOR,
                 source={"ScanWorker": "run"},
                 msg=content,
+                compact_msg=traceback.format_exc(limit=0),
                 alarm_type=exc.__class__.__name__,
                 metadata=self._get_metadata_for_alarm(),
             )

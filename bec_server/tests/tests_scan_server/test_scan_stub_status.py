@@ -34,7 +34,7 @@ def test_scan_stub_status_init(scan_stub_status):
             metadata={"device_instr_id": "test"},
             device="samx",
             status="completed",
-            error_message=None,
+            error_info=None,
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -48,7 +48,7 @@ def test_scan_stub_status_init(scan_stub_status):
             metadata={"device_instr_id": "test"},
             device="samx",
             status="completed",
-            error_message=None,
+            error_info=None,
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -73,7 +73,7 @@ def test_scan_stub_status_update_future_completed(msg, scan_stub_status):
             metadata={"device_instr_id": "test"},
             device="samx",
             status="error",
-            error_message=None,
+            error_info=None,
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -88,7 +88,7 @@ def test_scan_stub_status_update_future_completed(msg, scan_stub_status):
 def test_scan_stub_status_update_future_error(msg, scan_stub_status):
     with mock.patch.object(scan_stub_status, "set_failed") as set_failed:
         scan_stub_status._update_future(msg)
-        set_failed.assert_called_once_with(msg.error_message)
+        set_failed.assert_called_once_with(msg.error_info)
 
 
 @pytest.mark.parametrize(
@@ -98,7 +98,7 @@ def test_scan_stub_status_update_future_error(msg, scan_stub_status):
             metadata={"device_instr_id": "test"},
             device="samx",
             status="running",
-            error_message=None,
+            error_info=None,
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -124,7 +124,14 @@ def test_scan_stub_status_set_done(scan_stub_status):
 
 
 def test_scan_stub_status_set_failed(scan_stub_status):
-    scan_stub_status.set_failed("error")
+    scan_stub_status.set_failed(
+        {
+            "error_message": "Error occurred",
+            "compact_error_message": "Error occurred",
+            "exception_type": "ValueError",
+            "device": "samx",
+        }
+    )
     assert scan_stub_status.done is True
     scan_stub_status.wait()
 
@@ -136,7 +143,7 @@ def test_scan_stub_status_set_failed(scan_stub_status):
             metadata={"device_instr_id": "test"},
             device="samx",
             status="running",
-            error_message=None,
+            error_info=None,
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -167,7 +174,7 @@ def test_scan_stub_status_wait(scan_stub_status):
             metadata={"device_instr_id": diid},
             device="samx",
             status="completed",
-            error_message=None,
+            error_info=None,
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -200,7 +207,12 @@ def test_scan_stub_status_wait_error(scan_stub_status):
             metadata={"device_instr_id": diid},
             device="samx",
             status="error",
-            error_message="Error message",
+            error_info={
+                "error_message": "Error message",
+                "compact_error_message": "Error message",
+                "exception_type": "ValueError",
+                "device": "samx",
+            },
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -237,7 +249,12 @@ def test_scan_stub_status_wait_log_remaining(scan_stub_status):
             metadata={"device_instr_id": diid},
             device="samx",
             status="completed",
-            error_message="Error message",
+            error_info={
+                "error_message": "Error message",
+                "compact_error_message": "Error message",
+                "exception_type": "ValueError",
+                "device": "samx",
+            },
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
@@ -307,7 +324,12 @@ def test_stub_status_repr(instruction_handler):
         metadata={"device_instr_id": "test_diid"},
         device="samx",
         status="completed",
-        error_message="Error message",
+        error_info={
+            "error_message": "Error message",
+            "compact_error_message": "Error message",
+            "exception_type": "ValueError",
+            "device": "samx",
+        },
         instruction=messages.DeviceInstructionMessage(
             device="samx",
             action="set",
@@ -327,7 +349,7 @@ def test_stub_status_repr(instruction_handler):
         metadata={"device_instr_id": "test_diid"},
         device="samx",
         status="completed",
-        error_message=None,
+        error_info=None,
         instruction=messages.DeviceInstructionMessage(
             device="samx",
             action="set",

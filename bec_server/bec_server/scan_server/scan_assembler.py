@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import inspect
-import traceback
 from typing import TYPE_CHECKING
 
 from bec_lib import messages
 from bec_lib.logger import bec_logger
 
-from .errors import ScanAbortion
 from .scans import RequestBase, ScanBase, unpack_scan_args
 
 logger = bec_logger.logger
@@ -62,62 +60,55 @@ class ScanAssembler:
         scan_cls = self.scan_manager.scan_dict[cls_name]
 
         logger.info(f"Preparing instructions of request of type {scan} / {scan_cls.__name__}")
-        try:
-            args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
-            kwargs = msg.content.get("parameter", {}).get("kwargs", {})
+        args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
+        kwargs = msg.content.get("parameter", {}).get("kwargs", {})
 
-            cls_input_args = [
-                name
-                for name, val in inspect.signature(scan_cls).parameters.items()
-                if val.default == inspect.Parameter.empty and name != "kwargs"
-            ]
+        cls_input_args = [
+            name
+            for name, val in inspect.signature(scan_cls).parameters.items()
+            if val.default == inspect.Parameter.empty and name != "kwargs"
+        ]
 
-            request_inputs = {}
-            if scan_cls.arg_bundle_size["bundle"] > 0:
-                request_inputs["arg_bundle"] = args
-                request_inputs["inputs"] = {}
-                request_inputs["kwargs"] = kwargs
+        request_inputs = {}
+        if scan_cls.arg_bundle_size["bundle"] > 0:
+            request_inputs["arg_bundle"] = args
+            request_inputs["inputs"] = {}
+            request_inputs["kwargs"] = kwargs
+        else:
+            request_inputs["arg_bundle"] = []
+            request_inputs["inputs"] = {}
+            request_inputs["kwargs"] = {}
+
+            if "args" in cls_input_args:
+                split_index = cls_input_args.index("args")
+                defined_cls_args = cls_input_args[:split_index]
+                defined_args = args[:split_index]
+
+                for ii, key in enumerate(defined_args):
+                    input_name = defined_cls_args[ii]
+                    request_inputs["inputs"][input_name] = key
+
+                request_inputs["inputs"]["args"] = args[split_index:]
             else:
-                request_inputs["arg_bundle"] = []
-                request_inputs["inputs"] = {}
-                request_inputs["kwargs"] = {}
+                for ii, key in enumerate(args):
+                    request_inputs["inputs"][cls_input_args[ii]] = key
 
-                if "args" in cls_input_args:
-                    split_index = cls_input_args.index("args")
-                    defined_cls_args = cls_input_args[:split_index]
-                    defined_args = args[:split_index]
+            for key in kwargs:
+                if key in cls_input_args:
+                    request_inputs["inputs"][key] = kwargs[key]
 
-                    for ii, key in enumerate(defined_args):
-                        input_name = defined_cls_args[ii]
-                        request_inputs["inputs"][input_name] = key
+            for key, val in kwargs.items():
+                if key not in cls_input_args:
+                    request_inputs["kwargs"][key] = val
 
-                    request_inputs["inputs"]["args"] = args[split_index:]
-                else:
-                    for ii, key in enumerate(args):
-                        request_inputs["inputs"][cls_input_args[ii]] = key
-
-                for key in kwargs:
-                    if key in cls_input_args:
-                        request_inputs["inputs"][key] = kwargs[key]
-
-                for key, val in kwargs.items():
-                    if key not in cls_input_args:
-                        request_inputs["kwargs"][key] = val
-
-            scan_instance = scan_cls(
-                *args,
-                device_manager=self.device_manager,
-                parameter=msg.content.get("parameter"),
-                metadata=msg.metadata,
-                instruction_handler=self.parent.queue_manager.instruction_handler,
-                scan_id=scan_id,
-                request_inputs=request_inputs,
-                **kwargs,
-            )
-            return scan_instance
-        except Exception as exc:
-            content = traceback.format_exc()
-            logger.error(
-                f"Failed to initialize the scan class of type {scan_cls.__name__}. {content}"
-            )
-            raise ScanAbortion(content) from exc
+        scan_instance = scan_cls(
+            *args,
+            device_manager=self.device_manager,
+            parameter=msg.content.get("parameter"),
+            metadata=msg.metadata,
+            instruction_handler=self.parent.queue_manager.instruction_handler,
+            scan_id=scan_id,
+            request_inputs=request_inputs,
+            **kwargs,
+        )
+        return scan_instance

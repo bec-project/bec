@@ -76,6 +76,7 @@ def test_execute_rpc_call_not_serializable(rpc_cls: RPCHandler):
         alarm_type="TypeError",
         source={},
         msg="Return value of rpc call {} is not serializable.",
+        compact_msg="Return value of rpc call {} is not serializable.",
         metadata={},
     )
 

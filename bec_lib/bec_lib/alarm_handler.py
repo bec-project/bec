@@ -9,6 +9,11 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.text import Text
+
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.utils import threadlocked
@@ -42,11 +47,41 @@ class AlarmBase(Exception):
         super().__init__(self.alarm.content)
 
     def __str__(self) -> str:
+        msg = self.alarm.compact_msg or self.alarm.msg
         return (
-            f"An alarm has occured. Severity: {self.severity.name}. Source:"
-            f" {self.alarm.content['source']}.\n{self.alarm_type}.\n\t"
-            f" {self.alarm.content['msg']}"
+            f"An alarm has occured. Severity: {self.severity.name}.\n{self.alarm_type}.\n\t"
+            f" {msg}"
         )
+
+    def pretty_print(self) -> None:
+        """
+        Use Rich to pretty print the alarm message,
+        following the same logic used in __str__().
+        """
+        console = Console()
+
+        msg = self.alarm.compact_msg or self.alarm.msg
+
+        text = Text()
+        text.append(f"{self.alarm_type} | ", style="bold")
+        text.append(f"Severity {self.severity.name}", style="bold yellow")
+        if self.alarm.source.get("device"):
+            text.append(f" | Device {self.alarm.source['device']}\n", style="bold")
+        text.append("\n")
+
+        # Format message inside a syntax box if it looks like traceback
+        if "Traceback (most recent call last):" in msg:
+            body = Syntax(msg.strip(), "python", word_wrap=True)
+        else:
+            body = Text(msg.strip())
+
+        if self.alarm.source.get("device"):
+            body.append(
+                f"\n\nThe error is likely unrelated to BEC. Please check the device '{self.alarm.source['device']}'.",
+                style="bold",
+            )
+
+        console.print(Panel(body, title=text, border_style="red", expand=True))
 
 
 class AlarmHandler:

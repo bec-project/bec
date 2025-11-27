@@ -549,10 +549,12 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             exclude_done=False, exclude_checked=True
         )
         if unchecked_status_objects:
+            msg = f"Scan completed with unchecked status objects: {unchecked_status_objects}. Use .wait() or .done within the scan to check their status."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 source={"Scan": self.scan_name},
-                msg=f"Scan completed with unchecked status objects: {unchecked_status_objects}. Use .wait() or .done within the scan to check their status.",
+                msg=msg,
+                compact_msg=msg,
                 alarm_type="ScanCleanupWarning",
                 metadata=metadata,
             )
@@ -563,10 +565,12 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             exclude_done=True, exclude_checked=False
         )
         if remaining_status_objects:
+            msg = f"Scan completed with remaining status objects: {remaining_status_objects}"
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 source={"Scan": self.scan_name},
-                msg=f"Scan completed with remaining status objects: {remaining_status_objects}",
+                msg=msg,
+                compact_msg=msg,
                 alarm_type="ScanCleanupWarning",
                 metadata=metadata,
             )

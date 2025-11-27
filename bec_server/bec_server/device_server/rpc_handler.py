@@ -142,7 +142,16 @@ class RPCHandler:
         diid = instr.metadata.get("device_instr_id", "")
         request = self.requests_handler.get_request(diid)
         if request and not request.get("status_objects"):
-            self.requests_handler.set_finished(diid, success=False, error_message=error_traceback)
+            self.requests_handler.set_finished(
+                diid,
+                success=False,
+                error_info={
+                    "error_message": error_traceback,
+                    "compact_error_message": traceback.format_exc(limit=0),
+                    "exception_type": exc.__class__.__name__,
+                    "device": self.device_server.get_device_from_exception(exc),
+                },
+            )
 
     ##################################################
     ###### Handlers for specific RPC operations ######
@@ -268,11 +277,13 @@ class RPCHandler:
                 # pylint: disable=protected-access
                 return [obj._staged for obj in res]
             res = None
+            msg = f"Return value of rpc call {instr_params} is not serializable."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 alarm_type="TypeError",
                 source=instr_params,
-                msg=f"Return value of rpc call {instr_params} is not serializable.",
+                msg=msg,
+                compact_msg=msg,
                 metadata={},
             )
         return res

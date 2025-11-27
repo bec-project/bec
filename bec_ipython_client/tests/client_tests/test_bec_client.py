@@ -7,6 +7,7 @@ import pytest
 
 from bec_ipython_client import BECIPythonClient, main
 from bec_lib import messages
+from bec_lib.alarm_handler import AlarmBase, AlarmHandler, Alarms
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 
@@ -211,3 +212,33 @@ def test_bec_ipython_client_property_access(ipython_client):
                         client.active_account = "account"
                     with pytest.raises(AttributeError):
                         client._client.active_account = "account"
+
+
+def test_bec_ipython_client_show_last_alarm(ipython_client, capsys):
+    client = ipython_client
+    alarm_msg = messages.AlarmMessage(
+        severity=Alarms.MAJOR,
+        alarm_type="TestAlarm",
+        source={},
+        msg="This is a test alarm",
+        compact_msg="Test alarm",
+    )
+    client.alarm_handler = AlarmHandler(connector=mock.MagicMock())
+    client.alarm_handler.add_alarm(alarm_msg)
+    client._alarm_history.append(
+        (AlarmBase, client.alarm_handler.get_unhandled_alarms()[0], None, None)
+    )
+    client.show_last_alarm()
+    captured = capsys.readouterr()
+    assert "Alarm Raised" in captured.out
+    assert "Severity: MAJOR" in captured.out
+    assert "Type: TestAlarm" in captured.out
+    assert "This is a test alarm" in captured.out
+
+
+def test_bec_ipython_client_show_last_no_alarm(ipython_client, capsys):
+    client = ipython_client
+    client._alarm_history = []
+    client.show_last_alarm()
+    captured = capsys.readouterr()
+    assert "No alarm has been raised in this session." in captured.out
