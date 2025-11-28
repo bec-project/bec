@@ -181,6 +181,11 @@ class ScanStubStatus:
             all(st._done for st in self._sub_status_objects) if self._sub_status_objects else True
         )
 
+    @staticmethod
+    def _raise_if_failed(obj: concurrent.futures.Future) -> None:
+        if obj.exception() is not None:
+            raise obj.exception()
+
     def wait(
         self, min_wait: float = None, timeout: float = np.inf, logger_wait=5
     ) -> ScanStubStatus:
@@ -208,8 +213,10 @@ class ScanStubStatus:
 
         if self._done and self._get_sub_status_done():
             self._done_checked = True
+            self._raise_if_failed(self._future)
             for st in self._sub_status_objects:
                 st._done_checked = True
+                self._raise_if_failed(st._future)
             return self
 
         # pylint: disable=protected-access
@@ -224,8 +231,7 @@ class ScanStubStatus:
                 futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
             )
             for future in done:
-                if future.exception() is not None:
-                    raise future.exception()
+                self._raise_if_failed(future)
             wait_time += increment
             if wait_time >= timeout:
                 raise TimeoutError("The wait operation timed out.")

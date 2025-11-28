@@ -133,7 +133,9 @@ def test_scan_stub_status_set_failed(scan_stub_status):
         }
     )
     assert scan_stub_status.done is True
-    scan_stub_status.wait()
+    with pytest.raises(DeviceInstructionError) as exc_info:
+        scan_stub_status.wait()
+    assert str(exc_info.value) == "Error occurred"
 
 
 @pytest.mark.parametrize(
