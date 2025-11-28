@@ -52,9 +52,10 @@ class BECMessageHandler:
             return self._handle_progress_signal(obj, message)
         if isinstance(obj, bms.PreviewSignal):
             return self._handle_preview_signal(obj, message)
-        if isinstance(obj, bms.AsyncSignal):
+        if isinstance(obj, bms.DynamicSignal):
             return self._handle_async_signal(obj, message)
 
+        logger.error(f"Unsupported signal type: {type(obj)}")
         raise TypeError(f"Unsupported signal type: {type(obj)}")
 
     def _handle_file_event_signal(self, obj: bms.FileEventSignal, message: messages.BECMessage):
