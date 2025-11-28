@@ -13,7 +13,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
 
-from .errors import ScanAbortion
+from .errors import DeviceInstructionError, ScanAbortion
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
 from .scan_stubs import ScanStubStatus
 
@@ -413,6 +413,18 @@ class ScanWorker(threading.Thread):
                     instr.metadata["scan_id"] = queue.queue.active_rb.scan_id
                     instr.metadata["queue_id"] = queue.queue_id
                     self._instruction_step(instr)
+            except DeviceInstructionError as exc_di:
+                content = traceback.format_exc()
+                logger.error(content)
+                self.connector.raise_alarm(
+                    severity=Alarms.MAJOR,
+                    source={"device": exc_di.device, "ScanWorker": "_process_instructions"},
+                    msg=exc_di.traceback,
+                    compact_msg=exc_di.compact_message,
+                    alarm_type=exc_di.exception_type,
+                    metadata=self._get_metadata_for_alarm(),
+                )
+                raise ScanAbortion from exc_di
             except Exception as exc_return_to_start:
                 # if the return_to_start fails, raise the original exception
                 content = traceback.format_exc()
@@ -427,6 +439,18 @@ class ScanWorker(threading.Thread):
                 )
                 raise ScanAbortion from exc
             raise ScanAbortion from exc
+        except DeviceInstructionError as exc_di:
+            content = traceback.format_exc()
+            logger.error(content)
+            self.connector.raise_alarm(
+                severity=Alarms.MAJOR,
+                source={"device": exc_di.device, "ScanWorker": "_process_instructions"},
+                msg=exc_di.traceback,
+                compact_msg=exc_di.compact_message,
+                alarm_type=exc_di.exception_type,
+                metadata=self._get_metadata_for_alarm(),
+            )
+            raise ScanAbortion from exc_di
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(content)
