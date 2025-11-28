@@ -881,7 +881,7 @@ class RequestBlockQueue:
                 alarm_type=exc.exception_type,
                 metadata=self._get_metadata_for_alarm(),
             )
-            raise ScanAbortion from exc
+            raise
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
