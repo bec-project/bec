@@ -14,11 +14,16 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
 
     REPORT_TYPE = "device_progress"
 
-    def _run_update(self, device_names: str):
+    def core(self):
+        """core function to run the live updates for the table"""
+        self._wait_for_report_instructions()
+        self._run_update(self.report_instruction[self.REPORT_TYPE])
+
+    def _run_update(self, device_names: list[str]):
         """Run the update loop for the progress bar.
 
         Args:
-            device_names (str): The name of the device to monitor.
+            device_names (list[str]): The name of the device to monitor.
         """
         with ScanProgressBar(
             scan_number=self.scan_item.scan_number, clear_on_exit=False
@@ -29,7 +34,7 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
                 self._print_client_msgs_asap()
         self._print_client_msgs_all()
 
-    def _update_progressbar(self, progressbar: ScanProgressBar, device_names: str) -> bool:
+    def _update_progressbar(self, progressbar: ScanProgressBar, device_names: list[str]) -> bool:
         """Update the progressbar based on the device status message
 
         Args:
