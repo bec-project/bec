@@ -51,9 +51,9 @@ class BECJson(SerializationRegistry):
 
     use_json = True
 
-    def dumps(self, obj):
+    def dumps(self, obj, indent: int | None = None) -> str:
         """Pack object `obj` and return packed bytes."""
-        return json.dumps(obj, default=self.encode)
+        return json.dumps(obj, default=self.encode, indent=indent)
 
     def loads(self, raw_bytes):
         """Unpack bytes and return the decoded object."""
