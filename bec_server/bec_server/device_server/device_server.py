@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import ophyd
 from ophyd import Kind, OphydObject, Staged, StatusBase
@@ -19,6 +19,7 @@ from bec_lib.device import OnFailure
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
+from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 from bec_server.device_server.rpc_handler import RPCHandler
@@ -146,7 +147,7 @@ class RequestHandler:
         instr_id: str,
         success: bool = None,
         error_info: messages.ErrorInfo | None = None,
-        result=None,
+        result: Any = None,
     ):
         """
         Set the request to finished.
@@ -155,6 +156,7 @@ class RequestHandler:
             instr_id(str): The ID of the instruction.
             success(bool): Whether the instruction was successful. Defaults to None.
             error_info(messages.ErrorInfo, optional): Error information. Defaults to None.
+            result(Any): The result of the instruction. Defaults to None. Only relevant for RPC calls.
         """
         with self._lock:
             request_info = self.get_request(instr_id)
@@ -200,22 +202,56 @@ class RequestHandler:
 
         if all(status_obj.done for status_obj in self._storage[instr_id]["status_objects"]):
             exceptions = [
-                status_obj.exception() for status_obj in self._storage[instr_id]["status_objects"]
+                (status_obj.exception(), status_obj)
+                for status_obj in self._storage[instr_id]["status_objects"]
+                if isinstance(status_obj, StatusBase)
             ]
-            if any(exceptions):
-                error = next(val for val in exceptions if val)
-                self.set_finished(
-                    instr_id,
-                    success=False,
-                    error_info={
-                        "error_message": traceback.format_exc(),
-                        "compact_error_message": traceback.format_exc(limit=0),
-                        "exception_type": error.__class__.__name__,
-                        "device": self.parent.get_device_from_exception(error),
-                    },
-                )
+            if any(val for val, _ in exceptions):
+                error, obj = next((val, obj) for val, obj in exceptions if val)
+                error_info = self.get_error_info(error, obj)
+                self.set_finished(instr_id, success=False, error_info=error_info)
+
             else:
                 self.set_finished(instr_id, success=True)
+
+    def get_error_info(self, error: Exception, obj: StatusBase) -> messages.ErrorInfo:
+        """
+        Get basic error information from an ophyd object.
+
+        Args:
+            error(Exception): The error that occurred.
+            obj(StatusBase): The ophyd status object that caused the error.
+
+        Returns:
+            messages.ErrorInfo: A dictionary containing basic error information.
+        """
+        if hasattr(obj, "device"):
+            device_name = obj.device.dotted_name or obj.device.name
+        elif hasattr(obj, "obj") and isinstance(obj.obj, OphydObject):
+            device_name = obj.obj.dotted_name or obj.obj.name
+        else:
+            device_name = None
+
+        msg = (
+            f"{error.__class__.__name__}: {error}\n"
+            f"The status {obj.__class__.__name__} from device {device_name} failed during the execution "
+            f"of the following instruction:\n"
+            f"{json_ext.dumps(obj.instruction, indent=2)}\n"
+        )
+        if obj.instruction.action:
+            compact_msg = (
+                f"An error occurred during '{obj.instruction.action}' on device '{device_name}'.\n\n"
+                f"{error.__class__.__name__}: {str(error)}"
+            )
+        else:
+            compact_msg = f"{error.__class__.__name__}: {str(error)}"
+        error_info: messages.ErrorInfo = {
+            "error_message": msg,
+            "compact_error_message": compact_msg,
+            "exception_type": error.__class__.__name__,
+            "device": device_name,
+        }
+        return error_info
 
     def send_device_instruction_response(
         self,
@@ -223,7 +259,7 @@ class RequestHandler:
         success: bool,
         done: bool,
         error_info: messages.ErrorInfo | None = None,
-        result=None,
+        result: Any = None,
     ):
         """
         Send a request status message.

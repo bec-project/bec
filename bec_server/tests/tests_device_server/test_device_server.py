@@ -424,6 +424,9 @@ def test_complete_device(device_server_mock, instr):
     complete_mock = mock.MagicMock()
     device = instr.content["device"]
     oph_device = device_server.device_manager.devices.get(device)
+    status = DeviceStatus(oph_device)
+    status.set_finished()
+    complete_mock.return_value = status
     if device is not None:
         oph_device.obj.complete = complete_mock
     device_server._complete_device(instr)
