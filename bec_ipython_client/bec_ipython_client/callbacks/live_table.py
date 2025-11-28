@@ -171,6 +171,13 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def core(self):
         """core function to run the live updates for the table"""
+        self._wait_for_report_instructions()
+        show_table = self.report_instruction[self.REPORT_TYPE].get("show_table", True)
+        self._print_table_data = show_table
+        self._run_update(self.report_instruction[self.REPORT_TYPE]["points"])
+
+    def _wait_for_report_instructions(self):
+        """wait until the report instructions are available"""
         req_ID = self.scan_queue_request.requestID
         while True:
             request_block = [
@@ -181,10 +188,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
             if request_block["report_instructions"]:
                 break
             self.check_alarms()
-
-        show_table = self.report_instruction[self.REPORT_TYPE].get("show_table", True)
-        self._print_table_data = show_table
-        self._run_update(self.report_instruction[self.REPORT_TYPE]["points"])
 
     def _run_update(self, target_num_points: int):
         """run the update loop with the progress bar
