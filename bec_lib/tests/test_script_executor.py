@@ -16,6 +16,7 @@ def test_upload_script(connected_connector):
     assert uploaded_content.value == script_content
 
 
+@pytest.mark.skip(reason="Problems with coverage measurement. See GH-670")
 def test_script_executor(connected_connector, capsys):
     script_content = "a = 2; print(a)"
     script_id = upload_script(connected_connector, script_content)
@@ -32,6 +33,7 @@ def test_script_executor(connected_connector, capsys):
     assert a == 1  # The script should not modify the local variable
 
 
+@pytest.mark.skip(reason="Problems with coverage measurement. See GH-670")
 @pytest.mark.timeout(5)
 def test_script_executor_failure(connected_connector):
     script_content = "print(unknown_variable)"
