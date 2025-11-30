@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.77.1 (2025-11-30)
+
+### Bug Fixes
+
+- **live progress update**: Fix progress update
+  ([`0288b97`](https://github.com/bec-project/bec/commit/0288b97b31817ac48261f1893e2f5e84959c5b14))
+
+
 ## v3.77.0 (2025-11-30)
 
 ### Bug Fixes
