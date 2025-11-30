@@ -1180,7 +1180,8 @@ class RedisConnector:
             max_size (int, optional): max size of stream. Defaults to None.
             pipe (Pipeline, optional): redis pipe. Defaults to None.
             expire (int, optional): expire time. Defaults to None.
-            approximate (bool, optional): use approximate max size. Only used if max_size is set. Defaults to True.
+            approximate (bool, optional): Set to False to enforce exact max size trimming. If True,
+                redis may trim the stream approximately. Only used if max_size is set. Defaults to True.
 
         Examples:
             >>> redis.xadd("test", {"test": "test"})
