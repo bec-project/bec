@@ -29,16 +29,24 @@ class AtlasMetadataHandler:
         self._scan_status_register = None
         self._account = None
         self._start_account_subscription()
+        self._start_deployment_info_subscription()
         self._start_scan_subscription()
         self._start_scan_history_subscription()
+        self._start_messaging_subscription()
 
     def _start_account_subscription(self):
         self.atlas_connector.connector.register(
             MessageEndpoints.account(), cb=self._handle_account_info, parent=self, from_start=True
         )
+
+    def _start_deployment_info_subscription(self):
+        if not self.atlas_connector.redis_atlas:
+            return
+        if not self.atlas_connector.deployment_name:
+            return
         self.atlas_connector.redis_atlas.register(
             MessageEndpoints.atlas_deployment_info(self.atlas_connector.deployment_name),
-            cb=self._handle_atlas_account_update,
+            cb=self._update_deployment_info,
             parent=self,
             from_start=True,
         )
@@ -53,14 +61,28 @@ class AtlasMetadataHandler:
             MessageEndpoints.scan_history(), cb=self._handle_scan_history, parent=self
         )
 
+    def _start_messaging_subscription(self):
+        self.atlas_connector.connector.register(
+            MessageEndpoints.message_service_queue(), cb=self._handle_messaging, parent=self
+        )
+
     @staticmethod
-    def _handle_atlas_account_update(msg, *, parent, **_kwargs) -> None:
+    def _update_deployment_info(
+        msg: dict[str, messages.DeploymentInfoMessage], *, parent: AtlasMetadataHandler, **_kwargs
+    ) -> None:
         if not isinstance(msg, dict) or "data" not in msg:
-            logger.error(f"Invalid account message received from Atlas: {msg}")
+            logger.error(f"Invalid deployment info message received: {msg}")
             return
-        msg = cast(messages.VariableMessage, msg["data"])
-        parent._account = msg.value
-        parent._update_local_account(msg.value)
+        parent.update_messaging_services(msg["data"].messaging_services)
+
+    def update_messaging_services(self, services: list[messages.MessagingServiceConfig]) -> None:
+        """
+        Update the messaging services in the Atlas connector
+        """
+        info = messages.AvailableResourceMessage(resource=services)
+        self.atlas_connector.connector.xadd(
+            MessageEndpoints.available_messaging_services(), {"data": info}, max_size=1
+        )
 
     def _update_local_account(self, account: str) -> None:
         """
@@ -74,7 +96,7 @@ class AtlasMetadataHandler:
             logger.info(f"Updated local account to: {account}")
 
     @staticmethod
-    def _handle_account_info(msg, *, parent, **_kwargs) -> None:
+    def _handle_account_info(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
         if not isinstance(msg, dict) or "data" not in msg:
             logger.error(f"Invalid account message received: {msg}")
             return
@@ -84,7 +106,7 @@ class AtlasMetadataHandler:
         logger.info(f"Updated account to: {parent._account}")
 
     @staticmethod
-    def _handle_scan_status(msg, *, parent, **_kwargs) -> None:
+    def _handle_scan_status(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
         msg = msg.value
         try:
             parent.send_atlas_update({"scan_status": msg})
@@ -94,7 +116,7 @@ class AtlasMetadataHandler:
             logger.exception(f"Failed to update scan status: {content}")
 
     @staticmethod
-    def _handle_scan_history(msg, *, parent, **_kwargs) -> None:
+    def _handle_scan_history(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
         msg = msg["data"]
         try:
             parent.send_atlas_update({"scan_history": msg})
@@ -102,6 +124,15 @@ class AtlasMetadataHandler:
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update scan history: {content}")
+
+    @staticmethod
+    def _handle_messaging(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
+        try:
+            parent.atlas_connector.ingest_message(msg)
+        # pylint: disable=broad-except
+        except Exception:
+            content = traceback.format_exc()
+            logger.exception(f"Failed to update messaging data: {content}")
 
     def send_atlas_update(self, msg: dict) -> None:
         """

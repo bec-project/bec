@@ -8,7 +8,7 @@ from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Any, ClassVar, Literal, Self
+from typing import Any, ClassVar, Literal, Self, Union
 from uuid import uuid4
 
 import numpy as np
@@ -1165,12 +1165,12 @@ class AvailableResourceMessage(BECMessage):
     """Message for available resources such as scans, data processing plugins etc
 
     Args:
-        resource (dict, list[dict]): Resource description
+        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: dict | list[dict]
+    resource: dict | list[dict] | BECMessage | list[BECMessage]
 
 
 class ProgressMessage(BECMessage):
@@ -1456,6 +1456,59 @@ class ACLAccountsMessage(BECMessage):
     ]
 
 
+class RealmInfoMessage(BECMessage):
+    """
+    Message for realm information
+    Args:
+        realm_id (str): Realm ID
+        deployments (list[DeploymentInfoMessage]): List of deployment information messages
+        name (str): Realm name
+        xname (str): Realm xname
+        managers (list[str]): List of realm managers
+    """
+
+    msg_type: ClassVar[str] = "realm_info_message"
+
+    realm_id: str
+    deployments: list[DeploymentInfoMessage]
+    name: str
+    xname: str
+    managers: list[str]
+
+
+class SessionInfoMessage(BECMessage):
+    """
+    Message for session information
+
+    Args:
+        name (str): Session name
+        experiment_id (str | None): Experiment ID
+        messaging_services (list[MessagingServiceConfig]): Messaging services configurations
+    """
+
+    msg_type: ClassVar[str] = "session_info_message"
+    name: str
+    experiment_id: str | None = None
+    account: str | None = None
+    messaging_services: list[MessagingServiceConfig] = Field(default_factory=list)
+
+
+class DeploymentInfoMessage(BECMessage):
+    """
+    Message for deployment information
+
+    Args:
+        name (str): Deployment name
+        messaging_services (list[MessagingServiceConfig]): Messaging services configurations
+        active_session (SessionInfoMessage | None): Active session information
+    """
+
+    msg_type: ClassVar[str] = "deployment_info_message"
+    name: str
+    active_session: SessionInfoMessage | None = None
+    messaging_services: list[MessagingServiceConfig] = Field(default_factory=list)
+
+
 class EndpointInfoMessage(BECMessage):
     """
     Message for endpoint information
@@ -1511,3 +1564,108 @@ class MacroUpdateMessage(BECMessage):
         if values.update_type == "add" and not values.file_path:
             raise ValueError("file_path must be provided for add actions")
         return values
+
+
+class MessagingServiceTextContent(BaseModel):
+    """
+    Text content for messaging services
+
+    Args:
+        content (str): Text content
+    """
+
+    content: str
+
+
+class MessagingServiceFileContent(BaseModel):
+    """
+    File content for messaging services
+
+    Args:
+        filename (str): Name of the file
+        mime_type (str): MIME type of the file
+        data (bytes): File data
+    """
+
+    filename: str
+    mime_type: str
+    data: bytes
+
+
+class MessagingServiceTagsContent(BaseModel):
+    """
+    Tags content for messaging services
+
+    Args:
+        tags (list[str]): List of tags
+    """
+
+    tags: list[str]
+
+
+class MessagingServiceStickerContent(BaseModel):
+    """
+    Sticker content for messaging services
+
+    Args:
+        sticker_id (str): Sticker ID
+    """
+
+    sticker_id: str
+
+
+class MessagingServiceGiphyContent(BaseModel):
+    """
+    Giphy content for messaging services
+
+    Args:
+        giphy_url (str): Giphy URL
+    """
+
+    giphy_url: str
+
+
+MessagingServiceContent = Union[
+    MessagingServiceTextContent,
+    MessagingServiceFileContent,
+    MessagingServiceTagsContent,
+    MessagingServiceStickerContent,
+    MessagingServiceGiphyContent,
+]
+
+
+class MessagingServiceMessage(BECMessage):
+    """
+    Message for communicating with messaging services such as Signal, Teams or SciLog
+
+    Args:
+        service_name (Literal["signal", "teams", "scilog"]): Name of the messaging service
+        message (list[MessagingServiceContent]): Message content
+        channel (str | list[str]): Channel or recipient to send the message to
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "messaging_service_message"
+    service_name: Literal["signal", "teams", "scilog"]
+    message: list[MessagingServiceContent]
+    channel: str | list[str] | None = None
+    metadata: dict | None = Field(default_factory=dict)
+
+
+class MessagingServiceConfig(BECMessage):
+    """
+    Message for communicating available scopes for messaging services such as Signal, Teams or SciLog.
+    The message is typically sent as part of an AvailableResourceMessage.
+
+    Args:
+        service_name (Literal["signal", "teams", "scilog"]): Name of the messaging service
+        scopes (list[str]): List of available scopes
+        enabled (bool): True if the service is enabled
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "messaging_service_config_message"
+    service_name: Literal["signal", "teams", "scilog"]
+    scopes: list[str]
+    enabled: bool
+    metadata: dict | None = Field(default_factory=dict)
