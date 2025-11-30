@@ -1808,7 +1808,7 @@ class MessageEndpoints:
     @staticmethod
     def atlas_deployment_info(deployment_name: str):
         """
-        Endpoint for deployment info updates.
+        Endpoint for deployment info updates. Stored on the BEC Atlas redis instance.
 
         Returns:
             EndpointInfo: Endpoint for deployment info.
@@ -1816,6 +1816,89 @@ class MessageEndpoints:
         endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/deployment_info"
         return EndpointInfo(
             endpoint=endpoint,
-            message_type=messages.VariableMessage,
-            message_op=MessageOp.SET_PUBLISH,
+            message_type=messages.DeploymentInfoMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def deployment_info():
+        """
+        Endpoint for deployment info updates. It contains the forwarded deployment info from Atlas,
+        see atlas_deployment_info.
+
+        Returns:
+            EndpointInfo: Endpoint for deployment info.
+        """
+        endpoint = f"{EndpointType.INFO.value}/deployment/deployment_info"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeploymentInfoMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def message_service_queue():
+        """
+        Endpoint for message service queue. This endpoint is used by clients of messaging services to
+        send messages using a messages.MessagingServiceMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for message service queue.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/message_service/queue"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.MessagingServiceMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def available_messaging_services():
+        """
+        Endpoint for available messaging services. This endpoint is used to publish the available
+        messaging services using an AvailableResourceMessage.
+        Returns:
+            EndpointInfo: Endpoint for available messaging services.
+        """
+        endpoint = f"{EndpointType.INFO.value}/messaging_services/available_messaging_services"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def message_service_ingest(deployment_name: str):
+        """
+        Endpoint for ingesting messages for a particular deployment's messaging service.
+
+        Returns:
+            EndpointInfo: Endpoint for message service ingest.
+        """
+        endpoint = (
+            f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/message_service/ingest"
+        )
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.MessagingServiceMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def available_logbooks(realm_name: str):
+        """
+        Endpoint for available logbooks. This endpoint is used to publish the available logbooks
+        using an AvailableResourceMessage.
+
+        Args:
+            realm_name (str): Realm name.
+
+        Returns:
+            EndpointInfo: Endpoint for available logbooks.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/realm/{realm_name}/info/available_logbooks"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.KEY_VALUE,
         )
