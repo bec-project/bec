@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.77.0 (2025-11-30)
+
+### Bug Fixes
+
+- **scan history**: Temp fix to skip deprecated messages
+  ([`b80ccc7`](https://github.com/bec-project/bec/commit/b80ccc7fc16eb5c441520f8e6ac27132efe54079))
+
+### Features
+
+- **file writer**: Write to .tmp files
+  ([`32d37d7`](https://github.com/bec-project/bec/commit/32d37d77b70a3978ed1745eec0a6163727d52d04))
+
+### Testing
+
+- Disabling script executor
+  ([`af59e59`](https://github.com/bec-project/bec/commit/af59e59e74900e2475fe1fe0e15ad4039e61a57a))
+
+
 ## v3.76.1 (2025-11-26)
 
 ### Bug Fixes
