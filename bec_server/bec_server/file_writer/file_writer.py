@@ -300,6 +300,7 @@ class HDF5FileWriter:
             info_storage=info_storage,
             configuration=configuration_data,
             file_references=data.file_references,
+            beamline_states=data.beamline_states,
             device_manager=self.file_writer_manager.device_manager,
         ).get_storage_format()
 

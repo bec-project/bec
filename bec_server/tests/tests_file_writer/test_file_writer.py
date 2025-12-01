@@ -73,6 +73,7 @@ def test_csaxs_nexus_format(file_writer_manager_mock_with_dm):
         },
         configuration={},
         device_manager=file_manager.device_manager,
+        beamline_states={},
     ).get_storage_format()
     assert writer_storage["entry"].attrs["definition"] == "NXsas"
     assert writer_storage["entry"]._storage["sample"]._storage["x_translation"]._data == [0, 1, 2]
@@ -271,3 +272,54 @@ def test_load_format_from_plugin_uses_plugin(tmp_path, hdf5_file_writer, scan_st
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert test_file["entry"].attrs["definition"] == "NXsas"
+
+
+def test_states_are_converted_to_compound_types(tmp_path, hdf5_file_writer, scan_storage_mock):
+    """
+    Test that the beamline states are correctly converted to numpy compound types and stored in the file.
+    """
+    file_writer = hdf5_file_writer
+    storage = scan_storage_mock
+    storage.beamline_states = {
+        "State1": [
+            messages.BeamlineStateMessage(
+                name="State1", status="valid", label="Shutter open", timestamp=1.23
+            ),
+            messages.BeamlineStateMessage(
+                name="State1", status="warning", label="Shutter moving", timestamp=2.34
+            ),
+        ]
+    }
+
+    file_writer.write(f"{tmp_path}/test.h5", storage, configuration_data={})
+
+    with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
+        states_group = test_file["entry/collection/states"]
+        assert "State1" in states_group
+
+        state_dataset = states_group["State1"]
+        assert state_dataset.dtype.names == ("label", "status", "timestamp")
+
+        values = state_dataset[...]
+        assert len(values) == 2
+
+        label_0 = values[0]["label"]
+        status_0 = values[0]["status"]
+        label_1 = values[1]["label"]
+        status_1 = values[1]["status"]
+        if isinstance(label_0, bytes):
+            label_0 = label_0.decode()
+        if isinstance(status_0, bytes):
+            status_0 = status_0.decode()
+        if isinstance(label_1, bytes):
+            label_1 = label_1.decode()
+        if isinstance(status_1, bytes):
+            status_1 = status_1.decode()
+
+        assert label_0 == "Shutter open"
+        assert status_0 == "valid"
+        assert values[0]["timestamp"] == 1.23
+
+        assert label_1 == "Shutter moving"
+        assert status_1 == "warning"
+        assert values[1]["timestamp"] == 2.34

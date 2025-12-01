@@ -1,0 +1,410 @@
+from __future__ import annotations
+
+import functools
+import keyword
+import traceback
+from abc import ABC, abstractmethod
+from typing import Callable, ClassVar, Generic, Type, TypeVar, cast
+
+from pydantic import BaseModel, field_validator, model_validator
+
+from bec_lib import messages
+from bec_lib.alarm_handler import Alarms
+from bec_lib.device import DeviceBase, Signal
+from bec_lib.devicemanager import DeviceManagerBase
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.redis_connector import MessageObject, RedisConnector
+
+
+def with_state_error_handling(func: Callable) -> Callable:
+    """
+    Decorator for handling exceptions in state evaluation methods.
+
+    This decorator:
+    1. Calls update_device_signal_info() on the parent object before executing the function
+    2. If update_device_signal_info() fails, emits an "unknown" state and raises an alarm
+    3. If the decorated function fails, emits an "unknown" state and raises an alarm
+
+    The decorated function should expect a 'parent' parameter of type DeviceBeamlineState.
+    """
+
+    @functools.wraps(func)
+    def wrapper(msg_obj: MessageObject, parent: "DeviceBeamlineState") -> None:
+        assert parent.connector is not None
+
+        try:
+            parent.update_device_signal_info()
+        except Exception as exc:
+            parent._handle_state_exception(exc)
+            return
+
+        try:
+            result = func(msg_obj, parent)
+            if result is not None:
+                parent._emit_state(result)
+        except Exception as exc:
+            parent._handle_state_exception(exc)
+
+    return wrapper
+
+
+class BeamlineStateConfig(BaseModel):
+    """
+    Base Configuration for a beamline state.
+    """
+
+    state_type: ClassVar[str] = "BeamlineState"
+
+    name: str
+    title: str | None = None
+
+    model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """
+        Validate that the state name is a valid Python identifier and does not conflict with reserved method names.
+        """
+        if not v.isidentifier():
+            raise ValueError(f"State name '{v}' must be a valid Python identifier.")
+        if keyword.iskeyword(v):
+            raise ValueError(f"State name '{v}' cannot be a reserved Python keyword.")
+        if v in {"add", "remove", "show_all"}:
+            raise ValueError(f"State name '{v}' is reserved and cannot be used.")
+        return v
+
+
+class DeviceStateConfig(BeamlineStateConfig):
+    """
+    Configuration for a device-based beamline state.
+    """
+
+    state_type: ClassVar[str] = "DeviceBeamlineState"
+
+    device: DeviceBase | str
+    signal: DeviceBase | str | None = None
+
+    @model_validator(mode="after")
+    def validate_signal(self) -> DeviceStateConfig:
+        """
+        Validate that the signal is either None, a string, or a DeviceBase instance. If it's a DeviceBase instance, return its name.
+        """
+        if self.signal is None:
+            return self
+        if isinstance(self.signal, DeviceBase) and not isinstance(self.signal, Signal):
+            raise ValueError(
+                f"Signal must be a string or a Signal instance, got {type(self.signal)}"
+            )
+        if isinstance(self.device, DeviceBase) and isinstance(self.signal, DeviceBase):
+            if self.signal.parent != self.device:
+                raise ValueError(
+                    f"Signal '{self.signal.dotted_name}' does not belong to device '{self.device.dotted_name}'"
+                )
+        if isinstance(self.device, DeviceBase):
+            self.device = self.device.dotted_name
+        if isinstance(self.signal, DeviceBase):
+            self.signal = self.signal.dotted_name
+        return self
+
+
+class DeviceWithinLimitsStateConfig(DeviceStateConfig):
+    """
+    Configuration for a device within limits beamline state.
+    """
+
+    state_type: ClassVar[str] = "DeviceWithinLimitsState"
+
+    low_limit: float | None = None
+    high_limit: float | None = None
+    tolerance: float = 0.1
+
+
+C = TypeVar("C", bound=BeamlineStateConfig)
+D = TypeVar("D", bound=DeviceStateConfig)
+
+
+class BeamlineState(ABC, Generic[C]):
+    """Abstract base class for beamline states."""
+
+    CONFIG_CLASS: Type[C]
+
+    def __init__(
+        self,
+        config: C | None = None,
+        redis_connector: RedisConnector | None = None,
+        device_manager: DeviceManagerBase | None = None,
+        **kwargs,
+    ) -> None:
+        self.config = config or self.CONFIG_CLASS(**kwargs)
+        self.connector = redis_connector
+        self.device_manager = device_manager
+        self.raised_warning = False
+        self.started = False
+        self._last_state: messages.BeamlineStateMessage | None = None
+        self._error_prefix = f"[BL State {self.config.name}]:"
+
+    def update_parameters(self, **kwargs) -> None:
+        """Update the configuration parameters of the state."""
+        self.config = self.CONFIG_CLASS(**{**self.config.model_dump(), **kwargs})
+
+    @abstractmethod
+    def evaluate(self, *args, **kwargs) -> messages.BeamlineStateMessage | None:
+        """Evaluate the state and return its state."""
+
+    def start(self) -> None:
+        """Start monitoring the state if needed."""
+        self.started = True
+        self.raised_warning = False
+
+    def stop(self) -> None:
+        """Stop monitoring the state if needed."""
+        self.started = False
+
+    def restart(self) -> None:
+        """Restart the state monitoring."""
+        self.stop()
+        self.start()
+
+    def _emit_state(self, state_msg: messages.BeamlineStateMessage) -> None:
+        if self.connector is None:
+            return
+        is_different = (
+            state_msg.model_dump(exclude={"timestamp"})
+            != self._last_state.model_dump(exclude={"timestamp"})
+            if self._last_state
+            else True
+        )
+        if self._last_state is None:
+            is_different = True
+        if is_different:
+            self._last_state = state_msg
+            self.connector.xadd(
+                MessageEndpoints.beamline_state(self.config.name),
+                {"data": state_msg},
+                max_size=1,
+                approximate=False,
+            )
+
+    def _handle_state_exception(self, exc: Exception) -> None:
+        """
+        Handle exceptions that occur during state evaluation by emitting an "unknown" state and raising an alarm.
+
+        Args:
+            exc (Exception): The exception that occurred.
+        """
+        traceback_content = traceback.format_exc()
+        info = exc.args[0] if exc.args else traceback_content
+
+        if self.connector is not None and not self.raised_warning:
+            error_info = messages.ErrorInfo(
+                exception_type=type(exc).__name__,
+                error_message=traceback_content,
+                compact_error_message=info,
+            )
+            self.connector.raise_alarm(severity=Alarms.WARNING, info=error_info)
+
+        out = messages.BeamlineStateMessage(name=self.config.name, status="unknown", label=info)
+        self._emit_state(out)
+        self.raised_warning = True
+
+
+class DeviceBeamlineState(BeamlineState[D], Generic[D]):
+    """A beamline state that depends on a device reading."""
+
+    CONFIG_CLASS: Type[D]
+
+    def update_device_signal_info(self) -> None:
+        if self.device_manager is None:
+            from bec_lib.client import BECClient
+
+            bec = BECClient()  # fetch the singleton instance of the BECClient
+            dev = bec.device_manager.devices
+        else:
+            dev = self.device_manager.devices
+
+        try:
+            self.device_obj: DeviceBase = dev[self.config.device]
+        except KeyError:
+            # pylint: disable=raise-missing-from
+            raise ValueError(f"{self._error_prefix} Device '{self.config.device}' not found.")
+
+        if self.config.signal is not None:
+            signal = cast(str, self.config.signal)
+            # We support two options here:
+            # 1) The signal is the dotted name
+            # 2) The signal is the obj_name of the signal, i.e. the entry in the device's read dictionary
+            # We can distinguish these two cases by checking if the signal name contains a dot or not.
+            if "." in signal:
+                try:
+                    signal_obj = dev[signal]
+                except AttributeError:
+                    # pylint: disable=raise-missing-from
+                    raise ValueError(
+                        f"{self._error_prefix} Signal '{signal}' not found for device '{self.config.device}'."
+                    )
+                if signal_obj.parent != self.device_obj:
+                    raise ValueError(
+                        f"{self._error_prefix} Signal '{signal}' does not belong to device '{self.config.device}'"
+                    )
+
+                signal_component = ".".join(signal.split(".")[1:])
+                self.signal_name = self.device_obj.root._info["signals"][signal_component][
+                    "obj_name"
+                ]
+            else:
+                # The signal is the obj_name, so we need to find the corresponding signal
+                self.signal_name = self.config.signal
+                for sig_info in self.device_obj.root._info["signals"].values():
+                    if sig_info["obj_name"] == self.signal_name:
+                        break
+                else:
+                    raise ValueError(
+                        f"{self._error_prefix} Signal '{self.signal_name}' not found for device '{self.config.device}'. "
+                        f"Make sure to specify the correct signal name as seen in the device's read "
+                        f"dictionary or use the full dotted name of the signal."
+                    )
+
+        else:
+            # Take the hinted signal of the device
+            if self.device_obj._hints:
+                self.signal_name = self.device_obj._hints[0]
+            else:
+                raise ValueError(
+                    f"[BL State {self.config.name}] No signal specified for device '{self.config.device}' and no hints available."
+                )
+
+    def start(self) -> None:
+        if self.started:
+            return
+        super().start()
+
+        if self.connector is None:
+            raise RuntimeError("Redis connector is not set.")
+        try:
+            self.update_device_signal_info()
+        except Exception as exc:
+            self._handle_state_exception(exc)
+            return
+
+        msg = self.connector.get(MessageEndpoints.device_readback(self.device_obj.root.name))
+        if msg is not None:
+            self._update_device_state(
+                MessageObject(
+                    topic=MessageEndpoints.device_readback(self.device_obj.root.name).endpoint,
+                    value=msg,
+                ),
+                parent=self,
+            )
+        self.connector.register(
+            MessageEndpoints.device_readback(self.device_obj.root.name),
+            cb=self._update_device_state,
+            parent=self,
+        )
+
+    def stop(self) -> None:
+        if not self.started:
+            return
+        if self.connector is None:
+            return
+        self.connector.unregister(
+            MessageEndpoints.device_readback(self.device_obj.root.name),
+            cb=self._update_device_state,
+        )
+
+        super().stop()
+
+    @staticmethod
+    @with_state_error_handling
+    def _update_device_state(
+        msg_obj: MessageObject, parent: DeviceBeamlineState
+    ) -> messages.BeamlineStateMessage | None:
+        """
+        Update the device state based on the received message.
+        """
+        msg: messages.DeviceMessage = msg_obj.value  # type: ignore ; we know it's a DeviceMessage
+        return parent.evaluate(msg)
+
+
+class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
+    """
+    A state that checks if the shutter is open.
+
+    Example:
+        shutter_state = ShutterState(name="shutter_open")
+        shutter_state.configure(device="shutter1")
+        bec.beamline_states.add(shutter_state)
+    """
+
+    CONFIG_CLASS = DeviceStateConfig
+
+    def evaluate(
+        self, msg: messages.DeviceMessage, *args, **kwargs
+    ) -> messages.BeamlineStateMessage:
+        val = msg.signals.get(self.signal_name, {}).get("value", "").lower()
+        if val == "open":
+            return messages.BeamlineStateMessage(
+                name=self.config.name, status="valid", label="Shutter is open."
+            )
+        return messages.BeamlineStateMessage(
+            name=self.config.name, status="invalid", label="Shutter is closed."
+        )
+
+
+class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]):
+    """
+    A state that checks if a positioner is within limits.
+
+    Example:
+        device_state = DeviceWithinLimitsState(name="sample_x_within_limits")
+        device_state.configure(device="sample_x", signal="sample_x_signal_name", low_limit=0.0, high_limit=10.0)
+        bec.beamline_states.add(device_state)
+
+    """
+
+    CONFIG_CLASS = DeviceWithinLimitsStateConfig
+
+    def evaluate(
+        self, msg: messages.DeviceMessage, *args, **kwargs
+    ) -> messages.BeamlineStateMessage:
+        """
+        Evaluate if the positioner is within the defined limits. If it is outside the limits,
+        return an invalid state. Otherwise, return a valid state. If it is within 10% of the limits,
+        return a warning state.
+        """
+
+        if self.config.low_limit is None:
+            self.config.low_limit = float("-inf")
+        if self.config.high_limit is None:
+            self.config.high_limit = float("inf")
+
+        val = msg.signals.get(self.signal_name, {}).get("value", None)
+        if val is None:
+            return messages.BeamlineStateMessage(
+                name=self.config.name,
+                status="invalid",
+                label=f"Positioner {self.device_obj.name}: Value {self.signal_name} not found.",
+            )
+
+        if val < self.config.low_limit or val > self.config.high_limit:
+            return messages.BeamlineStateMessage(
+                name=self.config.name,
+                status="invalid",
+                label=f"Positioner {self.device_obj.dotted_name} out of limits",
+            )
+
+        min_warning_threshold = self.config.low_limit + self.config.tolerance
+        max_warning_threshold = self.config.high_limit - self.config.tolerance
+
+        if val < min_warning_threshold or val > max_warning_threshold:
+            return messages.BeamlineStateMessage(
+                name=self.config.name,
+                status="warning",
+                label=f"Positioner {self.device_obj.dotted_name} near limits",
+            )
+
+        return messages.BeamlineStateMessage(
+            name=self.config.name,
+            status="valid",
+            label=f"Positioner {self.device_obj.dotted_name} within limits",
+        )
