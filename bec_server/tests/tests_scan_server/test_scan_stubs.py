@@ -112,3 +112,15 @@ def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
             rpc_call_2 = instructions[0]
             assert rpc_call_1 != rpc_call_2
             assert rpc_call_1.metadata["device_instr_id"] != rpc_call_2.metadata["device_instr_id"]
+
+
+def test_stage(stubs):
+    """Test that staging wihtout a device is not blocking, the status object should resolve."""
+    # Have only rtx in the device manager with async readout priority
+    devices = list(stubs._device_manager.devices.values())
+    for device in devices:
+        stubs._device_manager.devices.pop(device.name)
+    # No devices are in the device manager, stage should resolve and return empty list
+    msg = list(stubs.stage())
+    # Should not block, and return an empty list
+    assert not msg
