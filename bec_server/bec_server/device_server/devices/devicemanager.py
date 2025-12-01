@@ -29,7 +29,10 @@ from bec_lib.logger import bec_logger
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.bec_message_handler import BECMessageHandler
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.device_serializer import get_device_info
+from bec_server.device_server.devices.device_serializer import (
+    disable_lazy_wait_for_connection,
+    get_device_info,
+)
 
 logger = bec_logger.logger
 
@@ -465,7 +468,6 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
-        self.connect_device(opaas_obj.obj)
         if hasattr(opaas_obj.obj, "on_connected"):
             opaas_obj.obj.on_connected()
         opaas_obj.initialize_device_buffer(self.connector)
@@ -513,9 +515,11 @@ class DeviceManagerDS(DeviceManagerBase):
                 return
             if hasattr(obj, "wait_for_connection"):
                 try:
-                    obj.wait_for_connection(all_signals=wait_for_all, timeout=timeout)  # type: ignore
+                    with disable_lazy_wait_for_connection(obj):
+                        obj.wait_for_connection(all_signals=wait_for_all, timeout=timeout)  # type: ignore
                 except TypeError:
-                    obj.wait_for_connection(timeout=timeout)  # type: ignore
+                    with disable_lazy_wait_for_connection(obj):
+                        obj.wait_for_connection(timeout=timeout)  # type: ignore
                 return
             logger.error(
                 f"Device {obj.name} does not implement the socket controller interface nor"
@@ -536,6 +540,8 @@ class DeviceManagerDS(DeviceManagerBase):
             obj (_type_): _description_
         """
         try:
+            # Method will connect to all devices if necessary, so make sure that those are connected first
+            self.connect_device(obj)
             interface = get_device_info(obj)
             self.connector.set(
                 MessageEndpoints.device_info(obj.name),
