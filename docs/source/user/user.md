@@ -2,24 +2,29 @@
 
 (user)=
 
-# User
+# User Documentation
 
-**Introduction**
+## Introduction
 
-Welcome to the User section of the BEC documentation! BEC is an experiment control system mostly based on Python that equips users with a command-line interface (CLI) and a graphical user interface (GUI) for controlling devices and executing scans. This section provides essential information for users exploring BEC, regardless of their level of familiarity.
+Welcome to the *User* section of the BEC documentation!
+BEC is an experiment control system built primarily in Python, providing both a command-line interface (CLI) and a graphical user interface (GUI). With BEC, users can control devices, perform scans, and analyze data efficiently.
 
-**Key Topics**
+This section provides an overview of the essential tools you’ll use when working with BEC—regardless of your prior experience.
 
-- [Installing the BEC client](#user.installation): Set up a local BEC client on your machine to interact with an already deployed BEC system.
-- [Devices](#user.devices): Learn how to access, configure and update device settings.
-- [Command-Line Interface (CLI)](#user.command_line_interface): Interact with BEC through the CLI, including device access, motor control, and scan execution. Learn how to use the scan interface and write your own scripts and macros.
-- [Graphical User Interface (GUI)](#user.graphical_user_interface): Learn how to utilize the modular widgets and functionalities of the GUI.
-- [Data Access and Plotting](#user.data_access_and_plotting): Examining and plotting scan data for live feedback and online data analysis.
+### Key Topics
 
-For detailed insights into BEC's underlying architecture, customization possibilities, or extensions to deployed systems at the beamline, please explore the [Developer](#developer) section. Enjoy exploring and experimenting with BEC!
+- [Installing the BEC client](#user.installation): Set up a local BEC client to connect to an existing BEC deployment.
+- [Devices](#user.devices): Learn how to inspect, configure, and update device settings.
+- [Command-Line Interface (CLI)](#user.command_line_interface): Control devices, motors, and scans. Write your own scripts and macros.
+- [Graphical User Interface (GUI)](#user.graphical_user_interface): Discover BEC Widgets, a powerful GUI framework for interacting with BEC.
+- [Data Access and Plotting](#user.data_access_and_plotting): Explore and visualize scan data for live monitoring and online analysis.
+
+If you're interested in extending BEC, customizing deployments, or understanding its internal architecture, please refer to the **[Developer](#developer)** section.
 
 ```{important}
-If you have any questions or feature requests, please feel free to open an issue on [Github](https://github.com/bec-project/bec/issues). We are happy to help you with any questions you might have.
+If you have questions or feature requests, feel free to open an issue on
+[GitHub](https://github.com/bec-project/bec/issues).  
+We are happy to help!
 ```
 
 ```{toctree}
