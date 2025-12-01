@@ -578,13 +578,15 @@ class ScanStubs:
 
         if stage_device_names_without_async:
             stage_device_names_without_async = sorted(stage_device_names_without_async)
-        instr = messages.DeviceInstructionMessage(
-            device=stage_device_names_without_async,
-            action="stage",
-            parameter={},
-            metadata={"device_instr_id": status._device_instr_id},
-        )
-        yield instr
+            instr = messages.DeviceInstructionMessage(
+                device=stage_device_names_without_async,
+                action="stage",
+                parameter={},
+                metadata={"device_instr_id": status._device_instr_id},
+            )
+            yield instr
+        else:
+            status.set_done()
         status.wait()
         return status
 
