@@ -11,20 +11,17 @@ from typing import Iterable, Literal, Tuple
 import IPython
 import redis
 import redis.exceptions
-import requests
 from IPython.terminal.ipapp import TerminalIPythonApp
 from IPython.terminal.prompts import Prompts, Token
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich.traceback import Traceback
 
 from bec_ipython_client.beamline_mixin import BeamlineMixin
 from bec_ipython_client.bec_magics import BECMagics
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
 from bec_ipython_client.signals import ScanInterruption, SigintHandler
 from bec_lib import plugin_helper
-from bec_lib.acl_login import BECAuthenticationError
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import parse_cmdline_args
