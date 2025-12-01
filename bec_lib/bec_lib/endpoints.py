@@ -1755,6 +1755,40 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def beamline_state(state_name: str):
+        """
+        Endpoint for beamline state. This endpoint is used to publish the beamline state
+        using a messages.BeamlineStateMessage message.
+
+        Args:
+            state_name (str): State name.
+        Returns:
+            EndpointInfo: Endpoint for beamline state.
+        """
+        endpoint = f"{EndpointType.INFO.value}/beamline_state/{state_name}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.BeamlineStateMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def available_beamline_states():
+        """
+        Endpoint for updating the available beamline states. This endpoint is used to
+        publish beamline state updates using a messages.AvailableBeamlineStatesMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for beamline state updates.
+        """
+        endpoint = f"{EndpointType.INFO.value}/available_beamline_states"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableBeamlineStatesMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def atlas_websocket_state(deployment_name: str, host_id: str):
         """
         Endpoint for the websocket state information, containing the users and their subscriptions
