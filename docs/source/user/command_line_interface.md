@@ -163,32 +163,6 @@ The return object of `dev.samx.get()` is a [namedtuple](https://docs.python.org/
 We recommend not using `dev.samx.get()` due to the fact that it forces a readback from all signals. 
 ```
 
-### DeviceConfig
-
-Besides signals, devices are initialized based on their `deviceConfig` (see also [BEC device config](#user.devices)).
-The current deviceConfig, e.g. for the device `samx` can be retrieved  either by simply typing 
-
-``` ipython
-dev.samx
-``` 
-
-or directly by retrieving the deviceConfig through
-
-```ipython
-demo [5/50] ❯❯ dev.samx.get_device_config()
-Out[5]:
-{'delay': 1,
-'labels': 'samx',
-'limits': [-50, 50],
-'name': 'samx',
-'speed': 100,
-'tolerance': 0.01,
-'update_frequency': 400}
-```
-
-To update the deviceConfig, please check [set_device_config()](#user.devices.update_device_config).
-
-
 ### Move a motor
 
 A very common operation in the beginning is to be able to move a device. 
