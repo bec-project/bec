@@ -1317,7 +1317,7 @@ class MacroUpdateMessage(BECMessage):
         return values
 
 
-class MessagingServiceContent(BaseModel):
+class _MessagingServiceContent(BaseModel):
     """
     Content of the message for messaging services
 
@@ -1333,14 +1333,14 @@ class MessagingServiceMessage(BECMessage):
 
     Args:
         service_name (Literal["signal", "teams", "scilog"]): Name of the messaging service
-        message (str | dict): Message content
+        message (list[_MessagingServiceContent]): Message content
         channel (str | list[str]): Channel or recipient to send the message to
         metadata (dict, optional): Additional metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "messaging_service_message"
     service_name: Literal["signal", "teams", "scilog"]
-    message: list[MessagingServiceContent]
+    message: list[_MessagingServiceContent]
     channel: str | list[str] | None = None
     metadata: dict | None = Field(default_factory=dict)
 
