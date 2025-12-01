@@ -15,6 +15,7 @@ from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
 from bec_server.procedures.subprocess_worker import SubProcessWorker
 
+from .beamline_state_manager import BeamlineStateManager
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
 from .scan_manager import ScanManager
@@ -40,6 +41,8 @@ class ScanServer(BECService):
             use_subprocess_proc_worker=config.model.procedures.use_subprocess_worker
         )
         self.status = messages.BECStatus.RUNNING
+        self.beamline_states = None
+        self._start_beamline_state_manager()
 
     def _start_device_manager(self):
         self.wait_for_service("DeviceServer")
@@ -58,6 +61,9 @@ class ScanServer(BECService):
 
     def _start_scan_guard(self):
         self.scan_guard = ScanGuard(parent=self)
+
+    def _start_beamline_state_manager(self):
+        self.beamline_states = BeamlineStateManager(self.connector)
 
     def _start_alarm_handler(self):
         self.connector.register(MessageEndpoints.alarm(), cb=self._alarm_callback, parent=self)
