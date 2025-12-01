@@ -19,6 +19,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bec_lib.alarm_handler import AlarmHandler, Alarms
+from bec_lib.beamline_states import BeamlineConditionConfig
 from bec_lib.bec_service import BECService
 from bec_lib.bl_checks import BeamlineChecks
 from bec_lib.callback_handler import CallbackHandler, EventType
@@ -149,6 +150,7 @@ class BECClient(BECService):
         self._initialized = True
         self._username = ""
         self._system_user = ""
+        self.beamline_conditions = None
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
@@ -226,6 +228,7 @@ class BECClient(BECService):
         self.bl_checks.start()
         self.device_monitor = DeviceMonitorPlugin(self.connector)
         self._update_username()
+        self.beamline_conditions = BeamlineConditionConfig(client=self)
 
     def alarms(self, severity=Alarms.WARNING):
         """get the next alarm with at least the specified severity"""
