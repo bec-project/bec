@@ -1966,3 +1966,49 @@ class GameLeaderboardMessage(BECMessage):
     msg_type: ClassVar[str] = "game_leaderboard_message"
     game_name: str
     leaderboard: list[GameScoreMessage]
+
+
+class BeamlineStateMessage(BECMessage):
+    """
+    Message for beamline state updates
+
+    Args:
+        name (str): Name of the beamline state
+        status (Literal["valid", "invalid", "warning", "unknown"]): Status of the beamline state
+        label (str): Description of the beamline state
+    """
+
+    msg_type: ClassVar[str] = "beamline_state_message"
+    name: str
+    status: Literal["valid", "invalid", "warning", "unknown"]
+    label: str
+    timestamp: float = Field(default_factory=time.time)
+
+
+class BeamlineStateConfig(BaseModel):
+    """
+    Entry for beamline state update
+
+    Args:
+        name (str): Name of the beamline state
+        title (str): Title of the beamline state
+        state_type (str): Type of the beamline state
+        parameters (dict, optional): Additional parameters for the state
+    """
+
+    name: str
+    title: str
+    state_type: str
+    parameters: dict = Field(default_factory=dict)
+
+
+class AvailableBeamlineStatesMessage(BECMessage):
+    """
+    Message for updating beamline states
+
+    Args:
+        states (list[BeamlineStateConfig]): List of beamline state update entries
+    """
+
+    msg_type: ClassVar[str] = "beamline_state_update_message"
+    states: list[BeamlineStateConfig]

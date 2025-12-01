@@ -7,6 +7,7 @@ import yaml
 
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
+from bec_lib.bl_states import DeviceWithinLimitsStateConfig
 from bec_lib.devicemanager import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -579,3 +580,64 @@ def test_image_analysis(bec_client_lib):
     assert (np.isclose(fit_res[1]["stats"]["mean"], 3.3, atol=0.5)).all()
     # Center of mass is not in the middle due to hot (fluctuating) pixels
     assert (np.isclose(fit_res[1]["stats"]["center_of_mass"], [49.5, 40.8], atol=2)).all()
+
+
+@pytest.mark.timeout(100)
+def test_bl_state(bec_client_lib):
+    bec = bec_client_lib
+    bec.metadata.update({"unit_test": "test_bl_state"})
+    dev = bec.device_manager.devices
+    scans = bec.scans
+    hexapod_config = DeviceWithinLimitsStateConfig(
+        name="hexapod_x_within_limits",
+        device=dev.hexapod.x,
+        signal=dev.hexapod.x.readback,
+        low_limit=-10,
+        high_limit=10,
+        tolerance=1,
+    )
+    samx_config = DeviceWithinLimitsStateConfig(
+        name="samx_within_limits", device="samx", low_limit=-10, high_limit=10, tolerance=1
+    )
+
+    bec.beamline_states.add(hexapod_config)
+    bec.beamline_states.add(samx_config)
+    while not hasattr(bec.beamline_states, "hexapod_x_within_limits") or not hasattr(
+        bec.beamline_states, "samx_within_limits"
+    ):
+        time.sleep(0.1)
+    scans.umv(dev.samx, 5, relative=False).wait()
+    assert bec.beamline_states.samx_within_limits.get() == {
+        "status": "valid",
+        "label": "Positioner samx within limits",
+    }
+
+    scans.umv(dev.samx, 20, relative=False).wait()
+    assert bec.beamline_states.samx_within_limits.get() == {
+        "status": "invalid",
+        "label": "Positioner samx out of limits",
+    }
+
+    scans.umv(dev.hexapod.x, 5, relative=False).wait()
+    assert bec.beamline_states.hexapod_x_within_limits.get() == {
+        "status": "valid",
+        "label": "Positioner hexapod.x within limits",
+    }
+    scans.umv(dev.hexapod.x, 20, relative=False).wait()
+    assert bec.beamline_states.hexapod_x_within_limits.get() == {
+        "status": "invalid",
+        "label": "Positioner hexapod.x out of limits",
+    }
+
+    bec.beamline_states.delete("hexapod_x_within_limits")
+    assert not hasattr(bec.beamline_states, "hexapod_x_within_limits")
+
+    bec.beamline_states.samx_within_limits.update_parameters(low_limit=-5, high_limit=25)
+    bec.beamline_states.show_all()
+
+    while bec.beamline_states.samx_within_limits.get()["status"] != "valid":
+        time.sleep(0.1)
+    assert bec.beamline_states.samx_within_limits.get() == {
+        "status": "valid",
+        "label": "Positioner samx within limits",
+    }
