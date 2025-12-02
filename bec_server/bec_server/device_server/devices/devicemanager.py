@@ -348,8 +348,11 @@ class DeviceManagerDS(DeviceManagerBase):
         raised_exc = self.connect_device(obj, wait_for_all=True)
         # Publish device info with connect = True if no exception was raised during connection
         # Otherwise publish with connect = False
-        connect = False if raised_exc else True
-        self.publish_device_info(obj, connect=connect, pipe=pipe)
+        connect = True if raised_exc is None else False
+        # If .describe() fails for connect=True, we rerun with connect=False
+        # and return the exception. This will later be raised even if
+        # connect_device succeeded.
+        publish_device_exc = self.publish_device_info(obj, connect=connect, pipe=pipe)
         pipe.execute()
 
         # insert the created device obj into the device manager
@@ -360,6 +363,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
         if raised_exc:
             raise raised_exc
+
+        if publish_device_exc:
+            raise publish_device_exc
 
         if not enabled:
             return opaas_obj
@@ -539,7 +545,9 @@ class DeviceManagerDS(DeviceManagerBase):
             logger.error(f"Failed to connect for {obj.name}: {exc}")
             return exc
 
-    def publish_device_info(self, obj: OphydObject, connect: bool = True, pipe=None):
+    def publish_device_info(
+        self, obj: OphydObject, connect: bool = True, pipe=None
+    ) -> None | Exception:
         """
         Publish the device info to redis. The device info contains
         inter alia the class name, user functions and signals.
@@ -548,12 +556,22 @@ class DeviceManagerDS(DeviceManagerBase):
             obj (_type_): _description_
             connect (bool): Whether to connect to the device before getting the info. Defaults to True.
         """
-        interface = get_device_info(obj, connect=connect)
-        self.connector.set(
-            MessageEndpoints.device_info(obj.name),
-            messages.DeviceInfoMessage(device=obj.name, info=interface),
-            pipe,
-        )
+        try:
+            interface = get_device_info(obj, connect=connect)
+            self.connector.set(
+                MessageEndpoints.device_info(obj.name),
+                messages.DeviceInfoMessage(device=obj.name, info=interface),
+                pipe,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to publish device info for {obj.name}: {exc}")
+            interface = get_device_info(obj, connect=False)
+            self.connector.set(
+                MessageEndpoints.device_info(obj.name),
+                messages.DeviceInfoMessage(device=obj.name, info=interface),
+                pipe,
+            )
+            return exc
 
     def reset_device_data(self, obj: OphydObject, pipe=None) -> None:
         """delete all device data and device info"""
