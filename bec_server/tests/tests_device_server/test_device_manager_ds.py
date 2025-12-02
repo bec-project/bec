@@ -4,10 +4,11 @@ from unittest import mock
 
 import numpy as np
 import pytest
+from ophyd_devices.devices.psi_motor import EpicsMotor
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -430,3 +431,54 @@ def test_device_manager_ds_obj_callback_async_signal_incomplete_info(dm_with_dev
         device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=msg)
 
         mock_xadd.assert_not_called()
+
+
+@pytest.fixture
+def epics_motor_config():
+    return {
+        "name": "test_motor",
+        "description": "Test Epics Motor",
+        "deviceClass": "ophyd_devices.devices.psi_motor.EpicsMotor",
+        "deviceConfig": {"prefix": "TEST:MOTOR"},
+        "deviceTags": ["test", "motor"],
+        "onFailure": "buffer",
+        "enabled": True,
+        "readoutPriority": "baseline",
+        "softwareTrigger": False,
+    }
+
+
+@pytest.fixture
+def epics_motor():
+
+    motor = EpicsMotor(prefix="TEST:MOTOR", name="test_motor")
+    return motor
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config):
+    """Test to initialize an EpicsMotor device, check if all necessary subscriptions are made."""
+    cfg = {"name": "test_motor", "prefix": "TEST:MOTOR"}
+    with (
+        mock.patch.object(
+            dm_with_devices, "publish_device_info", return_value=None
+        ) as mock_publish_device_info,
+        mock.patch.object(
+            dm_with_devices, "initialize_enabled_device"
+        ) as mock_initialize_enabled_device,
+    ):
+        with (
+            mock.patch.object(epics_motor.low_limit_travel, "subscribe") as mock_low_subscribe,
+            mock.patch.object(epics_motor.high_limit_travel, "subscribe") as mock_high_subscribe,
+        ):
+            opaas_dev = dm_with_devices.initialize_device(epics_motor_config, cfg, epics_motor)
+
+            mock_initialize_enabled_device.assert_called_once()
+            mock_publish_device_info.assert_called_once()
+            # Check that subscriptions to limit updates are made
+            mock_low_subscribe.assert_called_once_with(
+                dm_with_devices._obj_callback_limit_change, run=False
+            )
+            mock_high_subscribe.assert_called_once_with(
+                dm_with_devices._obj_callback_limit_change, run=False
+            )
