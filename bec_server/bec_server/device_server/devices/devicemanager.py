@@ -243,8 +243,9 @@ class DeviceManagerDS(DeviceManagerBase):
                 if hasattr(obj, "low_limit_travel") and hasattr(obj, "high_limit_travel"):
                     low_limit_status = obj.low_limit_travel.set(config_value[0])  # type: ignore
                     high_limit_status = obj.high_limit_travel.set(config_value[1])  # type: ignore
-                    low_limit_status.wait()
-                    high_limit_status.wait()
+                    # Respect Timeout to avoid blocking the device server indefinitely
+                    low_limit_status.wait(timeout=2)
+                    high_limit_status.wait(timeout=2)
                     continue
             if config_key == "labels":
                 if not config_value:
@@ -260,7 +261,7 @@ class DeviceManagerDS(DeviceManagerBase):
 
             config_attr = getattr(obj, config_key)
             if isinstance(config_attr, ophyd.Signal):
-                config_attr.set(config_value)
+                config_attr.set(config_value).wait(timeout=2)
             elif callable(config_attr):
                 config_attr(config_value)
             else:
@@ -357,17 +358,17 @@ class DeviceManagerDS(DeviceManagerBase):
 
         self.initialize_enabled_device(opaas_obj)
 
-        self.update_config(obj, config)
-
         obj = opaas_obj.obj
-        # add subscriptions
-        if not hasattr(obj, "event_types"):
-            return opaas_obj
-        self._subscribe_to_device_events(obj, opaas_obj)
-        self._subscribe_to_bec_device_events(obj)
-        self._subscribe_to_auto_monitors(obj)
-        self._subscribe_to_limit_updates(obj)
-        self._subscribe_to_bec_signals(obj)
+
+        # add subscriptions first before updating the config to avoid missing any updates
+        if hasattr(obj, "event_types"):  # Only subscribe to devices that support events
+            self._subscribe_to_device_events(obj, opaas_obj)
+            self._subscribe_to_bec_device_events(obj)
+            self._subscribe_to_auto_monitors(obj)
+            self._subscribe_to_limit_updates(obj)
+            self._subscribe_to_bec_signals(obj)
+
+        self.update_config(obj, config)
 
         return opaas_obj
 
