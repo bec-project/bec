@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v3.78.0 (2025-12-02)
+
+### Bug Fixes
+
+- **request handler**: Properly resolve error info for status objects
+  ([`2bb65c0`](https://github.com/bec-project/bec/commit/2bb65c0bb558f04d469bee622a9e5f25aaf814ee))
+
+- **stubs**: Ensure done status is raise on failure
+  ([`feac1c8`](https://github.com/bec-project/bec/commit/feac1c86da9c6ceb1a503ff79d9d620737eb116d))
+
+### Chores
+
+- Cleanup
+  ([`4a08242`](https://github.com/bec-project/bec/commit/4a082424844da1317703e888ca20bf9b955d68a9))
+
+### Features
+
+- Add optional indent parameter to BECJson.dumps method
+  ([`da51f0d`](https://github.com/bec-project/bec/commit/da51f0d5f7729dacd06dfbca7cdab022ea7c8858))
+
+- Error logs simplified
+  ([`cb5610f`](https://github.com/bec-project/bec/commit/cb5610f609ac8ab88d03a2e98cdef18449950ced))
+
+### Refactoring
+
+- Handle DeviceInstructionErrors explicitly to forward tracebacks
+  ([`ba4006c`](https://github.com/bec-project/bec/commit/ba4006cf5d1ddf57d3ce5824af852cbe75183a8c))
+
+
 ## v3.77.1 (2025-11-30)
 
 ### Bug Fixes
