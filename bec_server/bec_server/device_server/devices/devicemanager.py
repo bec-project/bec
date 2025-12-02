@@ -366,9 +366,22 @@ class DeviceManagerDS(DeviceManagerBase):
         self._subscribe_to_device_events(obj, opaas_obj)
         self._subscribe_to_bec_device_events(obj)
         self._subscribe_to_auto_monitors(obj)
+        self._subscribe_to_limit_updates(obj)
         self._subscribe_to_bec_signals(obj)
 
         return opaas_obj
+
+    def _subscribe_to_limit_updates(self, obj: OphydObject):
+        """
+        Subscribe to limit updates if the device has low_limit_travel and high_limit_travel signals.
+
+        Args:
+            obj (OphydObject): Ophyd object to subscribe to limit updates
+        """
+        if hasattr(obj, "low_limit_travel") and hasattr(obj.low_limit_travel, "subscribe"):
+            obj.low_limit_travel.subscribe(self._obj_callback_limit_change, run=False)
+        if hasattr(obj, "high_limit_travel") and hasattr(obj.high_limit_travel, "subscribe"):
+            obj.high_limit_travel.subscribe(self._obj_callback_limit_change, run=False)
 
     def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
         """Subscribe to device events"""
@@ -544,6 +557,20 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.delete(MessageEndpoints.device_read(obj.name), pipe)
         self.connector.delete(MessageEndpoints.device_read_configuration(obj.name), pipe)
         self.connector.delete(MessageEndpoints.device_info(obj.name), pipe)
+
+    def _obj_callback_limit_change(self, *_args, obj: OphydObject, **kwargs):
+        """Callback for limit changes"""
+        if not obj.connected:
+            return
+        name = obj.root.name
+        limits = {
+            "low": {"value": obj.root.low_limit_travel.get()},
+            "high": {"value": obj.root.high_limit_travel.get()},
+        }
+        dev_msg = messages.DeviceMessage(signals=limits)
+        pipe = self.connector.pipeline()
+        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=pipe)
+        pipe.execute()
 
     def _obj_callback_readback(self, *_args, obj: OphydObject, **kwargs):
         if not obj.connected:
