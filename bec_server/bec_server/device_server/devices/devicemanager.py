@@ -344,7 +344,12 @@ class DeviceManagerDS(DeviceManagerBase):
         # refresh the device info
         pipe = self.connector.pipeline()
         self.reset_device_data(obj, pipe)
-        raised_exc = self.publish_device_info(obj, pipe)
+        # Try to connect to the device, needs wait_for_all to include lazy signals e.g. AD detectors
+        raised_exc = self.connect_device(obj, wait_for_all=True)
+        # Publish device info with connect = True if no exception was raised during connection
+        # Otherwise publish with connect = False
+        connect = False if raised_exc else True
+        self.publish_device_info(obj, connect=connect, pipe=pipe)
         pipe.execute()
 
         # insert the created device obj into the device manager
@@ -363,14 +368,15 @@ class DeviceManagerDS(DeviceManagerBase):
 
         obj = opaas_obj.obj
 
-        # add subscriptions first before updating the config to avoid missing any updates
-        if hasattr(obj, "event_types"):  # Only subscribe to devices that support events
+        # Add subscriptions to device events and signal if supported by the device
+        if hasattr(obj, "event_types"):
             self._subscribe_to_device_events(obj, opaas_obj)
             self._subscribe_to_bec_device_events(obj)
             self._subscribe_to_auto_monitors(obj)
             self._subscribe_to_limit_updates(obj)
             self._subscribe_to_bec_signals(obj)
 
+        # Update the config at last as this may also set signals
         self.update_config(obj, config)
 
         return opaas_obj
@@ -488,8 +494,8 @@ class DeviceManagerDS(DeviceManagerBase):
 
     @staticmethod
     def connect_device(
-        obj: ophyd.OphydObject, wait_for_all: bool = False, timeout: float = 30, force: bool = False
-    ):
+        obj: ophyd.OphydObject, wait_for_all: bool = False, timeout: float = 30, **kwargs
+    ) -> None | Exception:
         """
         Establish a connection to a device.
 
@@ -499,17 +505,12 @@ class DeviceManagerDS(DeviceManagerBase):
                                  Default is False
             timeout (float): Timeout in seconds for the connection attempt to all signals.
                              Default is 30 seconds.
-            force (bool): If True, forces reconnection even if already connected.
-                          Relevant for devices inheriting from ADBase as they are always connected.
-                          Default is False.
 
         Raises:
             ConnectionError: If the connection could not be established.
         """
 
         try:
-            if not force and obj.connected:
-                return
             if hasattr(obj, "controller"):
                 obj.controller.on()  # type: ignore
                 return
@@ -521,42 +522,38 @@ class DeviceManagerDS(DeviceManagerBase):
                     with disable_lazy_wait_for_connection(obj):
                         obj.wait_for_connection(timeout=timeout)  # type: ignore
                 return
+            # Check connected last, as an ophyd device with only lazy signals will always
+            # be obj.connected == True. Therefore, we have to call wait_for_connection first
+            # for any ophyd devices. This anyways falls back to checking obj.connected.
+            # For simulated devices or non-ophyd devices that do not implement wait_for_connection
+            # we still want to check obj.connected to allow for them to load.
+            if obj.connected:
+                return
+
             logger.error(
                 f"Device {obj.name} does not implement the socket controller interface nor"
                 " wait_for_connection and cannot be turned on."
             )
-            raise ConnectionError(f"Failed to establish a connection to device {obj.name}")
-        except Exception:
-            error_traceback = traceback.format_exc()
-            logger.error(f"{error_traceback}. Failed to connect to {obj.name}.")
-            raise ConnectionError(f"Failed to establish a connection to device {obj.name}")
+            return ConnectionError(f"Failed to establish a connection to device {obj.name}")
+        except Exception as exc:
+            logger.error(f"Failed to connect for {obj.name}: {exc}")
+            return exc
 
-    def publish_device_info(self, obj: OphydObject, pipe=None) -> None | Exception:
+    def publish_device_info(self, obj: OphydObject, connect: bool = True, pipe=None):
         """
         Publish the device info to redis. The device info contains
         inter alia the class name, user functions and signals.
 
         Args:
             obj (_type_): _description_
+            connect (bool): Whether to connect to the device before getting the info. Defaults to True.
         """
-        try:
-            # Method will connect to all devices if necessary, so make sure that those are connected first
-            self.connect_device(obj)
-            interface = get_device_info(obj)
-            self.connector.set(
-                MessageEndpoints.device_info(obj.name),
-                messages.DeviceInfoMessage(device=obj.name, info=interface),
-                pipe,
-            )
-        except Exception as exc:
-            logger.error(f"Failed to get device info for {obj.name}: {exc}")
-            interface = get_device_info(obj, connect=False)
-            self.connector.set(
-                MessageEndpoints.device_info(obj.name),
-                messages.DeviceInfoMessage(device=obj.name, info=interface),
-                pipe,
-            )
-            return exc
+        interface = get_device_info(obj, connect=connect)
+        self.connector.set(
+            MessageEndpoints.device_info(obj.name),
+            messages.DeviceInfoMessage(device=obj.name, info=interface),
+            pipe,
+        )
 
     def reset_device_data(self, obj: OphydObject, pipe=None) -> None:
         """delete all device data and device info"""

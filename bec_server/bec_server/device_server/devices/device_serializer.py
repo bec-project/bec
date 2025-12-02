@@ -273,10 +273,8 @@ def get_lazy_wait_for_connection(
         return output
     if hasattr(device, "lazy_wait_for_connection"):
         output[device.name] = (device, device.lazy_wait_for_connection)
-    else:
-        logger.warning(f"Device {device.name} does not have lazy_wait_for_connection attribute")
-
-    for attr, cpt in device._sig_attrs.items():  # pylint: disable=protected-access
-        if issubclass(cpt.cls, Device):
-            output.update(get_lazy_wait_for_connection(getattr(device, attr), output=output))
+    if hasattr(device, "_sig_attrs"):
+        for attr, cpt in device._sig_attrs.items():  # pylint: disable=protected-access
+            if issubclass(cpt.cls, Device):
+                output.update(get_lazy_wait_for_connection(getattr(device, attr), output=output))
     return output
