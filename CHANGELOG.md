@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.78.1 (2025-12-02)
+
+### Bug Fixes
+
+- **devicemanager**: Add callback for limit updates from low/high_travel_limit
+  ([`d8e28f5`](https://github.com/bec-project/bec/commit/d8e28f5e0c2c4780b63bb040bdeabfb8fb70cd9c))
+
+- **devicemanager**: Add timeout to .set calls on signals
+  ([`c9883e7`](https://github.com/bec-project/bec/commit/c9883e7756b37fff0672500429907e376cf07474))
+
+
 ## v3.78.0 (2025-12-02)
 
 ### Bug Fixes
