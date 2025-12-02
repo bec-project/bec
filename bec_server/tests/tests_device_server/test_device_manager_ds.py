@@ -89,10 +89,9 @@ def test_device_proxy_init(dm_with_devices):
 def test_connect_device(dm_with_devices, obj, raises_error):
     device_manager = dm_with_devices
     if raises_error:
-        with pytest.raises(ConnectionError):
-            device_manager.connect_device(obj)
-        return
-    device_manager.connect_device(obj)
+        assert isinstance(device_manager.connect_device(obj), Exception)
+    else:
+        assert device_manager.connect_device(obj) is None
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -105,13 +104,6 @@ def test_connect_device_with_kwargs(dm_with_devices):
         device_manager.connect_device(obj, wait_for_all=True)
         mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=30)
         mock_wait_for_connection.reset_mock()
-        assert obj.connected is False
-        obj._connected = True
-        device_manager.connect_device(obj, wait_for_all=True, timeout=10, force=False)
-        mock_wait_for_connection.assert_not_called()
-        assert obj.connected is True
-        device_manager.connect_device(obj, wait_for_all=True, timeout=10, force=True)
-        mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=10)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -120,9 +112,10 @@ def test_disable_unreachable_devices(device_manager, session_from_test_config):
         device_manager._session = copy.deepcopy(session_from_test_config)
         device_manager._load_session()
 
-    def mocked_failed_connection(obj):
+    def mocked_failed_connection(obj, **kwargs):
         if obj.name == "samx":
-            raise ConnectionError
+            return ConnectionError("Failed to connect to samx device")
+        return None
 
     config_reply = messages.RequestResponseMessage(accepted=True, message="")
 
@@ -466,6 +459,9 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config):
         mock.patch.object(
             dm_with_devices, "initialize_enabled_device"
         ) as mock_initialize_enabled_device,
+        mock.patch.object(
+            dm_with_devices, "connect_device", return_value=None
+        ) as mock_connect_device,
     ):
         with (
             mock.patch.object(epics_motor.low_limit_travel, "subscribe") as mock_low_subscribe,
@@ -475,6 +471,7 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config):
 
             mock_initialize_enabled_device.assert_called_once()
             mock_publish_device_info.assert_called_once()
+            mock_connect_device.assert_called_once_with(epics_motor, wait_for_all=True)
             # Check that subscriptions to limit updates are made
             mock_low_subscribe.assert_called_once_with(
                 dm_with_devices._obj_callback_limit_change, run=False
