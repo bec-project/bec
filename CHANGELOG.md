@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v3.78.2 (2025-12-02)
+
+### Bug Fixes
+
+- **devicemanager**: Add lazy wait for connection to speed up config loads
+  ([`606735a`](https://github.com/bec-project/bec/commit/606735a072eb4e7b4b1de48da4ee98c14a3047b1))
+
+- **devicemanager**: Fix connect logic to use 'wait_for_connection' to check connectivity of signals
+  ([`7c2d528`](https://github.com/bec-project/bec/commit/7c2d52837f4fb1c0436b798c57497d7d5b545480))
+
+- **scanstubs**: Resolve status object in stage if no not async device are present
+  ([`50a3e71`](https://github.com/bec-project/bec/commit/50a3e71d23360846c3dd3661b5d779a78ed0d6ee))
+
+### Testing
+
+- **devicemanager**: Fix tests for devicemanager after adapting connect logic
+  ([`7ef7cb7`](https://github.com/bec-project/bec/commit/7ef7cb783993bd32dca7141e6ccdb0aed2b807f5))
+
+- **stubs-stage**: Test that stage does not block with empty config
+  ([`e1f6bde`](https://github.com/bec-project/bec/commit/e1f6bde7c5c8703792aa47541af695d1e8fb938b))
+
+
 ## v3.78.1 (2025-12-02)
 
 ### Bug Fixes
