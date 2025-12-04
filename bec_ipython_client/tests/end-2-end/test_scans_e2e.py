@@ -737,12 +737,12 @@ def test_update_config(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_update_config"})
     demo_config_path = os.path.join(os.path.dirname(configs.__file__), "demo_config.yaml")
-    config = bec.config._load_config_from_file(demo_config_path)
+    config = bec.device_manager.config_helper._load_config_from_file(demo_config_path)
     config.pop("samx")
-    bec.config.send_config_request(action="set", config=config)
+    bec.device_manager.config_helper.send_config_request(action="set", config=config)
     assert "samx" not in bec.device_manager.devices
-    config = bec.config._load_config_from_file(demo_config_path)
-    bec.config.send_config_request(action="set", config=config)
+    config = bec.device_manager.config_helper._load_config_from_file(demo_config_path)
+    bec.device_manager.config_helper.send_config_request(action="set", config=config)
 
 
 @pytest.mark.timeout(100)
