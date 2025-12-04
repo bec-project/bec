@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v3.79.0 (2025-12-04)
+
+### Bug Fixes
+
+- Redis connection in e2e tests
+  ([`4975440`](https://github.com/bec-project/bec/commit/49754407580f7c914953497eabb9f08fd8138f07))
+
+### Documentation
+
+- Fix docstrings
+  ([`60ed7fb`](https://github.com/bec-project/bec/commit/60ed7fb2a5312744a73bd67b7cd82aad34b2b3d4))
+
+- Fix message docstring
+  ([`b5e2f48`](https://github.com/bec-project/bec/commit/b5e2f48550af86a42bcf93fdb8f71a0e70ec5017))
+
+### Features
+
+- Add lrem redis operation
+  ([`447a40b`](https://github.com/bec-project/bec/commit/447a40b6b6a7f0337d8305c8583c053bf22f1f32))
+
+- Add procedure to run IDE script
+  ([`6a78490`](https://github.com/bec-project/bec/commit/6a784909463a970ad55de58fb938c7e249561197))
+
+- Add status API to procedure manager
+  ([`630d15c`](https://github.com/bec-project/bec/commit/630d15c3805f7dc2eff5138dbc8122e165761689))
+
+- Extend procedure manager and API
+  ([`1823659`](https://github.com/bec-project/bec/commit/18236590264813f98c2442f69d62bbce85656bd6))
+
+- add helper for Redis communication - add abort functionality - add removal from aborted queues -
+  add status API - fix bugs in manager to update redis state correctly
+
+- Push container worker stdout to redis
+  ([`d0215a4`](https://github.com/bec-project/bec/commit/d0215a477b15cc2d1bbf161f00ce7de639d9918a))
+
+### Refactoring
+
+- Make active workers private
+  ([`4c17a5a`](https://github.com/bec-project/bec/commit/4c17a5aa49b8c314483561760066e779dea35cbd))
+
+
 ## v3.78.2 (2025-12-02)
 
 ### Bug Fixes
