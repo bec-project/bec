@@ -14,11 +14,13 @@ from bec_lib.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
     ProcedureWorkerStatus,
+    RawMessage,
     RequestResponseMessage,
 )
 from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
 from bec_server.scan_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
+from bec_server.scan_server.procedures.helper import FrontendProcedureHelper
 from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.scan_server.procedures.manager import ProcedureManager, ProcedureWorker
 from bec_server.scan_server.procedures.procedure_registry import (
@@ -47,7 +49,7 @@ def shutdown_client():
         connector_cls=partial(RedisConnector, redis_cls=fakeredis.FakeRedis),
     )
     bec_client.start()
-    yield
+    yield bec_client
     bec_client.shutdown()
 
 
@@ -62,6 +64,14 @@ def procedure_manager():
         manager = ProcedureManager(server, InProcessProcedureWorker)
         yield manager
     manager.shutdown()
+
+
+def test_helper_log_streams(procedure_manager):
+    conn = procedure_manager._conn
+    helper = FrontendProcedureHelper(conn)
+    conn.xadd(MessageEndpoints.procedure_logs("queue1"), {"data": RawMessage(data=str("data"))})
+    conn.xadd(MessageEndpoints.procedure_logs("queue2"), {"data": RawMessage(data=str("data"))})
+    assert helper.get.log_queue_names() == ["queue1", "queue2"]
 
 
 @pytest.mark.parametrize(["accepted", "msg"], zip([True, False], ["test true", "test false"]))
@@ -230,7 +240,7 @@ def test_builtin_procedure_log_args(_, procedure_logger: MagicMock):
                 args_kwargs=((test_string,), {"kwarg": "test"}),
             )
         )
-    log_call_arg_0 = procedure_logger.info.call_args.args[0]
+    log_call_arg_0 = procedure_logger.success.call_args.args[0]
     assert test_string in log_call_arg_0
     assert "'kwarg': 'test'" in log_call_arg_0
 

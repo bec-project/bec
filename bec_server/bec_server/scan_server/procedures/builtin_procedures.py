@@ -9,13 +9,14 @@ logger = bec_logger.logger
 
 def log_message_args_kwargs(*args, **kwargs):
     """Log the args and kwargs from the procedure execution message. Intended for testing."""
-    logger.info(
+    logger.success(
         f"Builtin procedure log_message_args_kwargs called with args: {args} and kwargs: {kwargs}"
     )
 
 
 def sleep(*, time_s):
     """Sleep for time_s seconds. Intended for testing."""
+    logger.success(f"Sleeping for {time_s} s.")
     time.sleep(time_s)
 
 

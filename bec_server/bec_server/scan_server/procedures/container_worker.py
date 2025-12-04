@@ -170,7 +170,7 @@ def _setup():
     logger.debug("starting client")
     client.start()
 
-    logger.info(f"ContainerWorker started container for queue {env['queue']}")
+    logger.success(f"ContainerWorker started container for queue {env['queue']}")
     logger.debug(f"ContainerWorker environment: {env}")
 
     conn = RedisConnector(env["redis_server"])
@@ -204,6 +204,7 @@ def _main(env, helper, client, conn):
         )
 
     def _run_task(item: ProcedureExecutionMessage):
+        logger.success(f"Executing procedure {item.identifier}.")
         kwargs = item.args_kwargs[1]
         proc_func = procedure_registry.callable_from_execution_message(item)
         if bec_arg := inspect.signature(proc_func).parameters.get("bec"):
@@ -215,7 +216,7 @@ def _main(env, helper, client, conn):
     _push_status(ProcedureWorkerStatus.IDLE)
     item = None
     try:
-        logger.debug(f"ContainerWorker waiting for instructions on {exec_endpoint}")
+        logger.success(f"ContainerWorker waiting for instructions on queue {env['queue']}")
         while (
             item := conn.blocking_list_pop_to_set_add(
                 exec_endpoint, active_procs_endpoint, timeout_s=timeout_s

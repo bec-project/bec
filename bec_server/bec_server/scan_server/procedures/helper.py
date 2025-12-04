@@ -86,6 +86,11 @@ class _Get(_HelperBase):
         raw: list[str] = [s.decode() for s in self._conn.keys(ep("*"))]
         return [s.split("/")[-1] for s in raw]
 
+    def log_queue_names(self) -> list[str]:
+        """Get the names of queues currently containing logs from procedures."""
+        raw: list[str] = [s.decode() for s in self._conn.keys(ME.procedure_logs("*"))]
+        return [s.split("/")[-1] for s in raw]
+
 
 class FrontendProcedureHelper(_HelperBase):
 
