@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 import warnings
 from copy import deepcopy
 from enum import Enum, auto
@@ -10,7 +11,6 @@ from uuid import uuid4
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
-from typing_extensions import TypedDict
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
@@ -426,11 +426,12 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
-class ErrorInfo(TypedDict):
+class ErrorInfo(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     error_message: str
     compact_error_message: str | None
     exception_type: str
-    device: str | None
+    device: str | list[str] | None = None
 
 
 class DeviceInstructionResponse(BECMessage):
@@ -864,20 +865,14 @@ class AlarmMessage(BECMessage):
 
     Args:
         severity (Alarms, Literal[0,1,2]): Severity level (0-2). ALARMS.WARNING = 0, ALARMS.MINOR = 1, ALARMS.MAJOR = 2
-        alarm_type (str): Type of alarm.
-        source (dict): Source of the problem.
-        msg (str): Problem description.
-        compact_msg (str, optional): Optional compact message for quick display.
+        info (ErrorInfo): Error information.
         metadata (dict, optional): Additional metadata.
 
     """
 
     msg_type: ClassVar[str] = "alarm_message"
     severity: int  # TODO change once enums moved to a separate class
-    alarm_type: str
-    source: dict
-    msg: str
-    compact_msg: str | None = None
+    info: ErrorInfo
 
 
 class StatusMessage(BECMessage):

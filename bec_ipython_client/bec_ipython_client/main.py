@@ -213,16 +213,16 @@ class BECIPythonClient:
         header.append("Alarm Raised\n", style="bold red")
         header.append(f"Severity: {alarm.severity.name}\n", style="bold")
         header.append(f"Type: {alarm.alarm_type}\n", style="bold")
-        if alarm.alarm.source.get("device"):
-            header.append(f"Device: {alarm.alarm.source['device']}\n", style="bold")
+        if alarm.alarm.info.device:
+            header.append(f"Device: {alarm.alarm.info.device}\n", style="bold")
 
         console.print(Panel(header, title="Alarm Info", border_style="red", expand=False))
 
         # --- SHOW SUMMARY
-        if alarm.alarm.compact_msg:
+        if alarm.alarm.info.compact_error_message:
             console.print(
                 Panel(
-                    Text(alarm.alarm.compact_msg, style="yellow"),
+                    Text(alarm.alarm.info.compact_error_message, style="yellow"),
                     title="Summary",
                     border_style="yellow",
                     expand=False,
@@ -230,7 +230,7 @@ class BECIPythonClient:
             )
 
         # --- SHOW FULL TRACEBACK
-        tb_str = alarm.alarm.msg
+        tb_str = alarm.alarm.info.error_message
         if tb_str:
             try:
                 console.print(tb_str)
