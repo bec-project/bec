@@ -210,9 +210,12 @@ def test_LogMessage():
 def test_AlarmMessage():
     msg = messages.AlarmMessage(
         severity=2,
-        alarm_type="major",
-        source={"system": "samx"},
-        msg="An error occurred",
+        info=messages.ErrorInfo(
+            error_message="This is an alarm message.",
+            compact_error_message="Alarm content",
+            exception_type="AlarmType",
+            device="AlarmDevice",
+        ),
         metadata={"RID": "1234"},
     )
     res = MsgpackSerialization.dumps(msg)

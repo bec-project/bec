@@ -47,7 +47,7 @@ from redis.retry import Retry
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfoMessage
+from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfoMessage, ErrorInfo
 from bec_lib.serialization import MsgpackSerialization
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -429,43 +429,28 @@ class RedisConnector:
         )
         self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
 
-    def raise_alarm(
-        self,
-        severity: Alarms,
-        alarm_type: str,
-        source: dict[str, Any],
-        msg: str,
-        compact_msg: str | None = None,
-        metadata: dict | None = None,
-    ):
+    def raise_alarm(self, severity: Alarms, info: ErrorInfo, metadata: dict | None = None):
         """
         Raise an alarm
 
         Args:
             severity (Alarms): alarm severity
-            alarm_type (str): alarm type
-            source (dict[str, Any]): source of the alarm
-            msg (str): message
-            metadata (dict): metadata
+            info (ErrorInfo): error information
+            metadata (dict, optional): additional metadata. Defaults to None.
 
         Examples:
             >>> connector.raise_alarm(
                 severity=Alarms.WARNING,
-                alarm_type="ValueError",
-                source={"device": "samx", "source": "async_file_writer"},
-                msg=f"test alarm",
-                metadata={"test": 1}
+                info=ErrorInfo(
+                    id=str(uuid.uuid4()),
+                    error_message="ValueError",
+                    compact_error_message="test alarm",
+                    exception_type="ValueError",
+                    device="samx",
+                )
             )
         """
-        bec_logger.logger.info(f"Setting alarm: {alarm_type} - {msg}")
-        alarm_msg = AlarmMessage(
-            severity=severity,
-            alarm_type=alarm_type,
-            source=source,
-            msg=msg,
-            compact_msg=compact_msg,
-            metadata=metadata,
-        )
+        alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
         self.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
 
     def pipeline(self) -> redis.client.Pipeline:

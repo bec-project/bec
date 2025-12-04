@@ -92,12 +92,13 @@ def test_device_server_init(device_server):
                 metadata={"device_instr_id": "test"},
                 device="samx",
                 status="error",
-                error_info={
-                    "error_message": "position=-5000 not within limits (-50, 50)",
-                    "compact_error_message": "position=-5000 not within limits (-50, 50)",
-                    "exception_type": "DeviceInstructionError",
-                    "device": "samx",
-                },
+                error_info=messages.ErrorInfo(
+                    id="uuid",
+                    error_message="position=-5000 not within limits (-50, 50)",
+                    compact_error_message="position=-5000 not within limits (-50, 50)",
+                    exception_type="DeviceInstructionError",
+                    device="samx",
+                ),
                 instruction=messages.DeviceInstructionMessage(
                     device="samx",
                     action="set",
@@ -138,4 +139,4 @@ def test_device_server_set(device_server, msg, response):
 
     # Now compare the error_info separately
     if out.status == "error":
-        assert original_error_info["error_message"] in created_error_info["error_message"]
+        assert original_error_info.error_message in created_error_info.error_message

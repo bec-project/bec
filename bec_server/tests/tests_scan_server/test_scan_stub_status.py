@@ -124,14 +124,13 @@ def test_scan_stub_status_set_done(scan_stub_status):
 
 
 def test_scan_stub_status_set_failed(scan_stub_status):
-    scan_stub_status.set_failed(
-        {
-            "error_message": "Error occurred",
-            "compact_error_message": "Error occurred",
-            "exception_type": "ValueError",
-            "device": "samx",
-        }
+    error_info = messages.ErrorInfo(
+        error_message="Error occurred",
+        compact_error_message="Error occurred",
+        exception_type="ValueError",
+        device="samx",
     )
+    scan_stub_status.set_failed(error_info)
     assert scan_stub_status.done is True
     with pytest.raises(DeviceInstructionError) as exc_info:
         scan_stub_status.wait()
@@ -209,12 +208,12 @@ def test_scan_stub_status_wait_error(scan_stub_status):
             metadata={"device_instr_id": diid},
             device="samx",
             status="error",
-            error_info={
-                "error_message": "Error message",
-                "compact_error_message": "Error message",
-                "exception_type": "ValueError",
-                "device": "samx",
-            },
+            error_info=messages.ErrorInfo(
+                error_message="Error message",
+                compact_error_message="Error message",
+                exception_type="ValueError",
+                device="samx",
+            ),
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
