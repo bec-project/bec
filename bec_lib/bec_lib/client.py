@@ -22,6 +22,7 @@ from bec_lib.alarm_handler import AlarmHandler, Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.bl_checks import BeamlineChecks
 from bec_lib.callback_handler import CallbackHandler, EventType
+from bec_lib.config_helper import ConfigHelperUser
 from bec_lib.dap_plugins import DAPPlugins
 from bec_lib.device_monitor_plugin import DeviceMonitorPlugin
 from bec_lib.devicemanager import DeviceManagerBase
@@ -219,7 +220,7 @@ class BECClient(BECService):
         self._start_scan_queue()
         self._start_alarm_handler()
         self.macros.load_all_user_macros()
-        self.config = self.device_manager.config_helper
+        self.config = ConfigHelperUser(self.device_manager.config_helper)
         self.history = ScanHistory(client=self)
         self.dap = DAPPlugins(self)
         self.bl_checks = BeamlineChecks(self)

@@ -462,7 +462,9 @@ class DeviceManagerBase:
         self.parent = service  # for backwards compatibility; will be removed in the future
         self.connector = self._service.connector
         self.scan_info = ScanInfo(msg=None)
-        self.config_helper = ConfigHelper(self.connector, self._service._service_name)
+        self.config_helper = ConfigHelper(
+            connector=self.connector, service_name=self._service._service_name
+        )
         self._status_cb = status_cb if isinstance(status_cb, list) else [status_cb]
 
     def initialize(self, bootstrap_server) -> None:
