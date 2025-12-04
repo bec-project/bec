@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.80.0 (2025-12-04)
+
+### Features
+
+- Procedure helper fn to fetch log stream names
+  ([`cb00f19`](https://github.com/bec-project/bec/commit/cb00f195553778b4fc2cff62f65544e14cf2ff4c))
+
+
 ## v3.79.0 (2025-12-04)
 
 ### Bug Fixes
