@@ -13,6 +13,7 @@ import redis
 import redis.exceptions
 from IPython.terminal.ipapp import TerminalIPythonApp
 from IPython.terminal.prompts import Prompts, Token
+from pydantic import ValidationError
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -30,6 +31,7 @@ from bec_lib.client import BECClient
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
+from bec_lib.utils.pydantic_pretty_print import pretty_print_pydantic_validation_error
 
 logger = bec_logger.logger
 
@@ -247,6 +249,9 @@ def _ip_exception_handler(
         print("\x1b[31m BEC alarm:\x1b[0m")
         evalue.pretty_print()
         print("For more details, use 'bec.show_last_alarm()'")
+        return
+    if issubclass(etype, ValidationError):
+        pretty_print_pydantic_validation_error(evalue)
         return
     if issubclass(etype, (ScanInterruption, DeviceConfigError)):
         print(f"\x1b[31m {evalue.__class__.__name__}:\x1b[0m {evalue}")
