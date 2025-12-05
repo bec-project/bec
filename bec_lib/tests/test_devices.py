@@ -608,7 +608,7 @@ def test_show_all():
 @pytest.fixture()
 def adj():
     (adj := AdjustableMixin()).root = mock.MagicMock()
-    adj.update_config = mock.MagicMock()
+    adj._update_config = mock.MagicMock()
     return adj
 
 
@@ -626,7 +626,7 @@ def test_adjustable_mixin_limits_missing(adj):
 
 def test_adjustable_mixin_set_limits(adj):
     adj.limits = [-12, 12]
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 12]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 12]}})
 
 
 def test_adjustable_mixin_set_low_limit(adj):
@@ -634,7 +634,7 @@ def test_adjustable_mixin_set_low_limit(adj):
         signals={"low": {"value": -12}, "high": {"value": 12}}, metadata={}
     )
     adj.low_limit = -20
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-20, 12]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-20, 12]}})
 
 
 def test_adjustable_mixin_set_high_limit(adj):
@@ -642,7 +642,7 @@ def test_adjustable_mixin_set_high_limit(adj):
         signals={"low": {"value": -12}, "high": {"value": 12}}, metadata={}
     )
     adj.high_limit = 20
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
 
 
 def test_computed_signal_set_compute_method():
