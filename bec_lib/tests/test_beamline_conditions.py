@@ -3,7 +3,7 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_lib.beamline_states import (
+from bec_lib.bl_conditions import (
     BeamlineCondition,
     BeamlineConditionConfig,
     DeviceBeamlineCondition,
