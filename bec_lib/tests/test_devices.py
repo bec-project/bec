@@ -651,7 +651,7 @@ def test_computed_signal_set_compute_method():
     def my_compute_method():
         return "a + b"
 
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as update_config:
         comp_signal.set_compute_method(my_compute_method)
         update_config.assert_called_once_with(
             {
@@ -714,7 +714,7 @@ def test_computed_signal_show_all():
 
 def test_computed_signal_set_signals():
     comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as update_config:
         comp_signal.set_input_signals(
             Signal(name="a", parent=mock.MagicMock(spec=DeviceManagerBase)),
             Signal(name="b", parent=mock.MagicMock(spec=DeviceManagerBase)),
@@ -730,7 +730,7 @@ def test_computed_signal_set_signals_raises_error():
 
 def test_computed_signal_set_signals_empty():
     comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as update_config:
         comp_signal.set_input_signals()
         update_config.assert_called_once_with({"deviceConfig": {"input_signals": []}})
 
