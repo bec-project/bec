@@ -21,7 +21,6 @@ from rich.table import Table
 from bec_lib.alarm_handler import AlarmHandler, Alarms
 from bec_lib.beamline_states import BeamlineConditionConfig
 from bec_lib.bec_service import BECService
-from bec_lib.bl_checks import BeamlineChecks
 from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.config_helper import ConfigHelperUser
 from bec_lib.dap_plugins import DAPPlugins
@@ -140,7 +139,6 @@ class BECClient(BECService):
         self._live_updates = None
         self.dap = None
         self.device_monitor = None
-        self.bl_checks = None
         self.scans_namespace = SimpleNamespace()
         self._hli_funcs = {}
         self.metadata = {}
@@ -225,8 +223,6 @@ class BECClient(BECService):
         self.config = ConfigHelperUser(self.device_manager)
         self.history = ScanHistory(client=self)
         self.dap = DAPPlugins(self)
-        self.bl_checks = BeamlineChecks(self)
-        self.bl_checks.start()
         self.device_monitor = DeviceMonitorPlugin(self.connector)
         self._update_username()
         self.beamline_conditions = BeamlineConditionConfig(client=self)
@@ -325,8 +321,6 @@ class BECClient(BECService):
             self.queue.shutdown()
         if self.alarm_handler:
             self.alarm_handler.shutdown()
-        if self.bl_checks:
-            self.bl_checks.stop()
         if self.history is not None:
             # pylint: disable=protected-access
             self.history._shutdown()

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from typeguard import typechecked
 
-from bec_lib.bl_conditions import BeamlineCondition
+from bec_lib.beamline_states import BeamlineCondition
 from bec_lib.logger import bec_logger
 
 logger = bec_logger.logger
