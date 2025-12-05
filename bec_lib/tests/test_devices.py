@@ -451,13 +451,6 @@ def test_status_wait():
     status.wait()
 
 
-def test_device_set_device_config(dev_w_config: Callable[..., DeviceBaseWithConfig]):
-    device = dev_w_config({"deviceConfig": {"tolerance": 1}})
-    device.set_device_config({"tolerance": 2})
-    assert device.get_device_config() == {"tolerance": 2}
-    device.parent.config_helper.send_config_request.assert_called_once()
-
-
 @pytest.fixture
 def device_w_tags(dev_w_config: Callable[..., DeviceBaseWithConfig]):
     yield dev_w_config({"deviceTags": {"tag1", "tag2"}})
@@ -498,10 +491,7 @@ def test_properties(dev_w_config: Callable[..., DeviceBaseWithConfig], config, a
 
 @pytest.mark.parametrize(
     ["config", "method", "value"],
-    [
-        ({"deviceTags": {"tag1", "tag2"}}, "get_device_tags", {"tag1", "tag2"}),
-        ({"deviceConfig": {"tolerance": 1}}, "get_device_config", {"tolerance": 1}),
-    ],
+    [({"deviceTags": {"tag1", "tag2"}}, "get_device_tags", {"tag1", "tag2"})],
 )
 def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, method, value):
     assert getattr(dev_w_config(config), method)() == value
@@ -618,7 +608,7 @@ def test_show_all():
 @pytest.fixture()
 def adj():
     (adj := AdjustableMixin()).root = mock.MagicMock()
-    adj.update_config = mock.MagicMock()
+    adj._update_config = mock.MagicMock()
     return adj
 
 
@@ -636,7 +626,7 @@ def test_adjustable_mixin_limits_missing(adj):
 
 def test_adjustable_mixin_set_limits(adj):
     adj.limits = [-12, 12]
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 12]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 12]}})
 
 
 def test_adjustable_mixin_set_low_limit(adj):
@@ -644,7 +634,7 @@ def test_adjustable_mixin_set_low_limit(adj):
         signals={"low": {"value": -12}, "high": {"value": 12}}, metadata={}
     )
     adj.low_limit = -20
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-20, 12]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-20, 12]}})
 
 
 def test_adjustable_mixin_set_high_limit(adj):
@@ -652,7 +642,7 @@ def test_adjustable_mixin_set_high_limit(adj):
         signals={"low": {"value": -12}, "high": {"value": 12}}, metadata={}
     )
     adj.high_limit = 20
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
 
 
 def test_computed_signal_set_compute_method():
@@ -661,7 +651,7 @@ def test_computed_signal_set_compute_method():
     def my_compute_method():
         return "a + b"
 
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as update_config:
         comp_signal.set_compute_method(my_compute_method)
         update_config.assert_called_once_with(
             {
@@ -724,7 +714,7 @@ def test_computed_signal_show_all():
 
 def test_computed_signal_set_signals():
     comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as update_config:
         comp_signal.set_input_signals(
             Signal(name="a", parent=mock.MagicMock(spec=DeviceManagerBase)),
             Signal(name="b", parent=mock.MagicMock(spec=DeviceManagerBase)),
@@ -740,7 +730,7 @@ def test_computed_signal_set_signals_raises_error():
 
 def test_computed_signal_set_signals_empty():
     comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as update_config:
         comp_signal.set_input_signals()
         update_config.assert_called_once_with({"deviceConfig": {"input_signals": []}})
 
