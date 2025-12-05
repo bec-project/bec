@@ -52,6 +52,8 @@ class ScanForTesting(ScanBase):
 class TestPluginSystem:
     @pytest.fixture(scope="class", autouse=True)
     def setup_env(self, tmp_path_factory: TempPathFactory):
+        uninstall("bec_testing_plugin")
+
         print("\n\nSetting up plugin for tests: generating files...\n")
         TestPluginSystem._tmp_plugin_dir = tmp_path_factory.mktemp("test_plugin")
         TestPluginSystem._tmp_plugin_name = TestPluginSystem._tmp_plugin_dir.name
@@ -125,6 +127,10 @@ class TestPluginSystem:
         metadata_schema._METADATA_SCHEMA_REGISTRY = {}
         del sys.modules["bec_lib.metadata_schema"]
         TestPluginSystem._tmp_plugin_dir = None
+
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "-v", "install", "-e", "../bec_testing_plugin"]
+        )
 
     def test_generated_files_in_plugin_deployment(self):
         files = os.listdir(TestPluginSystem._tmp_plugin_dir)
