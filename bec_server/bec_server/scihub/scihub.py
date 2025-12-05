@@ -7,7 +7,6 @@ from bec_lib.bec_service import BECService
 from bec_lib.service_config import ServiceConfig
 from bec_server.scihub.atlas import AtlasConnector
 from bec_server.scihub.scilog import SciLogConnector
-from bec_server.scihub.service_handler.service_handler import ServiceHandler
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import RedisConnector
@@ -22,7 +21,6 @@ class SciHub(BECService):
         self.service_handler = None
         self._start_atlas_connector()
         self._start_scilog_connector()
-        self._start_service_handler()
         self.status = messages.BECStatus.RUNNING
 
     def _start_atlas_connector(self):
@@ -32,10 +30,6 @@ class SciHub(BECService):
 
     def _start_scilog_connector(self):
         self.scilog_connector = SciLogConnector(self, self.connector)
-
-    def _start_service_handler(self):
-        self.service_handler = ServiceHandler(self.connector)
-        self.service_handler.start()
 
     def shutdown(self):
         super().shutdown()
