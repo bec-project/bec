@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bec_lib import beamline_states as bl_states
+from bec_lib import bl_conditions as bl_states
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
@@ -66,7 +66,7 @@ class BeamlineConditionManager:
         cls = getattr(bl_states, cond_info.condition_type, None)
         if cls is None:
             raise ValueError(
-                f"Condition type {cond_info.condition_type} not found in beamline_states."
+                f"Condition type {cond_info.condition_type} not found in beamline conditions."
             )
         condition = cls(name=cond_info.name, redis_connector=self.connector, title=cond_info.title)
         condition.configure(**cond_info.parameters)
