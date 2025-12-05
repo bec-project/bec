@@ -1385,3 +1385,49 @@ class MacroUpdateMessage(BECMessage):
         if values.update_type == "add" and not values.file_path:
             raise ValueError("file_path must be provided for add actions")
         return values
+
+
+class _MessagingServiceContent(BaseModel):
+    """
+    Content of the message for messaging services
+
+    """
+
+    content_type: Literal["text", "file", "tags"]
+    content: str | dict | list[str]
+
+
+class MessagingServiceMessage(BECMessage):
+    """
+    Message for communicating with messaging services such as Signal, Teams or SciLog
+
+    Args:
+        service_name (Literal["signal", "teams", "scilog"]): Name of the messaging service
+        message (list[_MessagingServiceContent]): Message content
+        channel (str | list[str]): Channel or recipient to send the message to
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "messaging_service_message"
+    service_name: Literal["signal", "teams", "scilog"]
+    message: list[_MessagingServiceContent]
+    channel: str | list[str] | None = None
+    metadata: dict | None = Field(default_factory=dict)
+
+
+class MessagingServiceScopes(BECMessage):
+    """
+    Message for communicating available scopes for messaging services such as Signal, Teams or SciLog
+
+    Args:
+        service_name (Literal["signal", "teams", "scilog"]): Name of the messaging service
+        scopes (list[str]): List of available scopes
+        enabled (bool): True if the service is enabled
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "messaging_service_scopes_message"
+    service_name: Literal["signal", "teams", "scilog"]
+    scopes: list[str]
+    enabled: bool
+    metadata: dict | None = Field(default_factory=dict)

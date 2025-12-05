@@ -1730,3 +1730,35 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.SET_PUBLISH
         )
+
+    @staticmethod
+    def message_service_queue():
+        """
+        Endpoint for message service queue. This endpoint is used by messaging services to
+        send messages using a messages.MessagingServiceMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for message service queue.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/message_service/queue"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.MessagingServiceMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def message_service_scopes():
+        """
+        Endpoint for message service scopes. This endpoint is used by messaging services to
+        listen for scope changes using a messages.MessagingServiceScopeMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for message service scopes.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/message_service/scopes"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.MessagingServiceScopes,
+            message_op=MessageOp.STREAM,
+        )
