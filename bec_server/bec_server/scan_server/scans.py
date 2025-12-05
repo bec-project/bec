@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
@@ -285,7 +286,8 @@ class RequestBase(ABC):
                 if not low_limit <= pos_axis <= high_limit:
                     raise LimitError(
                         f"Target position {pos} for motor {dev} is outside of range: [{low_limit},"
-                        f" {high_limit}]"
+                        f" {high_limit}]",
+                        device=dev,
                     )
 
     def update_scan_motors(self):
@@ -550,14 +552,13 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         )
         if unchecked_status_objects:
             msg = f"Scan completed with unchecked status objects: {unchecked_status_objects}. Use .wait() or .done within the scan to check their status."
-            self.connector.raise_alarm(
-                severity=Alarms.WARNING,
-                source={"Scan": self.scan_name},
-                msg=msg,
-                compact_msg=msg,
-                alarm_type="ScanCleanupWarning",
-                metadata=metadata,
+            error_info = messages.ErrorInfo(
+                error_message=msg,
+                compact_error_message=msg,
+                exception_type="UncheckedStatusObjectsWarning",
+                device=None,
             )
+            self.connector.raise_alarm(severity=Alarms.WARNING, info=error_info, metadata=metadata)
 
         # Check if there are any remaining status objects that are not done.
         # This is not an error but we send a warning and wait for them to complete.
@@ -566,14 +567,13 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         )
         if remaining_status_objects:
             msg = f"Scan completed with remaining status objects: {remaining_status_objects}"
-            self.connector.raise_alarm(
-                severity=Alarms.WARNING,
-                source={"Scan": self.scan_name},
-                msg=msg,
-                compact_msg=msg,
-                alarm_type="ScanCleanupWarning",
-                metadata=metadata,
+            error_info = messages.ErrorInfo(
+                error_message=msg,
+                compact_error_message=msg,
+                exception_type="ScanCleanupWarning",
+                device=None,
             )
+            self.connector.raise_alarm(severity=Alarms.WARNING, info=error_info, metadata=metadata)
             for obj in remaining_status_objects:
                 obj.wait()
 
@@ -1233,7 +1233,8 @@ class ContLineScan(ScanBase):
             if not low_limit <= pos_axis <= high_limit:
                 raise LimitError(
                     f"Target position including offset {pos_axis} (offset: {self.offset}) for motor {self.device} is outside of range: [{low_limit},"
-                    f" {high_limit}]"
+                    f" {high_limit}]",
+                    device=self.device,
                 )
 
     def _at_each_point(self, _ind=None, _pos=None):

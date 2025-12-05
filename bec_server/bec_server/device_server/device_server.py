@@ -245,12 +245,12 @@ class RequestHandler:
             )
         else:
             compact_msg = f"{error.__class__.__name__}: {str(error)}"
-        error_info: messages.ErrorInfo = {
-            "error_message": msg,
-            "compact_error_message": compact_msg,
-            "exception_type": error.__class__.__name__,
-            "device": device_name,
-        }
+        error_info = messages.ErrorInfo(
+            error_message=msg,
+            compact_error_message=compact_msg,
+            exception_type=error.__class__.__name__,
+            device=device_name,
+        )
         return error_info
 
     def send_device_instruction_response(
@@ -370,12 +370,15 @@ class DeviceServer(BECService):
                 except Exception as exc:  # pylint: disable=broad-except
                     content = traceback.format_exc()
                     logger.error(content)
+                    error_info = messages.ErrorInfo(
+                        error_message=content,
+                        compact_error_message=traceback.format_exc(limit=0),
+                        exception_type=exc.__class__.__name__,
+                        device=dev.obj.name,
+                    )
                     self.connector.raise_alarm(
                         severity=Alarms.WARNING,
-                        source={"device": dev.obj.name, "method": "stop"},
-                        msg=content,
-                        compact_msg=traceback.format_exc(limit=0),
-                        alarm_type=exc.__class__.__name__,
+                        info=error_info,
                         metadata=self._get_metadata_for_alarm(None),
                     )
         self.status = BECStatus.RUNNING
@@ -491,44 +494,36 @@ class DeviceServer(BECService):
         except ophyd_errors.LimitError as limit_error:
             content = traceback.format_exc()
             compact_msg = traceback.format_exc(limit=0)
-            error_info: messages.ErrorInfo = {
-                "error_message": content,
-                "compact_error_message": compact_msg,
-                "exception_type": limit_error.__class__.__name__,
-                "device": self.get_device_from_exception(limit_error),
-            }
+            error_info = messages.ErrorInfo(
+                error_message=content,
+                compact_error_message=compact_msg,
+                exception_type=limit_error.__class__.__name__,
+                device=self.get_device_from_exception(limit_error),
+            )
             self.requests_handler.set_finished(
                 instructions.metadata["device_instr_id"], success=False, error_info=error_info
             )
 
             logger.error(content)
             self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source={"device": error_info["device"], "instruction": instructions.content},
-                msg=content,
-                compact_msg=traceback.format_exc(limit=0),
-                alarm_type=limit_error.__class__.__name__,
-                metadata=self._get_metadata_for_alarm(msg),
+                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm(msg)
             )
         except Exception as exc:  # pylint: disable=broad-except
             content = traceback.format_exc()
             compact_msg = traceback.format_exc(limit=0)
-            error_info: messages.ErrorInfo = {
-                "error_message": content,
-                "compact_error_message": compact_msg,
-                "exception_type": exc.__class__.__name__,
-                "device": self.get_device_from_exception(exc),
-            }
+            error_info = messages.ErrorInfo(
+                error_message=content,
+                compact_error_message=compact_msg,
+                exception_type=exc.__class__.__name__,
+                device=self.get_device_from_exception(exc),
+            )
             if action == "rpc":
                 self.rpc_handler._send_rpc_exception(exc, instructions)
             else:
                 logger.error(content)
                 self.connector.raise_alarm(
                     severity=Alarms.MAJOR,
-                    source={"device": error_info["device"], "instruction": instructions.content},
-                    msg=content,
-                    compact_msg=traceback.format_exc(limit=0),
-                    alarm_type=exc.__class__.__name__,
+                    info=error_info,
                     metadata=self._get_metadata_for_alarm(msg),
                 )
             self.requests_handler.set_finished(
@@ -804,13 +799,14 @@ class DeviceServer(BECService):
         return signal_container
 
     def _retry_obj_method(self, device: str, obj: OphydObject, method: str, exc: Exception) -> dict:
+        error_info = messages.ErrorInfo(
+            error_message=f"Failed to run {method} on device {device}.\n{traceback.format_exc()}",
+            compact_error_message=traceback.format_exc(limit=0),
+            exception_type=exc.__class__.__name__,
+            device=device,
+        )
         self.device_manager.connector.raise_alarm(
-            severity=Alarms.WARNING,
-            alarm_type="Warning",
-            source={"device": device, "method": method},
-            msg=f"Failed to run {method} on device {device}.",
-            compact_msg=traceback.format_exc(limit=0),
-            metadata=self._get_metadata_for_alarm(),
+            severity=Alarms.WARNING, info=error_info, metadata=self._get_metadata_for_alarm()
         )
         device_root = device.split(".")[0]
         ds_dev = self.device_manager.devices.get(device_root)

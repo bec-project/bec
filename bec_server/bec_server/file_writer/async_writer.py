@@ -180,12 +180,14 @@ class AsyncWriter(threading.Thread):
             content = traceback.format_exc()
             # self.send_file_message(done=True, successful=False)
             logger.error(f"Error writing async data file {self.tmp_file_path}: {content}")
+            error_info = messages.ErrorInfo(
+                error_message=f"Error writing async data file {self.tmp_file_path}",
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type="AsyncWriterError",
+            )
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
-                alarm_type="AsyncWriterError",
-                source={"file_path": self.tmp_file_path},
-                msg=f"Error writing async data file {self.tmp_file_path}: {content}",
-                compact_msg=traceback.format_exc(limit=0),
+                info=error_info,
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
@@ -268,12 +270,15 @@ class AsyncWriter(threading.Thread):
                         else:  # pragma: no cover
                             # this should never happen as the keys are fixed in the pydantic model
                             msg = f"Unknown key: {key}. Data will not be written."
+                            error_info = messages.ErrorInfo(
+                                error_message=msg,
+                                compact_error_message=msg,
+                                exception_type="ValueError",
+                                device=device_name,
+                            )
                             self.connector.raise_alarm(
                                 severity=Alarms.WARNING,
-                                alarm_type="ValueError",
-                                source={"device": device_name},
-                                msg=msg,
-                                compact_msg=msg,
+                                info=error_info,
                                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                             )
 
@@ -316,10 +321,12 @@ class AsyncWriter(threading.Thread):
             msg = f"Unknown async update type: {update_type}. Data will not be written."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
-                alarm_type="ValueError",
-                source={"device": signal_group.name},
-                msg=msg,
-                compact_msg=msg,
+                info=messages.ErrorInfo(
+                    error_message=msg,
+                    compact_error_message=msg,
+                    exception_type="ValueError",
+                    device=signal_group.name,
+                ),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
 
@@ -375,10 +382,12 @@ class AsyncWriter(threading.Thread):
                 msg = f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will not be written."
                 self.connector.raise_alarm(
                     severity=Alarms.WARNING,
-                    alarm_type="ValueError",
-                    source={"device": signal_group.name},
-                    msg=msg,
-                    compact_msg=msg,
+                    info=messages.ErrorInfo(
+                        error_message=msg,
+                        compact_error_message=msg,
+                        exception_type="ValueError",
+                        device=signal_group.name,
+                    ),
                     metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 return
@@ -402,10 +411,12 @@ class AsyncWriter(threading.Thread):
             msg = f"Invalid max_shape for async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
-                alarm_type="ValueError",
-                source={"device": signal_group.name},
-                msg=msg,
-                compact_msg=msg,
+                info=messages.ErrorInfo(
+                    error_message=msg,
+                    compact_error_message=msg,
+                    exception_type="ValueError",
+                    device=signal_group.name,
+                ),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
             return
@@ -432,10 +443,12 @@ class AsyncWriter(threading.Thread):
                     msg = f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated."
                     self.connector.raise_alarm(
                         severity=Alarms.WARNING,
-                        alarm_type="ValueError",
-                        source={"device": signal_group.name, "slice": row_index},
-                        msg=msg,
-                        compact_msg=msg,
+                        info=messages.ErrorInfo(
+                            error_message=msg,
+                            compact_error_message=msg,
+                            exception_type="ValueError",
+                            device=signal_group.name,
+                        ),
                         metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                     )
                     value = value[:, : max_shape[1]]
@@ -460,10 +473,12 @@ class AsyncWriter(threading.Thread):
                 msg = f"Added data slice for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated."
                 self.connector.raise_alarm(
                     severity=Alarms.WARNING,
-                    alarm_type="ValueError",
-                    source={"device": signal_group.name, "slice": row_index},
-                    msg=msg,
-                    compact_msg=msg,
+                    info=messages.ErrorInfo(
+                        error_message=msg,
+                        compact_error_message=msg,
+                        exception_type="ValueError",
+                        device=signal_group.name,
+                    ),
                     metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 value = value[: max_shape[1] - col_index]

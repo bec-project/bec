@@ -45,7 +45,13 @@ def instr():
 def test_execute_rpc_call(rpc_cls: RPCHandler, instr_params):
     rpc_var = mock.MagicMock()
     rpc_var.return_value = 1
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr_params=instr_params)
+    msg = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter=instr_params,
+        metadata={"RID": "RID", "device_instr_id": "diid"},
+    )
+    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
     if instr_params:
         if instr_params.get("args") and instr_params.get("kwargs"):
             rpc_var.assert_called_once_with(*instr_params["args"], **instr_params["kwargs"])
@@ -61,7 +67,13 @@ def test_execute_rpc_call(rpc_cls: RPCHandler, instr_params):
 @pytest.mark.parametrize("instr_params", [({"args": (1, 2, 3), "kwargs": {"a": 1, "b": 2}}), ({})])
 def test_execute_rpc_call_var(rpc_cls: RPCHandler, instr_params: dict):
     rpc_var = 5
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr_params=instr_params)
+    msg = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter=instr_params,
+        metadata={"RID": "RID", "device_instr_id": "diid"},
+    )
+    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
     assert out == 5
 
 
@@ -69,23 +81,38 @@ def test_execute_rpc_call_not_serializable(rpc_cls: RPCHandler):
     rpc_var = mock.MagicMock()
     rpc_var.return_value = mock.MagicMock()
     rpc_var.return_value.__str__.side_effect = Exception
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr_params={})
-    assert out is None
-    rpc_cls.connector.raise_alarm.assert_called_once_with(
-        severity=Alarms.WARNING,
-        alarm_type="TypeError",
-        source={},
-        msg="Return value of rpc call {} is not serializable.",
-        compact_msg="Return value of rpc call {} is not serializable.",
-        metadata={},
+    msg = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter={"func": "trigger"},
+        metadata={"RID": "RID", "device_instr_id": "diid"},
     )
+    with mock.patch("bec_lib.messages.uuid.uuid4", return_value="uuid"):
+        out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
+        assert out is None
+        error_info = messages.ErrorInfo(
+            id="uuid",
+            error_message=f"Return value of rpc call {msg.parameter} is not serializable.",
+            compact_error_message=f"Return value of rpc call {msg.parameter} is not serializable.",
+            exception_type="TypeError",
+            device="device",
+        )
+        rpc_cls.connector.raise_alarm.assert_called_once_with(
+            severity=Alarms.WARNING, info=error_info
+        )
 
 
 def test_execute_rpc_call_ophyd_status(rpc_cls: RPCHandler):
     rpc_var = mock.MagicMock()
     status = StatusBase()
     rpc_var.return_value = status
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr_params={})
+    msg = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter={},
+        metadata={"RID": "RID", "device_instr_id": "diid"},
+    )
+    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
     assert out is rpc_var.return_value
     status.set_finished()
 
@@ -95,7 +122,13 @@ def test_execute_rpc_call_list_from_stage(rpc_cls: RPCHandler):
     rpc_var.return_value = [mock.MagicMock(), mock.MagicMock()]
     rpc_var.return_value[0]._staged = True
     rpc_var.return_value[1]._staged = False
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr_params={"func": "stage"})
+    msg = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter={"func": "stage"},
+        metadata={"RID": "RID", "device_instr_id": "diid"},
+    )
+    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
     assert out == [True, False]
 
 

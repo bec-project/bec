@@ -37,17 +37,15 @@ class AlarmException(Exception):
 
 
 class AlarmBase(Exception):
-    def __init__(
-        self, alarm: messages.AlarmMessage, alarm_type: str, severity: Alarms, handled=False
-    ) -> None:
+    def __init__(self, alarm: messages.AlarmMessage, severity: Alarms, handled=False) -> None:
         self.alarm = alarm
         self.severity = severity
         self.handled = handled
-        self.alarm_type = alarm_type
+        self.alarm_type = alarm.info.exception_type
         super().__init__(self.alarm.content)
 
     def __str__(self) -> str:
-        msg = self.alarm.compact_msg or self.alarm.msg
+        msg = self.alarm.info.compact_error_message or self.alarm.info.error_message
         return (
             f"An alarm has occured. Severity: {self.severity.name}.\n{self.alarm_type}.\n\t"
             f" {msg}"
@@ -60,13 +58,13 @@ class AlarmBase(Exception):
         """
         console = Console()
 
-        msg = self.alarm.compact_msg or self.alarm.msg
+        msg = self.alarm.info.compact_error_message or self.alarm.info.error_message
 
         text = Text()
         text.append(f"{self.alarm_type} | ", style="bold")
         text.append(f"Severity {self.severity.name}", style="bold yellow")
-        if self.alarm.source.get("device"):
-            text.append(f" | Device {self.alarm.source['device']}\n", style="bold")
+        if self.alarm.info.device:
+            text.append(f" | Device {self.alarm.info.device}\n", style="bold")
         text.append("\n")
 
         # Format message inside a syntax box if it looks like traceback
@@ -75,13 +73,18 @@ class AlarmBase(Exception):
         else:
             body = Text(msg.strip())
 
-        if self.alarm.source.get("device"):
+        if self.alarm.info.device:
             body.append(
-                f"\n\nThe error is likely unrelated to BEC. Please check the device '{self.alarm.source['device']}'.",
+                f"\n\nThe error is likely unrelated to BEC. Please check the device '{self.alarm.info.device}'.",
                 style="bold",
             )
 
         console.print(Panel(body, title=text, border_style="red", expand=True))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, AlarmBase):
+            return False
+        return self.alarm.info.id == other.alarm.info.id
 
 
 class AlarmHandler:
@@ -111,10 +114,11 @@ class AlarmHandler:
         Args:
             msg (messages.AlarmMessage): Alarm message that should be added
         """
-        severity = Alarms(msg.content["severity"])
-        alarm = AlarmBase(
-            alarm=msg, alarm_type=msg.content["alarm_type"], severity=severity, handled=False
-        )
+        severity = Alarms(msg.severity)
+        alarm = AlarmBase(alarm=msg, severity=severity, handled=False)
+        if alarm in self.alarms_stack:
+            logger.debug(f"Alarm already in stack: {alarm}")
+            return
         if severity > Alarms.MINOR:
             self.alarms_stack.appendleft(alarm)
             logger.debug(alarm)

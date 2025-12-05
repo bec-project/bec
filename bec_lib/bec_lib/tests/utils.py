@@ -741,23 +741,8 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
         self._get_buffer = {}
         self.store_data = store_data
 
-    def raise_alarm(
-        self,
-        severity: Alarms,
-        alarm_type: str,
-        source: str,
-        msg: str,
-        compact_msg: str,
-        metadata: dict,
-    ):
-        messages.AlarmMessage(
-            severity=severity,
-            alarm_type=alarm_type,
-            source=source,
-            msg=msg,
-            compact_msg=compact_msg,
-            metadata=metadata,
-        )
+    def raise_alarm(self, severity: Alarms, info: messages.ErrorInfo, metadata: dict | None = None):
+        messages.AlarmMessage(severity=severity, info=info, metadata=metadata)
 
     def log_error(self, *args, **kwargs):
         pass

@@ -112,12 +112,7 @@ def test_stop_devices(device_server_mock):
             stop.assert_called_once()
             assert raise_alarm.call_count == 1
             assert raise_alarm.call_args == mock.call(
-                severity=Alarms.WARNING,
-                source={"device": "samy", "method": "stop"},
-                msg=mock.ANY,
-                compact_msg=mock.ANY,
-                alarm_type=mock.ANY,
-                metadata=mock.ANY,
+                severity=Alarms.WARNING, info=mock.ANY, metadata=mock.ANY
             )
             # If stop raises an exception, the device server must get back to running state
             assert device_server.status == BECStatus.RUNNING
@@ -266,14 +261,7 @@ def test_handle_device_instruction_raises_alarm(device_server_mock):
     with mock.patch.object(device_server, "assert_device_is_enabled", side_effect=RuntimeError):
         with mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm:
             device_server.handle_device_instructions(mock.MagicMock())
-            raise_alarm.assert_called_once_with(
-                severity=Alarms.MAJOR,
-                source=ANY,
-                msg=ANY,
-                compact_msg=ANY,
-                alarm_type=ANY,
-                metadata=ANY,
-            )
+            raise_alarm.assert_called_once_with(severity=Alarms.MAJOR, info=ANY, metadata=ANY)
 
 
 @pytest.mark.parametrize(
@@ -297,12 +285,7 @@ def test_handle_device_instructions_limit_error(device_server_mock, instructions
             device_server.handle_device_instructions(instructions)
 
             alarm_mock.assert_called_once_with(
-                severity=Alarms.MAJOR,
-                source={"device": None, "instruction": instructions.content},
-                msg=ANY,
-                compact_msg=ANY,
-                alarm_type="LimitError",
-                metadata=instructions.metadata,
+                severity=Alarms.MAJOR, info=ANY, metadata=instructions.metadata
             )
 
 

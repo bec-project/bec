@@ -142,16 +142,13 @@ class RPCHandler:
         diid = instr.metadata.get("device_instr_id", "")
         request = self.requests_handler.get_request(diid)
         if request and not request.get("status_objects"):
-            self.requests_handler.set_finished(
-                diid,
-                success=False,
-                error_info={
-                    "error_message": error_traceback,
-                    "compact_error_message": traceback.format_exc(limit=0),
-                    "exception_type": exc.__class__.__name__,
-                    "device": self.device_server.get_device_from_exception(exc),
-                },
+            error_info = messages.ErrorInfo(
+                error_message=error_traceback,
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type=exc.__class__.__name__,
+                device=self.device_server.get_device_from_exception(exc),
             )
+            self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
     ##################################################
     ###### Handlers for specific RPC operations ######
@@ -204,9 +201,8 @@ class RPCHandler:
         Args:
             instr(messages.DeviceInstructionMessage): RPC instruction
         """
-        instr_params = instr.parameter
         _, obj, rpc_var = self._get_rpc_components(instr)
-        res = self._execute_rpc_call(rpc_var, instr_params)
+        res = self._execute_rpc_call(rpc_var, instr)
 
         if not isinstance(res, ophyd.StatusBase) or res.done:
             self._update_cache(obj, instr)
@@ -236,7 +232,7 @@ class RPCHandler:
         instr_params = instr.content.get("parameter")
 
         _, obj, rpc_var = self._get_rpc_components(instr)
-        res = self._execute_rpc_call(rpc_var, instr_params)
+        res = self._execute_rpc_call(rpc_var, instr)
 
         # update the cache for value-updating functions
         if instr_params.get("func") in ["put", "get"] or instr_params.get("func").endswith(
@@ -253,7 +249,7 @@ class RPCHandler:
     ###### Helper functions for RPC processing ######
     ##################################################
 
-    def _execute_rpc_call(self, rpc_var: Any, instr_params: dict) -> Any:
+    def _execute_rpc_call(self, rpc_var: Any, instr: messages.DeviceInstructionMessage) -> Any:
         """
         Get result from RPC call. This is the core function that executes the RPC call.
 
@@ -264,6 +260,7 @@ class RPCHandler:
         Returns:
             Any: Result of RPC call
         """
+        instr_params = instr.parameter
         if callable(rpc_var):
             args = tuple(instr_params.get("args", ()))
             kwargs = instr_params.get("kwargs", {})
@@ -278,14 +275,13 @@ class RPCHandler:
                 return [obj._staged for obj in res]
             res = None
             msg = f"Return value of rpc call {instr_params} is not serializable."
-            self.connector.raise_alarm(
-                severity=Alarms.WARNING,
-                alarm_type="TypeError",
-                source=instr_params,
-                msg=msg,
-                compact_msg=msg,
-                metadata={},
+            error_info = messages.ErrorInfo(
+                error_message=msg,
+                compact_error_message=msg,
+                exception_type="TypeError",
+                device=instr.device,
             )
+            self.connector.raise_alarm(severity=Alarms.WARNING, info=error_info)
         return res
 
     def _get_rpc_components(

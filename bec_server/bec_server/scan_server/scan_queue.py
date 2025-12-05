@@ -81,13 +81,14 @@ class QueueManager:
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(content)
+            error_info = messages.ErrorInfo(
+                error_message=content,
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type=exc.__class__.__name__,
+                device=None,
+            )
             self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source=msg.content,
-                msg=content,
-                compact_msg=traceback.format_exc(limit=0),
-                alarm_type=exc.__class__.__name__,
-                metadata=msg.metadata,
+                severity=Alarms.MAJOR, info=error_info, metadata=msg.metadata
             )
 
     def add_queue(self, queue_name: str) -> None:
@@ -861,38 +862,35 @@ class RequestBlockQueue:
             self._pull_request_block()
             return next(self.active_rb.instructions)
         except LimitError as limit_error:
+            error_info = messages.ErrorInfo(
+                error_message=limit_error.args[0],
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type=limit_error.__class__.__name__,
+                device=limit_error.device,
+            )
             self.scan_queue.queue_manager.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source=self.active_rb.msg.content,
-                msg=limit_error.args[0],
-                compact_msg=traceback.format_exc(limit=0),
-                alarm_type=limit_error.__class__.__name__,
-                metadata=self._get_metadata_for_alarm(),
+                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
             )
             self.instruction_queue.stopped = True
             raise ScanAbortion from limit_error
         except DeviceInstructionError as exc:
             logger.error(exc.message)
             self.scan_queue.queue_manager.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source={"device": exc.device, "instruction": self.active_rb.msg.content},
-                msg=exc.traceback,
-                compact_msg=exc.compact_message,
-                alarm_type=exc.exception_type,
-                metadata=self._get_metadata_for_alarm(),
+                severity=Alarms.MAJOR, info=exc.error_info, metadata=self._get_metadata_for_alarm()
             )
             raise
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(content)
+            error_info = messages.ErrorInfo(
+                error_message=str(exc),
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type=exc.__class__.__name__,
+                device=None,
+            )
             self.scan_queue.queue_manager.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source=self.active_rb.msg.content,
-                msg=content,
-                compact_msg=traceback.format_exc(limit=0),
-                alarm_type=exc.__class__.__name__,
-                metadata=self._get_metadata_for_alarm(),
+                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
             )
             raise ScanAbortion from exc
 

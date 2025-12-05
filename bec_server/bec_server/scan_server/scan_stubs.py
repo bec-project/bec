@@ -141,9 +141,9 @@ class ScanStubStatus:
             error_info (messages.ErrorInfo, optional): Error information. Defaults to None.
         """
         self.done = True
-        info = error_info if error_info is not None else {}
-        exc = DeviceInstructionError(info.get("compact_error_message") if info else None)
-        exc.set_info(info)
+        exc = DeviceInstructionError(error_info.compact_error_message if error_info else None)
+        if error_info:
+            exc.set_info(error_info)
         self._future.set_exception(exc)
 
     def set_running(self):

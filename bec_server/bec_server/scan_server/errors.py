@@ -11,7 +11,10 @@ class ScanAbortion(Exception):
 
 
 class LimitError(Exception):
-    pass
+    def __init__(self, message, device: str | None = None):
+        super().__init__(message)
+        self.message = message
+        self.device = device
 
 
 class DeviceMessageError(Exception):
@@ -22,13 +25,7 @@ class DeviceInstructionError(Exception):
     def __init__(self, message):
         super().__init__(message)
         self.message = message
-        self.traceback = None
-        self.compact_message = None
-        self.exception_type = None
-        self.device = None
+        self.error_info: ErrorInfo | None = None
 
-    def set_info(self, error_info: ErrorInfo | dict):
-        self.traceback = error_info.get("error_message") if error_info else None
-        self.compact_message = error_info.get("compact_error_message") if error_info else None
-        self.exception_type = error_info.get("exception_type") if error_info else None
-        self.device = error_info.get("device") if error_info else None
+    def set_info(self, error_info: ErrorInfo):
+        self.error_info = error_info

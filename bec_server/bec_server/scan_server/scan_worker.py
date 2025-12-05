@@ -418,10 +418,7 @@ class ScanWorker(threading.Thread):
                 logger.error(content)
                 self.connector.raise_alarm(
                     severity=Alarms.MAJOR,
-                    source={"device": exc_di.device, "ScanWorker": "_process_instructions"},
-                    msg=exc_di.traceback,
-                    compact_msg=exc_di.compact_message,
-                    alarm_type=exc_di.exception_type,
+                    info=exc_di.error_info,
                     metadata=self._get_metadata_for_alarm(),
                 )
                 raise ScanAbortion from exc_di
@@ -429,13 +426,14 @@ class ScanWorker(threading.Thread):
                 # if the return_to_start fails, raise the original exception
                 content = traceback.format_exc()
                 logger.error(content)
+                error_info = messages.ErrorInfo(
+                    error_message=content,
+                    compact_error_message=traceback.format_exc(limit=0),
+                    exception_type=exc_return_to_start.__class__.__name__,
+                    device=None,
+                )
                 self.connector.raise_alarm(
-                    severity=Alarms.MAJOR,
-                    source={"ScanWorker": "_process_instructions"},
-                    msg=content,
-                    compact_msg=traceback.format_exc(limit=0),
-                    alarm_type=exc_return_to_start.__class__.__name__,
-                    metadata=self._get_metadata_for_alarm(),
+                    severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
                 )
                 raise ScanAbortion from exc
             raise ScanAbortion from exc
@@ -444,24 +442,24 @@ class ScanWorker(threading.Thread):
             logger.error(content)
             self.connector.raise_alarm(
                 severity=Alarms.MAJOR,
-                source={"device": exc_di.device, "ScanWorker": "_process_instructions"},
-                msg=exc_di.traceback,
-                compact_msg=exc_di.compact_message,
-                alarm_type=exc_di.exception_type,
+                info=exc_di.error_info,
                 metadata=self._get_metadata_for_alarm(),
             )
+
             raise ScanAbortion from exc_di
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(content)
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source={"ScanWorker": "_process_instructions"},
-                msg=content,
-                compact_msg=traceback.format_exc(limit=0),
-                alarm_type=exc.__class__.__name__,
-                metadata=self._get_metadata_for_alarm(),
+            error_info = messages.ErrorInfo(
+                error_message=content,
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type=exc.__class__.__name__,
+                device=None,
             )
+            self.connector.raise_alarm(
+                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
+            )
+
             raise ScanAbortion from exc
         queue.is_active = False
         queue.status = InstructionQueueStatus.COMPLETED
@@ -568,13 +566,14 @@ class ScanWorker(threading.Thread):
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(content)
+            error_info = messages.ErrorInfo(
+                error_message=content,
+                compact_error_message=traceback.format_exc(limit=0),
+                exception_type=exc.__class__.__name__,
+                device=None,
+            )
             self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                source={"ScanWorker": "run"},
-                msg=content,
-                compact_msg=traceback.format_exc(limit=0),
-                alarm_type=exc.__class__.__name__,
-                metadata=self._get_metadata_for_alarm(),
+                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
             )
             if self.queue_name in self.parent.queue_manager.queues:
                 self.parent.queue_manager.queues[self.queue_name].abort()

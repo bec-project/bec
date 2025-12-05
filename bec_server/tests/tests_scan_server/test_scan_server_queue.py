@@ -121,12 +121,7 @@ def test_queuemanager_add_to_queue_error_send_alarm(queuemanager_mock):
         with mock.patch.object(queue_manager, "add_queue", side_effects=KeyError):
             queue_manager.add_to_queue(scan_queue="dummy", msg=msg)
             connector.raise_alarm.assert_called_once_with(
-                severity=Alarms.MAJOR,
-                source=msg.content,
-                msg=mock.ANY,
-                compact_msg=mock.ANY,
-                alarm_type="KeyError",
-                metadata={"RID": "something"},
+                severity=Alarms.MAJOR, info=mock.ANY, metadata={"RID": "something"}
             )
 
 
@@ -384,12 +379,7 @@ def test_invalid_scan_specified_in_message(queuemanager_mock):
     with mock.patch.object(queue_manager, "connector") as connector:
         queue_manager.add_to_queue(scan_queue="dummy", msg=msg)
         connector.raise_alarm.assert_called_once_with(
-            severity=Alarms.MAJOR,
-            source=msg.content,
-            msg=mock.ANY,
-            compact_msg="KeyError: 'fake test scan which does not exist!'\n",
-            alarm_type="KeyError",
-            metadata={"RID": "something"},
+            severity=Alarms.MAJOR, info=mock.ANY, metadata={"RID": "something"}
         )
 
 
@@ -730,14 +720,14 @@ def test_request_block_queue_raises_alarm_on_error(
     req_block_queue.active_rb.scan_number = scan_number
     with pytest.raises(ScanAbortion):
         next(req_block_queue)
-    req_block_queue.scan_queue.queue_manager.connector.raise_alarm.assert_called_once_with(
-        severity=Alarms.MAJOR,
-        source=req_block_queue.active_rb.msg.content,
-        msg=mock.ANY,
-        compact_msg=mock.ANY,
-        alarm_type=exc.__name__,
-        metadata=metadata,
+    raise_alarm_mock = req_block_queue.scan_queue.queue_manager.connector.raise_alarm
+    raise_alarm_mock.assert_called_once_with(
+        severity=Alarms.MAJOR, info=mock.ANY, metadata=metadata
     )
+    submitted_error_info: messages.ErrorInfo = raise_alarm_mock.call_args[1]["info"]
+    assert submitted_error_info.exception_type == exc.__name__
+    assert submitted_error_info.error_message == "Test error"
+    assert str(exc("Test error")) in str(submitted_error_info)
 
 
 def test_queue_manager_get_active_scan_id(queuemanager_mock):

@@ -216,13 +216,13 @@ def test_bec_ipython_client_property_access(ipython_client):
 
 def test_bec_ipython_client_show_last_alarm(ipython_client, capsys):
     client = ipython_client
-    alarm_msg = messages.AlarmMessage(
-        severity=Alarms.MAJOR,
-        alarm_type="TestAlarm",
-        source={},
-        msg="This is a test alarm",
-        compact_msg="Test alarm",
+    error_info = messages.ErrorInfo(
+        error_message="This is a test alarm",
+        compact_error_message="Test alarm",
+        exception_type="TestAlarm",
+        device=None,
     )
+    alarm_msg = messages.AlarmMessage(severity=Alarms.MAJOR, info=error_info)
     client.alarm_handler = AlarmHandler(connector=mock.MagicMock())
     client.alarm_handler.add_alarm(alarm_msg)
     client._alarm_history.append(
