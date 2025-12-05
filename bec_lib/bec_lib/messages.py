@@ -1385,3 +1385,51 @@ class MacroUpdateMessage(BECMessage):
         if values.update_type == "add" and not values.file_path:
             raise ValueError("file_path must be provided for add actions")
         return values
+
+
+class BeamlineConditionMessage(BECMessage):
+    """
+    Message for beamline condition updates
+
+    Args:
+        name (str): Name of the beamline condition
+        status (Literal["normal", "warning", "alarm"]): Status of the beamline condition
+        message (str): Description of the beamline condition
+    """
+
+    msg_type: ClassVar[str] = "beamline_condition_message"
+    name: str
+    status: Literal["normal", "warning", "alarm"]
+    message: str
+
+
+class BeamlineConditionUpdateEntry(BaseModel):
+    """
+    Entry for beamline condition update
+
+    Args:
+        name (str): Name of the beamline condition
+        title (str): Title of the beamline condition
+        condition_type (str): Type of the beamline condition
+        parameters (dict, optional): Additional parameters for the condition
+    """
+
+    name: str
+    title: str
+    condition_type: str
+    parameters: dict = Field(default_factory=dict)
+
+
+class AvailableBeamlineConditionsMessage(BECMessage):
+    """
+    Message for updating beamline conditions
+
+    Args:
+        conditions (list[BeamlineConditionUpdateEntry]): List of beamline condition update entries
+        name (str): Name of the beamline condition group
+        condition_type (str): Type of the beamline condition group
+        parameters (dict, optional): Additional parameters for the condition group
+    """
+
+    msg_type: ClassVar[str] = "beamline_condition_update_message"
+    conditions: list[BeamlineConditionUpdateEntry]
