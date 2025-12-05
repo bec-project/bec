@@ -36,11 +36,18 @@ runs:
         ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
         path: ./ophyd_devices
 
+    - name: Checkout Testing Plugin
+      uses: actions/checkout@v4
+      with:
+        repository: bec-project/bec_testing_plugin
+        path: ./bec_testing_plugin
+
     - name: Install Python dependencies
       shell: bash
       run: |
         pip install uv
         uv pip install --system -e ./ophyd_devices[dev]
-        uv pip install --system -e ./bec/bec_lib[dev]
+        uv pip install --system -e ./bec/bec_lib[dev,ci]
         uv pip install --system -e ./bec/bec_ipython_client[dev]
         uv pip install --system -e ./bec/bec_server[dev]
+        uv pip install --system -e ./bec_testing_plugin[dev]
