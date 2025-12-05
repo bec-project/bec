@@ -217,7 +217,7 @@ def bec_ipython_client_with_demo_config(
     config = ServiceConfig(bec_services_config_file_path)
     bec = BECIPythonClient(config, RedisConnector, forced=True)
     bec.start()
-    bec.config.load_demo_config()
+    bec.config.load_demo_config(force=True)
     try:
         yield bec
     finally:
@@ -230,7 +230,7 @@ def bec_client_lib_with_demo_config(bec_redis_fixture, bec_services_config_file_
     config = ServiceConfig(bec_services_config_file_path)
     bec = BECClient(config, RedisConnector, forced=True, wait_for_server=True)
     bec.start()
-    bec.config.load_demo_config()
+    bec.config.load_demo_config(force=True)
     try:
         yield bec
     finally:

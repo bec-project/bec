@@ -322,7 +322,9 @@ def test_config_reload(
     num_devices = len(bec.device_manager.devices)
     if raises_error:
         with pytest.raises(DeviceConfigError):
-            bec.config.update_session_with_file(runtime_config_file_path)
+            bec.config.update_session_with_file(
+                runtime_config_file_path, force=True, validate=False
+            )
         if deletes_config:
             assert len(bec.device_manager.devices) == 0
         elif disabled_device:
@@ -330,7 +332,7 @@ def test_config_reload(
         else:
             assert len(bec.device_manager.devices) == num_devices
     else:
-        bec.config.update_session_with_file(runtime_config_file_path)
+        bec.config.update_session_with_file(runtime_config_file_path, force=True, validate=False)
         assert len(bec.device_manager.devices) == 2
     for dev in disabled_device:
         assert bec.device_manager.devices[dev].enabled is False
@@ -375,7 +377,7 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
         f.write(yaml.dump(config))
 
     with pytest.raises(DeviceConfigError):
-        bec.config.update_session_with_file(runtime_config_file_path)
+        bec.config.update_session_with_file(runtime_config_file_path, force=True, validate=False)
 
     assert len(bec.device_manager.devices) == 2
     assert bec.device_manager.devices["eyefoc"].enabled is True
@@ -386,7 +388,7 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
         f"e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=0)
     )
 
-    bec.config.update_session_with_file(runtime_config_file_path)
+    bec.config.update_session_with_file(runtime_config_file_path, force=True)
     assert len(bec.device_manager.devices) == 2
     assert bec.device_manager.devices["eyefoc"].enabled is True
     assert bec.device_manager.devices["hexapod"].enabled is True
@@ -412,13 +414,13 @@ def test_config_add_remove_device(bec_client_lib):
             "readOnly": False,
         }
     }
-    bec.config.send_config_request(action="add", config=config)
+    bec.device_manager.config_helper.send_config_request(action="add", config=config)
     with pytest.raises(DeviceConfigError) as config_error:
-        bec.config.send_config_request(action="add", config=config)
+        bec.device_manager.config_helper.send_config_request(action="add", config=config)
     assert config_error.match("Device new_device already exists")
     assert "new_device" in dev
 
-    bec.config.send_config_request(action="remove", config={"new_device": {}})
+    bec.device_manager.config_helper.send_config_request(action="remove", config={"new_device": {}})
     assert "new_device" not in dev
 
     device_config_msg = bec.connector.get(MessageEndpoints.device_config())
@@ -429,7 +431,7 @@ def test_config_add_remove_device(bec_client_lib):
 
     config["new_device"]["deviceClass"] = "ophyd_devices.doesnt_exist"
     with pytest.raises(DeviceConfigError) as config_error:
-        bec.config.send_config_request(action="add", config=config)
+        bec.device_manager.config_helper.send_config_request(action="add", config=config)
     assert config_error.match("module 'ophyd_devices' has no attribute 'doesnt_exist'")
     assert "new_device" not in dev
     assert "samx" in dev
