@@ -19,8 +19,8 @@ from rich.console import Console
 from rich.table import Table
 
 from bec_lib.alarm_handler import AlarmHandler, Alarms
-from bec_lib.beamline_states import BeamlineConditionConfig
 from bec_lib.bec_service import BECService
+from bec_lib.bl_conditions import BeamlineConditionConfig
 from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.config_helper import ConfigHelperUser
 from bec_lib.dap_plugins import DAPPlugins
