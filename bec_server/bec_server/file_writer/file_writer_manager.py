@@ -193,7 +193,9 @@ class FileWriterManager(BECService):
                 scan_number=msg.scan_number,
                 connector=self.connector,
                 devices=msg.readout_priority.get("async", []),
-                async_signals=self.device_manager.get_bec_signals("AsyncSignal"),
+                async_signals=self.device_manager.get_bec_signals(
+                    ["AsyncSignal", "DynamicSignal", "AsyncMultiSignal"]
+                ),
             )
             scan_storage.async_writer.start()
 

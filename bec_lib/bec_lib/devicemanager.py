@@ -15,7 +15,6 @@ from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
 
-from bec_lib.atlas_models import Device as DeviceModel
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.callback_handler import EventType
 from bec_lib.config_helper import ConfigHelper
@@ -48,6 +47,14 @@ else:
         "bec_lib.messages", ("BECStatus", "ServiceResponseMessage")
     )
 
+BECSignals = Literal[
+    "AsyncSignal",
+    "AsyncMultiSignal",
+    "DynamicSignal",
+    "FileEventSignal",
+    "PreviewSignal",
+    "ProgressSignal",
+]
 
 logger = bec_logger.logger
 
@@ -724,23 +731,24 @@ class DeviceManagerBase:
 
     @typechecked
     def get_bec_signals(
-        self,
-        signal_type: Literal["AsyncSignal", "FileEventSignal", "PreviewSignal", "ProgressSignal"],
+        self, signal_type: list[BECSignals] | BECSignals
     ) -> list[tuple[str, str, dict]]:
         """
         Get a list of BEC signals of the specified type.
 
         Args:
-            signal_type (str): Type of the signal to filter by.
-        Supported types are "AsyncSignal", "FileEventSignal", "PreviewSignal", and "ProgressSignal".
+            signal_type (list[BECSignals] | BECSignals): Type of signal to retrieve.
+        Supported types are "AsyncSignal", "AsyncMultiSignal", "DynamicSignal", "FileEventSignal", "PreviewSignal", and "ProgressSignal".
 
         Returns:
             list: List of tuples containing the device name, component name and the signal info.
         """
         signals = []
+        if not isinstance(signal_type, list):
+            signal_type = [signal_type]
         for device in self.devices.values():
             for comp, signal_info in device._info.get("signals", {}).items():
-                if signal_info.get("signal_class") == signal_type:
+                if signal_info.get("signal_class") in signal_type:
                     signals.append((device.name, comp, signal_info))
         return signals
 
