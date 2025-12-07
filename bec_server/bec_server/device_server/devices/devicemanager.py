@@ -10,6 +10,7 @@ import inspect
 import threading
 import time
 import traceback
+from collections import deque
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
@@ -145,6 +146,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self.config_update_handler = None
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
+        self._device_order_map = {}
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -176,8 +178,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
         progress = DeviceProgress(self.connector, self._session["devices"])
         try:
+            devices = self.resolve_device_dependencies(self.current_session["devices"])
             self.failed_devices = {}
-            for dev in self._session["devices"]:
+            for dev in devices:
                 if cancel_event and cancel_event.is_set():
                     raise CancelledError("Device initialization cancelled.")
                 name = dev.get("name")
@@ -230,6 +233,69 @@ class DeviceManagerDS(DeviceManagerBase):
             raise DeviceConfigError(
                 f"Failed to initialize device: {dev}: {content}. The config will be reset."
             ) from exc
+
+    def resolve_device_dependencies(self, devices: list[dict]) -> list[dict]:
+        """
+        Resolve device dependencies and return a sorted list of devices. It uses
+        the device's "needs" field of the config to determine dependencies.
+
+        Using Kahn's algorithm for topological sorting.
+
+        Args:
+            devices (list[dict]): List of device config dictionaries
+        Returns:
+            list[dict]: Sorted list of device config dictionaries
+        """
+        device_dict = {dev["name"]: dev for dev in devices}
+        in_degree = {dev["name"]: 0 for dev in devices}
+        adj_list = {dev["name"]: [] for dev in devices}
+
+        for dev in devices:
+            needs = dev.get("needs", [])
+            for dep in needs:
+                if dep not in device_dict:
+                    raise DeviceConfigError(f"Device {dev['name']} needs unknown device {dep}.")
+                adj_list[dep].append(dev["name"])
+                in_degree[dev["name"]] += 1
+
+        queue = deque([name for name, degree in in_degree.items() if degree == 0])
+        sorted_devices = []
+
+        while queue:
+            current = queue.popleft()
+            sorted_devices.append(device_dict[current])
+            for neighbor in adj_list[current]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        cyclic_devices = [name for name, degree in in_degree.items() if degree > 0]
+        if cyclic_devices:
+            raise DeviceConfigError(f"Cyclic dependency detected among devices: {cyclic_devices}")
+
+        self._device_order_map = {dev["name"]: idx for idx, dev in enumerate(sorted_devices)}
+
+        return sorted_devices
+
+    def get_device_order(self, device_names: list[str]) -> list[str]:
+        """
+        Get the device names sorted by their initialization order.
+
+        Args:
+            device_names (list[str]): List of device names to sort.
+
+        Returns:
+            list[str]: Sorted list of device names.
+
+        Raises:
+            RuntimeError: If the device order map is not initialized.
+        """
+        if not self._device_order_map:
+            raise RuntimeError("Device order map is not initialized.")
+        return sorted(
+            device_names,
+            key=lambda name: self._device_order_map.get(name.split(".")[0], float("inf")),
+        )
 
     def initialize_delayed_devices(self, dev: dict, config: dict, obj: OphydObject) -> None:
         """Initialize delayed device after all other devices have been initialized."""

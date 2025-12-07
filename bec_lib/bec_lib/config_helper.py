@@ -542,6 +542,7 @@ class ConfigHelper:
             '# - description: A string description of the device. Default is "" (empty string).\n'
             "# - deviceConfig: A dictionary of configuration parameters specific to the device class. Default is None.\n"
             "# - deviceTags: A list/set of tags associated with the device. Default is an empty list/set.\n"
+            "# - needs: A list of other device names that this device depends on. Default is [].\n"
             '# - onFailure: The action to take on failure. Possible values are ["buffer", "retry", "raise"]. Default is "retry".\n'
             "# - readOnly: A boolean indicating if the device is read-only. Default is false.\n"
             "# - softwareTrigger: A boolean indicating if the device uses software triggering. Default is false.\n"
@@ -563,6 +564,9 @@ class ConfigHelper:
             "#   enabled: true\n"
             "#   connectionTimeout: 20\n"
             "#   readoutPriority: baseline\n"
+            "#   needs:\n"
+            "#     - device2\n"
+            "#     - device3\n"
             "#   onFailure: retry\n"
             "#   readOnly: false\n"
             "#   softwareTrigger: false\n"

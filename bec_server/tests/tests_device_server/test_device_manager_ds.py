@@ -7,6 +7,7 @@ import pytest
 from ophyd_devices.devices.psi_motor import EpicsMotor
 
 from bec_lib import messages
+from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
@@ -495,3 +496,98 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
             mock_high_subscribe.assert_called_once_with(
                 dm_with_devices._obj_callback_limit_change, run=False
             )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_dependency_resolution(dm_with_devices):
+    devices = [
+        {"name": "dev1", "deviceClass": "SomeClass", "deviceConfig": {}, "enabled": True},
+        {
+            "name": "dev2",
+            "deviceClass": "SomeClass",
+            "deviceConfig": {},
+            "needs": ["dev1"],
+            "enabled": True,
+        },
+        {
+            "name": "dev3",
+            "deviceClass": "SomeClass",
+            "deviceConfig": {},
+            "needs": ["dev2"],
+            "enabled": True,
+        },
+    ]
+
+    sorted_devices = dm_with_devices.resolve_device_dependencies(devices)
+    sorted_names = [dev["name"] for dev in sorted_devices]
+    assert sorted_names == ["dev1", "dev2", "dev3"]
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_dependency_resolution_with_unknown_dependency(dm_with_devices):
+    devices = [
+        {"name": "dev1", "deviceClass": "SomeClass", "deviceConfig": {}, "enabled": True},
+        {
+            "name": "dev2",
+            "deviceClass": "SomeClass",
+            "deviceConfig": {},
+            "needs": ["unknown_dev"],
+            "enabled": True,
+        },
+    ]
+
+    with pytest.raises(DeviceConfigError, match="needs unknown device"):
+        dm_with_devices.resolve_device_dependencies(devices)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_dependency_resolution_with_cyclic_dependency(dm_with_devices):
+    devices = [
+        {
+            "name": "dev1",
+            "deviceClass": "SomeClass",
+            "deviceConfig": {},
+            "needs": ["dev3"],
+            "enabled": True,
+        },
+        {
+            "name": "dev2",
+            "deviceClass": "SomeClass",
+            "deviceConfig": {},
+            "needs": ["dev1"],
+            "enabled": True,
+        },
+        {
+            "name": "dev3",
+            "deviceClass": "SomeClass",
+            "deviceConfig": {},
+            "needs": ["dev2"],
+            "enabled": True,
+        },
+    ]
+
+    with pytest.raises(DeviceConfigError, match="Cyclic dependency detected"):
+        dm_with_devices.resolve_device_dependencies(devices)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_get_device_order(dm_with_devices):
+    device_manager = dm_with_devices
+    devices = ["samx", "eiger"]
+    ordered_devices = device_manager.get_device_order(devices)
+    assert len(ordered_devices) == len(devices)
+    assert ordered_devices == ["eiger", "samx"]
+
+    devices = ["samx.readback", "eiger"]
+    ordered_devices = device_manager.get_device_order(devices)
+    assert len(ordered_devices) == len(devices)
+    assert ordered_devices == ["eiger", "samx.readback"]
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_get_device_order_without_order_map(dm_with_devices):
+    device_manager = dm_with_devices
+    device_manager._device_order_map = {}
+    devices = ["samx", "eiger"]
+    with pytest.raises(RuntimeError, match="Device order map is not initialized"):
+        device_manager.get_device_order(devices)
