@@ -54,6 +54,11 @@ class ConfigUpdateHandler:
             if msg.content["action"] == "remove":
                 self._remove_config(msg)
 
+            # After any config change, resolve dependencies. It will raise if dependencies are not met.
+            self.update_session_config(msg)
+            self.device_manager.resolve_device_dependencies(
+                self.device_manager.current_session["devices"]
+            )
         except Exception:
             error_msg = traceback.format_exc()
             accepted = False
@@ -174,6 +179,43 @@ class ConfigUpdateHandler:
             self.device_manager.disconnect_device(device)
             self.device_manager.reset_device(device)
             self.device_manager.devices.pop(dev)
+
+    def update_session_config(self, msg: messages.DeviceConfigMessage) -> None:
+        """
+        Updates the current session config with the new config from the message.
+
+        Args:
+            msg (BECMessage.DeviceConfigMessage): Config message containing the new config
+
+        """
+        action = msg.action
+        match action:
+            case "update":
+                # Update the session config
+                for dev in msg.content["config"]:
+                    dev_config = self.device_manager.devices[dev]._config
+                    session_device_config = next(
+                        (
+                            d
+                            for d in self.device_manager.current_session["devices"]
+                            if d["name"] == dev
+                        ),
+                        None,
+                    )
+                    if session_device_config:
+                        session_device_config.update(dev_config)
+            case "add":
+                # Add new devices to the session config
+                for dev, dev_config in msg.content["config"].items():
+                    self.device_manager.current_session["devices"].append(dev_config)
+            case "remove":
+                # Remove devices from the session config
+                for dev in msg.content["config"]:
+                    self.device_manager.current_session["devices"] = [
+                        d
+                        for d in self.device_manager.current_session["devices"]
+                        if d["name"] != dev
+                    ]
 
     def handle_failed_device_inits(self):
         if self.device_manager.failed_devices:
