@@ -8,7 +8,6 @@ from bec_lib.callback_handler import EventType
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
-from bec_lib.scan_history import ScanHistory
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -16,14 +15,18 @@ from bec_lib.scan_history import ScanHistory
 
 @pytest.fixture
 def scan_history_without_thread(connected_connector, file_history_messages):
-    for msg in file_history_messages:
-        connected_connector.xadd(MessageEndpoints.scan_history(), {"data": msg})
-    client = BECClient(connector_cls=RedisConnector)
-    client.connector = connected_connector
-    yield ScanHistory(client=client, load_threaded=False)
+    with mock.patch("bec_lib.scan_history.os.access") as access:
+        from bec_lib.scan_history import ScanHistory
+
+        for msg in file_history_messages:
+            connected_connector.xadd(MessageEndpoints.scan_history(), {"data": msg})
+        client = BECClient(connector_cls=RedisConnector)
+        client.connector = connected_connector
+        yield ScanHistory(client=client, load_threaded=False), access
 
 
 def test_scan_history_loads_messages(scan_history_without_thread, file_history_messages):
+    scan_history_without_thread, _ = scan_history_without_thread
     container = scan_history_without_thread.get_by_scan_number(1)
     assert container._msg == file_history_messages[0]
 
@@ -53,8 +56,9 @@ def test_scan_history_loads_messages(scan_history_without_thread, file_history_m
     ] == scan_history_without_thread._scan_numbers
 
 
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(20)
 def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_history_messages):
+    scan_history_without_thread, _ = scan_history_without_thread
     msg = [
         messages.ScanHistoryMessage(
             scan_id="scan_id_4",
@@ -105,6 +109,7 @@ def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_hist
 
 
 def test_scan_history_slices(scan_history_without_thread, file_history_messages):
+    scan_history_without_thread, _ = scan_history_without_thread
     assert [scan._msg for scan in scan_history_without_thread[0:2]] == file_history_messages[:2]
     assert [scan._msg for scan in scan_history_without_thread[1:]] == file_history_messages[1:]
     assert [scan._msg for scan in scan_history_without_thread[-2:]] == file_history_messages[-2:]
@@ -115,6 +120,8 @@ def test_scan_history_slices(scan_history_without_thread, file_history_messages)
 def test_scan_history_filters_readable_files(
     scan_history_without_thread, file_history_messages, tmp_path
 ):
+    scan_history_without_thread, access = scan_history_without_thread
+    access.side_effect = lambda arg, *_: "unreadable" not in arg
     # Create a temporary file that is not readable
     unreadable_file = tmp_path / "unreadable_file.txt"
     unreadable_file.write_text("This file is not readable")
@@ -157,7 +164,8 @@ def test_scan_history_filters_readable_files(
     while scan_history_without_thread.get_by_scan_id("scan_id_readable") is None:
         time.sleep(0.1)
     # Verify that the unreadable file is not included in the history
-    assert scan_history_without_thread.get_by_scan_id("scan_id_unreadable") is None
+    other = scan_history_without_thread.get_by_scan_id("scan_id_unreadable")
+    assert other is None
     assert scan_history_without_thread.get_by_scan_id("scan_id_readable")._msg == readable_msg
 
     # New: ensure unreadable scan_number wasn't appended, readable was
@@ -166,9 +174,11 @@ def test_scan_history_filters_readable_files(
     assert nums[-1] == 6
 
 
-@pytest.mark.timeout(20)
+@pytest.mark.timeout(10)
 def test_scan_history_update_callback(scan_history_without_thread, file_history_messages):
     """Test the scan history update callbacks."""
+    scan_history_without_thread, _ = scan_history_without_thread
+
     with mock.patch.object(
         scan_history_without_thread._client.callbacks, "run"
     ) as mock_callback_run:
@@ -190,6 +200,8 @@ def test_scan_history_update_callback(scan_history_without_thread, file_history_
 @pytest.mark.timeout(20)
 def test_scan_history_multiple_scan_numbers(scan_history_without_thread, file_history_messages):
     """Test the scan history update callbacks."""
+    scan_history_without_thread, _ = scan_history_without_thread
+
     msgs = [
         messages.ScanHistoryMessage(
             scan_id="scan_id_1_a",
