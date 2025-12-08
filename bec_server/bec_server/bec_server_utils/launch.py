@@ -70,11 +70,11 @@ def main():
             server = libtmux.Server(socket_path="/tmp/tmux-shared/default")
         else:
             server = libtmux.Server()
-        session = server.find_where({"session_name": "bec"})
+        session = server.sessions.get(matcher=lambda s: s.name == "bec")
         if session is None:
             print("No BEC session found")
             return
-        session.attach_session()
+        session.attach()
 
 
 if __name__ == "__main__":
