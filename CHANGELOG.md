@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v3.80.1 (2025-12-08)
+
+### Bug Fixes
+
+- Update for new libtmux API
+  ([`40adf8c`](https://github.com/bec-project/bec/commit/40adf8c31da1e7018d403f39ee17e5c806f68ccc))
+
+### Chores
+
+- Remove unused gitlab files
+  ([`6674b3b`](https://github.com/bec-project/bec/commit/6674b3baf7bbccc0471f8e72653246897f175742))
+
+### Continuous Integration
+
+- #668 add testing plugin to dependencies
+  ([`0492c68`](https://github.com/bec-project/bec/commit/0492c688315cbdb5dbb7217794d1fa16ab981dcf))
+
+### Refactoring
+
+- Move error info to pydantic
+  ([`c85e0cb`](https://github.com/bec-project/bec/commit/c85e0cb9d2d12fe0f12e22b8335b030aa6c09c83))
+
+### Testing
+
+- Fix mocking in scan history test
+  ([`530098e`](https://github.com/bec-project/bec/commit/530098e6b80d0dbffa6d49f284963d6c0d03422b))
+
+- Update tmux test
+  ([`379a282`](https://github.com/bec-project/bec/commit/379a282e4079d20eeb7f4374c8e48fb38b91daf7))
+
+
 ## v3.80.0 (2025-12-04)
 
 ### Features
