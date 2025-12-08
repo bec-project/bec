@@ -108,13 +108,31 @@ class DeviceManagerDS(DeviceManagerBase):
         super().initialize(bootstrap_server)
 
     def _reload_action(self) -> None:
-        pass
+        """
+        The _reload_action on the device server is a no-op, as devices are reloaded
+        through the config update handler.
+        """
 
-    def _add_action(self, msg: messages.DeviceConfigMessage) -> None:
-        pass
+    def _add_action(self, config: dict) -> None:
+        """
+        The _add_action on the device server is a no-op, as devices are added
+        through the config update handler.
+        """
 
-    def _remove_action(self, msg: messages.DeviceConfigMessage) -> None:
-        pass
+    def _remove_action(self, config: dict) -> None:
+        """
+        The _remove_action on the device server is a no-op, as devices are removed
+        through the config update handler.
+        """
+
+    @property
+    def current_session(self) -> dict:
+        """
+        Get the current device session.
+        Please note that the internal _session variable is private as it is shared across
+        multiple services and typically should not be accessed directly.
+        """
+        return self._session
 
     @staticmethod
     def _get_device_class(dev_type: str) -> type:
