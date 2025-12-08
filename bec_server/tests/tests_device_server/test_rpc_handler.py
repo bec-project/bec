@@ -23,6 +23,16 @@ def rpc_cls() -> RPCHandler:  # type: ignore
     return rpc_handler
 
 
+@pytest.fixture()
+def mock_rpc_methods(rpc_cls):
+    """Fixture to mock the common RPC read methods"""
+    with (
+        mock.patch.object(rpc_cls, "_rpc_read_configuration_and_return") as mock_read_config,
+        mock.patch.object(rpc_cls, "_rpc_read_and_return") as mock_read,
+    ):
+        yield {"read_config": mock_read_config, "read": mock_read}
+
+
 @pytest.fixture
 def instr():
     yield messages.DeviceInstructionMessage(
@@ -310,3 +320,55 @@ def test_set_config_signal_updates_cache(rpc_cls, dev_mock, instr):
     )
     rpc_cls.process_rpc_instruction(instr=instr)
     rpc_cls._update_cache.assert_called_once_with(dev_mock.obj.velocity, instr)
+
+
+def test_update_cache_config_kind(rpc_cls, instr, mock_rpc_methods):
+    """Test that _update_cache calls read_configuration for config kind signals"""
+    signal_mock = mock.MagicMock(spec=Signal)
+    signal_mock.kind = Kind.config
+    mock_rpc_methods["read_config"].return_value = {"config": "data"}
+
+    result = rpc_cls._update_cache(signal_mock, instr)
+
+    mock_rpc_methods["read_config"].assert_called_once_with(instr)
+    mock_rpc_methods["read"].assert_not_called()
+    assert result == {"config": "data"}
+
+
+def test_update_cache_hinted_kind(rpc_cls, instr, mock_rpc_methods):
+    """Test that _update_cache calls read for hinted kind signals"""
+    signal_mock = mock.MagicMock(spec=Signal)
+    signal_mock.kind = Kind.hinted
+    mock_rpc_methods["read"].return_value = {"read": "data"}
+
+    result = rpc_cls._update_cache(signal_mock, instr)
+
+    mock_rpc_methods["read"].assert_called_once_with(instr)
+    mock_rpc_methods["read_config"].assert_not_called()
+    assert result == {"read": "data"}
+
+
+def test_update_cache_normal_kind(rpc_cls, instr, mock_rpc_methods):
+    """Test that _update_cache calls read for normal kind signals"""
+    signal_mock = mock.MagicMock(spec=Signal)
+    signal_mock.kind = Kind.normal
+    mock_rpc_methods["read"].return_value = {"read": "data"}
+
+    result = rpc_cls._update_cache(signal_mock, instr)
+
+    mock_rpc_methods["read"].assert_called_once_with(instr)
+    mock_rpc_methods["read_config"].assert_not_called()
+    assert result == {"read": "data"}
+
+
+def test_update_cache_omitted_kind(rpc_cls, instr, mock_rpc_methods):
+    """Test that _update_cache calls both read methods for omitted kind signals"""
+    signal_mock = mock.MagicMock(spec=Signal)
+    signal_mock.kind = Kind.omitted
+    mock_rpc_methods["read_config"].return_value = {"config": "data"}
+
+    result = rpc_cls._update_cache(signal_mock, instr)
+
+    mock_rpc_methods["read"].assert_called_once_with(instr)
+    mock_rpc_methods["read_config"].assert_called_once_with(instr)
+    assert result == {"config": "data"}
