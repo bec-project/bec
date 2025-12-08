@@ -1,9 +1,12 @@
 import argparse
 import os
+import warnings
 
 import libtmux
 
 from bec_server.bec_server_utils.service_handler import ServiceHandler
+
+warnings.filterwarnings("always", category=DeprecationWarning)
 
 
 def main():
