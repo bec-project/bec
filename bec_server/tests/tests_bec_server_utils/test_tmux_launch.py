@@ -6,7 +6,9 @@ from bec_server.bec_server_utils.tmux_launch import tmux_start, tmux_stop
 
 
 def test_tmux_start():
-    with mock.patch("bec_server.bec_server_utils.tmux_launch.libtmux") as mock_libtmux_server:
+    with mock.patch(
+        "bec_server.bec_server_utils.tmux_launch.libtmux", autospec=True
+    ) as mock_libtmux_server:
         tmux_start(
             "/path/to/bec",
             {
@@ -20,7 +22,7 @@ def test_tmux_start():
             "bec", window_name="BEC server. Use `ctrl+b d` to detach.", kill_session=True
         )
         assert (
-            mock_libtmux_server.Server().new_session().attached_window.select_layout.call_count == 1
+            mock_libtmux_server.Server().new_session().active_window.select_layout.call_count == 1
         )
 
         assert mock_libtmux_server.Server().new_session().set_option.call_count == 1
