@@ -3,6 +3,8 @@ import time
 
 import libtmux
 import psutil
+from libtmux import Session
+from libtmux.constants import PaneDirection
 from libtmux.exc import LibTmuxException
 
 
@@ -74,17 +76,17 @@ def tmux_start(bec_path: str, services: dict):
         services (dict): Dictionary of services to launch. Keys are the service names, values are path and command templates.
 
     """
-    sessions = {}
+    sessions: dict[str, Session] = {}
     for service, service_config in services.items():
         tmux_session_name = service_config.tmux_session.name
         if tmux_session_name not in sessions:
             tmux_window_label = service_config.tmux_session.window_label
             session = get_new_session(tmux_session_name, tmux_window_label)
-            pane = session.attached_window.attached_pane
+            pane = session.active_window.active_pane
             sessions[tmux_session_name] = session
         else:
             session = sessions[tmux_session_name]
-            pane = session.attached_window.split_window(vertical=False)
+            pane = session.active_window.split(direction=PaneDirection.Right)
 
         activate_venv(
             pane,
@@ -99,7 +101,7 @@ def tmux_start(bec_path: str, services: dict):
             wait_func()
 
     for session in sessions.values():
-        session.attached_window.select_layout("tiled")
+        session.active_window.select_layout("tiled")
         session.mouse_all_flag = True
         session.set_option("mouse", "on")
 
