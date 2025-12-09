@@ -29,6 +29,7 @@ from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.callback_handler import EventType
 from bec_lib.client import BECClient
 from bec_lib.logger import bec_logger
+from bec_lib.procedures.hli import ProcedureHli
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.utils.pydantic_pretty_print import pretty_print_pydantic_validation_error
@@ -76,6 +77,7 @@ class BECIPythonClient:
             name="BECIPythonClient",
             prompt_for_acl=True,
         )
+
         self._ip = IPython.get_ipython()
         self.started = False
         self._sighandler = None
@@ -189,13 +191,14 @@ class BECIPythonClient:
         magics = BECMagics(self._ip, self)
         self._ip.register_magics(magics)
 
-    def shutdown(self):
+    def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the client and all its components"""
         try:
             self.gui.close()
         except AttributeError:
             pass
-        self._client.shutdown()
+        self._client.shutdown(per_thread_timeout_s)
+        logger.success("done")
 
     def _create_exception_handler(self):
         return functools.partial(_ip_exception_handler, parent=self)

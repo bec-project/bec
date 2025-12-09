@@ -84,6 +84,12 @@ class ACLConfig(BaseModel):
     user: str | None = None
 
 
+class ProcedureConfig(BaseModel):
+    """Procedure config model."""
+
+    enable_procedures: bool = True
+
+
 class ServiceConfigModel(BaseModel):
     """Service configuration model."""
 
@@ -97,6 +103,7 @@ class ServiceConfigModel(BaseModel):
     scilog: SciLogConfig = Field(default_factory=SciLogConfig)
     acl: ACLConfig = Field(default_factory=ACLConfig)
     abort_on_ctrl_c: bool = True
+    procedures: ProcedureConfig = Field(default_factory=ProcedureConfig)
 
 
 class ServiceConfig:
