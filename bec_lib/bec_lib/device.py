@@ -13,6 +13,7 @@ import uuid
 from collections import defaultdict, namedtuple
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
+import numpy as np
 from pydantic import ConfigDict
 from rich.console import Console
 from rich.table import Table
@@ -500,8 +501,14 @@ class DeviceBase:
         class_name = obj._class_name
 
         if isinstance(obj.parent, DeviceManagerBase):
-            # Get the updated device config
-            device_config = obj.parent.get_device_config().get(obj.name, {}).get("deviceConfig", {})
+            # Get the updated device config. We use the cached version to avoid
+            # excessive calls to Redis.
+            ttl_hash = int(np.round(time.time() / 5))
+            device_config = (
+                obj.parent.get_device_config_cached(hash=ttl_hash)
+                .get(obj.name, {})
+                .get("deviceConfig", {})
+            )
             # Filter down to only config signals
             config_signals = [
                 sig_name
@@ -513,8 +520,9 @@ class DeviceBase:
             config = "".join([f"\t{key}: {val}\n" for key, val in device_config.items()])
 
             separator = "--" * 10
+
             # pylint: disable=protected-access
-            return (
+            info = (
                 f"{class_name}(name={obj.name},"
                 f" enabled={obj.root.enabled}):\n{separator}\nDetails:\n\tDescription:"
                 f" {obj._config.get('description', obj.name)}\n\tStatus:"
@@ -524,8 +532,13 @@ class DeviceBase:
                 f" {obj._config.get('deviceClass')}\n\treadoutPriority:"
                 f" {obj._config.get('readoutPriority')}\n\tDevice tags:"
                 f" {obj._config.get('deviceTags', [])}\n\tUser parameter:"
-                f" {obj._config.get('userParameter')}\n{separator}\nConfig Signals:\n{config}"
+                f" {obj._config.get('userParameter')}\n"
             )
+            if hasattr(obj, "limits"):
+                info += f"\tLimits: {obj.limits}\n"
+            if config:
+                info += f"\n{separator}\nConfig Signals:\n{config}"
+            return info
         return f"{class_name}(name={obj.name}, root_device={obj.root.name}, enabled={obj.root.enabled})"
 
 
