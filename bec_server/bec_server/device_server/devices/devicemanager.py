@@ -243,8 +243,7 @@ class DeviceManagerDS(DeviceManagerBase):
         reload_msg = messages.DeviceConfigMessage(action="reload", config={})
         self.connector.send(MessageEndpoints.device_config_update(), reload_msg)
 
-    @staticmethod
-    def update_config(obj: OphydObject, config: dict) -> None:
+    def update_config(self, obj: OphydObject, config: dict) -> None:
         """Update an ophyd device's config
 
         Args:
@@ -258,6 +257,7 @@ class DeviceManagerDS(DeviceManagerBase):
             obj._update_device_config(config)  # type: ignore
             return
 
+        signal_updated = False
         for config_key, config_value in config.items():
             # first handle the ophyd exceptions...
             if config_key == "limits":
@@ -283,10 +283,18 @@ class DeviceManagerDS(DeviceManagerBase):
             config_attr = getattr(obj, config_key)
             if isinstance(config_attr, ophyd.Signal):
                 config_attr.set(config_value).wait(timeout=2)
+                if not hasattr(config_attr, "_auto_monitor"):
+                    # only signal values that are not auto monitored need
+                    # to trigger a manual buffer update
+                    signal_updated = True
             elif callable(config_attr):
                 config_attr(config_value)
             else:
                 setattr(obj, config_key, config_value)
+
+        if signal_updated:
+            # re-initialize the device buffer to reflect the updated signal values
+            self.devices[obj.name].initialize_device_buffer(self.connector)
 
     @staticmethod
     def construct_device_obj(
