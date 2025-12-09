@@ -500,11 +500,20 @@ class DeviceBase:
         class_name = obj._class_name
 
         if isinstance(obj.parent, DeviceManagerBase):
-            # pylint: disable=protected-access
-            config = "".join(
-                [f"\t{key}: {val}\n" for key, val in obj._config.get("deviceConfig").items()]
-            )
+            # Get the updated device config
+            device_config = obj.parent.get_device_config().get(obj.name, {}).get("deviceConfig", {})
+            # Filter down to only config signals
+            config_signals = [
+                sig_name
+                for sig_name, sig in obj._info.get("signals").items()
+                if sig.get("kind_str") == "config"
+            ]
+            device_config = {k: v for k, v in device_config.items() if k in config_signals}
+            # Print only updated config signals
+            config = "".join([f"\t{key}: {val}\n" for key, val in device_config.items()])
+
             separator = "--" * 10
+            # pylint: disable=protected-access
             return (
                 f"{class_name}(name={obj.name},"
                 f" enabled={obj.root.enabled}):\n{separator}\nDetails:\n\tDescription:"
@@ -515,7 +524,7 @@ class DeviceBase:
                 f" {obj._config.get('deviceClass')}\n\treadoutPriority:"
                 f" {obj._config.get('readoutPriority')}\n\tDevice tags:"
                 f" {obj._config.get('deviceTags', [])}\n\tUser parameter:"
-                f" {obj._config.get('userParameter')}\n{separator}\nConfig:\n{config}"
+                f" {obj._config.get('userParameter')}\n{separator}\nConfig Signals:\n{config}"
             )
         return f"{class_name}(name={obj.name}, root_device={obj.root.name}, enabled={obj.root.enabled})"
 
@@ -544,10 +553,6 @@ class DeviceBaseWithConfig(DeviceBase):
         self.update_config({"enabled": val})
         self.root._config["enabled"] = val
 
-    def get_device_config(self):
-        """get the device config for this device"""
-        return self.root._config["deviceConfig"]
-
     def update_config(self, update: dict) -> None:
         """
         Updates the device configuration.
@@ -558,15 +563,6 @@ class DeviceBaseWithConfig(DeviceBase):
         """
         self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: update}
-        )
-
-    @typechecked
-    def set_device_config(self, val: dict):
-        """set the device config for this device"""
-        # pylint: disable=protected-access
-        self.root._config["deviceConfig"].update(val)
-        return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"deviceConfig": self.root._config["deviceConfig"]}}
         )
 
     def get_device_tags(self) -> list:

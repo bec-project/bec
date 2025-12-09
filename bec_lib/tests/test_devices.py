@@ -451,13 +451,6 @@ def test_status_wait():
     status.wait()
 
 
-def test_device_set_device_config(dev_w_config: Callable[..., DeviceBaseWithConfig]):
-    device = dev_w_config({"deviceConfig": {"tolerance": 1}})
-    device.set_device_config({"tolerance": 2})
-    assert device.get_device_config() == {"tolerance": 2}
-    device.parent.config_helper.send_config_request.assert_called_once()
-
-
 @pytest.fixture
 def device_w_tags(dev_w_config: Callable[..., DeviceBaseWithConfig]):
     yield dev_w_config({"deviceTags": {"tag1", "tag2"}})
@@ -498,10 +491,7 @@ def test_properties(dev_w_config: Callable[..., DeviceBaseWithConfig], config, a
 
 @pytest.mark.parametrize(
     ["config", "method", "value"],
-    [
-        ({"deviceTags": {"tag1", "tag2"}}, "get_device_tags", {"tag1", "tag2"}),
-        ({"deviceConfig": {"tolerance": 1}}, "get_device_config", {"tolerance": 1}),
-    ],
+    [({"deviceTags": {"tag1", "tag2"}}, "get_device_tags", {"tag1", "tag2"})],
 )
 def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, method, value):
     assert getattr(dev_w_config(config), method)() == value

@@ -1,4 +1,5 @@
 # pylint: skip-file
+import copy
 import os
 from collections import defaultdict
 from unittest import mock
@@ -420,3 +421,77 @@ def test_get_bec_signals(dm_with_devices):
     eiger = list(filter(lambda x: x[0] == "eiger", preview_signals))[0]
     assert eiger[1] == "preview"
     assert isinstance(eiger[2], dict)
+
+
+def test_get_device_config(dm_with_devices, session_from_test_config):
+    device_manager = dm_with_devices
+    with mock.patch.object(device_manager.connector, "get") as mock_get:
+        mock_get.return_value = messages.AvailableResourceMessage(
+            resource=session_from_test_config.get("devices")
+        )
+        samx_config = device_manager.get_device_config().get("samx")
+    ref_config_samx = next(
+        filter(lambda x: x["name"] == "samx", session_from_test_config["devices"])
+    )
+    samx_config["name"] = "samx"  # Ensure name is present for comparison
+    assert samx_config == ref_config_samx
+
+
+def test_get_device_config_returns_empty_dict_on_none(dm_with_devices):
+    device_manager = dm_with_devices
+    with mock.patch.object(device_manager.connector, "get") as mock_get:
+        mock_get.return_value = None
+        config = device_manager.get_device_config()
+    assert config == {}
+
+
+def test_get_device_config_with_signal_update(dm_with_devices, session_from_test_config):
+    device_manager = dm_with_devices
+    # Mock a device signal that can be read
+    mock_signal = mock.MagicMock()
+    mock_signal.read.return_value = {"samx_velocity": {"value": 5.0}}
+
+    # Add signal info to the device
+    device_manager.devices["samx"]._info["signals"] = {
+        "velocity": {"obj_name": "samx_velocity", "kind_str": "config"}
+    }
+
+    # Mock getattr to return our mock signal
+    with mock.patch("bec_lib.devicemanager.getattr", return_value=mock_signal):
+        with mock.patch.object(device_manager.connector, "get") as mock_get:
+            # Create config with a deviceConfig that has a signal
+            config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+            for dev_conf in config_with_signal:
+                if dev_conf["name"] == "samx":
+                    dev_conf["deviceConfig"] = {"velocity": 0.0}
+                    break
+
+            mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+            samx_config = device_manager.get_device_config(update_signals=True).get("samx")
+
+    # Verify signal was updated with the read value
+    assert samx_config["deviceConfig"]["velocity"] == 5.0
+    mock_signal.read.assert_called_once_with(cached=True)
+
+
+def test_get_device_config_without_signal_update(dm_with_devices, session_from_test_config):
+    device_manager = dm_with_devices
+
+    # Add signal info to the device
+    device_manager.devices["samx"]._info["signals"] = {
+        "velocity": {"obj_name": "samx_velocity", "kind_str": "config"}
+    }
+
+    with mock.patch.object(device_manager.connector, "get") as mock_get:
+        # Create config with a deviceConfig that has a signal
+        config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+        for dev_conf in config_with_signal:
+            if dev_conf["name"] == "samx":
+                dev_conf["deviceConfig"] = {"velocity": 0.0}
+                break
+
+        mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+        samx_config = device_manager.get_device_config(update_signals=False).get("samx")
+
+    # Verify signal was NOT updated and retains original value
+    assert samx_config["deviceConfig"]["velocity"] == 0.0
