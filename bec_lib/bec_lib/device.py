@@ -560,10 +560,10 @@ class DeviceBaseWithConfig(DeviceBase):
     @enabled.setter
     def enabled(self, val):
         # pylint: disable=protected-access
-        self.update_config({"enabled": val})
+        self._update_config({"enabled": val})
         self.root._config["enabled"] = val
 
-    def update_config(self, update: dict) -> None:
+    def _update_config(self, update: dict) -> None:
         """
         Updates the device configuration.
 
@@ -966,7 +966,7 @@ class AdjustableMixin:
 
     @limits.setter
     def limits(self, val: list):
-        self.update_config({"deviceConfig": {"limits": val}})
+        self._update_config({"deviceConfig": {"limits": val}})
 
     @property
     def low_limit(self):
@@ -978,7 +978,7 @@ class AdjustableMixin:
     @low_limit.setter
     def low_limit(self, val: float):
         limits = [val, self.high_limit]
-        self.update_config({"deviceConfig": {"limits": limits}})
+        self._update_config({"deviceConfig": {"limits": limits}})
 
     @property
     def high_limit(self):
@@ -990,7 +990,7 @@ class AdjustableMixin:
     @high_limit.setter
     def high_limit(self, val: float):
         limits = [self.low_limit, val]
-        self.update_config({"deviceConfig": {"limits": limits}})
+        self._update_config({"deviceConfig": {"limits": limits}})
 
 
 class Signal(AdjustableMixin, OphydInterfaceBase):
@@ -1034,7 +1034,7 @@ class ComputedSignal(Signal):
         method_code = inspect.getsource(method)
         self._num_args_method = len(inspect.signature(method).parameters)
 
-        self.update_config({"deviceConfig": {"compute_method": self._header + method_code}})
+        self._update_config({"deviceConfig": {"compute_method": self._header + method_code}})
         if self._num_signals is None:
             return
         if self._num_args_method != self._num_signals:
@@ -1053,12 +1053,12 @@ class ComputedSignal(Signal):
         >>> dev.<dev_name>.set_input_signals(dev.bpm4i.readback, dev.bpm5i.readback)
         """
         if not signals:
-            self.update_config({"deviceConfig": {"input_signals": []}})
+            self._update_config({"deviceConfig": {"input_signals": []}})
             return
         if not all(isinstance(signal, Signal) for signal in signals):
             raise ValueError("All input signals must be of type Signal.")
         signals = [signal.dotted_name for signal in signals]
-        self.update_config({"deviceConfig": {"input_signals": signals}})
+        self._update_config({"deviceConfig": {"input_signals": signals}})
         self._num_signals = len(signals)
         if self._num_args_method is None:
             return
