@@ -621,7 +621,7 @@ def test_show_all():
 @pytest.fixture()
 def adj():
     (adj := AdjustableMixin()).root = mock.MagicMock()
-    adj.update_config = mock.MagicMock()
+    adj._update_config = mock.MagicMock()
     return adj
 
 
@@ -639,7 +639,7 @@ def test_adjustable_mixin_limits_missing(adj):
 
 def test_adjustable_mixin_set_limits(adj):
     adj.limits = [-12, 12]
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 12]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 12]}})
 
 
 def test_adjustable_mixin_set_low_limit(adj):
@@ -647,7 +647,7 @@ def test_adjustable_mixin_set_low_limit(adj):
         signals={"low": {"value": -12}, "high": {"value": 12}}, metadata={}
     )
     adj.low_limit = -20
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-20, 12]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-20, 12]}})
 
 
 def test_adjustable_mixin_set_high_limit(adj):
@@ -655,7 +655,7 @@ def test_adjustable_mixin_set_high_limit(adj):
         signals={"low": {"value": -12}, "high": {"value": 12}}, metadata={}
     )
     adj.high_limit = 20
-    adj.update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
+    adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
 
 
 def test_computed_signal_set_compute_method():
@@ -664,9 +664,9 @@ def test_computed_signal_set_compute_method():
     def my_compute_method():
         return "a + b"
 
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as _update_config:
         comp_signal.set_compute_method(my_compute_method)
-        update_config.assert_called_once_with(
+        _update_config.assert_called_once_with(
             {
                 "deviceConfig": {
                     "compute_method": comp_signal._header
@@ -727,12 +727,12 @@ def test_computed_signal_show_all():
 
 def test_computed_signal_set_signals():
     comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as _update_config:
         comp_signal.set_input_signals(
             Signal(name="a", parent=mock.MagicMock(spec=DeviceManagerBase)),
             Signal(name="b", parent=mock.MagicMock(spec=DeviceManagerBase)),
         )
-        update_config.assert_called_once_with({"deviceConfig": {"input_signals": ["a", "b"]}})
+        _update_config.assert_called_once_with({"deviceConfig": {"input_signals": ["a", "b"]}})
 
 
 def test_computed_signal_set_signals_raises_error():
@@ -743,9 +743,9 @@ def test_computed_signal_set_signals_raises_error():
 
 def test_computed_signal_set_signals_empty():
     comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
-    with mock.patch.object(comp_signal, "update_config") as update_config:
+    with mock.patch.object(comp_signal, "_update_config") as _update_config:
         comp_signal.set_input_signals()
-        update_config.assert_called_once_with({"deviceConfig": {"input_signals": []}})
+        _update_config.assert_called_once_with({"deviceConfig": {"input_signals": []}})
 
 
 def test_computed_signal_raises_error_on_set_compute_method():
