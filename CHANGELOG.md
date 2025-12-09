@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.81.1 (2025-12-09)
+
+### Bug Fixes
+
+- Pull testing plugin from pypi
+  ([`06e28f9`](https://github.com/bec-project/bec/commit/06e28f9403de4e69cf9eba6967daea4fa3bce955))
+
+
 ## v3.81.0 (2025-12-09)
 
 ### Features
