@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.81.0 (2025-12-09)
+
+### Features
+
+- Enhance ConfigHelper to handle configuration conflicts with user input
+  ([`7408271`](https://github.com/bec-project/bec/commit/74082712e3d0bd18d332d3025742adfff4323952))
+
+
 ## v3.80.1 (2025-12-08)
 
 ### Bug Fixes
