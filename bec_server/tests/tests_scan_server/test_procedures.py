@@ -19,11 +19,11 @@ from bec_lib.messages import (
 )
 from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
-from bec_server.scan_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
-from bec_server.scan_server.procedures.helper import FrontendProcedureHelper
-from bec_server.scan_server.procedures.in_process_worker import InProcessProcedureWorker
-from bec_server.scan_server.procedures.manager import ProcedureManager, ProcedureWorker
-from bec_server.scan_server.procedures.procedure_registry import (
+from bec_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
+from bec_server.procedures.helper import FrontendProcedureHelper
+from bec_server.procedures.in_process_worker import InProcessProcedureWorker
+from bec_server.procedures.manager import ProcedureManager, ProcedureWorker
+from bec_server.procedures.procedure_registry import (
     _BUILTIN_PROCEDURES,
     ProcedureRegistryError,
     callable_from_execution_message,
@@ -58,7 +58,7 @@ def procedure_manager():
     server = MagicMock()
     server.bootstrap_server = f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}"
     with patch(
-        "bec_server.scan_server.procedures.manager.RedisConnector",
+        "bec_server.procedures.manager.RedisConnector",
         partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
     ):
         manager = ProcedureManager(server, InProcessProcedureWorker)
@@ -171,8 +171,8 @@ def _wait_until(predicate: Callable[[], bool], timeout_s: float = 0.1):
             raise TimeoutError()
 
 
-@patch("bec_server.scan_server.procedures.worker_base.RedisConnector")
-@patch("bec_server.scan_server.procedures.manager.RedisConnector", MagicMock())
+@patch("bec_server.procedures.worker_base.RedisConnector")
+@patch("bec_server.procedures.manager.RedisConnector", MagicMock())
 def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     procedure_manager._worker_cls = UnlockableWorker
     message = PROCESS_REQUEST_TEST_CASES[0]
@@ -208,9 +208,9 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     _wait_until(lambda: len(procedure_manager._active_workers) == 0)
 
 
-@patch("bec_server.scan_server.procedures.worker_base.RedisConnector", MagicMock())
-@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
-@patch("bec_server.scan_server.procedures.in_process_worker.callable_from_execution_message")
+@patch("bec_server.procedures.worker_base.RedisConnector", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.callable_from_execution_message")
 def test_in_process_worker(procedure_function):
     queue = "primary"
     with InProcessProcedureWorker("localhost:1", queue, 1) as worker:
@@ -228,8 +228,8 @@ def test_in_process_worker(procedure_function):
         procedure_function().assert_called_with(1, 2, 3, foo="bar")
 
 
-@patch("bec_server.scan_server.procedures.builtin_procedures.logger")
-@patch("bec_server.scan_server.procedures.worker_base.RedisConnector")
+@patch("bec_server.procedures.builtin_procedures.logger")
+@patch("bec_server.procedures.worker_base.RedisConnector")
 def test_builtin_procedure_log_args(_, procedure_logger: MagicMock):
     test_string = "test string for logging as an arg"
     with InProcessProcedureWorker("localhost:1", "primary", 1) as worker:
@@ -245,10 +245,10 @@ def test_builtin_procedure_log_args(_, procedure_logger: MagicMock):
     assert "'kwarg': 'test'" in log_call_arg_0
 
 
-@patch("bec_server.scan_server.procedures.in_process_worker.BECClient")
-@patch("bec_server.scan_server.procedures.worker_base.RedisConnector")
+@patch("bec_server.procedures.in_process_worker.BECClient")
+@patch("bec_server.procedures.worker_base.RedisConnector")
 def test_builtin_procedure_scan_execution(_, Client):
-    from bec_server.scan_server.procedures.builtin_procedures import run_scan
+    from bec_server.procedures.builtin_procedures import run_scan
 
     run_scan.__annotations__["bec"] = Client
     args = ("samx", -10, 10)
@@ -296,7 +296,7 @@ def _yield_once():
 
 
 @patch(
-    "bec_server.scan_server.procedures.worker_base.RedisConnector",
+    "bec_server.procedures.worker_base.RedisConnector",
     side_effect=lambda *_: MagicMock(
         blocking_list_pop_to_set_add=MagicMock(side_effect=_yield_once())
     ),
@@ -359,7 +359,7 @@ def _all_eq_except_id(a: list[ProcedureExecutionMessage], b: list[ProcedureExecu
 
 
 @pytest.mark.parametrize("queue", ["queue1", "queue2"])
-@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
 def test_startup(manager_with_test_msgs: _ManagerWithMsgs, queue: str):
     procedure_manager, expected = manager_with_test_msgs
     queue_expected = list(filter(lambda msg: msg.queue == queue, expected))
@@ -378,7 +378,7 @@ def test_startup(manager_with_test_msgs: _ManagerWithMsgs, queue: str):
     assert _all_eq_except_id(unhandled_execution_list, queue_expected)
 
 
-@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
 def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
     procedure_manager, expected = manager_with_test_msgs
     remaining_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
@@ -401,7 +401,7 @@ def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
     assert _all_eq_except_id(unhandled_execution_list, aborted_expected)
 
 
-@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
 def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
     procedure_manager, expected = manager_with_test_msgs
     q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
@@ -422,7 +422,7 @@ def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
     assert _all_eq_except_id(q2_execution_list, [q2_expected[0]])
 
 
-@patch("bec_server.scan_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
 def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
     procedure_manager, expected = manager_with_test_msgs
     q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))

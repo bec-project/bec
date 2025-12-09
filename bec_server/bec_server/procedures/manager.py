@@ -21,10 +21,10 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.redis_connector import RedisConnector
-from bec_server.scan_server.procedures import procedure_registry
-from bec_server.scan_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
-from bec_server.scan_server.procedures.helper import BackendProcedureHelper
-from bec_server.scan_server.procedures.worker_base import ProcedureWorker
+from bec_server.procedures import procedure_registry
+from bec_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
+from bec_server.procedures.helper import BackendProcedureHelper
+from bec_server.procedures.worker_base import ProcedureWorker
 from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger

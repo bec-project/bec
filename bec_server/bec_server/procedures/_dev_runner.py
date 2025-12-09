@@ -6,8 +6,8 @@ if True:  # pragma: no cover # must open a clause to apply to everything
     from unittest.mock import MagicMock
 
     from bec_lib.logger import bec_logger
-    from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
-    from bec_server.scan_server.procedures.manager import ProcedureManager
+    from bec_server.procedures.container_worker import ContainerProcedureWorker
+    from bec_server.procedures.manager import ProcedureManager
 
     logger = bec_logger.logger
 

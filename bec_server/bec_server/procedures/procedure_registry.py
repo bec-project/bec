@@ -1,13 +1,13 @@
 from typing import Iterable
 
 from bec_lib.messages import ProcedureExecutionMessage
-from bec_server.scan_server.procedures.builtin_procedures import (
+from bec_server.procedures.builtin_procedures import (
     log_message_args_kwargs,
     run_scan,
     run_script,
     sleep,
 )
-from bec_server.scan_server.procedures.constants import BecProcedure
+from bec_server.procedures.constants import BecProcedure
 
 _BUILTIN_PROCEDURES: dict[str, BecProcedure] = {
     "log execution message args": log_message_args_kwargs,

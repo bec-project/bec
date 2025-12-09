@@ -1,6 +1,6 @@
 from typing import Literal, Protocol, TypedDict
 
-from bec_server.scan_server.procedures.constants import ContainerWorkerEnv, PodmanContainerStates
+from bec_server.procedures.constants import ContainerWorkerEnv, PodmanContainerStates
 
 
 class VolumeSpec(TypedDict):

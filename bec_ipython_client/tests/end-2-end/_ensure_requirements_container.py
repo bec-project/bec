@@ -1,7 +1,7 @@
 from time import sleep
 
-from bec_server.scan_server.procedures.constants import PROCEDURE, ProcedureWorkerError
-from bec_server.scan_server.procedures.container_utils import PodmanCliUtils
+from bec_server.procedures.constants import PROCEDURE, ProcedureWorkerError
+from bec_server.procedures.container_utils import PodmanCliUtils
 
 image_name = (
     f"ghcr.io/bec-project/{PROCEDURE.CONTAINER.REQUIREMENTS_IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
