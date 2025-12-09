@@ -10,6 +10,7 @@ import typeguard
 
 import bec_lib
 from bec_lib import messages
+from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.connector import MessageObject
 from bec_lib.devicemanager import DeviceConfigError
 
@@ -433,8 +434,8 @@ def test_get_device_config(dm_with_devices, session_from_test_config):
     ref_config_samx = next(
         filter(lambda x: x["name"] == "samx", session_from_test_config["devices"])
     )
-    samx_config["name"] = "samx"  # Ensure name is present for comparison
-    assert samx_config == ref_config_samx
+
+    assert samx_config == _DeviceModelCore(**ref_config_samx).model_dump()
 
 
 def test_get_device_config_returns_empty_dict_on_none(dm_with_devices):
