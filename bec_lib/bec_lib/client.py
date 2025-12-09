@@ -220,7 +220,7 @@ class BECClient(BECService):
         self._start_scan_queue()
         self._start_alarm_handler()
         self.macros.load_all_user_macros()
-        self.config = ConfigHelperUser(self.device_manager.config_helper)
+        self.config = ConfigHelperUser(self.device_manager)
         self.history = ScanHistory(client=self)
         self.dap = DAPPlugins(self)
         self.bl_checks = BeamlineChecks(self)

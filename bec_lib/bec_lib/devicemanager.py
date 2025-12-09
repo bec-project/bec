@@ -8,14 +8,17 @@ import collections
 import copy
 import functools
 import re
+import time
 import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Iterable, Literal
 
+import numpy as np
 from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
 
+from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.callback_handler import EventType
 from bec_lib.config_helper import ConfigHelper
@@ -464,7 +467,7 @@ class DeviceManagerBase:
         self.connector = self._service.connector
         self.scan_info = ScanInfo(msg=None)
         self.config_helper = ConfigHelper(
-            connector=self.connector, service_name=self._service._service_name
+            connector=self.connector, service_name=self._service._service_name, device_manager=self
         )
         self._status_cb = status_cb if isinstance(status_cb, list) else [status_cb]
 
@@ -747,19 +750,27 @@ class DeviceManagerBase:
                     signals.append((device.name, comp, signal_info))
         return signals
 
-    @functools.lru_cache(maxsize=2)
-    def get_device_config_cached(self, hash: int, update_signals: bool = True) -> dict:
+    def get_device_config_cached(self, update_signals: bool = True) -> dict:
         """
         Get the current device configuration from Redis. If update_signals is True,
         also update the config's signal values if they have changed.
         The result is cached based on the provided hash value.
 
         Args:
-            hash (int): Hash value to cache the result. Typically a time-based hash.
             update_signals (bool): Whether to update signal values in the config.
         Returns:
             dict: Device configuration.
         """
+
+        ttl_hash = int(np.round(time.time() / 5))
+        return self._get_device_config_cached_internal(
+            ttl_hash=ttl_hash, update_signals=update_signals
+        )
+
+    @functools.lru_cache(maxsize=2)
+    def _get_device_config_cached_internal(
+        self, ttl_hash: int, update_signals: bool = True
+    ) -> dict:
         return self.get_device_config(update_signals=update_signals)
 
     def get_device_config(self, update_signals: bool = True) -> dict:
@@ -788,7 +799,7 @@ class DeviceManagerBase:
                             self.devices[dev_name], signal_name
                         ).read(cached=True)[signal_obj_name]["value"]
 
-            config[dev_name] = dev_conf
+            config[dev_name] = _DeviceModelCore(**dev_conf).model_dump()
         return config
 
     def shutdown(self):

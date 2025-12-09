@@ -34,6 +34,7 @@ from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.json import ExtendedEncoder
 
 if TYPE_CHECKING:  # pragma: no cover
+    from bec_lib.devicemanager import DeviceManagerBase
     from bec_lib.messages import DeviceConfigMessage, RequestResponseMessage, ServiceResponseMessage
     from bec_lib.redis_connector import RedisConnector
 
@@ -68,8 +69,9 @@ class ConfigHelperUser:
     Thin wrapper around ConfigHelper to expose only selected methods to the user.
     """
 
-    def __init__(self, config_helper: ConfigHelper) -> None:
-        self._config_helper = config_helper
+    def __init__(self, device_manager: DeviceManagerBase) -> None:
+        self._device_manager = device_manager
+        self._config_helper = device_manager.config_helper
 
     def update_session_with_file(
         self, file_path: str, save_recovery: bool = True, force: bool = False, validate: bool = True
@@ -117,17 +119,24 @@ class ConfigHelperUser:
 class ConfigHelper:
     """Config Helper"""
 
-    def __init__(self, connector: RedisConnector, service_name: str | None = None) -> None:
+    def __init__(
+        self,
+        connector: RedisConnector,
+        service_name: str | None = None,
+        device_manager: DeviceManagerBase | None = None,
+    ) -> None:
         """Helper class for updating and saving the BEC device configuration.
 
         Args:
             connector (RedisConnector): Redis connector.
             service_name (str, optional): Name of the service. Defaults to None.
+            device_manager (DeviceManagerBase, optional): Device manager instance. Defaults to None.
         """
         self._connector = connector
         self._service_name = service_name
         self._writer_mixin = None
         self._base_path_recovery = None
+        self._device_manager = device_manager
 
     def update_session_with_file(
         self, file_path: str, save_recovery: bool = True, force: bool = False, validate: bool = True
@@ -216,11 +225,11 @@ class ConfigHelper:
         Returns:
             dict: Conflicts found in the config: Device name -> List of conflicting elements.
         """
-        _config = self._connector.get(MessageEndpoints.device_config())
-        if not _config:
+        if not self._device_manager:
             return {}
-        _config = _config.content["resource"]
-        current_config = {dev["name"]: _DeviceModelCore(**dev).model_dump() for dev in _config}
+        current_config = self._device_manager.get_device_config_cached()
+        if not current_config:
+            return {}
 
         output_conflicts = {}
         for dev, config in new_config.items():

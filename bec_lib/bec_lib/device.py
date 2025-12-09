@@ -503,11 +503,8 @@ class DeviceBase:
         if isinstance(obj.parent, DeviceManagerBase):
             # Get the updated device config. We use the cached version to avoid
             # excessive calls to Redis.
-            ttl_hash = int(np.round(time.time() / 5))
             device_config = (
-                obj.parent.get_device_config_cached(hash=ttl_hash)
-                .get(obj.name, {})
-                .get("deviceConfig", {})
+                obj.parent.get_device_config_cached().get(obj.name, {}).get("deviceConfig", {})
             )
             # Filter down to only config signals
             config_signals = [
