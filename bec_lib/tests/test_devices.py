@@ -522,10 +522,23 @@ def dev_container():
     return devs
 
 
-def test_device_container_wm(dev_container):
+def test_device_container_wm(dev_container, capsys):
     with mock.patch.object(dev_container.test, "read", return_value={"test": {"value": 1}}) as read:
         dev_container.wm("test")
         dev_container.wm("tes*")
+        captured = capsys.readouterr()
+        assert "test" in captured.out
+        assert "1.0000" in captured.out
+
+
+def test_device_container_wm_read_contains_None(dev_container, capsys):
+    with mock.patch.object(
+        dev_container.test, "read", return_value={"test": {"value": None}}
+    ) as read:
+        dev_container.wm("test")
+        captured = capsys.readouterr()
+        assert "test" in captured.out
+        assert "N/A" in captured.out
 
 
 @pytest.mark.parametrize(
