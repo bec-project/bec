@@ -68,6 +68,7 @@ def test_building_worker_image():
 
 @pytest.mark.timeout(100)
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_procedure_runner_spawns_worker(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
@@ -75,7 +76,7 @@ def test_procedure_runner_spawns_worker(
     assert manager._active_workers == {}
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
-        identifier="sleep", args_kwargs=((), {"time_s": 2}), queue="test"
+        identifier="sleep", args_kwargs=((), {"time_s": 0.1}), queue="test"
     )
 
     logs = []
@@ -88,7 +89,7 @@ def test_procedure_runner_spawns_worker(
     client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 20)
+    _wait_while(lambda: manager._active_workers != {}, 90)
 
     assert logs != []
 

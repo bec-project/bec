@@ -1562,9 +1562,27 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def procedure_status_update() -> EndpointInfo:
+        """
+        Endpoint for individual procedure status updates. Mainly for use in updating procedure statuses in the helper.
+        For general queue monitoring, use the procedure_queue_notif endpoint and read the queues instead.
+
+        Returns:
+            EndpointInfo: Endpoint for scan queue request response.
+
+        """
+        endpoint = f"{EndpointType.INFO.value}/procedures/procedure_status_update"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ProcedureStatusUpdate,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def procedure_queue_notif():
         """
-        PubSub channel for a consumer (e.g. BEC widgets) to be notified of changes to a procedure queue
+        PubSub channel for a consumer (e.g. BEC widgets) to be notified of changes to a procedure queue.
+        For general monitoring such as
 
         Returns:
             EndpointInfo: Endpoint for procedure queue updates for given queue.

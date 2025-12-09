@@ -358,22 +358,22 @@ class RedisConnector:
         retry_policy.update_retries(self.RETRY_ON_TIMEOUT if enabled else 0)
         self._redis_conn.set_retry(retry_policy)
 
-    def shutdown(self):
+    def shutdown(self, per_thread_timeout_s: float | None = None):
         """
         Shutdown the connector
         """
-
+        self.set_retry_enabled(False)
         if self._events_listener_thread:
             self._stop_events_listener_thread.set()
-            self._events_listener_thread.join()
+            self._events_listener_thread.join(timeout=per_thread_timeout_s)
             self._events_listener_thread = None
         if self._stream_events_listener_thread:
             self._stop_stream_events_listener_thread.set()
-            self._stream_events_listener_thread.join()
+            self._stream_events_listener_thread.join(timeout=per_thread_timeout_s)
             self._stream_events_listener_thread = None
         if self._events_dispatcher_thread:
             self._messages_queue.put(StopIteration)
-            self._events_dispatcher_thread.join()
+            self._events_dispatcher_thread.join(timeout=per_thread_timeout_s)
             self._events_dispatcher_thread = None
 
         # this will take care of shutting down direct listening threads

@@ -1281,7 +1281,7 @@ class ServiceRequestMessage(BECMessage):
 class ProcedureRequestMessage(BECMessage):
     """Message type for sending procedure requests to the server
 
-    Sent by the API server / user to the procedure_request topic. It will be consumed by the scan server.
+    Sent by the API server / user to the procedure_request topic. It will be consumed by the procedure manager.
         Args:
             identifier (str): name of the procedure registered with the server
             queue (str | none): a key for the procedure queue
@@ -1291,14 +1291,24 @@ class ProcedureRequestMessage(BECMessage):
     identifier: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] | None = None
     queue: str | None = None
+    execution_id: str = Field(default_factory=lambda: str(uuid4()))
 
 
 class ProcedureQNotifMessage(BECMessage):
-    """Message type for notifying watchers of changes to queues"""
+    """Message type for notifying watchers of changes to queues, mainly meant for GUI to consume"""
 
     msg_type: ClassVar[str] = "procedure_queue_notif_message"
     queue_name: str
     queue_type: Literal["execution", "unhandled"]
+
+
+class ProcedureStatusUpdate(BECMessage):
+    """Message type for notifying watchers of changes to procedure executions, mainly meant for status helper to consume"""
+
+    msg_type: ClassVar[str] = "procedure_execution_status_update"
+    execution_id: str
+    action: Literal["Started", "Aborted", "Finished"]
+    error: str | None = None
 
 
 class ProcedureExecutionMessage(BECMessage):
@@ -1315,7 +1325,7 @@ class ProcedureExecutionMessage(BECMessage):
     identifier: str
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
-    execution_id: str = Field(default_factory=lambda: str(uuid4()))
+    execution_id: str
 
 
 class ProcedureAbortMessage(BECMessage):

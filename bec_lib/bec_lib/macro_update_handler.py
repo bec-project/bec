@@ -8,7 +8,7 @@ import importlib.metadata
 import importlib.util
 import inspect
 import os
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
 
 import slugify
 
@@ -87,6 +87,12 @@ def has_executable_code(content: str) -> tuple[bool, int | None]:
             return True, node.lineno
 
     return False, None
+
+
+class _Macro(TypedDict):
+    cls: Callable
+    source: str
+    fname: str
 
 
 class MacroUpdateHandler:

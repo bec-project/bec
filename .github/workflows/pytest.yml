@@ -47,7 +47,7 @@ jobs:
         id: coverage
         run: |
           cd ./bec
-          coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest --random-order ./bec_server/tests ./bec_ipython_client/tests/client_tests ./bec_lib/tests
+          coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -vv --random-order ./bec_server/tests ./bec_ipython_client/tests/client_tests ./bec_lib/tests
           coverage report 
           coverage xml -o coverage-unit.xml
 

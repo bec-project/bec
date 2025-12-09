@@ -7,9 +7,9 @@ from typing import cast
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus
+from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
 from bec_server.procedures.constants import PROCEDURE
-from bec_server.procedures.helper import BackendProcedureHelper
 
 logger = bec_logger.logger
 
@@ -79,6 +79,7 @@ class ProcedureWorker(ABC):
         ...
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self._conn.shutdown()
         self._kill_process()
 
     def work(self):
