@@ -353,27 +353,27 @@ class DeviceContainer(dict):
             else:
                 limits[dev.name] = "[]"
 
+        def _get_value_str(val):
+            if not isinstance(val, str):
+                try:
+                    return f"{val:.4f}"
+                except Exception:
+                    return "N/A"
+            return val
+
         for dev, read in dev_read.items():
             if dev in read:
                 val = read[dev]["value"]
-                if not isinstance(val, str):
-                    readbacks[dev] = f"{val:.4f}"
-                else:
-                    readbacks[dev] = val
+                readbacks[dev] = _get_value_str(val)
             else:
                 readbacks[dev] = "N/A"
+
             if f"{dev}_setpoint" in read:
                 val = read[f"{dev}_setpoint"]["value"]
-                if not isinstance(val, str):
-                    setpoints[dev] = f"{val:.4f}"
-                else:
-                    setpoints[dev] = val
+                setpoints[dev] = _get_value_str(val)
             elif f"{dev}_user_setpoint" in read:
                 val = read[f"{dev}_user_setpoint"]["value"]
-                if not isinstance(val, str):
-                    setpoints[dev] = f"{val:.4f}"
-                else:
-                    setpoints[dev] = val
+                setpoints[dev] = _get_value_str(val)
             else:
                 setpoints[dev] = "N/A"
         for dev in device_names:
