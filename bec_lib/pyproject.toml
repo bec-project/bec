@@ -55,9 +55,7 @@ dev = [
     "copier~=9.7",
     "typer~=0.15",
 ]
-ci = [
-    "bec_testing_plugin@git+https://github.com/bec-project/bec_testing_plugin.git",
-]
+ci = ["bec-testing-plugin"]
 
 [project.scripts]
 bec-channel-monitor = "bec_lib.channel_monitor:channel_monitor_launch"
