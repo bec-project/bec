@@ -15,7 +15,6 @@ from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
 
-from bec_lib.atlas_models import Device as DeviceModel
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.callback_handler import EventType
 from bec_lib.config_helper import ConfigHelper
@@ -30,6 +29,7 @@ from bec_lib.device import (
 )
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messages import AvailableResourceMessage
 from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.rpc_utils import rgetattr
 
@@ -745,6 +745,35 @@ class DeviceManagerBase:
                 if signal_info.get("signal_class") == signal_type:
                     signals.append((device.name, comp, signal_info))
         return signals
+
+    def get_device_config(self, update_signals: bool = True) -> dict:
+        """
+        Get the current device configuration from Redis. If update_signal is True,
+        also update the config's signal values if they have changed.
+        """
+        config_msg = self.connector.get(MessageEndpoints.device_config())
+        config = {}
+        if not config_msg or not isinstance(config_msg, AvailableResourceMessage):
+            return config
+        for dev_conf in config_msg.resource:
+            dev_name = dev_conf.pop("name", None)
+            if not dev_name:
+                continue
+            if update_signals:
+                # If the device config specifies start values for signals, update them
+                available_signal = self.devices[dev_name]._info.get("signals", {})
+                device_config = dev_conf.get("deviceConfig", {})
+                if not device_config:
+                    continue
+                for signal_name in device_config:
+                    if signal_name in available_signal:
+                        signal_obj_name = available_signal[signal_name].get("obj_name")
+                        dev_conf["deviceConfig"][signal_name] = getattr(
+                            self.devices[dev_name], signal_name
+                        ).read(cached=True)[signal_obj_name]["value"]
+
+            config[dev_name] = dev_conf
+        return config
 
     def shutdown(self):
         """
