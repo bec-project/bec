@@ -850,7 +850,112 @@ def test_device_str(dm_with_devices):
     """Test that the device string representation includes the name and class."""
     dev = dm_with_devices.devices.eiger
     out = str(dev)
-    assert "SimCamera(name=eiger" in out
-    assert f"User parameter: {dev._config.get('userParameter')}" in out
-    assert f"Device tags: {dev._config.get('deviceTags')}" in out
-    assert f"Device class: {dev._config.get('deviceClass')}" in out
+    assert "SimCamera(name=eiger, enabled=True)" == out
+
+
+def test_device_repr_pretty_cycle(dm_with_devices):
+    """Test that _repr_pretty_ uses simple representation when cycling."""
+    dev = dm_with_devices.devices.eiger
+
+    # Mock the pretty printer object
+    class MockPrinter:
+        def __init__(self):
+            self.text_output = None
+
+        def text(self, value):
+            self.text_output = value
+
+    p = MockPrinter()
+    dev._repr_pretty_(p, cycle=True)
+
+    assert p.text_output == "SimCamera(...)"
+
+
+def test_device_repr_pretty_in_container(dm_with_devices):
+    """Test that _repr_pretty_ uses simple representation when indented (in container)."""
+    dev = dm_with_devices.devices.eiger
+
+    # Mock the pretty printer object with indentation
+    class MockPrinter:
+        def __init__(self):
+            self.text_output = None
+            self.indentation = 1  # Simulate being in a container
+
+        def text(self, value):
+            self.text_output = value
+
+    p = MockPrinter()
+    dev._repr_pretty_(p, cycle=False)
+
+    assert p.text_output == str(dev)
+
+
+def test_device_repr_pretty_rich_format(dm_with_devices):
+    """Test that _repr_pretty_ uses rich formatting when not cycling and not in container."""
+    dev = dm_with_devices.devices.eiger
+
+    # Mock the pretty printer object
+    class MockPrinter:
+        def __init__(self):
+            self.text_output = None
+            self.indentation = 0  # Not in a container
+
+        def text(self, value):
+            self.text_output = value
+
+    with mock.patch.object(
+        dev, "read", return_value={"eiger": {"value": 1, "timestamp": 1701105880.1711318}}
+    ):
+        p = MockPrinter()
+        dev._repr_pretty_(p, cycle=False)
+
+        # Check that we got rich formatted output (contains ANSI codes or table structure)
+        assert p.text_output is not None
+        assert (
+            "SimCamera: eiger" in p.text_output or "[3m" in p.text_output
+        )  # Rich formatting present
+
+
+def test_device_compile_rich_str_with_values(dm_with_devices):
+    """Test that _compile_rich_str creates output with current values."""
+    import numpy as np
+
+    dev = dm_with_devices.devices.eiger
+
+    with mock.patch.object(
+        dev,
+        "read",
+        return_value={
+            "eiger": {"value": 5.0, "timestamp": 1701105880.1711318},
+            "eiger_array": {"value": np.array([1, 2, 3, 4, 5]), "timestamp": 1701105880.1711318},
+        },
+    ):
+        result = dev._compile_rich_str(dev)
+
+        assert result is not None
+        assert "Current Values" in result
+        assert "eiger" in result
+        assert "5.0" in result or "5" in result
+        # Check numpy array formatting
+        assert "shape=" in result
+
+
+def test_device_compile_rich_str_with_config_signals(dev):
+    """Test that _compile_rich_str includes config signals section."""
+    # Mock device with config signals
+    # Note: Only signals defined in _info with kind_str == "config" will be shown
+    with mock.patch.object(dev.samx.parent, "get_device_config_cached") as mock_config:
+        mock_config.return_value = {
+            "samx": {"deviceConfig": {"velocity": 10.5, "acceleration": 5.0}}
+        }
+
+        with mock.patch.object(
+            dev.samx, "read", return_value={"samx": {"value": 5.0, "timestamp": 1701105880.1711318}}
+        ):
+            result = dev.samx._compile_rich_str(dev.samx)
+
+            assert result is not None
+            assert "Config Signals" in result
+            # velocity and acceleration are config signals in the samx device info
+            assert "velocity" in result
+            assert "10.5" in result

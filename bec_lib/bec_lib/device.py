@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, namedtuple
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
@@ -26,6 +27,8 @@ from bec_lib.queue_items import QueueItem
 from bec_lib.utils.import_utils import lazy_import
 
 if TYPE_CHECKING:  # pragma: no cover
+    from IPython.lib.pretty import PrettyPrinter
+
     from bec_lib import messages
     from bec_lib.client import BECClient
     from bec_lib.redis_connector import RedisConnector
@@ -491,52 +494,154 @@ class DeviceBase:
         return self.name.__hash__()
 
     def __str__(self):
-        return self._compile_str(self)
-
-    @staticmethod
-    def _compile_str(obj: DeviceBase):
+        """Simple string representation for non-IPython contexts"""
         # pylint: disable=import-outside-toplevel
         from bec_lib.devicemanager import DeviceManagerBase
 
+        class_name = self._class_name
+        if isinstance(self.parent, DeviceManagerBase):
+            return f"{class_name}(name={self.name}, enabled={self.root.enabled})"
+        return f"{class_name}(name={self.name}, root_device={self.root.name}, enabled={self.root.enabled})"
+
+    def _repr_pretty_(self, p: PrettyPrinter, cycle: bool):
+        """
+        Pretty print for IPython contexts. The _repr_pretty_ method is called by IPython
+        to display the object in a pretty way. Any other tool will simply use the __str__
+        or __repr__ methods.
+
+        Since IPython does not provide a direct support for rich, we compile a rich
+        formatted string and pass it to the pretty printer.
+
+        Args:
+            p (PrettyPrinter): The pretty printer
+            cycle (bool): Whether or not we're in a cycle
+        """
+        if cycle:
+            p.text(f"{self._class_name}(...)")
+            return
+
+        # Use simple representation if we're inside a container (list, dict, etc.)
+        # The pretty printer provides this through the 'p' object
+        if hasattr(p, "indentation") and p.indentation > 0:
+            p.text(str(self))
+            return
+
+        result = self._compile_rich_str(self)
+        if result:
+            p.text(result)
+        else:
+            # Fallback to simple representation
+            p.text(str(self))
+
+    @staticmethod
+    def _compile_rich_str(obj: DeviceBase) -> str | None:
+        """Compile rich formatted string for IPython display"""
+        # pylint: disable=import-outside-toplevel
+        # avoid circular imports
+        from bec_lib.devicemanager import DeviceManagerBase
+
+        if not isinstance(obj.parent, DeviceManagerBase):
+            return None
+
         class_name = obj._class_name
 
-        if isinstance(obj.parent, DeviceManagerBase):
-            # Get the updated device config. We use the cached version to avoid
-            # excessive calls to Redis.
-            device_config = (
-                obj.parent.get_device_config_cached().get(obj.name, {}).get("deviceConfig", {})
-            )
-            # Filter down to only config signals
-            config_signals = [
-                sig_name
-                for sig_name, sig in obj._info.get("signals").items()
-                if sig.get("kind_str") == "config"
-            ]
-            device_config = {k: v for k, v in device_config.items() if k in config_signals}
-            # Print only updated config signals
-            config = "".join([f"\t{key}: {val}\n" for key, val in device_config.items()])
+        console = Console()
 
-            separator = "--" * 10
+        # Create main table
+        table = Table(title=f"{class_name}: {obj.name}", show_header=False, box=None)
+        table.add_column("Property", style="cyan", no_wrap=True)
+        table.add_column("Value", style="white")
 
-            # pylint: disable=protected-access
-            info = (
-                f"{class_name}(name={obj.name},"
-                f" enabled={obj.root.enabled}):\n{separator}\nDetails:\n\tDescription:"
-                f" {obj._config.get('description', obj.name)}\n\tStatus:"
-                f" {'enabled' if obj.root.enabled else 'disabled'}\n\tRead only:"
-                f" {obj.read_only}\n\tSoftware Trigger: {obj.root.software_trigger}\n\tLast recorded value:"
-                f" {obj.read(cached=True)}\n\tDevice class:"
-                f" {obj._config.get('deviceClass')}\n\treadoutPriority:"
-                f" {obj._config.get('readoutPriority')}\n\tDevice tags:"
-                f" {obj._config.get('deviceTags', [])}\n\tUser parameter:"
-                f" {obj._config.get('userParameter')}\n"
-            )
-            if hasattr(obj, "limits"):
-                info += f"\tLimits: {obj.limits}\n"
-            if config:
-                info += f"\n{separator}\nConfig Signals:\n{config}"
-            return info
-        return f"{class_name}(name={obj.name}, root_device={obj.root.name}, enabled={obj.root.enabled})"
+        # Basic info
+        table.add_row("Enabled", str(obj.root.enabled))
+        table.add_row("Description", str(obj._config.get("description", obj.name)))
+        table.add_row("Read only", str(obj.read_only))
+        table.add_row("Software Trigger", str(obj.root.software_trigger))
+        table.add_row("Device class", str(obj._config.get("deviceClass", "N/A")))
+        table.add_row("Readout Priority", str(obj._config.get("readoutPriority", "N/A")))
+
+        if obj._config.get("deviceTags"):
+            tags = ", ".join(obj._config.get("deviceTags", []))
+            table.add_row("Device tags", tags)
+
+        if obj._config.get("userParameter"):
+            table.add_row("User parameter", str(obj._config.get("userParameter")))
+
+        if hasattr(obj, "limits"):
+            table.add_row("Limits", str(obj.limits))
+
+        # Get the updated device config. We use the cached version to avoid
+        # excessive calls to Redis.
+        device_config = (
+            obj.parent.get_device_config_cached().get(obj.name, {}).get("deviceConfig", {})
+        )
+        # Filter down to only config signals
+        config_signals = [
+            sig_name
+            for sig_name, sig in obj._info.get("signals", {}).items()
+            if sig.get("kind_str") == "config"
+        ]
+        device_config = {k: v for k, v in device_config.items() if k in config_signals}
+
+        # Get current values
+        current_values = obj.read(cached=True)
+
+        # Render main table to string
+        with console.capture() as capture:
+            console.print(table)
+        output = capture.get()
+
+        # Add current values section if available
+        if current_values:
+            value_table = Table(title="Current Values", show_header=True, box=None)
+            value_table.add_column("Signal", style="cyan")
+            value_table.add_column("Value", style="yellow")
+            value_table.add_column("Timestamp", style="dim")
+
+            for signal_name, signal_data in current_values.items():
+                value = signal_data.get("value")
+                timestamp = signal_data.get("timestamp")
+
+                # Format value (handle numpy arrays)
+                if isinstance(value, np.ndarray):
+                    with np.printoptions(precision=4, suppress=True, threshold=10):
+                        value_str = f"{str(value)}, shape={value.shape}, dtype={value.dtype}"
+                else:
+                    value_str = str(value)
+
+                # Format timestamp
+                if timestamp:
+                    dt = datetime.fromtimestamp(timestamp)
+                    timestamp_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    timestamp_str = "N/A"
+
+                value_table.add_row(signal_name, value_str, timestamp_str)
+
+            with console.capture() as capture:
+                console.print(value_table)
+            output += "\n" + capture.get()
+
+        # Add config signals section if available
+        if device_config:
+            config_table = Table(title="Config Signals", show_header=True, box=None)
+            config_table.add_column("Signal", style="cyan")
+            config_table.add_column("Value", style="green")
+
+            for key, val in device_config.items():
+                # Format value (handle numpy arrays)
+                if isinstance(val, np.ndarray):
+                    with np.printoptions(precision=4, suppress=True, threshold=10):
+                        val_str = f"{str(val)}, shape={val.shape}, dtype={val.dtype}"
+                else:
+                    val_str = str(val)
+                config_table.add_row(key, val_str)
+
+            with console.capture() as capture:
+                console.print(config_table)
+            output += "\n" + capture.get()
+
+        return output
 
 
 class DeviceBaseWithConfig(DeviceBase):
