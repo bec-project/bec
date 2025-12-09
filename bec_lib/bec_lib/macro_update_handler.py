@@ -8,7 +8,7 @@ import importlib.metadata
 import importlib.util
 import inspect
 import os
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
 
 import slugify
 
@@ -89,6 +89,12 @@ def has_executable_code(content: str) -> tuple[bool, int | None]:
     return False, None
 
 
+class _Macro(TypedDict):
+    cls: Callable
+    source: str
+    fname: str
+
+
 class MacroUpdateHandler:
     def __init__(self, macros: UserMacros):
         """
@@ -97,7 +103,7 @@ class MacroUpdateHandler:
         Args:
             macros (UserMacros): The UserMacros instance to manage.
         """
-        self.macros = {}
+        self.macros: dict[str, _Macro] = {}
         self.client = macros._client
         self._macro_path = self.client._service_config.model.user_macros.base_path
         self.client.connector.register(
@@ -210,6 +216,7 @@ class MacroUpdateHandler:
                 continue
 
             logger.info(f"Importing {name}")
+            print(macro)
             self.macros[name] = macro
             builtins.__dict__[name] = macro["cls"]
             self.client.callbacks.run(

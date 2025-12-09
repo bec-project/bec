@@ -1,8 +1,10 @@
+import inspect
 from typing import Iterable
 
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_server.procedures.builtin_procedures import (
     log_message_args_kwargs,
+    run_macro,
     run_scan,
     run_script,
     sleep,
@@ -14,6 +16,7 @@ _BUILTIN_PROCEDURES: dict[str, BecProcedure] = {
     "run scan": run_scan,
     "sleep": sleep,
     "run_script": run_script,
+    "run_macro": run_macro,
 }
 
 _PROCEDURE_REGISTRY: dict[str, BecProcedure] = {} | _BUILTIN_PROCEDURES
@@ -31,13 +34,22 @@ def check_builtin_procedure(msg: ProcedureExecutionMessage) -> bool:
     return msg.identifier in available()
 
 
+def callable_from_name(name: str) -> BecProcedure:
+    if not is_registered(name):
+        raise ProcedureRegistryError(f"No registered procedure {name}. Available: {available()}")
+    return _PROCEDURE_REGISTRY[name]
+
+
 def callable_from_execution_message(msg: ProcedureExecutionMessage) -> BecProcedure:
     """Get the function to execute for the given message"""
-    if not is_registered(msg.identifier):
-        raise ProcedureRegistryError(
-            f"No registered procedure {msg.identifier}. Available: {available()}"
-        )
-    return _PROCEDURE_REGISTRY[msg.identifier]
+    return callable_from_name(msg.identifier)
+
+
+def get_info(name: str):
+    params = dict(inspect.signature(callable_from_name(name)).parameters)
+    params.pop("bec", None)
+    args = ", ".join(map(str, params.values()))
+    return f"({args})"
 
 
 def is_registered(identifier: str) -> bool:

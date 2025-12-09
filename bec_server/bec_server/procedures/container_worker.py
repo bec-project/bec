@@ -1,6 +1,6 @@
 import inspect
 import os
-import sys
+import traceback
 from contextlib import redirect_stdout
 from typing import AnyStr, TextIO
 
@@ -10,6 +10,7 @@ from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import LogLevel, bec_logger
 from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus, RawMessage
+from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_server.procedures import procedure_registry
@@ -20,7 +21,6 @@ from bec_server.procedures.constants import (
     ProcedureWorkerError,
 )
 from bec_server.procedures.container_utils import get_backend
-from bec_server.procedures.helper import BackendProcedureHelper
 from bec_server.procedures.protocol import ContainerCommandBackend
 from bec_server.procedures.worker_base import ProcedureWorker
 
@@ -154,6 +154,8 @@ def _setup():
         logger.error(f"Missing environment variable needed by container worker: {e}")
         exit(1)
 
+    logger.debug(f"Starting with environment: {env}")
+    logger.debug(f"Configuring logger...")
     bec_logger.level = LogLevel.DEBUG
     bec_logger._console_log = True
     bec_logger.configure(
@@ -162,11 +164,13 @@ def _setup():
         service_name=f"Container worker for procedure queue {env['queue']}",
         service_config={"log_writer": {"base_path": "/tmp/"}},
     )
-
+    logger.debug(f"Done.")
     host, port = env["redis_server"].split(":")
     redis = {"host": host, "port": port}
 
-    client = BECIPythonClient(config=ServiceConfig(redis=redis))
+    client = BECIPythonClient(
+        config=ServiceConfig(redis=redis, config={"procedures": {"enable_procedures": False}})
+    )
     logger.debug("starting client")
     client.start()
 
@@ -180,7 +184,7 @@ def _setup():
     return env, helper, client, conn
 
 
-def _main(env, helper, client, conn):
+def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn):
 
     exec_endpoint = MessageEndpoints.procedure_execution(env["queue"])
     active_procs_endpoint = MessageEndpoints.active_procedure_executions()
@@ -223,22 +227,27 @@ def _main(env, helper, client, conn):
             )
         ) is not None:
             _push_status(ProcedureWorkerStatus.RUNNING, item.execution_id)
+            helper.status_update(item.execution_id, "Started")
             helper.notify_watchers(env["queue"], queue_type="execution")
             logger.debug(f"running task {item!r}")
             try:
                 _run_task(item)
             except Exception as e:
                 logger.error(f"Encountered error running procedure {item}")
+                helper.status_update(item.execution_id, "Finished", traceback.format_exc())
                 logger.error(e)
+            else:
+                helper.status_update(item.execution_id, "Finished")
+                logger.success(f"Finished procedure {item}")
             finally:
                 helper.remove_from_active.by_exec_id(item.execution_id)
             _push_status(ProcedureWorkerStatus.IDLE)
     except Exception as e:
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
     finally:
-        logger.success("Container runner shutting down")
+        logger.success(f"Container runner shutting down")
         _push_status(ProcedureWorkerStatus.FINISHED)
-        client.shutdown()
+        client.shutdown(per_thread_timeout_s=1)
         if item is not None:  # in this case we are here due to an exception, not a timeout
             helper.remove_from_active.by_exec_id(item.execution_id)
 
@@ -247,7 +256,8 @@ def main():
     """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
 
     env, helper, client, conn = _setup()
-    output_diverter = RedisOutputDiverter(conn, env["queue"])
+    logger_connector = RedisConnector(env["redis_server"])
+    output_diverter = RedisOutputDiverter(logger_connector, env["queue"])
     with redirect_stdout(output_diverter):
         logger.add(
             output_diverter,
@@ -256,3 +266,5 @@ def main():
             filter=bec_logger.filter(),
         )
         _main(env, helper, client, conn)
+    conn.shutdown()
+    logger_connector.shutdown()

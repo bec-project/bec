@@ -11,7 +11,7 @@ import importlib
 import inspect
 import time
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import redis
 from pydantic import BaseModel, Field, field_validator
@@ -29,6 +29,7 @@ from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.plugin_helper import _get_available_plugins
+from bec_lib.procedures.hli import ProcedureHli
 from bec_lib.scan_history import ScanHistory
 from bec_lib.script_executor import ScriptExecutor
 from bec_lib.service_config import ServiceConfig
@@ -92,6 +93,13 @@ class LiveUpdatesConfig(BaseModel):
     print_client_messages: bool = True
 
 
+class _InitParams(TypedDict):
+    config: ServiceConfig
+    connector_cls: type[RedisConnector]
+    wait_for_server: bool
+    prompt_for_acl: bool
+
+
 class BECClient(BECService):
     """
     The BECClient class is the main entry point for the BEC client and all derived classes.
@@ -124,12 +132,16 @@ class BECClient(BECService):
         """
         if self._initialized:
             return
-        self.__init_params = {
+        self.__init_params: _InitParams = {
             "config": config if config is not None else ServiceConfig(config_name="client"),
             "connector_cls": connector_cls if connector_cls is not None else RedisConnector,
             "wait_for_server": wait_for_server,
             "prompt_for_acl": prompt_for_acl,
         }
+        self._init_procedure_hli: bool = self.__init_params[
+            "config"
+        ]._config_model.procedures.enable_procedures
+        print(self._init_procedure_hli)
         self._name = name
         self.device_manager = None
         self.queue = None
@@ -203,6 +215,7 @@ class BECClient(BECService):
             builtins.bec = self._parent
             self.macros = UserMacros(self)
             self._start_services()
+            self.proc = ProcedureHli(self.connector) if self._init_procedure_hli else None
             default_namespace = {"dev": self.device_manager.devices, "scans": self.scans_namespace}
             self.callbacks.run(
                 EventType.NAMESPACE_UPDATE, action="add", ns_objects=default_namespace
@@ -313,9 +326,9 @@ class BECClient(BECService):
         self.alarm_handler = AlarmHandler(self.connector)
         self.alarm_handler.start()
 
-    def shutdown(self):
+    def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the client and all its components"""
-        super().shutdown()
+        super().shutdown(per_thread_timeout_s)
         if self.device_manager:
             self.device_manager.shutdown()
         if self.queue:

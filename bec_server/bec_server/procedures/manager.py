@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
+    AvailableResourceMessage,
     BECMessage,
     ProcedureAbortMessage,
     ProcedureClearUnhandledMessage,
@@ -20,17 +21,14 @@ from bec_lib.messages import (
     ProcedureWorkerStatus,
     RequestResponseMessage,
 )
+from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
-from bec_server.procedures.helper import BackendProcedureHelper
 from bec_server.procedures.worker_base import ProcedureWorker
 from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
-
-
-# TODO garbage collect IDs
 
 
 class ProcedureWorkerEntry(TypedDict):
@@ -71,7 +69,7 @@ class ProcedureManager:
 
         self._logs = deque([], maxlen=1000)
         self._conn = RedisConnector([self._parent.bootstrap_server])
-        self._helper = BackendProcedureHelper(self._conn)
+        self._helper = BackendProcedureHelper(self._conn, monitor_responses=False)
         self._startup()
 
         self._active_workers: dict[str, ProcedureWorkerEntry] = {}
@@ -91,6 +89,15 @@ class ProcedureManager:
             MessageEndpoints.procedure_clear_unhandled(), None, self._process_clear_unhandled
         )
         self._conn.register(MessageEndpoints.procedure_request(), None, self._process_queue_request)
+        self._conn.set(
+            MessageEndpoints.available_procedures(),
+            AvailableResourceMessage(
+                resource={
+                    name: procedure_registry.get_info(name)
+                    for name in procedure_registry.available()
+                }
+            ),
+        )
         logger.success("Done initialising procedure manager.")
 
     def _startup(self):
@@ -104,10 +111,13 @@ class ProcedureManager:
             self._helper.notify_watchers(queue, "execution")
         self._helper.notify_all("unhandled")
 
-    def _ack(self, accepted: bool, msg: str):
+    def _ack(self, accepted: bool, msg: str, exec_id: str):
         logger.info(f"procedure accepted: {accepted}, message: {msg}")
         self._conn.send(
-            self._reply_endpoint, RequestResponseMessage(accepted=accepted, message=msg)
+            self._reply_endpoint,
+            RequestResponseMessage(
+                accepted=accepted, message={"message": msg, "execution_id": exec_id}
+            ),
         )
 
     def _validate_request(self, msg: dict[str, Any] | ProcedureRequestMessage):
@@ -117,10 +127,14 @@ class ProcedureManager:
                 self._ack(
                     False,
                     f"Procedure {message_obj.identifier} not known to the server. Available: {list(procedure_registry.available())}",
+                    exec_id=message_obj.execution_id,
                 )
                 return None
         except ValidationError as e:
-            self._ack(False, f"{e}")
+            exec_id = (
+                msg.get("execution_id", "ID UNKNOWN") if isinstance(msg, dict) else msg.execution_id
+            )
+            self._ack(False, f"{e}", exec_id)
             return None
         return message_obj
 
@@ -152,10 +166,13 @@ class ProcedureManager:
         logger.debug(f"Procedure manager got request message {msg}")
         if (message := self._validate_request(msg)) is None:
             return
-        self._ack(True, f"Running procedure {message.identifier}")
+        self._ack(True, f"Running procedure {message.identifier}", message.execution_id)
         queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
         exec_message = ProcedureExecutionMessage(
-            identifier=message.identifier, queue=queue, args_kwargs=message.args_kwargs or ((), {})
+            identifier=message.identifier,
+            queue=queue,
+            args_kwargs=message.args_kwargs or ((), {}),
+            execution_id=message.execution_id,
         )
         logger.debug(f"active workers: {self._active_workers}, worker requested: {queue}")
         self._helper.push.exec(queue, exec_message)
@@ -233,10 +250,9 @@ class ProcedureManager:
                 self._helper.clear.unhandled_execution(message.execution_id)
 
     def _wait_for_all_futures(self):
-        futures.wait(
-            (entry["future"] for entry in self._active_workers.values()),
-            timeout=PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S,
-        )
+        with self.lock:
+            futs = list(entry["future"] for entry in self._active_workers.values())
+        futures.wait(futs, timeout=PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S)
 
     def spawn(self, queue: str):
         """Spawn a procedure worker future which listens to a given queue, i.e. procedure queue list in Redis.
@@ -257,18 +273,24 @@ class ProcedureManager:
     def shutdown(self):
         """Shutdown the procedure manager. Unregisters from the request endpoint, cancel any
         procedure workers which haven't started, and abort any which have."""
+        logger.debug("shutting down procedure manager")
+        self._conn.unregister(MessageEndpoints.procedure_abort(), None, self._process_abort)
+        self._conn.unregister(
+            MessageEndpoints.procedure_clear_unhandled(), None, self._process_clear_unhandled
+        )
         self._conn.unregister(
             MessageEndpoints.procedure_request(), None, self._process_queue_request
         )
         self._conn.shutdown()
         # cancel futures by hand to give us the opportunity to detatch them from redis if they have started
-        for entry in self._active_workers.values():
-            cancelled = entry["future"].cancel()
-            if not cancelled:
-                # unblock any waiting workers and let them shutdown
-                if worker := entry["worker"]:
-                    # redis unblock executor.client_id
-                    worker.abort()
+        with self.lock:
+            for entry in self._active_workers.values():
+                cancelled = entry["future"].cancel()
+                if not cancelled:
+                    # unblock any waiting workers and let them shutdown
+                    if worker := entry["worker"]:
+                        # redis unblock executor.client_id
+                        worker.abort()
         self._wait_for_all_futures()
         self.executor.shutdown()
 

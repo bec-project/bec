@@ -401,16 +401,16 @@ class BECService:
         logger.info(out)
         print(out)
 
-    def shutdown(self):
+    def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the BECService"""
         try:
-            self.connector.shutdown()
+            self.connector.shutdown(per_thread_timeout_s=per_thread_timeout_s)
             self._service_info_event.set()
             if self._service_info_thread:
-                self._service_info_thread.join()
+                self._service_info_thread.join(timeout=per_thread_timeout_s)
             self._metrics_emitter_event.set()
             if self._metrics_emitter_thread:
-                self._metrics_emitter_thread.join()
+                self._metrics_emitter_thread.join(timeout=per_thread_timeout_s)
         except AttributeError:
             print("Failed to shutdown BECService.")
 

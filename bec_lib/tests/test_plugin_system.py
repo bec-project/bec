@@ -57,10 +57,6 @@ class TestPluginSystem:
         print("\n\nSetting up plugin for tests: generating files...\n")
         TestPluginSystem._tmp_plugin_dir = tmp_path_factory.mktemp("test_plugin")
         TestPluginSystem._tmp_plugin_name = TestPluginSystem._tmp_plugin_dir.name
-        TestPluginSystem._plugin_script = (
-            os.path.dirname(os.path.abspath(__file__))
-            + "/../util_scripts/create_plugin_structure.py"
-        )
         print("Done. Modifying files with test code...\n")
         # run plugin generation script
         try:
