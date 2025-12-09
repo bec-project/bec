@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import collections
 import copy
+import functools
 import re
 import traceback
 from dataclasses import dataclass
@@ -746,9 +747,24 @@ class DeviceManagerBase:
                     signals.append((device.name, comp, signal_info))
         return signals
 
+    @functools.lru_cache(maxsize=2)
+    def get_device_config_cached(self, hash: int, update_signals: bool = True) -> dict:
+        """
+        Get the current device configuration from Redis. If update_signals is True,
+        also update the config's signal values if they have changed.
+        The result is cached based on the provided hash value.
+
+        Args:
+            hash (int): Hash value to cache the result. Typically a time-based hash.
+            update_signals (bool): Whether to update signal values in the config.
+        Returns:
+            dict: Device configuration.
+        """
+        return self.get_device_config(update_signals=update_signals)
+
     def get_device_config(self, update_signals: bool = True) -> dict:
         """
-        Get the current device configuration from Redis. If update_signal is True,
+        Get the current device configuration from Redis. If update_signals is True,
         also update the config's signal values if they have changed.
         """
         config_msg = self.connector.get(MessageEndpoints.device_config())
