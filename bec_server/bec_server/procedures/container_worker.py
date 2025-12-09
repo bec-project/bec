@@ -12,17 +12,17 @@ from bec_lib.logger import LogLevel, bec_logger
 from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus, RawMessage
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
-from bec_server.scan_server.procedures import procedure_registry
-from bec_server.scan_server.procedures.constants import (
+from bec_server.procedures import procedure_registry
+from bec_server.procedures.constants import (
     PROCEDURE,
     ContainerWorkerEnv,
     PodmanContainerStates,
     ProcedureWorkerError,
 )
-from bec_server.scan_server.procedures.container_utils import get_backend
-from bec_server.scan_server.procedures.helper import BackendProcedureHelper
-from bec_server.scan_server.procedures.protocol import ContainerCommandBackend
-from bec_server.scan_server.procedures.worker_base import ProcedureWorker
+from bec_server.procedures.container_utils import get_backend
+from bec_server.procedures.helper import BackendProcedureHelper
+from bec_server.procedures.protocol import ContainerCommandBackend
+from bec_server.procedures.worker_base import ProcedureWorker
 
 logger = bec_logger.logger
 

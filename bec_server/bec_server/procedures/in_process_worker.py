@@ -3,11 +3,11 @@ from functools import partial
 
 from bec_lib.client import BECClient
 from bec_lib.messages import ProcedureExecutionMessage
-from bec_server.scan_server.procedures.procedure_registry import (
+from bec_server.procedures.procedure_registry import (
     callable_from_execution_message,
     check_builtin_procedure,
 )
-from bec_server.scan_server.procedures.worker_base import ProcedureWorker
+from bec_server.procedures.worker_base import ProcedureWorker
 
 
 class InProcessProcedureWorker(ProcedureWorker):

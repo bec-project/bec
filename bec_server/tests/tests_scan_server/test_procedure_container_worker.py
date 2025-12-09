@@ -8,22 +8,19 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from bec_lib.messages import ProcedureWorkerStatus, ProcedureWorkerStatusMessage
-from bec_server.scan_server.procedures import procedure_registry
-from bec_server.scan_server.procedures.constants import PodmanContainerStates
-from bec_server.scan_server.procedures.container_worker import (
-    ContainerProcedureWorker,
-    ContainerWorkerEnv,
-)
-from bec_server.scan_server.procedures.container_worker import main as container_worker_main
-from bec_server.scan_server.procedures.protocol import ContainerCommandBackend
-from bec_server.scan_server.procedures.worker_base import ProcedureWorker
+from bec_server.procedures import procedure_registry
+from bec_server.procedures.constants import PodmanContainerStates
+from bec_server.procedures.container_worker import ContainerProcedureWorker, ContainerWorkerEnv
+from bec_server.procedures.container_worker import main as container_worker_main
+from bec_server.procedures.protocol import ContainerCommandBackend
+from bec_server.procedures.worker_base import ProcedureWorker
 
 
 @patch(
-    "bec_server.scan_server.procedures.container_worker.get_backend",
+    "bec_server.procedures.container_worker.get_backend",
     lambda: MagicMock(spec=ContainerCommandBackend),
 )
-@patch("bec_server.scan_server.procedures.worker_base.RedisConnector")
+@patch("bec_server.procedures.worker_base.RedisConnector")
 def test_container_worker_init(redis_mock):
     redis_mock().host = "server"
     redis_mock().port = "port"
@@ -36,11 +33,11 @@ def test_container_worker_init(redis_mock):
 
 
 @patch(
-    "bec_server.scan_server.procedures.container_worker.get_backend",
+    "bec_server.procedures.container_worker.get_backend",
     MagicMock(return_value=MagicMock(spec=ContainerCommandBackend)),
 )
-@patch("bec_server.scan_server.procedures.container_worker.logger")
-@patch("bec_server.scan_server.procedures.worker_base.RedisConnector")
+@patch("bec_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.worker_base.RedisConnector")
 def test_container_worker_work(redis_mock, logger_mock):
     redis_mock().host = "server"
     redis_mock().port = "port"
@@ -98,14 +95,14 @@ def test_container_worker_work(redis_mock, logger_mock):
     cleanup()
 
 
-@patch("bec_server.scan_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.container_worker.logger")
 def test_main_exits_without_env_variables(logger_mock):
     with patch.dict(os.environ, clear=True), pytest.raises(SystemExit):
         container_worker_main()
     assert "Missing environment variable " in logger_mock.error.call_args.args[0]
 
 
-@patch("bec_server.scan_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.container_worker.logger")
 def test_main_continues_with_env_variables(logger_mock):
     with pytest.raises(ValueError) as e:
         with patch.dict(
@@ -136,13 +133,13 @@ class MockItem:
 
 
 @patch(
-    "bec_server.scan_server.procedures.container_worker.get_backend",
+    "bec_server.procedures.container_worker.get_backend",
     MagicMock(return_value=MagicMock(spec=ContainerCommandBackend)),
 )
-@patch("bec_server.scan_server.procedures.container_worker.BECClient", MagicMock())
-@patch("bec_server.scan_server.procedures.container_worker.logger")
-@patch("bec_server.scan_server.procedures.container_worker.RedisConnector")
-@patch("bec_server.scan_server.procedures.container_worker.procedure_registry")
+@patch("bec_server.procedures.container_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.container_worker.RedisConnector")
+@patch("bec_server.procedures.container_worker.procedure_registry")
 def test_main_running(registry_mock, redis_mock, logger_mock):
     redis_mock().blocking_list_pop_to_set_add.side_effect = [MockItem("1"), MockItem("2"), None]
     function_recorder = MagicMock()
@@ -162,12 +159,12 @@ def test_main_running(registry_mock, redis_mock, logger_mock):
 
 
 @patch(
-    "bec_server.scan_server.procedures.container_worker.get_backend",
+    "bec_server.procedures.container_worker.get_backend",
     MagicMock(return_value=MagicMock(spec=ContainerCommandBackend)),
 )
-@patch("bec_server.scan_server.procedures.container_worker.BECClient", MagicMock())
-@patch("bec_server.scan_server.procedures.container_worker.logger")
-@patch("bec_server.scan_server.procedures.container_worker.RedisConnector")
+@patch("bec_server.procedures.container_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.container_worker.RedisConnector")
 def test_main_running_newly_registered_proc(redis_mock, logger_mock):
     PROC_NAME = "new_test_procedure"
 
