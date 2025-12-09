@@ -12,10 +12,10 @@ from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.procedures.constants import _CONTAINER, _WORKER
-from bec_server.scan_server.procedures.container_utils import get_backend
-from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
-from bec_server.scan_server.procedures.manager import ProcedureManager
+from bec_server.procedures.constants import _CONTAINER, _WORKER
+from bec_server.procedures.container_utils import get_backend
+from bec_server.procedures.container_worker import ContainerProcedureWorker
+from bec_server.procedures.manager import ProcedureManager
 
 if TYPE_CHECKING:
     from pytest_bec_e2e.plugin import LogTestTool
@@ -67,7 +67,7 @@ def test_building_worker_image():
 
 
 @pytest.mark.timeout(100)
-@patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 def test_procedure_runner_spawns_worker(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
@@ -94,8 +94,8 @@ def test_procedure_runner_spawns_worker(
 
 
 @pytest.mark.timeout(100)
-@patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
-@patch("bec_server.scan_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
+@patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_happy_path_container_procedure_runner(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):

@@ -49,7 +49,7 @@ bec-scan-server = "bec_server.scan_server.cli.launch:main"
 bec-scan-bundler = "bec_server.scan_bundler.cli.launch:main"
 bec-scihub = "bec_server.scihub.cli.launch:main"
 bec-server = "bec_server:main"
-bec-procedure-worker = "bec_server.scan_server.procedures.container_worker:main"
+bec-procedure-worker = "bec_server.procedures.container_worker:main"
 
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"

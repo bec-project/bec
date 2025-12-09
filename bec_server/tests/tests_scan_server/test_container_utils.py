@@ -2,8 +2,8 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from bec_server.scan_server.procedures.constants import PROCEDURE, PodmanContainerStates
-from bec_server.scan_server.procedures.container_utils import (
+from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates
+from bec_server.procedures.container_utils import (
     PodmanApiUtils,
     PodmanCliUtils,
     _multi_args_from_dict,
@@ -88,13 +88,13 @@ TEST_CONTAINER_JSON = b"""[{
 
 @pytest.fixture
 def api_utils():
-    with patch("bec_server.scan_server.procedures.container_utils.PodmanClient") as client:
+    with patch("bec_server.procedures.container_utils.PodmanClient") as client:
         yield PodmanApiUtils(), client
 
 
 @pytest.fixture
 def cli_utils():
-    with patch("bec_server.scan_server.procedures.container_utils.subprocess") as subprocess:
+    with patch("bec_server.procedures.container_utils.subprocess") as subprocess:
         subprocess.run().returncode = 0
         subprocess.run().stdout = b"success"
         yield PodmanCliUtils(), subprocess.run
@@ -102,7 +102,7 @@ def cli_utils():
 
 @pytest.fixture
 def cli_utils_with_fake_image_json():
-    with patch("bec_server.scan_server.procedures.container_utils.subprocess") as subprocess:
+    with patch("bec_server.procedures.container_utils.subprocess") as subprocess:
         subprocess.run().returncode = 0
         subprocess.run().stdout = TEST_IMAGE_JSON
         yield PodmanCliUtils()
@@ -110,7 +110,7 @@ def cli_utils_with_fake_image_json():
 
 @pytest.fixture
 def cli_utils_with_fake_container_json():
-    with patch("bec_server.scan_server.procedures.container_utils.subprocess") as subprocess:
+    with patch("bec_server.procedures.container_utils.subprocess") as subprocess:
         subprocess.run().returncode = 0
         subprocess.run().stdout = TEST_CONTAINER_JSON
         yield PodmanCliUtils()
