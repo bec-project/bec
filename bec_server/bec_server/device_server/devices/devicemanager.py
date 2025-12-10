@@ -561,9 +561,6 @@ class DeviceManagerDS(DeviceManagerBase):
         """disconnect from a device"""
         if not obj.connected:
             return
-        if hasattr(obj, "controller"):
-            obj.controller.off()
-            return
         obj.destroy()
 
     def reset_device(self, obj: DSDevice):
@@ -589,9 +586,6 @@ class DeviceManagerDS(DeviceManagerBase):
         """
 
         try:
-            if hasattr(obj, "controller"):
-                obj.controller.on()  # type: ignore
-                return
             if hasattr(obj, "wait_for_connection"):
                 try:
                     with disable_lazy_wait_for_connection(obj):
