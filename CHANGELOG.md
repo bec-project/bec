@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v3.82.0 (2025-12-10)
+
+### Bug Fixes
+
+- Config merge respects internal values
+  ([`ffbf321`](https://github.com/bec-project/bec/commit/ffbf3217ae6918b6a405a4c90548435fd504d7c9))
+
+- Exclude defaults from config export
+  ([`714d3a0`](https://github.com/bec-project/bec/commit/714d3a0a31ae04ec1378e9edaee7511ae05720e7))
+
+- **device manager**: Allow None as result in wm calls
+  ([`bd7ee00`](https://github.com/bec-project/bec/commit/bd7ee00795b773406b277f5e3d878e34f28ca890))
+
+- **device manager**: Update device info in redis when setting signals during init
+  ([`bd69074`](https://github.com/bec-project/bec/commit/bd690749ab7a4a466b42bdbc99e4a007762ce4e2))
+
+- **device model**: Change description default to empty string
+  ([`55fbfb7`](https://github.com/bec-project/bec/commit/55fbfb7bd5375f49110f95646dfc9506c192fe98))
+
+### Features
+
+- Add get_device_config
+  ([`bb42ec0`](https://github.com/bec-project/bec/commit/bb42ec0614ca63f86a3d0c3bebca74829f5cdfa6))
+
+- Add header to exported config
+  ([`37998cc`](https://github.com/bec-project/bec/commit/37998ccb3958c5195a5f314a9365ed1a6184820b))
+
+- **device manager**: Add cached get_device_config
+  ([`9122c55`](https://github.com/bec-project/bec/commit/9122c557259cb86a75721d46862bea338c992cc0))
+
+- **device manager**: Add public property for accessing the current session
+  ([`9482571`](https://github.com/bec-project/bec/commit/94825715603b383220a80f02acfed2ae92de50ea))
+
+### Refactoring
+
+- **device**: Add limits; move to cached device config
+  ([`16c7b71`](https://github.com/bec-project/bec/commit/16c7b71b3746068c688574889361bfb809505756))
+
+### Testing
+
+- **devices**: Add wm test for None
+  ([`353a186`](https://github.com/bec-project/bec/commit/353a186b4ec7daadd18145f6d6e43c0267e06bbd))
+
+- **rpc handler**: Improve tests for rpc handler config updates
+  ([`a90b146`](https://github.com/bec-project/bec/commit/a90b14647931e01331b48043c5a565da6f314264))
+
+
 ## v3.81.1 (2025-12-09)
 
 ### Bug Fixes
