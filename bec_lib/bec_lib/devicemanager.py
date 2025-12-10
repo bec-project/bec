@@ -750,7 +750,9 @@ class DeviceManagerBase:
                     signals.append((device.name, comp, signal_info))
         return signals
 
-    def get_device_config_cached(self, update_signals: bool = True) -> dict:
+    def get_device_config_cached(
+        self, update_signals: bool = True, exclude_defaults: bool = False
+    ) -> dict:
         """
         Get the current device configuration from Redis. If update_signals is True,
         also update the config's signal values if they have changed.
@@ -758,25 +760,36 @@ class DeviceManagerBase:
 
         Args:
             update_signals (bool): Whether to update signal values in the config.
+            exclude_defaults (bool): Whether to exclude default values in the config.
         Returns:
             dict: Device configuration.
         """
 
         ttl_hash = int(np.round(time.time() / 5))
         return self._get_device_config_cached_internal(
-            ttl_hash=ttl_hash, update_signals=update_signals
+            ttl_hash=ttl_hash, update_signals=update_signals, exclude_defaults=exclude_defaults
         )
 
     @functools.lru_cache(maxsize=2)
     def _get_device_config_cached_internal(
-        self, ttl_hash: int, update_signals: bool = True
+        self, ttl_hash: int, update_signals: bool = True, exclude_defaults: bool = False
     ) -> dict:
-        return self.get_device_config(update_signals=update_signals)
+        return self.get_device_config(
+            update_signals=update_signals, exclude_defaults=exclude_defaults
+        )
 
-    def get_device_config(self, update_signals: bool = True) -> dict:
+    def get_device_config(
+        self, update_signals: bool = True, exclude_defaults: bool = False
+    ) -> dict:
         """
         Get the current device configuration from Redis. If update_signals is True,
         also update the config's signal values if they have changed.
+
+        Args:
+            update_signals (bool): Whether to update signal values in the config.
+            exclude_defaults (bool): Whether to exclude default values in the config.
+        Returns:
+            dict: Device configuration.
         """
         config_msg = self.connector.get(MessageEndpoints.device_config())
         config = {}
@@ -799,7 +812,9 @@ class DeviceManagerBase:
                             self.devices[dev_name], signal_name
                         ).read(cached=True)[signal_obj_name]["value"]
 
-            config[dev_name] = _DeviceModelCore(**dev_conf).model_dump()
+            config[dev_name] = _DeviceModelCore(**dev_conf).model_dump(
+                exclude_defaults=exclude_defaults
+            )
         return config
 
     def shutdown(self):

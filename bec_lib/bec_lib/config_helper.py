@@ -519,23 +519,30 @@ class ConfigHelper:
         )
 
     def _save_config_to_file(self, file_path: str, raise_on_error: bool = True) -> bool:
-        config = self._connector.get(MessageEndpoints.device_config())
+        """Save the current session as a yaml file to disk.
+        Args:
+            file_path (str): Full path to the yaml file.
+            raise_on_error (bool, optional): Whether to raise an error on failure. Defaults to True.
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        if not self._device_manager:
+            if raise_on_error:
+                raise DeviceConfigError("Device manager is not available.")
+            return False
+        config = self._device_manager.get_device_config_cached(exclude_defaults=True)
         if not config:
             if raise_on_error:
-                raise DeviceConfigError("No config found in the session.")
+                raise DeviceConfigError("No device configuration available to save.")
             return False
-        config = config.content["resource"]
-        out = {}
-        for dev in config:
-            dev.pop("id", None)
-            dev.pop("createdAt", None)
-            dev.pop("createdBy", None)
-            dev.pop("sessionId", None)
-            name = dev.pop("name")
-            out[name] = dev
+
+        # convert the device tag sets to lists for yaml serialization
+        for dev_conf in config.values():
+            if "deviceTags" in dev_conf and isinstance(dev_conf["deviceTags"], set):
+                dev_conf["deviceTags"] = list(dev_conf["deviceTags"])
 
         with open(file_path, "w") as file:
-            file.write(yaml.dump(out))
+            file.write(yaml.dump(config))
         return True
 
     def send_config_request(
