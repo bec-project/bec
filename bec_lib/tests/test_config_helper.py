@@ -17,10 +17,10 @@ dir_path = os.path.dirname(bec_lib.__file__)
 
 
 @pytest.fixture
-def config_helper_plain():
+def config_helper_plain(dm_with_devices) -> ConfigHelper:
     connector = mock.MagicMock()
-    config_helper_inst = ConfigHelper(connector)
-    yield config_helper_inst
+    config_helper_inst = ConfigHelper(connector, device_manager=dm_with_devices)
+    return config_helper_inst
 
 
 @pytest.fixture
@@ -62,75 +62,72 @@ def test_config_helper_load_config_from_file(
 
 
 def test_config_helper_save_current_session(config_helper):
-    config_helper._connector.get.return_value = messages.AvailableResourceMessage(
-        resource=[
-            {
-                "id": "648c817f67d3c7cd6a354e8e",
-                "createdAt": "2023-06-16T15:36:31.215Z",
-                "createdBy": "unknown user",
+    config = [
+        {
+            "id": "648c817f67d3c7cd6a354e8e",
+            "createdAt": "2023-06-16T15:36:31.215Z",
+            "createdBy": "unknown user",
+            "name": "pinz",
+            "sessionId": "648c817d67d3c7cd6a354df2",
+            "enabled": True,
+            "readOnly": False,
+            "deviceClass": "SimPositioner",
+            "deviceTags": {"user motors"},
+            "deviceConfig": {
+                "delay": 1,
+                "labels": "pinz",
+                "limits": [-50, 50],
                 "name": "pinz",
-                "sessionId": "648c817d67d3c7cd6a354df2",
-                "enabled": True,
-                "readOnly": False,
-                "deviceClass": "SimPositioner",
-                "deviceTags": {"user motors"},
-                "deviceConfig": {
-                    "delay": 1,
-                    "labels": "pinz",
-                    "limits": [-50, 50],
-                    "name": "pinz",
-                    "tolerance": 0.01,
-                    "update_frequency": 400,
-                },
-                "readoutPriority": "baseline",
-                "onFailure": "retry",
+                "tolerance": 0.01,
+                "update_frequency": 400,
             },
-            {
-                "id": "648c817f67d3c7cd6a354ec5",
-                "createdAt": "2023-06-16T15:36:31.764Z",
-                "createdBy": "unknown user",
-                "name": "transd",
-                "sessionId": "648c817d67d3c7cd6a354df2",
-                "enabled": True,
-                "readOnly": False,
-                "deviceClass": "SimMonitor",
-                "deviceTags": {"beamline"},
-                "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
-                "readoutPriority": "monitored",
-                "onFailure": "retry",
-            },
-        ]
-    )
+            "readoutPriority": "baseline",
+            "onFailure": "retry",
+        },
+        {
+            "id": "648c817f67d3c7cd6a354ec5",
+            "createdAt": "2023-06-16T15:36:31.764Z",
+            "createdBy": "unknown user",
+            "name": "transd",
+            "sessionId": "648c817d67d3c7cd6a354df2",
+            "enabled": True,
+            "readOnly": False,
+            "deviceClass": "SimMonitor",
+            "deviceTags": {"beamline"},
+            "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
+            "readoutPriority": "monitored",
+            "onFailure": "retry",
+        },
+    ]
+    msg = messages.AvailableResourceMessage(resource=config)
     with mock.patch("builtins.open", mock.mock_open()) as mock_open:
-        config_helper.save_current_session("test.yaml")
-        out_data = {
-            "pinz": {
-                "deviceClass": "SimPositioner",
-                "deviceTags": {"user motors"},
-                "enabled": True,
-                "readOnly": False,
-                "deviceConfig": {
-                    "delay": 1,
-                    "labels": "pinz",
-                    "limits": [-50, 50],
-                    "name": "pinz",
-                    "tolerance": 0.01,
-                    "update_frequency": 400,
+        with mock.patch.object(config_helper._device_manager.connector, "get") as mock_get:
+            mock_get.return_value = msg
+            config_helper.save_current_session("test.yaml")
+            out_data = {
+                "pinz": {
+                    "deviceClass": "SimPositioner",
+                    "deviceTags": ["user motors"],
+                    "enabled": True,
+                    "deviceConfig": {
+                        "delay": 1,
+                        "labels": "pinz",
+                        "limits": [-50, 50],
+                        "name": "pinz",
+                        "tolerance": 0.01,
+                        "update_frequency": 400,
+                    },
+                    "readoutPriority": "baseline",
                 },
-                "readoutPriority": "baseline",
-                "onFailure": "retry",
-            },
-            "transd": {
-                "deviceClass": "SimMonitor",
-                "deviceTags": {"beamline"},
-                "enabled": True,
-                "readOnly": False,
-                "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
-                "readoutPriority": "monitored",
-                "onFailure": "retry",
-            },
-        }
-        mock_open().write.assert_called_once_with(yaml.dump(out_data))
+                "transd": {
+                    "deviceClass": "SimMonitor",
+                    "deviceTags": ["beamline"],
+                    "enabled": True,
+                    "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
+                    "readoutPriority": "monitored",
+                },
+            }
+            mock_open().write.assert_called_once_with(yaml.dump(out_data))
 
 
 def test_send_config_request_raises_with_empty_config(config_helper):
@@ -409,7 +406,7 @@ def test_update_base_path_recovery(config_helper_plain):
     ],
 )
 def test_config_helper_get_config_conflicts(
-    config_helper, new_config, current_config, expected_conflicts
+    config_helper: ConfigHelper, new_config: dict, current_config: dict, expected_conflicts: dict
 ):
 
     config_in_redis = []
@@ -418,11 +415,10 @@ def test_config_helper_get_config_conflicts(
         config["name"] = dev_cfg.pop("name", dev_name)
         config.update(dev_cfg)
         config_in_redis.append(config)
-    config_helper._connector.get.return_value = messages.AvailableResourceMessage(
-        resource=config_in_redis
-    )
-    conflicts = config_helper._get_config_conflicts(new_config)
-    assert conflicts == expected_conflicts
+    with mock.patch.object(config_helper._device_manager.connector, "get") as mock_get:
+        mock_get.return_value = messages.AvailableResourceMessage(resource=config_in_redis)
+        conflicts = config_helper._get_config_conflicts(new_config)
+        assert conflicts == expected_conflicts
 
 
 def test_format_value_for_display(config_helper):
