@@ -496,3 +496,57 @@ def test_get_device_config_without_signal_update(dm_with_devices, session_from_t
 
     # Verify signal was NOT updated and retains original value
     assert samx_config["deviceConfig"]["velocity"] == 0.0
+
+
+def test_get_device_config_with_signal_None(dm_with_devices, session_from_test_config):
+    device_manager = dm_with_devices
+    # Mock a device signal that can be read
+    mock_signal = mock.MagicMock()
+    mock_signal.read.return_value = None
+
+    # Add signal info to the device
+    device_manager.devices["samx"]._info["signals"] = {
+        "velocity": {"obj_name": "samx_velocity", "kind_str": "config"}
+    }
+
+    # Mock getattr to return our mock signal
+    with mock.patch("bec_lib.devicemanager.getattr", return_value=mock_signal):
+        with mock.patch.object(device_manager.connector, "get") as mock_get:
+            # Create config with a deviceConfig that has a signal
+            config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+            for dev_conf in config_with_signal:
+                if dev_conf["name"] == "samx":
+                    dev_conf["deviceConfig"] = {"velocity": 0.0}
+                    break
+
+            mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+            samx_config = device_manager.get_device_config(update_signals=True).get("samx")
+
+    # Verify signal was NOT updated and retains original value
+    assert samx_config["deviceConfig"]["velocity"] == 0.0
+    mock_signal.read.assert_called_once_with(cached=True)
+
+
+def test_get_device_config_signal_does_not_exist(dm_with_devices, session_from_test_config):
+    device_manager = dm_with_devices
+
+    # Add signal info to the device
+    device_manager.devices["samx"]._info["signals"] = {
+        "velocity": {"obj_name": "samx_velocity", "kind_str": "config"}
+    }
+
+    # Mock getattr to return None
+    with mock.patch("bec_lib.devicemanager.getattr", return_value=None):
+        with mock.patch.object(device_manager.connector, "get") as mock_get:
+            # Create config with a deviceConfig that has a signal
+            config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+            for dev_conf in config_with_signal:
+                if dev_conf["name"] == "samx":
+                    dev_conf["deviceConfig"] = {"velocity": 0.0}
+                    break
+
+            mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+            samx_config = device_manager.get_device_config(update_signals=True).get("samx")
+
+    # Verify signal was NOT updated and retains original value
+    assert samx_config["deviceConfig"]["velocity"] == 0.0
