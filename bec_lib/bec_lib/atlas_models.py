@@ -9,7 +9,7 @@ import json
 from enum import Enum
 from typing import AbstractSet, Any, Literal, TypeVar
 
-from pydantic import BaseModel, Field, PrivateAttr, create_model, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, create_model, field_validator, model_validator
 from pydantic_core import PydanticUndefined
 
 from bec_lib.utils.json import ExtendedEncoder
@@ -40,12 +40,23 @@ class _DeviceModelCore(BaseModel):
     deviceClass: str
     readoutPriority: Literal["monitored", "baseline", "async", "on_request", "continuous"]
     deviceConfig: dict | None = None
-    description: str | None = None
+    description: str = ""
     deviceTags: set[str] = set()
     onFailure: Literal["buffer", "retry", "raise"] = "retry"
     readOnly: bool = False
     softwareTrigger: bool = False
     userParameter: dict = {}
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def none_to_empty_str(cls, v: Any) -> Any:
+        """
+        Convert None to empty string for description field. This is mostly for backwards compatibility
+        with older configs that might have description set to null.
+        """
+        if v is None:
+            return ""
+        return v
 
 
 class HashInclusion(str, Enum):
