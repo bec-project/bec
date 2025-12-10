@@ -127,7 +127,8 @@ def test_config_helper_save_current_session(config_helper):
                     "readoutPriority": "monitored",
                 },
             }
-            mock_open().write.assert_called_once_with(yaml.dump(out_data))
+            call = mock_open().write.call_args[0][0]
+            assert yaml.safe_load(call) == out_data
 
 
 def test_send_config_request_raises_with_empty_config(config_helper):

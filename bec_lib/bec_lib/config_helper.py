@@ -526,6 +526,49 @@ class ConfigHelper:
         Returns:
             bool: True if successful, False otherwise.
         """
+
+        header = (
+            "# BEC Device Configuration File\n"
+            "#\n"
+            "# The device config consists of a mapping of device names to their configurations.\n"
+            "#\n"
+            "# The following fields are required for each device:\n"
+            "# - deviceClass: The class of the device (e.g., ophyd_devices.SimPositioner).\n"
+            "# - enabled: A boolean indicating if the device is enabled.\n"
+            '# - readoutPriority: Determines how the device is read out during a scan. Possible values are ["monitored", "baseline", "async", "on_request", "continuous"].\n'
+            "#\n"
+            "# Optional fields (defaults shown):\n"
+            '# - description: A string description of the device. Default is "" (empty string).\n'
+            "# - deviceConfig: A dictionary of configuration parameters specific to the device class. Default is None.\n"
+            "# - deviceTags: A list/set of tags associated with the device. Default is an empty list/set.\n"
+            '# - onFailure: The action to take on failure. Possible values are ["buffer", "retry", "raise"]. Default is "retry".\n'
+            "# - readOnly: A boolean indicating if the device is read-only. Default is false.\n"
+            "# - softwareTrigger: A boolean indicating if the device uses software triggering. Default is false.\n"
+            "# - userParameter: A dictionary of user-defined parameters. Default is {}.\n"
+            "#\n"
+            "# Default values may be omitted for brevity.\n"
+            "##########################################################################################################################\n"
+            "\n\n"
+            "# An example device configuration with all fields:\n\n"
+            "# device1:\n"
+            "#   deviceClass: ophyd_devices.SimPositioner\n"
+            "#   description: Sample positioner device\n"
+            "#   deviceConfig:\n"
+            "#     delay: 1\n"
+            "#     update_frequency: 10\n"
+            "#   deviceTags: \n"
+            "#     - frontend\n"
+            "#     - motor\n"
+            "#   enabled: true\n"
+            "#   readoutPriority: baseline\n"
+            "#   onFailure: retry\n"
+            "#   readOnly: false\n"
+            "#   softwareTrigger: false\n"
+            "#   userParameter:\n"
+            "#     in: 23.1\n"
+            "#     out: -50\n\n"
+            "##########################################################################################################################\n\n\n"
+        )
         if not self._device_manager:
             if raise_on_error:
                 raise DeviceConfigError("Device manager is not available.")
@@ -542,6 +585,7 @@ class ConfigHelper:
                 dev_conf["deviceTags"] = list(dev_conf["deviceTags"])
 
         with open(file_path, "w") as file:
+            file.write(header)
             file.write(yaml.dump(config))
         return True
 
