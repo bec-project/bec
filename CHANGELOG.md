@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.82.1 (2025-12-10)
+
+### Bug Fixes
+
+- **device manager**: Improve handling of signal reading and caching
+  ([`ba08ab8`](https://github.com/bec-project/bec/commit/ba08ab8c155ebe4259b36af42fe9f13f84c76d87))
+
+### Documentation
+
+- Improvements to the user docs
+  ([`b2f549e`](https://github.com/bec-project/bec/commit/b2f549e9399f4c515b810baf46437c33d581e3ec))
+
+
 ## v3.82.0 (2025-12-10)
 
 ### Bug Fixes
