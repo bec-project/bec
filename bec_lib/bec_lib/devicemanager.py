@@ -808,9 +808,13 @@ class DeviceManagerBase:
                 for signal_name in device_config:
                     if signal_name in available_signal:
                         signal_obj_name = available_signal[signal_name].get("obj_name")
-                        dev_conf["deviceConfig"][signal_name] = getattr(
-                            self.devices[dev_name], signal_name
-                        ).read(cached=True)[signal_obj_name]["value"]
+                        signal_obj = getattr(self.devices[dev_name], signal_name, None)
+                        if not signal_obj or not signal_obj_name:
+                            continue
+                        sig_read = signal_obj.read(cached=True)
+                        if sig_read is None:
+                            continue
+                        dev_conf["deviceConfig"][signal_name] = sig_read[signal_obj_name]["value"]
 
             config[dev_name] = _DeviceModelCore(**dev_conf).model_dump(
                 exclude_defaults=exclude_defaults
