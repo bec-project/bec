@@ -55,8 +55,10 @@ def unpack_scan_args(scan_args: dict[str, Any]) -> list:
     return args
 
 
-def get_2D_raster_pos(axis, snaked=True):
-    """get_2D_raster_post calculates and returns the positions for a 2D
+def get_ND_grid_pos(axes: list[np.ndarray], snaked: bool = True) -> np.ndarray:
+    """
+    Generate N-dimensional grid positions.
+    It creates a grid of positions for N dimensions, with optional snaking behavior.
 
     snaked==True:
         ->->->->-
@@ -68,20 +70,27 @@ def get_2D_raster_pos(axis, snaked=True):
         ->->->->-
 
     Args:
-        axis (list): list of positions for each axis
-        snaked (bool, optional): If true, the positions will be calculcated for a snake scan. Defaults to True.
+        axes (list of arrays): list of 1D arrays for each axis
+        snaked (bool, optional): If True, the grid is generated in a "snaked"
+            pattern across all dimensions.
 
     Returns:
-        array: calculated positions
+        np.ndarray: shape (num_points, N)
     """
 
-    x_grid, y_grid = np.meshgrid(axis[0], axis[1])
-    if snaked:
-        y_grid.T[::2] = np.fliplr(y_grid.T[::2])
-    x_flat = x_grid.T.ravel()
-    y_flat = y_grid.T.ravel()
-    positions = np.vstack((x_flat, y_flat)).T
-    return positions
+    def _get_positions_recursively(current_axes):
+        if len(current_axes) == 1:
+            return [[v] for v in current_axes[0]]
+
+        positions = []
+        for i, val in enumerate(current_axes[0]):
+            sub_positions = _get_positions_recursively(current_axes[1:])
+            if snaked and (i % 2 == 1):
+                sub_positions.reverse()
+            positions.extend([[val] + sp for sp in sub_positions])
+        return positions
+
+    return np.array(_get_positions_recursively(axes))
 
 
 # pylint: disable=too-many-arguments
@@ -918,15 +927,36 @@ class Scan(ScanBase):
             burst_at_each_point=burst_at_each_point,
             **kwargs,
         )
+        self._last_pos = []
 
     def _calculate_positions(self):
-        axis = []
+        axes = []
+        self._last_pos = []
         for _, val in self.caller_args.items():
-            axis.append(np.linspace(val[0], val[1], val[2], dtype=float))
-        if len(axis) > 1:
-            self.positions = get_2D_raster_pos(axis, snaked=self.snaked)
-        else:
-            self.positions = np.vstack(tuple(axis)).T
+            axes.append(np.linspace(val[0], val[1], val[2], dtype=float))
+            self._last_pos.append(None)
+        self.positions = get_ND_grid_pos(axes, snaked=self.snaked)
+
+    def _move_scan_motors_and_wait(self, pos):
+        if pos is None:
+            return
+        if not isinstance(pos, list) and not isinstance(pos, np.ndarray):
+            pos = [pos]
+        if len(pos) == 0:
+            return
+        # Determine which motors changed
+        changed_values = []
+        changed_motors = []
+        for motor, new, old in zip(self.scan_motors, pos, self._last_pos):
+            if old is None or not np.isclose(new, old):
+                changed_motors.append(motor)
+                changed_values.append(new)
+
+        # Only move if something changed
+        if changed_motors:
+            yield from self.stubs.set(device=changed_motors, value=changed_values)
+
+        self._last_pos = list(pos)
 
 
 class FermatSpiralScan(ScanBase):

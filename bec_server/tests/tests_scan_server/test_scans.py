@@ -31,8 +31,8 @@ from bec_server.scan_server.scans import (
     ScanBase,
     TimeScan,
     UpdatedMove,
-    get_2D_raster_pos,
     get_fermat_spiral_pos,
+    get_ND_grid_pos,
     get_round_roi_scan_positions,
     get_round_scan_positions,
     unpack_scan_args,
@@ -375,12 +375,6 @@ def test_scan_updated_move(mv_msg, reference_msg_list, scan_assembler, ScanStubS
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored"},
-                    device="samx",
-                    action="set",
-                    parameter={"value": -5.0},
-                ),
-                messages.DeviceInstructionMessage(
-                    metadata={"readout_priority": "monitored"},
                     device=["eiger"],
                     action="trigger",
                     parameter={},
@@ -450,6 +444,181 @@ def test_scan_updated_move(mv_msg, reference_msg_list, scan_assembler, ScanStubS
     ],
 )
 def test_scan_scan(scan_msg, reference_scan_list, scan_assembler):
+    device_manager = DMMock()
+    device_manager.add_device("samx")
+    device_manager.devices["samx"].readback.put(0)
+    msg_list = []
+
+    def offset_mock():
+        yield None
+
+    scan = scan_assembler(Scan, parameter=scan_msg.content.get("parameter"))
+
+    scan._set_position_offset = offset_mock
+    for step in scan.run():
+        if step:
+            step.metadata.pop("device_instr_id", None)
+            msg_list.append(step)
+    scan_uid = msg_list[0].metadata.get("scan_id")
+    for ii, _ in enumerate(reference_scan_list):
+        if reference_scan_list[ii].metadata.get("scan_id") is not None:
+            reference_scan_list[ii].metadata["scan_id"] = scan_uid
+    assert msg_list == reference_scan_list
+
+
+@pytest.mark.parametrize(
+    "scan_msg,reference_scan_list",
+    [
+        (
+            messages.ScanQueueMessage(
+                scan_type="grid_scan",
+                parameter={"args": {"samx": (-5, 5, 2), "samy": (-5, 5, 2)}, "kwargs": {}},
+                queue="primary",
+            ),
+            [
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["samx", "samy"],
+                    action="read",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=None,
+                    action="open_scan",
+                    parameter={
+                        "scan_motors": ["samx", "samy"],
+                        "readout_priority": {
+                            "monitored": ["samx", "samy"],
+                            "baseline": [],
+                            "on_request": [],
+                            "async": [],
+                        },
+                        "num_points": 4,
+                        "positions": [[-5.0, -5.0], [-5.0, 5.0], [5.0, 5.0], [5.0, -5.0]],
+                        "scan_name": "grid_scan",
+                        "scan_type": "step",
+                    },
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={},
+                    device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                    action="stage",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "baseline"},
+                    device=["rtx", "samz"],
+                    action="read",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device="samx",
+                    action="set",
+                    parameter={"value": np.float64(-5.0)},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device="samy",
+                    action="set",
+                    parameter={"value": np.float64(-5.0)},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                    action="pre_scan",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["eiger"],
+                    action="trigger",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored", "point_id": 0},
+                    device=["bpm4i", "eiger", "samx", "samy"],
+                    action="read",
+                    parameter={"group": "monitored"},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device="samy",
+                    action="set",
+                    parameter={"value": np.float64(5.0)},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["eiger"],
+                    action="trigger",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored", "point_id": 1},
+                    device=["bpm4i", "eiger", "samx", "samy"],
+                    action="read",
+                    parameter={"group": "monitored"},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device="samx",
+                    action="set",
+                    parameter={"value": np.float64(5.0)},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["eiger"],
+                    action="trigger",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored", "point_id": 2},
+                    device=["bpm4i", "eiger", "samx", "samy"],
+                    action="read",
+                    parameter={"group": "monitored"},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device="samy",
+                    action="set",
+                    parameter={"value": np.float64(-5.0)},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["eiger"],
+                    action="trigger",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored", "point_id": 3},
+                    device=["bpm4i", "eiger", "samx", "samy"],
+                    action="read",
+                    parameter={"group": "monitored"},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                    action="complete",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={},
+                    device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                    action="unstage",
+                    parameter={},
+                ),
+                messages.DeviceInstructionMessage(
+                    metadata={"readout_priority": "monitored"},
+                    device=None,
+                    action="close_scan",
+                    parameter={},
+                ),
+            ],
+        )
+    ],
+)
+def test_scan_scan_2d(scan_msg, reference_scan_list, scan_assembler):
     device_manager = DMMock()
     device_manager.add_device("samx")
     device_manager.devices["samx"].readback.put(0)
@@ -957,16 +1126,36 @@ def test_round_scan_positions(in_args, reference_positions):
 @pytest.mark.parametrize(
     "in_args,reference_positions,snaked",
     [
-        (([list(range(2)), list(range(2))],), [[0, 1], [0, 0], [1, 0], [1, 1]], True),
+        ([list(range(2)), list(range(2))], [[0, 0], [0, 1], [1, 1], [1, 0]], True),
+        ([list(range(2)), list(range(3))], [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]], False),
         (
-            ([list(range(2)), list(range(3))],),
-            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]],
-            False,
+            [list(range(3)), list(range(3)), list(range(2))],
+            [
+                [0, 0, 0],
+                [0, 0, 1],
+                [0, 1, 1],
+                [0, 1, 0],
+                [0, 2, 0],
+                [0, 2, 1],
+                [1, 2, 1],
+                [1, 2, 0],
+                [1, 1, 0],
+                [1, 1, 1],
+                [1, 0, 1],
+                [1, 0, 0],
+                [2, 0, 0],
+                [2, 0, 1],
+                [2, 1, 1],
+                [2, 1, 0],
+                [2, 2, 0],
+                [2, 2, 1],
+            ],
+            True,
         ),
     ],
 )
 def test_raster_scan_positions(in_args, reference_positions, snaked):
-    positions = get_2D_raster_pos(*in_args, snaked=snaked)
+    positions = get_ND_grid_pos(in_args, snaked=snaked)
     assert np.isclose(positions, reference_positions).all()
 
 
