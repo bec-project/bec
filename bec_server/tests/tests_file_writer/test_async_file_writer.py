@@ -17,6 +17,7 @@ from bec_server.file_writer.async_writer import AsyncWriter
                 {
                     "component_name": "data",
                     "signal_class": "AsyncSignal",
+                    "storage_name": "waveform_data",
                     "obj_name": "waveform_data",
                     "kind_int": 5,
                     "kind_str": "hinted",
