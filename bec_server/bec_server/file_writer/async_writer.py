@@ -100,7 +100,7 @@ class AsyncWriter(threading.Thread):
             if not saved:
                 continue
             topic = MessageEndpoints.device_async_signal(
-                scan_id=self.scan_id, device=device_name, signal=signal_info["obj_name"]
+                scan_id=self.scan_id, device=device_name, signal=signal_info["storage_name"]
             ).endpoint
             key = "0-0"
             self.stream_keys[topic] = key
