@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from bec_lib.utils.import_utils import lazy_import
 
@@ -1729,4 +1729,43 @@ class MessageEndpoints:
         endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/request"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.SET_PUBLISH
+        )
+
+    @staticmethod
+    def atlas_deployment_ingest(deployment_name: str):
+        """
+        Endpoint for ingesting data from a particular deployment.
+
+        Returns:
+            EndpointInfo: Endpoint for deployment ingest.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/ingest"
+        return EndpointInfo(endpoint=endpoint, message_type=Any, message_op=MessageOp.STREAM)
+
+    @staticmethod
+    def atlas_deployment_data(deployment_name: str, endpoint_suffix: str):
+        """
+        Endpoint for forwarding deployment data to Atlas.
+
+        Returns:
+            EndpointInfo: Endpoint for deployment data.
+        """
+        endpoint = (
+            f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/data/{endpoint_suffix}"
+        )
+        return EndpointInfo(endpoint=endpoint, message_type=Any, message_op=MessageOp.STREAM)
+
+    @staticmethod
+    def atlas_deployment_info(deployment_name: str):
+        """
+        Endpoint for deployment info updates.
+
+        Returns:
+            EndpointInfo: Endpoint for deployment info.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/deployment_info"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.VariableMessage,
+            message_op=MessageOp.SET_PUBLISH,
         )

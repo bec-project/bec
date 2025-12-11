@@ -37,7 +37,7 @@ class AtlasMetadataHandler:
             MessageEndpoints.account(), cb=self._handle_account_info, parent=self, from_start=True
         )
         self.atlas_connector.redis_atlas.register(
-            f"internal/deployment/{self.atlas_connector.deployment_name}/deployment_info",
+            MessageEndpoints.atlas_deployment_info(self.atlas_connector.deployment_name),
             cb=self._handle_atlas_account_update,
             parent=self,
             from_start=True,
