@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.83.0 (2025-12-11)
+
+### Features
+
+- **scan**: Implement N-dimensional grid position generation and update tests
+  ([`7e8e05b`](https://github.com/bec-project/bec/commit/7e8e05be2aea73927c514b3e001ae1bfcdea3cb2))
+
+### Refactoring
+
+- **device**: Make update_config private
+  ([`6253c7b`](https://github.com/bec-project/bec/commit/6253c7b9bcfb416e01a324d762aa448c73d770f0))
+
+
 ## v3.82.1 (2025-12-10)
 
 ### Bug Fixes
