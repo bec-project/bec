@@ -98,6 +98,22 @@ class AtlasConnector:
             f"internal/deployment/{self.deployment_name}/ingest", data, max_size=1000
         )
 
+    def ingest_message(self, msg: dict) -> None:
+        """
+        Ingest a message into Atlas to be consumed by a messaging service such as SciLog, Teams or Signal.
+        """
+        if not self.connected_to_atlas:
+            logger.warning("Not connected to Atlas. Cannot ingest message.")
+            return
+
+        if self.redis_atlas is None:
+            logger.error("Redis Atlas connection is not initialized.")
+            return
+
+        self.redis_atlas.xadd(
+            f"internal/deployment/{self.deployment_name}/message_service_queue", msg, max_size=1000
+        )
+
     def update_acls(self):
         """
         Update the ACLs from Atlas. This is done by reading the ACLs from the Atlas
