@@ -125,7 +125,9 @@ class AtlasForwarder:
         else:
             data = msg
         parent.atlas_connector.redis_atlas.xadd(
-            f"internal/deployment/{parent.atlas_connector.deployment_name}/data/{endpoint}",
+            MessageEndpoints.atlas_deployment_data(
+                parent.atlas_connector.deployment_name, endpoint
+            ),
             data if isinstance(data, dict) else {"pubsub_data": data},
             max_size=10,
             expire=60,

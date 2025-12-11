@@ -1,6 +1,7 @@
 from unittest import mock
 
 from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints
 from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 
 
@@ -43,7 +44,9 @@ def test_atlas_connector_ingest_data(atlas_connector):
     with mock.patch.object(atlas_connector.redis_atlas, "xadd") as mock_xadd:
         atlas_connector.ingest_data({"data": "dummy_data"})
         mock_xadd.assert_called_once_with(
-            "internal/deployment/test-deployment/ingest", {"data": "dummy_data"}, max_size=1000
+            MessageEndpoints.atlas_deployment_ingest(atlas_connector.deployment_name),
+            {"data": "dummy_data"},
+            max_size=1000,
         )
 
 
