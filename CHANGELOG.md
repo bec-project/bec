@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.84.0 (2025-12-11)
+
+### Features
+
+- **device**: Enhance string representation with rich formatting and current values
+  ([`0c8394f`](https://github.com/bec-project/bec/commit/0c8394fafd49add8afa2b24103eb015081f8300a))
+
+
 ## v3.83.0 (2025-12-11)
 
 ### Features
