@@ -81,6 +81,39 @@ class AlarmBase(Exception):
 
         console.print(Panel(body, title=text, border_style="red", expand=True))
 
+    def print_details(self) -> None:
+        console = Console()
+
+        # --- HEADER ---
+        header = Text()
+        header.append("Alarm Raised\n", style="bold red")
+        header.append(f"Severity: {self.severity.name}\n", style="bold")
+        header.append(f"Type: {self.alarm_type}\n", style="bold")
+        if self.alarm.info.device:
+            header.append(f"Device: {self.alarm.info.device}\n", style="bold")
+
+        console.print(Panel(header, title="Alarm Info", border_style="red", expand=False))
+
+        # --- SHOW SUMMARY
+        if self.alarm.info.compact_error_message:
+            console.print(
+                Panel(
+                    Text(self.alarm.info.compact_error_message, style="yellow"),
+                    title="Summary",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
+
+        # --- SHOW FULL TRACEBACK
+        tb_str = self.alarm.info.error_message
+        if tb_str:
+            try:
+                console.print(tb_str)
+            except Exception:
+                # fallback in case msg is not a traceback
+                console.print(Panel(tb_str, title="Message", border_style="cyan"))
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AlarmBase):
             return False
