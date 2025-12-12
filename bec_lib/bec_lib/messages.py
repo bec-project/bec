@@ -432,6 +432,7 @@ class ErrorInfo(BaseModel):
     compact_error_message: str | None
     exception_type: str
     device: str | list[str] | None = None
+    context: str | None = None
 
 
 class DeviceInstructionResponse(BECMessage):
