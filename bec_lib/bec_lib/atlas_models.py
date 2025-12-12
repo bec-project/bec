@@ -42,6 +42,7 @@ class _DeviceModelCore(BaseModel):
     deviceConfig: dict | None = None
     description: str = ""
     deviceTags: set[str] = set()
+    needs: list[str] = []
     onFailure: Literal["buffer", "retry", "raise"] = "retry"
     readOnly: bool = False
     softwareTrigger: bool = False
