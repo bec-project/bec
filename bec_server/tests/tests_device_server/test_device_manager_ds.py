@@ -51,9 +51,14 @@ class DeviceMock:
 
 
 class DeviceControllerMock(DeviceMock):
+    """Mock device with controller attribute that raises an error on wait_for_connection"""
+
     def __init__(self) -> None:
         super().__init__()
         self.controller = ControllerMock(self)
+
+    def wait_for_connection(self, timeout):
+        self.controller.on()
 
 
 class EpicsDeviceMock(DeviceMock):
