@@ -52,8 +52,6 @@ class InProcessProcedureWorker(ProcedureWorker):
             self._helper.status_update(item.execution_id, "Finished")
 
     def _kill_process(self):
-        self._conn.shutdown()
-        self.bec_client.shutdown()
         self.logger.info(
             f"In-process procedure worker for queue {self.key.endpoint} timed out after {self._lifetime_s} s, shutting down"
         )

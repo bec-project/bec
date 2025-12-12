@@ -115,7 +115,6 @@ class BECLogger:
             connector_cls (type[RedisConnector], optional): Connector class. Defaults to None.
             service_config (dict, optional): Service configuration dictionary. Defaults to None.
         """
-        print("....")
         if self._configured:
             # already configured, nothing to do - this can happen
             # if running another BECClient (or BECService) in addition
