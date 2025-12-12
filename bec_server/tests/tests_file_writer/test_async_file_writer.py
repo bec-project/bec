@@ -541,3 +541,22 @@ def test_async_writer_same_device_readback_and_signal(async_writer):
         signal_out = f[async_writer.BASE_PATH]["waveform"]["waveform_data"]["value"][:]
         expected_signal = np.array([10, 20, 30, 40, 50])
         assert np.array_equal(signal_out, expected_signal)
+
+
+def test_async_writer_raises_on_wrong_data_type(async_writer):
+    """Test that the async writer raises a TypeError when non-DeviceMessage data is sent."""
+    endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
+
+    # Send invalid data (not a DeviceMessage)
+    invalid_data = messages.DeviceMessage(
+        signals={"monitor_async": {"value": {"data": None}, "timestamp": 1}},
+        metadata={"async_update": {"type": "add", "max_shape": [None]}},
+    )
+
+    async_writer.connector.xadd(endpoint, msg_dict={"data": invalid_data})
+
+    with pytest.raises(
+        TypeError,
+        match="Failed to create dataset value in group /entry/collection/devices/monitor_async/monitor_async.",
+    ):
+        async_writer.poll_and_write_data()
