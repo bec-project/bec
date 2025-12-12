@@ -24,6 +24,30 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.redis_connector import RedisConnector
 
 
+def create_dataset_safe(group: h5py.Group, name: str, data: Any, **kwargs) -> h5py.Dataset:
+    """
+    Create a dataset in the given group with error handling for unsupported datatypes.
+
+    Args:
+        group (h5py.Group): The group to create the dataset in
+        name (str): The name of the dataset
+        data (Any): The data to write to the dataset
+        **kwargs: Additional keyword arguments to pass to h5py.Group.create_dataset
+    Returns:
+        h5py.Dataset: The created dataset
+    """
+    try:
+        return group.create_dataset(name, data=data, **kwargs)
+    except TypeError as exc:
+        comment = f" The datatype {type(data)} may not be supported."
+        if isinstance(data, (list, np.ndarray)):
+            inner_type = type(data[0])
+            comment = f" The datatype {type(data)}[{inner_type}] may not be supported."
+        raise TypeError(
+            f"Failed to create dataset {name} in group {group.name}. {comment}"
+        ) from exc
+
+
 class AsyncWriter(threading.Thread):
     """
     Async writer for writing async device data during the scan.
@@ -285,7 +309,7 @@ class AsyncWriter(threading.Thread):
         if write_replace:
             for group_name, value in self.device_data_replace.items():
                 group = f[group_name]
-                group.create_dataset("value", data=value, maxshape=value.shape)
+                create_dataset_safe(group, "value", data=value, maxshape=value.shape)
 
         f.flush()
 
@@ -359,7 +383,7 @@ class AsyncWriter(threading.Thread):
             else:
                 if value.ndim < len(max_shape):
                     value = value.reshape((1,) + value.shape)
-                signal_group.create_dataset("value", data=value, maxshape=max_shape)
+                create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
             return
 
         # add to the already existing dataset
@@ -452,7 +476,7 @@ class AsyncWriter(threading.Thread):
                         metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                     )
                     value = value[:, : max_shape[1]]
-                signal_group.create_dataset("value", data=value, maxshape=max_shape)
+                create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
                 self.cursor[signal_group.name][row_index] = value.shape[1]
             return
 
@@ -498,7 +522,7 @@ class AsyncWriter(threading.Thread):
         if not isinstance(value, (list, np.ndarray)):
             value = [value]
         if "timestamp" not in signal_group:
-            signal_group.create_dataset("timestamp", data=value, maxshape=(None,))
+            create_dataset_safe(signal_group, "timestamp", data=value, maxshape=(None,))
         else:
             signal_group["timestamp"].resize((len(signal_group["timestamp"]) + len(value),))
             signal_group["timestamp"][-len(value) :] = value
