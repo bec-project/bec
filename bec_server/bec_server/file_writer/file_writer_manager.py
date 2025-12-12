@@ -193,7 +193,9 @@ class FileWriterManager(BECService):
                 scan_number=msg.scan_number,
                 connector=self.connector,
                 devices=msg.readout_priority.get("async", []),
-                async_signals=self.device_manager.get_bec_signals("AsyncSignal"),
+                async_signals=self.device_manager.get_bec_signals(
+                    ["AsyncSignal", "DynamicSignal", "AsyncMultiSignal"]
+                ),
             )
             scan_storage.async_writer.start()
 
@@ -272,7 +274,10 @@ class FileWriterManager(BECService):
 
         # extract name from 'public/<scan_id>/file/<name>'
         names = [msg.decode().split("/")[-1] for msg in msgs]
-        file_msgs = [self.connector.get(msg.decode()) for msg in msgs]
+        file_msgs = [
+            self.connector.get(MessageEndpoints.public_file(scan_id=scan_id, name=name))
+            for name in names
+        ]
         if not file_msgs:
             return
         for name, file_msg in zip(names, file_msgs):

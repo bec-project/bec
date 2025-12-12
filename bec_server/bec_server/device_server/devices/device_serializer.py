@@ -166,15 +166,20 @@ def get_device_info(
                         if len(info.get("signals")) == 1:
                             obj_name = signal_obj.name
                             comp_name = component_name
+                            storage_name = obj_name  # device + component name
                         else:
                             obj_name = "_".join([signal_obj.name, signal_name])
                             comp_name = ".".join([component_name, signal_name])
+                            storage_name = (
+                                signal_obj.name
+                            )  # device + component name; same for all sub-signals
                         signals.update(
                             {
                                 comp_name: {
                                     "component_name": component_name,
                                     "signal_class": signal_obj.__class__.__name__,
                                     "obj_name": obj_name,
+                                    "storage_name": storage_name,
                                     "kind_int": kind,
                                     "kind_str": Kind(kind).name,
                                     "doc": doc,
