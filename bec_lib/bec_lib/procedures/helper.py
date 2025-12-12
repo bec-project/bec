@@ -99,7 +99,7 @@ class ProcedureStatus:
                 raise ValueError(f"Improper transition from {self._state} to {state}")
 
     def __repr__(self) -> str:
-        msg = f"<ProcedureStatus for {self._identifier} state: '{self.state.value}'>"
+        msg = f"<ProcedureStatus for '{self._identifier}', state: '{self.state.value}'>"
         if self._error is not None:
             msg += f"\nERROR:\n{self._error}"
         return msg

@@ -13,8 +13,8 @@ class ProcedureHli:
         """Pretty-print a list of available procedures."""
         print(
             """
-Available procedures:
----------------------
+Available procedures and their signatures:
+------------------------------------------
 """
         )
 
