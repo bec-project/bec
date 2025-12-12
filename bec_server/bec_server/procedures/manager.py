@@ -5,7 +5,7 @@ from collections import deque
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
-from typing import Any, Callable, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypedDict, TypeVar
 
 from pydantic import ValidationError
 
@@ -25,8 +25,9 @@ from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
-from bec_server.procedures.worker_base import ProcedureWorker
-from bec_server.scan_server.scan_server import ScanServer
+
+if TYPE_CHECKING:
+    from bec_server.procedures.worker_base import ProcedureWorker
 
 logger = bec_logger.logger
 
@@ -55,20 +56,19 @@ def _resolve_dict(msg: dict[str, Any] | _T, MsgType: type[_T]) -> _T:
 
 class ProcedureManager:
 
-    def __init__(self, parent: ScanServer, worker_type: type[ProcedureWorker]):
+    def __init__(self, redis: str, worker_type: type[ProcedureWorker]):
         """Watches the request queue and pushes to worker execution queues. Manages
         instantiating and cleaning up after workers.
 
         Args:
-            parent (ScanServer): the scan server to get the Redis server address from.
+            redis (str): the scan redis server connection string "host:port".
             worker_type (type[ProcedureWorker]): which kind of worker to use."""
-        self._parent = parent
         self.lock = RLock()
 
         logger.success("Initialising procedure manager...")
 
         self._logs = deque([], maxlen=1000)
-        self._conn = RedisConnector([self._parent.bootstrap_server])
+        self._conn = RedisConnector([redis])
         self._helper = BackendProcedureHelper(self._conn, monitor_responses=False)
         self._startup()
 

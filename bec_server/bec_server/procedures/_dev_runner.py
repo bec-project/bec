@@ -12,10 +12,7 @@ if True:  # pragma: no cover # must open a clause to apply to everything
     logger = bec_logger.logger
 
 if __name__ == "__main__":  # pragma: no cover
-
-    server = MagicMock()
-    server.bootstrap_server = "localhost:6379"
-    manager = ProcedureManager(server, ContainerProcedureWorker)
+    manager = ProcedureManager("localhost:6379", ContainerProcedureWorker)
     try:
         logger.info(f"Running procedure manager {manager}")
         Event().wait()

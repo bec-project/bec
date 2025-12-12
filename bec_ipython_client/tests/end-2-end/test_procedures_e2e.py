@@ -43,9 +43,9 @@ def client_logtool_and_manager(
     bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
 ) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
-    server = MagicMock()
-    server.bootstrap_server = f"{client.connector.host}:{client.connector.port}"
-    manager = ProcedureManager(server, ContainerProcedureWorker)
+    manager = ProcedureManager(
+        f"{client.connector.host}:{client.connector.port}", ContainerProcedureWorker
+    )
     yield client, logtool, manager
     manager.shutdown()
 
