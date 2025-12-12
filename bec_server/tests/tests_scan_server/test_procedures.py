@@ -22,13 +22,14 @@ from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
 from bec_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
 from bec_server.procedures.in_process_worker import InProcessProcedureWorker
-from bec_server.procedures.manager import ProcedureManager, ProcedureWorker
+from bec_server.procedures.manager import ProcedureManager
 from bec_server.procedures.procedure_registry import (
     _BUILTIN_PROCEDURES,
     ProcedureRegistryError,
     callable_from_execution_message,
     register,
 )
+from bec_server.procedures.worker_base import ProcedureWorker
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -68,8 +69,6 @@ class ShortLifetimeWorker(InProcessProcedureWorker):
 
 @pytest.fixture
 def procedure_manager():
-    server = MagicMock()
-    server.bootstrap_server = f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}"
     with (
         patch(
             "bec_server.procedures.manager.RedisConnector",
@@ -80,7 +79,7 @@ def procedure_manager():
             partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
         ),
     ):
-        manager = ProcedureManager(server, ShortLifetimeWorker)  # type: ignore
+        manager = ProcedureManager(f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}", ShortLifetimeWorker)  # type: ignore
         yield manager
     manager.shutdown()
 
