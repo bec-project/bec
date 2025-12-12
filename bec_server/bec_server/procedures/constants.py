@@ -51,7 +51,7 @@ class _CONTAINER:
     IMAGE_NAME = "bec_procedure_worker"
     DEPLOYMENT_PATH = Path(os.path.dirname(bec_lib.__file__)) / "../../"
     CONTAINERFILE_LOCATION = (  # Directory where `Containerfile` lives
-        DEPLOYMENT_PATH / "bec_server/bec_server/scan_server/procedures/"
+        DEPLOYMENT_PATH / "bec_server/bec_server/procedures/"
     )
     REQUIREMENTS_CONTAINERFILE_NAME = "Containerfile.requirements"
     REQUIREMENTS_IMAGE_NAME = "bec_requirements"
@@ -65,7 +65,7 @@ class _CONTAINER:
 class _PROCEDURE:
     WORKER = _WORKER()
     CONTAINER = _CONTAINER()
-    MANAGER_SHUTDOWN_TIMEOUT_S = 2
+    MANAGER_SHUTDOWN_TIMEOUT_S: float | None = None
     BEC_VERSION = version("bec_lib")
     REDIS_HOST = "redis"
 

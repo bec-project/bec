@@ -747,7 +747,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
     def log_error(self, *args, **kwargs):
         pass
 
-    def shutdown(self):
+    def shutdown(self, per_thread_timeout_s: float | None = None):
         pass
 
     def register(self, *args, **kwargs):

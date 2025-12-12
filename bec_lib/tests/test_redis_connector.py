@@ -440,10 +440,10 @@ def test_set_connector(
         MessageOp.SET,
     )
     test_set_messages = {
-        ProcedureExecutionMessage(identifier="test1", queue="queue1"),  # type: ignore
-        ProcedureExecutionMessage(identifier="test2", queue="queue2"),  # type: ignore
-        ProcedureExecutionMessage(identifier="test3", queue="queue3"),  # type: ignore
-        ProcedureExecutionMessage(identifier="test4", queue="queue4"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test1", queue="queue1", execution_id="1"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test2", queue="queue2", execution_id="2"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test3", queue="queue3", execution_id="3"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test4", queue="queue4", execution_id="4"),  # type: ignore
     }
     for msg in test_set_messages:
         connected_connector._redis_conn.sadd(
@@ -479,7 +479,9 @@ def test_list_pop_to_sadd_adds_to_set(
         ProcedureExecutionMessage,
         MessageOp.LIST,
     )
-    test_message = ProcedureExecutionMessage(identifier="test5", queue="queue5")
+    test_message = ProcedureExecutionMessage(
+        identifier="test5", queue="queue5", execution_id="1234"
+    )
     connected_connector.lpush(test_list_endpoint, test_message)
     connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
     test_set_messages.add(test_message)
@@ -492,7 +494,9 @@ def test_list_pop_to_sadd_rejects_wrong_messageop(
 ):
     connected_connector, test_set_endpoint, _ = test_set_connector
     test_list_endpoint = MessageEndpoints.device_progress("samx")
-    test_message = ProcedureExecutionMessage(identifier="test5", queue="queue5")
+    test_message = ProcedureExecutionMessage(
+        identifier="test5", queue="queue5", execution_id="1234"
+    )
     connected_connector._redis_conn.lpush(
         test_list_endpoint.endpoint, MsgpackSerialization.dumps(test_message)
     )

@@ -10,6 +10,10 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.scan_number_container import ScanNumberContainer
 from bec_lib.service_config import ServiceConfig
+from bec_server.procedures.container_utils import podman_available
+from bec_server.procedures.container_worker import ContainerProcedureWorker
+from bec_server.procedures.in_process_worker import InProcessProcedureWorker
+from bec_server.procedures.manager import ProcedureManager
 
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
@@ -39,6 +43,7 @@ class ScanServer(BECService):
         self._start_scan_assembler()
         self._start_alarm_handler()
         self._reset_scan_number()
+        self._start_procedure_manager()
         self.status = messages.BECStatus.RUNNING
 
     def _start_device_manager(self):
@@ -67,6 +72,12 @@ class ScanServer(BECService):
             self.scan_number = 1
         if self.connector.get(MessageEndpoints.dataset_number()) is None:
             self.dataset_number = 1
+
+    def _start_procedure_manager(self):
+        procedure_worker = (
+            ContainerProcedureWorker if podman_available() else InProcessProcedureWorker
+        )
+        self.proc_manager = ProcedureManager(self.bootstrap_server, procedure_worker)
 
     @staticmethod
     def _alarm_callback(msg, parent: ScanServer, **_kwargs):
@@ -98,5 +109,6 @@ class ScanServer(BECService):
 
     def shutdown(self) -> None:
         """shutdown the scan server"""
+        self.proc_manager.shutdown()
         self.device_manager.shutdown()
         self.queue_manager.shutdown()

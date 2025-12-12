@@ -573,8 +573,10 @@ def test_redis_connector_message_alternated_pass(connected_connector):
 def test_lrem(connected_connector: RedisConnector):
     conn, ep = connected_connector, MessageEndpoints.procedure_execution
     msgs = [
-        messages.ProcedureExecutionMessage(identifier=_id, queue="primary", args_kwargs=((), {}))
-        for _id in ("a", "b", "c")
+        messages.ProcedureExecutionMessage(
+            identifier=_id, queue="primary", args_kwargs=((), {}), execution_id=str(i)
+        )
+        for i, _id in enumerate(("a", "b", "c"))
     ]
     for msg in msgs:
         conn.rpush(ep(msg.queue), msg)

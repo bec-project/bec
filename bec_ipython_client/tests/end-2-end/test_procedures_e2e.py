@@ -12,10 +12,10 @@ from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.procedures.constants import _CONTAINER, _WORKER
-from bec_server.scan_server.procedures.container_utils import get_backend
-from bec_server.scan_server.procedures.container_worker import ContainerProcedureWorker
-from bec_server.scan_server.procedures.manager import ProcedureManager
+from bec_server.procedures.constants import _CONTAINER, _WORKER
+from bec_server.procedures.container_utils import get_backend
+from bec_server.procedures.container_worker import ContainerProcedureWorker
+from bec_server.procedures.manager import ProcedureManager
 
 if TYPE_CHECKING:
     from pytest_bec_e2e.plugin import LogTestTool
@@ -43,9 +43,9 @@ def client_logtool_and_manager(
     bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
 ) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
-    server = MagicMock()
-    server.bootstrap_server = f"{client.connector.host}:{client.connector.port}"
-    manager = ProcedureManager(server, ContainerProcedureWorker)
+    manager = ProcedureManager(
+        f"{client.connector.host}:{client.connector.port}", ContainerProcedureWorker
+    )
     yield client, logtool, manager
     manager.shutdown()
 
@@ -67,7 +67,8 @@ def test_building_worker_image():
 
 
 @pytest.mark.timeout(100)
-@patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_procedure_runner_spawns_worker(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
@@ -75,7 +76,7 @@ def test_procedure_runner_spawns_worker(
     assert manager._active_workers == {}
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
-        identifier="sleep", args_kwargs=((), {"time_s": 2}), queue="test"
+        identifier="sleep", args_kwargs=((), {"time_s": 0.1}), queue="test"
     )
 
     logs = []
@@ -88,14 +89,14 @@ def test_procedure_runner_spawns_worker(
     client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 20)
+    _wait_while(lambda: manager._active_workers != {}, 90)
 
     assert logs != []
 
 
 @pytest.mark.timeout(100)
-@patch("bec_server.scan_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
-@patch("bec_server.scan_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
+@patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_happy_path_container_procedure_runner(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
 ):
@@ -111,7 +112,7 @@ def test_happy_path_container_procedure_runner(
     conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 20)
+    _wait_while(lambda: manager._active_workers != {}, 90)
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")

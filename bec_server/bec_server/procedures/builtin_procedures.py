@@ -14,7 +14,7 @@ def log_message_args_kwargs(*args, **kwargs):
     )
 
 
-def sleep(*, time_s):
+def sleep(*, time_s: float):
     """Sleep for time_s seconds. Intended for testing."""
     logger.success(f"Sleeping for {time_s} s.")
     time.sleep(time_s)
@@ -35,4 +35,16 @@ def run_scan(scan_name: str, args: tuple, parameters: dict, *, bec: BECClient):
 
 
 def run_script(script_id: str, *, bec: BECClient):
+    """Run the script with the given script ID on the server. Mainly intended for use from the GUI IDE view
+    or as a helper for similar utilities."""
     bec._run_script(script_id)
+
+
+def run_macro(macro_name: str, params: tuple[tuple, dict] | None = None, *, bec: BECClient):
+    """Run the given macro. Must be a macro automatically loaded from the plugin repository, for security reasons."""
+    if params is None:
+        params = ((), {})
+    if (macro := bec.macros._update_handler.macros.get(macro_name)) is not None:
+        macro["cls"](*params[0], **params[1])
+    else:
+        raise ValueError(f"Macro {macro_name} not found in the client namespace!")

@@ -13,14 +13,14 @@ from podman.domain.containers import Container
 from podman.errors import APIError
 
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.procedures.constants import (
+from bec_server.procedures.constants import (
     PROCEDURE,
     ContainerWorkerEnv,
     NoPodman,
     PodmanContainerStates,
     ProcedureWorkerError,
 )
-from bec_server.scan_server.procedures.protocol import (
+from bec_server.procedures.protocol import (
     ContainerCommandBackend,
     ContainerCommandOutput,
     VolumeSpec,
@@ -33,6 +33,14 @@ def get_backend() -> ContainerCommandBackend:
     """Get the currently selected backend for executing podman commands"""
     return PodmanCliUtils()
     # return PodmanApiUtils()
+
+
+def podman_available() -> bool:
+    try:
+        PodmanCliUtils()._run_and_capture_error("podman", "version")
+        return True
+    except ProcedureWorkerError:
+        return False
 
 
 class _PodmanUtilsBase(ContainerCommandBackend):
