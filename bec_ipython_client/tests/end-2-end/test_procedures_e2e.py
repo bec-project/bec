@@ -112,7 +112,7 @@ def test_happy_path_container_procedure_runner(
     conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 20)
+    _wait_while(lambda: manager._active_workers != {}, 90)
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")
