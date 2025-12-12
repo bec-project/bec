@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.84.1 (2025-12-12)
+
+### Bug Fixes
+
+- **atlas**: Use proper endpoints to avoid deprecation warnings
+  ([`9a0b167`](https://github.com/bec-project/bec/commit/9a0b1673a0d3208af4cac9ef36676f86047c0736))
+
+
 ## v3.84.0 (2025-12-11)
 
 ### Features
