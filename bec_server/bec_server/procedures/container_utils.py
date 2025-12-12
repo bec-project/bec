@@ -35,6 +35,14 @@ def get_backend() -> ContainerCommandBackend:
     # return PodmanApiUtils()
 
 
+def podman_available() -> bool:
+    try:
+        PodmanCliUtils()._run_and_capture_error("podman", "version")
+        return True
+    except ProcedureWorkerError:
+        return False
+
+
 class _PodmanUtilsBase(ContainerCommandBackend):
 
     def build_requirements_image(self):  # pragma: no cover
