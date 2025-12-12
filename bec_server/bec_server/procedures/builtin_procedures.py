@@ -41,8 +41,10 @@ def run_script(script_id: str, *, bec: BECClient):
     bec._run_script(script_id)
 
 
-def run_macro(macro_name: str, params: tuple[tuple, dict], *, bec: BECClient):
+def run_macro(macro_name: str, params: tuple[tuple, dict] | None = None, *, bec: BECClient):
     """Run the given macro. Must be a macro automatically loaded from the plugin repository, for security reasons."""
+    if params is None:
+        params = ((), {})
     if (macro := builtins.__dict__.get("_user_macros", {}).get(macro_name)) is not None:
         macro["cls"](*params[0], **params[1])
     else:
