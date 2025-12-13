@@ -56,7 +56,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
         super().__init__(
             bec, report_instruction=report_instruction, request=request, callbacks=callbacks
         )
-        self.scan_queue_request = None
         self.scan_item = None
         self.dev_values = None
         self.point_data = None
@@ -73,6 +72,8 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def wait_for_scan_to_start(self):
         """wait until the scan starts"""
         while True:
+            if not self.scan_item or not self.scan_item.queue:
+                raise RuntimeError("No scan item or scan queue available.")
             queue_pos = self.scan_item.queue.queue_position
             self.check_alarms()
             if self.scan_item.status == "closed":
@@ -160,7 +161,20 @@ class LiveUpdatesTable(LiveUpdatesBase):
         return header
 
     def update_scan_item(self, timeout: float = 15):
-        """get the current scan item"""
+        """
+        Get the current scan item and update self.scan_item
+
+        Args:
+            timeout (float): timeout in seconds
+
+        Raises:
+            RuntimeError: if no scan queue request is available
+            TimeoutError: if no scan item is found before reaching the timeout
+
+        """
+        if not self.scan_queue_request:
+            raise RuntimeError("No scan queue request available.")
+
         start = time.time()
         while self.scan_queue_request.scan is None:
             self.check_alarms()
@@ -178,14 +192,19 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def _wait_for_report_instructions(self):
         """wait until the report instructions are available"""
+        if not self.scan_queue_request or not self.scan_item or not self.scan_item.queue:
+            logger.warning(
+                f"Cannot wait for report instructions. scan_queue_request: {self.scan_queue_request}, scan_item: {self.scan_item}, scan_item.queue: {getattr(self.scan_item, 'queue', None)}"
+            )
+            return
         req_ID = self.scan_queue_request.requestID
         while True:
             request_block = [
-                req for req in self.scan_item.queue.request_blocks if req["RID"] == req_ID
+                req for req in self.scan_item.queue.request_blocks if req.RID == req_ID
             ][0]
-            if not request_block["is_scan"]:
+            if not request_block.is_scan:
                 break
-            if request_block["report_instructions"]:
+            if request_block.report_instructions:
                 break
             self.check_alarms()
 
@@ -195,6 +214,9 @@ class LiveUpdatesTable(LiveUpdatesBase):
         Args:
             target_num_points (int): number of points to be collected
         """
+        if not self.scan_item:
+            logger.warning("No scan item available for live updates.")
+            return
         with ScanProgressBar(
             scan_number=self.scan_item.scan_number, clear_on_exit=self._print_table_data
         ) as progressbar:

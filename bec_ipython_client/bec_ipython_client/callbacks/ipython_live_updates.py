@@ -31,7 +31,7 @@ class IPythonLiveUpdates:
         self._interrupted_request = None
         self._active_callback = None
         self._processed_instructions = 0
-        self._active_request = None
+        self._active_request: messages.ScanQueueMessage | None = None
         self._user_callback = None
         self._request_block_index = collections.defaultdict(lambda: 0)
         self._request_block_id = None
@@ -47,7 +47,9 @@ class IPythonLiveUpdates:
         Args:
             report_instructions (list): The list of report instructions.
         """
-        scan_type = self._active_request.content["scan_type"]
+        if not self._active_request:
+            return
+        scan_type = self._active_request.scan_type
         if scan_type in ["open_scan_def", "close_scan_def"]:
             self._process_instruction({"scan_progress": {"points": 0, "show_table": True}})
             return
@@ -74,6 +76,9 @@ class IPythonLiveUpdates:
         scan_report_type = list(instr.keys())[0]
         scan_def_id = self.client.scans._scan_def_id
         interactive_scan = self.client.scans._interactive_scan
+        if self._active_request is None:
+            # Already checked in caller method. It is just for type checking purposes.
+            return
         if scan_def_id is None or interactive_scan:
             if scan_report_type == "readback":
                 LiveUpdatesReadbackProgressbar(
@@ -126,17 +131,22 @@ class IPythonLiveUpdates:
             )
             self._active_callback.run()
 
-    def _available_req_blocks(self, queue: QueueItem, request: messages.ScanQueueMessage):
+    def _available_req_blocks(
+        self, queue: QueueItem, request: messages.ScanQueueMessage
+    ) -> list[messages.RequestBlock]:
         """Get the available request blocks.
 
         Args:
             queue (QueueItem): The queue item.
             request (messages.ScanQueueMessage): The request message.
+
+        Returns:
+            list[messages.RequestBlock]: The list of available request blocks.
         """
         available_blocks = [
             req_block
             for req_block in queue.request_blocks
-            if req_block["RID"] == request.metadata["RID"]
+            if req_block.RID == request.metadata["RID"]
         ]
         return available_blocks
 
@@ -167,7 +177,7 @@ class IPythonLiveUpdates:
 
                 available_blocks = self._available_req_blocks(queue, request)
                 req_block = available_blocks[self._request_block_index[req_id]]
-                report_instructions = req_block.get("report_instructions", [])
+                report_instructions = req_block.report_instructions or []
                 self._process_report_instructions(report_instructions)
 
             self._reset()
@@ -191,12 +201,19 @@ class IPythonLiveUpdates:
             self.client.queue.request_scan_halt()
 
     def _element_in_queue(self) -> bool:
-        queue = self.client.queue.queue_storage.current_scan_queue.get("primary", {}).get(
-            "info", []
-        )
-        if not queue:
+        if self.client.queue is None:
             return False
-        return self._current_queue.queue_id in queue[0].get("queue_id")
+        if (csq := self.client.queue.queue_storage.current_scan_queue) is None:
+            return False
+        scan_queue_status = csq.get("primary")
+        if scan_queue_status is None:
+            return False
+        queue_info = scan_queue_status.info
+        if not queue_info:
+            return False
+        if self._current_queue is None:
+            return False
+        return self._current_queue.queue_id == queue_info[0].queue_id
 
     def _process_queue(
         self, queue: QueueItem, request: messages.ScanQueueMessage, req_id: str
@@ -216,9 +233,11 @@ class IPythonLiveUpdates:
         if not queue.request_blocks or not queue.status or queue.queue_position is None:
             return False
         if queue.status == "PENDING" and queue.queue_position > 0:
-            status = self.client.queue.queue_storage.current_scan_queue.get("primary", {}).get(
-                "status"
-            )
+            primary_queue = self.client.queue.queue_storage.current_scan_queue.get("primary")
+
+            if primary_queue is None:
+                return False
+            status = primary_queue.status
             print(
                 "Scan is enqueued and is waiting for execution. Current position in queue:"
                 f" {queue.queue_position + 1}. Queue status: {status}.",
@@ -229,13 +248,13 @@ class IPythonLiveUpdates:
         if not available_blocks:
             return False
         req_block = available_blocks[self._request_block_index[req_id]]
-        if req_block["content"]["scan_type"] in [
+        if req_block.msg.scan_type in [
             "open_scan_def",
             "mv",
         ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 
-        report_instructions = req_block["report_instructions"]
+        report_instructions = req_block.report_instructions or []
         if not report_instructions:
             return False
         self._process_report_instructions(report_instructions)
@@ -263,7 +282,11 @@ class IPythonLiveUpdates:
         self._current_queue = None
         self._user_callback = None
         self._processed_instructions = 0
-        scan_closed = forced or (self._active_request.content["scan_type"] == "close_scan_def")
+        scan_closed = (
+            forced
+            or self._active_request is None
+            or (self._active_request.scan_type == "close_scan_def")
+        )
         self._active_request = None
 
         if self.client.scans._scan_def_id and not scan_closed:

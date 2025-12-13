@@ -7,7 +7,7 @@ import time
 import traceback
 import uuid
 from enum import Enum
-from typing import TYPE_CHECKING, Deque
+from typing import TYPE_CHECKING, Deque, Literal
 
 from rich.console import Console
 from rich.table import Table
@@ -653,7 +653,9 @@ class RequestBlock:
         self.instructions = None
         self.scan = None
         self.scan_motors = []
-        self.readout_priority = {}
+        self.readout_priority: dict[
+            Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]
+        ] = {}
         self.msg = msg
         self.RID = msg.metadata["RID"]
         self.scan_assembler = assembler
@@ -721,26 +723,24 @@ class RequestBlock:
                 return offset
         return offset
 
-    def describe(self):
+    def describe(self) -> messages.RequestBlock:
         """prepare a dictionary that summarizes the request block"""
-        return {
-            "msg": self.msg,
-            "RID": self.RID,
-            "scan_motors": self.scan_motors,
-            "readout_priority": self.readout_priority,
-            "is_scan": self.is_scan,
-            "scan_number": self.scan_number,
-            "scan_id": self.scan_id,
-            "metadata": self.msg.metadata,
-            "content": self.msg.content,
-            "report_instructions": self.scan_report_instructions,
-        }
+        return messages.RequestBlock(
+            msg=self.msg,
+            RID=self.RID,
+            scan_motors=self.scan_motors,
+            readout_priority=self.readout_priority,
+            is_scan=self.is_scan,
+            scan_number=self.scan_number,
+            scan_id=self.scan_id,
+            report_instructions=self.scan_report_instructions,
+        )
 
 
 class RequestBlockQueue:
     def __init__(self, instruction_queue, assembler) -> None:
         self.request_blocks_queue = collections.deque()
-        self.request_blocks = []
+        self.request_blocks: list[RequestBlock] = []
         self.instruction_queue = instruction_queue
         self.scan_queue = instruction_queue.parent
         self.assembler = assembler
@@ -996,23 +996,23 @@ class InstructionQueueItem:
         return False
 
     @return_to_start.setter
-    def return_to_start(self, val: bool) -> bool:
+    def return_to_start(self, val: bool):
         self._return_to_start = val
 
     def describe(self):
         """description of the instruction queue"""
         request_blocks = [rb.describe() for rb in self.queue.request_blocks]
-        content = {
-            "queue_id": self.queue_id,
-            "scan_id": self.scan_id,
-            "is_scan": self.is_scan,
-            "request_blocks": request_blocks,
-            "scan_number": self.scan_number,
-            "status": self.status.name,
-            "active_request_block": (
+        content = messages.QueueInfoEntry(
+            queue_id=self.queue_id,
+            scan_id=self.scan_id,
+            is_scan=self.is_scan,
+            request_blocks=request_blocks,
+            scan_number=self.scan_number,
+            status=self.status.name,
+            active_request_block=(
                 self.active_request_block.describe() if self.active_request_block else None
             ),
-        }
+        )
         return content
 
     def append_to_queue_history(self):

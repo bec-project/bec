@@ -33,22 +33,22 @@ logger = bec_logger.logger
 def queue_is_empty(queue) -> bool:  # pragma: no cover
     if not queue:
         return True
-    if not queue["primary"].get("info"):
+    if not queue["primary"].info:
         return True
     return False
 
 
-def get_queue(bec):  # pragma: no cover
+def get_queue(bec) -> messages.ScanQueueStatusMessage | None:  # pragma: no cover
     return bec.queue.connector.get(MessageEndpoints.scan_queue_status())
 
 
 def wait_for_empty_queue(bec):  # pragma: no cover
     while not get_queue(bec):
         time.sleep(1)
-    while not queue_is_empty(get_queue(bec).content["queue"]):
+    while not queue_is_empty(get_queue(bec).queue):
         time.sleep(1)
         logger.info(bec.queue)
-    while get_queue(bec).content["queue"]["primary"]["status"] != "RUNNING":
+    while get_queue(bec).queue["primary"].status != "RUNNING":
         time.sleep(1)
         logger.info(bec.queue)
 

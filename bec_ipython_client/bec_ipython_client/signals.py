@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import signal
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import ScanInterruption
+
+if TYPE_CHECKING:  # pragma: no cover
+    from bec_lib.client import BECClient
 
 PAUSE_MSG = """
 The Scan Queue is entering a paused state. These are your options for changing
@@ -73,7 +79,7 @@ class SignalHandler:
 
 
 class SigintHandler(SignalHandler):
-    def __init__(self, bec):
+    def __init__(self, bec: BECClient):
         super().__init__(signal.SIGINT)
         self.bec = bec
         self.last_sigint_time = None  # time most recent SIGINT was processed
@@ -84,11 +90,11 @@ class SigintHandler(SignalHandler):
         if not current_scan:
             raise KeyboardInterrupt
 
-        status = current_scan.get("status").lower()
+        status = current_scan.status.lower()
         if status not in ["running", "deferred_pause"]:
             raise KeyboardInterrupt
 
-        if any(current_scan.get("is_scan")) and (
+        if any(current_scan.is_scan) and (
             self.last_sigint_time is None or time.time() - self.last_sigint_time > 10
         ):
             # reset the counter to 1

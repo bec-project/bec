@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import _thread
 import io
 import os
 import threading
 import time
 from contextlib import redirect_stdout
+from typing import TYPE_CHECKING
 from unittest.mock import PropertyMock
 
 import h5py
@@ -18,6 +21,9 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
 logger = bec_logger.logger
+
+if TYPE_CHECKING:  # pragma: no cover
+    from bec_ipython_client.main import BECIPythonClient
 
 # pylint: disable=protected-access
 
@@ -201,13 +207,13 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_abort(bec_ipython_client_fixture):
+def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
     def send_abort(bec):
         while True:
             current_scan_info = bec.queue.scan_storage.current_scan_info
             if not current_scan_info:
                 continue
-            status = current_scan_info.get("status").lower()
+            status = current_scan_info.status.lower()
             if status not in ["running", "deferred_pause"]:
                 continue
             if bec.queue.scan_storage.current_scan is None:
@@ -217,7 +223,7 @@ def test_scan_abort(bec_ipython_client_fixture):
                 break
         while True:
             queue = bec.queue.queue_storage.current_scan_queue
-            if queue["primary"]["info"][0]["status"] == "DEFERRED_PAUSE":
+            if queue["primary"].info[0].status == "DEFERRED_PAUSE":
                 break
             time.sleep(0.5)
         _thread.interrupt_main()
@@ -241,7 +247,7 @@ def test_scan_abort(bec_ipython_client_fixture):
         time.sleep(0.5)
 
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue["info"] or current_queue["status"] != "RUNNING":
+    while current_queue.info or current_queue.status != "RUNNING":
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
 
@@ -307,7 +313,7 @@ def test_queued_scan(bec_ipython_client_fixture):
     while len(scan2.scan.live_data) != 50:
         time.sleep(0.5)
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue["info"] or current_queue["status"] != "RUNNING":
+    while current_queue.info or current_queue.status != "RUNNING":
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
     scan_number_end = bec.queue.next_scan_number
@@ -356,7 +362,7 @@ def test_scan_restart(bec_ipython_client_fixture):
     scan2.wait()
 
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue["info"] or current_queue["status"] != "RUNNING":
+    while current_queue.info or current_queue.status != "RUNNING":
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
     scan_number_end = bec.queue.next_scan_number
@@ -364,7 +370,7 @@ def test_scan_restart(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_observer_repeat_queued(bec_ipython_client_fixture):
+def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClient):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_observer_repeat_queued"})
     scans = bec.scans
@@ -396,7 +402,7 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture):
     scan2.wait()
 
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue["info"] or current_queue["status"] != "RUNNING":
+    while current_queue.info or current_queue.status != "RUNNING":
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
     scan_number_end = bec.queue.next_scan_number
@@ -433,7 +439,7 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
         scan1.wait()
 
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue["info"] or current_queue["status"] != "RUNNING":
+    while current_queue.info or current_queue.status != "RUNNING":
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
     while True:

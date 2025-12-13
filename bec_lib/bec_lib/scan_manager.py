@@ -239,7 +239,7 @@ class ScanManager:
         self._scan_number_container.dataset_number = val
 
     def _scan_queue_status_callback(self, msg, **_kwargs) -> None:
-        queue_status = msg.value
+        queue_status: messages.ScanQueueStatusMessage = msg.value
         if not queue_status:
             return
         self.update_with_queue_status(queue_status)
