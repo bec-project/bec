@@ -41,8 +41,8 @@ class QueueItem:
         queue_id: str,
         request_blocks: list[messages.RequestBlock],
         status: str,
-        active_request_block: dict,
-        scan_id: list[str],
+        active_request_block: messages.RequestBlock | None,
+        scan_id: list[str | None],
         client_messages: list | None = None,
         **_kwargs,
     ) -> None:
@@ -179,8 +179,12 @@ class QueueStorage:
         self._update_current_scan_queue()
         self._update_queue_history()
 
-    def describe_queue(self):
-        """create a rich.table description of the current scan queue"""
+    def describe_queue(self) -> list[str]:
+        """
+        Create a rich table description of the current scan queue.
+        Returns:
+            list[str]: list of rich table strings for each queue
+        """
         queue_tables = []
         self._update_queue()
         console = Console()
@@ -222,7 +226,14 @@ class QueueStorage:
                 queue.update_queue_item(queue_item)
                 continue
             self.storage.append(
-                QueueItem(scan_manager=self.scan_manager, **queue_item.model_dump())
+                QueueItem(
+                    scan_manager=self.scan_manager,
+                    queue_id=queue_item.queue_id,
+                    request_blocks=queue_item.request_blocks,
+                    status=queue_item.status,
+                    active_request_block=queue_item.active_request_block,
+                    scan_id=queue_item.scan_id,
+                )
             )
             if ii > 20:
                 # only keep the last 20 queue items
