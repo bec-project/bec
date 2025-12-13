@@ -58,6 +58,7 @@ class BECIPythonClient:
     # the CLIBECClient but directly through the BECIPythonClient. While this is not
     # needed for normal usage, it is required, e.g. for mocks.
     _local_only_types: Tuple = ()
+    _client: CLIBECClient | BECClient
 
     def __init__(
         self,

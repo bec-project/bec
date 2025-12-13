@@ -164,7 +164,7 @@ class ScanQueueHistoryMessage(BECMessage):
     Args:
         status (str): Current scan status
         queue_id (str): Unique queue ID
-        info (dict): Dictionary containing additional information about the scan
+        info (QueueInfoEntry): Information about the scan in the queue
         queue (str): Defaults to "primary" queue. Information about the queue the scan was in.
         metadata (dict, optional): Additional metadata to describe the scan
 
@@ -175,7 +175,7 @@ class ScanQueueHistoryMessage(BECMessage):
     msg_type: ClassVar[str] = "queue_history"
     status: str
     queue_id: str
-    info: dict
+    info: QueueInfoEntry
     queue: str = Field(default="primary")
 
 
@@ -279,6 +279,71 @@ class ScanQueueOrderMessage(BECMessage):
     target_position: int | None = None
 
 
+class RequestBlock(BaseModel):
+    """
+    Model for a request block within a scan queue entry. It represents a single request in the scan queue, e.g. a single scan or rpc call.
+
+    Args:
+        msg (ScanQueueMessage): The original scan queue message containing the request details
+        RID (str): Request ID associated with the request
+        scan_motors (list[str]): List of motors involved in the scan
+        readout_priority (dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]]): Readout priority for the request
+        is_scan (bool): True if the request is a scan, False if it is an rpc call
+        scan_number (int | None): Scan number if applicable
+        scan_id (str | None): Scan ID if applicable
+        report_instructions (list[dict] | None): List of report instructions for the scan, if any
+
+    """
+
+    msg: ScanQueueMessage
+    RID: str
+    scan_motors: list[str]
+    readout_priority: dict[
+        Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]
+    ]
+    is_scan: bool
+    scan_number: int | None
+    scan_id: str | None
+    report_instructions: list[dict] | None = None
+
+
+class QueueInfoEntry(BaseModel):
+    """
+    Model for scan queue information entries. It represents a single queue element within a scan queue but
+    may contain multiple request blocks.
+
+    Args:
+        queue_id (str): Unique queue ID
+        scan_id (list[str | None]): List of scan IDs for each request block
+        is_scan (list[bool]): List indicating whether each request block is a scan
+        request_blocks (list[RequestBlock]): List of RequestBlock objects representing the requests in the queue entry
+        scan_number (list[int | None]): List of scan numbers for each request block
+        status (str): Current status of the queue entry
+        active_request_block (RequestBlock | None): The currently active request block, if any
+    """
+
+    queue_id: str
+    scan_id: list[str | None]
+    is_scan: list[bool]
+    request_blocks: list[RequestBlock]
+    scan_number: list[int | None]
+    status: str
+    active_request_block: RequestBlock | None = None
+
+
+class ScanQueueStatus(BaseModel):
+    """
+    Model for scan queue status information. It represents the status of a single queue, e.g. "primary" or "interception".
+
+    Args:
+        info (list[QueueInfoEntry]): List of QueueInfoEntry objects representing the current queue status
+        status (str): Current status of the scan queue
+    """
+
+    info: list[QueueInfoEntry]
+    status: str
+
+
 class ScanQueueStatusMessage(BECMessage):
     """Message type for sending scan queue status updates
 
@@ -291,14 +356,12 @@ class ScanQueueStatusMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "scan_queue_status"
-    queue: dict
+    queue: dict[str, ScanQueueStatus]
 
     @field_validator("queue")
     @classmethod
     def check_queue(cls, v):
         """Validate the queue"""
-        if not isinstance(v, dict):
-            raise ValueError(f"Invalid queue {v}. Must be a dictionary")
         if "primary" not in v:
             raise ValueError(f"Invalid queue {v}. Must contain a 'primary' key")
         return v
