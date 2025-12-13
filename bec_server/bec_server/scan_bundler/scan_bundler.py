@@ -91,11 +91,11 @@ class ScanBundler(BECService):
         self.executor_tasks.append(task)
 
     def _scan_queue_callback(self, msg, **_kwargs):
-        msg = msg.value
-        self.current_queue = msg.content["queue"]["primary"].get("info")
+        msg: messages.ScanQueueStatusMessage = msg.value
+        self.current_queue = msg.queue["primary"].info
 
     def _scan_status_callback(self, msg, **_kwargs):
-        msg = msg.value
+        msg: messages.ScanStatusMessage = msg.value
         self.handle_scan_status_message(msg)
 
     def handle_scan_status_message(self, msg: messages.ScanStatusMessage) -> None:

@@ -21,9 +21,35 @@ def scan_item():
     return ScanItem(
         scan_manager=scan_manager,
         queue_id="queue_id",
-        scan_number=[1],
-        scan_id=["scan_id"],
+        scan_number=1,
+        scan_id="scan_id",
         status="open",
+    )
+
+
+@pytest.fixture
+def scan_queue_msg():
+    return messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={
+            "args": {"samx": [-2, 2]},
+            "kwargs": {"step": 1.0, "exp_time": 0.1, "relative": True},
+        },
+        metadata={"RID": "bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5"},
+        queue="primary",
+    )
+
+
+@pytest.fixture
+def request_block(scan_queue_msg):
+    return messages.RequestBlock(
+        msg=scan_queue_msg,
+        RID="bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5",
+        scan_motors=["samx"],
+        is_scan=True,
+        scan_number=1,
+        scan_id="scan_id",
+        readout_priority={"monitored": ["bpm4i", "samx"], "async": []},
     )
 
 
@@ -86,13 +112,13 @@ def test_scan_item_str(scan_item):
     assert (
         str(scan_item)
         == "ScanItem:\n \tStart time: Fri Jun 23 15:11:06 2023\n\tEnd time: Fri Jun 23 15:11:16"
-        " 2023\n\tElapsed time: 10.0 s\n\tScan ID: ['scan_id']\n\tScan number: [1]\n\tNumber of"
+        " 2023\n\tElapsed time: 10.0 s\n\tScan ID: scan_id\n\tScan number: 1\n\tNumber of"
         " points: 1\n"
     )
 
 
 def test_scan_item_str_plain(scan_item):
-    assert str(scan_item) == "ScanItem:\n \tScan ID: ['scan_id']\n\tScan number: [1]\n"
+    assert str(scan_item) == "ScanItem:\n \tScan ID: scan_id\n\tScan number: 1\n"
 
 
 def test_emit_data(scan_item):
@@ -119,11 +145,9 @@ def test_emit_status(scan_item):
     )
 
 
-def test_run_request_callbacks(scan_item):
+def test_run_request_callbacks(scan_item, request_block):
     scan_manager = scan_item.scan_manager
-    queue_item = QueueItem(
-        scan_manager, "queue_id", [{"RID": "requestID"}], "status", None, ["scan_id"]
-    )
+    queue_item = QueueItem(scan_manager, "queue_id", [request_block], "status", None, ["scan_id"])
     with mock.patch("bec_lib.queue_items.update_queue") as mock_update_queue:
         with mock.patch.object(queue_item, "_update_with_buffer") as mock_update_buffer:
             with mock.patch.object(
@@ -139,11 +163,9 @@ def test_run_request_callbacks(scan_item):
                     )
 
 
-def test_poll_callbacks(scan_item):
+def test_poll_callbacks(scan_item, request_block):
     scan_manager = scan_item.scan_manager
-    queue_item = QueueItem(
-        scan_manager, "queue_id", [{"RID": "requestID"}], "status", None, ["scan_id"]
-    )
+    queue_item = QueueItem(scan_manager, "queue_id", [request_block], "status", None, ["scan_id"])
     with mock.patch("bec_lib.queue_items.update_queue") as mock_update_queue:
         with mock.patch.object(queue_item, "_update_with_buffer") as mock_update_buffer:
             with mock.patch.object(
@@ -159,16 +181,15 @@ def test_poll_callbacks(scan_item):
 
 def test_scan_item_eq():
     scan_manager = ScanManager(ConnectorMock(""))
-    scan_item1 = ScanItem("queue_id", [1], ["scan_id"], "status", scan_manager=scan_manager)
-    scan_item2 = ScanItem("queue_id", [1], ["scan_id"], "status", scan_manager=scan_manager)
+    scan_item1 = ScanItem("queue_id", 1, "scan_id", "open", scan_manager=scan_manager)
+    scan_item2 = ScanItem("queue_id", 1, "scan_id", "open", scan_manager=scan_manager)
     assert scan_item1 == scan_item2
 
 
 def test_scan_item_neq():
     scan_manager = ScanManager(ConnectorMock(""))
-    scan_item1 = ScanItem("queue_id", [1], ["scan_id"], "status", scan_manager=scan_manager)
-    scan_item2 = ScanItem("queue_id", [1], ["scan_id"], "status", scan_manager=scan_manager)
-    scan_item2.scan_id = ["scan_id2"]
+    scan_item1 = ScanItem("queue_id", 1, "scan_id", "open", scan_manager=scan_manager)
+    scan_item2 = ScanItem("queue_id", 1, "scan_id2", "open", scan_manager=scan_manager)
     assert scan_item1 != scan_item2
 
 

@@ -255,16 +255,16 @@ class ScanStorage:
         self._pending_inserts = defaultdict(list[dict[Literal["func", "func_args"], Any]])
 
     @property
-    def current_scan_info(self) -> dict | None:
+    def current_scan_info(self) -> messages.QueueInfoEntry | None:
         """Get the current scan information from the scan queue.
 
         Returns:
             Dictionary containing current scan information, or None if no scan is active.
         """
         scan_queue = self.scan_manager.queue_storage.current_scan_queue
-        if not scan_queue or not scan_queue["primary"].get("info"):
+        if not scan_queue or not scan_queue["primary"].info:
             return None
-        return scan_queue["primary"].get("info")[0]
+        return scan_queue["primary"].info[0]
 
     @property
     def current_scan(self) -> ScanItem | None:
@@ -278,15 +278,16 @@ class ScanStorage:
         return self.find_scan_by_ID(scan_id=self.current_scan_id[0])
 
     @property
-    def current_scan_id(self) -> str | None:
+    def current_scan_id(self) -> list[str | None]:
         """Get the scan ID of the currently active scan.
 
         Returns:
             The current scan ID as a string, or None if no scan is active.
         """
         if self.current_scan_info is None:
-            return None
-        return self.current_scan_info.get("scan_id")
+            return []
+
+        return self.current_scan_info.scan_id
 
     @threadlocked
     def find_scan_by_ID(self, scan_id: str) -> ScanItem | None:
@@ -462,22 +463,22 @@ class ScanStorage:
         Args:
             queue_msg: The queue status message containing information about queued scans.
         """
-        queue_info = queue_msg.queue["primary"].get("info")
+        queue_info = queue_msg.queue["primary"].info
         for ii, queue_item in enumerate(queue_info):
 
-            if not any(queue_item["is_scan"]):
+            if not any(queue_item.is_scan):
                 continue
 
-            for ii, scan in enumerate(queue_item["scan_id"]):
+            for ii, scan in enumerate(queue_item.scan_id):
                 if self.find_scan_by_ID(scan):
                     continue
 
                 logger.debug(f"Appending new scan: {queue_item}")
                 self.add_scan_item(
-                    queue_id=queue_item["queue_id"],
-                    scan_number=queue_item["scan_number"][ii],
-                    scan_id=queue_item["scan_id"][ii],
-                    status=queue_item["status"],
+                    queue_id=queue_item.queue_id,
+                    scan_number=queue_item.scan_number[ii],
+                    scan_id=queue_item.scan_id[ii],
+                    status=queue_item.status,
                 )
             if ii > 20:
                 # only keep the last 20 queue items

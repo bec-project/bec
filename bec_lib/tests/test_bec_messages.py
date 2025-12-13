@@ -91,7 +91,10 @@ def test_ScanQueueStatusMessage_must_include_primary_queue():
 
 
 def test_ScanQueueStatusMessage_loads_successfully():
-    msg = messages.ScanQueueStatusMessage(queue={"primary": {}}, metadata={"RID": "1234"})
+    msg = messages.ScanQueueStatusMessage(
+        queue={"primary": messages.ScanQueueStatus(info=[], status="RUNNING")},
+        metadata={"RID": "1234"},
+    )
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
@@ -347,7 +350,17 @@ def test_GUIConfigMessage():
 
 def test_ScanQueueHistoryMessage():
     msg = messages.ScanQueueHistoryMessage(
-        status="running", queue_id="queue_id", info={"val": "val"}, metadata={"RID": "1234"}
+        status="running",
+        queue_id="queue_id",
+        info=messages.QueueInfoEntry(
+            queue_id="queue_i",
+            scan_id=["scan_id", None],
+            is_scan=[True, False],
+            request_blocks=[],
+            scan_number=[1, None],
+            status="RUNNING",
+        ),
+        metadata={"RID": "1234"},
     )
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
