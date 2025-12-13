@@ -62,7 +62,7 @@ class LiveUpdatesBase(abc.ABC):
         self.bec = bec
         self.request = request
         self.RID = request.metadata["RID"]
-        self.scan_queue_request = None
+        self.scan_queue_request: RequestItem | None = None
         self.report_instruction = report_instruction
         if callbacks is None:
             self.callbacks = []

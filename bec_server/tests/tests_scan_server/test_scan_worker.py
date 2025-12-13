@@ -436,6 +436,7 @@ def test_send_scan_status(scan_worker_mock, status, expire):
     worker = scan_worker_mock
     worker.device_manager.connector = ConnectorMock()
     worker.current_scan_id = str(uuid.uuid4())
+    worker.current_scan_info = {"scan_number": 5}
     worker._send_scan_status(status)
     scan_info_msgs = [
         msg

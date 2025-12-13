@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 from string import Template
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -303,7 +303,11 @@ class ScanWorker(threading.Thread):
                 "Please check your service config."
             ) from exc
 
-    def _send_scan_status(self, status: str):
+    def _send_scan_status(
+        self, status: Literal["open", "paused", "closed", "aborted", "halted"]
+    ) -> None:
+        if not self.current_scan_info:
+            return
         current_scan_info_print = self.current_scan_info.copy()
         if current_scan_info_print.get("positions", []):
             current_scan_info_print["positions"] = "..."
