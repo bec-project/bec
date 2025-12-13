@@ -412,12 +412,8 @@ def test_queue_item_update_queue_item(queue_item, scan_queue_status_message):
 
 def test_queue_item_update_with_client_message(queue_item):
     """Test adding client messages to queue item."""
-    msg1 = messages.ClientInfoMessage(
-        message="First message", source="scan_server", metadata={}
-    )
-    msg2 = messages.ClientInfoMessage(
-        message="Second message", source="device_server", metadata={}
-    )
+    msg1 = messages.ClientInfoMessage(message="First message", source="scan_server", metadata={})
+    msg2 = messages.ClientInfoMessage(message="Second message", source="device_server", metadata={})
 
     queue_item.update_with_client_message(msg1)
     queue_item.update_with_client_message(msg2)
@@ -443,7 +439,7 @@ def test_queue_item_get_client_messages(queue_item):
 
     # Get only asap messages
     asap_msgs = queue_item.get_client_messages(only_asap=True)
-    
+
     # Note: get_client_messages has a bug - it modifies list while iterating
     # But we test the current behavior
     assert len(asap_msgs) >= 1
@@ -452,18 +448,14 @@ def test_queue_item_get_client_messages(queue_item):
 
 def test_queue_item_get_client_messages_all(queue_item):
     """Test retrieving all client messages."""
-    msg1 = messages.ClientInfoMessage(
-        message="Message 1", source="scan_server", metadata={}
-    )
-    msg2 = messages.ClientInfoMessage(
-        message="Message 2", source="scan_server", metadata={}
-    )
+    msg1 = messages.ClientInfoMessage(message="Message 1", source="scan_server", metadata={})
+    msg2 = messages.ClientInfoMessage(message="Message 2", source="scan_server", metadata={})
 
     queue_item.client_messages = [msg1, msg2]
 
     # Get all messages
     all_msgs = queue_item.get_client_messages(only_asap=False)
-    
+
     assert len(all_msgs) >= 1
 
 
@@ -471,9 +463,7 @@ def test_queue_item_format_client_msg():
     """Test formatting client message."""
     from bec_lib.queue_items import QueueItem
 
-    msg = messages.ClientInfoMessage(
-        message="Test message", source="scan_server", metadata={}
-    )
+    msg = messages.ClientInfoMessage(message="Test message", source="scan_server", metadata={})
 
     formatted = QueueItem.format_client_msg(msg)
 
@@ -529,7 +519,7 @@ def test_queue_item_status_property(queue_item, scan_queue_status_message):
     """Test status property with update_queue decorator."""
     # Mock the connector to avoid actual Redis calls
     queue_item.scan_manager.queue_storage.current_scan_queue = None
-    
+
     # Access status should return the internal _status
     assert queue_item._status == "pending"
 
@@ -583,9 +573,7 @@ def test_queue_item_requests_property(queue_item):
     mock_request.requestID = "rid_1"
 
     with mock.patch.object(
-        queue_item.scan_manager.request_storage,
-        "find_request_by_ID",
-        return_value=mock_request,
+        queue_item.scan_manager.request_storage, "find_request_by_ID", return_value=mock_request
     ):
         requests = queue_item.requests
 
