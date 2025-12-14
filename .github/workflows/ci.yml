@@ -1,19 +1,19 @@
 name: Full CI
-on: 
+on:
   push:
   pull_request:
   workflow_dispatch:
     inputs:
       BEC_WIDGETS_BRANCH:
-        description: 'Branch of BEC Widgets to install'
+        description: "Branch of BEC Widgets to install"
         required: false
         type: string
       BEC_CORE_BRANCH:
-        description: 'Branch of BEC Core to install'
+        description: "Branch of BEC Core to install"
         required: false
         type: string
       OPHYD_DEVICES_BRANCH:
-        description: 'Branch of Ophyd Devices to install'
+        description: "Branch of Ophyd Devices to install"
         required: false
         type: string
 
@@ -37,8 +37,6 @@ jobs:
       BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH || 'main' }}
       BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH || github.head_ref || github.sha}}
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   unit-test-matrix:
     needs: [check_pr_status, formatter]
@@ -57,7 +55,7 @@ jobs:
       BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH || 'main' }}
       BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH || github.head_ref || github.sha}}
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
-      PYTHON_VERSION: '3.11'
+      PYTHON_VERSION: "3.11"
 
   child-repos:
     needs: [check_pr_status, formatter]
@@ -78,3 +76,31 @@ jobs:
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
     secrets:
       GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
+
+  upload-coverage:
+    needs: [unit-test, end2end-test]
+    if: needs.check_pr_status.outputs.branch-pr == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download unit test coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+          path: ./coverage-unit
+
+      - name: Download e2e test coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-e2e
+          path: ./coverage-e2e
+
+      - name: Upload combined coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage-unit/coverage-unit.xml,./coverage-e2e/coverage-e2e.xml
+          slug: bec-project/bec
+          fail_ci_if_error: true

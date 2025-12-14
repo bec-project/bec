@@ -18,7 +18,6 @@ inputs:
     default: "3.11"
     description: "Python version to use"
 
-
 runs:
   using: "composite"
   steps:
@@ -40,7 +39,7 @@ runs:
       run: |
         mkdir -p ./_e2e_test_checkout_/
         echo -e "\033[35;1m Installing dependencies for branch ${{ inputs.BEC_CORE_BRANCH }} for BEC Core. \033[0;m";
-        echo -e "\033[35;1m Installing dependencies for branch ${{ inputs.OPHYD_DEVICES_BRANCH }} for ophyd_devices. \033[0;m"; 
+        echo -e "\033[35;1m Installing dependencies for branch ${{ inputs.OPHYD_DEVICES_BRANCH }} for ophyd_devices. \033[0;m";
 
     - name: Checkout BEC Core
       uses: actions/checkout@v4
@@ -64,5 +63,5 @@ runs:
         pip install -e ../ophyd_devices
         podman pod create --network=host local_bec
         python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
-        pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/
-        
+        coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/
+        coverage xml -o coverage-e2e.xml
