@@ -1,26 +1,26 @@
-name: Run Pytest with Coverage
-on: 
+name: Run E2E Tests with Coverage
+on:
   workflow_call:
     inputs:
       BEC_CORE_BRANCH:
-        description: 'Branch of BEC Core to install'
+        description: "Branch of BEC Core to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       OPHYD_DEVICES_BRANCH:
-        description: 'Branch of Ophyd Devices to install'
+        description: "Branch of Ophyd Devices to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       BEC_WIDGETS_BRANCH:
-        description: 'Branch of BEC Widgets to install'
+        description: "Branch of BEC Widgets to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       PYTHON_VERSION:
-        description: 'Python version to use'
+        description: "Python version to use"
         required: false
-        default: '3.11'
+        default: "3.11"
         type: string
 
 jobs:
@@ -36,4 +36,10 @@ jobs:
           OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
           BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
           PYTHON_VERSION: ${{ inputs.PYTHON_VERSION }}
-          
+
+      - name: Upload E2E coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-e2e
+          path: ./_e2e_test_checkout_/bec/coverage-e2e.xml
+          retention-days: 1

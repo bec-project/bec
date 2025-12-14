@@ -1,31 +1,26 @@
 name: Run Pytest with Coverage
-on: 
+on:
   workflow_call:
     inputs:
       pr_number:
-        description: 'Pull request number'
+        description: "Pull request number"
         required: false
         type: number
       BEC_CORE_BRANCH:
-        description: 'Branch of BEC Core to install'
+        description: "Branch of BEC Core to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       OPHYD_DEVICES_BRANCH:
-        description: 'Branch of Ophyd Devices to install'
+        description: "Branch of Ophyd Devices to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       BEC_WIDGETS_BRANCH:
-        description: 'Branch of BEC Widgets to install'
+        description: "Branch of BEC Widgets to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
-    secrets:
-      CODECOV_TOKEN:
-        required: true
-
-
 
 permissions:
   pull-requests: write
@@ -54,11 +49,11 @@ jobs:
           cd ./bec
           coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest --random-order ./bec_server/tests ./bec_ipython_client/tests/client_tests ./bec_lib/tests
           coverage report 
-          coverage xml
+          coverage xml -o coverage-unit.xml
 
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+      - name: Upload unit test coverage artifact
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: bec-project/bec
+          name: coverage-unit
+          path: ./bec/coverage-unit.xml
+          retention-days: 1
