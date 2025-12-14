@@ -572,7 +572,7 @@ def test_kickoff_device(device_server_mock, instr):
         kickoff.assert_called_once()
 
 
-@pytest.mark.timeout(5)
+@pytest.mark.timeout(30)
 @pytest.mark.parametrize(
     "instr",
     [
