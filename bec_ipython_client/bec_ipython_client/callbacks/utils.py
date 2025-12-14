@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import abc
-import threading
 import time
 import traceback
 from collections.abc import Callable
@@ -19,23 +18,6 @@ logger = bec_logger.logger
 
 class ScanRequestError(Exception):
     """Error raised when a scan request is rejected"""
-
-
-def set_event_delayed(event: threading.Event, delay: int) -> None:
-    """Set event with a delay
-
-    Args:
-        event (threading.Event): event that should be set
-        delay (int): delay time in seconds
-
-    """
-
-    def call_set():
-        time.sleep(delay)
-        event.set()
-
-    thread = threading.Thread(target=call_set, daemon=True)
-    thread.start()
 
 
 def check_alarms(bec):
