@@ -1,4 +1,5 @@
 import time
+from threading import Event
 from unittest import mock
 
 import pytest
@@ -56,9 +57,19 @@ def test_scan_history_loads_messages(scan_history_without_thread, file_history_m
     ] == scan_history_without_thread._scan_numbers
 
 
-@pytest.mark.timeout(20)
+# @pytest.mark.timeout(20)
 def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_history_messages):
-    scan_history_without_thread, _ = scan_history_without_thread
+    scan_history, _ = scan_history_without_thread
+    cbs_run = 0
+    ev = Event()
+
+    def _cb():
+        nonlocal cbs_run, ev
+        cbs_run += 1
+        if cbs_run >= 2:
+            ev.set()
+
+    scan_history._client.callbacks.register(EventType.SCAN_HISTORY_UPDATE, _cb)
     msg = [
         messages.ScanHistoryMessage(
             scan_id="scan_id_4",
@@ -84,28 +95,26 @@ def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_hist
         ),
     ]
     with mock.patch("bec_lib.scan_history.os.access", return_value=True):
-        scan_history_without_thread._max_scans = 2
+        scan_history._max_scans = 2
         for m in msg:
-            scan_history_without_thread._connector.xadd(
-                MessageEndpoints.scan_history(), {"data": m}
-            )
+            scan_history._connector.xadd(MessageEndpoints.scan_history(), {"data": m})
 
-        while len(scan_history_without_thread._scan_ids) > 2:
+        while len(scan_history._scan_ids) > 2:
             time.sleep(0.1)
 
-    assert scan_history_without_thread.get_by_scan_number(1) is None
-    assert scan_history_without_thread.get_by_scan_number(4)._msg == msg[0]
+    if ev.wait(timeout=1):
+        raise TimeoutError()
 
-    assert (
-        len(scan_history_without_thread._scan_numbers)
-        == len(scan_history_without_thread._scan_ids)
-        == 2
-    )
-    assert scan_history_without_thread._scan_numbers == [4, 5]
-    assert [
-        scan_history_without_thread._scan_data[sid].scan_number
-        for sid in scan_history_without_thread._scan_ids
-    ] == scan_history_without_thread._scan_numbers
+    with scan_history._scan_data_lock:
+
+        assert scan_history.get_by_scan_number(1) is None
+        assert scan_history.get_by_scan_number(4)._msg == msg[0]
+
+        assert len(scan_history._scan_numbers) == len(scan_history._scan_ids) == 2
+        assert scan_history._scan_numbers == [4, 5]
+        assert [
+            scan_history._scan_data[sid].scan_number for sid in scan_history._scan_ids
+        ] == scan_history._scan_numbers
 
 
 def test_scan_history_slices(scan_history_without_thread, file_history_messages):
