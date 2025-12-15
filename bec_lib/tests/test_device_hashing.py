@@ -18,6 +18,7 @@ TEST_DEVICE_DICT = {
     "deviceClass": "TestDeviceClass",
     "readoutPriority": "baseline",
     "enabled": True,
+    "needs": [],
 }
 
 
@@ -246,11 +247,12 @@ def test_device_equality_according_to_model(hash_model: DeviceHashModel, equal: 
 @pytest.mark.parametrize(
     "hash_model, expected",
     [
-        (DeviceHashModel(), {"deviceConfig": {"a": "b", "c": "d", "l": "m"}}),
-        (DeviceHashModel(deviceConfig=DictHashInclusion()), {}),
+        (DeviceHashModel(), {"deviceConfig": {"a": "b", "c": "d", "l": "m"}, "needs": []}),
+        (DeviceHashModel(deviceConfig=DictHashInclusion(), needs=HashInclusion.EXCLUDE), {}),
         (
             DeviceHashModel(
                 deviceConfig=DictHashInclusion(),
+                needs=HashInclusion.EXCLUDE,
                 enabled=HashInclusion.VARIANT,
                 softwareTrigger=HashInclusion.VARIANT,
             ),
@@ -259,6 +261,7 @@ def test_device_equality_according_to_model(hash_model: DeviceHashModel, equal: 
         (
             DeviceHashModel(
                 deviceConfig=DictHashInclusion(),
+                needs=HashInclusion.EXCLUDE,
                 userParameter=DictHashInclusion(
                     field_inclusion=HashInclusion.INCLUDE,
                     inclusion_keys={"a"},
@@ -275,7 +278,7 @@ def test_device_equality_according_to_model(hash_model: DeviceHashModel, equal: 
                     remainder_inclusion=HashInclusion.EXCLUDE,
                 )
             ),
-            {"deviceConfig": {"a": "b", "c": "d", "l": "m"}},
+            {"deviceConfig": {"a": "b", "c": "d", "l": "m"}, "needs": []},
         ),
     ],
 )
@@ -426,5 +429,6 @@ def test_hashable_device_set_or_adds_variants():
     combined_device: HashableDevice = combined.pop()
     assert combined_device.variants != set()
     assert HashableDevice.model_validate(combined_device.variants.pop())._variant_info() == {
-        "deviceConfig": {"param": "other_value"}
+        "deviceConfig": {"param": "other_value"},
+        "needs": [],
     }
