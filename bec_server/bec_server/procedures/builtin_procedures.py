@@ -1,5 +1,5 @@
-import time
 import builtins
+import time
 
 from bec_lib.client import BECClient
 from bec_lib.logger import bec_logger

@@ -40,19 +40,22 @@ Available procedures and their signatures:
         return self._helper.request.procedure(identifier, args_kwargs, queue)
 
     def run_macro(
-        self,
-        macro_name: str,
-        args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] | None = None,
-        queue: str | None = None,
+        self, macro_name: str, *args, queue: str | None = None, **kwargs
     ) -> ProcedureStatus:
         """Make a request for the given procedure to be executed
 
         Args:
             macro_name (str): the name of the macro to execute as a procedure
-            args_kwargs (tuple[tuple, dict], optional): args and kwargs to be passed to the procedure
+        Keyword-only args:
             queue (str, optional): the queue on which to execute the procedure
+
+        All other args and kwargs are passed directly to the macro. Since this function uses the
+        "queue" keyword argument itself, it will not be passed to the macro, don't use a keyword
+        argument named "queue" there.
 
         returns:
             ProcedureStatus monitoring the status of the requested procedure.
         """
-        return self._helper.request.procedure("run_macro", ((macro_name, args_kwargs), {}), queue)
+        return self._helper.request.procedure(
+            "run_macro", ((macro_name,), {"params": (args, kwargs)}), queue
+        )

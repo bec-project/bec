@@ -66,6 +66,10 @@ class ShortLifetimeWorker(InProcessProcedureWorker):
         super().__init__(server, queue, lifetime_s)
         self._lifetime_s = 0.1
 
+    def _kill_process(self):
+        self.bec_client.shutdown()
+        super()._kill_process()
+
 
 @pytest.fixture
 def procedure_manager():
@@ -236,12 +240,12 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
 
 
 @patch("bec_server.procedures.worker_base.RedisConnector", MagicMock())
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock())
 @patch("bec_server.procedures.in_process_worker.callable_from_execution_message")
 def test_in_process_worker(procedure_function):
     queue = "primary"
     kwargs = {"queue": queue, "execution_id": "test", "metadata": {}}
-    with InProcessProcedureWorker("localhost:1", queue, 1) as worker:
+    with ShortLifetimeWorker("localhost:1", queue, 1) as worker:
         worker._run_task("wrong type")  # type: ignore
         procedure_function().assert_not_called()
         worker._run_task(ProcedureExecutionMessage(identifier="not builtin", **kwargs))
@@ -256,11 +260,12 @@ def test_in_process_worker(procedure_function):
         procedure_function().assert_called_with(1, 2, 3, foo="bar")
 
 
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
 @patch("bec_server.procedures.builtin_procedures.logger")
 @patch("bec_server.procedures.worker_base.RedisConnector")
 def test_builtin_procedure_log_args(_, procedure_logger: MagicMock):
     test_string = "test string for logging as an arg"
-    with InProcessProcedureWorker("localhost:1", "primary", 1) as worker:
+    with ShortLifetimeWorker("localhost:1", "primary", 1) as worker:
         worker._run_task(
             ProcedureExecutionMessage(
                 identifier="log execution message args",
@@ -274,7 +279,7 @@ def test_builtin_procedure_log_args(_, procedure_logger: MagicMock):
     assert "'kwarg': 'test'" in log_call_arg_0
 
 
-@patch("bec_server.procedures.in_process_worker.BECClient")
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient")
 @patch("bec_server.procedures.worker_base.RedisConnector")
 def test_builtin_procedure_scan_execution(_, Client):
     from bec_server.procedures.builtin_procedures import run_scan
@@ -390,7 +395,7 @@ def _all_eq_except_id(a: list[ProcedureExecutionMessage], b: list[ProcedureExecu
 
 
 @pytest.mark.parametrize("queue", ["queue1", "queue2"])
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock())
 def test_startup(manager_with_test_msgs: _ManagerWithMsgs, queue: str):
     procedure_manager, expected = manager_with_test_msgs
     procedure_manager._worker_cls = MagicMock
@@ -410,7 +415,7 @@ def test_startup(manager_with_test_msgs: _ManagerWithMsgs, queue: str):
     assert _all_eq_except_id(unhandled_execution_list, queue_expected)
 
 
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock())
 def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
     procedure_manager, expected = manager_with_test_msgs
     remaining_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
@@ -431,11 +436,9 @@ def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
     )
     assert _all_eq_except_id(q2_execution_list, remaining_expected)
     assert _all_eq_except_id(unhandled_execution_list, aborted_expected)
-    ...
-    ...
 
 
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock())
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock())
 def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
     procedure_manager, expected = manager_with_test_msgs
     q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
@@ -457,7 +460,7 @@ def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
 
 
 @patch("bec_server.procedures.in_process_worker.callable_from_execution_message", lambda *_: True)
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock)
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
 def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
     procedure_manager, expected = manager_with_test_msgs
     q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
@@ -483,7 +486,7 @@ def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
     assert _all_eq_except_id(q2_unhandled_list, q2_expected)
 
 
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock)
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
 def test_procedure_status_rejected(procedure_manager):
     status = procedure_manager._helper.request.procedure("doesn't exist")
     assert status.state == ProcedureState.REQUESTED
@@ -491,7 +494,7 @@ def test_procedure_status_rejected(procedure_manager):
     assert status.done
 
 
-@patch("bec_server.procedures.in_process_worker.BECClient", MagicMock)
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
 def test_procedure_status_accepted(procedure_manager):
     procedure_manager._worker_cls = UnlockableWorker
     msg = ProcedureRequestMessage(
@@ -505,4 +508,24 @@ def test_procedure_status_accepted(procedure_manager):
     worker.event_1.set()
     _wait_until(lambda: status.state == ProcedureState.RUNNING, timeout_s=2)
     worker.event_2.set()
-    _wait_until(lambda: status.state == ProcedureState.FINISHED, timeout_s=2)
+    _wait_until(lambda: status.state == ProcedureState.SUCCESS, timeout_s=2)
+
+
+def _mock_error_procedure(*args, **kwargs):
+    raise RuntimeError("Encountered error in procedure")
+
+
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
+def test_procedure_status_error(procedure_manager):
+    register("error", _mock_error_procedure)
+    msg = ProcedureRequestMessage(identifier="error", execution_id="test")
+    status = procedure_manager._helper.request._procedure(msg)
+    assert status.state == ProcedureState.REQUESTED
+    _wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=1)
+    worker = procedure_manager._active_workers["primary"]["worker"]
+    assert isinstance(worker, ShortLifetimeWorker)
+    with pytest.raises(RuntimeError) as e:
+        status.wait(timeout_s=2, raise_on_failure=True)
+
+    e.match("error in procedure")
+    assert status.error is not None

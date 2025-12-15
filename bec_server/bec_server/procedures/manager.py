@@ -231,11 +231,13 @@ class ProcedureManager:
         self._helper.notify_watchers(queue, "execution")
 
     def _abort_all(self):
-        for entry in self._active_workers.values():
-            if entry["worker"] is not None:
-                entry["worker"].abort()
-        for entry in self._active_workers.values():
-            entry["future"].cancel()
+        with self.lock:
+            entries = list(self._active_workers.values())
+            for entry in entries:
+                if entry["worker"] is not None:
+                    entry["worker"].abort()
+            for entry in entries:
+                entry["future"].cancel()
         self._helper.move.all_execution_queues_to_unhandled()
         self._wait_for_all_futures()
 

@@ -2,6 +2,7 @@ import inspect
 import traceback
 from functools import partial
 
+from bec_ipython_client.main import BECIPythonClient
 from bec_lib.client import BECClient
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_lib.procedures.helper import BackendProcedureHelper
@@ -21,7 +22,7 @@ class InProcessProcedureWorker(ProcedureWorker):
 
         self.logger = bec_logger.logger
         self.logger.info(f"In-process procedure worker for queue {self.key.endpoint} spinning up")
-        self.bec_client = BECClient()
+        self.bec_client = BECIPythonClient()
         self.bec_client.start()
         self._helper = BackendProcedureHelper(self._conn)
 
@@ -39,10 +40,10 @@ class InProcessProcedureWorker(ProcedureWorker):
             args, kwargs = item.args_kwargs
             procedure_function = callable_from_execution_message(item)
             procedure_sig = inspect.signature(procedure_function)
-            if (
-                "bec" in procedure_sig.parameters
-                and procedure_sig.parameters["bec"].annotation is BECClient
-            ):
+            if "bec" in procedure_sig.parameters and procedure_sig.parameters["bec"].annotation in [
+                BECClient,
+                BECIPythonClient,
+            ]:
                 procedure_function = partial(procedure_function, bec=self.bec_client)
             procedure_function(*args, **kwargs)
         except Exception as e:
