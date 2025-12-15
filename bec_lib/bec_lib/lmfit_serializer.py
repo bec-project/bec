@@ -52,18 +52,32 @@ def serialize_lmfit_params(params: Parameters) -> dict:
         return {v.name: serialize_param_object(v) for v in params}
 
 
-def deserialize_param_object(obj: dict) -> Parameter:
+def deserialize_param_object(obj: dict[str, dict | Parameter]) -> Parameters:
     """
     Deserialize dictionary representation of lmfit.Parameter object.
 
     Args:
-        obj (dict): Dictionary representation of the parameters
+        obj (dict[str, dict | Parameter]): Dictionary representation of the parameters
 
     Returns:
-        Parameter: Parameter object
+        Parameters: Parameters object
     """
     param = Parameters()
     for k, v in obj.items():
-        v.pop("name")
-        param.add(k, **v)
+        if isinstance(v, Parameter):
+            param.add(
+                k,
+                value=v.value,
+                vary=v.vary,
+                min=v.min,
+                max=v.max,
+                expr=v.expr,
+                brute_step=v.brute_step,
+            )
+            continue
+        if isinstance(v, dict):
+            v.pop("name", None)
+            v_copy = v.copy()
+            v_copy.pop("name", None)
+            param.add(k, **v_copy)
     return param

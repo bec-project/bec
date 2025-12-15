@@ -41,6 +41,7 @@ class LmfitService1D(DAPServiceBase):
         self.device_y = None
         self.signal_y = None
         self.parameters = None
+        self._parameter_override_names = []
         self.current_scan_item = None
         self.finished_id = None
         self.model = getattr(lmfit.models, model)()
@@ -171,6 +172,7 @@ class LmfitService1D(DAPServiceBase):
         data_y: np.ndarray = None,
         x_min: float = None,
         x_max: float = None,
+        parameters: dict | None = None,
         amplitude: lmfit.Parameter = None,
         center: lmfit.Parameter = None,
         sigma: lmfit.Parameter = None,
@@ -197,15 +199,59 @@ class LmfitService1D(DAPServiceBase):
 
         self.oversample = oversample
 
-        self.parameters = {}
+        raw_parameters: dict = {}
+        if parameters:
+            if isinstance(parameters, lmfit.Parameters):
+                raw_parameters.update({name: param for name, param in parameters.items()})
+            elif isinstance(parameters, dict):
+                raw_parameters.update(parameters)
+            else:
+                raise DAPError(
+                    f"Invalid parameters type {type(parameters)}. Expected dict or lmfit.Parameters."
+                )
         if amplitude:
-            self.parameters["amplitude"] = amplitude
+            raw_parameters["amplitude"] = amplitude
         if center:
-            self.parameters["center"] = center
+            raw_parameters["center"] = center
         if sigma:
-            self.parameters["sigma"] = sigma
+            raw_parameters["sigma"] = sigma
 
-        self.parameters = deserialize_param_object(self.parameters)
+        override_params = deserialize_param_object(raw_parameters)
+        if len(override_params) > 0:
+            valid_names = set(getattr(self.model, "param_names", []))
+            if valid_names:
+                invalid_names = set(override_params.keys()) - valid_names
+                for name in invalid_names:
+                    logger.warning(
+                        f"Ignoring unknown lmfit parameter '{name}' for model '{self.model.__class__.__name__}'."
+                    )
+                    override_params.pop(name, None)
+
+        self._parameter_override_names = list(override_params.keys())
+        if len(override_params) > 0:
+            # If `params=` is provided to lmfit, it must contain ALL parameters.
+            # Start from model defaults and apply overrides on top.
+            full_params = self.model.make_params()
+            for name, override in override_params.items():
+                full_params[name].set(
+                    value=override.value,
+                    vary=override.vary,
+                    min=override.min,
+                    max=override.max,
+                    expr=override.expr,
+                    brute_step=getattr(override, "brute_step", None),
+                )
+            self.parameters = full_params
+            logger.info(
+                f"Configured lmfit model={self.model.__class__.__name__} with override_params={serialize_lmfit_params(override_params)}"
+            )
+        else:
+            self.parameters = None
+            if parameters or amplitude or center or sigma:
+                logger.info(
+                    f"No usable lmfit parameter overrides after validation for model={self.model.__class__.__name__} "
+                    f"(input_keys={list(raw_parameters.keys())})"
+                )
 
         if data_x is not None and data_y is not None:
             self.data = {
@@ -344,9 +390,12 @@ class LmfitService1D(DAPServiceBase):
             "scan_data": True,
         }
 
-    def process(self) -> tuple[dict, dict]:
+    def process(self) -> tuple[dict, dict] | None:
         """
         Process data and return the result.
+
+        Returns:
+            tuple[dict, dict]: Processed data and metadata if successful, None otherwise.
         """
         # get the data
         if not self.data:
@@ -356,10 +405,31 @@ class LmfitService1D(DAPServiceBase):
         y = self.data["y"]
 
         # fit the data
+        model_name = self.model.__class__.__name__
         if self.parameters:
-            result = self.model.fit(y, x=x, params=self.parameters)
+            logger.debug(
+                f"Running lmfit fit: model={model_name} points={len(x)} fixed/override_params={self._parameter_override_names}"
+            )
         else:
-            result = self.model.fit(y, x=x)
+            logger.debug(f"Running lmfit fit: model={model_name} points={len(x)} params=<default>")
+
+        try:
+            if self.parameters:
+                result = self.model.fit(y, x=x, params=self.parameters)
+            else:
+                result = self.model.fit(y, x=x)
+        except Exception as exc:  # pylint: disable=broad-except
+            if self.parameters is not None:
+                try:
+                    params_str = serialize_lmfit_params(self.parameters)
+                except Exception as ser_exc:
+                    params_str = f"<serialization failed: {ser_exc}>"
+            else:
+                params_str = "<None>"
+            logger.warning(
+                f"lmfit fit failed: model={model_name} points={len(x)} parameters={params_str} error={exc}"
+            )
+            return
 
         # if the fit was only on a subset of the data, add the original x values to the output
         if self.data["x_lim"] or self.oversample != 1:
