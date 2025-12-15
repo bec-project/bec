@@ -24,7 +24,8 @@ class ProcedureState(Enum):
     REJECTED = "Rejected"
     SCHEDULED = "Scheduled"
     RUNNING = "Running"
-    FINISHED = "Finished"
+    SUCCESS = "Success"
+    FAILED = "Failed"
 
 
 class ProcedureStatus:
@@ -41,7 +42,7 @@ class ProcedureStatus:
     def done(self):
         return self._done.is_set()
 
-    def wait(self, timeout_s: float | None = None):
+    def wait(self, timeout_s: float | None = None, raise_on_failure: bool = False):
         """Wait for the procedure to be finished."""
         try:
             self._done.wait(timeout=timeout_s)
@@ -49,6 +50,8 @@ class ProcedureStatus:
             logger.error(
                 "Cancelled waiting. To cancel the procedure please call .cancel() on this status."
             )
+        if raise_on_failure and self.done and self._state == ProcedureState.FAILED:
+            raise RuntimeError(str(self._error))
 
     def cancel(self):
         """Request for the procedure to be cancelled."""
@@ -61,9 +64,17 @@ class ProcedureStatus:
         self._helper.request.abort_execution(self._id)
 
     def set_error(self, error: str):
-        if self.state not in [ProcedureState.FINISHED, ProcedureState.REJECTED]:
+        if self.state not in [ProcedureState.FAILED, ProcedureState.REJECTED]:
             raise ValueError("Cannot set error on an unfinished status.")
         self._error = error
+
+    def raise_for_status(self):
+        if self.state in [ProcedureState.FAILED, ProcedureState.REJECTED]:
+            raise RuntimeError(self._error)
+
+    @property
+    def error(self):
+        return self._error
 
     @property
     def state(self):
@@ -72,7 +83,7 @@ class ProcedureStatus:
     @state.setter
     def state(self, state: ProcedureState):
         # A rejected or finished status can no longer be updated
-        if self._state in [ProcedureState.REJECTED, ProcedureState.FINISHED]:
+        if self._state in [ProcedureState.REJECTED, ProcedureState.FAILED, ProcedureState.SUCCESS]:
             return
         # The request can be accepted or denied
         if self._state is ProcedureState.REQUESTED:
@@ -91,7 +102,7 @@ class ProcedureStatus:
                 return
         # A scheduled or running procedure can be set to finished
         if self._state in [ProcedureState.RUNNING, ProcedureState.SCHEDULED]:
-            if state == ProcedureState.FINISHED:
+            if state in [ProcedureState.FAILED, ProcedureState.SUCCESS]:
                 self._state = state
                 self._done.set()
                 return
@@ -139,12 +150,14 @@ class _HelperBase:
             if msg_.action == "Started":
                 self._callback_ids[msg_.execution_id].state = ProcedureState.RUNNING
             elif msg_.action == "Aborted":
-                self._callback_ids[msg_.execution_id].state = ProcedureState.FINISHED
+                self._callback_ids[msg_.execution_id].state = ProcedureState.FAILED
                 del self._callback_ids[msg_.execution_id]
             elif msg_.action == "Finished":
-                self._callback_ids[msg_.execution_id].state = ProcedureState.FINISHED
                 if msg_.error is not None:
+                    self._callback_ids[msg_.execution_id].state = ProcedureState.FAILED
                     self._callback_ids[msg_.execution_id].set_error(msg_.error)
+                else:
+                    self._callback_ids[msg_.execution_id].state = ProcedureState.SUCCESS
                 del self._callback_ids[msg_.execution_id]
             logger.debug(f"Updated status for procedure execution {msg_.execution_id}")
 
