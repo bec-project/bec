@@ -120,6 +120,7 @@ class DeviceHashModel(BaseModel, frozen=True):
     connectionTimeout: HashInclusion = HashInclusion.EXCLUDE
     deviceConfig: DictHashInclusion = DictHashInclusion(field_inclusion=HashInclusion.VARIANT)
     deviceTags: HashInclusion = HashInclusion.EXCLUDE
+    needs: HashInclusion = HashInclusion.VARIANT
     readoutPriority: HashInclusion = HashInclusion.EXCLUDE
     description: HashInclusion = HashInclusion.EXCLUDE
     readOnly: HashInclusion = HashInclusion.EXCLUDE
