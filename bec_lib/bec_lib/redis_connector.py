@@ -248,7 +248,8 @@ class RedisConnector:
 
         def redis_connect_func(_redis_conn):
             _redis_conn.retry.call_with_retry(
-                do=lambda: _redis_conn.on_connect_check_health(check_health=True), fail=lambda: None
+                do=lambda *args, **kwargs: _redis_conn.on_connect_check_health(check_health=True),
+                fail=lambda *args, **kwargs: None,
             )
 
         self._redis_conn = redis_cls(
