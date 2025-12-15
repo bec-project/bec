@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v3.85.0 (2025-12-15)
+
+### Bug Fixes
+
+- Support for async multi signal
+  ([`7f38ac8`](https://github.com/bec-project/bec/commit/7f38ac8aaf6a9b52719acf51142ba00e414a9cfd))
+
+- **async writer**: Use storage name for subscriptions
+  ([`7ee827d`](https://github.com/bec-project/bec/commit/7ee827dcb6025524e5e69534571e8d49b992d4bd))
+
+- **file writer manager**: Move to proper endpoints instead of string parsing
+  ([`9421a54`](https://github.com/bec-project/bec/commit/9421a543c07775cc80a4e3a4d9323dc91df21683))
+
+### Features
+
+- **async writer**: Improve error message for unsupported data types
+  ([`bf932b9`](https://github.com/bec-project/bec/commit/bf932b9954da5702bd24fea7d14c302d8de25dd6))
+
+
 ## v3.84.1 (2025-12-12)
 
 ### Bug Fixes
