@@ -161,6 +161,54 @@ def test_LmfitService1D_configure_selected_devices(lmfit_service):
         get_data.assert_called_once()
 
 
+def test_LmfitService1D_configure_accepts_generic_parameters_and_filters_invalid(lmfit_service):
+    x = np.linspace(-1.0, 1.0, 15)
+    y = np.exp(-(x**2))
+    lmfit_service.configure(
+        data_x=x,
+        data_y=y,
+        parameters={"amplitude": {"value": 1.0, "vary": False}, "frequency": {"value": 2.0}},
+    )
+    assert lmfit_service.parameters["amplitude"].value == 1.0
+    assert lmfit_service.parameters["amplitude"].vary is False
+    assert "frequency" not in lmfit_service.parameters
+
+
+def test_LmfitService1D_configure_accepts_lmfit_parameters_object(lmfit_service):
+    x = np.linspace(-1.0, 1.0, 15)
+    y = np.exp(-(x**2))
+    params = lmfit.models.GaussianModel().make_params()
+    params["amplitude"].set(value=1.0, vary=False)
+    lmfit_service.configure(data_x=x, data_y=y, parameters=params)
+    assert lmfit_service.parameters["amplitude"].value == 1.0
+    assert lmfit_service.parameters["amplitude"].vary is False
+
+
+def test_LmfitService1D_configure_invalid_parameters_type_raises(lmfit_service):
+    x = np.linspace(-1.0, 1.0, 15)
+    y = np.exp(-(x**2))
+    with pytest.raises(DAPError):
+        lmfit_service.configure(data_x=x, data_y=y, parameters=["amplitude", 1.0])  # type: ignore[arg-type]
+
+
+def test_LmfitService1D_configure_parameters_work_for_sine_model():
+    if not hasattr(lmfit.models, "SineModel"):
+        pytest.skip("lmfit.models.SineModel not available in this environment")
+    service = LmfitService1D(model="SineModel", continuous=False, client=mock.MagicMock())
+    x = np.linspace(0.0, 2.0 * np.pi, 25)
+    y = np.sin(x)
+    service.configure(
+        data_x=x,
+        data_y=y,
+        parameters={"frequency": {"value": 1.0, "vary": False}, "center": {"value": 0.0}},
+    )
+    assert service.parameters["frequency"].value == 1.0
+    assert service.parameters["frequency"].vary is False
+    assert "center" not in service.parameters
+    assert "amplitude" in service.parameters
+    assert "shift" in service.parameters
+
+
 def test_LmfitService1D_get_model(lmfit_service):
     model = lmfit_service.get_model("GaussianModel")
     assert model.__name__ == "GaussianModel"
