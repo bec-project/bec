@@ -92,6 +92,7 @@ class DeviceManagerDS(DeviceManagerBase):
         status_cb: list[Callable] | Callable | None = None,
     ):
         super().__init__(service, status_cb)
+        self._use_proxy_objects = False
         self._config_request_connector = None
         self._device_instructions_connector = None
         self._config_update_handler_cls = config_update_handler
@@ -106,24 +107,6 @@ class DeviceManagerDS(DeviceManagerBase):
             else ConfigUpdateHandler(device_manager=self)
         )
         super().initialize(bootstrap_server)
-
-    def _reload_action(self) -> None:
-        """
-        The _reload_action on the device server is a no-op, as devices are reloaded
-        through the config update handler.
-        """
-
-    def _add_action(self, config: dict) -> None:
-        """
-        The _add_action on the device server is a no-op, as devices are added
-        through the config update handler.
-        """
-
-    def _remove_action(self, config: dict) -> None:
-        """
-        The _remove_action on the device server is a no-op, as devices are removed
-        through the config update handler.
-        """
 
     @property
     def current_session(self) -> dict:
