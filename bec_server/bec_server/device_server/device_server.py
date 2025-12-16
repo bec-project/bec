@@ -557,6 +557,19 @@ class DeviceServer(BECService):
         """callback for handling device instructions"""
         parent.executor.submit(parent.handle_device_instructions, msg.value)
 
+    def _add_status_object_info(
+        self,
+        status: StatusBase,
+        instruction: messages.DeviceInstructionMessage,
+        device: ophyd.Device,
+    ) -> None:
+        status.__dict__["instruction"] = instruction
+        if hasattr(status, "obj_ref"):
+            raise RuntimeError(
+                f"The 'obj_ref' attribute is reserved and cannot be used by the status object {status}."
+            )
+        status.__dict__["obj_ref"] = device
+
     def _trigger_device(self, instr: messages.DeviceInstructionMessage) -> None:
         logger.trace(f"Trigger device: {instr}")
         devices = instr.content["device"]
@@ -568,8 +581,7 @@ class DeviceServer(BECService):
             obj.metadata = instr.metadata
             status = obj.obj.trigger()
 
-            status.__dict__["instruction"] = instr
-            status.__dict__["obj"] = obj.obj
+            self._add_status_object_info(status, instr, obj.obj)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
     def _kickoff_device(self, instr: messages.DeviceInstructionMessage) -> None:
@@ -587,8 +599,7 @@ class DeviceServer(BECService):
         obj.configure(kickoff_parameter)
         status = obj.kickoff()
 
-        status.__dict__["instruction"] = instr
-        status.__dict__["obj"] = obj
+        self._add_status_object_info(status, instr, obj.obj)
         self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
     def _complete_device(self, instr: messages.DeviceInstructionMessage) -> None:
@@ -613,8 +624,7 @@ class DeviceServer(BECService):
                     f"The complete method of device {dev} does not return a StatusBase object."
                 )
 
-            status.__dict__["instruction"] = instr
-            status.__dict__["obj"] = obj
+            self._add_status_object_info(status, instr, obj.obj)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
@@ -642,7 +652,7 @@ class DeviceServer(BECService):
             obj = device_obj.obj
 
         status = obj.set(val)
-        status.__dict__["instruction"] = instr
+        self._add_status_object_info(status, instr, obj)
         status.__dict__["sub_id"] = sub_id
         self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
@@ -666,8 +676,7 @@ class DeviceServer(BECService):
                 )
 
             num_status_objects += 1
-            status.__dict__["instruction"] = instr
-            status.__dict__["obj"] = obj
+            self._add_status_object_info(status, instr, obj.obj)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
@@ -679,7 +688,7 @@ class DeviceServer(BECService):
         elif hasattr(status, "obj"):
             obj = status.obj
         else:
-            obj = status.__dict__["obj"]
+            obj = status.__dict__["obj_ref"]
 
         # if we've started a subscription, we need to unsubscribe now
         # this is typically the case for operations on nested devices.
@@ -875,8 +884,7 @@ class DeviceServer(BECService):
             if not isinstance(status, StatusBase):
                 raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")
             num_status_objects += 1
-            status.__dict__["instruction"] = instr
-            status.__dict__["obj"] = obj
+            self._add_status_object_info(status, instr, obj.obj)
             status.__dict__["status"] = 1
             status.add_callback(self._device_staged_callback)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
@@ -885,7 +893,7 @@ class DeviceServer(BECService):
 
     def _device_staged_callback(self, status: StatusBase) -> None:
         """Set the device status to staged"""
-        obj = status.__dict__["obj"]
+        obj = status.__dict__["obj_ref"]
         dev_name = obj.name
         instr = status.__dict__["instruction"]
         state = status.__dict__["status"]
@@ -922,8 +930,7 @@ class DeviceServer(BECService):
                     f"The unstage method of {dev} does not return a StatusBase object."
                 )
             num_status_objects += 1
-            status.__dict__["instruction"] = instr
-            status.__dict__["obj"] = obj
+            self._add_status_object_info(status, instr, obj.obj)
             status.__dict__["status"] = 0
             status.add_callback(self._device_staged_callback)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)

@@ -382,7 +382,7 @@ class RPCHandler:
         if not isinstance(res, ophyd.StatusBase):
             return
         res.__dict__["instruction"] = instr
-        res.__dict__["obj"] = obj
+        res.__dict__["obj_ref"] = obj
         self.requests_handler.add_status_object(instr.metadata["device_instr_id"], res)
 
     def _serialize_rpc_response(self, instr: messages.DeviceInstructionMessage, res: Any) -> Any:
