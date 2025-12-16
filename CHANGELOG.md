@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.85.1 (2025-12-16)
+
+### Bug Fixes
+
+- **redis connector**: Accept any arg kwarg combination in retry
+  ([`426d096`](https://github.com/bec-project/bec/commit/426d0960b575ccd28ebb65c9099bb1488a2cabd5))
+
+
 ## v3.85.0 (2025-12-15)
 
 ### Bug Fixes
