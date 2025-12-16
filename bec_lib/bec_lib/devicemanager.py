@@ -461,6 +461,7 @@ class DeviceManagerBase:
     def __init__(
         self, service: BECService, status_cb: list[Callable] | Callable | None = None
     ) -> None:
+        self._use_proxy_objects = True
         self.devices = DeviceContainer()
         self._config = {}  # valid config
         self._session = {}
@@ -528,7 +529,8 @@ class DeviceManagerBase:
                     if self.devices[dev].enabled:
                         dev_info_msg = self._get_device_info(dev)
                         self.devices[dev]._info = dev_info_msg.info.get("device_info", {})
-                        self.devices[dev]._parse_info()
+                        if self._use_proxy_objects:
+                            self.devices[dev]._parse_info()
                     status = "enabled" if self.devices[dev].enabled else "disabled"
                     logger.info(f"Device {dev} has been {status}.")
                 if "readOnly" in config[dev]:
@@ -576,16 +578,22 @@ class DeviceManagerBase:
         )
 
     def _add_action(self, config) -> None:
+        if not self._use_proxy_objects:
+            return
         self._add_multiple_devices_with_log(
             (dev_config, self._get_device_info(dev)) for dev, dev_config in config.items()
         )
 
     def _reload_action(self) -> None:
+        if not self._use_proxy_objects:
+            return
         logger.info("Reloading config.")
         self.devices.flush()
         self._get_config()
 
     def _remove_action(self, config) -> None:
+        if not self._use_proxy_objects:
+            return
         for dev in config:
             self._remove_device(dev)
 
