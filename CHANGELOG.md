@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.85.3 (2025-12-16)
+
+### Bug Fixes
+
+- **device manager**: Do not override real objects with proxies
+  ([`14b5b9b`](https://github.com/bec-project/bec/commit/14b5b9bbc47f1fc2a429cbeb7855c47c74b44f81))
+
+
 ## v3.85.2 (2025-12-16)
 
 ### Bug Fixes
