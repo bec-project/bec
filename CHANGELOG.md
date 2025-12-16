@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.85.2 (2025-12-16)
+
+### Bug Fixes
+
+- Scanhistory test race
+  ([`0477810`](https://github.com/bec-project/bec/commit/047781073972239121930e5c6d761a8f3fb15965))
+
+
 ## v3.85.1 (2025-12-16)
 
 ### Bug Fixes
