@@ -206,9 +206,10 @@ def test_read_configuration_cached(
     ],
 )
 def test_run_rpc_call(dev: Any, mock_rpc, method, args, kwargs, expected_call):
-    with mock.patch.object(dev.samx.setpoint, mock_rpc) as mock_rpc:
-        getattr(dev.samx.setpoint, method)(*args, **kwargs)
-        mock_rpc.assert_called_once_with(*expected_call)
+    with mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"):
+        with mock.patch.object(dev.samx.setpoint, mock_rpc) as mock_rpc:
+            getattr(dev.samx.setpoint, method)(*args, **kwargs)
+            mock_rpc.assert_called_once_with(*expected_call)
 
 
 def test_get_rpc_func_name_read(dev: Any):
@@ -305,12 +306,13 @@ def test_handle_rpc_response_returns_dict(dev: Any):
 
 def test_run_rpc_call_calls_stop_on_keyboardinterrupt(dev: Any):
     with mock.patch.object(dev.samx.setpoint, "_prepare_rpc_msg") as mock_rpc:
-        mock_rpc.side_effect = [KeyboardInterrupt]
-        with pytest.raises(RPCError):
-            with mock.patch.object(dev.samx, "stop") as mock_stop:
-                dev.samx.setpoint.set(1)
-        mock_rpc.assert_called_once()
-        mock_stop.assert_called_once()
+        with mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"):
+            mock_rpc.side_effect = [KeyboardInterrupt]
+            with pytest.raises(RPCError, match="User interruption during RPC call."):
+                with mock.patch.object(dev.samx, "stop") as mock_stop:
+                    dev.samx.setpoint.set(1)
+            mock_rpc.assert_called_once()
+            mock_stop.assert_called_once()
 
 
 @pytest.fixture
@@ -959,3 +961,32 @@ def test_device_compile_rich_str_with_config_signals(dev):
             # velocity and acceleration are config signals in the samx device info
             assert "velocity" in result
             assert "10.5" in result
+
+
+def test_rpc_call_without_client_raises(dm_with_devices):
+    """Test that calling an RPC method without a client raises an error."""
+    dev = dm_with_devices.devices.eiger
+    dev.parent.parent = None  # Remove reference to DeviceManagerBase
+
+    with pytest.raises(RPCError, match="RPC calls can only be made from a BECClient instance"):
+        dev.read(cached=False)
+
+
+def test_rpc_call_without_alarm_handler_raises(dev):
+    """Test that calling an RPC method without an alarm handler raises an error."""
+    import builtins
+
+    original_isinstance = builtins.isinstance
+
+    def isinstance_side_effect(obj, classinfo):
+        """Side effect function to mock isinstance checks and identify BECClient instances."""
+        if classinfo is BECClient:
+            return True
+        return original_isinstance(obj, classinfo)
+
+    with mock.patch.object(dev.samx.root.parent.parent, "alarm_handler", None):
+        with mock.patch("bec_lib.device.isinstance", side_effect=isinstance_side_effect):
+            with pytest.raises(
+                RPCError, match="RPC calls require an alarm handler to be set in the BECClient"
+            ):
+                dev.samx.read(cached=False)

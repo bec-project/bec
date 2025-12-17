@@ -1280,7 +1280,9 @@ class ContLineScan(ScanBase):
         )
 
         while self.point_id < len(self.positions[:]):
-            cont_motor_positions = self.device_manager.devices[self.scan_motors[0]].read()
+            cont_motor_positions = self.device_manager.devices[self.scan_motors[0]].read(
+                cached=True
+            )
 
             if not cont_motor_positions:
                 continue
@@ -1296,7 +1298,7 @@ class ContLineScan(ScanBase):
             if cont_motor_positions > self.positions[self.point_id][0]:
                 raise ScanAbortion(
                     f"Skipped point {self.point_id + 1}:"
-                    f"Consider reducing speed {self.device_manager.devices[self.scan_motors[0]].velocity.get()}, "
+                    f"Consider reducing speed {self.device_manager.devices[self.scan_motors[0]].velocity.get(cached=True)}, "
                     f"increasing the atol {self.atol}, or increasing the offset {self.offset}"
                 )
         # not needed, but for clarity
