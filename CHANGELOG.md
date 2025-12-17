@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v3.86.1 (2025-12-17)
+
+### Bug Fixes
+
+- **device-server**: Rename obj track in status obj to obj_ref instead of obj to avoid conflicts in
+  ophyd status namespace
+  ([`a5e7601`](https://github.com/bec-project/bec/commit/a5e7601f0f49bdb49750701f8e5189791d1c97a3))
+
+### Testing
+
+- Refactor tests, setting proper return and specs for trigger/kickoff
+  ([`49109fe`](https://github.com/bec-project/bec/commit/49109fec65b541a0e4e6e5ff628af51621d81564))
+
+
 ## v3.86.0 (2025-12-17)
 
 ### Continuous Integration
