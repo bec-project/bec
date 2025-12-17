@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.86.2 (2025-12-17)
+
+### Bug Fixes
+
+- **macro update handler**: Ensure user macros are in sync with builtins
+  ([`d06afd2`](https://github.com/bec-project/bec/commit/d06afd244b8a4b9a0d382e99c6653787ec3eee61))
+
+
 ## v3.86.1 (2025-12-17)
 
 ### Bug Fixes
