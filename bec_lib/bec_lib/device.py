@@ -352,10 +352,13 @@ class DeviceBase:
         Returns:
             Any: The return value of the RPC call.
         """
+
         try:
             client: BECClient = self.root.parent.parent
+            self._validate_rpc_client()
+
             # clear the alarm stack
-            client.alarm_handler.clear()
+            client.alarm_handler.clear()  # type: ignore
 
             # prepare RPC message
             rpc_id = str(uuid.uuid4())
@@ -377,6 +380,27 @@ class DeviceBase:
             raise RPCError("User interruption during RPC call.") from exc
 
         return return_val
+
+    def _validate_rpc_client(self) -> None:
+        """
+        Check if the device can run RPC calls.
+
+        Raises:
+            RPCError: If the device cannot run RPC calls.
+        """
+        # avoid circular imports
+        # only needed here for type checking
+        from bec_lib.client import BECClient  # pylint: disable=import-outside-toplevel
+
+        client: BECClient = self.root.parent.parent
+        if not isinstance(client, BECClient):
+            raise RPCError(
+                "RPC calls can only be made from a BECClient instance. Either use a"
+                " properly configured BECClient or set 'cached=True' to avoid an RPC call."
+            )
+
+        if client.alarm_handler is None:
+            raise RPCError("RPC calls require an alarm handler to be set in the BECClient.")
 
     def _get_rpc_func_name(self, fcn=None, use_parent=False):
         func_call = [self._compile_function_path(use_parent=use_parent)]
