@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.85.4 (2025-12-17)
+
+### Bug Fixes
+
+- Cached readout on scan server
+  ([`45edad1`](https://github.com/bec-project/bec/commit/45edad12fac690c791a9bb4dde85b7257c31bc17))
+
+
 ## v3.85.3 (2025-12-16)
 
 ### Bug Fixes
