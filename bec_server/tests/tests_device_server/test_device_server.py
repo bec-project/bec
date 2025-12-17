@@ -546,6 +546,7 @@ def test_trigger_device(device_server_mock, instr):
         with mock.patch.object(
             device_server.device_manager.devices.get(dev).obj, "trigger"
         ) as trigger:
+            trigger.return_value = mock.MagicMock(spec=DeviceStatus)
             device_server._trigger_device(instr)
             trigger.assert_called_once()
         assert device_server.device_manager.devices.get(dev).metadata == instr.metadata
@@ -568,6 +569,7 @@ def test_kickoff_device(device_server_mock, instr):
     with mock.patch.object(
         device_server.device_manager.devices.flyer_sim.obj, "kickoff"
     ) as kickoff:
+        kickoff.return_value = mock.MagicMock(spec=DeviceStatus)
         device_server._kickoff_device(instr)
         kickoff.assert_called_once()
 
