@@ -97,12 +97,50 @@ class MacroUpdateHandler:
         Args:
             macros (UserMacros): The UserMacros instance to manage.
         """
-        self.macros = {}
         self.client = macros._client
         self._macro_path = self.client._service_config.model.user_macros.base_path
         self.client.connector.register(
             MessageEndpoints.macro_update(), cb=self._macro_update_callback, parent=self
         )
+
+    @property
+    def macros(self) -> dict[str, dict[str, Any]]:
+        """Get the currently loaded macros.
+
+        Returns:
+            dict: A dictionary of macro names and their corresponding class objects and source code.
+        """
+        return builtins.__dict__.get("_user_macros", {})
+
+    def _add_macro(self, name: str, macro: dict[str, Any]) -> None:
+        """Add a macro to the builtins.
+
+        Args:
+            name (str): The name of the macro.
+            macro (dict[str, Any]): The macro details including class object and source code.
+        """
+        if "_user_macros" not in builtins.__dict__:
+            builtins.__dict__["_user_macros"] = {}
+        builtins.__dict__["_user_macros"][name] = macro
+        builtins.__dict__[name] = macro["cls"]
+
+    def _remove_macro(self, name: str) -> None:
+        """Remove a macro from the builtins.
+
+        Args:
+            name (str): The name of the macro to remove.
+        """
+        if "_user_macros" in builtins.__dict__ and name in builtins.__dict__["_user_macros"]:
+            builtins.__dict__["_user_macros"].pop(name)
+        if name in builtins.__dict__:
+            builtins.__dict__.pop(name)
+
+    def _remove_all_macros(self) -> None:
+        """Remove all macros from the builtins."""
+        if "_user_macros" in builtins.__dict__:
+            for name in list(builtins.__dict__["_user_macros"].keys()):
+                self._remove_macro(name)
+            builtins.__dict__.pop("_user_macros")
 
     def load_all_user_macros(self) -> None:
         """Load all macros from the `macros` directory.
@@ -135,7 +173,6 @@ class MacroUpdateHandler:
 
         for file in macro_files:
             self.load_user_macro(file)
-        builtins.__dict__.update({name: v["cls"] for name, v in self.macros.items()})
 
     def load_macro_module(self, file) -> list:
         """Load a macro module safely by checking for executable code using AST.
@@ -186,11 +223,10 @@ class MacroUpdateHandler:
 
         """
         for name, obj in self.macros.items():
-            builtins.__dict__.pop(name)
             self.client.callbacks.run(
                 EventType.NAMESPACE_UPDATE, action="remove", ns_objects={name: obj["cls"]}
             )
-        self.macros.clear()
+        self._remove_all_macros()
 
     def load_user_macro(self, file: str, ignore_existing: bool = False) -> None:
         """load a user macro file and import all its definitions
@@ -210,8 +246,7 @@ class MacroUpdateHandler:
                 continue
 
             logger.info(f"Importing {name}")
-            self.macros[name] = macro
-            builtins.__dict__[name] = macro["cls"]
+            self._add_macro(name, macro)
             self.client.callbacks.run(
                 EventType.NAMESPACE_UPDATE, action="add", ns_objects={name: macro["cls"]}
             )
@@ -224,8 +259,7 @@ class MacroUpdateHandler:
         self.client.callbacks.run(
             EventType.NAMESPACE_UPDATE, action="remove", ns_objects={name: self.macros[name]["cls"]}
         )
-        builtins.__dict__.pop(name)
-        self.macros.pop(name)
+        self._remove_macro(name)
 
     def reload_user_macro(self, name: str, file: str) -> None:
         """reload a user macro from file.
