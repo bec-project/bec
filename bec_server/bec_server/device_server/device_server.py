@@ -579,9 +579,10 @@ class DeviceServer(BECService):
         for dev in devices:
             obj = self.device_manager.devices.get(dev)
             obj.metadata = instr.metadata
-            status = obj.obj.trigger()
+            obj = obj.obj
+            status = obj.trigger()
 
-            self._add_status_object_info(status, instr, obj.obj)
+            self._add_status_object_info(status, instr, obj)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
     def _kickoff_device(self, instr: messages.DeviceInstructionMessage) -> None:
@@ -599,7 +600,7 @@ class DeviceServer(BECService):
         obj.configure(kickoff_parameter)
         status = obj.kickoff()
 
-        self._add_status_object_info(status, instr, obj.obj)
+        self._add_status_object_info(status, instr, obj)
         self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
     def _complete_device(self, instr: messages.DeviceInstructionMessage) -> None:
@@ -624,7 +625,7 @@ class DeviceServer(BECService):
                     f"The complete method of device {dev} does not return a StatusBase object."
                 )
 
-            self._add_status_object_info(status, instr, obj.obj)
+            self._add_status_object_info(status, instr, obj)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
@@ -676,7 +677,7 @@ class DeviceServer(BECService):
                 )
 
             num_status_objects += 1
-            self._add_status_object_info(status, instr, obj.obj)
+            self._add_status_object_info(status, instr, obj)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
@@ -884,7 +885,7 @@ class DeviceServer(BECService):
             if not isinstance(status, StatusBase):
                 raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")
             num_status_objects += 1
-            self._add_status_object_info(status, instr, obj.obj)
+            self._add_status_object_info(status, instr, obj)
             status.__dict__["status"] = 1
             status.add_callback(self._device_staged_callback)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
@@ -930,7 +931,7 @@ class DeviceServer(BECService):
                     f"The unstage method of {dev} does not return a StatusBase object."
                 )
             num_status_objects += 1
-            self._add_status_object_info(status, instr, obj.obj)
+            self._add_status_object_info(status, instr, obj)
             status.__dict__["status"] = 0
             status.add_callback(self._device_staged_callback)
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
