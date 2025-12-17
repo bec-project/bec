@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v3.86.0 (2025-12-17)
+
+### Continuous Integration
+
+- Combine pytest coverage with e2e client coverage
+  ([`f90c45b`](https://github.com/bec-project/bec/commit/f90c45bc05bc80792ae7bcd1a4cfbea0b593f755))
+
+### Features
+
+- **messages**: Move scanqueue to a pydantic model
+  ([`bbb3b5b`](https://github.com/bec-project/bec/commit/bbb3b5b0da11cb397ad3d390b1ebe057aa9fd2a3))
+
+### Refactoring
+
+- **callback utils**: Remove unused function
+  ([`4b420ad`](https://github.com/bec-project/bec/commit/4b420ad44d505279449eadb13bb36a4aa2876ebe))
+
+### Testing
+
+- **device server**: Increase timeout time
+  ([`4decb0b`](https://github.com/bec-project/bec/commit/4decb0b937b856bdc96f122f628774dd32c0c8ad))
+
+
 ## v3.85.4 (2025-12-17)
 
 ### Bug Fixes
