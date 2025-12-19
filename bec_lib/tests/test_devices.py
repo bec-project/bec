@@ -206,6 +206,7 @@ def test_read_configuration_cached(
     ],
 )
 def test_run_rpc_call(dev: Any, mock_rpc, method, args, kwargs, expected_call):
+    dev.samx.root.parent.parent.queue.get_default_scan_queue.return_value = "primary"
     with mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"):
         with mock.patch.object(dev.samx.setpoint, mock_rpc) as mock_rpc:
             getattr(dev.samx.setpoint, method)(*args, **kwargs)

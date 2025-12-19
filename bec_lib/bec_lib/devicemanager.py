@@ -236,7 +236,7 @@ class DeviceContainer(dict):
     def monitored_devices(
         self, scan_motors: list | None = None, readout_priority: dict | None = None
     ) -> list:
-        """get a list of all enabled primary devices"""
+        """get a list of all enabled monitored devices"""
         devices = []
         if scan_motors:
             if not isinstance(scan_motors, list):

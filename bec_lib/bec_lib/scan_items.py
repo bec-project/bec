@@ -262,9 +262,16 @@ class ScanStorage:
             The current QueueInfoEntry for the active scan, or None if no scan is active.
         """
         scan_queue = self.scan_manager.queue_storage.current_scan_queue
-        if not scan_queue or not scan_queue["primary"].info:
+
+        target_queue = self.scan_manager.get_default_scan_queue()
+        if not scan_queue or target_queue not in scan_queue:
             return None
-        return scan_queue["primary"].info[0]
+        scan_queue = scan_queue[target_queue]
+
+        if not scan_queue.info:
+            return None
+
+        return scan_queue.info[0]
 
     @property
     def current_scan(self) -> ScanItem | None:
@@ -466,23 +473,23 @@ class ScanStorage:
         Args:
             queue_msg(messages.ScanQueueStatusMessage): The queue status message containing scan info.
         """
-        queue_info = queue_msg.queue["primary"].info
-        for ii, queue_item in enumerate(queue_info):
+        for queue in queue_msg.queue.values():
+            for ii, queue_item in enumerate(queue.info):
 
-            if not any(queue_item.is_scan):
-                continue
-
-            for scan_idx, scan in enumerate(queue_item.scan_id):
-                if self.find_scan_by_ID(scan):
+                if not any(queue_item.is_scan):
                     continue
 
-                logger.debug(f"Appending new scan: {queue_item}")
-                self.add_scan_item(
-                    queue_id=queue_item.queue_id,
-                    scan_number=queue_item.scan_number[scan_idx],  # type: ignore[index]
-                    scan_id=queue_item.scan_id[scan_idx],  # type: ignore[index]
-                    status=queue_item.status,  # type: ignore[attr-defined]
-                )
-            if ii > 20:
-                # only keep the last 20 queue items
-                break
+                for scan_idx, scan in enumerate(queue_item.scan_id):
+                    if self.find_scan_by_ID(scan):
+                        continue
+
+                    logger.debug(f"Appending new scan: {queue_item}")
+                    self.add_scan_item(
+                        queue_id=queue_item.queue_id,
+                        scan_number=queue_item.scan_number[scan_idx],  # type: ignore[index]
+                        scan_id=queue_item.scan_id[scan_idx],  # type: ignore[index]
+                        status=queue_item.status,  # type: ignore[attr-defined]
+                    )
+                if ii > 20:
+                    # only keep the last 20 queue items
+                    break

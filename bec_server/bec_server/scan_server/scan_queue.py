@@ -55,12 +55,11 @@ class ScanQueueStatus(Enum):
 
 
 class QueueManager:
-    # pylint: disable=too-many-instance-attributes
+    """The QueueManager manages multiple ScanQueues"""
+
     def __init__(self, parent: ScanServer) -> None:
         self.parent = parent
         self.connector = parent.connector
-        self.num_queues = 1
-        self.key = ""
         self.queues: dict[str, ScanQueue] = {}
         self._start_scan_queue_register()
         self._lock = threading.RLock()
@@ -75,8 +74,9 @@ class QueueManager:
 
         """
         try:
-            self.add_queue(scan_queue)
-            self.queues[scan_queue].insert(msg, position=position)
+            with self._lock:
+                self.add_queue(scan_queue)
+                self.queues[scan_queue].insert(msg, position=position)
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
@@ -104,6 +104,31 @@ class QueueManager:
                 return
             self.queues[queue_name] = ScanQueue(self, queue_name=queue_name)
             self.queues[queue_name].start_worker()
+
+    def remove_queue(self, queue_name: str, skip_primary=True, emit_status=True) -> None:
+        """
+        Remove a queue from the queue manager. If the queue is "primary" and skip_primary is True,
+        the queue will not be removed to avoid removing the default queue.
+        The emit_status flag controls whether the queue status will be sent after removal. This should only
+        be set to False during shutdown to avoid unnecessary status updates.
+
+        Args:
+            queue_name (str): The name of the queue to remove
+            skip_primary (bool): If True, the primary queue will not be removed. Default is True.
+            emit_status (bool): If True, the queue status will be sent after removal. Default is True.
+
+        """
+        if queue_name == "primary" and skip_primary:
+            return
+        with self._lock:
+            if queue_name not in self.queues:
+                return
+            queue = self.queues[queue_name]
+            queue.signal_event.set()
+            queue.stop_worker()
+            del self.queues[queue_name]
+            if emit_status:
+                self.send_queue_status()
 
     def _start_scan_queue_register(self) -> None:
         self.connector.register(
@@ -407,10 +432,8 @@ class QueueManager:
 
     def shutdown(self):
         """shutdown the queue"""
-        for queue in self.queues.values():
-            queue.signal_event.set()
-            queue.stop_worker()
-        self.queues.clear()
+        for queue_name in list(self.queues.keys()):
+            self.remove_queue(queue_name, skip_primary=False, emit_status=False)
 
 
 class ScanQueue:
@@ -418,14 +441,13 @@ class ScanQueue:
     While for most scenarios a single ScanQueue is sufficient,
     multiple ScanQueues can be used to run experiments in parallel.
     The default ScanQueue is always "primary".
-
-    Raises:
-        StopIteration: _description_
-        StopIteration: _description_
+    If a ScanQueue is inactive for the specified AUTO_SHUTDOWN_TIME,
+    it will be automatically removed.
 
     """
 
     MAX_HISTORY = 100
+    AUTO_SHUTDOWN_TIME: int = 60  # seconds
     DEFAULT_QUEUE_STATUS = ScanQueueStatus.RUNNING
 
     def __init__(
@@ -451,6 +473,7 @@ class ScanQueue:
         self.auto_reset_enabled = True
         self.init_scan_worker()
         self._lock = threading.RLock()
+        self._auto_shutdown_timer: threading.Timer | None = None
 
     def init_scan_worker(self):
         """init the scan worker"""
@@ -467,6 +490,7 @@ class ScanQueue:
         if len(self.queue) > 0:
             self.queue[0].stop()
         self.scan_worker.shutdown()
+        self._reset_auto_shutdown_timer()
 
     @property
     def worker_status(self) -> InstructionQueueStatus | None:
@@ -516,7 +540,36 @@ class ScanQueue:
         while not self.signal_event.is_set():
             updated = self._next_instruction_queue()
             if updated:
+                self._reset_auto_shutdown_timer()
                 return self.active_instruction_queue
+            self._start_auto_shutdown_timer()
+
+    def _start_auto_shutdown_timer(self):
+        """
+        Start the auto shutdown timer if it is not already running.
+        """
+        with self._lock:
+            if self._auto_shutdown_timer is None and len(self.queue) == 0:
+                if self.queue_name == "primary":
+                    # We don't auto-shutdown the primary queue, so there is no
+                    # need to set a timer
+                    return
+                self._auto_shutdown_timer = threading.Timer(
+                    self.AUTO_SHUTDOWN_TIME, self.queue_manager.remove_queue, args=[self.queue_name]
+                )
+                self._auto_shutdown_timer.name = f"AutoShutdownTimer-{self.queue_name}"
+                self._auto_shutdown_timer.start()
+
+    def _reset_auto_shutdown_timer(self):
+        """
+        Cancel and reset the auto shutdown timer.
+        """
+        with self._lock:
+            if self._auto_shutdown_timer is not None:
+                self._auto_shutdown_timer.cancel()
+                if threading.current_thread() != self._auto_shutdown_timer:
+                    self._auto_shutdown_timer.join()
+                self._auto_shutdown_timer = None
 
     def _next_instruction_queue(self) -> bool:
         """get the next instruction queue from the queue. If no update is available, it will return False."""

@@ -42,9 +42,6 @@ class ScanServerMock(ScanServer):
     def _start_procedure_manager(self, *args, **kwargs):
         pass
 
-    def shutdown(self):
-        pass
-
     def wait_for_service(self, name, status=BECStatus.RUNNING):
         pass
 

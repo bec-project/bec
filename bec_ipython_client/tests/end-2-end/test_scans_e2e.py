@@ -841,3 +841,30 @@ def test_device_progress_grid_scan(bec_ipython_client_fixture, capsys):
     assert "samx" not in captured.out
     assert "Scan" in captured.out
     assert "100 %" in captured.out
+
+
+@pytest.mark.timeout(100)
+def test_grid_scan_secondary_queue(capsys, bec_ipython_client_fixture):
+    bec = bec_ipython_client_fixture
+    scans = bec.scans
+    bec.metadata.update({"unit_test": "test_grid_scan_secondary_queue"})
+    dev = bec.device_manager.devices
+    status = scans.grid_scan(
+        dev.samx,
+        -5,
+        5,
+        10,
+        dev.samy,
+        -5,
+        5,
+        10,
+        exp_time=0.01,
+        relative=False,
+        scan_queue="secondary",
+    )
+    assert len(status.scan.live_data) == 100
+    assert status.scan.num_points == 100
+    captured = capsys.readouterr()
+    assert "finished. Scan ID" in captured.out
+
+    assert "secondary" in bec.queue.queue_storage.current_scan_queue

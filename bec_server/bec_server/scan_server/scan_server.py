@@ -42,8 +42,8 @@ class ScanServer(BECService):
     ):
         super().__init__(config, connector_cls, unique_service=True)
         self._start_scan_manager()
-        self._start_queue_manager()
         self._start_device_manager()
+        self._start_queue_manager()
         self._start_scan_guard()
         self._start_scan_assembler()
         self._start_alarm_handler()
@@ -61,6 +61,7 @@ class ScanServer(BECService):
 
     def _start_queue_manager(self):
         self.queue_manager = QueueManager(parent=self)
+        self.queue_manager.add_queue("primary")
 
     def _start_scan_assembler(self):
         self.scan_assembler = ScanAssembler(parent=self)

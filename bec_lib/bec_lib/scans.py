@@ -50,13 +50,14 @@ class ScanObject:
     def _run(
         self,
         *args,
-        callback: Callable = None,
-        async_callback: Callable = None,
+        callback: Callable | None = None,
+        async_callback: Callable | None = None,
         hide_report: bool = False,
-        metadata: dict = None,
-        monitored: list[str | DeviceBase] = None,
-        file_suffix: str = None,
-        file_directory: str = None,
+        metadata: dict | None = None,
+        monitored: list[str | DeviceBase] | None = None,
+        file_suffix: str | None = None,
+        file_directory: str | None = None,
+        scan_queue: str | None = None,
         **kwargs,
     ) -> ScanReport:
         """
@@ -69,6 +70,9 @@ class ScanObject:
             hide_report: Hide the report
             metadata: Metadata dictionary
             monitored: List of monitored devices
+            file_suffix: File suffix for the scan data
+            file_directory: File directory for the scan data
+            scan_queue: Scan queue name. If None, the default queue will be used.
             **kwargs: Keyword arguments
 
         Returns:
@@ -121,6 +125,9 @@ class ScanObject:
 
         kwargs["user_metadata"] = user_metadata
         kwargs["system_config"] = sys_config
+
+        scan_queue = scan_queue or self.client.queue.get_default_scan_queue()
+        kwargs["scan_queue"] = scan_queue
 
         request = Scans.prepare_scan_request(self.scan_name, self.scan_info, *args, **kwargs)
         request_id = str(uuid.uuid4())
@@ -233,7 +240,7 @@ class Scans:
         Returns:
             messages.ScanQueueMessage: scan request message
         """
-
+        scan_queue = kwargs.pop("scan_queue", "primary")
         # check that all required keyword arguments have been specified
         if not all(req_kwarg in kwargs for req_kwarg in scan_info.get("required_kwargs")):
             raise TypeError(
@@ -290,7 +297,7 @@ class Scans:
                     f" of arguments ({num_bundles} given)."
                 )
         return messages.ScanQueueMessage(
-            scan_type=scan_name, parameter=params, queue="primary", metadata=metadata
+            scan_type=scan_name, parameter=params, queue=scan_queue, metadata=metadata
         )
 
     @staticmethod
