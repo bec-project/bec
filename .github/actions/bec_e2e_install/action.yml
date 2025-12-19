@@ -13,6 +13,10 @@ inputs:
     required: false
     default: "main"
     description: "Branch of BEC Widgets to install"
+  BEC_TESTING_PLUGIN_BRANCH: # id of input
+    required: false
+    default: "main"
+    description: "Branch of BEC Testing Plugin to install"
   PYTHON_VERSION: # id of input
     required: false
     default: "3.11"
@@ -55,12 +59,20 @@ runs:
         ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
         path: ./_e2e_test_checkout_/ophyd_devices
 
+    - name: Checkout Testing Plugin
+      uses: actions/checkout@v4
+      with:
+        repository: bec-project/bec_testing_plugin
+        ref: ${{ inputs.BEC_TESTING_PLUGIN_BRANCH }}
+        path: ./_e2e_test_checkout_/bec_testing_plugin
+
     - name: Install Depdendencies & run Pytest
       shell: bash -el {0} # Needs to be bash -el {0} to work with conda
       run: |
         cd ./_e2e_test_checkout_/bec
         source ./bin/install_bec_dev.sh -t
         pip install -e ../ophyd_devices
+        pip install -e ../bec_testing_plugin
         podman pod create --network=host local_bec
         python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
         coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/
