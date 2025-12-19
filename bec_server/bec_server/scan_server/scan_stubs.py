@@ -945,6 +945,34 @@ class ScanStubs:
         Args:
             instructions (dict): Dict containing the scan report instructions
 
+        Examples:
+            >>> # Report on a motor readback
+            >>> instructions = {
+            ...     "readback": {
+            ...         "RID": "1234",
+            ...         "devices": ["fsamroy"],
+            ...         "start": [0],
+            ...         "end": [90],
+            ...     }
+            ... }
+            >>> yield from self.stubs.scan_report_instruction(instructions)
+
+            >>> # Report device progress
+            >>> instructions = {
+            ...     "device_progress": ["mcs"]
+            ... }
+            >>> yield from self.stubs.scan_report_instruction(instructions)
+
+            >>> # Scan progress
+            >>> instructions = {
+            ...     "scan_progress": {
+            ...         "points": 10,
+            ...         "show_table": True,
+            ...     }
+            ... }
+            >>> yield from self.stubs.scan_report_instruction(instructions)
+
+
         Returns:
             Generator[messages.DeviceInstructionMessage, None, None]: Generator that yields a device message.
         """
