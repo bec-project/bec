@@ -276,10 +276,11 @@ class DeviceBase:
             "args": args,
             "kwargs": kwargs,
         }
+        client: BECClient = self.root.parent.parent
         msg = messages.ScanQueueMessage(
             scan_type="device_rpc",
             parameter=params,
-            queue="primary",
+            queue=client.queue.get_default_scan_queue(),  # type: ignore
             metadata={"RID": request_id, "response": True},
         )
         return msg

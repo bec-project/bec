@@ -1,3 +1,4 @@
+import threading
 from unittest import mock
 
 import pytest
@@ -406,11 +407,18 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
 )
 def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, response_message):
     sg = scan_guard_mock
+    # shut down the queue manager as we are going to mock its queues
+    if sg.parent.queue_manager:
+        sg.parent.queue_manager.shutdown()
 
     class MockQueue:
         def __init__(self):
+            self.signal_event = threading.Event()
             self.queue = [MockInstructionItem()]
             self.status = ScanQueueStatus.PAUSED if queue_paused else ScanQueueStatus.RUNNING
+
+        def stop_worker(self):
+            pass
 
     class MockInstructionItem:
         def __init__(self):

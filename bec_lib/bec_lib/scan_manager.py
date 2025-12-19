@@ -40,6 +40,7 @@ class ScanManager:
         self.request_storage = RequestStorage(scan_manager=self)
         self.scan_storage = ScanStorage(scan_manager=self)
         self._scan_number_container = ScanNumberContainer(connector)
+        self._default_scan_queue = "primary"
 
         self.connector.register(
             topics=MessageEndpoints.scan_queue_status(), cb=self._scan_queue_status_callback
@@ -85,6 +86,7 @@ class ScanManager:
 
         action = "deferred_pause" if deferred_pause else "pause"
         logger.info(f"Requesting {action}")
+
         return self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(scan_id=scan_id, action=action, parameter={}),
@@ -100,9 +102,12 @@ class ScanManager:
         if scan_id is None:
             scan_id = self.scan_storage.current_scan_id
         logger.info("Requesting scan abortion")
+        target_queue = self.get_default_scan_queue()
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
-            messages.ScanQueueModificationMessage(scan_id=scan_id, action="abort", parameter={}),
+            messages.ScanQueueModificationMessage(
+                scan_id=scan_id, action="abort", parameter={}, queue=target_queue
+            ),
         )
 
     def request_scan_halt(self, scan_id=None):
@@ -114,10 +119,13 @@ class ScanManager:
         """
         if scan_id is None:
             scan_id = self.scan_storage.current_scan_id
+        target_queue = self.get_default_scan_queue()
         logger.info("Requesting scan halt")
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
-            messages.ScanQueueModificationMessage(scan_id=scan_id, action="halt", parameter={}),
+            messages.ScanQueueModificationMessage(
+                scan_id=scan_id, action="halt", parameter={}, queue=target_queue
+            ),
         )
 
     def request_scan_continuation(self, scan_id=None):
@@ -130,9 +138,12 @@ class ScanManager:
         if scan_id is None:
             scan_id = self.scan_storage.current_scan_id
         logger.info("Requesting scan continuation")
+        target_queue = self.get_default_scan_queue()
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
-            messages.ScanQueueModificationMessage(scan_id=scan_id, action="continue", parameter={}),
+            messages.ScanQueueModificationMessage(
+                scan_id=scan_id, action="continue", parameter={}, queue=target_queue
+            ),
         )
 
     def request_queue_reset(self):
@@ -151,6 +162,7 @@ class ScanManager:
             requestID = str(uuid.uuid4())
         logger.info("Requesting to abort and repeat a scan")
         position = "replace" if replace else "append"
+        target_queue = self.get_default_scan_queue()
 
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
@@ -158,6 +170,7 @@ class ScanManager:
                 scan_id=scan_id,
                 action="restart",
                 parameter={"position": position, "RID": requestID},
+                queue=target_queue,
             ),
         )
         return requestID
@@ -168,7 +181,7 @@ class ScanManager:
         scan_id: str,
         action: Literal["move_up", "move_down", "move_top", "move_bottom", "move_to"],
         position: int | None = None,
-        queue: str = "primary",
+        queue: str | None = None,
         wait_for_response: bool = False,
     ) -> messages.RequestResponseMessage | None:
         """
@@ -185,6 +198,8 @@ class ScanManager:
             dict: Response message if wait_for_response is True
         """
         logger.info(f"Requesting to {action} a scan in the queue")
+        if queue is None:
+            queue = self.get_default_scan_queue()
 
         if action == "move_to" and position is None:
             raise ValueError("Position must be provided when action is 'move_to'")
@@ -266,6 +281,23 @@ class ScanManager:
             scan_msgs = [scan_msgs]
         for scan_msg in scan_msgs:
             self.scan_storage.add_scan_segment(scan_msg)
+
+    @typechecked
+    def set_default_scan_queue(self, queue_name: str) -> None:
+        """Set the default scan queue for all scans using this client.
+
+        Args:
+            queue_name (str): The name of the scan queue to set as default.
+        """
+        self._default_scan_queue = queue_name
+
+    def get_default_scan_queue(self) -> str:
+        """Get the default scan queue for all scans using this client.
+
+        Returns:
+            str: The name of the default scan queue.
+        """
+        return self._default_scan_queue
 
     @typechecked
     def add_scan_to_queue_schedule(

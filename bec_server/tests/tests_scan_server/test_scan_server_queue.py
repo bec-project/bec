@@ -1,3 +1,4 @@
+import time
 import uuid
 from unittest import mock
 
@@ -23,6 +24,7 @@ from bec_server.scan_server.tests.fixtures import scan_server_mock
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+ScanQueue.AUTO_SHUTDOWN_TIME = 1  # Reduce auto-shutdown time for testing
 
 
 @pytest.fixture
@@ -69,11 +71,6 @@ def test_queuemanager_queue_contains_primary(queuemanager_mock):
     assert "primary" in queue_manager.queues
 
 
-def test_queuemanager_queue_inits_without_queues(queuemanager_mock):
-    queue_manager = queuemanager_mock([])
-    assert len(queue_manager.queues) == 0
-
-
 @pytest.mark.parametrize("queue", ["primary", "alignment"])
 def test_queuemanager_add_to_queue(queuemanager_mock, queue):
     queue_manager = queuemanager_mock()
@@ -86,6 +83,20 @@ def test_queuemanager_add_to_queue(queuemanager_mock, queue):
     queue_manager.add_queue(queue)
     queue_manager.add_to_queue(scan_queue=queue, msg=msg)
     assert queue_manager.queues[queue].queue.popleft().scan_msgs[0] == msg
+
+
+@pytest.mark.timeout(20)
+def test_queuemanger_shuts_down_idle_queue(queuemanager_mock):
+    """
+    Test that the QueueManager shuts down idle queues after AUTO_SHUTDOWN_TIME.
+    """
+    queue_manager = queuemanager_mock(queues=["primary", "secondary"])
+    assert "secondary" in queue_manager.queues
+    queue_manager.queues["secondary"]._start_auto_shutdown_timer()
+    # Wait for longer than AUTO_SHUTDOWN_TIME
+    while "secondary" in queue_manager.queues:
+        time.sleep(0.1)
+    assert "primary" in queue_manager.queues
 
 
 def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager_mock):

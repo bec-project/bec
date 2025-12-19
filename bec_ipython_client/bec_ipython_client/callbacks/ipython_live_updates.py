@@ -205,7 +205,7 @@ class IPythonLiveUpdates:
             return False
         if (csq := self.client.queue.queue_storage.current_scan_queue) is None:
             return False
-        scan_queue_status = csq.get("primary")
+        scan_queue_status = csq.get(self.client.queue.get_default_scan_queue())
         if scan_queue_status is None:
             return False
         queue_info = scan_queue_status.info
@@ -233,13 +233,15 @@ class IPythonLiveUpdates:
         if not queue.request_blocks or not queue.status or queue.queue_position is None:
             return False
         if queue.status == "PENDING" and queue.queue_position > 0:
-            primary_queue = self.client.queue.queue_storage.current_scan_queue.get("primary")
+            target_queue = self.client.queue.queue_storage.current_scan_queue.get(
+                self.client.queue.get_default_scan_queue()
+            )
 
-            if primary_queue is None:
+            if target_queue is None:
                 return False
-            status = primary_queue.status
+            status = target_queue.status
             print(
-                "Scan is enqueued and is waiting for execution. Current position in queue:"
+                f"Scan is enqueued and is waiting for execution. Current position in queue {self.client.queue.get_default_scan_queue()}:"
                 f" {queue.queue_position + 1}. Queue status: {status}.",
                 end="\r",
                 flush=True,

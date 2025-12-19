@@ -17,6 +17,7 @@ from bec_server.scan_server.tests.utils import ScanServerMock
 def scan_server_mock(dm_with_devices):
     server = ScanServerMock(dm_with_devices)
     yield server
+    server.shutdown()
     bec_logger.logger.remove()
 
 

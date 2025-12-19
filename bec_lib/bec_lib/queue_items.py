@@ -87,11 +87,12 @@ class QueueItem:
         current_queue = self.scan_manager.queue_storage.current_scan_queue
         if not current_queue:
             return
-        queue_info = current_queue["primary"].info
-        for queue_item in queue_info:
-            if queue_item.queue_id == self.queue_id:
-                self.update_queue_item(queue_item)
-                return
+        for queue in current_queue.values():
+            queue_info = queue.info
+            for queue_item in queue_info:
+                if queue_item.queue_id == self.queue_id:
+                    self.update_queue_item(queue_item)
+                    return
         history = self.scan_manager.queue_storage.queue_history
         if not history:
             return
@@ -219,25 +220,26 @@ class QueueStorage:
         """update a queue item with a new ScanQueueStatusMessage / queue message"""
         self.current_scan_queue = queue_msg.queue
         self._update_queue_history()
-        queue_info = queue_msg.queue["primary"].info
-        for ii, queue_item in enumerate(queue_info):
-            queue = self.find_queue_item_by_ID(queue_id=queue_item.queue_id)
-            if queue:
-                queue.update_queue_item(queue_item)
-                continue
-            self.storage.append(
-                QueueItem(
-                    scan_manager=self.scan_manager,
-                    queue_id=queue_item.queue_id,
-                    request_blocks=queue_item.request_blocks,
-                    status=queue_item.status,
-                    active_request_block=queue_item.active_request_block,
-                    scan_id=queue_item.scan_id,
+        for queue in queue_msg.queue.values():
+            queue_info = queue.info
+            for ii, queue_item in enumerate(queue_info):
+                queue = self.find_queue_item_by_ID(queue_id=queue_item.queue_id)
+                if queue:
+                    queue.update_queue_item(queue_item)
+                    continue
+                self.storage.append(
+                    QueueItem(
+                        scan_manager=self.scan_manager,
+                        queue_id=queue_item.queue_id,
+                        request_blocks=queue_item.request_blocks,
+                        status=queue_item.status,
+                        active_request_block=queue_item.active_request_block,
+                        scan_id=queue_item.scan_id,
+                    )
                 )
-            )
-            if ii > 20:
-                # only keep the last 20 queue items
-                break
+                if ii > 20:
+                    # only keep the last 20 queue items
+                    break
 
     @threadlocked
     def find_queue_item_by_ID(self, queue_id: str) -> QueueItem | None:
@@ -267,7 +269,10 @@ class QueueStorage:
         """Update the queue item with a new ClientInfoMessage"""
         if not self.current_scan_queue:
             return
-        queue_info = self.current_scan_queue["primary"].info
+        target_queue = self.scan_manager.get_default_scan_queue()
+        if target_queue not in self.current_scan_queue:
+            return
+        queue_info = self.current_scan_queue[target_queue].info
         if not queue_info:
             return
         queue_item = self.find_queue_item_by_ID(queue_info[0].queue_id)
