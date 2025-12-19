@@ -825,3 +825,19 @@ def test_client_info_message(bec_ipython_client_fixture):
         s1 = scans.line_scan(dev.samx, 0, 1, steps=10, exp_time=0.5, relative=False)
         output = buffer.getvalue()
         assert "test_client_info_message" in output
+
+
+@pytest.mark.timeout(100)
+def test_device_progress_grid_scan(bec_ipython_client_fixture, capsys):
+    bec = bec_ipython_client_fixture
+    scans = bec.scans
+    bec.metadata.update({"unit_test": "test_device_progress_grid_scan"})
+    dev = bec.device_manager.devices
+    scans.device_progress_grid_scan(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, relative=True, exp_time=0.01
+    )
+    captured = capsys.readouterr()
+    assert "bpm4i" not in captured.out
+    assert "samx" not in captured.out
+    assert "Scan" in captured.out
+    assert "100 %" in captured.out
