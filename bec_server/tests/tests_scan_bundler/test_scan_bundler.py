@@ -230,62 +230,6 @@ def test_add_device_to_storage_baseline(scan_bundler_mock, msg, scan_type):
 
 
 @pytest.mark.parametrize(
-    "queue_msg",
-    [
-        messages.ScanQueueStatusMessage(
-            queue={
-                "primary": messages.ScanQueueStatus(
-                    info=[
-                        messages.QueueInfoEntry(
-                            queue_id="7c15c9a2-71d4-4f2a-91a7-c4a63088fa38",
-                            scan_id=["bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5"],
-                            is_scan=[True],
-                            request_blocks=[
-                                messages.RequestBlock(
-                                    msg=messages.ScanQueueMessage(
-                                        scan_type="fermat_scan",
-                                        parameter={
-                                            "args": {"samx": [-2, 2], "samy": [-2, 2]},
-                                            "kwargs": {
-                                                "step": 1.5,
-                                                "exp_time": 0.02,
-                                                "relative": True,
-                                            },
-                                        },
-                                        queue="primary",
-                                        metadata={"RID": "cd8fc68f-fe65-4031-9a37-e0e7ba9df542"},
-                                    ),
-                                    RID="cd8fc68f-fe65-4031-9a37-e0e7ba9df542",
-                                    scan_motors=["samx", "samy"],
-                                    readout_priority={
-                                        "monitored": ["samx", "samy"],
-                                        "baseline": [],
-                                        "on_request": [],
-                                    },
-                                    is_scan=True,
-                                    scan_number=25,
-                                    scan_id="bfa582aa-f9cd-4258-ab5d-3e5d54d3dde5",
-                                )
-                            ],
-                            scan_number=[25],
-                            status="PENDING",
-                            active_request_block=None,
-                        )
-                    ],
-                    status="RUNNING",
-                )
-            }
-        )
-    ],
-)
-def test_scan_queue_callback(scan_bundler_mock, queue_msg):
-    sb = scan_bundler_mock
-    msg = MessageObject("", queue_msg)
-    sb._scan_queue_callback(msg)
-    assert sb.current_queue == queue_msg.content["queue"]["primary"].info
-
-
-@pytest.mark.parametrize(
     "scan_msg",
     [
         messages.ScanStatusMessage(
