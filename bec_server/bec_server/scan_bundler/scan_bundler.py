@@ -36,12 +36,6 @@ class ScanBundler(BECService):
             name="device_read_register",
         )
         self.connector.register(
-            MessageEndpoints.scan_queue_status(),
-            cb=self._scan_queue_callback,
-            group_id="scan_bundler",
-            name="scan_queue_register",
-        )
-        self.connector.register(
             MessageEndpoints.scan_status(),
             cb=self._scan_status_callback,
             group_id="scan_bundler",
@@ -55,7 +49,6 @@ class ScanBundler(BECService):
         self.scan_motors = {}
         self.readout_priority = {}
         self.storage_initialized = set()
-        self.current_queue = None
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.executor_tasks = collections.deque(maxlen=100)
         self.scan_id_history = collections.deque(maxlen=10)
@@ -89,10 +82,6 @@ class ScanBundler(BECService):
             msgs = [msgs]
         task = self.executor.submit(self._add_device_to_storage, msgs, dev)
         self.executor_tasks.append(task)
-
-    def _scan_queue_callback(self, msg, **_kwargs):
-        msg: messages.ScanQueueStatusMessage = msg.value
-        self.current_queue = msg.queue["primary"].info
 
     def _scan_status_callback(self, msg, **_kwargs):
         msg: messages.ScanStatusMessage = msg.value
