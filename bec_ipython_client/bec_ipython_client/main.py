@@ -151,6 +151,7 @@ class BECIPythonClient:
             object,
             lambda o, p, cycle: o.__str__ is object.__str__ and p.text(repr(o)) or p.text(str(o)),
         )
+        self._set_idle()
 
     def _update_namespace_callback(self, action: Literal["add", "remove"], ns_objects: dict):
         """Callback to update the global namespace of ipython.
