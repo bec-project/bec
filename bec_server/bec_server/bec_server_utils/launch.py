@@ -3,6 +3,7 @@ import os
 import warnings
 
 import libtmux
+from libtmux.exc import TmuxObjectDoesNotExist
 
 from bec_server.bec_server_utils.service_handler import ServiceHandler
 
@@ -77,7 +78,14 @@ def main():
         if session is None:
             print("No BEC session found")
             return
-        session.attach()
+
+        try:
+            session.attach()
+        except TmuxObjectDoesNotExist:
+            # When the session gets closed while we are attached to it,
+            # libtmux raises this error. This is especially common when using systemd.
+            # To avoid confusing the user, we just exit silently.
+            return
 
 
 if __name__ == "__main__":
