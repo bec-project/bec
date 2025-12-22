@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import os
 from typing import TYPE_CHECKING
 
@@ -203,13 +202,15 @@ class AtlasConnector:
 
     @staticmethod
     def _device_config_request_callback(msg, *, parent, **_kwargs) -> None:
-        logger.info(f"Received request: {msg}")
-        parent.config_handler.parse_config_request(msg.value)
+        """Callback for device config requests - delegates to config_handler."""
+        parent.config_handler.handle_config_request_callback(msg.value)
 
     def shutdown(self):
         """
         Shutdown the Atlas connector
         """
+        if self.config_handler:
+            self.config_handler.shutdown()
         if self._config_request_handler:
             self._config_request_handler.shutdown()
         if self.metadata_handler:

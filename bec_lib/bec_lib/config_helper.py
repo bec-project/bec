@@ -617,7 +617,13 @@ class ConfigHelper:
         if wait_for_response:
             timeout = timeout_s if timeout_s is not None else self.suggested_timeout_s(config)
             logger.info(f"Waiting for reply with timeout {timeout} s")
-            reply = self.wait_for_config_reply(request_id, timeout=timeout)
+            reply = self.wait_for_config_reply(
+                request_id, timeout=timeout, send_cancel_on_interrupt=(action != "cancel")
+            )
+            if action == "cancel":
+                raise DeviceConfigError(
+                    "Config update was cancelled by user. The config has been flushed."
+                )
             self.handle_update_reply(reply, request_id, timeout)
         return request_id
 
@@ -709,7 +715,9 @@ class ConfigHelper:
                     " messages received."
                 )
 
-    def wait_for_config_reply(self, RID: str, timeout: float = 60) -> RequestResponseMessage:
+    def wait_for_config_reply(
+        self, RID: str, timeout: float = 60, send_cancel_on_interrupt: bool = True
+    ) -> RequestResponseMessage:
         """
         wait for config reply
 
@@ -720,16 +728,23 @@ class ConfigHelper:
         Returns:
             RequestResponseMessage: reply message
         """
-        start = time.monotonic()
-        while True:
-            elapsed_time = time.monotonic() - start
-            msg = self._connector.get(MessageEndpoints.device_config_request_response(RID))
-            if msg is None:
-                time.sleep(0.01)
-                if elapsed_time > timeout:
-                    raise DeviceConfigError("Timeout reached whilst waiting for config reply.")
-                continue
-            return msg
+        try:
+            start = time.monotonic()
+            while True:
+                elapsed_time = time.monotonic() - start
+                msg = self._connector.get(MessageEndpoints.device_config_request_response(RID))
+                if msg is None:
+                    time.sleep(0.01)
+                    if elapsed_time > timeout:
+                        raise DeviceConfigError("Timeout reached whilst waiting for config reply.")
+                    continue
+                return msg
+        except KeyboardInterrupt:
+            if send_cancel_on_interrupt:
+                self.send_config_request(
+                    action="cancel", config=None, wait_for_response=True, timeout_s=10
+                )
+            raise
 
     def load_demo_config(self, force: bool = False) -> None:
         """

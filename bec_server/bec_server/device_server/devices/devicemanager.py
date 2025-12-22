@@ -7,6 +7,7 @@ in BEC. It is the only place where devices are initialized and managed.
 from __future__ import annotations
 
 import inspect
+import threading
 import time
 import traceback
 from typing import Callable
@@ -23,7 +24,7 @@ from bec_lib import messages, plugin_helper
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
 from bec_lib.device import DeviceBaseWithConfig
-from bec_lib.devicemanager import DeviceManagerBase
+from bec_lib.devicemanager import CancelledError, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.utils.rpc_utils import rgetattr
@@ -122,7 +123,7 @@ class DeviceManagerDS(DeviceManagerBase):
         """Get the device class from the device type"""
         return plugin_helper.get_plugin_class(dev_type, [opd, ophyd])
 
-    def _load_session(self, *_args, **_kwargs):
+    def _load_session(self, *_args, cancel_event: threading.Event | None = None, **_kwargs):
         delayed_init = []
         if not self._is_config_valid():
             self._reset_config()
@@ -131,6 +132,8 @@ class DeviceManagerDS(DeviceManagerBase):
         try:
             self.failed_devices = {}
             for dev in self._session["devices"]:
+                if cancel_event and cancel_event.is_set():
+                    raise CancelledError("Device initialization cancelled.")
                 name = dev.get("name")
                 enabled = dev.get("enabled")
                 logger.info(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
@@ -160,6 +163,8 @@ class DeviceManagerDS(DeviceManagerBase):
                     logger.warning(f"Failed to initialize device {name}: {msg}")
                     self.failed_devices[name] = msg
             self.config_update_handler.handle_failed_device_inits()
+        except CancelledError:
+            raise
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(
@@ -851,4 +856,6 @@ class DeviceManagerDS(DeviceManagerBase):
             except Exception:
                 logger.error(f"Failed to disconnect device {device.name}: {traceback.format_exc()}")
         self.devices.flush()
+        if self.config_update_handler:
+            self.config_update_handler.shutdown()
         super().shutdown()
