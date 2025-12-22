@@ -8,6 +8,7 @@ import collections
 import copy
 import functools
 import re
+import threading
 import time
 import traceback
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ from bec_lib.device import (
 )
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AvailableResourceMessage
+from bec_lib.messages import AvailableResourceMessage, DeviceConfigMessage
 from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.rpc_utils import rgetattr
 
@@ -41,7 +42,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.bec_service import BECService
     from bec_lib.messages import (
         BECStatus,
-        DeviceConfigMessage,
         DeviceInfoMessage,
         ScanStatusMessage,
         ServiceResponseMessage,
@@ -62,6 +62,10 @@ BECSignals = Literal[
 ]
 
 logger = bec_logger.logger
+
+
+class CancelledError(Exception):
+    """Exception raised when a config request is cancelled."""
 
 
 def _rgetattr_safe(obj, attr, *args):
@@ -649,11 +653,11 @@ class DeviceManagerBase:
         logger.info(f"Received new ScanStatusMessage with ID {msg.scan_id}")
         parent.scan_info.msg = msg
 
-    def _get_config(self):
+    def _get_config(self, cancel_event: threading.Event | None = None) -> None:
         self._session["devices"] = self._get_redis_device_config()
         if not self._session["devices"]:
             logger.warning("No config available.")
-        self._load_session()
+        self._load_session(cancel_event=cancel_event)
 
     def _get_redis_device_config(self) -> list:
         devices = self.connector.get(MessageEndpoints.device_config())
@@ -698,7 +702,7 @@ class DeviceManagerBase:
         if dev_name in self.devices:
             self.devices.pop(dev_name)
 
-    def _load_session(self, _device_cls=None):
+    def _load_session(self, cancel_event: threading.Event | None = None, _device_cls=None):
         if self._is_config_valid():
             self._add_multiple_devices_with_log(
                 (dev, self._get_device_info(dev.get("name"))) for dev in self._session["devices"]
@@ -715,10 +719,8 @@ class DeviceManagerBase:
             msg (DeviceConfigMessage): Config message
 
         """
-        if msg.content["action"] not in ["update", "add", "remove", "reload", "set", "reset"]:
-            raise DeviceConfigError(
-                "Action must be either add, remove, update, set, reload or reset."
-            )
+        if not isinstance(msg, DeviceConfigMessage):
+            raise DeviceConfigError("Message must be of type DeviceConfigMessage.")
         if msg.content["action"] in ["update", "add", "remove", "set"]:
             if not msg.content["config"]:
                 raise DeviceConfigError(

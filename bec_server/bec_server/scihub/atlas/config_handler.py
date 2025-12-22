@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import os
+import concurrent.futures
+import threading
 import time
 import traceback
 import uuid
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, Tuple, TypedDict
 
-import bec_lib
 from bec_lib import messages
 from bec_lib.atlas_models import Device, DevicePartial
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.config_helper import CONF
+from bec_lib.devicemanager import CancelledError
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -23,7 +24,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = bec_logger.logger
 
-dir_path = os.path.abspath(os.path.join(os.path.dirname(bec_lib.__file__), "./configs/"))
+
+class RequestInfo(TypedDict):
+    future: concurrent.futures.Future
+    cancel_event: threading.Event
+    request_id: str
 
 
 class ConfigHandler:
@@ -34,32 +39,81 @@ class ConfigHandler:
         self.connector = connector
         self.device_manager = DeviceManager(self.atlas_connector.scihub)
         self.device_manager.initialize(atlas_connector.config.redis)
+        self.executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="ConfigHandler"
+        )
+        self._active_request: RequestInfo | None = None
+        self._lock = threading.Lock()
 
-    def parse_config_request(self, msg: messages.DeviceConfigMessage) -> None:
+    def handle_config_request_callback(self, msg: messages.DeviceConfigMessage) -> None:
+        """Handle incoming config request messages.
+
+        This method is called by the message broker callback and manages the execution
+        of config requests, including cancel handling and async execution.
+
+        Args:
+            msg(messages.DeviceConfigMessage): Incoming config request message
+        """
+        logger.info(f"Received request: {msg}")
+
+        # Handle cancel requests immediately
+        if msg.action == "cancel":
+            self._cancel_config_request(msg)
+            return
+
+        # Create a cancel event for this request
+        cancel_event = threading.Event()
+
+        # Submit to executor and store both future and cancel_event
+        future = self.executor.submit(self.parse_config_request, msg, cancel_event)
+
+        with self._lock:
+            self._active_request = RequestInfo(
+                future=future, cancel_event=cancel_event, request_id=msg.metadata.get("RID")
+            )
+            # Add callback to clean up when done
+            future.add_done_callback(lambda f: self._remove_active_request())
+
+    def parse_config_request(
+        self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event
+    ) -> None:
         """Processes a config request. If successful, it emits a config reply
 
         Args:
             msg (BMessage.DeviceConfigMessage): Config request
+            cancel_event: Event to check for cancellation
 
         """
+        error_msg = ""
+        accepted = True
         try:
             self.device_manager.check_request_validity(msg)
-            if msg.content["action"] == "update":
-                self._update_config(msg)
-            if msg.content["action"] == "reload":
-                self._reload_config(msg)
-            if msg.content["action"] == "set":
-                self._set_config(msg)
-            if msg.content["action"] == "add":
-                self._add_to_config(msg)
-            if msg.content["action"] == "remove":
-                self._remove_from_config(msg)
-            if msg.content["action"] == "reset":
-                self._reset_config(msg)
+            match msg.action:
+                case "update":
+                    self._update_config(msg, cancel_event)
+                case "reload":
+                    self._reload_config(msg)
+                case "set":
+                    self._set_config(msg, cancel_event)
+                case "add":
+                    self._add_to_config(msg, cancel_event)
+                case "remove":
+                    self._remove_from_config(msg)
+                case "reset":
+                    self._reset_config(msg)
 
+        except CancelledError:
+            error_msg = "Request was cancelled"
+            accepted = False
+            logger.info(f"Config request {msg.metadata.get('RID')} was cancelled.")
         except Exception:
-            content = traceback.format_exc()
-            self.send_config_request_reply(accepted=False, error_msg=content, metadata=msg.metadata)
+            error_msg = traceback.format_exc()
+            accepted = False
+        finally:
+            if not accepted:
+                self.send_config_request_reply(
+                    accepted=False, error_msg=error_msg, metadata=msg.metadata
+                )
 
     def send_config(self, msg: messages.DeviceConfigMessage) -> None:
         """broadcast a new config"""
@@ -75,11 +129,16 @@ class ConfigHandler:
             MessageEndpoints.device_config_request_response(request_id), msg, expire=60
         )
 
+    def _remove_active_request(self) -> None:
+        """Clear the active request."""
+        with self._lock:
+            self._active_request = None
+
     #################################################################
     ############### Config Actions ##################################
     #################################################################
 
-    def _update_config(self, msg: messages.DeviceConfigMessage):
+    def _update_config(self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event):
         """
         Update the currently available config with the provided one.
         If the device does not exist, it is skipped.
@@ -92,6 +151,8 @@ class ConfigHandler:
         dev_configs = msg.content["config"]
 
         for dev, config in dev_configs.items():
+            if cancel_event.is_set():
+                raise CancelledError("Config update cancelled")
             if dev not in self.device_manager.devices:
                 continue
 
@@ -114,17 +175,22 @@ class ConfigHandler:
         self.send_config_request_reply(accepted=True, error_msg=None, metadata=msg.metadata)
         self.send_config(msg)
 
-    def _set_config(self, msg: messages.DeviceConfigMessage):
+    def _set_config(self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event):
         """
-        Replace the config with the provided one.
+        Replace the config with the provided one. It will wait for the DeviceServer to accept the new config
+        before resolving.
+
         Args:
             msg (messages.DeviceConfigMessage): Config set message
+            cancel_event: Event to check for cancellation
         """
         config = msg.content["config"]
         msg.metadata["updated_config"] = False
 
         # make sure the config is valid before setting it in redis
         for name, device in config.items():
+            if cancel_event.is_set():
+                raise CancelledError("Config set cancelled")
             self._convert_to_db_config(name, device)
             Device(**device)
         self.set_config_in_redis(list(config.values()))
@@ -160,15 +226,20 @@ class ConfigHandler:
         )
         self.send_config(reload_msg)
 
-    def _add_to_config(self, msg: messages.DeviceConfigMessage):
+    def _add_to_config(self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event):
         """
         Add devices to the current config. If the device already exists, an error is raised.
+        The new config is sent to the DeviceServer and if accepted, the config is updated in redis.
+
         Args:
             msg (messages.DeviceConfigMessage): Config add message
+            cancel_event: Event to check for cancellation
         """
         dev_configs = msg.content["config"]
 
         for dev, config in dev_configs.items():
+            if cancel_event.is_set():
+                raise CancelledError("Config add cancelled")
             self._convert_to_db_config(dev, config)
             Device(**config)
             if dev in self.device_manager.devices:
@@ -202,8 +273,13 @@ class ConfigHandler:
     def _remove_from_config(self, msg: messages.DeviceConfigMessage):
         """
         Remove devices from the current config. If the device does not exist, an error is raised.
+        The new config is sent to the DeviceServer and if accepted, the config is updated in redis.
+
         Args:
             msg (messages.DeviceConfigMessage): Config remove message
+
+        Raises:
+            DeviceConfigError: If the device does not exist in the device manager.
         """
         dev_configs = msg.content["config"]
 
@@ -242,6 +318,56 @@ class ConfigHandler:
         reload_msg = messages.DeviceConfigMessage(action="reload", config={}, metadata=msg.metadata)
         self.send_config(reload_msg)
 
+    def _cancel_config_request(self, msg: messages.DeviceConfigMessage):
+        """
+        Cancel any active config request on the device server and locally.
+        Even if there is no active request locally, a cancel is still sent to the device server
+        as it may still have an active request.
+
+        Args:
+            msg (BECMessage.DeviceConfigMessage): Config message containing the cancel request
+        """
+
+        with self._lock:
+            request_info = self._active_request
+            if request_info is not None:
+                # Signal cancellation of local operations
+                cancel_event = request_info["cancel_event"]
+                future = request_info["future"]
+                active_request_id = request_info["request_id"]
+                cancel_event.set()
+                logger.info(f"Cancellation requested for config request {active_request_id}")
+
+        # Send 'cancel' to device server in case the active request initiated device server updates
+        # The device server will handle this gracefully if there's no active request on its side
+        try:
+            rid = str(uuid.uuid4())
+            self._update_device_server(rid, {}, action="cancel")
+            accepted, server_response_msg = self._wait_for_device_server_update(rid, timeout_time=5)
+            if not accepted:
+                logger.warning(
+                    f"Failed to cancel device server request: {server_response_msg.message}"
+                )
+        except TimeoutError:
+            logger.warning("Timeout while attempting to cancel device server request")
+        except Exception as exc:
+            logger.warning(f"Error canceling device server request: {exc}")
+
+        # Wait for the local task to actually stop
+        try:
+            if request_info is None:
+                logger.info("No active config request to cancel locally.")
+                self.send_config_request_reply(accepted=True, error_msg="", metadata=msg.metadata)
+                return
+            concurrent.futures.wait([future])
+            logger.info(f"Config request {active_request_id} has completed after cancellation")
+            self.send_config_request_reply(accepted=True, error_msg="", metadata=msg.metadata)
+        except Exception as exc:
+            logger.warning(f"Error waiting for cancellation of {active_request_id}: {exc}")
+            self.send_config_request_reply(
+                accepted=False, error_msg=f"Error during cancellation: {exc}", metadata=msg.metadata
+            )
+
     ##################################################################
     ############### Device Server Handling ############################
     ##################################################################
@@ -270,6 +396,16 @@ class ConfigHandler:
             elapsed_time += time_step
 
     def _update_device_config(self, device: DeviceBaseWithConfig, dev_config) -> bool:
+        """
+        Update a single device config
+
+        Args:
+            device (DeviceBaseWithConfig): Device to update
+            dev_config (dict): Config to update
+
+        Returns:
+            bool: True if the config was updated, False otherwise
+        """
         updated = False
         if "deviceConfig" in dev_config:
             request_id = str(uuid.uuid4())
@@ -378,3 +514,26 @@ class ConfigHandler:
         """
         msg = messages.AvailableResourceMessage(resource=config)
         self.device_manager.connector.set(MessageEndpoints.device_config(), msg)
+
+    def shutdown(self) -> None:
+        """Shutdown the config handler, canceling any active request."""
+        logger.info("Shutting down ConfigHandler...")
+
+        request_info: RequestInfo | None = None
+        with self._lock:
+            request_info = self._active_request
+            if request_info:
+                # Signal cancellation for the active request
+                request_info["cancel_event"].set()
+                logger.info(
+                    f"Cancellation signaled for config request {request_info['request_id']}"
+                )
+
+        # Wait for the request to complete
+        if request_info:
+            logger.info("Waiting for active config request to complete...")
+            concurrent.futures.wait([request_info["future"]], timeout=5.0)
+
+        # Shutdown the executor
+        self.executor.shutdown(wait=True, cancel_futures=True)
+        logger.info("ConfigHandler shutdown complete")
