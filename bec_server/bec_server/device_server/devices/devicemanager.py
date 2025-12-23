@@ -164,6 +164,7 @@ class DeviceManagerDS(DeviceManagerBase):
                     self.failed_devices[name] = msg
             self.config_update_handler.handle_failed_device_inits()
         except CancelledError:
+            self._reset_config()
             raise
         except Exception as exc:
             content = traceback.format_exc()
@@ -514,7 +515,7 @@ class DeviceManagerDS(DeviceManagerBase):
 
     @staticmethod
     def connect_device(
-        obj: ophyd.OphydObject, wait_for_all: bool = False, timeout: float = 30, **kwargs
+        obj: ophyd.OphydObject, wait_for_all: bool = False, timeout: float = 5, **kwargs
     ) -> None | Exception:
         """
         Establish a connection to a device.
@@ -524,7 +525,7 @@ class DeviceManagerDS(DeviceManagerBase):
             wait_for_all (bool): Whether to wait for all signals to connect.
                                  Default is False
             timeout (float): Timeout in seconds for the connection attempt to all signals.
-                             Default is 30 seconds.
+                             Default is 5 seconds.
 
         Raises:
             ConnectionError: If the connection could not be established.
