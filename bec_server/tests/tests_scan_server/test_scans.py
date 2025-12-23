@@ -7,7 +7,6 @@ import pytest
 
 from bec_lib import messages
 from bec_server.device_server.tests.utils import DMMock
-from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_plugins.otf_scan import OTFScan
 from bec_server.scan_server.scans import (
     Acquire,
@@ -16,6 +15,7 @@ from bec_server.scan_server.scans import (
     ContLineScan,
     DeviceRPC,
     FermatSpiralScan,
+    HexagonalScan,
     InteractiveReadMontiored,
     InteractiveTrigger,
     LineScan,
@@ -32,6 +32,7 @@ from bec_server.scan_server.scans import (
     TimeScan,
     UpdatedMove,
     get_fermat_spiral_pos,
+    get_hex_grid_2d,
     get_ND_grid_pos,
     get_round_roi_scan_positions,
     get_round_scan_positions,
@@ -2289,3 +2290,207 @@ def test_close_scan_implicitly(scan_assembler):
             metadata={"readout_priority": "monitored"},
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    "axes,snaked,reference_positions",
+    [
+        # Simple 2x2 grid with snaking
+        ([(0, 1, 1), (0, 1, 1)], True, [[0, 0], [1, 0], [0.5, 1]]),
+        # Simple 2x2 grid without snaking
+        ([(0, 1, 1), (0, 1, 1)], False, [[0, 0], [1, 0], [0.5, 1]]),
+        # 3x2 grid with different step sizes and snaking
+        (
+            [(0, 2, 1), (0, 1, 0.5)],
+            True,
+            [[0, 0], [1, 0], [2, 0], [1.5, 0.5], [0.5, 0.5], [0, 1], [1, 1], [2, 1]],
+        ),
+        # Small grid with exact boundaries
+        ([(0, 0.5, 0.5), (0, 0.5, 0.5)], True, [[0, 0], [0.5, 0], [0.25, 0.5]]),
+    ],
+)
+def test_get_hex_grid_2d(axes, snaked, reference_positions):
+    positions = get_hex_grid_2d(axes, snaked=snaked)
+    assert np.isclose(positions, reference_positions).all()
+
+
+def test_get_hex_grid_2d_invalid_dimensions():
+    """Test that get_hex_grid_2d raises ValueError for non-2D input"""
+    with pytest.raises(ValueError, match="2D hex grid requires exactly 2 dimensions"):
+        get_hex_grid_2d([(0, 1, 0.5)])
+
+
+def test_get_hex_grid_2d_boundary_clipping():
+    """Test that points outside boundaries are clipped"""
+    axes = [(0, 1, 1), (0, 0.5, 0.5)]
+    positions = get_hex_grid_2d(axes, snaked=False)
+    # All x values should be between 0 and 1
+    assert np.all((positions[:, 0] >= 0) & (positions[:, 0] <= 1))
+    # All y values should be between 0 and 0.5
+    assert np.all((positions[:, 1] >= 0) & (positions[:, 1] <= 0.5))
+
+
+def test_hexagonal_scan_initialization():
+    """Test HexagonalScan initialization"""
+    device_manager = DMMock()
+    device_manager.add_device("samx")
+    device_manager.add_device("samy")
+
+    request = HexagonalScan(
+        "samx",
+        -5,
+        5,
+        0.5,
+        "samy",
+        -5,
+        5,
+        0.5,
+        device_manager=device_manager,
+        exp_time=0.1,
+        relative=True,
+        snaked=True,
+    )
+
+    assert request.motor1 == "samx"
+    assert request.motor2 == "samy"
+    assert request.start_motor1 == -5
+    assert request.stop_motor1 == 5
+    assert request.step_motor1 == 0.5
+    assert request.start_motor2 == -5
+    assert request.stop_motor2 == 5
+    assert request.step_motor2 == 0.5
+    assert request.exp_time == 0.1
+    assert request.relative is True
+    assert request.snaked is True
+    assert set(request.scan_motors) == set(["samx", "samy"])
+
+
+def test_hexagonal_scan_positions():
+    """Test HexagonalScan position calculation"""
+    device_manager = DMMock()
+    device_manager.add_device("samx")
+    device_manager.add_device("samy")
+
+    request = HexagonalScan(
+        "samx",
+        0,
+        1,
+        1,
+        "samy",
+        0,
+        1,
+        1,
+        device_manager=device_manager,
+        exp_time=0.1,
+        relative=False,
+        snaked=False,
+    )
+
+    # Calculate positions
+    request._calculate_positions()
+
+    # Check that positions are generated
+    assert len(request.positions) > 0
+    # All positions should be within bounds
+    assert np.all((request.positions[:, 0] >= 0) & (request.positions[:, 0] <= 1))
+    assert np.all((request.positions[:, 1] >= 0) & (request.positions[:, 1] <= 1))
+
+
+def test_hexagonal_scan_snaking():
+    """Test that snaking actually changes the order of positions"""
+    device_manager = DMMock()
+    device_manager.add_device("samx")
+    device_manager.add_device("samy")
+
+    # Snaked version
+    request_snaked = HexagonalScan(
+        "samx",
+        0,
+        2,
+        1,
+        "samy",
+        0,
+        1,
+        1,
+        device_manager=device_manager,
+        exp_time=0.1,
+        relative=False,
+        snaked=True,
+    )
+    request_snaked._calculate_positions()
+
+    # Non-snaked version
+    request_unsnaked = HexagonalScan(
+        "samx",
+        0,
+        2,
+        1,
+        "samy",
+        0,
+        1,
+        1,
+        device_manager=device_manager,
+        exp_time=0.1,
+        relative=False,
+        snaked=False,
+    )
+    request_unsnaked._calculate_positions()
+
+    # The positions should be different
+    assert not np.array_equal(request_snaked.positions, request_unsnaked.positions)
+    # But they should contain the same set of points (just in different order)
+    assert len(request_snaked.positions) == len(request_unsnaked.positions)
+
+
+def test_hexagonal_scan_motor_movement_optimization():
+    """Test that _move_scan_motors_and_wait only moves changed motors"""
+    device_manager = DMMock()
+    device_manager.add_device("samx")
+    device_manager.add_device("samy")
+
+    request = HexagonalScan(
+        "samx",
+        0,
+        1,
+        1,
+        "samy",
+        0,
+        1,
+        1,
+        device_manager=device_manager,
+        exp_time=0.1,
+        relative=False,
+        snaked=True,
+    )
+    request._calculate_positions()
+
+    # Mock the stubs.set method to track calls
+    set_calls = []
+
+    def mock_set(device, value):
+        set_calls.append((device, value))
+        yield None
+
+    request.stubs.set = mock_set
+
+    # First move - both motors should move
+    list(request._move_scan_motors_and_wait([1.0, 2.0]))
+    assert len(set_calls) == 1
+    assert set(set_calls[0][0]) == set(["samx", "samy"])
+
+    # Second move - only motor1 changes
+    set_calls.clear()
+    list(request._move_scan_motors_and_wait([1.5, 2.0]))
+    assert len(set_calls) == 1
+    assert set_calls[0][0] == ["samx"]
+
+    # Third move - only motor2 changes
+    set_calls.clear()
+    list(request._move_scan_motors_and_wait([1.5, 3.0]))
+    assert len(set_calls) == 1
+    assert set_calls[0][0] == ["samy"]
+
+    # Fourth move - no change
+    set_calls.clear()
+    list(request._move_scan_motors_and_wait([1.5, 3.0]))
+    assert len(set_calls) == 0
