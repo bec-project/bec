@@ -538,6 +538,7 @@ class ConfigHelper:
             '# - readoutPriority: Determines how the device is read out during a scan. Possible values are ["monitored", "baseline", "async", "on_request", "continuous"].\n'
             "#\n"
             "# Optional fields (defaults shown):\n"
+            "# - connectionTimeout: Connection timeout in seconds. Default is 5.\n"
             '# - description: A string description of the device. Default is "" (empty string).\n'
             "# - deviceConfig: A dictionary of configuration parameters specific to the device class. Default is None.\n"
             "# - deviceTags: A list/set of tags associated with the device. Default is an empty list/set.\n"
@@ -560,6 +561,7 @@ class ConfigHelper:
             "#     - frontend\n"
             "#     - motor\n"
             "#   enabled: true\n"
+            "#   connectionTimeout: 20\n"
             "#   readoutPriority: baseline\n"
             "#   onFailure: retry\n"
             "#   readOnly: false\n"

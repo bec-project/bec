@@ -448,10 +448,17 @@ def epics_motor():
     return motor
 
 
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config):
+@pytest.mark.parametrize(
+    "device_manager_class, timeout",
+    [(DeviceManagerDS, 5), (DeviceManagerDS, 10), (DeviceManagerDS, None)],
+)
+def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, timeout):
     """Test to initialize an EpicsMotor device, check if all necessary subscriptions are made."""
     cfg = {"name": "test_motor", "prefix": "TEST:MOTOR"}
+    if timeout is not None:
+        epics_motor_config["connectionTimeout"] = timeout
+    else:
+        timeout = 5  # Default timeout in connect_device
     with (
         mock.patch.object(
             dm_with_devices, "publish_device_info", return_value=None
@@ -467,11 +474,13 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config):
             mock.patch.object(epics_motor.low_limit_travel, "subscribe") as mock_low_subscribe,
             mock.patch.object(epics_motor.high_limit_travel, "subscribe") as mock_high_subscribe,
         ):
-            opaas_dev = dm_with_devices.initialize_device(epics_motor_config, cfg, epics_motor)
+            dm_with_devices.initialize_device(epics_motor_config, cfg, epics_motor)
 
             mock_initialize_enabled_device.assert_called_once()
             mock_publish_device_info.assert_called_once()
-            mock_connect_device.assert_called_once_with(epics_motor, wait_for_all=True)
+            mock_connect_device.assert_called_once_with(
+                epics_motor, wait_for_all=True, timeout=timeout
+            )
             # Check that subscriptions to limit updates are made
             mock_low_subscribe.assert_called_once_with(
                 dm_with_devices._obj_callback_limit_change, run=False

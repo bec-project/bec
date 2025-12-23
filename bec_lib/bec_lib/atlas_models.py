@@ -40,6 +40,7 @@ class _DeviceModelCore(BaseModel):
     deviceClass: str
     readoutPriority: Literal["monitored", "baseline", "async", "on_request", "continuous"]
     deviceConfig: dict | None = None
+    connectionTimeout: float = 5.0
     description: str = ""
     deviceTags: set[str] = set()
     onFailure: Literal["buffer", "retry", "raise"] = "retry"
@@ -115,6 +116,7 @@ class DeviceHashModel(BaseModel, frozen=True):
     name: HashInclusion = HashInclusion.INCLUDE
     enabled: HashInclusion = HashInclusion.EXCLUDE
     deviceClass: HashInclusion = HashInclusion.INCLUDE
+    connectionTimeout: HashInclusion = HashInclusion.EXCLUDE
     deviceConfig: DictHashInclusion = DictHashInclusion(field_inclusion=HashInclusion.VARIANT)
     deviceTags: HashInclusion = HashInclusion.EXCLUDE
     readoutPriority: HashInclusion = HashInclusion.EXCLUDE
