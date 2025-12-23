@@ -131,18 +131,21 @@ class ConfigUpdateHandler:
         accepted = True
         try:
             self.device_manager.check_request_validity(msg)
-            if msg.content["action"] == "update":
-                self._update_config(msg, cancel_event)
-            elif msg.content["action"] == "add":
-                self._add_config(msg, cancel_event)
-                if self.device_manager.failed_devices:
-                    msg.metadata["failed_devices"] = self.device_manager.failed_devices
-            elif msg.content["action"] == "reload":
-                self._reload_config(cancel_event)
-                if self.device_manager.failed_devices:
-                    msg.metadata["failed_devices"] = self.device_manager.failed_devices
-            elif msg.content["action"] == "remove":
-                self._remove_config(msg, cancel_event)
+            match msg.action:
+                case "update":
+                    self._update_config(msg, cancel_event)
+                case "add":
+                    self._add_config(msg, cancel_event)
+                    if self.device_manager.failed_devices:
+                        msg.metadata["failed_devices"] = self.device_manager.failed_devices
+                case "reload":
+                    self._reload_config(cancel_event)
+                    if self.device_manager.failed_devices:
+                        msg.metadata["failed_devices"] = self.device_manager.failed_devices
+                case "remove":
+                    self._remove_config(msg, cancel_event)
+                case _:
+                    pass
 
         except CancelledError:
             error_msg = "Request was cancelled"
