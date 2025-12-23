@@ -75,9 +75,9 @@ class ScanServer(BECService):
     def _reset_scan_number(self):
         self.scan_number_container = ScanNumberContainer(self.connector)
         if self.connector.get(MessageEndpoints.scan_number()) is None:
-            self.scan_number = 1
+            self.scan_number = 0
         if self.connector.get(MessageEndpoints.dataset_number()) is None:
-            self.dataset_number = 1
+            self.dataset_number = 0
 
     def _start_procedure_manager(self, use_in_process_proc_worker: bool = False):
         procedure_worker = (

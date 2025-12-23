@@ -358,7 +358,7 @@ class ScanStorage:
             scan_item.num_points = scan_status.num_points
 
         # update scan number
-        if scan_item.scan_number is None and scan_number is not None:
+        if scan_number is not None:
             scan_item.scan_number = scan_number
 
         # add scan report info

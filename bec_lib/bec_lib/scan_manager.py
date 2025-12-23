@@ -234,24 +234,24 @@ class ScanManager:
     @property
     def next_scan_number(self):
         """get the next scan number from redis"""
-        return self._scan_number_container.scan_number
+        return self._scan_number_container.scan_number + 1
 
     @next_scan_number.setter
     @typechecked
     def next_scan_number(self, val: int):
         """set the next scan number in redis"""
-        self._scan_number_container.scan_number = val
+        self._scan_number_container.scan_number = max(val, 1) - 1
 
     @property
     def next_dataset_number(self):
         """get the next dataset number from redis"""
-        return self._scan_number_container.dataset_number
+        return self._scan_number_container.dataset_number + 1
 
     @next_dataset_number.setter
     @typechecked
     def next_dataset_number(self, val: int):
         """set the next dataset number in redis"""
-        self._scan_number_container.dataset_number = val
+        self._scan_number_container.dataset_number = max(val, 1) - 1
 
     def _scan_queue_status_callback(self, msg, **_kwargs) -> None:
         queue_status: messages.ScanQueueStatusMessage = msg.value

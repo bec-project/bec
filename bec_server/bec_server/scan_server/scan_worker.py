@@ -553,7 +553,6 @@ class ScanWorker(threading.Thread):
                 except ScanAbortion:
                     content = traceback.format_exc()
                     logger.error(content)
-                    queue.queue.increase_scan_number()
                     if queue.return_to_start:
                         self._send_scan_status("aborted")
                     else:
