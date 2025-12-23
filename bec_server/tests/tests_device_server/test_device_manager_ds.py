@@ -102,7 +102,7 @@ def test_connect_device_with_kwargs(dm_with_devices):
 
     with mock.patch.object(obj, "wait_for_connection") as mock_wait_for_connection:
         device_manager.connect_device(obj, wait_for_all=True)
-        mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=30)
+        mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=5)
         mock_wait_for_connection.reset_mock()
 
 

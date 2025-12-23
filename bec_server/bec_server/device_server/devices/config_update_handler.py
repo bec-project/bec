@@ -7,6 +7,7 @@ import traceback
 from typing import TYPE_CHECKING, TypedDict
 
 from bec_lib import messages
+from bec_lib.alarm_handler import Alarms
 from bec_lib.devicemanager import CancelledError, DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -66,7 +67,9 @@ class ConfigUpdateHandler:
         with self._lock:
             self._active_request = None
 
-    def _cancel_config_request(self, msg: messages.DeviceConfigMessage) -> None:
+    def _cancel_config_request(
+        self, msg: messages.DeviceConfigMessage, timeout: float = 30.0
+    ) -> None:
         """Cancel the active config request.
 
         Args:
@@ -91,7 +94,21 @@ class ConfigUpdateHandler:
 
         # Wait for the task to actually stop
         try:
-            concurrent.futures.wait([future])
+            out = concurrent.futures.wait([future], timeout=timeout)
+            if future in out.not_done:
+                error_msg = "Config cancellation is exceeding the expected time limit. The config will be flushed and you may need to restart the device server."
+                self.connector.raise_alarm(
+                    severity=Alarms.WARNING,
+                    info=messages.ErrorInfo(
+                        id="ConfigCancellationTimeout",
+                        error_message=error_msg,
+                        compact_error_message=error_msg,
+                        exception_type="TimeoutError",
+                    ),
+                )
+                self._flush_config()
+                concurrent.futures.wait([future])
+
             logger.info(f"Config request {active_request_id} has completed after cancellation")
             self.send_config_request_reply(accepted=True, error_msg="", metadata=msg.metadata)
         except Exception as exc:
@@ -163,9 +180,6 @@ class ConfigUpdateHandler:
         self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event
     ) -> None:
         for dev, dev_config in msg.content["config"].items():
-            import time
-
-            time.sleep(1)  # Simulate long-running operation
             if cancel_event.is_set():
                 raise CancelledError("Config update cancelled")
             device = self.device_manager.devices[dev]
