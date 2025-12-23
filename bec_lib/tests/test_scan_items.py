@@ -306,7 +306,12 @@ def test_update_with_scan_status_updates_scan_number():
         assert scan_item.scan_number == 1
 
 
-def test_update_with_scan_status_does_not_update_scan_number():
+def test_update_with_scan_status_updates_scan_number_already_existing():
+    """
+    Test that the scan number is updated even if it already exists.
+    Note: It is possible that the predicted scan number is incorrect, so we need to
+    update it anyway.
+    """
     scan_manager = ScanManager(ConnectorMock(""))
     scan_manager.scan_storage.last_scan_number = 0
     with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
@@ -323,7 +328,7 @@ def test_update_with_scan_status_does_not_update_scan_number():
                 timestamp=10,
             )
         )
-        assert scan_item.scan_number == 2
+        assert scan_item.scan_number == 1
 
 
 def test_update_with_scan_status_adds_scan_def_id():

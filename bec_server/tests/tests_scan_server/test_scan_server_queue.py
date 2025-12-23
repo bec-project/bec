@@ -669,11 +669,11 @@ def test_increase_scan_number(scan_queue_msg, is_scan):
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     req_block_queue.scan_queue.queue_manager.parent.scan_number = 20
     req_block_queue.scan_queue.queue_manager.parent.dataset_number = 5
-    rbl = RequestBlockMock(scan_queue_msg, "scan_id")
+    rbl = RequestBlock(scan_queue_msg, mock.MagicMock(), req_block_queue)
     rbl.is_scan = is_scan
     dataset_id_on_hold = scan_queue_msg.metadata.get("dataset_id_on_hold")
     req_block_queue.active_rb = rbl
-    req_block_queue.increase_scan_number()
+    rbl.assign_scan_number()
     if is_scan and rbl.scan_def_id is None:
         assert req_block_queue.scan_queue.queue_manager.parent.scan_number == 21
         if dataset_id_on_hold:

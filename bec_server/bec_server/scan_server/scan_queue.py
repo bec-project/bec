@@ -702,7 +702,9 @@ class AutoResetCM:
 
 
 class RequestBlock:
-    def __init__(self, msg, assembler: ScanAssembler, parent=None) -> None:
+    def __init__(
+        self, msg, assembler: ScanAssembler, parent: RequestBlockQueue | None = None
+    ) -> None:
         self.instructions = None
         self.scan = None
         self.scan_motors = []
@@ -750,20 +752,30 @@ class RequestBlock:
     def _scan_server_scan_number(self):
         return self.parent.scan_queue.queue_manager.parent.scan_number
 
-    def assign_scan_number(self) -> None:
+    def assign_scan_number(self):
         """assign and fix the current scan number prediction"""
-        if not self.is_scan:
-            return None
-        self._scan_number = self._scan_server_scan_number + self.scan_ids_head()
-        if hasattr(self.scan, "scan_number"):
-            self.scan.scan_number = self._scan_number
-        return None
+        if self.parent is None:
+            return
+
+        if not self.is_scan and self.msg.scan_type not in [
+            "open_scan_def",
+            "_open_interactive_scan",
+        ]:
+            return
+        if self.is_scan and self.scan_def_id is not None:
+            return
+        with self.parent.scan_queue.queue_manager._lock:
+            self.parent.increase_scan_number()
+            self._scan_number = self._scan_server_scan_number
+            if hasattr(self.scan, "scan_number"):
+                self.scan.scan_number = self._scan_number
+        return
 
     def scan_ids_head(self) -> int:
         """calculate the scan_id offset in the queue for the current request block"""
-        offset = 0
+        offset = 1
         for queue in self.parent.scan_queue.queue:
-            if queue.status == InstructionQueueStatus.COMPLETED:
+            if queue.status in [InstructionQueueStatus.COMPLETED, InstructionQueueStatus.RUNNING]:
                 continue
             if queue.queue_id != self.parent.instruction_queue.queue_id:
                 offset += len([scan_id for scan_id in queue.scan_id if scan_id])
@@ -848,8 +860,7 @@ class RequestBlockQueue:
         self.active_rb = self.request_blocks_queue.popleft()
         self._update_point_id(self.active_rb)
 
-        if self.active_rb.is_scan:
-            self.active_rb.assign_scan_number()
+        self.active_rb.assign_scan_number()
 
     def _update_point_id(self, request_block: RequestBlock):
         if request_block.scan_def_id not in self.scan_def_ids:
@@ -868,18 +879,9 @@ class RequestBlockQueue:
     def increase_scan_number(self) -> None:
         """increase the scan number counter"""
         rbl = self.active_rb
-        if rbl is None:
-            return
-        if not rbl.is_scan and rbl.scan_def_id is None:
-            return
-        if rbl.scan_def_id is None or rbl.msg.content["scan_type"] in [
-            "close_scan_def",
-            "_close_interactive_scan",
-        ]:
-            self.scan_queue.queue_manager.parent.scan_number += 1
-            if not rbl.msg.metadata.get("dataset_id_on_hold"):
-                self.scan_queue.queue_manager.parent.dataset_number += 1
-        return
+        self.scan_queue.queue_manager.parent.scan_number += 1
+        if not rbl.msg.metadata.get("dataset_id_on_hold"):
+            self.scan_queue.queue_manager.parent.dataset_number += 1
 
     def _get_metadata_for_alarm(self):
         """get the metadata for the alarm"""
@@ -910,7 +912,6 @@ class RequestBlockQueue:
                     self.scan_def_ids[self.active_rb.scan_def_id]["point_id"] = max(
                         current_point_id, point_id
                     )
-            self.increase_scan_number()
             self.active_rb = None
             self._pull_request_block()
             return next(self.active_rb.instructions)

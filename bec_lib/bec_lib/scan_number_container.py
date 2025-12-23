@@ -37,7 +37,7 @@ class ScanNumberContainer:
         if isinstance(msg.value, int):
             self.scan_number = msg.value
             return int(msg.value)
-        return int(msg.value.get(account, 1))
+        return int(msg.value.get(account, 0))
 
     @scan_number.setter
     def scan_number(self, val: int):
@@ -65,7 +65,7 @@ class ScanNumberContainer:
         if isinstance(msg.value, int):
             self.dataset_number = msg.value
             return int(msg.value)
-        return int(msg.value.get(account, 1))
+        return int(msg.value.get(account, 0))
 
     @dataset_number.setter
     def dataset_number(self, val: int):

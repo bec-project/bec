@@ -41,19 +41,19 @@ def scan_manager_with_fakeredis(connected_connector: RedisConnector):
 
 def test_scan_manager_next_scan_number(scan_manager):
     scan_manager.connector.get.return_value = messages.VariableMessage(value=3)
-    assert scan_manager.next_scan_number == 3
+    assert scan_manager.next_scan_number == 4
 
 
 def test_scan_manager_next_scan_number_failed(scan_manager):
     scan_manager.connector.get.return_value = None
-    assert scan_manager.next_scan_number == -1
+    assert scan_manager.next_scan_number == 0
 
 
 def test_scan_manager_next_scan_number_setter(scan_manager):
     with mock.patch.object(
         scan_manager.connector, "get", return_value=messages.VariableMessage(value={"": 2})
     ):
-        scan_manager.next_scan_number = 3
+        scan_manager.next_scan_number = 4
         scan_manager.connector.set.assert_called_once_with(
             MessageEndpoints.scan_number(), messages.VariableMessage(value={"": 3})
         )
@@ -61,19 +61,19 @@ def test_scan_manager_next_scan_number_setter(scan_manager):
 
 def test_scan_manager_next_dataset_number(scan_manager):
     scan_manager.connector.get.return_value = messages.VariableMessage(value=3)
-    assert scan_manager.next_dataset_number == 3
+    assert scan_manager.next_dataset_number == 4
 
 
 def test_scan_manager_next_dataset_number_failed(scan_manager):
     scan_manager.connector.get.return_value = None
-    assert scan_manager.next_dataset_number == -1
+    assert scan_manager.next_dataset_number == 0
 
 
 def test_scan_manager_next_dataset_number_setter(scan_manager):
     with mock.patch.object(
         scan_manager.connector, "get", return_value=messages.VariableMessage(value={"": 2})
     ):
-        scan_manager.next_dataset_number = 3
+        scan_manager.next_dataset_number = 4
         scan_manager.connector.set.assert_called_once_with(
             MessageEndpoints.dataset_number(), messages.VariableMessage(value={"": 3})
         )
