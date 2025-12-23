@@ -238,7 +238,8 @@ class QueueStorage:
                     )
                 )
                 if ii > 20:
-                    # only keep the last 20 queue items
+                    # only keep the last 20 queue items in storage to avoid
+                    # evicting too many items just because of a large queue
                     break
 
     @threadlocked
