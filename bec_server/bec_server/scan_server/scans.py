@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import numpy as np
 
@@ -188,6 +188,55 @@ def get_round_scan_positions(r_in: float, r_out: float, nr: int, nth: int, cenx=
             ]
         )
     return np.array(positions, dtype=float)
+
+
+def get_hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True) -> np.ndarray:
+    """
+    Generate a 2D hexagonal grid clipped to (start, stop) bounds.
+
+    Args:
+        axes: [(x_start, x_stop, x_step),
+               (y_start, y_stop, y_step)]
+              x_step = horizontal spacing between columns
+              y_step = vertical spacing between rows
+        snaked: if True, reverse direction on alternate rows to minimize travel distance
+
+    Returns:
+        np.ndarray of shape (N, 2)
+    """
+    if len(axes) != 2:
+        raise ValueError("2D hex grid requires exactly 2 dimensions")
+
+    (x0, x1, sx), (y0, y1, sy) = axes
+
+    points = []
+
+    # Number of rows needed
+    n_rows = int(np.ceil((y1 - y0) / sy)) + 2
+
+    for row in range(n_rows):
+        y = y0 + row * sy
+
+        # Alternate row offset - shift by half the x step
+        x_offset = (sx / 2) if (row % 2) else 0.0
+
+        # Number of columns needed
+        n_cols = int(np.ceil((x1 - x0) / sx)) + 2
+
+        row_points = []
+        for col in range(n_cols):
+            x = x0 + x_offset + col * sx
+
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                row_points.append((x, y))
+
+        # Reverse every other row if snaking is enabled
+        if snaked and (row % 2 == 1):
+            row_points.reverse()
+
+        points.extend(row_points)
+
+    return np.asarray(points, dtype=float)
 
 
 class RequestBase(ABC):
@@ -1105,6 +1154,114 @@ class RoundScan(ScanBase):
             nr=self.number_of_rings,
             nth=self.pos_in_first_ring,
         )
+
+
+class HexagonalScan(ScanBase):
+    scan_name = "hexagonal_scan"
+    required_kwargs = ["relative"]
+    gui_config = {
+        "Device 1": ["motor1", "start_motor1", "stop_motor1", "step_motor1"],
+        "Device 2": ["motor2", "start_motor2", "stop_motor2", "step_motor2"],
+        "Movement Parameters": ["relative", "snaked"],
+        "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
+    }
+
+    def __init__(
+        self,
+        motor1: DeviceBase,
+        start_motor1: float,
+        stop_motor1: float,
+        step_motor1: float,
+        motor2: DeviceBase,
+        start_motor2: float,
+        stop_motor2: float,
+        step_motor2: float,
+        exp_time: float = 0,
+        settling_time: float = 0,
+        relative: bool = False,
+        burst_at_each_point: int = 1,
+        snaked: bool = True,
+        **kwargs,
+    ):
+        """
+        Scan two motors in a hexagonal grid pattern.
+
+        Points are arranged in a honeycomb pattern where alternate rows
+        are offset by half the horizontal step size, providing more uniform
+        spatial coverage than rectangular grids.
+
+        Args:
+            motor1 (DeviceBase): first motor
+            start_motor1 (float): start position motor 1
+            stop_motor1 (float): end position motor 1
+            step_motor1 (float): horizontal spacing between columns for motor 1
+            motor2 (DeviceBase): second motor
+            start_motor2 (float): start position motor 2
+            stop_motor2 (float): end position motor 2
+            step_motor2 (float): vertical spacing between rows for motor 2
+            exp_time (float): exposure time in seconds. Default is 0.
+            settling_time (float): settling time in seconds. Default is 0.
+            relative (bool): if True, the motors will be moved relative to their current position. Default is False.
+            burst_at_each_point (int): number of exposures at each point. Default is 1.
+            snaked (bool): if True, reverse direction on alternate rows to minimize travel distance. Default is True.
+
+        Returns:
+            ScanReport
+
+        Examples:
+            >>> scans.hexagonal_scan(dev.motor1, -5, 5, 0.5, dev.motor2, -5, 5, 0.5, exp_time=0.1, relative=True)
+
+        """
+        self.motor1 = motor1
+        self.motor2 = motor2
+        self.snaked = snaked
+        super().__init__(
+            exp_time=exp_time,
+            settling_time=settling_time,
+            relative=relative,
+            burst_at_each_point=burst_at_each_point,
+            **kwargs,
+        )
+
+        self.start_motor1 = start_motor1
+        self.stop_motor1 = stop_motor1
+        self.start_motor2 = start_motor2
+        self.stop_motor2 = stop_motor2
+        self.step_motor1 = step_motor1
+        self.step_motor2 = step_motor2
+        self._last_pos = []
+
+    def update_scan_motors(self):
+        self.scan_motors = [self.motor1, self.motor2]
+
+    def _calculate_positions(self):
+        axes = [
+            (self.start_motor1, self.stop_motor1, self.step_motor1),
+            (self.start_motor2, self.stop_motor2, self.step_motor2),
+        ]
+        self._last_pos = [None, None]
+        self.positions = get_hex_grid_2d(axes, snaked=self.snaked)
+
+    def _move_scan_motors_and_wait(self, pos):
+        if pos is None:
+            return
+        if not isinstance(pos, list) and not isinstance(pos, np.ndarray):
+            pos = [pos]
+        if len(pos) == 0:
+            return
+        # Determine which motors changed
+        changed_values = []
+        changed_motors = []
+        for motor, new, old in zip(self.scan_motors, pos, self._last_pos):
+            if old is None or not np.isclose(new, old):
+                changed_motors.append(motor)
+                changed_values.append(new)
+
+        # Only move if something changed
+        if changed_motors:
+            yield from self.stubs.set(device=changed_motors, value=changed_values)
+
+        self._last_pos = list(pos)
 
 
 class ContLineScan(ScanBase):
