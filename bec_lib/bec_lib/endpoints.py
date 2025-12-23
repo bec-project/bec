@@ -313,6 +313,22 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def device_initialization_progress():
+        """
+        Endpoint for device initialization progress. This endpoint is used by the device server
+        to publish the device initialization progress using a messages.DeviceInitializationProgressMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for device initialization progress.
+        """
+        endpoint = f"{EndpointType.INFO.value}/devices/initialization_progress"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeviceInitializationProgressMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
+
+    @staticmethod
     def device_info(device: str):
         """
         Endpoint for device info. This endpoint is used by the device server to publish

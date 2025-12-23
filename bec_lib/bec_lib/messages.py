@@ -906,6 +906,27 @@ class DeviceConfigMessage(BECMessage):
         return values
 
 
+class DeviceInitializationProgressMessage(BECMessage):
+    """Message type for sending device initialization progress updates
+
+    Args:
+        device (str): Device name.
+        finished (bool): True if the initialization is finished.
+        success (bool): True if the initialization was successful.
+        index (int): Current progress index.
+        total (int): Total number of steps for initialization.
+        metadata (dict, optional): Additional metadata.
+
+    """
+
+    msg_type: ClassVar[str] = "device_initialization_progress_message"
+    device: str
+    finished: bool
+    success: bool
+    index: int
+    total: int
+
+
 class LogMessage(BECMessage):
     """Log message
 

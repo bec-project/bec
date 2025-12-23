@@ -10,7 +10,7 @@ import inspect
 import threading
 import time
 import traceback
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 import ophyd
@@ -35,7 +35,52 @@ from bec_server.device_server.devices.device_serializer import (
     get_device_info,
 )
 
+if TYPE_CHECKING:  # pragma: no cover
+    from bec_lib.redis_connector import RedisConnector
+
 logger = bec_logger.logger
+
+
+class DeviceProgress:
+    """
+    Class to track and publish device initialization progress.
+    """
+
+    def __init__(self, connector: RedisConnector, all_devices: list[dict]):
+        """
+        Initialize the DeviceProgress class.
+
+        Args:
+            connector (RedisConnector): Redis connector to publish progress messages.
+            all_devices (list[dict]): List of all device configurations.
+        """
+        self.connector = connector
+        self.all_devices = all_devices
+        self.total_devices = len(all_devices)
+        self.initialized_devices = 0
+
+    def update_progress(self, device_name: str, finished: bool, success: bool) -> None:
+        """
+        Update the device initialization progress and publish a progress message.
+
+        Args:
+            device_name (str): Name of the device being initialized.
+            finished (bool): Whether the device initialization is finished.
+            success (bool): Whether the device initialization was successful.
+        """
+        if finished:
+            self.initialized_devices += 1
+
+        progress_msg = messages.DeviceInitializationProgressMessage(
+            device=device_name,
+            finished=finished,
+            index=self.initialized_devices,
+            total=self.total_devices,
+            success=success,
+        )
+        self.connector.set_and_publish(
+            MessageEndpoints.device_initialization_progress(), progress_msg
+        )
 
 
 class DSDevice(DeviceBaseWithConfig):
@@ -129,6 +174,7 @@ class DeviceManagerDS(DeviceManagerBase):
             self._reset_config()
             return
 
+        progress = DeviceProgress(self.connector, self._session["devices"])
         try:
             self.failed_devices = {}
             for dev in self._session["devices"]:
@@ -141,6 +187,8 @@ class DeviceManagerDS(DeviceManagerBase):
                 if issubclass(dev_cls, (opd.DeviceProxy, opd.ComputedSignal)):
                     delayed_init.append(dev)
                     continue
+                success = True
+                progress.update_progress(device_name=name, finished=False, success=success)
                 obj, config = self.construct_device_obj(dev, device_manager=self)
                 try:
                     self.initialize_device(dev, config, obj)
@@ -151,9 +199,14 @@ class DeviceManagerDS(DeviceManagerBase):
                     msg = traceback.format_exc()
                     logger.warning(f"Failed to initialize device {name}: {msg}")
                     self.failed_devices[name] = msg
+                    success = False
+
+                progress.update_progress(device_name=name, finished=True, success=success)
 
             for dev in delayed_init:
+                success = True
                 name = dev.get("name")
+                progress.update_progress(device_name=name, finished=False, success=success)
                 obj, config = self.construct_device_obj(dev, device_manager=self)
                 try:
                     self.initialize_delayed_devices(dev, config, obj)
@@ -162,6 +215,8 @@ class DeviceManagerDS(DeviceManagerBase):
                     msg = traceback.format_exc()
                     logger.warning(f"Failed to initialize device {name}: {msg}")
                     self.failed_devices[name] = msg
+                    success = False
+                progress.update_progress(device_name=name, finished=True, success=success)
             self.config_update_handler.handle_failed_device_inits()
         except CancelledError:
             self._reset_config()
