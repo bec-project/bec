@@ -415,7 +415,9 @@ class DeviceManagerDS(DeviceManagerBase):
         pipe = self.connector.pipeline()
         self.reset_device_data(obj, pipe)
         # Try to connect to the device, needs wait_for_all to include lazy signals e.g. AD detectors
-        raised_exc = self.connect_device(obj, wait_for_all=True)
+        raised_exc = self.connect_device(
+            obj, wait_for_all=True, timeout=dev.get("connectionTimeout", 5)
+        )
         # Publish device info with connect = True if no exception was raised during connection
         # Otherwise publish with connect = False
         connect = True if raised_exc is None else False
