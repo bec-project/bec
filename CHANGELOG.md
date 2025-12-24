@@ -1,6 +1,57 @@
 # CHANGELOG
 
 
+## v3.87.0 (2025-12-24)
+
+### Bug Fixes
+
+- **config update**: Inform users about stuck cancellation
+  ([`3a802c3`](https://github.com/bec-project/bec/commit/3a802c3cb603e886c322fa1e4ed5a32661828fed))
+
+- **device server**: Reset config on cancel
+  ([`e007542`](https://github.com/bec-project/bec/commit/e007542223d68c50967fee2139a8ee17d89a47cc))
+
+- **IPython**: Set ipython shell to idle by default
+  ([`e50ea7b`](https://github.com/bec-project/bec/commit/e50ea7bc05388b021b017b54241b3cc07990380f))
+
+- **tmux launch**: Suppress error on restart
+  ([`ab8853e`](https://github.com/bec-project/bec/commit/ab8853edfa25b4f23d23c03466df27fddf44fa4e))
+
+### Continuous Integration
+
+- Install test plugin repo
+  ([`b2a8eb6`](https://github.com/bec-project/bec/commit/b2a8eb61ab11d3b83bf54923c244320b5ad57d42))
+
+### Documentation
+
+- Add examples to scan report instruction stub
+  ([`b72fae0`](https://github.com/bec-project/bec/commit/b72fae088ca42ea71290140ce77532a57d43169c))
+
+### Features
+
+- Add connectionTimeout parameter to device config
+  ([`bcda0df`](https://github.com/bec-project/bec/commit/bcda0df9ce79982f2276f03519c5ee022dce45a9))
+
+- Add support for canceling config updates
+  ([`9d6861b`](https://github.com/bec-project/bec/commit/9d6861b8ca3ee3e9c310004bf1c661d2521db0fb))
+
+- **device config**: Publish device progress while loading a config
+  ([`716f35e`](https://github.com/bec-project/bec/commit/716f35e502f741764b1e1e53db7d135701643327))
+
+### Refactoring
+
+- **config update handler**: Move to switch
+  ([`7534f14`](https://github.com/bec-project/bec/commit/7534f14bcd8b9220e23832fb749cac8629f5d746))
+
+- **scihub**: Minor cleanup in launch file
+  ([`5856ac2`](https://github.com/bec-project/bec/commit/5856ac267b3945e817fa9a35931370ba3c739066))
+
+### Testing
+
+- Add device progress e2e test
+  ([`88fe315`](https://github.com/bec-project/bec/commit/88fe3156b45b84f6e941324d824fd282d4c1f669))
+
+
 ## v3.86.2 (2025-12-17)
 
 ### Bug Fixes
