@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.88.0 (2025-12-24)
+
+### Features
+
+- **scans**: Add hexagonal scan
+  ([`35ab957`](https://github.com/bec-project/bec/commit/35ab957f205f0981673145fb7e19bbe3556bad55))
+
+
 ## v3.87.0 (2025-12-24)
 
 ### Bug Fixes
