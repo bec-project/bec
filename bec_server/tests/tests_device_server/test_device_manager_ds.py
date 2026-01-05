@@ -51,7 +51,7 @@ class DeviceMock:
 
 
 class DeviceControllerMock(DeviceMock):
-    """Mock device with controller attribute that raises an error on wait_for_connection"""
+    """Mock device with controller attribute that manages connection via wait_for_connection"""
 
     def __init__(self) -> None:
         super().__init__()
