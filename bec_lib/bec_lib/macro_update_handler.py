@@ -89,12 +89,6 @@ def has_executable_code(content: str) -> tuple[bool, int | None]:
     return False, None
 
 
-class _Macro(TypedDict):
-    cls: Callable
-    source: str
-    fname: str
-
-
 class MacroUpdateHandler:
     def __init__(self, macros: UserMacros):
         """

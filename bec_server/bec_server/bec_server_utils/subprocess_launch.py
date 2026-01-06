@@ -54,11 +54,11 @@ def subprocess_start(bec_path: str, services: dict[str, "ServiceDesc"]):
             # no terminal: execute servers in background
             cmd_ = cmd.split()
             cmd_.extend(service_config.args)
-            print(cmd_)
+            print(f"Running subprocess with args: {cmd_}")
             processes.append(subprocess.Popen(cmd_, cwd=cwd, stdout=subprocess.DEVNULL))
         else:
             cmd_ = [term.cmd] + term.args + [cmd] + service_config.args
-            print(cmd_)
+            print(f"Running subprocess with args: {cmd_}")
             processes.append(subprocess.Popen(cmd_, cwd=cwd))
     return processes
 

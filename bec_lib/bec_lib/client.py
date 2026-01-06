@@ -141,7 +141,6 @@ class BECClient(BECService):
         self._init_procedure_hli: bool = self.__init_params[
             "config"
         ]._config_model.procedures.enable_procedures
-        print(self._init_procedure_hli)
         self._name = name
         self.device_manager = None
         self.queue = None
