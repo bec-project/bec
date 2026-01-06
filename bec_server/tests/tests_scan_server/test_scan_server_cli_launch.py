@@ -5,7 +5,7 @@ from bec_server.scan_server.cli.launch import main
 
 def test_main():
     with mock.patch(
-        "bec_server.scan_server.cli.launch.parse_cmdline_args", return_value=(None, None, None)
+        "bec_server.scan_server.cli.launch.parse_cmdline_args", return_value=(None, [], None)
     ) as mock_parser:
         with mock.patch("bec_server.scan_server.scan_server.ScanServer") as mock_scan_server:
             with mock.patch("bec_server.scan_server.cli.launch.threading.Event") as mock_event:
@@ -17,7 +17,7 @@ def test_main():
 
 def test_main_shutdown():
     with mock.patch(
-        "bec_server.scan_server.cli.launch.parse_cmdline_args", return_value=(None, None, None)
+        "bec_server.scan_server.cli.launch.parse_cmdline_args", return_value=(None, [], None)
     ) as mock_parser:
         with mock.patch("bec_server.scan_server.scan_server.ScanServer") as mock_scan_server:
             with mock.patch("bec_server.scan_server.cli.launch.threading.Event") as mock_event:

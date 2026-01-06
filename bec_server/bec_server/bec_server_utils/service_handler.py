@@ -43,10 +43,15 @@ class ServiceDesc:
     command: str
     tmux_session: TmuxSession = field(default_factory=TmuxSession)
     wait_func: Union[Callable, None] = None
+    args: list[str] = field(default_factory=list)
 
     def __eq__(self, other):
         if isinstance(other, ServiceDesc):
-            if other.path.template == self.path.template and self.command == other.command:
+            if (
+                other.path.template == self.path.template
+                and self.command == other.command
+                and self.args == other.args
+            ):
                 if self.tmux_session.name == other.tmux_session.name:
                     if self.wait_func == other.wait_func:
                         return True
@@ -59,13 +64,21 @@ class ServiceHandler:
     Depending on the platform, the server is launched in a tmux session or in an iTerm2 session.
     """
 
-    SERVICES = {
-        "scan_server": ServiceDesc(Template("$base_path/scan_server"), "bec-scan-server"),
-        "scan_bundler": ServiceDesc(Template("$base_path/scan_bundler"), "bec-scan-bundler"),
-        "device_server": ServiceDesc(Template("$base_path/device_server"), "bec-device-server"),
-        "file_writer": ServiceDesc(Template("$base_path/file_writer"), "bec-file-writer"),
-        "scihub": ServiceDesc(Template("$base_path/scihub"), "bec-scihub"),
-        "data_processing": ServiceDesc(Template("$base_path/data_processing"), "bec-dap"),
+    SERVICES: dict[str, tuple[ServiceDesc, list[str]]] = {
+        # The list after the ServiceDesc represents which CLI args should be pulled from the global server args for each
+        # specific service. E.g. the global 'use_in_process_proc_worker' arg should be passed on to the ScanServer.
+        "scan_server": (
+            ServiceDesc(Template("$base_path/scan_server"), "bec-scan-server"),
+            ["use_in_process_proc_worker"],
+        ),
+        "scan_bundler": (ServiceDesc(Template("$base_path/scan_bundler"), "bec-scan-bundler"), []),
+        "device_server": (
+            ServiceDesc(Template("$base_path/device_server"), "bec-device-server"),
+            [],
+        ),
+        "file_writer": (ServiceDesc(Template("$base_path/file_writer"), "bec-file-writer"), []),
+        "scihub": (ServiceDesc(Template("$base_path/scihub"), "bec-scihub"), []),
+        "data_processing": (ServiceDesc(Template("$base_path/data_processing"), "bec-dap"), []),
     }
 
     def __init__(
@@ -75,6 +88,7 @@ class ServiceHandler:
         interface: Literal["tmux", "iterm2", "systemctl", "subprocess"] | None = None,
         start_redis: bool = False,
         no_persistence: bool = False,
+        use_in_process_proc_worker: bool = False,
     ):
         """
 
@@ -90,6 +104,10 @@ class ServiceHandler:
         self.interface = interface
         self.start_redis = start_redis
         self.no_persistence = no_persistence
+
+        self.extra_service_args: dict[str, str] = {}
+        if use_in_process_proc_worker:
+            self.extra_service_args["use_in_process_proc_worker"] = "--use-in-process-proc-worker"
 
         if self.interface is None:
             self._detect_available_interfaces()
@@ -137,7 +155,7 @@ class ServiceHandler:
                     if answer:
                         break
 
-        services = {}
+        services: dict[str, ServiceDesc] = {}
         if self.start_redis:
             config = ServiceConfig(self.config_path)
             redis_host_port = config.redis
@@ -162,8 +180,11 @@ class ServiceHandler:
 
         # redis must be started first ;
         # add to services dictionary
-        for service_name, service_config in copy.deepcopy(self.SERVICES).items():
+        for service_name, (service_config, extra_args) in copy.deepcopy(self.SERVICES).items():
             services[service_name] = service_config
+            for extra_arg in extra_args:
+                if extra_arg in self.extra_service_args:
+                    services[service_name].args.append(self.extra_service_args[extra_arg])
             if self.config_path:
                 service_config.command += f" --config {self.config_path}"
 

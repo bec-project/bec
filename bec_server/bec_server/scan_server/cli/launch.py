@@ -16,9 +16,13 @@ def main():
     """
     Launch the scan server.
     """
-    _, _, config = parse_cmdline_args()
+    _, extra_args, config = parse_cmdline_args()
 
-    bec_server = scan_server.ScanServer(config=config, connector_cls=RedisConnector)
+    bec_server = scan_server.ScanServer(
+        config=config,
+        connector_cls=RedisConnector,
+        use_in_process_proc_worker=("--use-in-process-proc-worker" in extra_args),
+    )
     try:
         event = threading.Event()
         # pylint: disable=E1102

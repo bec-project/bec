@@ -1,6 +1,8 @@
 from bec_lib.messages import BECStatus
+from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
+from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.scan_server import ScanServer
 from bec_server.scan_server.scan_worker import InstructionQueueStatus
 
@@ -19,10 +21,12 @@ class WorkerMock:
 
 
 class ScanServerMock(ScanServer):
-    def __init__(self, device_manager) -> None:
+    def __init__(self, device_manager: DMMock, use_in_process_proc_worker: bool = False) -> None:
         self.device_manager = device_manager
         super().__init__(
-            ServiceConfig(redis={"host": "dummy", "port": 6379}), connector_cls=ConnectorMock
+            ServiceConfig(redis={"host": "dummy", "port": 6379}),
+            connector_cls=ConnectorMock,
+            use_in_process_proc_worker=use_in_process_proc_worker,
         )
         self.scan_worker = WorkerMock()
 
@@ -35,7 +39,7 @@ class ScanServerMock(ScanServer):
     def _start_device_manager(self):
         pass
 
-    def _start_procedure_manager(self):
+    def _start_procedure_manager(self, *args, **kwargs):
         pass
 
     def shutdown(self):

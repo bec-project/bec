@@ -3,8 +3,12 @@ import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import psutil
+
+if TYPE_CHECKING:
+    from bec_server.bec_server_utils.service_handler import ServiceDesc
 
 
 @dataclass
@@ -32,12 +36,10 @@ def detect_terminal():
     raise RuntimeError("Could not detect any suitable terminal to launch processes")
 
 
-def subprocess_start(bec_path: str, services: dict):
+def subprocess_start(bec_path: str, services: dict[str, "ServiceDesc"]):
     processes = []
 
-    for ii, service_info in enumerate(services.items()):
-        service, service_config = service_info
-
+    for _, service_config in services.items():
         if os.environ.get("CONDA_DEFAULT_ENV"):
             cmd = f"{os.environ['CONDA_EXE']} run -n {os.environ['CONDA_DEFAULT_ENV']} --no-capture-output {service_config.command}"
         else:
@@ -50,9 +52,14 @@ def subprocess_start(bec_path: str, services: dict):
             term = detect_terminal()
         except RuntimeError:
             # no terminal: execute servers in background
-            processes.append(subprocess.Popen(cmd.split(), cwd=cwd, stdout=subprocess.DEVNULL))
+            cmd_ = cmd.split()
+            cmd_.extend(service_config.args)
+            print(cmd_)
+            processes.append(subprocess.Popen(cmd_, cwd=cwd, stdout=subprocess.DEVNULL))
         else:
-            processes.append(subprocess.Popen([term.cmd] + term.args + [cmd], cwd=cwd))
+            cmd_ = [term.cmd] + term.args + [cmd] + service_config.args
+            print(cmd_)
+            processes.append(subprocess.Popen(cmd_, cwd=cwd))
     return processes
 
 
