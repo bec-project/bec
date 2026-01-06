@@ -16,6 +16,18 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Utility tool managing the BEC server")
     command = parser.add_subparsers(dest="command")
+
+    _interface = {
+        "type": str,
+        "default": None,
+        "help": "Interface to use (tmux, iterm2, systemctl, subprocess)",
+    }
+    _in_process_worker = {
+        "action": "store_true",
+        "default": False,
+        "help": "Use the in process procedure worker for local testing",
+    }
+
     start = command.add_parser("start", help="Start the BEC server")
     start.add_argument(
         "--config", type=str, default=None, help="Path to the BEC service config file"
@@ -24,26 +36,18 @@ def main():
     start.add_argument(
         "--start-redis", action="store_true", default=False, help="Start Redis server"
     )
+    start.add_argument("--use-in-process-proc-worker", **_in_process_worker)
     start.add_argument(
         "--no-persistence", action="store_true", default=False, help="Do not load/save RDB file"
     )
-    start.add_argument(
-        "--interface",
-        type=str,
-        default=None,
-        help="Interface to use (tmux, iterm2, systemctl, subprocess)",
-    )
+    start.add_argument("--interface", **_interface)
     command.add_parser("stop", help="Stop the BEC server")
     restart = command.add_parser("restart", help="Restart the BEC server")
     restart.add_argument(
         "--config", type=str, default=None, help="Path to the BEC service config file"
     )
-    restart.add_argument(
-        "--interface",
-        type=str,
-        default=None,
-        help="Interface to use (tmux, iterm2, systemctl, subprocess)",
-    )
+    restart.add_argument("--interface", **_interface)
+    restart.add_argument("--use-in-process-proc-worker", **_in_process_worker)
     command.add_parser("attach", help="Open the currently running BEC server session")
 
     args = parser.parse_args()
@@ -61,7 +65,11 @@ def main():
         interface=interface,
         start_redis=args.start_redis if "start_redis" in args else False,
         no_persistence=args.no_persistence if "no_persistence" in args else False,
+        use_in_process_proc_worker=(
+            args.use_in_process_proc_worker if "use_in_process_proc_worker" in args else False
+        ),
     )
+
     if args.command == "start":
         service_handler.start()
     elif args.command == "stop":

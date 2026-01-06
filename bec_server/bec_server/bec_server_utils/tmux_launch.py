@@ -1,11 +1,15 @@
 import os
 import time
+from typing import TYPE_CHECKING
 
 import libtmux
 import psutil
 from libtmux import Session
 from libtmux.constants import PaneDirection
 from libtmux.exc import LibTmuxException
+
+if TYPE_CHECKING:
+    from bec_server.bec_server_utils.service_handler import ServiceDesc
 
 
 def activate_venv(pane, service_name, service_path):
@@ -65,7 +69,7 @@ def get_new_session(tmux_session_name, window_label):
     return session
 
 
-def tmux_start(bec_path: str, services: dict):
+def tmux_start(bec_path: str, services: dict[str, "ServiceDesc"]):
     """
     Launch services in a tmux session. All services are launched in separate panes.
     Services config dict contains "tmux_session_name" (default: "bec") and "window_label" (default: "BEC server",
@@ -94,7 +98,8 @@ def tmux_start(bec_path: str, services: dict):
             service_path=service_config.path.substitute(base_path=bec_path),
         )
 
-        pane.send_keys(service_config.command)
+        command = " ".join((service_config.command, *service_config.args))
+        pane.send_keys(command)
 
         wait_func = service_config.wait_func
         if callable(wait_func):
