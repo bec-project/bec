@@ -604,15 +604,19 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_queue_request():
+    def scan_queue_request(username: str):
         """
         Endpoint for scan queue request. This endpoint is used to request the new scans.
-        The request is sent using a messages.ScanQueueMessage message.
+        The request is sent using a messages.ScanQueueMessage message and scoped to the user
+        making the request through redis ACLs.
+
+        Args:
+            username (str): Username of the user making the request.
 
         Returns:
             EndpointInfo: Endpoint for scan queue request.
         """
-        endpoint = f"{EndpointType.USER.value}/queue/queue_request"
+        endpoint = f"{EndpointType.PERSONAL.value}/{username}/queue/queue_request"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.ScanQueueMessage, message_op=MessageOp.SEND
         )

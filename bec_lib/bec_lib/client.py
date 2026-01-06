@@ -296,7 +296,7 @@ class BECClient(BECService):
 
     def _update_username(self):
         # pylint: disable=protected-access
-        self._username = self.connector._redis_conn.acl_whoami()
+        self._username = self.connector.username
         self._system_user = getpass.getuser()
 
     def _start_scan_queue(self):

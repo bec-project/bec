@@ -74,6 +74,7 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
                 scan_type="fermat_scan",
                 parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
                 queue="primary",
+                metadata={"client_info": {"acl_user": "default"}},
             ),
             True,
         ),
@@ -82,6 +83,7 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
                 scan_type="device_rpc",
                 parameter={"device": "samy", "args": {}, "kwargs": {}},
                 queue="primary",
+                metadata={"client_info": {"acl_user": "default"}},
             ),
             True,
         ),
@@ -90,6 +92,7 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
                 scan_type="device_rpc",
                 parameter={"device": ["samy"], "args": {}, "kwargs": {}},
                 queue="primary",
+                metadata={"client_info": {"acl_user": "default"}},
             ),
             True,
         ),
@@ -107,7 +110,7 @@ def test_valid_request(scan_server_mock, scan_queue_msg, valid):
             with mock.patch.object(sg, "_check_valid_scan") as valid_scan:
                 k.device_manager.devices["samx"].enabled = True
                 k.device_manager.devices["samy"].enabled = True
-                status = sg._is_valid_scan_request(scan_queue_msg)
+                status = sg._is_valid_scan_request(scan_queue_msg, username="default")
                 valid_scan.assert_called_once_with(scan_queue_msg)
                 assert status.accepted == valid
 
@@ -220,10 +223,10 @@ def test_scan_queue_request_callback(scan_guard_mock):
         parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
         queue="primary",
     )
-    msg_obj = MessageObject(MessageEndpoints.scan_queue_request(), msg)
+    msg_obj = MessageObject(MessageEndpoints.scan_queue_request("default").endpoint, msg)
     with mock.patch.object(sg, "_handle_scan_request") as handle:
         sg._scan_queue_request_callback(msg_obj, sg)
-        handle.assert_called_once_with(msg)
+        handle.assert_called_once_with(msg, username="default")
 
 
 def test_scan_queue_modification_request_callback(scan_guard_mock):
@@ -257,7 +260,7 @@ def test_handle_scan_request(scan_guard_mock):
     with mock.patch.object(sg, "_is_valid_scan_request") as valid:
         with mock.patch.object(sg, "_append_to_scan_queue") as append:
             valid.return_value = ScanStatus(accepted=True, message="")
-            sg._handle_scan_request(msg)
+            sg._handle_scan_request(msg, username="default")
             append.assert_called_once_with(msg)
 
 
@@ -323,7 +326,7 @@ def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
         with mock.patch.object(sg, "_is_valid_scan_request") as valid:
             with mock.patch.object(sg, "_append_to_scan_queue") as append:
                 valid.return_value = ScanStatus(accepted=True, message="")
-                sg._handle_scan_request(msg)
+                sg._handle_scan_request(msg, username="default")
                 append.assert_not_called()
                 send.assert_called_once_with(MessageEndpoints.device_instructions(), mock.ANY)
 
@@ -338,7 +341,7 @@ def test_handle_scan_request_rejected(scan_guard_mock):
     with mock.patch.object(sg, "_is_valid_scan_request") as valid:
         with mock.patch.object(sg, "_append_to_scan_queue") as append:
             valid.return_value = ScanStatus(accepted=False, message="")
-            sg._handle_scan_request(msg)
+            sg._handle_scan_request(msg, username="default")
             append.assert_not_called()
 
 
@@ -348,18 +351,43 @@ def test_is_valid_scan_request_returns_scan_status_on_error(scan_guard_mock):
         scan_type="fermat_scan",
         parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
         queue="primary",
+        metadata={"client_info": {"acl_user": "default"}},
     )
     with mock.patch.object(sg, "_check_valid_scan") as valid:
         valid.side_effect = Exception("Test exception")
-        status = sg._is_valid_scan_request(msg)
+        status = sg._is_valid_scan_request(msg, username="default")
         assert status.accepted == False
         assert "Test exception" in status.message
+
+
+def test_check_valid_request_raises_for_missing_client_info(scan_guard_mock):
+    sg = scan_guard_mock
+    msg = messages.ScanQueueMessage(
+        scan_type="fermat_scan",
+        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        queue="primary",
+        metadata={},
+    )
+    with pytest.raises(ScanRejection, match="Missing client info in request metadata."):
+        sg._check_valid_request(msg, username="default")
+
+
+def test_check_valid_request_raises_for_username_mismatch(scan_guard_mock):
+    sg = scan_guard_mock
+    msg = messages.ScanQueueMessage(
+        scan_type="fermat_scan",
+        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        queue="primary",
+        metadata={"client_info": {"acl_user": "other_user"}},
+    )
+    with pytest.raises(ScanRejection, match="Username in topic does not match client info."):
+        sg._check_valid_request(msg, username="default")
 
 
 def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
     sg = scan_guard_mock
     with pytest.raises(ScanRejection) as scan_rejection:
-        sg._check_valid_request(None)
+        sg._check_valid_request(None, username="default")
     assert "Invalid request." in scan_rejection.value.args
 
 

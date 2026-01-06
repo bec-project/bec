@@ -45,9 +45,6 @@ class ScanManager:
             topics=MessageEndpoints.scan_queue_status(), cb=self._scan_queue_status_callback
         )
         self.connector.register(
-            topics=MessageEndpoints.scan_queue_request(), cb=self._scan_queue_request_callback
-        )
-        self.connector.register(
             topics=MessageEndpoints.scan_queue_request_response(),
             cb=self._scan_queue_request_response_callback,
         )
@@ -243,10 +240,6 @@ class ScanManager:
         if not queue_status:
             return
         self.update_with_queue_status(queue_status)
-
-    def _scan_queue_request_callback(self, msg, **_kwargs) -> None:
-        request = msg.value
-        self.request_storage.update_with_request(request)
 
     def _scan_queue_request_response_callback(self, msg, **_kwargs) -> None:
         response = msg.value

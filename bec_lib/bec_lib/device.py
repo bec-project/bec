@@ -368,8 +368,15 @@ class DeviceBase:
             # pylint: disable=protected-access
             if client.scans._scan_def_id:
                 msg.metadata["scan_def_id"] = client.scans._scan_def_id
+
+            msg.metadata["client_info"] = {
+                "acl_user": client.username,
+                "username": client._system_user,
+                "hostname": client._hostname,
+            }
+
             # send RPC message
-            client.connector.send(MessageEndpoints.scan_queue_request(), msg)
+            client.connector.send(MessageEndpoints.scan_queue_request(client.username), msg)
 
             # wait for RPC response
             if not wait_for_rpc_response:
