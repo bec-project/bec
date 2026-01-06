@@ -11,7 +11,7 @@ from bec_lib.atlas_models import (
     HashableDeviceSet,
     HashInclusion,
 )
-from bec_lib.utils.json import ExtendedEncoder
+from bec_lib.utils.json_extended import ExtendedEncoder
 
 TEST_DEVICE_DICT = {
     "name": "test_device",
