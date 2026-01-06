@@ -1358,12 +1358,12 @@ class ProcedureClearUnhandledMessage(ProcedureAbortMessage):
 
     One and only one of the args should be supplied.
         Args:
-            queue (str | None): the procedure queue to abort
-            execution_id (str | None): the procedure execution to abort
-            abort_all (bool | None): abort all procedures if true
+            queue (str | None): the unhandled procedure queue to clear
+            execution_id (str | None): the unhandled procedure queue to clear
+            abort_all (bool | None): clear all procedures if true
     """
 
-    ...
+    msg_type: ClassVar[str] = "procedure_clear_unhandled_message"
 
 
 class ProcedureWorkerStatusMessage(BECMessage):

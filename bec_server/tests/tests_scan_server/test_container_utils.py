@@ -2,11 +2,12 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates
+from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates, ProcedureWorkerError
 from bec_server.procedures.container_utils import (
     PodmanApiUtils,
     PodmanCliUtils,
     _multi_args_from_dict,
+    podman_available,
 )
 
 TEST_IMAGE_JSON = b"""[{
@@ -155,6 +156,19 @@ def test_build_args_from_dict():
         "--build-arg",
         "c=d",
     ]
+
+
+@patch("bec_server.procedures.container_utils.PodmanCliUtils", MagicMock())
+def test_cli_podman_avail():
+    assert podman_available()
+
+
+@patch(
+    "bec_server.procedures.container_utils.PodmanCliUtils",
+    MagicMock(side_effect=ProcedureWorkerError),
+)
+def test_cli_podman_not_avail():
+    assert not podman_available()
 
 
 def test_cli_build_req(cli_utils: tuple[PodmanCliUtils, MagicMock]):

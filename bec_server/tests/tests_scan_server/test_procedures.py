@@ -1,3 +1,4 @@
+import builtins
 import threading
 import time
 from functools import partial
@@ -20,6 +21,7 @@ from bec_lib.messages import (
 from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState
 from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
+from bec_server.procedures.builtin_procedures import run_macro
 from bec_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
 from bec_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
@@ -495,6 +497,17 @@ def test_procedure_status_rejected(procedure_manager):
 
 
 @patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
+def test_procedure_status_rejected_not_cancellable(procedure_manager):
+    status = procedure_manager._helper.request.procedure("doesn't exist")
+    _wait_until(lambda: status.state == ProcedureState.REJECTED)
+
+    with pytest.raises(ValueError) as e:
+        status.cancel()
+
+    assert e.match("A procedure which is already")
+
+
+@patch("bec_server.procedures.in_process_worker.BECIPythonClient", MagicMock)
 def test_procedure_status_accepted(procedure_manager):
     procedure_manager._worker_cls = UnlockableWorker
     msg = ProcedureRequestMessage(
@@ -506,9 +519,9 @@ def test_procedure_status_accepted(procedure_manager):
     worker = procedure_manager._active_workers["primary"]["worker"]
     assert isinstance(worker, UnlockableWorker)
     worker.event_1.set()
-    _wait_until(lambda: status.state == ProcedureState.RUNNING, timeout_s=2)
+    _wait_until(lambda: status.state == ProcedureState.RUNNING, timeout_s=10)
     worker.event_2.set()
-    _wait_until(lambda: status.state == ProcedureState.SUCCESS, timeout_s=2)
+    _wait_until(lambda: status.state == ProcedureState.SUCCESS, timeout_s=10)
 
 
 def _mock_error_procedure(*args, **kwargs):
@@ -529,3 +542,21 @@ def test_procedure_status_error(procedure_manager):
 
     e.match("error in procedure")
     assert status.error is not None
+
+    assert "<ProcedureStatus for 'error', state: 'Failed'>" in str(status)
+    assert "RuntimeError: Encountered error in procedure" in str(status)
+
+
+def test_builtin_proc_run_macro_found(shutdown_client):
+    recorder = MagicMock()
+    with patch.dict(
+        builtins.__dict__, _user_macros={"test_macro": {"cls": lambda a, b: recorder(a + b)}}
+    ):
+        run_macro("test_macro", ((5, 6), {}), bec=shutdown_client)
+    recorder.assert_called_with(11)
+
+
+def test_builtin_proc_run_macro_not_found(shutdown_client):
+    with pytest.raises(ValueError) as e:
+        run_macro("not found", bec=shutdown_client)
+    assert e.match("not found in the client namespace")

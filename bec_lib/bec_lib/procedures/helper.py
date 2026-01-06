@@ -58,7 +58,7 @@ class ProcedureStatus:
         if self.state not in [
             ProcedureState.REQUESTED,
             ProcedureState.RUNNING,
-            ProcedureState.RUNNING,
+            ProcedureState.SCHEDULED,
         ]:
             raise ValueError(f"A procedure which is already {self.state} cannot be cancelled!")
         self._helper.request.abort_execution(self._id)
@@ -151,6 +151,7 @@ class _HelperBase:
                 self._callback_ids[msg_.execution_id].state = ProcedureState.RUNNING
             elif msg_.action == "Aborted":
                 self._callback_ids[msg_.execution_id].state = ProcedureState.FAILED
+                self._callback_ids[msg_.execution_id].set_error("Aborted by user.")
                 del self._callback_ids[msg_.execution_id]
             elif msg_.action == "Finished":
                 if msg_.error is not None:
