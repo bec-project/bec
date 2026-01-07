@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v3.88.1 (2026-01-07)
+
+### Bug Fixes
+
+- **devicemanager**: Deprecate controller specific connect/disconnect logic
+  ([`fc3cdd3`](https://github.com/bec-project/bec/commit/fc3cdd346b316d63c07f66656768c426cbd8d1cf))
+
+### Documentation
+
+- Fix docstring DeviceControllerMock
+  ([`9f029d1`](https://github.com/bec-project/bec/commit/9f029d1251dff28afc011474fc71c21780cc6fa4))
+
+Co-authored-by: Copilot <175728472+Copilot@users.noreply.github.com>
+
+### Testing
+
+- Fix test for DeviceControllerMockDevice
+  ([`f29afc7`](https://github.com/bec-project/bec/commit/f29afc7625b22267593be746a6fd83234b72a7c7))
+
+
 ## v3.88.0 (2025-12-24)
 
 ### Features
