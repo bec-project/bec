@@ -22,6 +22,7 @@ from ophyd_devices.utils.bec_signals import BECMessageSignal
 from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
+from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
 from bec_lib.device import DeviceBaseWithConfig
@@ -272,6 +273,16 @@ class DeviceManagerDS(DeviceManagerBase):
             for dep in needs:
                 if dep not in device_dict:
                     raise DeviceConfigError(f"Device {dev['name']} needs unknown device {dep}.")
+                if device_dict[dep].get("enabled") is False:
+                    self.connector.raise_alarm(
+                        Alarms.WARNING,
+                        messages.ErrorInfo(
+                            error_message=f"Device {dev['name']} depends on disabled device {dep}.",
+                            compact_error_message=f"Dependency on disabled device {dep}.",
+                            exception_type="Warning",
+                            device=dev["name"],
+                        ),
+                    )
                 adj_list[dep].append(dev["name"])
                 in_degree[dev["name"]] += 1
 
