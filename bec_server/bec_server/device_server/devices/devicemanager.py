@@ -170,6 +170,37 @@ class DeviceManagerDS(DeviceManagerBase):
         """Get the device class from the device type"""
         return plugin_helper.get_plugin_class(dev_type, [opd, ophyd])
 
+    def _init_device(self, device_info: dict, delayed: bool, progress: DeviceProgress) -> None:
+        """
+        Initialize a device from its configuration dictionary.
+
+        Args:
+            device_info (dict): Device configuration dictionary.
+            delayed (bool): Whether to initialize the device in delayed mode.
+            progress (DeviceProgress): DeviceProgress instance to track initialization progress.
+        """
+
+        name = device_info.get("name")
+        success = True
+        progress.update_progress(device_name=name, finished=False, success=success)
+
+        obj, config = self.construct_device_obj(device_info, device_manager=self)
+        try:
+            if delayed:
+                self.initialize_delayed_devices(device_info, config, obj)
+            else:
+                self.initialize_device(device_info, config, obj)
+        # pylint: disable=broad-except
+        except Exception:
+            if name not in self.devices:
+                raise
+            msg = traceback.format_exc()
+            logger.warning(f"Failed to initialize device {name}: {msg}")
+            self.failed_devices[name] = msg
+            success = False
+        finally:
+            progress.update_progress(device_name=name, finished=True, success=success)
+
     def _load_session(self, *_args, cancel_event: threading.Event | None = None, **_kwargs):
         delayed_init = []
         if not self._is_config_valid():
@@ -177,49 +208,35 @@ class DeviceManagerDS(DeviceManagerBase):
             return
 
         progress = DeviceProgress(self.connector, self._session["devices"])
+        current_device_name = None
         try:
             devices = self.resolve_device_dependencies(self.current_session["devices"])
             self.failed_devices = {}
             for dev in devices:
-                if cancel_event and cancel_event.is_set():
-                    raise CancelledError("Device initialization cancelled.")
                 name = dev.get("name")
                 enabled = dev.get("enabled")
+
+                if cancel_event and cancel_event.is_set():
+                    raise CancelledError("Device initialization cancelled.")
                 logger.info(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
+                current_device_name = name
+
                 dev_cls = self._get_device_class(dev.get("deviceClass"))
                 if issubclass(dev_cls, (opd.DeviceProxy, opd.ComputedSignal)):
                     delayed_init.append(dev)
                     continue
-                success = True
-                progress.update_progress(device_name=name, finished=False, success=success)
-                obj, config = self.construct_device_obj(dev, device_manager=self)
-                try:
-                    self.initialize_device(dev, config, obj)
-                # pylint: disable=broad-except
-                except Exception:
-                    if name not in self.devices:
-                        raise
-                    msg = traceback.format_exc()
-                    logger.warning(f"Failed to initialize device {name}: {msg}")
-                    self.failed_devices[name] = msg
-                    success = False
 
-                progress.update_progress(device_name=name, finished=True, success=success)
+                self._init_device(dev, delayed=False, progress=progress)
+                current_device_name = None
 
             for dev in delayed_init:
-                success = True
                 name = dev.get("name")
-                progress.update_progress(device_name=name, finished=False, success=success)
-                obj, config = self.construct_device_obj(dev, device_manager=self)
-                try:
-                    self.initialize_delayed_devices(dev, config, obj)
-                # pylint: disable=broad-except
-                except Exception:
-                    msg = traceback.format_exc()
-                    logger.warning(f"Failed to initialize device {name}: {msg}")
-                    self.failed_devices[name] = msg
-                    success = False
-                progress.update_progress(device_name=name, finished=True, success=success)
+                if cancel_event and cancel_event.is_set():
+                    raise CancelledError("Device initialization cancelled.")
+                current_device_name = name
+                self._init_device(dev, delayed=True, progress=progress)
+                current_device_name = None
+
             self.config_update_handler.handle_failed_device_inits()
         except CancelledError:
             self._reset_config()
@@ -227,11 +244,11 @@ class DeviceManagerDS(DeviceManagerBase):
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(
-                f"Failed to initialize device: {dev}: {content}. The config will be reset."
+                f"Failed to initialize device: {current_device_name}: {content}. The config will be reset."
             )
             self._reset_config()
             raise DeviceConfigError(
-                f"Failed to initialize device: {dev}: {content}. The config will be reset."
+                f"Failed to initialize device: {current_device_name}: {content}. The config will be reset."
             ) from exc
 
     def resolve_device_dependencies(self, devices: list[dict]) -> list[dict]:
