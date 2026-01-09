@@ -8,6 +8,7 @@ import argparse
 import getpass
 import os
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -20,6 +21,7 @@ import tomli
 from rich.console import Console
 from rich.table import Table
 
+from bec_lib._print_versions import print_versions
 from bec_lib.acl_login import BECAccess
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -50,6 +52,14 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
     """
     if parser is None:
         parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("--version", action="store_true", default=False)
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        help="Format the output from --version as JSON for programmatic consumption.",
+    )
     parser.add_argument("--config", default="", help="path to the config file")
     parser.add_argument(
         "--bec-server", default=None, help="BEC server URL (Redis server), e.g. 'localhost:6379'"
@@ -75,6 +85,10 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
     parser.add_argument("--user", default=None, help="user name to use for the service.", type=str)
 
     args, extra_args = parser.parse_known_args()
+
+    if args.version:
+        print_versions(output_json=args.json)
+        sys.exit(0)
 
     # pylint: disable=protected-access
     bec_logger._stderr_log_level = (

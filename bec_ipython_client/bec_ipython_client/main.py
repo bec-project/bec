@@ -343,7 +343,6 @@ def main():
     parser = argparse.ArgumentParser(
         prog="BEC IPython client", description="BEC command line interface"
     )
-    parser.add_argument("--version", action="store_true", default=False)
     parser.add_argument("--nogui", action="store_true", default=False)
     parser.add_argument(
         "--gui-id",
@@ -362,10 +361,6 @@ def main():
 
     # remove already parsed args from command line args
     sys.argv = sys.argv[:1] + left_args
-
-    if args.version:
-        print(f"BEC IPython client: {version('bec_ipython_client')}")
-        sys.exit(0)
 
     if available_plugins and config.is_default():
         # check if config is defined in a plugin;
