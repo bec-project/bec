@@ -336,6 +336,8 @@ def test_parse_cmdline_args_with_config():
             mock_service_config.assert_called_once_with(
                 "test_config.yaml",
                 cmdline_args={
+                    "version": False,
+                    "json": False,
                     "config": "test_config.yaml",
                     "log_level": None,
                     "file_log_level": None,
