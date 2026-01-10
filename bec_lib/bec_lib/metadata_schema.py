@@ -13,11 +13,15 @@ _METADATA_SCHEMA_REGISTRY = {}
 
 
 class BasicScanMetadata(BaseModel):
-    """Basic scan metadata class. Only requires a sample name. Accepts any additional
+    """Basic scan metadata class. Accepts any additional
     metadata that the user wishes to provide. Can be extended to add required fields
     for specific scans."""
 
     model_config = ConfigDict(extra="allow", validate_assignment=True)
+    scan_name: str = Field(
+        "", title="Scan name", description="A human-friendly identifier for the scan"
+    )
+    comment: str = Field("", title="Comment", description="A comment about the scan")
     sample_name: str = Field(
         "", title="Sample name", description="A human-friendly identifier for the sample"
     )
