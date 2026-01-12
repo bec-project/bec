@@ -416,3 +416,17 @@ class DataAPI:
         """
         for plugin in self.plugins:
             plugin.unsubscribe(subscription_id, scan_id, callback)
+
+
+if __name__ == "__main__":
+    from bec_lib.client import BECClient
+
+    def my_callback(data, metadata):
+        print("Received data:", data)
+        print("With metadata:", metadata)
+
+    client = BECClient()
+    data_api = DataAPI(client)
+    sub = data_api.create_subscription("test_scan")
+    sub.add_device(device_name="waveform", device_entry="waveform_data")
+    sub.set_callback(my_callback)
