@@ -124,7 +124,7 @@ jobs:
         image: bec_requirements
         tags: ${{ steps.version.outputs.bec_version }} ${{ github.sha }}
         containerfiles: |
-          ./bec_server/bec_server/scan_server/procedures/Containerfile.requirements
+          ./bec_server/bec_server/procedures/Containerfile.requirements
         build-args: |
           BEC_VERSION=${{ steps.version.outputs.bec_version }}
         archs: amd64, aarch64
