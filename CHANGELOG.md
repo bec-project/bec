@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.89.2 (2026-01-12)
+
+### Bug Fixes
+
+- Improve version output
+  ([`756d567`](https://github.com/bec-project/bec/commit/756d567a0b546d814a7d3fc0409dc7b9f76cd9ce))
+
+
 ## v3.89.1 (2026-01-12)
 
 ### Bug Fixes
