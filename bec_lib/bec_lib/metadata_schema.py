@@ -19,11 +19,11 @@ class BasicScanMetadata(BaseModel):
 
     model_config = ConfigDict(extra="allow", validate_assignment=True)
     scan_name: str = Field(
-        "", title="Scan name", description="A human-friendly identifier for the scan"
+        "", title="Scan Name", description="A human-friendly identifier for the scan"
     )
     comment: str = Field("", title="Comment", description="A comment about the scan")
     sample_name: str = Field(
-        "", title="Sample name", description="A human-friendly identifier for the sample"
+        "", title="Sample Name", description="A human-friendly identifier for the sample"
     )
 
 
