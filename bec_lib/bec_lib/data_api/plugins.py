@@ -295,13 +295,28 @@ class BECLiveDataPlugin(DataAPIPlugin):
         Returns:
             True if the device entry is an async signal, False otherwise.
         """
+        async_signal_info = self._get_async_signal_info(device_name, device_entry)
+        return async_signal_info is not None
+
+    def _get_async_signal_info(self, device_name: str, device_entry: str) -> dict | None:
+        """
+        Get the async signal information for the given device and entry.
+
+        Args:
+            device_name: Name of the device.
+            device_entry: Specific entry of the device.
+        Returns:
+            The async signal information dict if found, None otherwise.
+        """
         if not self.client.device_manager:
-            return False
-        async_signals = self.client.device_manager.get_bec_signals("AsyncSignal")
-        for entry_name, _, entry_data in async_signals:
-            if entry_name == device_entry and entry_data.get("device_name") == device_name:
-                return True
-        return False
+            return None
+        async_signals = self.client.device_manager.get_bec_signals(
+            ["AsyncSignal", "AsyncMultiSignal", "DynamicSignal"]
+        )
+        for dev_name, _, entry_info in async_signals:
+            if entry_info.get("obj_name") == device_entry and dev_name == device_name:
+                return entry_info
+        return None
 
     def subscribe(
         self,
@@ -665,9 +680,16 @@ class BECLiveDataPlugin(DataAPIPlugin):
                 async_sub.callback_refs.append(callback_ref)
         else:
             # Create new redis connector subscription
+            async_signal_info = self._get_async_signal_info(device_name, device_entry)
+            if async_signal_info is None:
+                raise ValueError(
+                    f"Cannot subscribe to async signal '{device_name}' entry '{device_entry}': signal not found."
+                )
             connector_id = self.client.connector.register(
                 MessageEndpoints.device_async_signal(
-                    scan_id=scan_id, device=device_name, signal=device_entry
+                    scan_id=scan_id,
+                    device=device_name,
+                    signal=async_signal_info.get("storage_name"),
                 ),
                 cb=self._async_signal_sync_callback,
                 from_start=True,
@@ -783,11 +805,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
                 count += len(self._monitored_subscriptions[scan_id][callback_ref].devices)
 
         # Count async signals
-        for (
-            sub_scan_id,
-            device_name,
-            device_entry,
-        ), async_sub in self._async_subscriptions.items():
+        for (sub_scan_id, _, _), async_sub in self._async_subscriptions.items():
             if sub_scan_id == scan_id and callback_ref in async_sub.callback_refs:
                 count += 1
 
@@ -854,16 +872,3 @@ class BECLiveDataPlugin(DataAPIPlugin):
 
         # Update the min_length to track what we've already emitted
         callback_buffer.min_length = min_length
-
-
-"""
-NOTES
-
-- AsyncSignal subscriptions should be shared between multiple subscribers to avoid redundant subscriptions.
-- Whenever the redis connector triggers the callback, we broadcast to all subscribers of that device/entry/scan combination.
-- When the user subscribed to an AsyncSignal, we check if there is already a subscription for that device/entry/scan combination.
-- If yes, we just add the callback to the list of callbacks for that subscription.
-- When the user subscribes to multiple AsyncSignals, we synchronize the data length and only broadcast the data of equal length. Same for mixtures 
-    of monitored devices and AsyncSignals.
-
-"""

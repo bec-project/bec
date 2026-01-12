@@ -308,8 +308,8 @@ class TestBECLiveDataPlugin:
     def test_device_entry_is_async_signal(self, mock_client):
         """Test detection of async signal device entries."""
         mock_client.device_manager.get_bec_signals.return_value = [
-            ("async_sig1", None, {"device_name": "detector1"}),
-            ("async_sig2", None, {"device_name": "detector2"}),
+            ("detector1", None, {"obj_name": "async_sig1", "storage_name": "async_sig1"}),
+            ("detector2", None, {"obj_name": "async_sig2", "storage_name": "async_sig2"}),
         ]
 
         plugin = BECLiveDataPlugin(mock_client)
@@ -355,12 +355,12 @@ class TestBECLiveDataPlugin:
     def test_subscribe_to_async_signal(self, mock_client, mock_callback):
         """Test subscription to async signal."""
         mock_client.device_manager.get_bec_signals.return_value = [
-            ("async_sig1", None, {"device_name": "detector1"})
+            ("detector1", None, {"obj_name": "async_sig1", "storage_name": "async_sig1"})
         ]
 
         # Setup scan item
         scan_item = ScanItem(
-            queue_id="test_queue", scan_number=[1], scan_id=["test_scan_id"], status="open"
+            queue_id="test_queue", scan_number=1, scan_id="test_scan_id", status="open"
         )
         scan_item.status_message = messages.ScanStatusMessage(
             scan_id="test_scan_id", status="open", info={}
@@ -391,7 +391,7 @@ class TestBECLiveDataPlugin:
     def test_subscribe_to_async_signal_shared_subscription(self, mock_client):
         """Test that multiple callbacks share the same async signal subscription."""
         mock_client.device_manager.get_bec_signals.return_value = [
-            ("async_sig1", None, {"device_name": "detector1"})
+            ("detector1", None, {"obj_name": "async_sig1", "storage_name": "async_sig1"})
         ]
 
         scan_item = ScanItem(
@@ -520,7 +520,7 @@ class TestBECLiveDataPlugin:
     ):
         """Test data synchronization between monitored and async sources."""
         mock_client.device_manager.get_bec_signals.return_value = [
-            ("async_sig1", None, {"device_name": "detector1"})
+            ("detector1", None, {"obj_name": "async_sig1", "storage_name": "async_sig1"})
         ]
 
         plugin = BECLiveDataPlugin(mock_client)
@@ -588,7 +588,7 @@ class TestBECLiveDataPlugin:
     def test_unsubscribe_async_signal(self, mock_client, mock_callback):
         """Test unsubscribing from async signal."""
         mock_client.device_manager.get_bec_signals.return_value = [
-            ("async_sig1", None, {"device_name": "detector1"})
+            ("detector1", None, {"obj_name": "async_sig1", "storage_name": "async_sig1"})
         ]
 
         scan_item = ScanItem(
@@ -653,7 +653,7 @@ class TestBECLiveDataPlugin:
     def test_can_provide_async_signal(self, mock_client):
         """Test can_provide returns True for async signals."""
         mock_client.device_manager.get_bec_signals.return_value = [
-            ("async_sig1", None, {"device_name": "detector1"})
+            ("detector1", None, {"obj_name": "async_sig1", "storage_name": "async_sig1"})
         ]
 
         scan_item = ScanItem(
