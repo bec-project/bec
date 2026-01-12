@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.89.1 (2026-01-12)
+
+### Bug Fixes
+
+- Requirements containerfile path in build script
+  ([`d8cee5d`](https://github.com/bec-project/bec/commit/d8cee5dca31a37a3285970b5bed0abecda521027))
+
+
 ## v3.89.0 (2026-01-12)
 
 ### Bug Fixes
