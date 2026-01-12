@@ -8,6 +8,7 @@ import yaml
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bl_states import DeviceWithinLimitsStateConfig
+from bec_lib.data_api import DataAPI
 from bec_lib.devicemanager import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -114,6 +115,82 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == reference_container["data"][ii]
+
+
+@pytest.mark.timeout(100)
+def test_data_api_bundles_monitored_grid_scan_with_monitored_async_signal_lib(bec_client_lib):
+    bec = bec_client_lib
+    scans = bec.scans
+    dev = bec.device_manager.devices
+    callbacks = []
+
+    def callback(data, metadata):
+        callbacks.append((data, metadata))
+
+    def value_length(value):
+        return len(value) if isinstance(value, list) else 1
+
+    DataAPI.clear_instance()
+    try:
+        bec.metadata.update({"unit_test": "test_data_api_grid_scan_monitored_async_bundle"})
+        scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
+        dev.waveform.sim.select_model("ConstantModel")
+        dev.waveform.async_update.set("add")
+
+        data_api = DataAPI(bec)
+        with data_api.create_subscription(live=True) as subscription:
+            subscription.add_device("samx", "samx")
+            subscription.add_device("samy", "samy")
+            subscription.add_device("waveform", "waveform_waveform_0d")
+            subscription.set_callback(callback)
+
+            status = scans.grid_scan(
+                dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.05, relative=True
+            )
+            scan_id = status.queue_item.scan_ids[0]
+
+            status.wait(num_points=True, file_written=True)
+            expected_points = status.scan.num_points
+
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                total_lengths = sum(
+                    value_length(data["samx"]["samx"]["value"]) for data, _metadata in callbacks
+                )
+                assert total_lengths <= expected_points
+                if total_lengths == expected_points:
+                    break
+                time.sleep(0.1)
+
+        assert expected_points == 100
+        assert callbacks
+
+        samx_total = 0
+        samy_total = 0
+        waveform_total = 0
+        for data, metadata in callbacks:
+            assert set(data) == {"samx", "samy", "waveform"}
+            assert "samx" in data["samx"]
+            assert "samy" in data["samy"]
+            assert "waveform_waveform_0d" in data["waveform"]
+            assert metadata["scan_id"] == scan_id
+            assert metadata["async_update"]["type"] == "add"
+            samx_len = value_length(data["samx"]["samx"]["value"])
+            samy_len = value_length(data["samy"]["samy"]["value"])
+            waveform_len = value_length(data["waveform"]["waveform_waveform_0d"]["value"])
+            assert samx_len == samy_len == waveform_len
+            samx_total += samx_len
+            samy_total += samy_len
+            waveform_total += waveform_len
+            assert samx_total <= expected_points
+            assert samy_total <= expected_points
+            assert waveform_total <= expected_points
+
+        assert samx_total == expected_points
+        assert samy_total == expected_points
+        assert waveform_total == expected_points
+    finally:
+        DataAPI.clear_instance()
 
 
 @pytest.mark.timeout(100)
