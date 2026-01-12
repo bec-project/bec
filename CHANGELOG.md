@@ -1,6 +1,52 @@
 # CHANGELOG
 
 
+## v3.89.0 (2026-01-12)
+
+### Bug Fixes
+
+- Don't shut down client in in_process worker
+  ([`0ace6c5`](https://github.com/bec-project/bec/commit/0ace6c5033f2f2e7c1571f6e7d25fdfb388dd946))
+
+- Improve default args for macro proc
+  ([`ecd61d6`](https://github.com/bec-project/bec/commit/ecd61d60f0002ae2a13bf00d2adf4c4e8a0d2c44))
+
+### Features
+
+- Add available procedures method
+  ([`54b6fad`](https://github.com/bec-project/bec/commit/54b6fad22a8aa4ac23cca4ed2293e69135d8ebe1))
+
+- Better error handling in procedure HLI
+  ([`d811da2`](https://github.com/bec-project/bec/commit/d811da2f6657378e7fc4c921db50617ed74c4ba1))
+
+- Hli for procedure interaction
+  ([`777ddec`](https://github.com/bec-project/bec/commit/777ddecd6100453bbe8a8cef89fd6c8321c9357b))
+
+- helper on the client to call procedures - procedure to run a loaded macro function - status object
+  for procedures executed this way - tests
+
+- Pass additional CLI args to individual services
+  ([`b90a723`](https://github.com/bec-project/bec/commit/b90a7238a2276d06abdedc86299015da44ad4823))
+
+- Run proc manager in scan server
+  ([`7701e72`](https://github.com/bec-project/bec/commit/7701e724b9eafb195cabd87e3a5a61db1ce192b1))
+
+### Refactoring
+
+- Move procedure helper to bec_lib
+  ([`8f16111`](https://github.com/bec-project/bec/commit/8f16111581b87eacef28cd72af86a088dbf89fef))
+
+- Move procedures up a level
+  ([`ae13ad6`](https://github.com/bec-project/bec/commit/ae13ad6e27049616fc160fbff3f09fc54ebe05b3))
+
+### Testing
+
+- Increase test coverage
+  ([`c625832`](https://github.com/bec-project/bec/commit/c62583247420e219ac89d6ab814782fd3bc5378b))
+
+and fix a few small errors
+
+
 ## v3.88.1 (2026-01-07)
 
 ### Bug Fixes
