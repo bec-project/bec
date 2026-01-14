@@ -20,6 +20,11 @@ class WorkerMock:
         self.current_instruction_queue_item = None
 
 
+class ProcManagerMock:
+    def shutdown(self):
+        pass
+
+
 class ScanServerMock(ScanServer):
     def __init__(self, device_manager: DMMock, use_in_process_proc_worker: bool = False) -> None:
         self.device_manager = device_manager
@@ -29,6 +34,7 @@ class ScanServerMock(ScanServer):
             use_in_process_proc_worker=use_in_process_proc_worker,
         )
         self.scan_worker = WorkerMock()
+        self.proc_manager = ProcManagerMock()
 
     def _start_metrics_emitter(self):
         pass
