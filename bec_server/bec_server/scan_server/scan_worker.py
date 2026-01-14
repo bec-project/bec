@@ -12,6 +12,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
+from bec_server.scan_server.scans import RequestBase
 
 from .errors import DeviceInstructionError, ScanAbortion
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
@@ -398,25 +399,57 @@ class ScanWorker(threading.Thread):
         self._wait_for_device_server()
 
         queue.is_active = True
-        try:
-            for instr in queue:
-                self._check_for_interruption()
-                if instr is None:
-                    continue
-                self._exposure_time = getattr(queue.active_request_block.scan, "exp_time", None)
-                self._instruction_step(instr)
-        except ScanAbortion as exc:
-            if queue.stopped or not (queue.return_to_start and queue.active_request_block):
-                raise ScanAbortion from exc
-            queue.stopped = True
+        scan_instance: RequestBase | None
+        if (scan_instance := getattr(queue.active_request_block, "scan", None)) is None:
+            devices_to_lock = []
+        else:
+            devices_to_lock = scan_instance.instance_device_access().device_locking
+        with self.parent.device_locks.lock(devices_to_lock):
             try:
-                cleanup = queue.active_request_block.scan.move_to_start()
-                self.status = InstructionQueueStatus.RUNNING
-                for instr in cleanup:
+                for instr in queue:
                     self._check_for_interruption()
-                    instr.metadata["scan_id"] = queue.queue.active_rb.scan_id
-                    instr.metadata["queue_id"] = queue.queue_id
+                    if instr is None:
+                        continue
+                    self._exposure_time = getattr(queue.active_request_block.scan, "exp_time", None)
                     self._instruction_step(instr)
+            except ScanAbortion as exc:
+                if queue.stopped or not (queue.return_to_start and queue.active_request_block):
+                    raise ScanAbortion from exc
+                queue.stopped = True
+                try:
+                    cleanup = queue.active_request_block.scan.move_to_start()
+                    self.status = InstructionQueueStatus.RUNNING
+                    for instr in cleanup:
+                        self._check_for_interruption()
+                        instr.metadata["scan_id"] = queue.queue.active_rb.scan_id
+                        instr.metadata["queue_id"] = queue.queue_id
+                        self._instruction_step(instr)
+                except DeviceInstructionError as exc_di:
+                    content = traceback.format_exc()
+                    logger.error(content)
+                    self.connector.raise_alarm(
+                        severity=Alarms.MAJOR,
+                        info=exc_di.error_info,
+                        metadata=self._get_metadata_for_alarm(),
+                    )
+                    raise ScanAbortion from exc_di
+                except Exception as exc_return_to_start:
+                    # if the return_to_start fails, raise the original exception
+                    content = traceback.format_exc()
+                    logger.error(content)
+                    error_info = messages.ErrorInfo(
+                        error_message=content,
+                        compact_error_message=traceback.format_exc(limit=0),
+                        exception_type=exc_return_to_start.__class__.__name__,
+                        device=None,
+                    )
+                    self.connector.raise_alarm(
+                        severity=Alarms.MAJOR,
+                        info=error_info,
+                        metadata=self._get_metadata_for_alarm(),
+                    )
+                    raise ScanAbortion from exc
+                raise ScanAbortion from exc
             except DeviceInstructionError as exc_di:
                 content = traceback.format_exc()
                 logger.error(content)
@@ -425,46 +458,22 @@ class ScanWorker(threading.Thread):
                     info=exc_di.error_info,
                     metadata=self._get_metadata_for_alarm(),
                 )
+
                 raise ScanAbortion from exc_di
-            except Exception as exc_return_to_start:
-                # if the return_to_start fails, raise the original exception
+            except Exception as exc:
                 content = traceback.format_exc()
                 logger.error(content)
                 error_info = messages.ErrorInfo(
                     error_message=content,
                     compact_error_message=traceback.format_exc(limit=0),
-                    exception_type=exc_return_to_start.__class__.__name__,
+                    exception_type=exc.__class__.__name__,
                     device=None,
                 )
                 self.connector.raise_alarm(
                     severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
                 )
+
                 raise ScanAbortion from exc
-            raise ScanAbortion from exc
-        except DeviceInstructionError as exc_di:
-            content = traceback.format_exc()
-            logger.error(content)
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                info=exc_di.error_info,
-                metadata=self._get_metadata_for_alarm(),
-            )
-
-            raise ScanAbortion from exc_di
-        except Exception as exc:
-            content = traceback.format_exc()
-            logger.error(content)
-            error_info = messages.ErrorInfo(
-                error_message=content,
-                compact_error_message=traceback.format_exc(limit=0),
-                exception_type=exc.__class__.__name__,
-                device=None,
-            )
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
-            )
-
-            raise ScanAbortion from exc
         queue.is_active = False
         queue.status = InstructionQueueStatus.COMPLETED
         self.current_instruction_queue_item = None
