@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v3.89.3 (2026-01-14)
+
+### Bug Fixes
+
+- Assign scan number on start
+  ([`09109f1`](https://github.com/bec-project/bec/commit/09109f1464f055068e1fba121a779d17f5fd9103))
+
+- Support for parallel queues
+  ([`0f007aa`](https://github.com/bec-project/bec/commit/0f007aa15883ff61e3c85f521ecbef93bd76abf5))
+
+- **scan server mock**: Use procmanager mock instead of overriding shutdown
+  ([`963033a`](https://github.com/bec-project/bec/commit/963033a843f6f01ccf4b3e8f7827b34590d105bf))
+
+### Documentation
+
+- Improve docs for skipping queue updates
+  ([`af8896c`](https://github.com/bec-project/bec/commit/af8896cf5de0356182e0ebc67ed209ff9b52e854))
+
+### Refactoring
+
+- **scan bundler**: Remove unused scan queue sub; closes #717
+  ([`b39f56e`](https://github.com/bec-project/bec/commit/b39f56ef2d1063fb286ddbbb130d6fbf1ae8318e))
+
+
 ## v3.89.2 (2026-01-12)
 
 ### Bug Fixes
