@@ -14,6 +14,7 @@ from bec_server.procedures.container_utils import podman_available
 from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
+from bec_server.scan_server.device_locking import DeviceLockManager
 
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
@@ -41,6 +42,7 @@ class ScanServer(BECService):
         use_in_process_proc_worker: bool = False,
     ):
         super().__init__(config, connector_cls, unique_service=True)
+        self.device_locks = DeviceLockManager()
         self._start_scan_manager()
         self._start_device_manager()
         self._start_queue_manager()
