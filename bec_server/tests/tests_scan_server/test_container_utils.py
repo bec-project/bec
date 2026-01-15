@@ -158,16 +158,24 @@ def test_build_args_from_dict():
     ]
 
 
-@patch("bec_server.procedures.container_utils.PodmanCliUtils", MagicMock())
+@patch("bec_server.procedures.container_utils._run_and_capture_error", MagicMock())
 def test_cli_podman_avail():
     assert podman_available()
 
 
 @patch(
-    "bec_server.procedures.container_utils.PodmanCliUtils",
+    "bec_server.procedures.container_utils._run_and_capture_error",
     MagicMock(side_effect=ProcedureWorkerError),
 )
-def test_cli_podman_not_avail():
+def test_cli_podman_not_avail_execution():
+    assert not podman_available()
+
+
+@patch(
+    "bec_server.procedures.container_utils._run_and_capture_error",
+    MagicMock(side_effect=FileNotFoundError),
+)
+def test_cli_podman_not_avail_fnf():
     assert not podman_available()
 
 
