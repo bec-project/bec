@@ -164,14 +164,21 @@ class PodmanCliUtils(_PodmanUtilsBase):
     def _run_and_capture_error(self, *args: str, log: bool = True):
         if log:
             logger.debug(f"Running {args}")
-        output = subprocess.run([*args], capture_output=True)
-        if output.returncode != 0:
+        try:
+            output = subprocess.run([*args], capture_output=True, check=True)
+        except Exception as e:
             raise ProcedureWorkerError(
-                "Container shell command: \n"
-                f"    {args}"
-                "\n failed with output:"
-                f"{output.stderr}"
-            )
+                f"Failed to run container shell command: \n    {args}\nError: {e}"
+            ) from e
+
+        else:
+            if output.returncode != 0:
+                raise ProcedureWorkerError(
+                    "Container shell command: \n"
+                    f"    {args}"
+                    "\n failed with output:"
+                    f"{output.stderr}"
+                )
         return output
 
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
