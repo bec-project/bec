@@ -35,10 +35,23 @@ def get_backend() -> ContainerCommandBackend:
     # return PodmanApiUtils()
 
 
+def _run_and_capture_error(*args: str, log: bool = True):
+    if log:
+        logger.debug(f"Running {args}")
+    output = subprocess.run([*args], capture_output=True)
+    if output.returncode != 0:
+        raise ProcedureWorkerError(
+            "Container shell command: \n" f"    {args}" "\n failed with output:" f"{output.stderr}"
+        )
+    return output
+
+
 def podman_available() -> bool:
     try:
-        PodmanCliUtils()._run_and_capture_error("podman", "version")
+        _run_and_capture_error("podman", "version")
         return True
+    except FileNotFoundError:
+        return False
     except ProcedureWorkerError:
         return False
 
@@ -161,22 +174,9 @@ class PodmanCliOutput(ContainerCommandOutput):
 
 class PodmanCliUtils(_PodmanUtilsBase):
 
-    def _run_and_capture_error(self, *args: str, log: bool = True):
-        if log:
-            logger.debug(f"Running {args}")
-        output = subprocess.run([*args], capture_output=True)
-        if output.returncode != 0:
-            raise ProcedureWorkerError(
-                "Container shell command: \n"
-                f"    {args}"
-                "\n failed with output:"
-                f"{output.stderr}"
-            )
-        return output
-
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
         return json.loads(
-            self._run_and_capture_error(
+            _run_and_capture_error(
                 "podman", subcom, "list", "--all", "--format", "json", log=False
             ).stdout
         )
@@ -186,7 +186,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
     ) -> PodmanCliOutput:
         _buildargs = _multi_args_from_dict("--build-arg", buildargs)
         _containerfile = str(Path(path) / file)
-        output = self._run_and_capture_error(
+        output = _run_and_capture_error(
             "podman", "build", *_buildargs, "-f", _containerfile, "-t", tag, "-v", volume
         )
         return PodmanCliOutput(output.stdout.decode())
@@ -214,7 +214,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
         _pod_arg = ["--pod", pod_name] if pod_name else []
         _name_arg = ["--replace", "--name", container_name] if container_name else []
         return (
-            self._run_and_capture_error(
+            _run_and_capture_error(
                 "podman",
                 "run",
                 *_environment,
@@ -231,13 +231,13 @@ class PodmanCliUtils(_PodmanUtilsBase):
 
     def kill(self, id: str):
         try:
-            self._run_and_capture_error("podman", "kill", id)
+            _run_and_capture_error("podman", "kill", id)
         except ProcedureWorkerError as e:
             logger.error(e)
 
     def logs(self, id: str) -> list[str]:
         try:
-            return self._run_and_capture_error("podman", "logs", id).stderr.decode().splitlines()
+            return _run_and_capture_error("podman", "logs", id).stderr.decode().splitlines()
         except ProcedureWorkerError as e:
             logger.error(e)
             return [f"No logs found for container {id}\n"]
