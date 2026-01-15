@@ -1,10 +1,13 @@
 import threading
+from io import StringIO
 from unittest import mock
 from unittest.mock import ANY
 
 import pytest
-from ophyd import DeviceStatus, Staged
+from loguru import logger
+from ophyd import Device, DeviceStatus, Kind, Staged
 from ophyd.utils import errors as ophyd_errors
+from ophyd_devices import StatusBase
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -43,6 +46,23 @@ def device_server_mock(dm_with_devices):
     device_server.shutdown()
 
 
+@pytest.fixture
+def ophyd_device_mock():
+    dev = Device(name="dev", kind=Kind.normal)
+    yield dev
+
+
+@pytest.fixture
+def device_instruction_message_mock(ophyd_device_mock):
+    instr = messages.DeviceInstructionMessage(
+        device=ophyd_device_mock.name,
+        action="set",
+        parameter={},
+        metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
+    )
+    yield instr
+
+
 def test_start(device_server_mock):
     device_server = device_server_mock
 
@@ -65,6 +85,47 @@ def test_stop(device_server_mock):
     device_server = device_server_mock
     device_server.stop()
     assert device_server.status == BECStatus.IDLE
+
+
+def test_device_server_status_callback(
+    device_server_mock, ophyd_device_mock, device_instruction_message_mock
+):
+    """Test the status callback of the device server with different status objects."""
+    device_server = device_server_mock
+    dev = ophyd_device_mock
+    # Make sure kind is Kind.normal
+    dev._kind = Kind.normal
+    instr = device_instruction_message_mock
+
+    # Status object with obj=None, should use device from obj_ref
+    status_obj_None = StatusBase(obj=None)
+    device_server._add_status_object_info(status_obj_None, instruction=instr, device=dev)
+    with mock.patch.object(device_server, "_read_device") as mock_read_device:
+        device_server.status_callback(status_obj_None)
+        mock_read_device.assert_called_once_with(instr)
+
+    # Status object with obj set
+    status = StatusBase(obj=dev)
+    device_server._add_status_object_info(status, instruction=instr, device=dev)
+    with mock.patch.object(device_server, "_read_device") as mock_read_device:
+        device_server.status_callback(status)
+        mock_read_device.assert_called_once_with(instr)
+
+    # Status object, but missing object_info. This should log an error and likely raises
+    status_no_info = StatusBase()
+    buf = StringIO()
+    sink_id = None
+    try:
+        sink_id = logger.add(buf, level="ERROR")
+        with pytest.raises(Exception):
+            device_server.status_callback(status_no_info)
+        output = buf.getvalue()
+        assert (
+            "has not received the metadata through the `_add_status_object_info` method" in output
+        )
+    finally:
+        if sink_id:
+            logger.remove(sink_id)
 
 
 @pytest.mark.parametrize(
