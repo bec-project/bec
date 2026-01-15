@@ -166,19 +166,17 @@ class PodmanCliUtils(_PodmanUtilsBase):
             logger.debug(f"Running {args}")
         try:
             output = subprocess.run([*args], capture_output=True, check=True)
-        except Exception as e:
+        except FileNotFoundError:
+            raise NoPodman(
+                "Podman is not installed or not found in PATH. "
+                "Please install podman to use container-based procedures."
+            )
+        except subprocess.CalledProcessError as e:
             raise ProcedureWorkerError(
-                f"Failed to run container shell command: \n    {args}\nError: {e}"
+                f"Container shell command: \n    {args}\n failed with output: {e.stderr.decode()}"
             ) from e
-
-        else:
-            if output.returncode != 0:
-                raise ProcedureWorkerError(
-                    "Container shell command: \n"
-                    f"    {args}"
-                    "\n failed with output:"
-                    f"{output.stderr}"
-                )
+        except OSError as e:
+            raise NoPodman(f"Could not execute podman command: {e}") from e
         return output
 
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
