@@ -251,6 +251,7 @@ class RequestBase(ABC):
     required_kwargs = []
     return_to_start_after_abort = False
     use_scan_progress_report = False
+    device_permissions = {"input": [], "static": []}
 
     def __init__(
         self,
@@ -418,6 +419,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     required_kwargs = []
     return_to_start_after_abort = True
     use_scan_progress_report = True
+    device_permissions = {"input": ["device"], "static": []}
 
     # perform pre-move action before the pre_scan trigger is sent
     pre_move = True
@@ -807,6 +809,7 @@ class DeviceRPC(ScanStub):
         "kwargs": ScanArgType.DICT,
     }
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": 1}
+    device_permissions = {"input": ["device"], "static": []}
 
     def update_scan_motors(self):
         pass
@@ -829,6 +832,7 @@ class Move(RequestBase):
     arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
     required_kwargs = ["relative"]
+    device_permissions = {"input": ["device"], "static": []}
 
     def __init__(self, *args, relative=False, **kwargs):
         """
@@ -939,6 +943,7 @@ class Scan(ScanBase):
             "snaked",
         ]
     }
+    device_permissions = {"input": ["device"], "static": []}
 
     def __init__(
         self,
@@ -1017,6 +1022,7 @@ class FermatSpiralScan(ScanBase):
         "Movement Parameters": ["step", "spiral_type", "relative", "optim_trajectory"],
         "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
     }
+    device_permissions = {"input": ["motor1", "motor2"], "static": []}
 
     def __init__(
         self,
@@ -1101,6 +1107,7 @@ class RoundScan(ScanBase):
         "Ring Parameters": ["inner_ring", "outer_ring", "number_of_rings", "pos_in_first_ring"],
         "Scan Parameters": ["relative", "burst_at_each_point"],
     }
+    device_permissions = {"input": ["motor_1", "motor_2"], "static": []}
 
     def __init__(
         self,
@@ -1165,6 +1172,7 @@ class HexagonalScan(ScanBase):
         "Movement Parameters": ["relative", "snaked"],
         "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
     }
+    device_permissions = {"input": ["motor1", "motor2"], "static": []}
 
     def __init__(
         self,
@@ -1273,6 +1281,7 @@ class ContLineScan(ScanBase):
         "Movement Parameters": ["steps", "relative", "offset", "atol"],
         "Acquisition Parameters": ["exp_time", "burst_at_each_point"],
     }
+    device_permissions = {"input": ["device"], "static": []}
 
     def __init__(
         self,
@@ -1467,6 +1476,7 @@ class ContLineFlyScan(AsyncFlyScanBase):
     required_kwargs = []
     use_scan_progress_report = False
     gui_config = {"Device": ["motor", "start", "stop"], "Scan Parameters": ["exp_time", "relative"]}
+    device_permissions = {"input": ["motor"], "static": []}
 
     def __init__(
         self,
@@ -1553,6 +1563,7 @@ class RoundScanFlySim(SyncFlyScanBase):
         "Fly Parameters": ["flyer", "relative"],
         "Ring Parameters": ["inner_ring", "outer_ring", "number_of_rings", "number_pos"],
     }
+    device_permissions = {"input": ["flyer"], "static": []}
 
     def __init__(
         self,
@@ -1641,6 +1652,7 @@ class RoundROIScan(ScanBase):
         "Shell Parameters": ["dr", "nth"],
         "Acquisition Parameters": ["exp_time", "relative", "burst_at_each_point"],
     }
+    device_permissions = {"input": ["motor_1", "motor_2"], "static": []}
 
     def __init__(
         self,
@@ -1700,6 +1712,7 @@ class ListScan(ScanBase):
     required_kwargs = ["relative"]
     arg_input = {"device": ScanArgType.DEVICE, "positions": ScanArgType.LIST}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    device_permissions = {"input": ["device"], "static": []}
 
     def __init__(self, *args, parameter: dict = None, **kwargs):
         """
@@ -1780,6 +1793,7 @@ class MonitorScan(ScanBase):
     required_kwargs = ["relative"]
     scan_type = "fly"
     gui_config = {"Device": ["device", "start", "stop"], "Scan Parameters": ["relative"]}
+    device_permissions = {"input": ["device"], "static": []}
 
     def __init__(
         self,
@@ -1924,6 +1938,7 @@ class LineScan(ScanBase):
         "Movement Parameters": ["steps", "relative"],
         "Acquisition Parameters": ["exp_time", "burst_at_each_point"],
     }
+    device_permissions = {"input": ["device"], "static": []}
 
     def __init__(
         self,

@@ -1415,7 +1415,11 @@ class ACLAccountsMessage(BECMessage):
 
     msg_type: ClassVar[str] = "acl_accounts_message"
     accounts: dict[
-        str, dict[Literal["categories", "keys", "channels", "commands", "profile"], list[str] | str]
+        str,
+        dict[
+            Literal["categories", "keys", "channels", "commands", "profile", "scans", "devices"],
+            list[str] | str,
+        ],
     ]
 
 

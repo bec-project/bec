@@ -443,3 +443,71 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
             in sg.device_manager.connector.send.mock_calls
         )
         assert success_call not in sg.device_manager.connector.send.calls
+
+
+@pytest.mark.parametrize(
+    "msg,valid",
+    [
+        (
+            messages.ScanQueueMessage(
+                scan_type="fermat_scan",
+                parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+                queue="primary",
+                metadata={"user_account": "test_user"},
+            ),
+            True,
+        ),
+        (
+            messages.ScanQueueMessage(
+                scan_type="fermat_scan",
+                parameter={"args": {"samz": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+                queue="primary",
+                metadata={"user_account": "test_user"},
+            ),
+            False,
+        ),
+        (
+            messages.ScanQueueMessage(
+                scan_type="line_scan",
+                parameter={"args": {"samx": (-5, 5)}, "kwargs": {"step": 3, "relative": True}},
+                queue="primary",
+                metadata={"user_account": "test_user"},
+            ),
+            True,
+        ),
+        (
+            messages.ScanQueueMessage(
+                scan_type="line_scan",
+                parameter={
+                    "args": {"samx": (-5, 5), "samy": (-5, 5)},
+                    "kwargs": {"step": 1, "relative": True},
+                },
+                queue="primary",
+                metadata={"user_account": "test_user"},
+            ),
+            True,
+        ),
+        (
+            messages.ScanQueueMessage(
+                scan_type="acquire",
+                parameter={"args": {}, "kwargs": {"exposure_time": 1.0, "num_frames": 10}},
+                queue="primary",
+                metadata={"user_account": "test_user"},
+            ),
+            True,
+        ),
+    ],
+)
+def test_check_device_permissions(scan_guard_mock, msg, valid):
+    sg = scan_guard_mock
+
+    # Mock ACL accounts
+    sg.acl_accounts = messages.ACLAccountsMessage(
+        accounts={"test_user": {"devices": ["samx", "samy"]}, "default": {"devices": []}}
+    )
+
+    if valid:
+        sg._check_device_permissions(msg)
+    else:
+        with pytest.raises(ScanRejection, match="does not have permission to use device"):
+            sg._check_device_permissions(msg)

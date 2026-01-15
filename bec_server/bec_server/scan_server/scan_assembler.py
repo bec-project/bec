@@ -60,6 +60,36 @@ class ScanAssembler:
         scan_cls = self.scan_manager.scan_dict[cls_name]
 
         logger.info(f"Preparing instructions of request of type {scan} / {scan_cls.__name__}")
+        request_inputs = self.get_request_inputs(msg)
+        args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
+        kwargs = msg.content.get("parameter", {}).get("kwargs", {})
+
+        scan_instance = scan_cls(
+            *args,
+            device_manager=self.device_manager,
+            parameter=msg.content.get("parameter"),
+            metadata=msg.metadata,
+            instruction_handler=self.parent.queue_manager.instruction_handler,
+            scan_id=scan_id,
+            request_inputs=request_inputs,
+            **kwargs,
+        )
+        return scan_instance
+
+    def get_request_inputs(
+        self, msg: messages.ScanQueueMessage
+    ) -> dict[str, dict[str, object] | list[object]]:
+        """Get the request inputs from the scan queue message.
+
+        Args:
+            msg (messages.ScanQueueMessage): scan queue message from which to extract the inputs
+        Returns:
+            dict[str, dict[str, object] | list[object]]: dictionary containing 'inputs', 'arg_bundle', and 'kwargs'
+        """
+        scan = msg.content.get("scan_type")
+        cls_name = self.scan_manager.available_scans[scan]["class"]
+        scan_cls = self.scan_manager.scan_dict[cls_name]
+
         args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
         kwargs = msg.content.get("parameter", {}).get("kwargs", {})
 
@@ -101,14 +131,4 @@ class ScanAssembler:
                 if key not in cls_input_args:
                     request_inputs["kwargs"][key] = val
 
-        scan_instance = scan_cls(
-            *args,
-            device_manager=self.device_manager,
-            parameter=msg.content.get("parameter"),
-            metadata=msg.metadata,
-            instruction_handler=self.parent.queue_manager.instruction_handler,
-            scan_id=scan_id,
-            request_inputs=request_inputs,
-            **kwargs,
-        )
-        return scan_instance
+        return request_inputs

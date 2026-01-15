@@ -90,6 +90,7 @@ class ScanManager:
                 "arg_bundle_size": scan_cls.arg_bundle_size,
                 "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
                 "signature": signature_to_dict(scan_cls.__init__),
+                "device_permissions": getattr(scan_cls, "device_permissions", {}),
             }
 
     def validate_gui_config(self, scan_cls) -> dict:

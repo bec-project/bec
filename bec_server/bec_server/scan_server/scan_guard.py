@@ -41,6 +41,7 @@ class ScanGuard:
         self.parent = parent
         self.device_manager = self.parent.device_manager
         self.connector = self.parent.connector
+        self.acl_accounts: messages.ACLAccountsMessage | None = None
 
         self.connector.register(
             MessageEndpoints.scan_queue_request(), cb=self._scan_queue_request_callback, parent=self
@@ -57,10 +58,12 @@ class ScanGuard:
             parent=self,
         )
 
-    def _is_valid_scan_request(self, request) -> ScanStatus:
+    def _is_valid_scan_request(self, request: messages.ScanQueueMessage) -> ScanStatus:
+        self._update_acls()
         try:
             self._check_valid_request(request)
             self._check_valid_scan(request)
+            self._check_device_permissions(request)
             self._check_baton(request)
             self._check_motors_movable(request)
             self._check_soft_limits(request)
@@ -74,17 +77,107 @@ class ScanGuard:
         if request is None:
             raise ScanRejection("Invalid request.")
 
-    def _check_valid_scan(self, request) -> None:
+    def _check_valid_scan(self, request: messages.ScanQueueMessage) -> None:
         avail_scans = self.connector.get(MessageEndpoints.available_scans())
-        scan_type = request.content.get("scan_type")
+        scan_type = request.scan_type
         if scan_type not in avail_scans.resource:
             raise ScanRejection(f"Unknown scan type {scan_type}.")
 
         if scan_type == "device_rpc":
             # ensure that the requested rpc is allowed for this particular device
-            params = request.content.get("parameter")
+            params = request.parameter or {}
             if not self._device_rpc_is_valid(device=params.get("device"), func=params.get("func")):
                 raise ScanRejection(f"Rejected rpc: {request.content}")
+
+    def _check_device_permissions(self, request: messages.ScanQueueMessage) -> None:
+        """
+        Check if the user has permissions to use the devices needed for the scan.
+        The device permissions are defined in the scan class as 'device_permissions' attribute and
+        contain 'input' and 'static' device lists. 'input' devices are fetched from the scan parameters.
+        'static' devices are always required for the scan, e.g. when devices are hardcoded in the scan class.
+
+        Args:
+            request (messages.ScanQueueMessage): The scan request message.
+
+        Raises:
+            ScanRejection: If the scan request uses devices without proper permissions.
+        """
+        if not self.acl_accounts:
+            return
+
+        user_account = request.metadata.get("user_account", "default")
+        user_permissions = self.acl_accounts.accounts.get(user_account, {}).get("devices", [])
+
+        devices_to_check = self._get_devices_from_request(request)
+
+        # Check permissions for all collected devices
+        for device_name in devices_to_check:
+            if device_name not in user_permissions:
+                raise ScanRejection(
+                    f"User '{user_account}' does not have permission to use device '{device_name}'."
+                )
+
+    def _get_devices_from_request(self, request: messages.ScanQueueMessage) -> set[str]:
+        """
+        Extract device names from the scan request parameters that need permission checks.
+        Args:
+            request (messages.ScanQueueMessage): The scan request message.
+        Returns:
+            set[str]: Set of device names extracted from the request.
+        """
+
+        scan_type = request.scan_type
+
+        # For type checking purposes
+        assert self.parent.scan_manager is not None
+        assert self.parent.scan_assembler is not None
+
+        avail_scans = self.parent.scan_manager.available_scans
+        scan_class = avail_scans.get(scan_type)
+        if not scan_class:
+            raise ScanRejection(f"Unknown scan type {scan_type}.")
+
+        device_permissions = scan_class.get("device_permissions", {})
+        if not device_permissions:
+            return set()
+
+        input_devices = device_permissions.get("input", [])
+        static_devices = device_permissions.get("static", [])
+
+        request_inputs = self.parent.scan_assembler.get_request_inputs(request)
+
+        # Collect all device names that need permission checks
+        devices_to_check = set()
+
+        # Add static devices (always required for this scan type)
+        devices_to_check.update(static_devices)
+
+        # Add input devices (extracted from scan parameters)
+        for input_device in input_devices:
+            if input_device in request_inputs.get("inputs", {}):
+                device_value = request_inputs["inputs"][input_device]
+                devices_to_check.add(device_value)
+            if input_device in request_inputs.get("kwargs", {}):
+                device_value = request_inputs["kwargs"][input_device]
+                devices_to_check.add(device_value)
+            if bundles := request_inputs.get("arg_bundle", []):
+                # get the indices of the arg_input corresponding to input devices
+                if scan_class["arg_bundle_size"]["bundle"] <= 0:
+                    continue
+                bundle_size = int(scan_class["arg_bundle_size"]["bundle"])
+                arg_input = scan_class["arg_input"]
+                if input_device in arg_input:
+                    device_index = list(arg_input.keys()).index(input_device)
+                    devices: list = bundles[device_index::bundle_size]  # type: ignore
+                    for device in devices:
+                        if not isinstance(device, str):
+                            continue
+                        devices_to_check.add(device)
+
+        return devices_to_check
+
+    def _update_acls(self) -> None:
+        self.acl_accounts = self.connector.get(MessageEndpoints.acl_accounts())
 
     def _device_rpc_is_valid(self, device: str, func: str) -> bool:
         # pylint: disable=unused-argument

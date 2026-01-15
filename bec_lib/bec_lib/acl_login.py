@@ -252,7 +252,6 @@ class BECAccess:
         Returns:
             bool: True if the login was successful, False otherwise.
         """
-
         if isinstance(acl_config, str):
             if os.path.exists(acl_config) and not prompt_for_acl:
                 # Load the account information from the .env file
@@ -264,7 +263,7 @@ class BECAccess:
                 if self._check_redis_auth(user, password):
                     return True
         elif isinstance(acl_config, dict):
-            username = acl_config.get("username")
+            username = acl_config.get("user") or acl_config.get("username")
             password = acl_config.get("password")
             if self._check_redis_auth(username, password):
                 return True

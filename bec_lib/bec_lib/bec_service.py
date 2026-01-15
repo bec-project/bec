@@ -104,7 +104,7 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
     config_file = args.config
     cli_args = vars(args)
     user = cli_args.pop("user")
-    acl_config = {"username": user} if user else {}
+    acl_config = {"user": user} if user else {}
     redis_url = args.bec_server
 
     if redis_url and config_file:
@@ -164,7 +164,9 @@ class BECService:
             connector_cls(self.bootstrap_server) if connector is None else connector
         )
         self.acl = BECAccess(self.connector)
-        self.acl._bec_service_login(prompt_for_acl, self._service_config.config.get("acl"))
+        self.acl._bec_service_login(
+            prompt_for_acl, self._service_config.config.get("acl", {}).get("env_file")
+        )
 
         self._unique_service = unique_service
         self.wait_for_server = wait_for_server
