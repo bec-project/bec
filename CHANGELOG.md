@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.89.5 (2026-01-15)
+
+### Bug Fixes
+
+- **device-server**: Protect against 'obj'=None in status_callback
+  ([`e3cbfc9`](https://github.com/bec-project/bec/commit/e3cbfc9005be1b9fd7da1cf459ed4fa2f5cf2f42))
+
+
 ## v3.89.4 (2026-01-15)
 
 ### Bug Fixes
