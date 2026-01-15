@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.89.4 (2026-01-15)
+
+### Bug Fixes
+
+- Don't allow podman utils instantiation without podman
+  ([`825fc9c`](https://github.com/bec-project/bec/commit/825fc9cdda8d964ec4f30095ced4024126338ec3))
+
+- Podman availability check
+  ([`b530d9a`](https://github.com/bec-project/bec/commit/b530d9acbada9dfe5eccc4e8e941251d0729b036))
+
+
 ## v3.89.3 (2026-01-14)
 
 ### Bug Fixes
