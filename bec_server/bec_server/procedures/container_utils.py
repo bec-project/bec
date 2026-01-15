@@ -57,6 +57,9 @@ def podman_available() -> bool:
 
 
 class _PodmanUtilsBase(ContainerCommandBackend):
+    def __init__(self) -> None:
+        if not podman_available():
+            raise NoPodman()
 
     def build_requirements_image(self):  # pragma: no cover
         """Build the procedure worker requirements image"""
@@ -93,6 +96,7 @@ class PodmanApiUtils(_PodmanUtilsBase):
     # for libpod API specs
 
     def __init__(self, uri: str = PROCEDURE.CONTAINER.PODMAN_URI):
+        super().__init__()
         self.uri = uri
         self._container: Container | None = None
 
