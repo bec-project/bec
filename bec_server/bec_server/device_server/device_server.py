@@ -684,12 +684,13 @@ class DeviceServer(BECService):
 
     def status_callback(self, status):
         pipe = self.connector.pipeline()
+        obj = None
         if hasattr(status, "device"):
             obj = status.device
         elif hasattr(status, "obj"):
             obj = status.obj
-        else:
-            obj = status.__dict__["obj_ref"]
+        if obj is None:
+            obj = status.__dict__.get("obj_ref", None)
 
         # if we've started a subscription, we need to unsubscribe now
         # this is typically the case for operations on nested devices.
@@ -698,6 +699,11 @@ class DeviceServer(BECService):
         if getattr(status, "sub_id", None):
             obj.unsubscribe(status.sub_id)
 
+        if obj is None:
+            logger.error(
+                f"Could not find device object for status: {status}."
+                f"The status object has not received the metadata through the `_add_status_object_info` method properly."
+            )
         device_name = (
             ".".join([obj.root.name, obj.dotted_name]) if obj.dotted_name else obj.root.name
         )
