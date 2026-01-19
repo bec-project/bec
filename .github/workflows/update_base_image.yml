@@ -26,7 +26,7 @@ jobs:
           image: bec_linux_base
           tags: ${{ github.sha }} latest
           containerfiles: |
-            ./bec_server/bec_server/scan_server/procedures/Containerfile.bec_linux_base
+            ./bec_server/bec_server/procedures/Containerfile.bec_linux_base
           archs: amd64, aarch64
 
       - name: Push to registry
