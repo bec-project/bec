@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 

@@ -26,11 +26,11 @@ from bec_lib.utils import scan_to_csv
 from bec_lib.utils.import_utils import lazy_import
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.client import BECClient
 else:
     # TODO: put back normal import when Pydantic gets faster
-    messages = lazy_import("bec_lib.messages")
+    messages = lazy_import("bec_messages.messages")
 
 logger = bec_logger.logger
 

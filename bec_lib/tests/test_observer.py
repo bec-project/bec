@@ -5,7 +5,7 @@ import pytest
 from typeguard import TypeCheckError
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.observer import Observer, ObserverManager
 

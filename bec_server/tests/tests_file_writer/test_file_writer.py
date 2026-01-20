@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from test_file_writer_manager import file_writer_manager_mock
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_server import file_writer
 from bec_server.file_writer import HDF5FileWriter
 from bec_server.file_writer.file_writer import HDF5Storage

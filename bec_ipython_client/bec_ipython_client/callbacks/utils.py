@@ -10,7 +10,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.request_items import RequestItem
 
 if TYPE_CHECKING:
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.client import BECClient
 
 logger = bec_logger.logger

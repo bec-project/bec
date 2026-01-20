@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.callback_handler import EventType
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints

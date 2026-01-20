@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.acl_login import BECAccess, BECAuthenticationError
 from bec_lib.utils.user_acls_test import BECAccessDemo
 

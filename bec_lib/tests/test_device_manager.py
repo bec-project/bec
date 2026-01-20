@@ -9,7 +9,7 @@ import pytest
 import typeguard
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.connector import MessageObject
 from bec_lib.devicemanager import DeviceConfigError

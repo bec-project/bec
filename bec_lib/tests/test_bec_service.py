@@ -9,11 +9,11 @@ import pytest
 import yaml
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.bec_service import BECService, parse_cmdline_args
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECStatus
+from bec_messages.messages import BECStatus
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import DEFAULT_BASE_PATH, ServiceConfig
 

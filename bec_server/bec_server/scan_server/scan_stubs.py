@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Generator, Literal
 import numpy as np
 from typeguard import typechecked
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 

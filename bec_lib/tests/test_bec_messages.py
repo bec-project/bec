@@ -2,8 +2,8 @@ import numpy as np
 import pydantic
 import pytest
 
-from bec_lib import messages
-from bec_lib.serialization import MsgpackSerialization
+from bec_messages import messages
+from bec_messages.serialization import MsgpackSerialization
 
 
 @pytest.mark.parametrize("version", [1.0, 1.1, 1.2, None])

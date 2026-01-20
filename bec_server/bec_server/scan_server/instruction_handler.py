@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable
 from bec_lib.endpoints import MessageEndpoints
 
 if TYPE_CHECKING:
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.redis_connector import RedisConnector
 
 

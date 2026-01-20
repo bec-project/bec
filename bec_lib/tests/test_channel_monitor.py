@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.channel_monitor import channel_callback, channel_monitor_launch, log_callback
 from bec_lib.redis_connector import MessageObject
 

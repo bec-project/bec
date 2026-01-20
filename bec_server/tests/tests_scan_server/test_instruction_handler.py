@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.instruction_handler import InstructionHandler
 

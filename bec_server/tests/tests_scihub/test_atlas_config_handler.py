@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.device import DeviceBaseWithConfig, OnFailure, ReadoutPriority
 from bec_lib.devicemanager import CancelledError

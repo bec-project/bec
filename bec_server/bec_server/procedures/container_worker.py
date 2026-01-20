@@ -5,11 +5,11 @@ from contextlib import redirect_stdout
 from typing import AnyStr, TextIO
 
 from bec_ipython_client.main import BECIPythonClient
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import LogLevel, bec_logger
-from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus, RawMessage
+from bec_messages.messages import ProcedureExecutionMessage, ProcedureWorkerStatus, RawMessage
 from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig

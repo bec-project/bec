@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Literal
 
 from typeguard import typechecked
 
-from bec_lib import messages  # typechecking doesn't work with lazy_import
+from bec_messages import messages  # typechecking doesn't work with lazy_import
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.queue_items import QueueStorage

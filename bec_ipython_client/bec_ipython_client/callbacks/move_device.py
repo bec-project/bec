@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from bec_ipython_client.progressbar import DeviceProgressBar
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 

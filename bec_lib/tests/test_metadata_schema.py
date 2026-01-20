@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from bec_lib import metadata_schema
-from bec_lib.messages import ScanQueueMessage
+from bec_messages.messages import ScanQueueMessage
 from bec_lib.metadata_schema import BasicScanMetadata
 from bec_lib.scans import Scans
 

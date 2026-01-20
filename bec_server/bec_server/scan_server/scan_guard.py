@@ -4,7 +4,7 @@ import traceback
 import uuid
 from typing import TYPE_CHECKING
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.scan_queue import ScanQueueStatus

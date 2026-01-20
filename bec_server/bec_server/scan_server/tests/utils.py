@@ -1,4 +1,4 @@
-from bec_lib.messages import BECStatus
+from bec_messages.messages import BECStatus
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.client import BECClient
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase

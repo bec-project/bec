@@ -1,7 +1,7 @@
 from unittest import mock
 
 from bec_ipython_client.callbacks.device_progress import LiveUpdatesDeviceProgress
-from bec_lib import messages
+from bec_messages import messages
 
 
 def test_update_progressbar_continues_without_device_data():

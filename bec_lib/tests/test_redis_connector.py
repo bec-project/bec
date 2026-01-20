@@ -3,11 +3,11 @@ from unittest import mock
 
 import pytest
 
-import bec_lib.messages as bec_messages
-from bec_lib import messages
+import bec_messages.messages as bec_messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import EndpointInfo, EndpointType, MessageEndpoints, MessageOp
-from bec_lib.messages import (
+from bec_messages.messages import (
     AlarmMessage,
     BECMessage,
     BECStatus,
@@ -22,7 +22,7 @@ from bec_lib.redis_connector import (
     WrongArguments,
     validate_endpoint,
 )
-from bec_lib.serialization import MsgpackSerialization
+from bec_messages.serialization import MsgpackSerialization
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -369,7 +369,7 @@ def test_send_raises_on_invalid_message_type(connector):
     with pytest.raises(TypeError) as excinfo:
         msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={}, metadata={})
         connector.set_and_publish(MessageEndpoints.device_read("samx"), msg)
-    assert "Message type <class 'bec_lib.messages.ScanMessage'> is not compatible " in str(
+    assert "Message type <class 'bec_messages.messages.ScanMessage'> is not compatible " in str(
         excinfo.value
     )
 

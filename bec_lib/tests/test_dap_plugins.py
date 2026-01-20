@@ -3,7 +3,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.dap_plugin_objects import DAPPluginObject, LmfitService1D
 from bec_lib.dap_plugins import DAPPlugins
 from bec_lib.device import DeviceBase

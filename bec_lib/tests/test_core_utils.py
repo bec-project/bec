@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.live_scan_data import LiveScanData
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_report import ScanReport

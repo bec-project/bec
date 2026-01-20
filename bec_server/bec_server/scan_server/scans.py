@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase

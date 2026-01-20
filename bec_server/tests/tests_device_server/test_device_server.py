@@ -9,10 +9,10 @@ from ophyd import Device, DeviceStatus, Kind, Staged
 from ophyd.utils import errors as ophyd_errors
 from ophyd_devices import StatusBase
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import BECStatus
+from bec_messages.messages import BECStatus
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError

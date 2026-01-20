@@ -9,7 +9,8 @@ from collections import defaultdict
 
 import h5py
 
-from bec_lib import messages, plugin_helper
+from bec_messages import messages
+from bec_lib import plugin_helper
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 

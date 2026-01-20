@@ -20,7 +20,8 @@ from ophyd.signal import EpicsSignalBase
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 from typeguard import typechecked
 
-from bec_lib import messages, plugin_helper
+from bec_messages import messages
+from bec_lib import plugin_helper
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
 from bec_lib.device import DeviceBaseWithConfig

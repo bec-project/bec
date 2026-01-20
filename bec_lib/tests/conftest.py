@@ -4,7 +4,8 @@ import fakeredis
 import h5py
 import pytest
 
-from bec_lib import bec_logger, messages
+from bec_lib import bec_logger
+from bec_messages import messages
 from bec_lib.client import BECClient
 from bec_lib.redis_connector import RedisConnector
 

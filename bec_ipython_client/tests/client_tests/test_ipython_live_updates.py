@@ -3,7 +3,7 @@ from unittest import mock
 import pytest
 
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.queue_items import QueueItem
 
 

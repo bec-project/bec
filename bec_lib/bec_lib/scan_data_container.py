@@ -22,7 +22,7 @@ from prettytable import PrettyTable
 from bec_lib.logger import bec_logger
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
+    from bec_messages import messages
 
 logger = bec_logger.logger
 

@@ -6,7 +6,10 @@ from bec_lib import plugin_helper
 
 @pytest.mark.parametrize(
     "class_spec, out_name",
-    [("bec_lib.messages.BECMessage", "BECMessage"), ("bec_lib.messages.BECStatus", "BECStatus")],
+    [
+        ("bec_messages.messages.BECMessage", "BECMessage"),
+        ("bec_messages.messages.BECStatus", "BECStatus"),
+    ],
 )
 def test_get_plugin_class(class_spec, out_name):
     cls = plugin_helper.get_plugin_class(class_spec, [bec_lib])

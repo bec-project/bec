@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
 

@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scans import FermatSpiralScan, LineScan, RequestBase
 

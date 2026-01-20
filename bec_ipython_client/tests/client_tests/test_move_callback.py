@@ -8,7 +8,7 @@ from bec_ipython_client.callbacks.move_device import (
     LiveUpdatesReadbackProgressbar,
     ReadbackDataHandler,
 )
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 
 

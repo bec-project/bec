@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bec_ipython_client.main import BECIPythonClient
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.procedures.constants import _CONTAINER, _WORKER

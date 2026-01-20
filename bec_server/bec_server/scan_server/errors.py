@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from bec_lib.messages import ErrorInfo
+    from bec_messages.messages import ErrorInfo
 
 
 class ScanAbortion(Exception):

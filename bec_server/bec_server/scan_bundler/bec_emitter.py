@@ -5,7 +5,7 @@ import time
 from queue import Queue
 from typing import TYPE_CHECKING
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 

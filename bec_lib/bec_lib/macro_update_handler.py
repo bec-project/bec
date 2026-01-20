@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
 
 import slugify
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.callback_handler import EventType
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger

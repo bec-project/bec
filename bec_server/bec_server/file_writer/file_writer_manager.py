@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.callback_handler import CallbackHandler, EventType

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import yaml
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.devicemanager import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints

@@ -34,13 +34,13 @@ from bec_lib.device import (
 )
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AvailableResourceMessage, DeviceConfigMessage
+from bec_messages.messages import AvailableResourceMessage, DeviceConfigMessage
 from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.rpc_utils import rgetattr
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.bec_service import BECService
-    from bec_lib.messages import (
+    from bec_messages.messages import (
         BECStatus,
         DeviceInfoMessage,
         ScanStatusMessage,
@@ -49,7 +49,7 @@ if TYPE_CHECKING:  # pragma: no cover
 else:
     # TODO: put back normal import when Pydantic gets faster
     BECStatus, ServiceResponseMessage = lazy_import_from(
-        "bec_lib.messages", ("BECStatus", "ServiceResponseMessage")
+        "bec_messages.messages", ("BECStatus", "ServiceResponseMessage")
     )
 
 BECSignals = Literal[

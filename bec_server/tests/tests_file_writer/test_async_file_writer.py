@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.file_writer.async_writer import AsyncWriter
 

@@ -7,7 +7,7 @@ import traceback
 from string import Template
 from typing import TYPE_CHECKING, Literal
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components

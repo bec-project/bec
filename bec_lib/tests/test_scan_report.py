@@ -2,7 +2,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.bec_errors import ScanAbortion
 from bec_lib.scan_report import ScanReport
 

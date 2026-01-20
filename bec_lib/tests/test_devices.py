@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 from typeguard import TypeCheckError
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.client import BECClient
 from bec_lib.config_helper import ConfigHelper
 from bec_lib.device import (

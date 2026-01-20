@@ -3,7 +3,7 @@ from unittest import mock
 
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.errors import DeviceMessageError

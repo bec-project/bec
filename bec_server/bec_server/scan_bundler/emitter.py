@@ -1,4 +1,4 @@
-from bec_lib import messages
+from bec_messages import messages
 
 
 class EmitterBase:

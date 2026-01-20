@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.bec_errors import DeviceConfigError, ServiceConfigError
 from bec_lib.config_helper import ConfigHelper
 from bec_lib.service_config import ServiceConfigModel

@@ -39,18 +39,18 @@ from bec_lib.utils.import_utils import lazy_import_from
 logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib.messages import BECStatus, ServiceRequestMessage, VariableMessage
+    from bec_messages.messages import BECStatus, ServiceRequestMessage, VariableMessage
     from bec_lib.redis_connector import RedisConnector
     from bec_lib.scan_manager import ScanManager
     from bec_lib.scans import Scans
 else:
     # TODO: put back normal import when Pydantic gets faster
-    VariableMessage = lazy_import_from("bec_lib.messages", ("VariableMessage",))
-    BECStatus = lazy_import_from("bec_lib.messages", ("BECStatus",))
+    VariableMessage = lazy_import_from("bec_messages.messages", ("VariableMessage",))
+    BECStatus = lazy_import_from("bec_messages.messages", ("BECStatus",))
     RedisConnector = lazy_import_from("bec_lib.redis_connector", ("RedisConnector",))
     ScanManager = lazy_import_from("bec_lib.scan_manager", ("ScanManager",))
     Scans = lazy_import_from("bec_lib.scans", ("Scans",))
-    ServiceRequestMessage = lazy_import_from("bec_lib.messages", ("ServiceRequestMessage",))
+    ServiceRequestMessage = lazy_import_from("bec_messages.messages", ("ServiceRequestMessage",))
 
 
 class SystemConfig(BaseModel):

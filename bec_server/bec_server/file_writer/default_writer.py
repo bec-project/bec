@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.devicemanager import DeviceManagerBase
     from bec_server.file_writer.file_writer import HDF5Storage
 

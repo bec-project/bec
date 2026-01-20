@@ -12,14 +12,14 @@ import ophyd
 from ophyd import Kind, OphydObject, Staged, StatusBase
 from ophyd.utils import errors as ophyd_errors
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.device import OnFailure
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECStatus
-from bec_lib.serialization import json_ext
+from bec_messages.messages import BECStatus
+from bec_messages.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 from bec_server.device_server.rpc_handler import RPCHandler

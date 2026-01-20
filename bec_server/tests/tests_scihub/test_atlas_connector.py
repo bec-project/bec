@@ -1,6 +1,6 @@
 from unittest import mock
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 

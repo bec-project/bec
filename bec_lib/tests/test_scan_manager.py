@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 from typeguard import TypeCheckError
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 from bec_lib.scan_manager import ScanManager

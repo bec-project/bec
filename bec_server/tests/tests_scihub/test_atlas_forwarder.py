@@ -2,8 +2,8 @@ import time
 
 import pytest
 
-from bec_lib import messages
-from bec_lib.serialization import json_ext as json
+from bec_messages import messages
+from bec_messages.serialization import json_ext as json
 
 
 @pytest.fixture

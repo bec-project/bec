@@ -4,7 +4,7 @@ from functools import partial
 
 from bec_ipython_client.main import BECIPythonClient
 from bec_lib.client import BECClient
-from bec_lib.messages import ProcedureExecutionMessage
+from bec_messages.messages import ProcedureExecutionMessage
 from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_server.procedures.procedure_registry import (
     callable_from_execution_message,

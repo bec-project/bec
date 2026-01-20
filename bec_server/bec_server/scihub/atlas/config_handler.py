@@ -7,7 +7,7 @@ import traceback
 import uuid
 from typing import TYPE_CHECKING, Tuple, TypedDict
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.atlas_models import Device, DevicePartial
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.config_helper import CONF

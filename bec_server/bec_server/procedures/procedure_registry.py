@@ -1,7 +1,7 @@
 import inspect
 from typing import Iterable
 
-from bec_lib.messages import ProcedureExecutionMessage
+from bec_messages.messages import ProcedureExecutionMessage
 from bec_server.procedures.builtin_procedures import (
     log_message_args_kwargs,
     run_macro,

@@ -14,7 +14,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.scan_items import ScanItem
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.client import BECClient
     from bec_lib.queue_items import QueueItem
     from bec_lib.request_items import RequestItem

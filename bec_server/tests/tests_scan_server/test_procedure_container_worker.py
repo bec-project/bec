@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from bec_lib.messages import ProcedureWorkerStatus, ProcedureWorkerStatusMessage
+from bec_messages.messages import ProcedureWorkerStatus, ProcedureWorkerStatusMessage
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PodmanContainerStates
 from bec_server.procedures.container_worker import ContainerProcedureWorker, ContainerWorkerEnv

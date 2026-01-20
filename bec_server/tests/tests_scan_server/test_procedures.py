@@ -11,7 +11,7 @@ import pytest
 
 from bec_lib.client import BECClient, RedisConnector
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import (
+from bec_messages.messages import (
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
     ProcedureWorkerStatus,
@@ -19,7 +19,7 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState
-from bec_lib.serialization import MsgpackSerialization
+from bec_messages.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
 from bec_server.procedures.builtin_procedures import run_macro
 from bec_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists

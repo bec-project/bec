@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 import bec_lib
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.service_config import ServiceConfig
 from bec_server.device_server.device_server import DeviceServer

@@ -23,11 +23,11 @@ from bec_lib.utils.import_utils import lazy_import
 if TYPE_CHECKING:  # pragma: no cover
     import lmfit
 
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.client import BECClient
 else:
     lmfit = lazy_import("lmfit")
-    messages = lazy_import("bec_lib.messages")
+    messages = lazy_import("bec_messages.messages")
 
 
 class DAPPluginObjectBase:

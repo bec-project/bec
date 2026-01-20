@@ -1,6 +1,6 @@
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import AlarmBase, Alarms
 
 

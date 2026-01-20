@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from ophyd_devices.devices.psi_motor import EpicsMotor
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 

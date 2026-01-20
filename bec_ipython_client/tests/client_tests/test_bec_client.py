@@ -6,7 +6,7 @@ import IPython
 import pytest
 
 from bec_ipython_client import BECIPythonClient, main
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import AlarmBase, AlarmHandler, Alarms
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig

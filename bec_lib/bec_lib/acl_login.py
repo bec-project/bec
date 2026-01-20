@@ -16,9 +16,9 @@ from bec_lib.redis_connector import RedisConnector
 from bec_lib.utils.import_utils import lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib.messages import LoginInfoMessage
+    from bec_messages.messages import LoginInfoMessage
 else:
-    LoginInfoMessage = lazy_import_from("bec_lib.messages", "LoginInfoMessage")
+    LoginInfoMessage = lazy_import_from("bec_messages.messages", "LoginInfoMessage")
 
 
 logger = bec_logger.logger

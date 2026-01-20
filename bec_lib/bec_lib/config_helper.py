@@ -29,18 +29,22 @@ from bec_lib.bec_yaml_loader import yaml_load
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import DeviceConfigWriter
 from bec_lib.logger import bec_logger
-from bec_lib.messages import ConfigAction
+from bec_messages.messages import ConfigAction
 from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.json import ExtendedEncoder
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.devicemanager import DeviceManagerBase
-    from bec_lib.messages import DeviceConfigMessage, RequestResponseMessage, ServiceResponseMessage
+    from bec_messages.messages import (
+        DeviceConfigMessage,
+        RequestResponseMessage,
+        ServiceResponseMessage,
+    )
     from bec_lib.redis_connector import RedisConnector
 
 else:
     # TODO: put back normal import when Pydantic gets faster
-    DeviceConfigMessage = lazy_import_from("bec_lib.messages", ("DeviceConfigMessage",))
+    DeviceConfigMessage = lazy_import_from("bec_messages.messages", ("DeviceConfigMessage",))
 
 logger = bec_logger.logger
 

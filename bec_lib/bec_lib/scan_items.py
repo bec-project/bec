@@ -20,7 +20,7 @@ from bec_lib.utils import threadlocked
 logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.scan_manager import ScanManager
 
     try:

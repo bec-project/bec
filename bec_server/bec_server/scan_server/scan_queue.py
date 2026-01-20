@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Deque, Literal
 from rich.console import Console
 from rich.table import Table
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger

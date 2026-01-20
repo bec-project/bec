@@ -29,13 +29,13 @@ from bec_lib.service_config import ServiceConfig
 from bec_lib.utils.import_utils import lazy_import, lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
-    from bec_lib.messages import BECStatus
+    from bec_messages import messages
+    from bec_messages.messages import BECStatus
     from bec_lib.redis_connector import RedisConnector
 else:
     # TODO: put back normal imports when Pydantic gets faster
-    messages = lazy_import("bec_lib.messages")
-    BECStatus = lazy_import_from("bec_lib.messages", ("BECStatus",))
+    messages = lazy_import("bec_messages.messages")
+    BECStatus = lazy_import_from("bec_messages.messages", ("BECStatus",))
 
 logger = bec_logger.logger
 

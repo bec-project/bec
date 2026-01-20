@@ -1,6 +1,6 @@
 from unittest import mock
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.service_config import ServiceConfigModel
 from bec_server.scihub.scilog import SciLogConnector

@@ -15,7 +15,7 @@ from ophyd_devices.utils.bec_signals import BECMessageSignal
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.logger import bec_logger
-from bec_lib.numpy_encoder import numpy_encode
+from bec_messages.numpy_encoder import numpy_encode
 from bec_lib.signature_serializer import signature_to_dict
 
 logger = bec_logger.logger

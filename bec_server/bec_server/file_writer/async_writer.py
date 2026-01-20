@@ -12,11 +12,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import h5py
 import numpy as np
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.serialization import MsgpackSerialization
+from bec_messages.serialization import MsgpackSerialization
 
 logger = bec_logger.logger
 

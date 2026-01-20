@@ -13,7 +13,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.scan_data_container import ScanDataContainer
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
+    from bec_messages import messages
     from bec_lib.client import BECClient
 
 

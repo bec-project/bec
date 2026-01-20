@@ -7,7 +7,7 @@ import yaml
 import bec_lib
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECStatus
+from bec_messages.messages import BECStatus
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.scan_bundler import ScanBundler

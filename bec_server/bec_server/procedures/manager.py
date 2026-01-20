@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import (
+from bec_messages.messages import (
     AvailableResourceMessage,
     BECMessage,
     ProcedureAbortMessage,

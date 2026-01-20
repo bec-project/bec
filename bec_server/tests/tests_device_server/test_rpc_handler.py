@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 from ophyd import Device, DeviceStatus, Kind, Signal, Staged, StatusBase
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.device_server import DeviceServer, RequestHandler
@@ -97,7 +97,7 @@ def test_execute_rpc_call_not_serializable(rpc_cls: RPCHandler):
         parameter={"func": "trigger"},
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
-    with mock.patch("bec_lib.messages.uuid.uuid4", return_value="uuid"):
+    with mock.patch("bec_messages.messages.uuid.uuid4", return_value="uuid"):
         out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
         assert out is None
         error_info = messages.ErrorInfo(

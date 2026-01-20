@@ -1,6 +1,6 @@
 import pytest
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.live_scan_data import LiveScanData
 
 

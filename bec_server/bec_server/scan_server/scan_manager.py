@@ -8,7 +8,7 @@ from bec_lib import plugin_helper
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AvailableResourceMessage
+from bec_messages.messages import AvailableResourceMessage
 from bec_lib.signature_serializer import signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
 

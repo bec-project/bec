@@ -13,7 +13,7 @@ import traceback
 from itertools import takewhile
 from typing import TYPE_CHECKING, Literal
 
-# TODO: Importing bec_lib, instead of `from bec_lib.messages import LogMessage`, avoids potential
+# TODO: Importing bec_lib, instead of `from bec_messages.messages import LogMessage`, avoids potential
 # logger <-> messages circular import. But there could be a better solution.
 import bec_lib
 from bec_lib.bec_errors import ServiceConfigError
@@ -212,7 +212,7 @@ class BECLogger:
             self.connector.xadd(
                 topic=MessageEndpoints.log(),
                 msg_dict={
-                    "data": bec_lib.messages.LogMessage(
+                    "data": bec_messages.messages.LogMessage(
                         log_type=msg["record"]["level"]["name"].lower(), log_msg=msg
                     )
                 },

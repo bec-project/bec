@@ -6,14 +6,14 @@ from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo
 from bec_lib.endpoints import MessageEndpoints as ME
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECMessage
-from bec_lib.messages import ProcedureAbortMessage as AbrtMsg
-from bec_lib.messages import ProcedureClearUnhandledMessage as ClrMsg
-from bec_lib.messages import ProcedureExecutionMessage as ExecMsg
-from bec_lib.messages import ProcedureQNotifMessage as QNotifMsg
-from bec_lib.messages import ProcedureRequestMessage as ReqMsg
-from bec_lib.messages import ProcedureStatusUpdate as StatUpd
-from bec_lib.messages import RequestResponseMessage as RespMsg
+from bec_messages.messages import BECMessage
+from bec_messages.messages import ProcedureAbortMessage as AbrtMsg
+from bec_messages.messages import ProcedureClearUnhandledMessage as ClrMsg
+from bec_messages.messages import ProcedureExecutionMessage as ExecMsg
+from bec_messages.messages import ProcedureQNotifMessage as QNotifMsg
+from bec_messages.messages import ProcedureRequestMessage as ReqMsg
+from bec_messages.messages import ProcedureStatusUpdate as StatUpd
+from bec_messages.messages import RequestResponseMessage as RespMsg
 from bec_lib.redis_connector import RedisConnector
 
 logger = bec_logger.logger

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from ophyd import OphydObject
 from ophyd_devices.utils import bec_signals as bms
 
-from bec_lib import messages
+from bec_messages import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector

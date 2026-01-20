@@ -16,7 +16,7 @@ from bec_lib.file_utils import (
     compile_file_components,
     get_full_path,
 )
-from bec_lib.messages import ScanStatusMessage
+from bec_messages.messages import ScanStatusMessage
 from bec_lib.tests.utils import ConnectorMock
 
 
