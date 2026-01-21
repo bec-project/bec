@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -183,7 +184,7 @@ class BECService:
         self._start_update_service_info()
         self._start_metrics_emitter()
         self._wait_for_server()
-        self._version = None
+        self._versions: dict[str, str] | None = None
         if self.connector.can_connect():
             self.connector.set_retry_enabled(True)
 
@@ -254,20 +255,6 @@ class BECService:
         msgs = [self.connector.get(MessageEndpoints.metrics(service)) for service in services]
         self._services_metric = {msg.content["name"]: msg for msg in msgs if msg is not None}
 
-    def _get_version_number(self):
-        if self._version:
-            return self._version
-
-        bec_lib_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-        if os.path.exists(os.path.join(bec_lib_path, "pyproject.toml")):
-            with open(os.path.join(bec_lib_path, "pyproject.toml"), "rb") as f:
-                pyproject = tomli.load(f)
-                self._version = pyproject["project"]["version"]
-                return self._version
-        self._version = importlib_version("bec-lib")
-        return self._version
-
     def _update_service_info(self):
         while not self._service_info_event.wait(timeout=3):
             try:
@@ -278,18 +265,12 @@ class BECService:
                 pass
 
     def _send_service_status(self):
-        version = self._get_version_number()
         self.connector.set_and_publish(
             topic=MessageEndpoints.service_status(self._service_id),
             msg=messages.StatusMessage(
                 name=self._service_name,
                 status=self.status,
-                info={
-                    "user": self._user,
-                    "hostname": self._hostname,
-                    "timestamp": time.time(),
-                    "version": version,
-                },
+                info=messages.ServiceInfo(user=self._user, hostname=self._hostname),
             ),
             expire=6,
         )

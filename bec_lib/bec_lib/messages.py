@@ -6,6 +6,8 @@ import uuid
 import warnings
 from copy import deepcopy
 from enum import Enum, auto
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as importlib_version
 from typing import Any, ClassVar, Literal, Self
 from uuid import uuid4
 
@@ -959,6 +961,41 @@ class AlarmMessage(BECMessage):
     info: ErrorInfo
 
 
+class ServiceVersions(BaseModel):
+    _versions: ClassVar[Self | None] = None
+
+    bec_lib: str
+    bec_server: str
+    bec_ipython_client: str
+    bec_widgets: str
+
+    @classmethod
+    def _get_version_numbers(cls):
+        if cls._versions:
+            return cls._versions
+
+        def _get_safe_version(package: str) -> str:
+            try:
+                return importlib_version(package)
+            except PackageNotFoundError:
+                return "Not found"
+
+        cls._versions = cls.model_validate(
+            {
+                pkg: _get_safe_version(pkg)
+                for pkg in ["bec_lib", "bec_server", "bec_ipython_client", "bec_widgets"]
+            }
+        )
+        return cls._versions
+
+
+class ServiceInfo(BaseModel):
+    user: str
+    hostname: str
+    timestamp: float = Field(default_factory=time.time)
+    versions: ServiceVersions = Field(default_factory=ServiceVersions._get_version_numbers)
+
+
 class StatusMessage(BECMessage):
     """Status message
 
@@ -973,7 +1010,7 @@ class StatusMessage(BECMessage):
     msg_type: ClassVar[str] = "status_message"
     name: str
     status: BECStatus
-    info: dict
+    info: ServiceInfo | dict
 
 
 class FileMessage(BECMessage):
