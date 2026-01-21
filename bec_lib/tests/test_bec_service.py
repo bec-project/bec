@@ -13,7 +13,7 @@ from bec_lib import messages
 from bec_lib.bec_service import BECService, parse_cmdline_args
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECStatus
+from bec_lib.messages import BECStatus, ServiceInfo
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import DEFAULT_BASE_PATH, ServiceConfig
 
@@ -115,9 +115,10 @@ def test_bec_service_update_existing_services():
         MessageEndpoints.service_status("service1").endpoint.encode(),
         MessageEndpoints.service_status("service2").endpoint.encode(),
     ]
+    info = ServiceInfo(user="test", hostname="localhost")
     service_msgs = [
-        messages.StatusMessage(name="service1", status=BECStatus.RUNNING, info={}, metadata={}),
-        messages.StatusMessage(name="service2", status=BECStatus.IDLE, info={}, metadata={}),
+        messages.StatusMessage(name="service1", status=BECStatus.RUNNING, info=info, metadata={}),
+        messages.StatusMessage(name="service2", status=BECStatus.IDLE, info=info, metadata={}),
     ]
     service_metric_msgs = [
         messages.ServiceMetricMessage(name="service1", metrics={}),
@@ -144,8 +145,9 @@ def test_bec_service_update_existing_services_ignores_wrong_msgs():
         MessageEndpoints.service_status("service1").endpoint.encode(),
         MessageEndpoints.service_status("service2").endpoint.encode(),
     ]
+    info = ServiceInfo(user="test", hostname="localhost")
     service_msgs = [
-        messages.StatusMessage(name="service1", status=BECStatus.RUNNING, info={}, metadata={}),
+        messages.StatusMessage(name="service1", status=BECStatus.RUNNING, info=info, metadata={}),
         None,
     ]
     connector = mock.MagicMock(spec=RedisConnector)
@@ -519,11 +521,12 @@ def test_wait_for_server_keyboard_interrupt():
 def test_wait_for_service():
     """Test that wait_for_service waits for the specified service to reach the specified status"""
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
+    info = ServiceInfo(user="test", hostname="localhost")
     service_status = [
-        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.IDLE, info={})},
+        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.IDLE, info=info)},
         {
             "ScanServer": messages.StatusMessage(
-                name="ScanServer", status=BECStatus.RUNNING, info={}
+                name="ScanServer", status=BECStatus.RUNNING, info=info
             )
         },
     ]
@@ -544,9 +547,10 @@ def test_wait_for_service():
 def test_wait_for_service_busy():
     """Test that wait_for_service waits for the specified service to reach the specified status"""
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
+    info = ServiceInfo(user="test", hostname="localhost")
     service_status = [
-        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.IDLE, info={})},
-        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.BUSY, info={})},
+        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.IDLE, info=info)},
+        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.BUSY, info=info)},
     ]
 
     with mock.patch.object(
@@ -565,11 +569,12 @@ def test_wait_for_service_busy():
 def test_wait_for_service_default():
     """Test that wait_for_service waits for the specified service to reach the specified status"""
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
+    info = ServiceInfo(user="test", hostname="localhost")
     service_status = [
-        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.IDLE, info={})},
+        {"ScanServer": messages.StatusMessage(name="ScanServer", status=BECStatus.IDLE, info=info)},
         {
             "ScanServer": messages.StatusMessage(
-                name="ScanServer", status=BECStatus.RUNNING, info={}
+                name="ScanServer", status=BECStatus.RUNNING, info=info
             )
         },
     ]
