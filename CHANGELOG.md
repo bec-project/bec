@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.90.0 (2026-01-21)
+
+### Bug Fixes
+
+- Path to linux base containerfile
+  ([`f38ec29`](https://github.com/bec-project/bec/commit/f38ec291db071a98c7a3d1d89c24a0de86f3d1df))
+
+### Features
+
+- Push package versions with service info
+  ([`ed00f53`](https://github.com/bec-project/bec/commit/ed00f5311261da3f81736870a4968115e2c7d40f))
+
+
 ## v3.89.5 (2026-01-15)
 
 ### Bug Fixes
