@@ -429,15 +429,13 @@ def test_DeviceInstructionMessage():
 
 def test_DeviceMonitor2DMessage():
     # Test 2D data
-    msg = messages.DeviceMonitor2DMessage(
-        device="eiger", data=np.random.rand(2, 100), metadata=None
-    )
+    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(2, 100))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
     assert res_loaded.metadata == {}
     # Test rgb image, i.e. image with 3 channels
-    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(3, 3), metadata=None)
+    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(3, 3))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
@@ -454,7 +452,7 @@ def test_DeviceMonitor2DMessage():
 
 def test_DeviceMonitor1DMessage():
     # Test 2D data
-    msg = messages.DeviceMonitor1DMessage(device="eiger", data=np.random.rand(100), metadata=None)
+    msg = messages.DeviceMonitor1DMessage(device="eiger", data=np.random.rand(100))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
