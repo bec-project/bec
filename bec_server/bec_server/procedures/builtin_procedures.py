@@ -16,7 +16,7 @@ def log_message_args_kwargs(*args, **kwargs):
 
 
 def sleep(*, time_s: float):
-    """Sleep for time_s seconds. Intended for testing."""
+    """Sleep for time_s seconds. Intended for testing, or for adding a pause between elements in a queue."""
     logger.success(f"Sleeping for {time_s} s.")
     time.sleep(time_s)
 
@@ -42,7 +42,9 @@ def run_script(script_id: str, *, bec: BECClient):
 
 
 def run_macro(macro_name: str, params: tuple[tuple, dict] | None = None, *, bec: BECClient):
-    """Run the given macro. Must be a macro automatically loaded from the plugin repository, for security reasons."""
+    """Run the given macro. Must be a macro automatically loaded from the plugin repository, for security reasons.
+    For a nicer interface from the BEC console, the `bec.proc.run_macro` helper can be used, which passes on arguments
+    in a more natural fashion."""
     if params is None:
         params = ((), {})
     if (macro := builtins.__dict__.get("_user_macros", {}).get(macro_name)) is not None:

@@ -39,7 +39,7 @@ from bec_server.procedures.worker_base import ProcedureWorker
 # pylint: disable=redefined-outer-name
 
 
-LOG_MSG_PROC_NAME = "log execution message args"
+LOG_MSG_PROC_NAME = "_log_msg_args"
 FAKEREDIS_HOST = "127.0.0.1"
 FAKEREDIS_PORT = 6380
 
@@ -270,7 +270,7 @@ def test_builtin_procedure_log_args(_, procedure_logger: MagicMock):
     with ShortLifetimeWorker("localhost:1", "primary", 1) as worker:
         worker._run_task(
             ProcedureExecutionMessage(
-                identifier="log execution message args",
+                identifier="_log_msg_args",
                 queue="primary",
                 args_kwargs=((test_string,), {"kwarg": "test"}),
                 execution_id="1234",
