@@ -107,7 +107,7 @@ def test_happy_path_container_procedure_runner(
     conn = client.connector
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
-        identifier="log execution message args", args_kwargs=(test_args, test_kwargs)
+        identifier="_log_msg_args", args_kwargs=(test_args, test_kwargs)
     )
     conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
 

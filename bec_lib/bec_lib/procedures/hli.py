@@ -18,8 +18,11 @@ Available procedures and their signatures:
 """
         )
 
-        for name, sig in self._helper.get.available_procedures().items():
-            print(f"'{name}':\n    {sig}\n")
+        for name, (sig, doc) in self._helper.get.available_procedures().items():
+            if not name.startswith("_"):
+                print(f"'{name}':\n    {sig}")
+                if doc:
+                    print(f'    """{doc}"""\n\n')
 
     def request_new(
         self,

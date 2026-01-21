@@ -12,7 +12,7 @@ from bec_server.procedures.builtin_procedures import (
 from bec_server.procedures.constants import BecProcedure
 
 _BUILTIN_PROCEDURES: dict[str, BecProcedure] = {
-    "log execution message args": log_message_args_kwargs,
+    "_log_msg_args": log_message_args_kwargs,
     "run scan": run_scan,
     "sleep": sleep,
     "run_script": run_script,
@@ -45,11 +45,12 @@ def callable_from_execution_message(msg: ProcedureExecutionMessage) -> BecProced
     return callable_from_name(msg.identifier)
 
 
-def get_info(name: str):
-    params = dict(inspect.signature(callable_from_name(name)).parameters)
+def get_info(name: str) -> tuple[str, str | None]:
+    proc_callable = callable_from_name(name)
+    params = dict(inspect.signature(proc_callable).parameters)
     params.pop("bec", None)
     args = ", ".join(map(str, params.values()))
-    return f"({args})"
+    return (f"({args})", proc_callable.__doc__)
 
 
 def is_registered(identifier: str) -> bool:
