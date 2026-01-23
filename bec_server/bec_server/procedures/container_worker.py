@@ -36,7 +36,9 @@ class RedisOutputDiverter(TextIO):
 
     def write(self, data: AnyStr):
         if data:
-            self._conn.xadd(self._ep, {"data": RawMessage(data=str(data))})
+            self._conn.xadd(
+                self._ep, {"data": RawMessage(data=str(data))}, max_size=10000, expire=3600
+            )
         return len(data)
 
     def flush(self): ...

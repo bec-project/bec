@@ -153,6 +153,8 @@ class LmfitService1D(DAPServiceBase):
                     msg_dict={
                         "data": messages.ProcessedDataMessage(data=stream_output, metadata=metadata)
                     },
+                    max_size=100,
+                    expire=60,
                 )
             if event.is_set():
                 break

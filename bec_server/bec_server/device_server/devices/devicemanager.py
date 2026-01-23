@@ -724,6 +724,7 @@ class DeviceManagerDS(DeviceManagerBase):
                 MessageEndpoints.device_monitor_2d(name),
                 stream_msg,
                 max_size=min(100, int(max_size // dsize)),
+                expire=3600,
             )
 
     def _obj_callback_device_monitor_1d(
@@ -762,6 +763,7 @@ class DeviceManagerDS(DeviceManagerBase):
                 MessageEndpoints.device_monitor_1d(name),
                 stream_msg,
                 max_size=min(100, int(max_size // dsize)),
+                expire=3600,
             )
 
     def _obj_callback_acq_done(self, *_args, **kwargs):
