@@ -115,6 +115,7 @@ class BECMessageHandler:
             MessageEndpoints.device_preview(device=obj.root.name, signal=message.signal),
             stream_msg,
             max_size=min(100, int(max_size // dsize)),
+            expire=3600,
         )
 
     def _handle_async_signal(self, obj: bms.AsyncSignal, message: messages.BECMessage):

@@ -202,6 +202,7 @@ def test_obj_device_monitor_2d_callback(dm_with_devices, value):
             MessageEndpoints.device_monitor_2d(eiger.name),
             stream_msg,
             max_size=min(100, int(max_size // value_size)),
+            expire=3600,
         )
 
 
@@ -327,6 +328,7 @@ def test_device_manager_ds_obj_callback_preview(dm_with_devices, value):
                 MessageEndpoints.device_preview(device="bec_signals_device", signal="preview"),
                 {"data": value},
                 max_size=100,  # Assuming a default max size
+                expire=3600,
             )
 
 

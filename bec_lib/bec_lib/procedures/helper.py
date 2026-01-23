@@ -174,7 +174,7 @@ class _Request(_HelperBase):
         super().__init__(conn, monitor_responses)
 
     def _xadd(self, ep: EndpointInfo, msg: BECMessage):
-        self._conn.xadd(ep, msg.model_dump())
+        self._conn.xadd(ep, msg.model_dump(), max_size=1000, expire=3600)
 
     def procedure(
         self,
