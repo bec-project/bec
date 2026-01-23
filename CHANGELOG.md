@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.90.1 (2026-01-23)
+
+### Bug Fixes
+
+- **service**: Fix service message info type
+  ([`cf15ed3`](https://github.com/bec-project/bec/commit/cf15ed3dff140b82619cf7c04945cc215fc01abf))
+
+
 ## v3.90.0 (2026-01-21)
 
 ### Bug Fixes
