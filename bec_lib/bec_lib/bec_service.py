@@ -220,10 +220,11 @@ class BECService:
         try:
             for service_name, msg in self._services_info.items():
                 if service_name == self.__class__.__name__:
+                    info: messages.ServiceInfo = msg.content["info"]
                     raise RuntimeError(
                         f"Another instance of {self.__class__.__name__} launched by user"
-                        f" {msg.content['info']['user']} is already running on"
-                        f" {msg.content['info']['hostname']}"
+                        f" {info.user} is already running on"
+                        f" {info.hostname}"
                     )
             return False
         except RuntimeError as service_error:
