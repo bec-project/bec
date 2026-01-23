@@ -1002,7 +1002,7 @@ class StatusMessage(BECMessage):
     Args:
         name (str): Name of the status.
         status (BECStatus): Value of the BECStatus enum (RUNNING = 2,  BUSY = 1, IDLE = 0, ERROR = -1).
-        info (dict): Status info.
+        info (ServiceInfo | dict): Status info.
         metadata (dict, optional): Additional metadata.
 
     """
