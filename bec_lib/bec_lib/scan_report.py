@@ -115,14 +115,14 @@ class ScanReport:
         return False
 
     def wait(
-        self, timeout: float | None = None, num_points: bool = False, file_written: bool = False
+        self, timeout: float | None = None, num_points: bool = False, file_written: bool = True
     ) -> ScanReport:
         """
         Wait for the request to complete
 
         Args:
             num_points (bool, optional): if True, wait for the number of points to be reached. Defaults to False.
-            file_written (bool, optional): if True, wait for the master file to be written. Defaults to False.
+            file_written (bool, optional): if True, wait for the master file to be written. Defaults to True.
             timeout (float, optional): timeout in seconds. Defaults to None.
 
         Raises:
