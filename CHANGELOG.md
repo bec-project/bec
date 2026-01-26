@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.90.3 (2026-01-26)
+
+### Bug Fixes
+
+- **alarm_handler**: Fix alarm handler for compact messages with traceback info
+  ([`c80e02d`](https://github.com/bec-project/bec/commit/c80e02d3636ae5986af8af045825dd76d8e410e8))
+
+
 ## v3.90.2 (2026-01-26)
 
 ### Bug Fixes
