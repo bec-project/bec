@@ -12,8 +12,8 @@ from bec_lib.scan_number_container import ScanNumberContainer
 from bec_lib.service_config import ServiceConfig
 from bec_server.procedures.container_utils import podman_available
 from bec_server.procedures.container_worker import ContainerProcedureWorker
-from bec_server.procedures.in_process_worker import InProcessProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
+from bec_server.procedures.multiprocess_worker import SubProcessWorker
 
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
@@ -81,7 +81,7 @@ class ScanServer(BECService):
 
     def _start_procedure_manager(self, use_in_process_proc_worker: bool = False):
         procedure_worker = (
-            InProcessProcedureWorker
+            SubProcessWorker
             if (use_in_process_proc_worker or not podman_available())
             else ContainerProcedureWorker
         )

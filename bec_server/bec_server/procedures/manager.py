@@ -65,7 +65,9 @@ class ProcedureManager:
             worker_type (type[ProcedureWorker]): which kind of worker to use."""
         self.lock = RLock()
 
-        logger.success("Initialising procedure manager...")
+        logger.success(
+            f"Initialising procedure manager, using worker type '{worker_type.__name__}'..."
+        )
 
         self._logs = deque([], maxlen=1000)
         self._conn = RedisConnector([redis])
