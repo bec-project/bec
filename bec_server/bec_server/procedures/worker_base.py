@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from threading import Event
-from typing import cast
+from typing import Generic, TypeVar, cast
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -18,6 +19,8 @@ class ProcedureWorker(ABC):
     """Base class for a worker which automatically dies when there is nothing in the queue for TIMEOUT s.
     Implement _setup_execution_environment(), _kill_process(), and _run_task() to create a functional worker.
     """
+
+    worker_pool_type: type[ThreadPoolExecutor | ProcessPoolExecutor]
 
     def __init__(self, server: str, queue: str, lifetime_s: float | None = None):
         """Start a worker to run procedures on the queue identified by `queue`. Should be used as a
@@ -64,6 +67,10 @@ class ProcedureWorker(ABC):
 
     @abstractmethod
     def _setup_execution_environment(self): ...
+
+    @staticmethod
+    @abstractmethod
+    def setup_pool() -> ProcessPoolExecutor | ThreadPoolExecutor: ...
 
     def logs(self) -> list[str]:
         return [""]

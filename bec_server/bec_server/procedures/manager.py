@@ -5,7 +5,7 @@ from collections import deque
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypedDict, TypeVar
 
 from pydantic import ValidationError
 
@@ -74,13 +74,11 @@ class ProcedureManager:
 
         self._active_workers: dict[str, ProcedureWorkerEntry] = {}
         self._messages_by_ids: dict[str, ProcedureExecutionMessage] = {}
-        self.executor = ThreadPoolExecutor(
-            max_workers=PROCEDURE.WORKER.MAX_WORKERS, thread_name_prefix="user_procedure_"
-        )
+        self._worker_cls = worker_type
+        self.executor = worker_type.setup_pool()
         atexit.register(self.executor.shutdown)
 
         self._callbacks: dict[str, list[Callable[[ProcedureWorker], Any]]] = {}
-        self._worker_cls = worker_type
         self._reply_endpoint = MessageEndpoints.procedure_request_response()
         self._server = f"{self._conn.host}:{self._conn.port}"
 

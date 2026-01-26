@@ -1,11 +1,13 @@
 import inspect
 import traceback
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 
 from bec_ipython_client.main import BECIPythonClient
 from bec_lib.client import BECClient
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_lib.procedures.helper import BackendProcedureHelper
+from bec_server.procedures.constants import PROCEDURE
 from bec_server.procedures.procedure_registry import (
     callable_from_execution_message,
     check_builtin_procedure,
@@ -17,6 +19,8 @@ class InProcessProcedureWorker(ProcedureWorker):
     """A simple in-process procedure worker. Be careful with this, it should only run trusted code.
     Intended for built-in procedures like those to run a single scan, or testing."""
 
+    worker_pool_type = ProcessPoolExecutor
+
     def _setup_execution_environment(self):
         from bec_lib.logger import bec_logger
 
@@ -25,6 +29,10 @@ class InProcessProcedureWorker(ProcedureWorker):
         self.bec_client = BECIPythonClient()
         self.bec_client.start()
         self._helper = BackendProcedureHelper(self._conn)
+
+    @staticmethod
+    def setup_pool():
+        return ProcessPoolExecutor(max_workers=PROCEDURE.WORKER.MAX_WORKERS)
 
     def _run_task(self, item: ProcedureExecutionMessage):
         if not isinstance(item, ProcedureExecutionMessage):
