@@ -27,6 +27,16 @@ from bec_lib.alarm_handler import AlarmBase, Alarms
             ),
             metadata={"metadata": "metadata2"},
         ),
+        messages.AlarmMessage(
+            severity=Alarms.MAJOR,
+            info=messages.ErrorInfo(
+                error_message='Traceback (most recent call last):\n  File "<stdin>", line 1, in <module>\nException: Test traceback',
+                compact_error_message='Traceback (most recent call last):\n  File "<stdin>", line 1, in <module>\nException: Test traceback',
+                exception_type="NoCompactAlarmType",
+                device="DeviceX",
+            ),
+            metadata={"metadata": "metadata3"},
+        ),
     ],
 )
 def test_alarm_base_printing(msg):

@@ -9,7 +9,7 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
@@ -67,17 +67,21 @@ class AlarmBase(Exception):
             text.append(f" | Device {self.alarm.info.device}\n", style="bold")
         text.append("\n")
 
+        renderables = []
         # Format message inside a syntax box if it looks like traceback
         if "Traceback (most recent call last):" in msg:
-            body = Syntax(msg.strip(), "python", word_wrap=True)
+            renderables.append(Syntax(msg.strip(), "python", word_wrap=True))
         else:
-            body = Text(msg.strip())
+            renderables.append(Text(msg.strip()))
 
         if self.alarm.info.device:
-            body.append(
-                f"\n\nThe error is likely unrelated to BEC. Please check the device '{self.alarm.info.device}'.",
-                style="bold",
+            renderables.append(
+                Text(
+                    f"\n\nThe error is likely unrelated to BEC. Please check the device '{self.alarm.info.device}'.",
+                    style="bold",
+                )
             )
+        body = Group(*renderables)
 
         console.print(Panel(body, title=text, border_style="red", expand=True))
 
