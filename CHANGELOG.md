@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.90.2 (2026-01-26)
+
+### Bug Fixes
+
+- Add max_size and expire parameters to message publishing
+  ([`ff4f483`](https://github.com/bec-project/bec/commit/ff4f483b24efedacfbe90935856e04e5d864ea92))
+
+### Code Style
+
+- Better proc printing
+  ([`e603926`](https://github.com/bec-project/bec/commit/e6039263f4c4845c2de721a8ccf3d1e07567706b))
+
+
 ## v3.90.1 (2026-01-23)
 
 ### Bug Fixes
