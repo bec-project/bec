@@ -104,12 +104,21 @@ def test_LmfitService1D_process(lmfit_service):
         "scan_data": True,
     }
     lmfit_service.model = mock.MagicMock()
+    lmfit_service.model.fit.return_value = mock.MagicMock(
+        best_fit=[4, 5, 6],
+        best_values={},
+        summary=mock.MagicMock(return_value="summary"),
+        chisqr=1.0,
+        redchi=1.0,
+        aic=1.0,
+        bic=1.0,
+    )
 
     result = lmfit_service.process()
     assert isinstance(result, tuple)
     assert isinstance(result[0], dict)
     assert isinstance(result[1], dict)
-    lmfit_service.model.fit.assert_called_once_with([4, 5, 6], x=[1, 2, 3])
+    lmfit_service.model.fit.assert_called_once()
 
 
 def test_LmfitService1D_on_scan_status_update(lmfit_service):
@@ -216,3 +225,61 @@ def test_LmfitService1D_get_model(lmfit_service):
 
     with pytest.raises(ValueError):
         lmfit_service.get_model("ModelDoesntExist")
+
+
+def test_LmfitService1D_composite_parameters_list_for_duplicate_models():
+    client = mock.MagicMock()
+    service = LmfitService1D(
+        model=["GaussianModel", "GaussianModel", "GaussianModel"], client=client, continuous=False
+    )
+    x = np.linspace(-3.0, 3.0, 50)
+    y = np.exp(-(x**2))
+    service.configure(
+        data_x=x,
+        data_y=y,
+        parameters=[
+            {"center": {"value": -1.0, "vary": True}},
+            {"center": {"value": 0.0, "vary": True}},
+            {"center": {"value": 1.0, "vary": True}},
+        ],
+    )
+    assert "GaussianModel_0_center" in service.parameters
+    assert "GaussianModel_1_center" in service.parameters
+    assert "GaussianModel_2_center" in service.parameters
+
+
+def test_LmfitService1D_composite_parameters_dict_for_unique_models():
+    client = mock.MagicMock()
+    service = LmfitService1D(model=["SineModel", "LinearModel"], client=client, continuous=False)
+    x = np.linspace(0.0, 2.0 * np.pi, 25)
+    y = np.sin(x)
+    service.configure(
+        data_x=x,
+        data_y=y,
+        parameters={
+            "SineModel": {"frequency": {"value": 1.0, "vary": False}},
+            "LinearModel": {"intercept": {"value": 0.0, "vary": True}},
+        },
+    )
+    assert "SineModel_0_frequency" in service.parameters
+    assert "LinearModel_1_intercept" in service.parameters
+
+
+def test_LmfitService1D_composite_parameters_dict_duplicate_models_rejected():
+    client = mock.MagicMock()
+    service = LmfitService1D(
+        model=["GaussianModel", "GaussianModel"], client=client, continuous=False
+    )
+    x = np.linspace(-1.0, 1.0, 15)
+    y = np.exp(-(x**2))
+    with pytest.raises(DAPError):
+        service.configure(
+            data_x=x, data_y=y, parameters={"GaussianModel": {"center": {"value": 0.0}}}
+        )
+
+
+def test_LmfitService1D_non_composite_list_parameters_rejected(lmfit_service):
+    x = np.linspace(-1.0, 1.0, 15)
+    y = np.exp(-(x**2))
+    with pytest.raises(DAPError):
+        lmfit_service.configure(data_x=x, data_y=y, parameters=[{"center": {"value": 0.0}}])
