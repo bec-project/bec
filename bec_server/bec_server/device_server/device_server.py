@@ -505,9 +505,6 @@ class DeviceServer(BECService):
             )
 
             logger.error(content)
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm(msg)
-            )
         except Exception as exc:  # pylint: disable=broad-except
             content = traceback.format_exc()
             compact_msg = traceback.format_exc(limit=0)
@@ -521,11 +518,6 @@ class DeviceServer(BECService):
                 self.rpc_handler._send_rpc_exception(exc, instructions)
             else:
                 logger.error(content)
-                self.connector.raise_alarm(
-                    severity=Alarms.MAJOR,
-                    info=error_info,
-                    metadata=self._get_metadata_for_alarm(msg),
-                )
             self.requests_handler.set_finished(
                 instructions.metadata["device_instr_id"], success=False, error_info=error_info
             )
