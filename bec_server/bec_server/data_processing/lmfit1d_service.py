@@ -417,7 +417,23 @@ class LmfitService1D(DAPServiceBase):
             if self.parameters:
                 result = self.model.fit(y, x=x, params=self.parameters)
             else:
-                result = self.model.fit(y, x=x)
+                guess_fn = getattr(self.model, "guess", None)
+                guessed_params = None
+                if callable(guess_fn):
+                    try:
+                        guessed_params = guess_fn(y, x=x)
+                        logger.debug(
+                            f"Using lmfit guess params for model={model_name}: {list(guessed_params.keys())}"
+                        )
+                    except Exception as guess_exc:
+                        logger.debug(
+                            f"lmfit guess failed for model={model_name}: {guess_exc}"
+                        )
+                        guessed_params = None
+                if guessed_params is not None:
+                    result = self.model.fit(y, x=x, params=guessed_params)
+                else:
+                    result = self.model.fit(y, x=x)
         except Exception as exc:  # pylint: disable=broad-except
             if self.parameters is not None:
                 try:
