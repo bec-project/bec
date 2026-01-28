@@ -631,7 +631,7 @@ class DeviceRPCMessage(BECMessage):
     msg_type: ClassVar[str] = "device_rpc_message"
     device: str
     return_val: Any
-    out: str | dict
+    out: str | dict | ErrorInfo
     success: bool = Field(default=True)
 
 

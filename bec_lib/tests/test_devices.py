@@ -289,11 +289,9 @@ def test_handle_rpc_response_raises(dev: Any):
     msg = messages.DeviceRPCMessage(
         device="samx",
         return_val={"type": "status", "RID": "request_id"},
-        out={
-            "msg": "Didn't work...",
-            "traceback": "Traceback (most recent call last):",
-            "error": "error",
-        },
+        out=messages.ErrorInfo(
+            exception_type="RPCError", error_message="An error occurred", compact_error_message=None
+        ),
         success=False,
     )
     with pytest.raises(RPCError):
