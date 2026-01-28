@@ -143,13 +143,23 @@ def test_execute_rpc_call_list_from_stage(rpc_cls: RPCHandler):
 
 
 def test_send_rpc_exception(rpc_cls: RPCHandler, instr: messages.DeviceInstructionMessage):
-    rpc_cls.send_rpc_exception(Exception(), instr)
+    with mock.patch.object(
+        rpc_cls.device_server, "get_device_from_exception", return_value="device"
+    ):
+        rpc_cls.send_rpc_exception(Exception(), instr)
+    error_info = rpc_cls.connector.set.call_args[0][1].out
     rpc_cls.connector.set.assert_called_once_with(
         MessageEndpoints.device_rpc("rpc_id"),
         messages.DeviceRPCMessage(
             device="device",
             return_val=None,
-            out={"error": "Exception", "msg": (), "traceback": "NoneType: None\n"},
+            out=messages.ErrorInfo(
+                id=error_info.id,
+                error_message=error_info.error_message,
+                compact_error_message=error_info.compact_error_message,
+                exception_type="Exception",
+                device="device",
+            ),
             success=False,
         ),
     )

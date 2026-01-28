@@ -126,28 +126,24 @@ class RPCHandler:
             instr(messages.DeviceInstructionMessage): RPC instruction
         """
         error_traceback = traceback.format_exc()
-        exc_formatted = {
-            "error": exc.__class__.__name__,
-            "msg": exc.args,
-            "traceback": error_traceback,
-        }
-        logger.info(f"Received exception: {exc_formatted}, {exc}")
+        error_info = messages.ErrorInfo(
+            error_message=error_traceback,
+            compact_error_message=traceback.format_exc(limit=0),
+            exception_type=exc.__class__.__name__,
+            device=self.device_server.get_device_from_exception(exc),
+        )
+        logger.info(f"Received exception: {error_info}, {exc}")
         instr_params = instr.parameter
         self.connector.set(
             MessageEndpoints.device_rpc(instr_params.get("rpc_id")),
             messages.DeviceRPCMessage(
-                device=instr.content["device"], return_val=None, out=exc_formatted, success=False
+                device=instr.content["device"], return_val=None, out=error_info, success=False
             ),
         )
         diid = instr.metadata.get("device_instr_id", "")
         request = self.requests_handler.get_request(diid)
         if request and not request.get("status_objects"):
-            error_info = messages.ErrorInfo(
-                error_message=error_traceback,
-                compact_error_message=traceback.format_exc(limit=0),
-                exception_type=exc.__class__.__name__,
-                device=self.device_server.get_device_from_exception(exc),
-            )
+
             self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
     ##################################################

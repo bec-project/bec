@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
 
+from bec_lib.alarm_handler import AlarmBase, Alarms
 from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -40,8 +41,36 @@ logger = bec_logger.logger
 _MAX_RECURSION_DEPTH = 100
 
 
-class RPCError(Exception):
+class RPCError(AlarmBase):
     """Exception raised when an RPC call fails."""
+
+    def __init__(
+        self, msg: messages.DeviceRPCMessage | messages.DeviceReqStatusMessage | str
+    ) -> None:
+        if isinstance(msg, messages.DeviceRPCMessage):
+            if isinstance(msg.out, dict):
+                msg.out = messages.ErrorInfo(**msg.out)
+            alarm = messages.AlarmMessage(severity=Alarms.MAJOR, info=msg.out)
+        elif isinstance(msg, messages.DeviceReqStatusMessage):
+            alarm = messages.AlarmMessage(
+                severity=Alarms.MAJOR,
+                info=messages.ErrorInfo(
+                    exception_type="RPCError",
+                    error_message=f"Device request failure: {msg}",
+                    compact_error_message=f"Device request for device {msg.device} resolved unsuccessfully.",
+                    device=msg.device,
+                ),
+            )
+        else:
+            alarm = messages.AlarmMessage(
+                severity=Alarms.MAJOR,
+                info=messages.ErrorInfo(
+                    exception_type="RPCError",
+                    error_message=str(msg),
+                    compact_error_message=str(msg),
+                ),
+            )
+        super().__init__(alarm, Alarms.MAJOR, handled=False)
 
 
 class ScanRequestError(Exception):
@@ -147,7 +176,7 @@ class Status:
             return
 
         if self._request_status is not None and not self._request_status.success:
-            raise RPCError(f"RPC call failed: {self._request_status}")
+            raise RPCError(self._request_status)
 
 
 class _PermissiveDeviceModel(_DeviceModelCore):
@@ -290,10 +319,7 @@ class DeviceBase:
             error = msg.content["out"]
             if not isinstance(error, dict):
                 error = {"error": "Exception", "msg": error, "traceback": ""}
-            raise RPCError(
-                f"During an RPC, the following error occured:\n{error['error']}:"
-                f" {error['msg']}.\nTraceback: {error['traceback']}\n The request will be aborted."
-            )
+            raise RPCError(msg)
         if msg.content.get("out"):
             print(msg.content.get("out"))
         return_val = msg.content.get("return_val")
