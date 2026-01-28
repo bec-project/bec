@@ -1169,6 +1169,7 @@ class RedisConnector:
         max_size=None,
         pipe: Pipeline | None = None,
         expire: int | None = None,
+        approximate=True,
     ):
         """
         add to stream
@@ -1179,6 +1180,7 @@ class RedisConnector:
             max_size (int, optional): max size of stream. Defaults to None.
             pipe (Pipeline, optional): redis pipe. Defaults to None.
             expire (int, optional): expire time. Defaults to None.
+            approximate (bool, optional): use approximate max size. Only used if max_size is set. Defaults to True.
 
         Examples:
             >>> redis.xadd("test", {"test": "test"})
@@ -1194,7 +1196,7 @@ class RedisConnector:
         msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
 
         if max_size:
-            client.xadd(topic, msg_dict, maxlen=max_size)
+            client.xadd(topic, msg_dict, maxlen=max_size, approximate=approximate)
         else:
             client.xadd(topic, msg_dict)
         if expire:

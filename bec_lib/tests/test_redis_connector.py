@@ -323,7 +323,14 @@ def test_redis_connector_xread(connector):
 def test_redis_connector_xadd_with_maxlen(connector):
     connector.xadd("topic1", {"key": "value"}, max_size=100)
     connector._redis_conn.xadd.assert_called_once_with(
-        "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100
+        "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100, approximate=True
+    )
+
+
+def test_redis_connector_xadd_with_maxlen_and_approximate(connector):
+    connector.xadd("topic1", {"key": "value"}, max_size=100, approximate=False)
+    connector._redis_conn.xadd.assert_called_once_with(
+        "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100, approximate=False
     )
 
 
