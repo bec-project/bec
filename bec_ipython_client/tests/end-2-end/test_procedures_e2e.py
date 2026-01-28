@@ -117,15 +117,15 @@ def test_happy_path_container_procedure_runner(
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")
     assert logtool.is_present_in_any_message(
-        "ContainerWorker started container for queue primary"
+        "Procedure worker started container for queue primary"
     ), f"Log content relating to procedures: {manager._logs}"
 
     res, msg = logtool.are_present_in_order(
         [
-            "Container worker 'primary' status update: IDLE",
-            "Container worker 'primary' status update: RUNNING",
-            "Container worker 'primary' status update: IDLE",
-            "Container worker 'primary' status update: FINISHED",
+            "Procedure worker 'primary' status update: IDLE",
+            "Procedure worker 'primary' status update: RUNNING",
+            "Procedure worker 'primary' status update: IDLE",
+            "Procedure worker 'primary' status update: FINISHED",
         ]
     )
     assert res, f"failed on {msg}"

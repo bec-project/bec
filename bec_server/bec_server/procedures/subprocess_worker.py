@@ -5,11 +5,9 @@ import time
 from signal import SIGINT
 
 from bec_lib.logger import bec_logger
-from bec_server.procedures.oop_worker_base import OutOfProcessWorkerBase, main
+from bec_server.procedures.oop_worker_base import PROCESS_TIMEOUT, OutOfProcessWorkerBase, main
 
 logger = bec_logger.logger
-
-PROCESS_TIMEOUT = 3
 
 
 class SubProcessWorker(OutOfProcessWorkerBase):

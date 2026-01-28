@@ -10,10 +10,9 @@ import pytest
 from bec_lib.messages import ProcedureWorkerStatus, ProcedureWorkerStatusMessage
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PodmanContainerStates
-from bec_server.procedures.container_worker import ContainerProcedureWorker, ContainerWorkerEnv
-from bec_server.procedures.container_worker import main as container_worker_main
+from bec_server.procedures.container_worker import ContainerProcedureWorker
+from bec_server.procedures.oop_worker_base import main as container_worker_main
 from bec_server.procedures.protocol import ContainerCommandBackend
-from bec_server.procedures.worker_base import ProcedureWorker
 
 
 @patch(
@@ -36,7 +35,7 @@ def test_container_worker_init(redis_mock):
     "bec_server.procedures.container_worker.get_backend",
     MagicMock(return_value=MagicMock(spec=ContainerCommandBackend)),
 )
-@patch("bec_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.oop_worker_base.logger")
 @patch("bec_server.procedures.worker_base.RedisConnector")
 def test_container_worker_work(redis_mock, logger_mock):
     redis_mock().host = "server"
@@ -95,14 +94,14 @@ def test_container_worker_work(redis_mock, logger_mock):
     cleanup()
 
 
-@patch("bec_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.oop_worker_base.logger")
 def test_main_exits_without_env_variables(logger_mock):
     with patch.dict(os.environ, clear=True), pytest.raises(SystemExit):
         container_worker_main()
     assert "Missing environment variable " in logger_mock.error.call_args.args[0]
 
 
-@patch("bec_server.procedures.container_worker.logger")
+@patch("bec_server.procedures.oop_worker_base.logger")
 def test_main_continues_with_env_variables(logger_mock):
     with pytest.raises(ValueError) as e:
         with patch.dict(
@@ -136,10 +135,10 @@ class MockItem:
     "bec_server.procedures.container_worker.get_backend",
     MagicMock(return_value=MagicMock(spec=ContainerCommandBackend)),
 )
-@patch("bec_server.procedures.container_worker.BECClient", MagicMock())
-@patch("bec_server.procedures.container_worker.logger")
-@patch("bec_server.procedures.container_worker.RedisConnector")
-@patch("bec_server.procedures.container_worker.procedure_registry")
+@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock())
+@patch("bec_server.procedures.oop_worker_base.logger")
+@patch("bec_server.procedures.oop_worker_base.RedisConnector")
+@patch("bec_server.procedures.oop_worker_base.procedure_registry")
 def test_main_running(registry_mock, redis_mock, logger_mock):
     redis_mock().blocking_list_pop_to_set_add.side_effect = [MockItem("1"), MockItem("2"), None]
     function_recorder = MagicMock()
@@ -155,16 +154,16 @@ def test_main_running(registry_mock, redis_mock, logger_mock):
     logger_mock.debug.assert_has_calls(
         [call("running task 1"), call("running task 2")], any_order=True
     )
-    logger_mock.success.assert_called_with("Container runner shutting down")
+    logger_mock.success.assert_called_with("Procedure runner shutting down")
 
 
 @patch(
     "bec_server.procedures.container_worker.get_backend",
     MagicMock(return_value=MagicMock(spec=ContainerCommandBackend)),
 )
-@patch("bec_server.procedures.container_worker.BECClient", MagicMock())
-@patch("bec_server.procedures.container_worker.logger")
-@patch("bec_server.procedures.container_worker.RedisConnector")
+@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock())
+@patch("bec_server.procedures.oop_worker_base.logger")
+@patch("bec_server.procedures.oop_worker_base.RedisConnector")
 def test_main_running_newly_registered_proc(redis_mock, logger_mock):
     PROC_NAME = "new_test_procedure"
 
@@ -185,4 +184,4 @@ def test_main_running_newly_registered_proc(redis_mock, logger_mock):
         container_worker_main()
     logger_mock.debug.assert_has_calls([call(f"running task {PROC_NAME}")], any_order=True)
     function_recorder.assert_called_once_with("a", b="c")
-    logger_mock.success.assert_called_with("Container runner shutting down")
+    logger_mock.success.assert_called_with("Procedure runner shutting down")
