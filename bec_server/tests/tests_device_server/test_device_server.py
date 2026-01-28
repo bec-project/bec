@@ -317,12 +317,28 @@ def test_handle_device_instructions_set(device_server_mock, instructions):
                     set_mock.assert_called_once_with(instructions)
 
 
-def test_handle_device_instruction_raises_alarm(device_server_mock):
+@pytest.mark.parametrize(
+    "instructions",
+    [
+        messages.DeviceInstructionMessage(
+            device="samx",
+            action="set",
+            parameter={},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
+        )
+    ],
+)
+def test_handle_device_instruction_disabled_device(device_server_mock, instructions):
+    """
+    Test that handling device instructions for a disabled device resolves the status as failed.
+    """
     device_server = device_server_mock
     with mock.patch.object(device_server, "assert_device_is_enabled", side_effect=RuntimeError):
-        with mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm:
-            device_server.handle_device_instructions(mock.MagicMock())
-            raise_alarm.assert_called_once_with(severity=Alarms.MAJOR, info=ANY, metadata=ANY)
+        with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
+            device_server.handle_device_instructions(instructions)
+            set_finished_mock.assert_called_once_with(
+                instructions.metadata["device_instr_id"], success=False, error_info=ANY
+            )
 
 
 @pytest.mark.parametrize(
@@ -338,15 +354,18 @@ def test_handle_device_instruction_raises_alarm(device_server_mock):
 )
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_handle_device_instructions_limit_error(device_server_mock, instructions):
+    """
+    Test that handling device instructions that raise LimitError resolves the status as failed.
+    """
     device_server = device_server_mock
 
-    with mock.patch.object(device_server.connector, "raise_alarm") as alarm_mock:
+    with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
         with mock.patch.object(device_server, "_set_device") as set_mock:
             set_mock.side_effect = ophyd_errors.LimitError("Wrong limits")
             device_server.handle_device_instructions(instructions)
 
-            alarm_mock.assert_called_once_with(
-                severity=Alarms.MAJOR, info=ANY, metadata=instructions.metadata
+            set_finished_mock.assert_called_once_with(
+                instructions.metadata["device_instr_id"], success=False, error_info=ANY
             )
 
 
