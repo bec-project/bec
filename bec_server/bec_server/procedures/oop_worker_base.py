@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 from typing import AnyStr, TextIO
 
 from bec_ipython_client.main import BECIPythonClient
+from bec_ipython_client.signals import OperationMode
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import LogLevel, bec_logger
@@ -18,6 +19,7 @@ from bec_server.procedures.constants import PROCEDURE, ContainerWorkerEnv, Proce
 from bec_server.procedures.worker_base import ProcedureWorker
 
 logger = bec_logger.logger
+PROCESS_TIMEOUT = 3
 
 
 class RedisOutputDiverter(TextIO):
@@ -118,10 +120,13 @@ def _setup():
     redis = {"host": host, "port": port}
 
     client = BECIPythonClient(
-        config=ServiceConfig(redis=redis, config={"procedures": {"enable_procedures": False}})
+        config=ServiceConfig(redis=redis, config={"procedures": {"enable_procedures": False}}),
+        mode=OperationMode.Procedure,
     )
+
     logger.debug("starting client")
     client.start()
+    client.queue.set_default_scan_queue(env["queue"])
 
     logger.success(f"Procedure worker started container for queue {env['queue']}")
     conn = RedisConnector(env["redis_server"])
@@ -189,6 +194,11 @@ def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn):
             finally:
                 helper.remove_from_active.by_exec_id(item.execution_id)
             _push_status(ProcedureWorkerStatus.IDLE)
+    except KeyboardInterrupt:
+        if item is not None:
+            logger.error("Procedure cancelled by user")
+            helper.status_update(item.execution_id, "Aborted", error="Aborted by user.")
+            # The rest of cleanup is handled in 'finally'
     except Exception as e:
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
     finally:
