@@ -246,12 +246,6 @@ class BECClient(BECService):
             yield []
         yield from self.alarm_handler.get_alarm(severity=severity)
 
-    def show_all_alarms(self, severity=Alarms.WARNING):
-        """print all unhandled alarms"""
-        alarms = self.alarm_handler.get_unhandled_alarms(severity=severity)
-        for alarm in alarms:
-            print(alarm)
-
     def clear_all_alarms(self):
         """remove all alarms from stack"""
         self.alarm_handler.clear()
