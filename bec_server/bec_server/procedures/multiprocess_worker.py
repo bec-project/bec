@@ -14,7 +14,7 @@ class SubProcessWorker(OutOfProcessWorkerBase):
 
     def _setup_execution_environment(self):
         env: dict[str, str] = self._worker_environment()  # type: ignore
-        env.update({"redis_server": "localhost:6379"})
+        env.update({"redis_server": self._redis_server})
         self._process = subprocess.Popen(
             [sys.executable, __file__],
             stdout=subprocess.PIPE,

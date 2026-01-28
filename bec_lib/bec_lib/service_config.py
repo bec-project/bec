@@ -7,9 +7,10 @@ import os
 import re
 from getpass import getuser
 from pathlib import Path
+from typing import Any, ClassVar
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from bec_lib.logger import bec_logger
 
@@ -88,10 +89,16 @@ class ProcedureConfig(BaseModel):
     """Procedure config model."""
 
     enable_procedures: bool = True
+    use_subprocess_worker: bool = False
 
 
 class ServiceConfigModel(BaseModel):
     """Service configuration model."""
+
+    _CMDLINE_ARGS: ClassVar[dict[str, tuple[str, str]]] = {
+        # A mapping from CLI args to service config model fields
+        "use_subprocess_proc_worker": ("procedures", "use_subprocess_worker")
+    }
 
     redis: RedisConfig = Field(default_factory=RedisConfig)
     file_writer: FileWriterConfig = Field(default_factory=FileWriterConfig)
@@ -104,6 +111,26 @@ class ServiceConfigModel(BaseModel):
     acl: ACLConfig = Field(default_factory=ACLConfig)
     abort_on_ctrl_c: bool = True
     procedures: ProcedureConfig = Field(default_factory=ProcedureConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_cmdline_args(cls, data: Any):
+        if isinstance(data, dict):
+            if cmdline_args := data.get("cmdline_args"):
+                for arg in cmdline_args.items():
+                    cls._update_data_for_arg(arg, data)
+        return data
+
+    @classmethod
+    def _update_data_for_arg(cls, arg: tuple[str, Any], data: dict):
+        argname, argval = arg
+        if argname not in cls._CMDLINE_ARGS:
+            return data
+        subconfig, variable = cls._CMDLINE_ARGS[argname]
+        if subconfig not in data:
+            data[subconfig] = {}
+        data[subconfig][variable] = argval
+        return data
 
 
 class ServiceConfig:

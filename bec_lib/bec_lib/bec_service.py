@@ -84,6 +84,12 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
         help="redis log level (not set means 'same as --log-level')",
     )
     parser.add_argument("--user", default=None, help="user name to use for the service.", type=str)
+    parser.add_argument(
+        "--use-subprocess-proc-worker",
+        action="store_true",
+        default=False,
+        help="Use the in process procedure worker for local testing",
+    )
 
     args, extra_args = parser.parse_known_args()
 
