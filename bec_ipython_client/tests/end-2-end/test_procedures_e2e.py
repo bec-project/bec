@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Callable, Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

@@ -1,7 +1,9 @@
+import time
+
 from bec_lib.logger import bec_logger
 from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates
 from bec_server.procedures.container_utils import get_backend
-from bec_server.procedures.oop_worker_base import OutOfProcessWorkerBase
+from bec_server.procedures.oop_worker_base import PROCESS_TIMEOUT, OutOfProcessWorkerBase
 from bec_server.procedures.protocol import ContainerCommandBackend
 
 logger = bec_logger.logger
@@ -42,6 +44,15 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
 
     def _kill_process(self):
         if not self._ending_or_ended():
+            self._backend.interrupt(self.container_name)
+            start = time.monotonic()
+            while time.monotonic() < start + PROCESS_TIMEOUT:
+                if self._ending_or_ended():
+                    return
+                time.sleep(0.2)
+            logger.warning(
+                f"Procedure worker {self._container_id} for queue {self._queue} failed to shut down, killing."
+            )
             self._backend.kill(self.container_name)
 
     def abort_execution(self, execution_id: str):

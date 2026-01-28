@@ -149,6 +149,9 @@ class PodmanApiUtils(_PodmanUtilsBase):
         with PodmanClient(base_url=self.uri) as client:
             return client.images.exists(image_tag)
 
+    def interrupt(self, id: str):
+        raise NotImplemented
+
     def kill(self, id: str):
         with PodmanClient(base_url=self.uri) as client:
             client.containers.get(id).kill()
@@ -232,6 +235,12 @@ class PodmanCliUtils(_PodmanUtilsBase):
             .stdout.decode()
             .strip()
         )
+
+    def interrupt(self, id: str):
+        try:
+            _run_and_capture_error("podman", "kill", "--signal", "SIGINT", id)
+        except ProcedureWorkerError as e:
+            logger.error(e)
 
     def kill(self, id: str):
         try:

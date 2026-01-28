@@ -21,7 +21,7 @@ from rich.text import Text
 from bec_ipython_client.beamline_mixin import BeamlineMixin
 from bec_ipython_client.bec_magics import BECMagics
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
-from bec_ipython_client.signals import ScanInterruption, SigintHandler
+from bec_ipython_client.signals import OperationMode, ScanInterruption, SigintHandler
 from bec_lib import plugin_helper
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import DeviceConfigError
@@ -67,6 +67,7 @@ class BECIPythonClient:
         connector_cls: type[RedisConnector] | None = None,
         wait_for_server=True,
         forced=False,
+        mode: OperationMode = OperationMode.Normal,
     ) -> None:
         self._client = CLIBECClient(
             config,
@@ -78,6 +79,7 @@ class BECIPythonClient:
             prompt_for_acl=True,
         )
 
+        self.operation_mode = mode
         self._ip = IPython.get_ipython()
         self.started = False
         self._sighandler = None
@@ -120,7 +122,7 @@ class BECIPythonClient:
             raise KeyboardInterrupt("Login aborted.")
 
         bec_logger.add_console_log()
-        self._sighandler = SigintHandler(self)
+        self._sighandler = SigintHandler(self, self.operation_mode)
         self._beamline_mixin = BeamlineMixin()
         self._live_updates = IPythonLiveUpdates(self)
         self._configure_ipython()
