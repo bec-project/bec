@@ -26,12 +26,10 @@ class ProcManagerMock:
 
 
 class ScanServerMock(ScanServer):
-    def __init__(self, device_manager: DMMock, use_in_process_proc_worker: bool = False) -> None:
+    def __init__(self, device_manager: DMMock) -> None:
         self.device_manager = device_manager
         super().__init__(
-            ServiceConfig(redis={"host": "dummy", "port": 6379}),
-            connector_cls=ConnectorMock,
-            use_in_process_proc_worker=use_in_process_proc_worker,
+            ServiceConfig(redis={"host": "dummy", "port": 6379}), connector_cls=ConnectorMock
         )
         self.scan_worker = WorkerMock()
         self.proc_manager = ProcManagerMock()

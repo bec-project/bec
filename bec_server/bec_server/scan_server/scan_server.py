@@ -34,12 +34,7 @@ class ScanServer(BECService):
     scan_assembler = None
     scan_manager = None
 
-    def __init__(
-        self,
-        config: ServiceConfig,
-        connector_cls: type[RedisConnector],
-        use_in_process_proc_worker: bool = False,
-    ):
+    def __init__(self, config: ServiceConfig, connector_cls: type[RedisConnector]):
         super().__init__(config, connector_cls, unique_service=True)
         self._start_scan_manager()
         self._start_device_manager()
@@ -48,7 +43,9 @@ class ScanServer(BECService):
         self._start_scan_assembler()
         self._start_alarm_handler()
         self._reset_scan_number()
-        self._start_procedure_manager(use_in_process_proc_worker=use_in_process_proc_worker)
+        self._start_procedure_manager(
+            use_subprocess_proc_worker=config.model.procedures.use_subprocess_worker
+        )
         self.status = messages.BECStatus.RUNNING
 
     def _start_device_manager(self):
@@ -79,10 +76,10 @@ class ScanServer(BECService):
         if self.connector.get(MessageEndpoints.dataset_number()) is None:
             self.dataset_number = 0
 
-    def _start_procedure_manager(self, use_in_process_proc_worker: bool = False):
+    def _start_procedure_manager(self, use_subprocess_proc_worker: bool = False):
         procedure_worker = (
             SubProcessWorker
-            if (use_in_process_proc_worker or not podman_available())
+            if (use_subprocess_proc_worker or not podman_available())
             else ContainerProcedureWorker
         )
         self.proc_manager = ProcedureManager(self.bootstrap_server, procedure_worker)

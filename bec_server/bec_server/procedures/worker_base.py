@@ -36,6 +36,7 @@ class ProcedureWorker(ABC):
         self.key = MessageEndpoints.procedure_execution(queue)
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
         self.status = ProcedureWorkerStatus.IDLE
+        self._redis_server = server
         self._conn = RedisConnector([server])
         self._helper = BackendProcedureHelper(self._conn)
         self._lifetime_s = lifetime_s or PROCEDURE.WORKER.QUEUE_TIMEOUT_S
