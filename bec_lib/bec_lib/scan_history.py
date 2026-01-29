@@ -6,14 +6,16 @@ from __future__ import annotations
 
 import os
 import threading
+import traceback
 from typing import TYPE_CHECKING
 
+from bec_lib import messages
+from bec_lib.bec_errors import BECError
 from bec_lib.callback_handler import EventType
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.scan_data_container import ScanDataContainer
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
     from bec_lib.client import BECClient
 
 
@@ -143,7 +145,27 @@ class ScanHistory:
     def __getitem__(self, index: int | slice) -> ScanDataContainer | list[ScanDataContainer]:
         with self._scan_data_lock:
             if isinstance(index, int):
-                target_id = self._scan_ids[index]
+                try:
+                    target_id = self._scan_ids[index]
+                except IndexError:
+                    if len(self._scan_ids) == 0:
+                        compact_msg = (
+                            f"ScanHistory is empty. This may be due to no scans being "
+                            f"run yet or the current user {os.getlogin()} not having access to the data files."
+                        )
+                    else:
+                        compact_msg = (
+                            f"Index {index} out of range for ScanHistory of length {len(self)}"
+                        )
+                    error_info = messages.ErrorInfo(
+                        error_message=traceback.format_exc(),
+                        compact_error_message=compact_msg,
+                        exception_type="IndexError",
+                        context="ScanHistory",
+                        device=None,
+                    )
+                    raise BECError(compact_msg, error_info)
+
                 return self.get_by_scan_id(target_id)
             if isinstance(index, slice):
                 return [self.get_by_scan_id(scan_id) for scan_id in self._scan_ids[index]]
