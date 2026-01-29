@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Callable, Generator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -68,6 +68,7 @@ def test_building_worker_image():
 
 @pytest.mark.timeout(100)
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
+@patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_procedure_runner_spawns_worker(
     client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
@@ -89,7 +90,13 @@ def test_procedure_runner_spawns_worker(
     client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 90)
+    try:
+        _wait_while(lambda: manager._active_workers != {}, 90)
+    except Exception as e:
+        worker = manager._active_workers["test"]["worker"]
+        raise Exception(
+            worker._backend.logs(worker._container_id)
+        ) from e  # print the logs if there is an error
 
     assert logs != []
 
