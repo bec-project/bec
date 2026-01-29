@@ -243,7 +243,17 @@ class ScanQueueModificationMessage(BECMessage):
 
     Args:
         scan_id (str): Unique scan ID
-        action (str): One of the actions defined in ACTIONS: ("pause", "deferred_pause", "continue", "abort", "clear", "restart", "halt", "resume")
+        action (str): One of the actions defined in ACTIONS:
+                "pause",
+                "deferred_pause",
+                "continue",
+                "abort",
+                "clear",
+                "restart",
+                "halt",
+                "resume",
+                "lock",
+                "release_lock"
         parameter (dict): Additional parameters for the action
         queue (str): Defaults to "primary" queue. The name of the queue that receives the modification.
         metadata (dict, optional): Additional metadata to describe and identify the scan.
@@ -255,7 +265,16 @@ class ScanQueueModificationMessage(BECMessage):
     msg_type: ClassVar[str] = "scan_queue_modification"
     scan_id: str | list[str] | None | list[None]
     action: Literal[
-        "pause", "deferred_pause", "continue", "abort", "clear", "restart", "halt", "resume"
+        "pause",
+        "deferred_pause",
+        "continue",
+        "abort",
+        "clear",
+        "restart",
+        "halt",
+        "resume",
+        "lock",
+        "release_lock",
     ]
     parameter: dict
     queue: str = Field(default="primary")
@@ -333,17 +352,34 @@ class QueueInfoEntry(BaseModel):
     active_request_block: RequestBlock | None = None
 
 
+class ScanQueueLock(BaseModel):
+    """
+    Model for scan queue locks. It represents a lock that can be applied
+    to a scan queue to prevent certain actions. Locks can be used to lock the
+    scan queue for various reasons.
+
+    """
+
+    reason: str
+    identifier: str
+
+
 class ScanQueueStatus(BaseModel):
     """
-    Model for scan queue status information. It represents the status of a single queue, e.g. "primary" or "interception".
+    Model for scan queue status information.
+    It represents the status of a single queue, e.g. "primary" or "interception".
+    If the queue is locked, the locks field contains the list of locks applied to the queue.
+
 
     Args:
         info (list[QueueInfoEntry]): List of QueueInfoEntry objects representing the current queue status
-        status (str): Current status of the scan queue
+        status (Literal["PAUSED", "RUNNING", "LOCKED"]): Current status of the scan queue
+        locks (list[ScanQueueLock], optional): List of ScanQueueLock objects representing the locks applied to the queue
     """
 
     info: list[QueueInfoEntry]
-    status: str
+    status: Literal["PAUSED", "RUNNING", "LOCKED"]
+    locks: list[ScanQueueLock] = Field(default_factory=list)
 
 
 class ScanQueueStatusMessage(BECMessage):
