@@ -9,14 +9,14 @@ from abc import ABC, abstractmethod
 from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel
-
-from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from pydantic import BaseModel
+
+from bec_lib import messages
 from bec_server.scan_server.instruction_handler import InstructionHandler
 
 from .errors import LimitError, ScanAbortion
@@ -380,11 +380,13 @@ class RequestBase(ABC):
     @classmethod
     def device_access(cls, scan_parameters: dict) -> ScanDeviceAccessList:
         """Provide the devices for which permissions and locking are needed for this scan, with the given parameter set."""
-        devices_used_in_scan = set(
-            str(scan_parameters.get(arg))
-            for arg, T in cls.arg_input.items()
-            if T == ScanArgType.DEVICE
-        )
+        arg_devices = set(scan_parameters.get("args", {}).keys())
+        param_kwargs = scan_parameters.get("kwargs", {})
+        kwarg_devices = set()
+        for arg, T in cls.arg_input.items():
+            if T == ScanArgType.DEVICE and arg in param_kwargs:
+                kwarg_devices.add(str(param_kwargs[arg]))
+        devices_used_in_scan = arg_devices | kwarg_devices
         return ScanDeviceAccessList(
             device_permissions=devices_used_in_scan, device_locking=devices_used_in_scan
         )

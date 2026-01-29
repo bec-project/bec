@@ -6,6 +6,7 @@ import pytest
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.scan_queue import QueueManager
+from bec_server.scan_server.tests.fixtures import scan_server_mock
 
 # overwrite threads_check fixture from bec_lib,
 # to have it in autouse
@@ -33,10 +34,8 @@ def connected_connector():
 
 
 @pytest.fixture
-def queuemanager_mock(
-    scan_server_mock,
-) -> Generator[Callable[[None | str | list[str]], QueueManager], None, None]:
-    def _get_queuemanager(queues=None):
+def queuemanager_mock(scan_server_mock):
+    def _get_queuemanager(queues=None) -> QueueManager:
         scan_server = scan_server_mock
         if queues is None:
             queues = ["primary"]
