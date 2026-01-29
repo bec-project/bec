@@ -103,7 +103,7 @@ class SigintHandler(SignalHandler):
     def _procedure_mode(self):
         # Catch it here to only kill scans which were started here
         print("SIGINT recieved in procedure mode. Sending scan abort request and exiting.")
-        self.bec.queue.request_scan_interruption(False)
+        self.bec.queue.request_scan_abortion()
         # Let the procedure worker shut itself down
         raise KeyboardInterrupt
 
