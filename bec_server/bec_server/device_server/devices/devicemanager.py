@@ -10,6 +10,7 @@ import inspect
 import threading
 import time
 import traceback
+from collections import deque
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
@@ -21,6 +22,7 @@ from ophyd_devices.utils.bec_signals import BECMessageSignal
 from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
+from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
 from bec_lib.device import DeviceBaseWithConfig
@@ -145,6 +147,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self.config_update_handler = None
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
+        self._device_order_map = {}
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -168,6 +171,37 @@ class DeviceManagerDS(DeviceManagerBase):
         """Get the device class from the device type"""
         return plugin_helper.get_plugin_class(dev_type, [opd, ophyd])
 
+    def _init_device(self, device_info: dict, delayed: bool, progress: DeviceProgress) -> None:
+        """
+        Initialize a device from its configuration dictionary.
+
+        Args:
+            device_info (dict): Device configuration dictionary.
+            delayed (bool): Whether to initialize the device in delayed mode.
+            progress (DeviceProgress): DeviceProgress instance to track initialization progress.
+        """
+
+        name = device_info.get("name")
+        success = True
+        progress.update_progress(device_name=name, finished=False, success=success)
+
+        obj, config = self.construct_device_obj(device_info, device_manager=self)
+        try:
+            if delayed:
+                self.initialize_delayed_devices(device_info, config, obj)
+            else:
+                self.initialize_device(device_info, config, obj)
+        # pylint: disable=broad-except
+        except Exception:
+            if name not in self.devices:
+                raise
+            msg = traceback.format_exc()
+            logger.warning(f"Failed to initialize device {name}: {msg}")
+            self.failed_devices[name] = msg
+            success = False
+        finally:
+            progress.update_progress(device_name=name, finished=True, success=success)
+
     def _load_session(self, *_args, cancel_event: threading.Event | None = None, **_kwargs):
         delayed_init = []
         if not self._is_config_valid():
@@ -175,48 +209,35 @@ class DeviceManagerDS(DeviceManagerBase):
             return
 
         progress = DeviceProgress(self.connector, self._session["devices"])
+        current_device_name = None
         try:
+            devices = self.resolve_device_dependencies(self.current_session["devices"])
             self.failed_devices = {}
-            for dev in self._session["devices"]:
-                if cancel_event and cancel_event.is_set():
-                    raise CancelledError("Device initialization cancelled.")
+            for dev in devices:
                 name = dev.get("name")
                 enabled = dev.get("enabled")
+
+                if cancel_event and cancel_event.is_set():
+                    raise CancelledError("Device initialization cancelled.")
                 logger.info(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
+                current_device_name = name
+
                 dev_cls = self._get_device_class(dev.get("deviceClass"))
                 if issubclass(dev_cls, (opd.DeviceProxy, opd.ComputedSignal)):
                     delayed_init.append(dev)
                     continue
-                success = True
-                progress.update_progress(device_name=name, finished=False, success=success)
-                obj, config = self.construct_device_obj(dev, device_manager=self)
-                try:
-                    self.initialize_device(dev, config, obj)
-                # pylint: disable=broad-except
-                except Exception:
-                    if name not in self.devices:
-                        raise
-                    msg = traceback.format_exc()
-                    logger.warning(f"Failed to initialize device {name}: {msg}")
-                    self.failed_devices[name] = msg
-                    success = False
 
-                progress.update_progress(device_name=name, finished=True, success=success)
+                self._init_device(dev, delayed=False, progress=progress)
+                current_device_name = None
 
             for dev in delayed_init:
-                success = True
                 name = dev.get("name")
-                progress.update_progress(device_name=name, finished=False, success=success)
-                obj, config = self.construct_device_obj(dev, device_manager=self)
-                try:
-                    self.initialize_delayed_devices(dev, config, obj)
-                # pylint: disable=broad-except
-                except Exception:
-                    msg = traceback.format_exc()
-                    logger.warning(f"Failed to initialize device {name}: {msg}")
-                    self.failed_devices[name] = msg
-                    success = False
-                progress.update_progress(device_name=name, finished=True, success=success)
+                if cancel_event and cancel_event.is_set():
+                    raise CancelledError("Device initialization cancelled.")
+                current_device_name = name
+                self._init_device(dev, delayed=True, progress=progress)
+                current_device_name = None
+
             self.config_update_handler.handle_failed_device_inits()
         except CancelledError:
             self._reset_config()
@@ -224,12 +245,85 @@ class DeviceManagerDS(DeviceManagerBase):
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(
-                f"Failed to initialize device: {dev}: {content}. The config will be reset."
+                f"Failed to initialize device: {current_device_name}: {content}. The config will be reset."
             )
             self._reset_config()
             raise DeviceConfigError(
-                f"Failed to initialize device: {dev}: {content}. The config will be reset."
+                f"Failed to initialize device: {current_device_name}: {content}. The config will be reset."
             ) from exc
+
+    def resolve_device_dependencies(self, devices: list[dict]) -> list[dict]:
+        """
+        Resolve device dependencies and return a sorted list of devices. It uses
+        the device's "needs" field of the config to determine dependencies.
+
+        Using Kahn's algorithm for topological sorting.
+
+        Args:
+            devices (list[dict]): List of device config dictionaries
+        Returns:
+            list[dict]: Sorted list of device config dictionaries
+        """
+        device_dict = {dev["name"]: dev for dev in devices}
+        in_degree = {dev["name"]: 0 for dev in devices}
+        adj_list = {dev["name"]: [] for dev in devices}
+
+        for dev in devices:
+            needs = dev.get("needs", [])
+            for dep in needs:
+                if dep not in device_dict:
+                    raise DeviceConfigError(f"Device {dev['name']} needs unknown device {dep}.")
+                if device_dict[dep].get("enabled") is False:
+                    self.connector.raise_alarm(
+                        Alarms.WARNING,
+                        messages.ErrorInfo(
+                            error_message=f"Device {dev['name']} depends on disabled device {dep}.",
+                            compact_error_message=f"Dependency on disabled device {dep}.",
+                            exception_type="Warning",
+                            device=dev["name"],
+                        ),
+                    )
+                adj_list[dep].append(dev["name"])
+                in_degree[dev["name"]] += 1
+
+        queue = deque([name for name, degree in in_degree.items() if degree == 0])
+        sorted_devices = []
+
+        while queue:
+            current = queue.popleft()
+            sorted_devices.append(device_dict[current])
+            for neighbor in adj_list[current]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        cyclic_devices = [name for name, degree in in_degree.items() if degree > 0]
+        if cyclic_devices:
+            raise DeviceConfigError(f"Cyclic dependency detected among devices: {cyclic_devices}")
+
+        self._device_order_map = {dev["name"]: idx for idx, dev in enumerate(sorted_devices)}
+
+        return sorted_devices
+
+    def get_device_order(self, device_names: list[str]) -> list[str]:
+        """
+        Get the device names sorted by their initialization order.
+
+        Args:
+            device_names (list[str]): List of device names to sort.
+
+        Returns:
+            list[str]: Sorted list of device names.
+
+        Raises:
+            RuntimeError: If the device order map is not initialized.
+        """
+        if not self._device_order_map:
+            raise RuntimeError("Device order map is not initialized.")
+        return sorted(
+            device_names,
+            key=lambda name: self._device_order_map.get(name.split(".")[0], float("inf")),
+        )
 
     def initialize_delayed_devices(self, dev: dict, config: dict, obj: OphydObject) -> None:
         """Initialize delayed device after all other devices have been initialized."""

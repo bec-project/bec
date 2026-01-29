@@ -567,6 +567,7 @@ class DeviceServer(BECService):
         devices = instr.content["device"]
         if not isinstance(devices, list):
             devices = [devices]
+        devices = self.device_manager.get_device_order(devices)
         self.requests_handler.add_request(instr, num_status_objects=len(devices))
         for dev in devices:
             obj = self.device_manager.devices.get(dev)
@@ -602,6 +603,8 @@ class DeviceServer(BECService):
             devices = instr.content["device"]
             if not isinstance(devices, list):
                 devices = [devices]
+
+        devices = self.device_manager.get_device_order(devices)
 
         self.requests_handler.add_request(instr, num_status_objects=len(devices))
         num_status_objects = 0
@@ -653,6 +656,8 @@ class DeviceServer(BECService):
         devices = instr.content["device"]
         if not isinstance(devices, list):
             devices = [devices]
+
+        devices = self.device_manager.get_device_order(devices)
 
         self.requests_handler.add_request(instr, num_status_objects=len(devices))
         num_status_objects = 0
@@ -743,6 +748,8 @@ class DeviceServer(BECService):
         if not isinstance(devices, list):
             devices = [devices]
 
+        devices = self.device_manager.get_device_order(devices)
+
         if not new_status:
             self._read_and_update_devices(devices, instr.metadata)
             return
@@ -755,6 +762,7 @@ class DeviceServer(BECService):
         start = time.time()
         pipe = self.connector.pipeline()
         signal_container = []
+        devices = self.device_manager.get_device_order(devices)
         for dev in devices:
             device_root = dev.split(".")[0]
             self.device_manager.devices.get(device_root).metadata = metadata
@@ -786,6 +794,7 @@ class DeviceServer(BECService):
         start = time.time()
         pipe = self.connector.pipeline()
         signal_container = []
+        devices = self.device_manager.get_device_order(devices)
         for dev in devices:
             self.device_manager.devices.get(dev).metadata = metadata
             obj = self.device_manager.devices.get(dev).obj
@@ -851,6 +860,8 @@ class DeviceServer(BECService):
         if not isinstance(devices, list):
             devices = [devices]
 
+        devices = self.device_manager.get_device_order(devices)
+
         self.requests_handler.add_request(instr, num_status_objects=len(devices))
 
         num_status_objects = 0
@@ -910,6 +921,8 @@ class DeviceServer(BECService):
         devices = instr.content["device"]
         if not isinstance(devices, list):
             devices = [devices]
+
+        devices = self.device_manager.get_device_order(devices)
 
         self.requests_handler.add_request(instr, num_status_objects=len(devices))
         num_status_objects = 0

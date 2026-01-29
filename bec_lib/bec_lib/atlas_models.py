@@ -43,6 +43,7 @@ class _DeviceModelCore(BaseModel):
     connectionTimeout: float = 5.0
     description: str = ""
     deviceTags: set[str] = set()
+    needs: list[str] = []
     onFailure: Literal["buffer", "retry", "raise"] = "retry"
     readOnly: bool = False
     softwareTrigger: bool = False
@@ -119,6 +120,7 @@ class DeviceHashModel(BaseModel, frozen=True):
     connectionTimeout: HashInclusion = HashInclusion.EXCLUDE
     deviceConfig: DictHashInclusion = DictHashInclusion(field_inclusion=HashInclusion.VARIANT)
     deviceTags: HashInclusion = HashInclusion.EXCLUDE
+    needs: HashInclusion = HashInclusion.VARIANT
     readoutPriority: HashInclusion = HashInclusion.EXCLUDE
     description: HashInclusion = HashInclusion.EXCLUDE
     readOnly: HashInclusion = HashInclusion.EXCLUDE
