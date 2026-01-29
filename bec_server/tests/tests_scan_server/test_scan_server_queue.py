@@ -27,23 +27,6 @@ from bec_server.scan_server.tests.fixtures import scan_server_mock
 ScanQueue.AUTO_SHUTDOWN_TIME = 1  # Reduce auto-shutdown time for testing
 
 
-@pytest.fixture
-def queuemanager_mock(scan_server_mock) -> QueueManager:
-    def _get_queuemanager(queues=None):
-        scan_server = scan_server_mock
-        if queues is None:
-            queues = ["primary"]
-        if isinstance(queues, str):
-            queues = [queues]
-        for queue in queues:
-            scan_server.queue_manager.add_queue(queue)
-        return scan_server.queue_manager
-
-    yield _get_queuemanager
-
-    scan_server_mock.queue_manager.shutdown()
-
-
 class RequestBlockQueueMock(RequestBlockQueue):
     request_blocks = []
     _scan_id = []

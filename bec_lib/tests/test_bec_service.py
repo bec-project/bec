@@ -345,6 +345,7 @@ def test_parse_cmdline_args_with_config():
                     "file_log_level": None,
                     "redis_log_level": None,
                     "bec_server": None,
+                    "use_subprocess_proc_worker": False,
                 },
                 acl={},
                 config_name="server",

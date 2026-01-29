@@ -16,7 +16,7 @@ def test_main_start():
                 interface="tmux",
                 start_redis=False,
                 no_persistence=False,
-                use_in_process_proc_worker=False,
+                use_subprocess_proc_worker=False,
             )
             mock_service_handler().start.assert_called_once()
 
@@ -34,7 +34,7 @@ def test_main_stop():
                 interface="tmux",
                 start_redis=False,
                 no_persistence=False,
-                use_in_process_proc_worker=False,
+                use_subprocess_proc_worker=False,
             )
             mock_service_handler().stop.assert_called_once()
 
@@ -52,7 +52,7 @@ def test_main_restart():
                 interface="tmux",
                 start_redis=False,
                 no_persistence=False,
-                use_in_process_proc_worker=False,
+                use_subprocess_proc_worker=False,
             )
             mock_service_handler().restart.assert_called_once()
 
@@ -70,7 +70,7 @@ def test_main_start_with_config():
                 interface="tmux",
                 start_redis=False,
                 no_persistence=False,
-                use_in_process_proc_worker=False,
+                use_subprocess_proc_worker=False,
             )
             mock_service_handler().start.assert_called_once()
 
@@ -88,6 +88,6 @@ def test_main_restart_with_config():
                 interface="tmux",
                 start_redis=False,
                 no_persistence=False,
-                use_in_process_proc_worker=False,
+                use_subprocess_proc_worker=False,
             )
             mock_service_handler().restart.assert_called_once()

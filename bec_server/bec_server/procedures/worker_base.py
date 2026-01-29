@@ -36,6 +36,7 @@ class ProcedureWorker(ABC):
         self.key = MessageEndpoints.procedure_execution(queue)
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
         self.status = ProcedureWorkerStatus.IDLE
+        self._redis_server = server
         self._conn = RedisConnector([server])
         self._helper = BackendProcedureHelper(self._conn)
         self._lifetime_s = lifetime_s or PROCEDURE.WORKER.QUEUE_TIMEOUT_S
@@ -48,19 +49,15 @@ class ProcedureWorker(ABC):
     def __enter__(self):
         return self
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._conn.shutdown()
+        self._kill_process()
+
     @abstractmethod
     def _kill_process(self):
         """Clean up the execution environment, e.g. kill container or running subprocess.
         Should be safe to call multiple times, as it could be called in abort() and again on
         __exit__()."""
-
-    @abstractmethod
-    def _run_task(self, item: ProcedureExecutionMessage):
-        """Actually cause the procedure to be executed.
-        Should block until the procedure is complete."""
-
-        # for a single scan procedure, this can just send the message,
-        # then block for the scan to appear in the history
 
     @abstractmethod
     def _setup_execution_environment(self): ...
@@ -78,26 +75,7 @@ class ProcedureWorker(ABC):
         """Abort the execution with the given id"""
         ...
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._conn.shutdown()
-        self._kill_process()
-
-    def work(self):
-        item = None
-        try:
-            # if podman container worker, this should probably monitor the queue there
-            while (
-                item := self._conn.blocking_list_pop_to_set_add(
-                    self.key, self._active_procs_endpoint, timeout_s=self._lifetime_s
-                )
-            ) is not None:
-                if not self._aborted.is_set():
-                    self.status = ProcedureWorkerStatus.RUNNING
-                    self._run_task(cast(ProcedureExecutionMessage, item))
-                    self.status = ProcedureWorkerStatus.IDLE
-        except Exception as e:
-            logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
-        finally:
-            if item is not None:
-                self._conn.remove_from_set(self._active_procs_endpoint, item)
-            self.status = ProcedureWorkerStatus.FINISHED
+    @abstractmethod
+    def work(self) -> None:
+        """Run the external process and communicate with it until it ends"""
+        ...

@@ -19,6 +19,12 @@ the state of the queue:
 %abort               Perform cleanup, then kill plan. Mark exit_stats='aborted'.
 %halt                Emergency Stop: Do not perform cleanup --- just stop.
 """
+from enum import Enum, auto
+
+
+class OperationMode(Enum):
+    Normal = auto()  # Interactive user operation
+    Procedure = auto()  # Procedure operation mode, exits (after aborting scan) after SIGINT
 
 
 class SignalHandler:
@@ -79,13 +85,29 @@ class SignalHandler:
 
 
 class SigintHandler(SignalHandler):
-    def __init__(self, bec: BECClient):
+    def __init__(self, bec: BECClient, mode: OperationMode = OperationMode.Normal):
         super().__init__(signal.SIGINT)
+        self._operation_mode = mode
         self.bec = bec
         self.last_sigint_time = None  # time most recent SIGINT was processed
         self.num_sigints_processed = 0  # count SIGINTs processed
 
     def handle_signals(self):
+        if self._operation_mode == OperationMode.Normal:
+            self._normal_mode()
+        elif self._operation_mode == OperationMode.Procedure:
+            self._procedure_mode()
+        else:
+            raise ValueError(f"Mode {self._operation_mode} not handled by SigintHandler")
+
+    def _procedure_mode(self):
+        # Catch it here to only kill scans which were started here
+        print("SIGINT recieved in procedure mode. Sending scan abort request and exiting.")
+        self.bec.queue.request_scan_interruption(False)
+        # Let the procedure worker shut itself down
+        raise KeyboardInterrupt
+
+    def _normal_mode(self):
         current_scan = self.bec.queue.scan_storage.current_scan_info
         if not current_scan:
             raise KeyboardInterrupt

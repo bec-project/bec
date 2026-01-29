@@ -66,10 +66,10 @@ class ServiceHandler:
 
     SERVICES: dict[str, tuple[ServiceDesc, list[str]]] = {
         # The list after the ServiceDesc represents which CLI args should be pulled from the global server args for each
-        # specific service. E.g. the global 'use_in_process_proc_worker' arg should be passed on to the ScanServer.
+        # specific service. E.g. the global 'use_subprocess_proc_worker' arg should be passed on to the ScanServer.
         "scan_server": (
             ServiceDesc(Template("$base_path/scan_server"), "bec-scan-server"),
-            ["use_in_process_proc_worker"],
+            ["use_subprocess_proc_worker"],
         ),
         "scan_bundler": (ServiceDesc(Template("$base_path/scan_bundler"), "bec-scan-bundler"), []),
         "device_server": (
@@ -88,7 +88,7 @@ class ServiceHandler:
         interface: Literal["tmux", "iterm2", "systemctl", "subprocess"] | None = None,
         start_redis: bool = False,
         no_persistence: bool = False,
-        use_in_process_proc_worker: bool = False,
+        use_subprocess_proc_worker: bool = False,
     ):
         """
 
@@ -106,8 +106,8 @@ class ServiceHandler:
         self.no_persistence = no_persistence
 
         self.extra_service_args: dict[str, str] = {}
-        if use_in_process_proc_worker:
-            self.extra_service_args["use_in_process_proc_worker"] = "--use-in-process-proc-worker"
+        if use_subprocess_proc_worker:
+            self.extra_service_args["use_subprocess_proc_worker"] = "--use-subprocess-proc-worker"
 
         if self.interface is None:
             self._detect_available_interfaces()

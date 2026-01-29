@@ -143,7 +143,7 @@ class BECClient(BECService):
         ]._config_model.procedures.enable_procedures
         self._name = name
         self.device_manager = None
-        self.queue = None
+        self.queue: ScanManager | None = None
         self.alarm_handler = None
         self.config = None
         self.history = None
