@@ -128,7 +128,6 @@ def _setup():
 
     logger.debug("starting client")
     client.start()
-    client.queue.set_default_scan_queue(env["queue"])
 
     logger.success(f"Procedure worker started container for queue {env['queue']}")
     conn = RedisConnector(env["redis_server"])
