@@ -31,6 +31,12 @@ class SubProcessWorker(OutOfProcessWorkerBase):
         return self._ending or (self._process.poll() is not None)
 
     def _kill_process(self):
+        """Attempts to end the process gently by first sending SIGINT, which is handled by the BECIpythonClient to
+        gracefully shut down, and end any scans it has started. See:
+        bec_ipython_client/main.py#L125 and bec_ipython_client/signals.py#L103
+        If the process fails to shut down naturally, kills it unceremoniously. This will leave the running scan running
+        on the ScanServer.
+        """
         if not self._ending_or_ended():
             self._ending = True
             self._process.send_signal(SIGINT)
@@ -56,7 +62,6 @@ class SubProcessWorker(OutOfProcessWorkerBase):
             self._setup_execution_environment()
 
     def logs(self):
-        """"""
         if self._process.stdout is None:
             return []
         return list(self._process.stdout)

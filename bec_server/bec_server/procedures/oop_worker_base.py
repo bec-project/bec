@@ -49,10 +49,6 @@ class RedisOutputDiverter(TextIO):
 class OutOfProcessWorkerBase(ProcedureWorker):
     """A worker which runs in a separate process"""
 
-    # The Podman client is a thin wrapper around the libpod API
-    # documented at https://docs.podman.io/en/latest/_static/api.html
-    # which is more detailed than the podman-py documentation
-
     def _worker_environment(self) -> ContainerWorkerEnv:
         """Used to pass information to the container as environment variables - should be the
         minimum necessary, or things which are only necessary for the functioning of the worker,
@@ -62,9 +58,6 @@ class OutOfProcessWorkerBase(ProcedureWorker):
             "queue": self._queue,
             "timeout_s": str(self._lifetime_s),
         }
-
-    @abstractmethod
-    def _ending_or_ended(self) -> bool: ...
 
     def work(self):
         """block until the external process is finished, listen for status updates in the meantime"""

@@ -60,10 +60,19 @@ class ProcedureWorker(ABC):
         __exit__()."""
 
     @abstractmethod
-    def _setup_execution_environment(self): ...
+    def _setup_execution_environment(self):
+        """Get everything ready such that the worker is waiting for instructions"""
+        ...
 
+    @abstractmethod
+    def _ending_or_ended(self) -> bool:
+        """Is the worker in the process of shutting down or has it finished?"""
+        ...
+
+    @abstractmethod
     def logs(self) -> list[str]:
-        return [""]
+        """Retrieve logs from the worker through whatever communication means it has"""
+        ...
 
     def abort(self):
         """Abort the entire worker"""

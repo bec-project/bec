@@ -236,6 +236,7 @@ class UnlockableWorker(ProcedureWorker):
         self._conn = MagicMock()
         self.execution_id = execution_id
         self.status = ProcedureWorkerStatus.IDLE
+        self._ending = False
 
     def abort_execution(self, execution_id: str): ...
     def _setup_execution_environment(self): ...
@@ -248,6 +249,12 @@ class UnlockableWorker(ProcedureWorker):
         self._helper.status_update(self.execution_id, "Finished")
         self.event_2.wait(self.TEST_TIMEOUT)
         self.status = ProcedureWorkerStatus.FINISHED
+
+    def _ending_or_ended(self) -> bool:
+        return self._ending
+
+    def logs(self):
+        return []
 
     def work(self):
         self._run_task(0)
