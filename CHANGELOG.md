@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v3.91.0 (2026-01-29)
+
+### Bug Fixes
+
+- Abort scan instead of interrupt
+  ([`07e7722`](https://github.com/bec-project/bec/commit/07e7722e88e28f1f8d21d19e877f47936941a6d5))
+
+- Cleaner passing of CLI args to service config
+  ([`82f8ee3`](https://github.com/bec-project/bec/commit/82f8ee3c7faab769215b0d6b2e1ea143b51f2131))
+
+- Don't set default scan queue by default
+  ([`66fd12a`](https://github.com/bec-project/bec/commit/66fd12a64b72bcd684930251200b84a6d4817486))
+
+- E2e test and bail if client not started
+  ([`e0f8bcf`](https://github.com/bec-project/bec/commit/e0f8bcf81729554208015991313822cba01a1b3a))
+
+### Documentation
+
+- Add some docs and tidy up
+  ([`5336282`](https://github.com/bec-project/bec/commit/533628287a19868db843ab978ac8b487abd919a6))
+
+### Features
+
+- Aborting procedure cancels running scan
+  ([`37e0fca`](https://github.com/bec-project/bec/commit/37e0fcafbe1666d27f1be2eb17113944f7150e4f))
+
+- SignalHandler gets a procedure mode which only takes one SIGINT
+
+- Add subprocess worker
+  ([`e67160c`](https://github.com/bec-project/bec/commit/e67160c3dcd08cfb9ee62c4a498fc81222cf608b))
+
+
 ## v3.90.4 (2026-01-29)
 
 ### Bug Fixes
