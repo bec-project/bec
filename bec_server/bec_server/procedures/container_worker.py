@@ -16,6 +16,10 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
     """A worker which runs scripts in a container with a full BEC environment,
     mounted from the filesystem, and only access to Redis"""
 
+    # The Podman client is a thin wrapper around the libpod API
+    # documented at https://docs.podman.io/en/latest/_static/api.html
+    # which is more detailed than the podman-py documentation
+
     def _setup_execution_environment(self):
         self._backend: ContainerCommandBackend = get_backend()
         image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"

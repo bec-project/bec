@@ -79,7 +79,7 @@ class BECIPythonClient:
             prompt_for_acl=True,
         )
 
-        self.operation_mode = mode
+        self._operation_mode = mode
         self._ip = IPython.get_ipython()
         self.started = False
         self._sighandler = None
@@ -122,7 +122,7 @@ class BECIPythonClient:
             raise KeyboardInterrupt("Login aborted.")
 
         bec_logger.add_console_log()
-        self._sighandler = SigintHandler(self, self.operation_mode)
+        self._sighandler = SigintHandler(self, self._operation_mode)
         self._beamline_mixin = BeamlineMixin()
         self._live_updates = IPythonLiveUpdates(self)
         self._configure_ipython()
