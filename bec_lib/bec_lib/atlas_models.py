@@ -12,7 +12,7 @@ from typing import AbstractSet, Any, Literal, TypeVar
 from pydantic import BaseModel, Field, PrivateAttr, create_model, field_validator, model_validator
 from pydantic_core import PydanticUndefined
 
-from bec_lib.utils.json import ExtendedEncoder
+from bec_lib.utils.json_extended import ExtendedEncoder
 
 _BM = TypeVar("BM", bound=BaseModel)
 
