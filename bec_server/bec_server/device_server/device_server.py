@@ -25,7 +25,8 @@ from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
-    from bec_lib.redis_connector import RedisConnector
+    from bec_lib.redis_connector import MessageObject, RedisConnector
+
 
 logger = bec_logger.logger
 
@@ -299,7 +300,7 @@ class DeviceServer(BECService):
         super().__init__(config, connector_cls, unique_service=True)
         self._tasks = []
         self.device_manager = None
-        self.connector.register(MessageEndpoints.stop_all_devices(), cb=self.on_stop_all_devices)
+        self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._start_device_manager()
         self.requests_handler = RequestHandler(self)
@@ -347,20 +348,42 @@ class DeviceServer(BECService):
             device_root = dev.split(".")[0]
             self.device_manager.devices.get(device_root).metadata = instr.metadata
 
-    def on_stop_all_devices(self, msg, **_kwargs) -> None:
-        """callback for receiving scan modifications / interceptions"""
-        mvalue = msg.value
+    def on_stop_devices(self, msg: MessageObject, **_kwargs) -> None:
+        """
+        Callback for receiving device stop requests.
+        Handles both stopping all devices (empty list) and stopping specific devices (list of device names).
+
+        Args:
+            msg: MessageObject containing the stop request.
+        """
+        mvalue: messages.VariableMessage = msg.value
         if mvalue is None:
             logger.warning("Failed to parse scan queue modification message.")
             return
-        logger.info("Received request to stop all devices.")
-        self.stop_devices()
+        if not mvalue.value:
+            self.stop_devices()
+            logger.info("Received request to stop all devices.")
+            return
+        logger.info(f"Received request to stop devices: {mvalue.value}")
+        self.stop_devices(mvalue.value)
 
-    def stop_devices(self) -> None:
-        """stop all enabled devices"""
-        logger.info("Stopping devices after receiving 'abort' request.")
+    def stop_devices(self, devices: list[str] | None = None) -> None:
+        """
+        Stop the specified devices or all devices if none are specified.
+
+        Args:
+            devices (list[str] | None): List of device names to stop. If None, all devices will be stopped.
+        """
         self.status = BECStatus.BUSY
-        for dev in self.device_manager.devices.enabled_devices:
+        if devices is None:
+            logger.info("Stopping devices after receiving 'abort' request.")
+            devices_to_stop = self.device_manager.devices.enabled_devices
+        else:
+            logger.info(f"Stopping devices {devices} after receiving 'abort' request.")
+            devices_to_stop = [
+                dev for dev in self.device_manager.devices.enabled_devices if dev.name in devices
+            ]
+        for dev in devices_to_stop:
             if dev.read_only:
                 # don't stop devices that we haven't set
                 continue

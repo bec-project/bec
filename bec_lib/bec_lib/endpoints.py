@@ -636,16 +636,18 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def stop_all_devices():
+    def stop_devices():
         """
-        Endpoint for stopping all devices. This endpoint is used to publish a message
-        to stop all devices and is used by the scan server's scan queue if a scan queue
-        modification was requested and accepted and requires to stop all devices.
+        Endpoint for stopping devices. This endpoint is used to publish a message
+        to stop devices and is used by the scan server's scan queue if a scan queue
+        modification was requested and accepted and requires to stop devices.
+        The variable message's value contains a list of device names to stop. If
+        the list is empty, all devices will be stopped.
 
         Returns:
-            EndpointInfo: Endpoint for stopping all devices.
+            EndpointInfo: Endpoint for stopping devices.
         """
-        endpoint = f"{EndpointType.INFO.value}/queue/stop_all_devices"
+        endpoint = f"{EndpointType.INFO.value}/queue/stop_devices"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.SEND
         )

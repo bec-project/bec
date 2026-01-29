@@ -241,8 +241,9 @@ class QueueManager:
         """
         Send a message to the device server to stop all devices.
         """
-        msg = messages.VariableMessage(value=1, metadata={})
-        self.connector.send(MessageEndpoints.stop_all_devices(), msg)
+        # We send an empty list to indicate that all devices should be stopped
+        msg = messages.VariableMessage(value=[], metadata={})
+        self.connector.send(MessageEndpoints.stop_devices(), msg)
 
     def scan_interception(self, scan_mod_msg: messages.ScanQueueModificationMessage) -> None:
         """handle a scan interception by compiling the requested method name and forwarding the request.

@@ -257,8 +257,8 @@ def test_set_abort(queuemanager_mock):
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
     assert len(queue_manager.connector.message_sent) == 3
     assert {
-        "queue": MessageEndpoints.stop_all_devices(),
-        "msg": messages.VariableMessage(value=1, metadata={}),
+        "queue": MessageEndpoints.stop_devices(),
+        "msg": messages.VariableMessage(value=[], metadata={}),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
@@ -273,8 +273,8 @@ def test_set_abort_with_empty_queue(queuemanager_mock):
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.RUNNING)
     assert len(queue_manager.connector.message_sent) == 1
     assert {
-        "queue": MessageEndpoints.stop_all_devices(),
-        "msg": messages.VariableMessage(value=1, metadata={}),
+        "queue": MessageEndpoints.stop_devices(),
+        "msg": messages.VariableMessage(value=[], metadata={}),
     } in queue_manager.connector.message_sent
 
 

@@ -1237,9 +1237,9 @@ class Positioner(AdjustableMixin, Device):
     * moving
     """
 
-    @rpc
     def stop(self):
-        pass
+        msg = messages.VariableMessage(value=[self.root.name])
+        self.root.parent.parent.connector.send(MessageEndpoints.stop_devices(), msg)
 
     @rpc
     def settle_time(self):
@@ -1253,7 +1253,7 @@ class Positioner(AdjustableMixin, Device):
         return self.describe_configuration().get("egu")
 
     def move(self, val: float, relative=False):
-        return self.parent.parent.scans.mv(self, val, relative=relative)
+        return self.root.parent.parent.scans.mv(self, val, relative=relative)
 
     @property
     @rpc
