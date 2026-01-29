@@ -175,6 +175,42 @@ class ScanManager:
         )
         return requestID
 
+    def add_queue_lock(self, queue: str, reason: str, lock_id: str) -> None:
+        """
+        Add a lock to the specified scan queue.
+
+        Args:
+            queue (str): The name of the scan queue to lock.
+            reason (str): The reason for locking the queue.
+            lock_id (str): The unique identifier for the lock.
+        """
+        logger.info(f"Adding lock to queue '{queue}' with reason: {reason}")
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                scan_id=None,
+                action="lock",
+                parameter={"reason": reason, "identifier": lock_id},
+                queue=queue,
+            ),
+        )
+
+    def remove_queue_lock(self, queue: str, lock_id: str) -> None:
+        """
+        Remove a lock from the specified scan queue.
+
+        Args:
+            queue (str): The name of the scan queue to unlock.
+            lock_id (str): The unique identifier for the lock to be removed.
+        """
+        logger.info(f"Removing lock '{lock_id}' from queue '{queue}'")
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                scan_id=None, action="release_lock", parameter={"identifier": lock_id}, queue=queue
+            ),
+        )
+
     @typechecked
     def request_queue_order_modification(
         self,

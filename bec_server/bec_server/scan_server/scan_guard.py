@@ -203,7 +203,7 @@ class ScanGuard:
 
         self.connector.send(MessageEndpoints.device_instructions(), instr)
 
-    def _handle_scan_modification_request(self, msg):
+    def _handle_scan_modification_request(self, msg: messages.ScanQueueModificationMessage):
         """
         Perform validity checks on the scan modification request and reply
         with a 'scan_queue_modification_request_response'.
@@ -216,7 +216,7 @@ class ScanGuard:
         """
         mod_msg = msg
 
-        if mod_msg.content.get("action") == "restart":
+        if mod_msg.action == "restart":
             RID = mod_msg.content["parameter"].get("RID")
             if RID:
                 mod_msg.metadata["RID"] = RID
