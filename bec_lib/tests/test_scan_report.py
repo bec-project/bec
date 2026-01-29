@@ -36,14 +36,14 @@ def test_scan_report_wait_scan(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
     with mock.patch.object(scan_report, "_wait_scan") as wait_scan:
         scan_report.wait()
-        wait_scan.assert_called_once_with(None, 0.1, num_points=False, file_written=False)
+        wait_scan.assert_called_once_with(None, 0.1, num_points=False, file_written=True)
 
 
 def test_scan_report_wait_scan_num_points(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
     with mock.patch.object(scan_report, "_wait_scan") as wait_scan:
         scan_report.wait(num_points=True)
-        wait_scan.assert_called_once_with(None, 0.1, num_points=True, file_written=False)
+        wait_scan.assert_called_once_with(None, 0.1, num_points=True, file_written=True)
 
 
 def test_scan_report_wait_scan_file_written(scan_report):
