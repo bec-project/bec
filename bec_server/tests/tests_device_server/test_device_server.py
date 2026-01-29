@@ -13,6 +13,7 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import BECStatus
+from bec_lib.redis_connector import MessageObject
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError
@@ -188,12 +189,23 @@ def test_stop_devices(device_server_mock):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_on_stop_all_devices(device_server_mock):
-    msg = messages.VariableMessage(value=1, metadata={})
+def test_on_stop_devices(device_server_mock):
+    msg = messages.VariableMessage(value=[], metadata={})
+    msg_obj = MessageObject(topic="internal/queue/stop_devices", value=msg)
     device_server = device_server_mock
     with mock.patch.object(device_server, "stop_devices") as stop:
-        device_server.on_stop_all_devices(msg, parent=device_server)
-        stop.assert_called_once()
+        device_server.on_stop_devices(msg_obj, parent=device_server)
+        stop.assert_called_once_with()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_on_stop_devices_with_list(device_server_mock):
+    msg = messages.VariableMessage(value=["samx"], metadata={})
+    msg_obj = MessageObject(topic="internal/queue/stop_devices", value=msg)
+    device_server = device_server_mock
+    with mock.patch.object(device_server, "stop_devices") as stop:
+        device_server.on_stop_devices(msg_obj, parent=device_server)
+        stop.assert_called_once_with(["samx"])
 
 
 @pytest.mark.parametrize(

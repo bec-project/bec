@@ -28,6 +28,20 @@ def test_grid_scan_lib(bec_client_lib):
 
 
 @pytest.mark.timeout(100)
+def test_grid_scan_lib_cancel(bec_client_lib):
+    bec = bec_client_lib
+    scans = bec.scans
+    bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
+    dev = bec.device_manager.devices
+    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False)
+    time.sleep(0.5)
+    status.cancel()
+
+    while status.status != "STOPPED":
+        time.sleep(0.1)
+
+
+@pytest.mark.timeout(100)
 def test_mv_scan_lib(bec_client_lib):
     bec = bec_client_lib
     scans = bec.scans
@@ -42,6 +56,28 @@ def test_mv_scan_lib(bec_client_lib):
     assert np.isclose(
         current_pos_samy, 20, atol=dev.samy._config["deviceConfig"].get("tolerance", 0.05)
     )
+
+
+@pytest.mark.timeout(100)
+def test_mv_can_be_cancelled(bec_client_lib):
+    bec = bec_client_lib
+    scans = bec.scans
+    bec.metadata.update({"unit_test": "test_mv_can_be_cancelled"})
+    dev = bec.device_manager.devices
+    try:
+        dev.samx.velocity.set(100).wait()
+        scans.umv(dev.samx, -20, relative=False).wait()
+        scan_report = scans.mv(dev.samx, 20, relative=False)
+        dev.samx.velocity.set(1).wait()  # slow down to be able to cancel
+        time.sleep(0.2)
+        scan_report.cancel()
+        while dev.samx.motor_is_moving.get():
+            time.sleep(0.2)
+
+        assert not np.isclose(dev.samx.readback.get(), 20, atol=1)
+
+    finally:
+        dev.samx.velocity.set(100).wait()
 
 
 @pytest.mark.timeout(100)

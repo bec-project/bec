@@ -101,12 +101,14 @@ def test_scan_report_wait_for_scan_raises(scan_report):
 
 
 def test_scan_report_aborts_on_ctrl_c(scan_report):
-    scan_report.request.request = messages.ScanQueueMessage(scan_type="mv", parameter={})
+    scan_report.request.request = messages.ScanQueueMessage(
+        scan_type="mv", parameter={"args": {"samx": [5]}}
+    )
     with mock.patch.object(scan_report, "_wait_move") as mock_wait_move:
         mock_wait_move.side_effect = [KeyboardInterrupt]
         with pytest.raises(ScanAbortion):
             scan_report.wait()
-        assert scan_report._client.queue.request_scan_abortion.call_count == 1
+        scan_report._client.device_manager.devices.get("samx").stop.assert_called_once()
 
 
 @pytest.mark.parametrize(

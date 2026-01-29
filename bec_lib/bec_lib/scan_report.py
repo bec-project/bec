@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import ScanAbortion
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
 from bec_lib.scan_items import ScanItem
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -18,6 +19,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.client import BECClient
     from bec_lib.queue_items import QueueItem
     from bec_lib.request_items import RequestItem
+
+logger = bec_logger.logger
 
 
 class ScanReport:
@@ -140,9 +143,27 @@ class ScanReport:
                     timeout, sleep_time, num_points=num_points, file_written=file_written
                 )
         except KeyboardInterrupt as exc:
-            self._client.queue.request_scan_abortion()
+            self.cancel()
             raise ScanAbortion("Aborted by user.") from exc
 
+        return self
+
+    def cancel(self) -> ScanReport:
+        """
+        Cancel the scan request
+        """
+        if self.request is None:
+            raise ValueError("Request is not set. Cannot cancel the scan.")
+        scan_type = self.request.request.content["scan_type"]
+        if scan_type == "mv":
+            motors = list(self.request.request.content["parameter"]["args"].keys())
+            for motor in motors:
+                try:
+                    self._client.device_manager.devices.get(motor).stop()
+                except Exception:  # pylint: disable=broad-except
+                    logger.warning(f"Failed to stop motor {motor}.")
+        else:
+            self._client.queue.request_scan_abortion()
         return self
 
     def _check_timeout(self, timeout: float | None = None, elapsed_time: float = 0) -> None:
