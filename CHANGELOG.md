@@ -1,6 +1,16 @@
 # CHANGELOG
 
 
+## v3.90.4 (2026-01-29)
+
+### Bug Fixes
+
+- **device server**: Remove duplicated alarms
+  ([`5ef3be0`](https://github.com/bec-project/bec/commit/5ef3be0363ed8e73747a5277f49de5d25b7fe2ea))
+
+All major alarms are now raised on the scan server.
+
+
 ## v3.90.3 (2026-01-26)
 
 ### Bug Fixes
