@@ -5,11 +5,9 @@ import time
 from signal import SIGINT
 
 from bec_lib.logger import bec_logger
-from bec_server.procedures.oop_worker_base import OutOfProcessWorkerBase, main
+from bec_server.procedures.oop_worker_base import PROCESS_TIMEOUT, OutOfProcessWorkerBase, main
 
 logger = bec_logger.logger
-
-PROCESS_TIMEOUT = 3
 
 
 class SubProcessWorker(OutOfProcessWorkerBase):
@@ -52,7 +50,9 @@ class SubProcessWorker(OutOfProcessWorkerBase):
             logger.info(
                 f"Aborting execution {execution_id}, restarting worker for queue: {self._queue}"
             )
-            time.sleep(3)
+            self._process.communicate(
+                timeout=PROCESS_TIMEOUT
+            )  # make sure process ended in kill process and flush pipes
             self._setup_execution_environment()
 
     def logs(self):

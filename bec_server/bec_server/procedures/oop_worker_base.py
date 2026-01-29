@@ -63,17 +63,12 @@ class OutOfProcessWorkerBase(ProcedureWorker):
             "timeout_s": str(self._lifetime_s),
         }
 
-    def _run_task(self, item: ProcedureExecutionMessage):
-        raise ProcedureWorkerError(
-            f"Out of process worker worker _run_task() called with {item} - this should never happen!"
-        )
-
     @abstractmethod
     def _ending_or_ended(self) -> bool: ...
 
     def work(self):
-        """block until the container is finished, listen for status updates in the meantime"""
-        # BLPOP from PocWorkerStatus and set status
+        """block until the external process is finished, listen for status updates in the meantime"""
+        # BLPOP from ProcWorkerStatus and set status
         # on timeout check if container is still running
 
         status_update = None
@@ -95,15 +90,29 @@ class OutOfProcessWorkerBase(ProcedureWorker):
             self.status = ProcedureWorkerStatus.DEAD
 
 
-def _setup():
-    logger.info("Procedure worker starting up")
+def _get_env() -> ContainerWorkerEnv:
     try:
         needed_keys = ContainerWorkerEnv.__annotations__.keys()
         logger.debug(f"Checking for environment variables: {needed_keys}")
-        env: ContainerWorkerEnv = {k: os.environ[k] for k in needed_keys}  # type: ignore
+        return {k: os.environ[k] for k in needed_keys}  # type: ignore
     except KeyError as e:
         logger.error(f"Missing environment variable needed by container worker: {e}")
         exit(1)
+
+
+def _resolve_timeout(timeout_s: str) -> float:
+    try:
+        return float(timeout_s)
+    except ValueError as e:
+        logger.error(
+            f"{e} \n Failed to convert supplied timeout argument to an int. \n Using default timeout of 10 s."
+        )
+        return PROCEDURE.WORKER.QUEUE_TIMEOUT_S
+
+
+def _setup():
+    logger.info("Procedure worker starting up")
+    env = _get_env()
 
     logger.debug(f"Starting with environment: {env}")
     logger.debug(f"Configuring logger...")
@@ -136,40 +145,36 @@ def _setup():
     return env, helper, client, conn
 
 
-def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn):
+def _run_task(client: BECIPythonClient, item: ProcedureExecutionMessage):
+    logger.success(f"Executing procedure {item.identifier}.")
+    kwargs = item.args_kwargs[1]
+    proc_func = procedure_registry.callable_from_execution_message(item)
+    if bec_arg := inspect.signature(proc_func).parameters.get("bec"):
+        if bec_arg.kind == bec_arg.KEYWORD_ONLY and bec_arg.annotation.__name__ == "BECClient":
+            logger.debug(f"Injecting BEC client argument for {item}")
+            kwargs["bec"] = client
+    proc_func(*item.args_kwargs[0], **kwargs)
 
+
+def _push_status(
+    conn: RedisConnector, queue: str, status: ProcedureWorkerStatus, id: str | None = None
+):
+    status_endpoint = MessageEndpoints.procedure_worker_status_update(queue)
+    logger.debug(f"Updating worker status to {status.name}")
+    conn.rpush(
+        status_endpoint,
+        messages.ProcedureWorkerStatusMessage(
+            worker_queue=queue, status=status, current_execution_id=id
+        ),
+    )
+
+
+def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn: RedisConnector):
     exec_endpoint = MessageEndpoints.procedure_execution(env["queue"])
     active_procs_endpoint = MessageEndpoints.active_procedure_executions()
-    status_endpoint = MessageEndpoints.procedure_worker_status_update(env["queue"])
-
-    try:
-        timeout_s = int(env["timeout_s"])
-    except ValueError as e:
-        logger.error(
-            f"{e} \n Failed to convert supplied timeout argument to an int. \n Using default timeout of 10 s."
-        )
-        timeout_s = PROCEDURE.WORKER.QUEUE_TIMEOUT_S
-
-    def _push_status(status: ProcedureWorkerStatus, id: str | None = None):
-        logger.debug(f"Updating worker status to {status.name}")
-        conn.rpush(
-            status_endpoint,
-            messages.ProcedureWorkerStatusMessage(
-                worker_queue=env["queue"], status=status, current_execution_id=id
-            ),
-        )
-
-    def _run_task(item: ProcedureExecutionMessage):
-        logger.success(f"Executing procedure {item.identifier}.")
-        kwargs = item.args_kwargs[1]
-        proc_func = procedure_registry.callable_from_execution_message(item)
-        if bec_arg := inspect.signature(proc_func).parameters.get("bec"):
-            if bec_arg.kind == bec_arg.KEYWORD_ONLY and bec_arg.annotation.__name__ == "BECClient":
-                logger.debug(f"Injecting BEC client argument for {item}")
-                kwargs["bec"] = client
-        procedure_registry.callable_from_execution_message(item)(*item.args_kwargs[0], **kwargs)
-
-    _push_status(ProcedureWorkerStatus.IDLE)
+    timeout_s = _resolve_timeout(env["timeout_s"])
+    queue = env["queue"]
+    _push_status(conn, queue, ProcedureWorkerStatus.IDLE)
     item = None
     try:
         logger.success(f"Worker waiting for instructions on queue {env['queue']}")
@@ -178,12 +183,12 @@ def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn):
                 exec_endpoint, active_procs_endpoint, timeout_s=timeout_s
             )
         ) is not None:
-            _push_status(ProcedureWorkerStatus.RUNNING, item.execution_id)
+            _push_status(conn, queue, ProcedureWorkerStatus.RUNNING, item.execution_id)
             helper.status_update(item.execution_id, "Started")
             helper.notify_watchers(env["queue"], queue_type="execution")
             logger.debug(f"running task {item!r}")
             try:
-                _run_task(item)
+                _run_task(client, item)
             except Exception as e:
                 logger.error(f"Encountered error running procedure {item}")
                 helper.status_update(item.execution_id, "Finished", traceback.format_exc())
@@ -193,7 +198,7 @@ def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn):
                 logger.success(f"Finished procedure {item}")
             finally:
                 helper.remove_from_active.by_exec_id(item.execution_id)
-            _push_status(ProcedureWorkerStatus.IDLE)
+            _push_status(conn, queue, ProcedureWorkerStatus.IDLE)
     except KeyboardInterrupt:
         if item is not None:
             logger.error("Procedure cancelled by user")
@@ -203,7 +208,7 @@ def _main(env, helper: BackendProcedureHelper, client: BECIPythonClient, conn):
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
     finally:
         logger.success(f"Procedure runner shutting down")
-        _push_status(ProcedureWorkerStatus.FINISHED)
+        _push_status(conn, queue, ProcedureWorkerStatus.FINISHED)
         client.shutdown(per_thread_timeout_s=1)
         if item is not None:  # in this case we are here due to an exception, not a timeout
             helper.remove_from_active.by_exec_id(item.execution_id)

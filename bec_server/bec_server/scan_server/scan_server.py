@@ -13,7 +13,7 @@ from bec_lib.service_config import ServiceConfig
 from bec_server.procedures.container_utils import podman_available
 from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
-from bec_server.procedures.multiprocess_worker import SubProcessWorker
+from bec_server.procedures.subprocess_worker import SubProcessWorker
 
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
