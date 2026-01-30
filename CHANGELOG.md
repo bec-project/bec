@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v3.94.0 (2026-01-30)
+
+### Bug Fixes
+
+- Adjust hash calculation for new device field 'needs'
+  ([`808e6fb`](https://github.com/bec-project/bec/commit/808e6fbc165e4cdd33c1f295ef9143aa30d70caa))
+
+### Features
+
+- Add needs field to device model
+  ([`3209149`](https://github.com/bec-project/bec/commit/3209149b862dbd659b1c2f342ac70ac2b3fd43d5))
+
+- **device manager**: Add alarm for dependencies on disabled devices
+  ([`6082ddf`](https://github.com/bec-project/bec/commit/6082ddf62006e9464f86eda3742623793f8ba6cc))
+
+- **device manager**: Add device dependency resolution
+  ([`626ef64`](https://github.com/bec-project/bec/commit/626ef6443cfa33ac68b6192b85f128469588d403))
+
+- **device server**: Run ophyd method according to device order
+  ([`0fefa0b`](https://github.com/bec-project/bec/commit/0fefa0bee357ea6473a75d0c428cf54f3470f8f1))
+
+### Refactoring
+
+- **device init**: Simplified initialization loop
+  ([`a4af791`](https://github.com/bec-project/bec/commit/a4af79150b7f012e1ac3655ee08d2c38bb5879be))
+
+
 ## v3.93.0 (2026-01-30)
 
 ### Features
