@@ -93,11 +93,20 @@ def test_queuemanger_shuts_down_idle_queue(queuemanager_mock):
     """
     queue_manager = queuemanager_mock(queues=["primary", "secondary"])
     assert "secondary" in queue_manager.queues
-    queue_manager.queues["secondary"]._start_auto_shutdown_timer()
+
+    # Get reference to the timer before it fires
+    secondary_queue = queue_manager.queues["secondary"]
+    secondary_queue._start_auto_shutdown_timer()
+    timer = secondary_queue._auto_shutdown_timer
+
     # Wait for longer than AUTO_SHUTDOWN_TIME
     while "secondary" in queue_manager.queues:
         time.sleep(0.1)
     assert "primary" in queue_manager.queues
+
+    # Ensure the timer thread is fully cleaned up
+    if timer is not None and timer.is_alive():
+        timer.join(timeout=1.0)
 
 
 def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager_mock):
