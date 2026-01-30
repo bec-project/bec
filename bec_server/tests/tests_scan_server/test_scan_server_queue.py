@@ -365,6 +365,7 @@ def test_set_restart(queuemanager_mock):
             with mock.patch.object(
                 queue_manager, "_wait_for_queue_to_appear_in_history"
             ) as scan_msg_wait:
+                scan_msg_wait.return_value = iq
                 with queue_manager._lock:
                     queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
                 scan_msg_wait.assert_called_once_with(iq.scan_id[0], "primary")

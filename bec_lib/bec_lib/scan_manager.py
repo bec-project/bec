@@ -65,6 +65,9 @@ class ScanManager:
         self.connector.register(
             patterns=MessageEndpoints.public_file("*", "*"), cb=self._public_file_callback
         )
+        self.connector.register(
+            topics=MessageEndpoints.scan_restart(), cb=self._scan_restart_callback
+        )
 
     def update_with_queue_status(self, queue: messages.ScanQueueStatusMessage) -> None:
         """update storage with a new queue status message"""
@@ -398,6 +401,10 @@ class ScanManager:
         value = msg.value
         scan_id = topic.split("/")[-3]
         self.scan_storage.add_public_file(scan_id, value)
+
+    def _scan_restart_callback(self, msg, **_kwargs) -> None:
+        restart_msg: messages.ScanRestartMessage = msg.value
+        self.scan_storage.update_with_scan_restart(restart_msg)
 
     def __str__(self) -> str:
         try:
