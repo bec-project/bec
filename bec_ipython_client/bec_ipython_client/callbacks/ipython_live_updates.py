@@ -4,13 +4,17 @@ import collections
 import time
 from typing import TYPE_CHECKING, Any
 
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+
 from bec_ipython_client.callbacks.device_progress import LiveUpdatesDeviceProgress
 from bec_lib.bec_errors import ScanInterruption
 from bec_lib.logger import bec_logger
 
 from .live_table import LiveUpdatesTable
 from .move_device import LiveUpdatesReadbackProgressbar
-from .utils import ScanRequestMixin, check_alarms
+from .utils import ScanRequestMixin, ScanRestart, check_alarms
 
 if TYPE_CHECKING:
     from bec_lib import messages
@@ -36,10 +40,17 @@ class IPythonLiveUpdates:
         self._request_block_index = collections.defaultdict(lambda: 0)
         self._request_block_id = None
         self._current_queue = None
+        self._status_live: Live | None = None
 
     @property
     def print_table_data(self):
         return self.client.live_updates_config.print_live_table
+
+    def _stop_status_live(self):
+        """Stop the status live panel if it's active."""
+        if self._status_live is not None:
+            self._status_live.stop()
+            self._status_live = None
 
     def _process_report_instructions(self, report_instructions: list) -> None:
         """Process instructions for the live updates.
@@ -182,15 +193,25 @@ class IPythonLiveUpdates:
 
             self._reset()
 
+        except ScanRestart as scan_restart:
+            self._stop_status_live()
+            Console().print("[yellow]Scan restarted[/yellow]")
+            request = scan_restart.new_scan_msg
+            self.process_request(request, callbacks)
+
         except ScanInterruption as scan_interr:
+            self._stop_status_live()
             self._interrupted_request = (request,)
             if self._current_queue and self.client._service_config.abort_on_ctrl_c:
                 self._wait_for_cleanup()
             self._reset(forced=True)
             raise scan_interr
+        finally:
+            self._stop_status_live()
 
     def _wait_for_cleanup(self):
         """Wait for the scan to be cleaned up."""
+        self._stop_status_live()
         try:
             if not self._element_in_queue():
                 return
@@ -232,20 +253,41 @@ class IPythonLiveUpdates:
         check_alarms(self.client)
         if not queue.request_blocks or not queue.status or queue.queue_position is None:
             return False
-        if queue.status == "PENDING" and queue.queue_position > 0:
+        if queue.status == "PENDING":
             target_queue = self.client.queue.queue_storage.current_scan_queue.get(
                 self.client.queue.get_default_scan_queue()
             )
-
             if target_queue is None:
                 return False
             status = target_queue.status
-            print(
-                f"Scan is enqueued and is waiting for execution. Current position in queue {self.client.queue.get_default_scan_queue()}:"
-                f" {queue.queue_position + 1}. Queue status: {status}.",
-                end="\r",
-                flush=True,
-            )
+            if status == "LOCKED":
+                lock_info = [f"{lock.identifier}: {lock.reason}\n" for lock in target_queue.locks]
+                message = f"Scan is waiting for the lock to be released. Active locks: \n{''.join(lock_info)}"
+                if self._status_live is None:
+                    self._status_live = Live(
+                        Panel(message, title="[yellow]Scan Status[/yellow]"), refresh_per_second=4
+                    )
+                    self._status_live.start()
+                else:
+                    self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
+                return False
+            if queue.queue_position > 0:
+                message = (
+                    f"Scan is enqueued and is waiting for execution. Current position in queue {self.client.queue.get_default_scan_queue()}:"
+                    f" {queue.queue_position + 1}. Queue status: {status}."
+                )
+                if self._status_live is None:
+                    self._status_live = Live(
+                        Panel(message, title="[yellow]Scan Status[/yellow]"), refresh_per_second=4
+                    )
+                    self._status_live.start()
+                else:
+                    self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
+                return False
+
+        # Stop the status live panel before processing begins to avoid conflicts with other Live displays
+        self._stop_status_live()
+
         available_blocks = self._available_req_blocks(queue, request)
         if not available_blocks:
             return False
@@ -279,6 +321,7 @@ class IPythonLiveUpdates:
         Args:
             forced(bool): If True, the reset is forced.
         """
+        self._stop_status_live()
         self._interrupted_request = None
 
         self._current_queue = None

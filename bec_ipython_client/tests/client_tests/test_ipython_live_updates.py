@@ -8,6 +8,16 @@ from bec_lib.queue_items import QueueItem
 
 
 @pytest.fixture
+def ipython_live_updates_with_mocked_live(bec_client_mock):
+    """Create IPythonLiveUpdates instance with mocked Live display."""
+    with mock.patch("bec_ipython_client.callbacks.ipython_live_updates.Live") as mock_live:
+        mock_instance = mock.MagicMock()
+        mock_live.return_value = mock_instance
+        live_updates = IPythonLiveUpdates(bec_client_mock)
+        yield live_updates, mock_live
+
+
+@pytest.fixture
 def queue_elements(bec_client_mock):
     client = bec_client_mock
     request_msg = messages.ScanQueueMessage(
@@ -80,9 +90,9 @@ def sample_scan_queue_status(sample_queue_info_entry):
 
 
 @pytest.mark.timeout(20)
-def test_live_updates_process_queue_pending(bec_client_mock, queue_elements):
-    client = bec_client_mock
-    live_updates = IPythonLiveUpdates(client)
+def test_live_updates_process_queue_pending(ipython_live_updates_with_mocked_live, queue_elements):
+    live_updates, mock_live = ipython_live_updates_with_mocked_live
+    client = live_updates.client
     queue, request_block, request_msg = queue_elements
 
     client.queue.queue_storage.current_scan_queue = {
@@ -97,10 +107,11 @@ def test_live_updates_process_queue_pending(bec_client_mock, queue_elements):
                 live_updates, "_available_req_blocks", return_value=[request_block]
             ):
                 with mock.patch.object(live_updates, "_process_report_instructions") as process:
-                    with mock.patch("builtins.print") as prt:
-                        res = live_updates._process_queue(queue, request_msg, "req_id")
-                        prt.assert_called_once()
-                        process.assert_not_called()
+                    res = live_updates._process_queue(queue, request_msg, "req_id")
+                    # Verify Live panel was created for showing queue status
+                    mock_live.assert_called_once()
+                    mock_live.return_value.start.assert_called_once()
+                    process.assert_not_called()
                     assert res is False
 
 

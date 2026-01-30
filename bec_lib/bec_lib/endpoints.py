@@ -539,6 +539,20 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def scan_restart():
+        """
+        Endpoint for scan restart. This endpoint is used to publish accepted
+        scan restarts using a messages.ScanRestartMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for scan restart.
+        """
+        endpoint = f"{EndpointType.INFO.value}/queue/scan_restart"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.ScanRestartMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
     def scan_queue_order_change_request():
         """
         Endpoint for scan queue order change request. This endpoint is used to request

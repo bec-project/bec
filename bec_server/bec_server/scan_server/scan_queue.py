@@ -402,6 +402,8 @@ class QueueManager:
         RID = parameter.get("RID")
         if RID:
             scan_msg.metadata["RID"] = RID
+        scan_restart_msg = messages.ScanRestartMessage(original_scan_id=scan_id, scan_msg=scan_msg)
+        self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
         self.add_to_queue(queue, scan_msg, 0)
         self.queues[queue].status = original_queue_status
 
@@ -445,7 +447,7 @@ class QueueManager:
             return None
         return self.queues[queue].queue[0].active_request_block.scan_id
 
-    def _wait_for_queue_to_appear_in_history(self, scan_id, queue, timeout=10):
+    def _wait_for_queue_to_appear_in_history(self, scan_id, queue, timeout=60):
         timeout_time = timeout
         elapsed_time = 0
         while True:

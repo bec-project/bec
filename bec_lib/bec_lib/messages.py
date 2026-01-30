@@ -238,6 +238,22 @@ class ScanStatusMessage(BECMessage):
         return f"{self.__class__.__name__}({content, self.metadata}))"
 
 
+class ScanRestartMessage(BECMessage):
+    """
+    Message type that informs about a scan restart.
+
+    Args:
+        original_scan_id (str): Unique ID of the original scan
+        original_request_id (str): Request ID of the original scan
+        new_request_id (str): Request ID of the restarted scan
+
+    """
+
+    msg_type: ClassVar[str] = "scan_restart"
+    original_scan_id: str
+    scan_msg: ScanQueueMessage
+
+
 class ScanQueueModificationMessage(BECMessage):
     """Message type for sending scan queue modifications
 
