@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.92.1 (2026-01-30)
+
+### Bug Fixes
+
+- **mv**: Stop device on keyboard interrupt
+  ([`dba2fa1`](https://github.com/bec-project/bec/commit/dba2fa1c2e86d494898bb5e150249ff23a5c63b4))
+
+
 ## v3.92.0 (2026-01-30)
 
 ### Continuous Integration
