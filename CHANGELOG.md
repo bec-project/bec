@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.93.0 (2026-01-30)
+
+### Features
+
+- Add path optimizer
+  ([`142026c`](https://github.com/bec-project/bec/commit/142026c481d2e6503297be87671e56875f6e2553))
+
+
 ## v3.92.1 (2026-01-30)
 
 ### Bug Fixes
