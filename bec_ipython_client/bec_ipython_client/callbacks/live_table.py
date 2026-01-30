@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, SupportsFloat
+from typing import TYPE_CHECKING, SupportsFloat
 
 import numpy as np
 
 from bec_ipython_client.prettytable import PrettyTable
 from bec_ipython_client.progressbar import ScanProgressBar
+from bec_lib.bec_errors import ScanRestart
 from bec_lib.logger import bec_logger
 
 from .utils import LiveUpdatesBase, check_alarms
@@ -240,6 +241,9 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 else:
                     logger.trace("waiting for new data point")
                     time.sleep(0.1)
+
+                if self.scan_item.restarted_msg:
+                    raise ScanRestart(new_scan_msg=self.scan_item.restarted_msg)
 
                 if not self.scan_item.num_points:
                     continue

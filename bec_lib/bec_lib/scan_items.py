@@ -88,6 +88,7 @@ class ScanItem:
         self.start_time: float | None = None
         self.end_time: float | None = None
         self.scan_report_instructions: list[dict] = []
+        self.restarted_msg: messages.ScanQueueMessage | None = None
         self._callbacks = []
         self._bec = builtins.__dict__.get("bec")
         self.public_files = {}
@@ -427,6 +428,21 @@ class ScanStorage:
         done_state = msg.done
         successful = msg.successful
         scan_item.public_files[file_path] = {"done_state": done_state, "successful": successful}
+
+    def update_with_scan_restart(self, restart_msg: messages.ScanRestartMessage) -> None:
+        """Update a scan item with scan restart information.
+
+        This method updates the scan item to reflect that a scan has been restarted.
+        It resets relevant attributes such as start time, end time, and status.
+
+        Args:
+            restart_msg: The scan restart message containing the scan ID.
+        """
+        scan_id = restart_msg.original_scan_id
+        scan_item = self.find_scan_by_ID(scan_id)
+        if not scan_item:
+            return
+        scan_item.restarted_msg = restart_msg.scan_msg
 
     @threadlocked
     def add_scan_item(
