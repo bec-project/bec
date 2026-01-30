@@ -151,17 +151,6 @@ class ScanObject:
 
         return report
 
-    def _start_register(self, request: messages.ScanQueueMessage) -> None:
-        """Start a register for the given request"""
-        self.client.device_manager.connector.register(
-            [
-                MessageEndpoints.device_readback(dev)
-                for dev in request.content["parameter"]["args"].keys()
-            ],
-            threaded=False,
-            cb=(lambda msg: msg),
-        )
-
     def _send_scan_request(self, request: messages.ScanQueueMessage) -> None:
         """Send a scan request to the scan server"""
         self.client.device_manager.connector.send(MessageEndpoints.scan_queue_request(), request)
