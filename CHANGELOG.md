@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v3.92.0 (2026-01-30)
+
+### Continuous Integration
+
+- Cancel previous CI run for PR or branch
+  ([`61480a8`](https://github.com/bec-project/bec/commit/61480a8967240557f9b7caab321d5bbd5c57de67))
+
+### Features
+
+- Improve rpc error handling
+  ([`671f9ce`](https://github.com/bec-project/bec/commit/671f9ce38a2f40cdae6a2a613b62ae465c2ce4d5))
+
+### Refactoring
+
+- **BECClient**: Remove show_all_alarms method avoid confusion with show_last_alarm
+  ([`f1a7293`](https://github.com/bec-project/bec/commit/f1a72934e58e1db908887cb130848132a1028a74))
+
+
 ## v3.91.0 (2026-01-29)
 
 ### Bug Fixes
