@@ -132,9 +132,7 @@ class RequestStorage:
                 logger.trace("Scan queue request exists. Updating with response.")
                 return
 
-            # it could be that the response arrived before the request
             self.storage.append(RequestItem.from_response(self.scan_manager, response_msg))
-            logger.trace("Scan queue request does not exist. Creating from response.")
 
     def update_with_request(self, request_msg: messages.ScanQueueMessage) -> None:
         """create or update request item based on a new ScanQueueMessage (i.e. request message)"""
