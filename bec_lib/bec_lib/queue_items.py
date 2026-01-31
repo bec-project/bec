@@ -192,7 +192,10 @@ class QueueStorage:
         if not self.current_scan_queue:
             return queue_tables
         for queue_name, scan_queue in self.current_scan_queue.items():
-            table = Table(title=f"{queue_name} queue / {scan_queue.status}")
+            status = scan_queue.status
+            if status == "LOCKED":
+                status = "PAUSED (LOCKED 🔒)"
+            table = Table(title=f"{queue_name} queue / {status}")
             table.add_column("queue_id", justify="center")
             table.add_column("scan_id", justify="center")
             table.add_column("is_scan", justify="center")
@@ -212,6 +215,13 @@ class QueueStorage:
                 )
             with console.capture() as capture:
                 console.print(table)
+
+                # Add dedicated section for locks if queue is locked
+                if scan_queue.status == "LOCKED" and scan_queue.locks:
+                    console.print("\n[bold yellow]Locks:[/bold yellow]")
+                    for lock in scan_queue.locks:
+                        console.print(f"  • [cyan]{lock.identifier}[/cyan]: {lock.reason}")
+
             queue_tables.append(capture.get())
         return queue_tables
 

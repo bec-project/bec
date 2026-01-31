@@ -20,6 +20,14 @@ class ScanRequestError(Exception):
     """Error raised when a scan request is rejected"""
 
 
+class ScanRestart(Exception):
+    """Exception to indicate that a scan has been restarted."""
+
+    def __init__(self, new_scan_msg: messages.ScanQueueMessage):
+        super().__init__("Scan has been restarted.")
+        self.new_scan_msg = new_scan_msg
+
+
 def check_alarms(bec):
     """check for alarms and raise them if needed"""
     bec.alarm_handler.raise_alarms()

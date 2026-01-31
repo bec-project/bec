@@ -31,7 +31,9 @@ class BECMagics(Magics):
     def resume(self, line):
         "Resume the scan"
         self.client.queue.request_scan_continuation()
-        return self.client._live_updates.continue_request()
+        if self.client._live_updates:
+            return self.client._live_updates.continue_request()
+        return None
 
     @line_magic
     def pause(self, line):
@@ -46,16 +48,8 @@ class BECMagics(Magics):
     @line_magic
     def restart(self, line):
         "Request a scan restart"
-        old_req_ids = self.client.queue.scan_storage.current_scan.queue.requestIDs
-        request = self.client.queue.request_storage.find_request_by_ID(old_req_ids[0]).request
-        requestID = self.client.queue.request_scan_restart()
-        request.metadata["RID"] = requestID
-        hide_report = request.metadata.get("hide_report", False)
-        # pylint: disable=protected-access
-        scan_report = self.client.scans._available_scans["fermat_scan"]._get_scan_report_type(
-            hide_report
-        )
-        return self.client._live_updates.process_request(request, scan_report, [])
+        request_id = self.client.queue.request_scan_restart()
+        return request_id
 
     @line_magic
     def halt(self, line):

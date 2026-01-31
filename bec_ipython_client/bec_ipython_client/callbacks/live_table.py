@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, SupportsFloat
 
 import numpy as np
 
+from bec_ipython_client.callbacks.utils import ScanRestart
 from bec_ipython_client.prettytable import PrettyTable
 from bec_ipython_client.progressbar import ScanProgressBar
 from bec_lib.logger import bec_logger
@@ -240,6 +241,9 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 else:
                     logger.trace("waiting for new data point")
                     time.sleep(0.1)
+
+                if self.scan_item.restarted_msg:
+                    raise ScanRestart(new_scan_msg=self.scan_item.restarted_msg)
 
                 if not self.scan_item.num_points:
                     continue

@@ -65,6 +65,9 @@ class ScanManager:
         self.connector.register(
             patterns=MessageEndpoints.public_file("*", "*"), cb=self._public_file_callback
         )
+        self.connector.register(
+            topics=MessageEndpoints.scan_restart(), cb=self._scan_restart_callback
+        )
 
     def update_with_queue_status(self, queue: messages.ScanQueueStatusMessage) -> None:
         """update storage with a new queue status message"""
@@ -174,6 +177,42 @@ class ScanManager:
             ),
         )
         return requestID
+
+    def add_queue_lock(self, queue: str, reason: str, lock_id: str) -> None:
+        """
+        Add a lock to the specified scan queue.
+
+        Args:
+            queue (str): The name of the scan queue to lock.
+            reason (str): The reason for locking the queue.
+            lock_id (str): The unique identifier for the lock.
+        """
+        logger.info(f"Adding lock to queue '{queue}' with reason: {reason}")
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                scan_id=None,
+                action="lock",
+                parameter={"reason": reason, "identifier": lock_id},
+                queue=queue,
+            ),
+        )
+
+    def remove_queue_lock(self, queue: str, lock_id: str) -> None:
+        """
+        Remove a lock from the specified scan queue.
+
+        Args:
+            queue (str): The name of the scan queue to unlock.
+            lock_id (str): The unique identifier for the lock to be removed.
+        """
+        logger.info(f"Removing lock '{lock_id}' from queue '{queue}'")
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                scan_id=None, action="release_lock", parameter={"identifier": lock_id}, queue=queue
+            ),
+        )
 
     @typechecked
     def request_queue_order_modification(
@@ -362,6 +401,10 @@ class ScanManager:
         value = msg.value
         scan_id = topic.split("/")[-3]
         self.scan_storage.add_public_file(scan_id, value)
+
+    def _scan_restart_callback(self, msg, **_kwargs) -> None:
+        restart_msg: messages.ScanRestartMessage = msg.value
+        self.scan_storage.update_with_scan_restart(restart_msg)
 
     def __str__(self) -> str:
         try:
