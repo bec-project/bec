@@ -1,25 +1,25 @@
 name: Run Pytest with different Python versions
-on: 
+on:
   workflow_call:
     inputs:
       pr_number:
-        description: 'Pull request number'
+        description: "Pull request number"
         required: false
         type: number
       BEC_CORE_BRANCH:
-        description: 'Branch of BEC Core to install'
+        description: "Branch of BEC Core to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       OPHYD_DEVICES_BRANCH:
-        description: 'Branch of Ophyd Devices to install'
+        description: "Branch of Ophyd Devices to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       BEC_WIDGETS_BRANCH:
-        description: 'Branch of BEC Widgets to install'
+        description: "Branch of BEC Widgets to install"
         required: false
-        default: 'main'
+        default: "main"
         type: string
 
 jobs:
@@ -30,7 +30,6 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-
       - name: Checkout BEC
         uses: actions/checkout@v4
         with:
@@ -47,4 +46,4 @@ jobs:
       - name: Run Pytest
         run: |
           cd ./bec
-          pytest -v --junitxml=report.xml --random-order ./bec_server/tests ./bec_lib/tests ./bec_ipython_client/tests/client_tests
+          pytest -v --junitxml=report.xml --timeout=300 --random-order ./bec_server/tests ./bec_lib/tests ./bec_ipython_client/tests/client_tests
