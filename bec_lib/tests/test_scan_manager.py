@@ -253,6 +253,67 @@ def test_scan_manager_add_scan_to_queue_schedule(scan_manager_with_fakeredis):
     assert manager.get_scan_queue_schedule_names() == []
 
 
+def test_scan_manager_request_set_completed(scan_manager):
+    scan_manager.request_set_completed("scan_id")
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id="scan_id", action="user_completed", parameter={}
+        ),
+    )
+
+
+def test_scan_manager_request_set_completed_scan_id(scan_manager):
+
+    class ScanStorage:
+        current_scan_info = {"scan_id": "current_scan_id"}
+
+        @property
+        def current_scan_id(self):
+            return self.current_scan_info["scan_id"]
+
+    scan_manager.scan_storage = ScanStorage()
+    scan_manager.request_set_completed()
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id="current_scan_id", action="user_completed", parameter={}
+        ),
+    )
+
+
+def test_scan_manager_add_queue_lock(scan_manager):
+    """
+    Test adding a queue lock
+    """
+    scan_manager.add_queue_lock(queue="primary", reason="Testing lock", lock_id="test_lock")
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None,
+            action="lock",
+            parameter={"reason": "Testing lock", "identifier": "test_lock"},
+            queue="primary",
+        ),
+    )
+
+
+def test_scan_manager_remove_queue_lock(scan_manager):
+    """
+    Test removing a queue lock
+    """
+    scan_manager.remove_queue_lock(queue="primary", lock_id="test_lock")
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None,
+            action="release_lock",
+            parameter={"identifier": "test_lock"},
+            queue="primary",
+        ),
+    )
+
+
 def test_scan_manager_add_public_file(scan_manager_with_scan):
     """
     Test the public file callback. It should add the file info to the scan item

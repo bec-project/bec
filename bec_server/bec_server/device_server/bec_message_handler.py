@@ -138,7 +138,7 @@ class BECMessageHandler:
             )
             return
         status = scan_status_msg.status
-        if status in ["closed", "aborted", "halted", None]:
+        if status in ["closed", "aborted", "halted", "user_completed", None]:
             logger.warning(
                 f"Cannot emit async signal {signal_name} for device {device_name} with status {status}."
             )

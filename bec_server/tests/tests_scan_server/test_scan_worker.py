@@ -8,7 +8,7 @@ import pytest
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.tests.utils import ConnectorMock
-from bec_server.scan_server.errors import ScanAbortion
+from bec_server.scan_server.errors import ScanAbortion, UserScanInterruption
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
     InstructionQueueItem,
@@ -793,3 +793,51 @@ def test_worker_get_metadata_for_alarm(scan_worker_mock, scan_info, out):
     worker.current_scan_info = scan_info
     metadata = worker._get_metadata_for_alarm()
     assert metadata == out
+
+
+def test_handle_scan_abortion(scan_worker_mock):
+    worker = scan_worker_mock
+    queue = mock.MagicMock(spec=InstructionQueueItem)
+    queue.exit_info = None
+    queue.queue_id = "id-12345"
+    with mock.patch.object(worker, "_send_scan_status") as send_status_mock:
+        abortion = ScanAbortion()
+        worker._handle_scan_abortion(queue, abortion)
+        send_status_mock.assert_called_once_with("aborted", reason="alarm")
+
+
+def test_handle_scan_halt(scan_worker_mock):
+    worker = scan_worker_mock
+    queue = mock.MagicMock(spec=InstructionQueueItem)
+    queue.exit_info = None
+    queue.queue_id = "id-12345"
+    with mock.patch.object(worker, "_send_scan_status") as send_status_mock:
+        abortion = ScanAbortion()
+        queue.return_to_start = False
+        worker._handle_scan_abortion(queue, abortion)
+        send_status_mock.assert_called_once_with("halted", reason="alarm")
+
+
+def test_handle_user_scan_interruption(scan_worker_mock):
+    worker = scan_worker_mock
+    queue = mock.MagicMock(spec=InstructionQueueItem)
+    queue.exit_info = None
+    queue.queue_id = "id-12345"
+    with mock.patch.object(worker, "_send_scan_status") as send_status_mock:
+        interruption = UserScanInterruption(exit_info="user_completed")
+        worker._handle_scan_abortion(queue, interruption)
+        send_status_mock.assert_called_once_with("user_completed", reason="user")
+
+
+def test_handle_user_scan_interruption_followed_by_abortion(scan_worker_mock):
+    worker = scan_worker_mock
+    queue = mock.MagicMock(spec=InstructionQueueItem)
+    queue.exit_info = "user_completed"
+    queue.queue_id = "id-12345"
+    with mock.patch.object(worker, "_send_scan_status") as send_status_mock:
+        interruption = UserScanInterruption(exit_info="user_completed")
+        abortion = ScanAbortion()
+        worker._handle_scan_abortion(queue, interruption)
+        worker._handle_scan_abortion(queue, abortion)
+        send_status_mock.mock_calls[0].assert_called_with("user_completed", reason="user")
+        send_status_mock.mock_calls[1].assert_called_with("user_completed", reason="user")
