@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.94.1 (2026-02-02)
+
+### Bug Fixes
+
+- **scan-report**: Change default of scan_report.wait to wait for master file
+  ([`75fee14`](https://github.com/bec-project/bec/commit/75fee147cc798cffbfa60a7219079ae059342876))
+
+
 ## v3.94.0 (2026-01-30)
 
 ### Bug Fixes
