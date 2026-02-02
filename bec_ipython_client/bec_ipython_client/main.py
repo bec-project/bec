@@ -24,7 +24,7 @@ from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
 from bec_ipython_client.signals import OperationMode, ScanInterruption, SigintHandler
 from bec_lib import plugin_helper
 from bec_lib.alarm_handler import AlarmBase
-from bec_lib.bec_errors import DeviceConfigError
+from bec_lib.bec_errors import BECError, DeviceConfigError
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.callback_handler import EventType
 from bec_lib.client import BECClient
@@ -214,38 +214,12 @@ class BECIPythonClient:
         except IndexError:
             print("No alarm has been raised in this session.")
             return
-
-        console = Console()
-
-        # --- HEADER ---
-        header = Text()
-        header.append("Alarm Raised\n", style="bold red")
-        header.append(f"Severity: {alarm.severity.name}\n", style="bold")
-        header.append(f"Type: {alarm.alarm_type}\n", style="bold")
-        if alarm.alarm.info.device:
-            header.append(f"Device: {alarm.alarm.info.device}\n", style="bold")
-
-        console.print(Panel(header, title="Alarm Info", border_style="red", expand=False))
-
-        # --- SHOW SUMMARY
-        if alarm.alarm.info.compact_error_message:
-            console.print(
-                Panel(
-                    Text(alarm.alarm.info.compact_error_message, style="yellow"),
-                    title="Summary",
-                    border_style="yellow",
-                    expand=False,
-                )
-            )
-
-        # --- SHOW FULL TRACEBACK
-        tb_str = alarm.alarm.info.error_message
-        if tb_str:
-            try:
-                console.print(tb_str)
-            except Exception:
-                # fallback in case msg is not a traceback
-                console.print(Panel(tb_str, title="Message", border_style="cyan"))
+        if hasattr(alarm, "print_details"):
+            alarm.print_details()
+            return
+        if hasattr(alarm, "pretty_print"):
+            alarm.pretty_print()
+            return
 
 
 def _ip_exception_handler(
@@ -260,6 +234,12 @@ def _ip_exception_handler(
     if issubclass(etype, ValidationError):
         pretty_print_pydantic_validation_error(evalue)
         return
+    if issubclass(etype, BECError):
+        parent._alarm_history.append((etype, evalue, tb, tb_offset))
+        evalue.pretty_print()
+        print("For more details, use 'bec.show_last_alarm()'")
+        return
+
     if issubclass(etype, (ScanInterruption, DeviceConfigError)):
         print(f"\x1b[31m {evalue.__class__.__name__}:\x1b[0m {evalue}")
         return
