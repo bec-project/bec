@@ -351,13 +351,13 @@ def test_scan_restart(bec_ipython_client_fixture):
     scan_number_start = bec.queue.next_scan_number
     # start repeat thread
     threading.Thread(target=send_repeat, args=(bec,), daemon=True).start()
-    # start scan
-    scan1 = scans.line_scan(
-        dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
-    )
-    scan2 = scans.line_scan(
-        dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
-    )
+
+    # We start two scans to ensure that the scan restart logic works correctly in a queued scenario
+    # The first scan is started without printout to allow us to submit the second scan immediately after
+    scans.line_scan(dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True)
+
+    # The second scan is using the live table printout. It should properly continue after the restart
+    scan2 = scans.line_scan(dev.samx, -5, 5, steps=50, exp_time=0.1, relative=True)
 
     scan2.wait()
 
@@ -868,3 +868,27 @@ def test_grid_scan_secondary_queue(capsys, bec_ipython_client_fixture):
     assert "finished. Scan ID" in captured.out
 
     assert "secondary" in bec.queue.queue_storage.current_scan_queue
+
+
+@pytest.mark.timeout(100)
+def test_scan_after_scan_lock(capsys, bec_ipython_client_fixture):
+    """
+    Test that pending scans are properly executed after a scan lock is released.
+    """
+    bec: BECIPythonClient = bec_ipython_client_fixture
+    scans = bec.scans
+    bec.metadata.update({"unit_test": "test_scan_after_scan_lock"})
+    dev = bec.device_manager.devices
+    bec.queue.add_queue_lock(queue="primary", reason="unit_test_scan_lock", lock_id="test_lock")
+    scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True, hide_report=True)
+    scan2 = scans.line_scan(
+        dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True, hide_report=True
+    )
+
+    time.sleep(2)  # wait to ensure the scan is pending
+    print(bec.queue)
+    captured = capsys.readouterr()
+    assert "LOCKED" in captured.out
+
+    bec.queue.remove_queue_lock(queue="primary", lock_id="test_lock")
+    scan2.wait()

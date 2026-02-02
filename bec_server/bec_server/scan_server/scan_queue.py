@@ -400,12 +400,16 @@ class QueueManager:
         self._lock.acquire()
 
         scan_msg = instruction_queue.scan_msgs[0]
-        RID = parameter.get("RID")
-        if RID:
-            scan_msg.metadata["RID"] = RID
+        request_id = parameter.get("RID")
+        if request_id:
+            scan_msg.metadata["RID"] = request_id
         scan_restart_msg = messages.ScanRestartMessage(original_scan_id=scan_id, scan_msg=scan_msg)
         self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
-        self.add_to_queue(queue, scan_msg, 0)
+        if scan_msg.allow_restart:
+            logger.info(f"Restarting scan {scan_id} in queue {queue}")
+            self.add_to_queue(queue, scan_msg, 0)
+        else:
+            logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
         self.queues[queue].status = original_queue_status
 
     @requires_queue
@@ -1111,7 +1115,7 @@ class InstructionQueueItem:
         self.queue_group_is_closed = False
         self.subqueue = iter([])
         self.queue_id = str(uuid.uuid4())
-        self.scan_msgs = []
+        self.scan_msgs: list[messages.ScanQueueMessage] = []
         self.scan_assembler = assembler
         self.worker = worker
         self.stopped = False
@@ -1166,7 +1170,7 @@ class InstructionQueueItem:
         self.instructions = iter([])
         # self.queue.request_blocks_queue.clear()
 
-    def append_scan_request(self, msg):
+    def append_scan_request(self, msg: messages.ScanQueueMessage) -> None:
         """append a scan message to the instruction queue"""
         self.scan_msgs.append(msg)
         self.queue.append(msg)
