@@ -197,7 +197,10 @@ class IPythonLiveUpdates:
             self._stop_status_live()
             Console().print("[yellow]Scan restarted[/yellow]")
             request = scan_restart.new_scan_msg
-            self.process_request(request, callbacks)
+            if request.allow_restart:
+                self.process_request(request, callbacks)
+            else:
+                raise scan_restart
 
         except ScanInterruption as scan_interr:
             self._stop_status_live()

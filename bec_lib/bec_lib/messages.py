@@ -133,6 +133,7 @@ class ScanQueueMessage(BECMessage):
             scan_type (str): one of the registered scan types; either rpc calls or scan types defined in the scan server
             parameter (dict): required parameters for the given scan_stype
             queue (str): either "primary" or "interception"
+            allow_restart (bool): Whether the server is allowed to restart the scan if needed. If False, only a ScanRestartMessage will be sent.
             metadata (dict, optional): additional metadata to describe the scan
         Examples:
             >>> ScanQueueMessage(scan_type="dscan", parameter={"motor1": "samx", "from_m1:": -5, "to_m1": 5, "steps_m1": 10, "motor2": "samy", "from_m2": -5, "to_m2": 5, "steps_m2": 10, "exp_time": 0.1})
@@ -142,6 +143,10 @@ class ScanQueueMessage(BECMessage):
     scan_type: str
     parameter: dict
     queue: str = Field(default="primary")
+    allow_restart: bool = Field(
+        default=True,
+        description="Whether the server is allowed to restart the scan if needed. If False, only a ScanRestartMessage will be sent.",
+    )
 
     @model_validator(mode="after")
     @classmethod
