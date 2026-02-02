@@ -13,7 +13,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
 
-from .errors import DeviceInstructionError, ScanAbortion
+from .errors import DeviceInstructionError, ScanAbortion, UserScanInterruption
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
 from .scan_stubs import ScanStubStatus
 
@@ -182,7 +182,10 @@ class ScanWorker(threading.Thread):
         while self.status == InstructionQueueStatus.PAUSED:
             time.sleep(0.1)
         if self.status == InstructionQueueStatus.STOPPED:
-            raise ScanAbortion
+            item = self.current_instruction_queue_item
+            if item is None or item.exit_info is None:
+                raise ScanAbortion()
+            raise UserScanInterruption(exit_info=item.exit_info)
 
     def _initialize_scan_info(
         self, active_rb: RequestBlock, instr: messages.DeviceInstructionMessage, num_points: int
@@ -304,7 +307,9 @@ class ScanWorker(threading.Thread):
             ) from exc
 
     def _send_scan_status(
-        self, status: Literal["open", "paused", "closed", "aborted", "halted"]
+        self,
+        status: Literal["open", "paused", "closed", "aborted", "halted", "user_completed"],
+        reason: Literal["user", "alarm"] | None = None,
     ) -> None:
         if not self.current_scan_info:
             return
@@ -317,6 +322,7 @@ class ScanWorker(threading.Thread):
         msg = messages.ScanStatusMessage(
             scan_id=self.current_scan_id,
             status=status,
+            reason=reason,
             scan_name=self.current_scan_info.get("scan_name"),
             scan_number=self.current_scan_info.get("scan_number"),
             session_id=self.current_scan_info.get("session_id"),
@@ -407,7 +413,7 @@ class ScanWorker(threading.Thread):
                 self._instruction_step(instr)
         except ScanAbortion as exc:
             if queue.stopped or not (queue.return_to_start and queue.active_request_block):
-                raise ScanAbortion from exc
+                raise exc
             queue.stopped = True
             try:
                 cleanup = queue.active_request_block.scan.move_to_start()
@@ -439,8 +445,8 @@ class ScanWorker(threading.Thread):
                 self.connector.raise_alarm(
                     severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
                 )
-                raise ScanAbortion from exc
-            raise ScanAbortion from exc
+                raise exc
+            raise exc
         except DeviceInstructionError as exc_di:
             content = traceback.format_exc()
             logger.error(content)
@@ -539,6 +545,27 @@ class ScanWorker(threading.Thread):
         self.forward_instruction(msg)
         # status.wait()
 
+    def _handle_scan_abortion(self, queue: InstructionQueueItem, exc: ScanAbortion):
+        content = traceback.format_exc()
+        logger.error(content)
+        if isinstance(exc, UserScanInterruption):
+            reason = "user"
+            exit_info = exc.exit_info
+            self._send_scan_status(exit_info, reason=reason)
+        else:
+            reason = "alarm"
+            if queue.return_to_start:
+                self._send_scan_status("aborted", reason=reason)
+            else:
+                self._send_scan_status("halted", reason=reason)
+        logger.info(f"Scan aborted: {queue.queue_id}")
+        queue.status = InstructionQueueStatus.STOPPED
+        queue.append_to_queue_history()
+        self.cleanup()
+        self.parent.queue_manager.queues[self.queue_name].abort()
+        self.reset()
+        self.status = InstructionQueueStatus.RUNNING
+
     def run(self):
         try:
             while not self.signal_event.is_set():
@@ -550,20 +577,11 @@ class ScanWorker(threading.Thread):
                         if not queue.stopped:
                             queue.append_to_queue_history()
 
-                except ScanAbortion:
-                    content = traceback.format_exc()
-                    logger.error(content)
-                    if queue.return_to_start:
-                        self._send_scan_status("aborted")
-                    else:
-                        self._send_scan_status("halted")
-                    logger.info(f"Scan aborted: {queue.queue_id}")
-                    queue.status = InstructionQueueStatus.STOPPED
-                    queue.append_to_queue_history()
-                    self.cleanup()
-                    self.parent.queue_manager.queues[self.queue_name].abort()
-                    self.reset()
-                    self.status = InstructionQueueStatus.RUNNING
+                except ScanAbortion as exc:
+                    if not queue:
+                        # only for type checker; we should never get here
+                        continue
+                    self._handle_scan_abortion(queue, exc)
 
         # pylint: disable=broad-except
         except Exception as exc:

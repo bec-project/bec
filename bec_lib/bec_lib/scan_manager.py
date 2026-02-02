@@ -131,6 +131,24 @@ class ScanManager:
             ),
         )
 
+    def request_set_completed(self, scan_id=None):
+        """request to set a scan as completed
+
+        Args:
+            scan_id (str, optional): ScanID. Defaults to None.
+
+        """
+        if scan_id is None:
+            scan_id = self.scan_storage.current_scan_id
+        logger.info("Requesting to set scan as completed")
+        target_queue = self.get_default_scan_queue()
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                scan_id=scan_id, action="user_completed", parameter={}, queue=target_queue
+            ),
+        )
+
     def request_scan_continuation(self, scan_id=None):
         """request a scan continuation
 

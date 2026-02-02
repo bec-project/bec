@@ -193,7 +193,7 @@ def test_set_halt(queuemanager_mock):
     queue_manager = queuemanager_mock()
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue_manager.set_halt(scan_id="dummy", parameter={})
-        set_abort.assert_called_once_with(scan_id="dummy", queue="primary")
+        set_abort.assert_called_once_with(scan_id="dummy", queue="primary", exit_info="halted")
 
 
 def test_set_halt_disables_return_to_start(queuemanager_mock):
@@ -205,7 +205,7 @@ def test_set_halt_disables_return_to_start(queuemanager_mock):
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue = queue_manager.queues["primary"].active_instruction_queue
         queue_manager.set_halt(scan_id="dummy", parameter={})
-        set_abort.assert_called_once_with(scan_id="dummy", queue="primary")
+        set_abort.assert_called_once_with(scan_id="dummy", queue="primary", exit_info="halted")
         assert queue.return_to_start is False
 
 
@@ -312,6 +312,80 @@ def test_set_abort(queuemanager_mock):
 
 
 @pytest.mark.timeout(5)
+def test_set_abort_with_scan_id(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    scan_queue = queue_manager.queues["primary"]
+    while scan_queue.scan_worker.current_instruction_queue_item is None:
+        time.sleep(0.1)
+    scan_id_abort = scan_queue.queue[0].scan_id[0]
+    queue_manager.set_abort(scan_id=scan_id_abort, queue="primary")
+    wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
+    assert len(queue_manager.connector.message_sent) == 5
+    assert {
+        "queue": MessageEndpoints.stop_devices(),
+        "msg": messages.VariableMessage(value=[], metadata={}),
+    } in queue_manager.connector.message_sent
+    assert (
+        queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
+    )
+
+
+@pytest.mark.timeout(5)
+def test_set_abort_with_scan_id_not_active(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    scan_queue = queue_manager.queues["primary"]
+    while scan_queue.scan_worker.current_instruction_queue_item is None:
+        time.sleep(0.1)
+    scan_id_abort = scan_queue.queue[1].scan_id[0]
+    queue_manager.set_abort(scan_id=scan_id_abort, queue="primary")
+
+    # The queue should remain RUNNING as the scan_id is not active
+    assert queue_manager.queues["primary"].status == ScanQueueStatus.RUNNING
+    assert len(scan_queue.queue) == 1  # One scan should be removed from the queue
+
+
+@pytest.mark.timeout(5)
+def test_set_abort_with_wrong_scan_id(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    scan_queue = queue_manager.queues["primary"]
+    while scan_queue.scan_worker.current_instruction_queue_item is None:
+        time.sleep(0.1)
+
+    queue_manager.set_abort(scan_id="doesnt_exist", queue="primary")
+    # The queue should remain RUNNING as the scan_id does not exist
+    assert queue_manager.queues["primary"].status == ScanQueueStatus.RUNNING
+    # The queue length should remain unchanged
+    assert len(scan_queue.queue) == 2
+
+
+@pytest.mark.timeout(5)
 def test_set_abort_with_empty_queue(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
@@ -400,6 +474,28 @@ def test_set_restart_no_active_scan(queuemanager_mock):
                     queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
                 scan_msg_wait.assert_not_called()
                 add_new_scan_to_queue.assert_not_called()
+
+
+@pytest.mark.timeout(5)
+def test_set_user_completed(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    scan_queue = queue_manager.queues["primary"]
+    while scan_queue.scan_worker.current_instruction_queue_item is None:
+        time.sleep(0.1)
+    queue_manager.set_user_completed(queue="primary")
+
+    # The queue should return to RUNNING state after user completion
+    wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.RUNNING)
+    while len(scan_queue.queue) > 1:
+        time.sleep(0.1)
 
 
 def test_request_block(scan_server_mock):

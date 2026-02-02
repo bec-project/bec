@@ -8,7 +8,7 @@ import numpy as np
 
 from bec_ipython_client.prettytable import PrettyTable
 from bec_ipython_client.progressbar import ScanProgressBar
-from bec_lib.bec_errors import ScanRestart
+from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
 
 from .utils import LiveUpdatesBase, check_alarms
@@ -103,6 +103,8 @@ class LiveUpdatesTable(LiveUpdatesBase):
                     break
             self.check_alarms()
             time.sleep(0.1)
+            if self.scan_item.queue.status.lower() in ["stopped", "aborted"]:
+                break
 
     def check_alarms(self):
         """check for alarms"""
@@ -244,6 +246,15 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
                 if self.scan_item.restarted_msg:
                     raise ScanRestart(new_scan_msg=self.scan_item.restarted_msg)
+
+                if self.scan_item.status == "user_completed":
+                    print("Scan was set to 'completed' by user.")
+                    break
+
+                if self.scan_item.status_message and self.scan_item.status_message.reason == "user":
+                    raise ScanInterruption(
+                        f"Scan {self.scan_item.scan_number} was aborted by user."
+                    )
 
                 if not self.scan_item.num_points:
                     continue

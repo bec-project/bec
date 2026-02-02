@@ -191,7 +191,8 @@ class ScanStatusMessage(BECMessage):
 
     Args:
         scan_id (str): Unique scan ID
-        status (Literal["open", "paused", "aborted", "halted", "closed"]) : Current scan status
+        status (Literal["open", "paused", "aborted", "halted", "closed", "user_completed"]) : Current scan status
+        reason (Literal["user", "alarm"] | None = None): Reason for the status change, if applicable
         scan_number (int, optional): Scan number
         session_id (str, optional): Session ID
         num_points (int, optional): Number of points in the scan. Only relevant if the number of points is determined by BEC.
@@ -212,7 +213,8 @@ class ScanStatusMessage(BECMessage):
 
     msg_type: ClassVar[str] = "scan_status"
     scan_id: str | None
-    status: Literal["open", "paused", "aborted", "halted", "closed"]
+    status: Literal["open", "paused", "aborted", "halted", "closed", "user_completed"]
+    reason: Literal["user", "alarm"] | None = None
     scan_number: int | None = None
     session_id: str | None = None
     num_points: int | None = Field(
@@ -274,7 +276,8 @@ class ScanQueueModificationMessage(BECMessage):
                 "halt",
                 "resume",
                 "lock",
-                "release_lock"
+                "release_lock",
+                "user_completed"
         parameter (dict): Additional parameters for the action
         queue (str): Defaults to "primary" queue. The name of the queue that receives the modification.
         metadata (dict, optional): Additional metadata to describe and identify the scan.
@@ -296,6 +299,7 @@ class ScanQueueModificationMessage(BECMessage):
         "resume",
         "lock",
         "release_lock",
+        "user_completed",
     ]
     parameter: dict
     queue: str = Field(default="primary")

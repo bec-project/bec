@@ -41,7 +41,7 @@ class ScanItem:
         scan_manager: The scan manager instance that manages this scan item.
         scan_number: Scan number associated with this scan.
         scan_id: Scan ID associated with this scan.
-        status: Current status of the scan ("open", "closed", "aborted", "halted", or "paused").
+        status: Current status of the scan ("open", "closed", "aborted", "halted", "paused", or "user_completed").
         status_message: Latest status message for this scan.
         data: Container for the scan's data points.
         live_data: Container for live/streaming scan data.
@@ -70,7 +70,7 @@ class ScanItem:
         queue_id: str,
         scan_number: int,
         scan_id: str,
-        status: Literal["open", "closed", "aborted", "halted", "paused"],
+        status: Literal["open", "closed", "aborted", "halted", "paused", "user_completed"],
         scan_manager: ScanManager | None = None,
         **_kwargs,
     ) -> None:
@@ -347,7 +347,8 @@ class ScanStorage:
         # update timestamps
         if scan_status.status == "open":
             scan_item.start_time = scan_status.timestamp
-        elif scan_status.status == "closed":
+        elif scan_status.timestamp:
+            # update for all other statuses if timestamp is provided
             scan_item.end_time = scan_status.timestamp
 
         # update status message

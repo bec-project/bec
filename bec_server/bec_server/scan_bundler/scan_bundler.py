@@ -104,7 +104,7 @@ class ScanBundler(BECService):
 
     def _scan_status_modification(self, msg: messages.ScanStatusMessage):
         status = msg.content.get("status")
-        if status not in ["closed", "aborted", "paused", "halted"]:
+        if status not in ["closed", "aborted", "paused", "halted", "user_completed"]:
             logger.error(f"Unknown scan status {status}")
             return
         scan_id = msg.content.get("scan_id")
@@ -270,7 +270,12 @@ class ScanBundler(BECService):
             if msg and msg.content["scan_id"] == scan_id:
                 self.handle_scan_status_message(msg)
             if scan_id in self.sync_storage:
-                if self.sync_storage[scan_id]["status"] in ["closed", "aborted"]:
+                if self.sync_storage[scan_id]["status"] in [
+                    "closed",
+                    "aborted",
+                    "halted",
+                    "user_completed",
+                ]:
                     logger.info(
                         f"Received reading for {self.sync_storage[scan_id]['status']} scan {scan_id}."
                     )
@@ -299,7 +304,12 @@ class ScanBundler(BECService):
                 logger.warning(f"Could not find a matching scan_id {scan_id} in sync_storage.")
                 return
 
-            if self.sync_storage[scan_id]["status"] in ["aborted", "closed"]:
+            if self.sync_storage[scan_id]["status"] in [
+                "aborted",
+                "closed",
+                "halted",
+                "user_completed",
+            ]:
                 # check if the sync_storage has been initialized properly.
                 # In case of post-scan initialization, scan info is not available
                 if not self.sync_storage[scan_id]["info"].get("scan_type"):
@@ -342,7 +352,7 @@ class ScanBundler(BECService):
         """remove old scan_ids to free memory"""
         remove_scan_ids = []
         for scan_id, entry in self.sync_storage.items():
-            if entry.get("status") not in ["closed", "aborted"]:
+            if entry.get("status") not in ["closed", "aborted", "halted", "user_completed"]:
                 continue
             if scan_id in self.scan_id_history:
                 continue

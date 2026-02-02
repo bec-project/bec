@@ -199,8 +199,8 @@ class FileWriterManager(BECService):
             )
             scan_storage.async_writer.start()
 
-        if status in ["closed", "aborted", "halted"]:
-            if status in ["aborted", "halted"]:
+        if status in ["closed", "aborted", "halted", "user_completed"]:
+            if status in ["aborted", "halted", "user_completed"]:
                 scan_storage.forced_finish = True
             if not scan_storage.end_time:
                 scan_storage.end_time = msg.content.get("timestamp")

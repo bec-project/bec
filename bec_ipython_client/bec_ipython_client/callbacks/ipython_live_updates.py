@@ -254,8 +254,15 @@ class IPythonLiveUpdates:
             bool: True if the scan is completed.
         """
         check_alarms(self.client)
-        if not queue.request_blocks or not queue.status or queue.queue_position is None:
+        if not queue.request_blocks or not queue.status:
             return False
+        if queue.scans:
+            if queue.scans[-1] is not None and queue.scans[-1].status == "user_completed":
+                return True
+
+        if queue.queue_position is None:
+            return False
+
         if queue.status == "PENDING":
             self._process_pending_queue_element(queue)
             return False
