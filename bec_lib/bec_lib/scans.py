@@ -20,6 +20,7 @@ from bec_lib.bec_errors import ScanAbortion
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.scan_repeat import _scan_repeat_depth
 from bec_lib.scan_report import ScanReport
 from bec_lib.signature_serializer import dict_to_signature
 from bec_lib.utils import scan_to_csv
@@ -285,8 +286,15 @@ class Scans:
                     f"{scan_info.get('doc')}\n {scan_name} requires at most {max_bundles} bundles"
                     f" of arguments ({num_bundles} given)."
                 )
+        # Check if we are in a "restart" decorator context
+        allow_restart = _scan_repeat_depth.get() == 0
+
         return messages.ScanQueueMessage(
-            scan_type=scan_name, parameter=params, queue=scan_queue, metadata=metadata
+            scan_type=scan_name,
+            parameter=params,
+            queue=scan_queue,
+            metadata=metadata,
+            allow_restart=allow_restart,
         )
 
     @staticmethod

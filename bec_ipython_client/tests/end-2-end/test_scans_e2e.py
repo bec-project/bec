@@ -19,6 +19,7 @@ from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import ScanAbortion, ScanInterruption
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.scan_repeat import scan_repeat
 
 logger = bec_logger.logger
 
@@ -892,3 +893,57 @@ def test_scan_after_scan_lock(capsys, bec_ipython_client_fixture):
 
     bec.queue.remove_queue_lock(queue="primary", lock_id="test_lock")
     scan2.wait()
+
+
+@pytest.mark.timeout(100)
+def test_scan_repeat_decorator(bec_ipython_client_fixture):
+    """
+    Test the scan_repeat decorator by simulating a communication failure during a scan.
+    The scan should be retried according to the specified max_repeats and exc_handler.
+    """
+
+    bec = bec_ipython_client_fixture
+    bec.metadata.update({"unit_test": "test_scan_repeat_decorator"})
+    scans = bec.scans
+    dev = bec.device_manager.devices
+
+    # add the SimPositionerWithCommFailure to the device manager for testing
+    config = {
+        "positioner_with_failure": {
+            "deviceClass": "ophyd_devices.sim.sim_test_devices.SimPositionerWithCommFailure",
+            "deviceConfig": {
+                "delay": 1,
+                "limits": [-100, 100],
+                "tolerance": 0.1,
+                "update_frequency": 400,
+            },
+            "readoutPriority": "baseline",
+            "deviceTags": {"user motors"},
+            "enabled": True,
+            "readOnly": False,
+        }
+    }
+    bec.device_manager.config_helper.send_config_request(action="add", config=config)
+    dev.positioner_with_failure.fails.set(1).wait()
+
+    def exc_handler(exception: Exception, attempt: int) -> bool:
+        """
+        Exception handler for scan_repeat decorator.
+        """
+        if isinstance(exception, AlarmBase):
+            device = exception.alarm.info.device
+            if device == "positioner_with_failure":
+                logger.info("Resetting failure condition on positioner_with_failure.")
+                dev.positioner_with_failure.fails.set(0).wait()
+                return True  # Retry the scan
+        return False  # Do not retry
+
+    @scan_repeat(max_repeats=2, exc_handler=exc_handler)
+    def my_scan():
+        scans.line_scan(dev.positioner_with_failure, -5, 5, steps=10, exp_time=0.01, relative=True)
+
+    my_scan()
+
+    bec.device_manager.config_helper.send_config_request(
+        action="remove", config={"positioner_with_failure": {}}
+    )
