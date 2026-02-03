@@ -247,14 +247,15 @@ class BECService:
         )
 
     def _update_existing_services(self) -> None:
-        service_keys = self.connector.keys(MessageEndpoints.service_status("*"))
+        service_keys: list[bytes] = self.connector.keys(MessageEndpoints.service_status("*"))
         if not service_keys:
             return
         # service keys are in the form of: "internal/services/status/4b9d1af8-44ed-4f3a-8787-ef9f958f59b"
+        prefix = MessageEndpoints.service_status("").endpoint
         services = []
         for service_key in service_keys:
-            _, _, service_id = service_key.decode().rpartition("/")
-            services.append(service_id)
+            service_name = service_key.decode().removeprefix(prefix)
+            services.append(service_name)
         msgs = [
             self.connector.get(MessageEndpoints.service_status(service)) for service in services
         ]
@@ -273,7 +274,7 @@ class BECService:
 
     def _send_service_status(self):
         self.connector.set_and_publish(
-            topic=MessageEndpoints.service_status(self._service_id),
+            topic=MessageEndpoints.service_status(self._service_name),
             msg=messages.StatusMessage(
                 name=self._service_name,
                 status=self.status,
@@ -338,7 +339,7 @@ class BECService:
             )
             msg = messages.ServiceMetricMessage(name=self._service_name, metrics=data)
             try:
-                self.connector.set_and_publish(MessageEndpoints.metrics(self._service_id), msg)
+                self.connector.set_and_publish(MessageEndpoints.metrics(self._service_name), msg)
             # pylint: disable=broad-except
             except Exception:
                 # exception is not explicitely specified,
