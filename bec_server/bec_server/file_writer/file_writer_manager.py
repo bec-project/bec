@@ -182,9 +182,11 @@ class FileWriterManager(BECService):
 
         scan_storage = self.scan_storage[scan_id]
         scan_storage.metadata.update(metadata)
-        status = msg.content.get("status")
+        status = msg.status
         if status:
-            scan_storage.metadata["exit_status"] = status
+            scan_storage.metadata["status"] = status
+            scan_storage.metadata["reason"] = msg.reason
+
         if status == "open" and not scan_storage.start_time:
             scan_storage.start_time = msg.content.get("timestamp")
             scan_storage.async_writer = AsyncWriter(
@@ -387,7 +389,8 @@ class FileWriterManager(BECService):
             scan_id=scan_id,
             scan_number=storage.scan_number,
             dataset_number=storage.metadata.get("dataset_number"),
-            exit_status=storage.metadata.get("exit_status"),
+            exit_status=storage.metadata.get("status"),
+            reason=storage.metadata.get("reason"),
             file_path=file_path,
             start_time=storage.start_time,
             end_time=storage.end_time,

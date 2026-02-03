@@ -891,7 +891,8 @@ class ScanHistoryMessage(BECMessage):
         scan_number (int): Scan number.
         dataset_number (int): Dataset number.
         file_path (str): Path to the file.
-        exit_status (Literal["closed", "aborted", "halted"]): Exit status of the scan.
+        exit_status (Literal["closed", "aborted", "halted", "user_completed"]): Exit status of the scan.
+        reason (Literal["user", "alarm"] | None, optional): Reason for the exit status, if applicable.
         start_time (float): Start time of the scan.
         end_time (float): End time of the scan.
         scan_name (str): Name of the scan.
@@ -907,7 +908,8 @@ class ScanHistoryMessage(BECMessage):
     scan_number: int
     dataset_number: int
     file_path: str
-    exit_status: Literal["closed", "aborted", "halted"]
+    exit_status: Literal["closed", "aborted", "halted", "user_completed"]
+    reason: Literal["user", "alarm"] | None = None
     start_time: float
     end_time: float
     scan_name: str
