@@ -29,7 +29,7 @@ def scan_storage_mock():
     storage.start_time = time.time()
     storage.end_time = time.time()
     storage.num_points = 10
-    storage.metadata = {"dataset_number": 10, "exit_status": "closed", "scan_name": "line_scan"}
+    storage.metadata = {"dataset_number": 10, "status": "closed", "scan_name": "line_scan"}
     yield storage
 
 
