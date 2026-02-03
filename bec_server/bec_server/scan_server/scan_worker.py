@@ -412,6 +412,8 @@ class ScanWorker(threading.Thread):
                 self._exposure_time = getattr(queue.active_request_block.scan, "exp_time", None)
                 self._instruction_step(instr)
         except ScanAbortion as exc:
+            if self.signal_event.is_set():
+                return
             if queue.stopped or not (queue.return_to_start and queue.active_request_block):
                 raise exc
             queue.stopped = True
@@ -530,6 +532,7 @@ class ScanWorker(threading.Thread):
         self.current_scan_info = {}
         self.scan_id = None
         self.interception_msg = None
+        self.current_instruction_queue_item = None
         self.scan_motors = []
 
     def cleanup(self):
@@ -549,9 +552,9 @@ class ScanWorker(threading.Thread):
         content = traceback.format_exc()
         logger.error(content)
         if isinstance(exc, UserScanInterruption):
-            reason = "user"
-            exit_info = exc.exit_info
-            self._send_scan_status(exit_info, reason=reason)
+            self._send_scan_status(exc.exit_info, reason="user")
+        elif queue.exit_info:
+            self._send_scan_status(queue.exit_info, reason="user")
         else:
             reason = "alarm"
             if queue.return_to_start:
