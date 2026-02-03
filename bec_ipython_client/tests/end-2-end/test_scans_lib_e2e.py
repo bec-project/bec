@@ -67,8 +67,8 @@ def test_mv_can_be_cancelled(bec_client_lib):
     try:
         dev.samx.velocity.set(100).wait()
         scans.umv(dev.samx, -20, relative=False).wait()
-        scan_report = scans.mv(dev.samx, 20, relative=False)
         dev.samx.velocity.set(1).wait()  # slow down to be able to cancel
+        scan_report = scans.mv(dev.samx, 20, relative=False)
         time.sleep(0.2)
         scan_report.cancel()
         while dev.samx.motor_is_moving.get():
