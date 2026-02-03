@@ -338,22 +338,34 @@ class QueueManager:
             exit_info: Information about how the scan was exited ("halted", "aborted", or "user_completed").
         """
         que = self.queues[queue]
-        if scan_id is not None:
+        if scan_id:
             if not isinstance(scan_id, list):
                 scan_id = [scan_id]
             current_scan_id = self._get_active_scan_id(queue)
             if not isinstance(current_scan_id, list):
                 current_scan_id = [current_scan_id]
             if len(set(scan_id) & set(current_scan_id)) == 0:
+                # The scan to abort is not the currently running scan, so we just remove it from the queue
                 self.queues[queue].remove_queue_item(scan_id)
                 return
 
         with AutoResetCM(que):
             if que.queue:
                 que.status = ScanQueueStatus.PAUSED
+            if que.worker_status == InstructionQueueStatus.STOPPED:
+                return
             instruction_queue = que.active_instruction_queue
-            if instruction_queue:
+            if not instruction_queue:
+                return
+            if not instruction_queue.exit_info:
                 instruction_queue.exit_info = exit_info
+
+            if instruction_queue.worker.current_instruction_queue_item is not instruction_queue:
+                logger.info(
+                    f"Worker is not running the expected instruction queue item.\
+                          Expected: {instruction_queue}, actual: {instruction_queue.worker.current_instruction_queue_item}. Skipping abort."
+                )
+                return
             que.worker_status = InstructionQueueStatus.STOPPED
             self.stop_all_devices()
 
