@@ -372,7 +372,10 @@ class DeviceServer(BECService):
             if isinstance(mvalue.metadata["stop_id"], str):
                 self.requests_handler._stopped_requests.append(mvalue.metadata["stop_id"])
             elif isinstance(mvalue.metadata["stop_id"], list):
-                self.requests_handler._stopped_requests.extend(mvalue.metadata["stop_id"])
+                # We don't allow None, so we remove it if present
+                for stop_id in mvalue.metadata["stop_id"]:
+                    if stop_id is not None:
+                        self.requests_handler._stopped_requests.append(stop_id)
         if not mvalue.value:
             self.stop_devices()
             logger.info("Received request to stop all devices.")

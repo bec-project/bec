@@ -374,7 +374,11 @@ class QueueManager:
                 )
                 return
             que.worker_status = InstructionQueueStatus.STOPPED
-            self.stop_all_devices(stop_id=instruction_queue.scan_id)
+            if instruction_queue.scan_id[-1] is None:
+                stop_id = instruction_queue.queue_id
+            else:
+                stop_id = instruction_queue.scan_id
+            self.stop_all_devices(stop_id=stop_id)
 
     @requires_queue
     def set_halt(self, scan_id=None, queue="primary", parameter: dict | None = None) -> None:

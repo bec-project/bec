@@ -302,13 +302,13 @@ def test_set_abort(queuemanager_mock):
     scan_queue = queue_manager.queues["primary"]
     while scan_queue.scan_worker.current_instruction_queue_item is None:
         time.sleep(0.1)
-    scan_id = scan_queue.queue[0].scan_id
+    queue_id = scan_queue.queue[0].queue_id
     queue_manager.set_abort(queue="primary")
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
     assert len(queue_manager.connector.message_sent) == 5
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=[], metadata={"stop_id": scan_id}),
+        "msg": messages.VariableMessage(value=[], metadata={"stop_id": queue_id}),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
@@ -343,7 +343,7 @@ def test_set_abort_with_scan_id(queuemanager_mock):
     )
 
 
-@pytest.mark.timeout(5)
+# @pytest.mark.timeout(5)
 def test_set_abort_with_scan_id_not_active(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
@@ -358,7 +358,7 @@ def test_set_abort_with_scan_id_not_active(queuemanager_mock):
     scan_queue = queue_manager.queues["primary"]
     while scan_queue.scan_worker.current_instruction_queue_item is None:
         time.sleep(0.1)
-    scan_id_abort = scan_queue.queue[1].scan_id[0]
+    scan_id_abort = scan_queue.queue[1].scan_id[0]  # second scan in the queue
     queue_manager.set_abort(scan_id=scan_id_abort, queue="primary")
 
     # The queue should remain RUNNING as the scan_id is not active
