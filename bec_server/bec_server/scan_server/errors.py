@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from bec_lib.messages import ErrorInfo
+    from bec_server.scan_server.scan_queue import ExitInfoType
 
 
 class ScanAbortion(Exception):
@@ -11,9 +12,9 @@ class ScanAbortion(Exception):
 
 
 class UserScanInterruption(ScanAbortion):
-    def __init__(self, exit_info: Literal["aborted", "halted", "user_completed"]):
+    def __init__(self, exit_info: ExitInfoType):
         super().__init__()
-        self.exit_info: Literal["aborted", "halted", "user_completed"] = exit_info
+        self.exit_info: ExitInfoType = exit_info
 
 
 class LimitError(Exception):

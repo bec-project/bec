@@ -551,10 +551,14 @@ class ScanWorker(threading.Thread):
     def _handle_scan_abortion(self, queue: InstructionQueueItem, exc: ScanAbortion):
         content = traceback.format_exc()
         logger.error(content)
+
+        exit_info = None
         if isinstance(exc, UserScanInterruption):
-            self._send_scan_status(exc.exit_info, reason="user")
-        elif queue.exit_info:
-            self._send_scan_status(queue.exit_info, reason="user")
+            exit_info = exc.exit_info
+        else:
+            exit_info = queue.exit_info
+        if exit_info:
+            self._send_scan_status(exit_info[0], reason=exit_info[1])
         else:
             reason = "alarm"
             if queue.return_to_start:
