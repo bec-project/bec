@@ -259,6 +259,8 @@ class IPythonLiveUpdates:
         if queue.scans:
             if queue.scans[-1] is not None and queue.scans[-1].status == "user_completed":
                 return True
+            if queue.scans[-1] is None and queue.status == "STOPPED":
+                raise ScanInterruption("Scan was stopped by the user.")
 
         if queue.queue_position is None:
             return False

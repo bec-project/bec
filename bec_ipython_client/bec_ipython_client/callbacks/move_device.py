@@ -8,6 +8,7 @@ import numpy as np
 
 from bec_ipython_client.progressbar import DeviceProgressBar
 from bec_lib import messages
+from bec_lib.bec_errors import ScanInterruption
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 
@@ -201,6 +202,8 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
 
             while not progress.finished or not data_source.done():
                 check_alarms(self.bec)
+                if self.scan_queue_request and self.scan_queue_request.queue.status == "STOPPED":
+                    raise ScanInterruption("Scan was stopped by the user.")
 
                 values = data_source.get_device_values()
                 progress.update(values=values)
