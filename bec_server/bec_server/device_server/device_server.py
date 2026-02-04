@@ -5,6 +5,7 @@ import inspect
 import threading
 import time
 import traceback
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -60,6 +61,7 @@ class RequestHandler:
         self.connector = parent.connector
         self._storage = {}
         self._lock = threading.Lock()
+        self._stopped_requests = deque(maxlen=50)
 
     def add_request(
         self,
@@ -273,6 +275,12 @@ class RequestHandler:
             result(Any): The result of the instruction. Defaults to None.
         """
         metadata = self._storage[instr_id]["instr"].metadata
+        stop_keys = ["RID", "scan_id", "queue_id"]
+        if any(metadata.get(key) in self._stopped_requests for key in stop_keys):
+            logger.info(
+                f"Instruction with metadata {metadata} is in stopped requests, skipping response."
+            )
+            return
 
         if success:
             status = ResponseState.COMPLETED
@@ -360,6 +368,11 @@ class DeviceServer(BECService):
         if mvalue is None:
             logger.warning("Failed to parse scan queue modification message.")
             return
+        if mvalue.metadata.get("stop_id"):
+            if isinstance(mvalue.metadata["stop_id"], str):
+                self.requests_handler._stopped_requests.append(mvalue.metadata["stop_id"])
+            elif isinstance(mvalue.metadata["stop_id"], list):
+                self.requests_handler._stopped_requests.extend(mvalue.metadata["stop_id"])
         if not mvalue.value:
             self.stop_devices()
             logger.info("Received request to stop all devices.")
