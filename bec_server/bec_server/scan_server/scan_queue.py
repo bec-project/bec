@@ -7,7 +7,7 @@ import time
 import traceback
 import uuid
 from enum import Enum
-from typing import TYPE_CHECKING, Deque, Literal
+from typing import TYPE_CHECKING, Deque, Literal, TypeAlias
 
 from rich.console import Console
 from rich.table import Table
@@ -37,6 +37,11 @@ def requires_queue(fcn):
         return fcn(self, *args, queue=queue, **kwargs)
 
     return wrapper
+
+
+ExitInfoType: TypeAlias = tuple[
+    Literal["halted", "aborted", "user_completed"], Literal["user", "alarm"]
+]
 
 
 class InstructionQueueStatus(Enum):
@@ -333,7 +338,8 @@ class QueueManager:
         scan_id=None,
         queue="primary",
         parameter: dict | None = None,
-        exit_info: Literal["halted", "aborted", "user_completed"] = "aborted",
+        exit_info: ExitInfoType | None = None,
+        user_call: bool = True,
     ) -> None:
         """
         Abort the scan and remove it from the queue. This will leave the queue in a paused state after the cleanup.
@@ -342,8 +348,11 @@ class QueueManager:
             scan_id: The scan ID to abort. If None, the currently active scan will be aborted.
             queue: The queue name. Defaults to "primary".
             parameter: Additional parameters for the abort action.
-            exit_info: Information about how the scan was exited ("halted", "aborted", or "user_completed").
+            exit_info: The exit information to set for the aborted scan.
+            user_call: Whether the abort was initiated by a user action.
         """
+        if exit_info is None:
+            exit_info = ("aborted", "user" if user_call else "alarm")
         que = self.queues[queue]
         if scan_id:
             if not isinstance(scan_id, list):
@@ -381,20 +390,24 @@ class QueueManager:
             self.stop_all_devices(stop_id=stop_id)
 
     @requires_queue
-    def set_halt(self, scan_id=None, queue="primary", parameter: dict | None = None) -> None:
+    def set_halt(
+        self, scan_id=None, queue="primary", parameter: dict | None = None, user_call: bool = True
+    ) -> None:
         """abort the scan and do not perform any cleanup routines"""
+        exit_info = ("halted", "user" if user_call else "alarm")
         instruction_queue = self.queues[queue].active_instruction_queue
         if instruction_queue:
             instruction_queue.return_to_start = False
-        self.set_abort(scan_id=scan_id, queue=queue, exit_info="halted")
+        self.set_abort(scan_id=scan_id, queue=queue, exit_info=exit_info)
 
     @requires_queue
     def set_user_completed(
-        self, scan_id=None, queue="primary", parameter: dict | None = None
+        self, scan_id=None, queue="primary", parameter: dict | None = None, user_call: bool = True
     ) -> None:
         """mark the scan as user completed and perform cleanup routines"""
+        exit_info = ("user_completed", "user" if user_call else "alarm")
         queue_state_prior_abort = self.queues[queue].status
-        self.set_abort(scan_id=scan_id, queue=queue, exit_info="user_completed")
+        self.set_abort(scan_id=scan_id, queue=queue, exit_info=exit_info)
         self.queues[queue].status = queue_state_prior_abort
 
     @requires_queue
@@ -1159,7 +1172,7 @@ class InstructionQueueItem:
         self._is_scan = False
         self.is_active = False  # set to true while a worker is processing the instructions
         self.completed = False
-        self.exit_info: Literal["halted", "aborted", "user_completed"] | None = None
+        self.exit_info: ExitInfoType | None = None
         self.deferred_pause = True
         self.queue_group = None
         self.queue_group_is_closed = False

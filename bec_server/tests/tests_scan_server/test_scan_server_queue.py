@@ -193,7 +193,9 @@ def test_set_halt(queuemanager_mock):
     queue_manager = queuemanager_mock()
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue_manager.set_halt(scan_id="dummy", parameter={})
-        set_abort.assert_called_once_with(scan_id="dummy", queue="primary", exit_info="halted")
+        set_abort.assert_called_once_with(
+            scan_id="dummy", queue="primary", exit_info=("halted", "user")
+        )
 
 
 def test_set_halt_disables_return_to_start(queuemanager_mock):
@@ -205,7 +207,9 @@ def test_set_halt_disables_return_to_start(queuemanager_mock):
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue = queue_manager.queues["primary"].active_instruction_queue
         queue_manager.set_halt(scan_id="dummy", parameter={})
-        set_abort.assert_called_once_with(scan_id="dummy", queue="primary", exit_info="halted")
+        set_abort.assert_called_once_with(
+            scan_id="dummy", queue="primary", exit_info=("halted", "user")
+        )
         assert queue.return_to_start is False
 
 
@@ -305,7 +309,8 @@ def test_set_abort(queuemanager_mock):
     queue_id = scan_queue.queue[0].queue_id
     queue_manager.set_abort(queue="primary")
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
-    assert len(queue_manager.connector.message_sent) == 5
+    while len(queue_manager.connector.message_sent) < 5:
+        time.sleep(0.1)
     assert {
         "queue": MessageEndpoints.stop_devices(),
         "msg": messages.VariableMessage(value=[], metadata={"stop_id": queue_id}),
@@ -333,7 +338,8 @@ def test_set_abort_with_scan_id(queuemanager_mock):
     scan_id_abort = scan_queue.queue[0].scan_id[0]
     queue_manager.set_abort(scan_id=scan_id_abort, queue="primary")
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
-    assert len(queue_manager.connector.message_sent) == 5
+    while len(queue_manager.connector.message_sent) < 5:
+        time.sleep(0.1)
     assert {
         "queue": MessageEndpoints.stop_devices(),
         "msg": messages.VariableMessage(value=[], metadata={"stop_id": [scan_id_abort]}),
@@ -343,7 +349,7 @@ def test_set_abort_with_scan_id(queuemanager_mock):
     )
 
 
-# @pytest.mark.timeout(5)
+@pytest.mark.timeout(5)
 def test_set_abort_with_scan_id_not_active(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []

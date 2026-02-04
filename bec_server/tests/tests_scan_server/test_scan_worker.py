@@ -824,7 +824,7 @@ def test_handle_user_scan_interruption(scan_worker_mock):
     queue.exit_info = None
     queue.queue_id = "id-12345"
     with mock.patch.object(worker, "_send_scan_status") as send_status_mock:
-        interruption = UserScanInterruption(exit_info="user_completed")
+        interruption = UserScanInterruption(exit_info=("user_completed", "user"))
         worker._handle_scan_abortion(queue, interruption)
         send_status_mock.assert_called_once_with("user_completed", reason="user")
 
@@ -835,7 +835,7 @@ def test_handle_user_scan_interruption_followed_by_abortion(scan_worker_mock):
     queue.exit_info = "user_completed"
     queue.queue_id = "id-12345"
     with mock.patch.object(worker, "_send_scan_status") as send_status_mock:
-        interruption = UserScanInterruption(exit_info="user_completed")
+        interruption = UserScanInterruption(exit_info=("user_completed", "user"))
         abortion = ScanAbortion()
         worker._handle_scan_abortion(queue, interruption)
         worker._handle_scan_abortion(queue, abortion)
