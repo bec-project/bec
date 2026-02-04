@@ -130,12 +130,12 @@ class QueueManager:
         with self._lock:
             if queue_name not in self.queues:
                 return
-            queue = self.queues[queue_name]
-            queue.signal_event.set()
-            queue.stop_worker()
-            del self.queues[queue_name]
-            if emit_status:
-                self.send_queue_status()
+            queue = self.queues.pop(queue_name)
+
+        queue.signal_event.set()
+        queue.stop_worker()
+        if emit_status:
+            self.send_queue_status()
 
     def add_queue_lock(self, queue_name: str, lock: messages.ScanQueueLock) -> None:
         """Add a lock to the specified queue.
