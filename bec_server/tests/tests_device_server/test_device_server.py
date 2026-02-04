@@ -982,3 +982,36 @@ def test_get_metadata_for_alarm_with_scan_info_msg(device_server_mock, msg):
     metadata = device_server._get_metadata_for_alarm(instr)
     assert metadata["scan_id"] == msg.scan_id
     assert metadata["scan_number"] == msg.scan_number
+
+
+@pytest.mark.parametrize("stop_id", ["scan_id-12345", ["scan_id-12345", "other_id"]])
+def test_request_handler_ignores_response_if_stop_id(device_server_mock, stop_id):
+    """
+    Test that if a device instruction message's metadata contains a field that
+    matches a stopped request's field, no response is sent when the status
+    object is updated with an exception.
+    """
+    device_server = device_server_mock
+
+    request = messages.DeviceInstructionMessage(
+        device="test_device",
+        action="complete",
+        parameter={},
+        metadata={"scan_id": "scan_id-12345", "device_instr_id": "diid"},
+    )
+
+    status = StatusBase()
+    device_server.requests_handler.add_request(request, num_status_objects=1)
+    device_server.requests_handler.add_status_object("diid", status)
+
+    with mock.patch.object(device_server.connector, "send") as send_mock:
+        with mock.patch.object(device_server, "stop_devices") as stop_mock:
+            device_server.on_stop_devices(
+                MessageObject(
+                    topic=MessageEndpoints.stop_devices().endpoint,
+                    value=messages.VariableMessage(value=[], metadata={"stop_id": stop_id}),
+                )
+            )
+            stop_mock.assert_called()
+        status.set_exception(RuntimeError("Test exception"))
+        send_mock.assert_not_called()

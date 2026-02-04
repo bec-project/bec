@@ -267,12 +267,19 @@ class QueueManager:
                 return instruction_queue
         return None
 
-    def stop_all_devices(self):
+    def stop_all_devices(self, stop_id: str | list[str] | None = None):
         """
         Send a message to the device server to stop all devices.
+        Args:
+            stop_id (str | None): An optional identifier for the stop request.
+                If provided, this ID will be added to the list of stopped requests in the device server to
+                prevent any instructions associated with this ID raising alarms after the stop command is issued.
+                The stop_id can be a scan ID, request ID, or queue ID.
         """
         # We send an empty list to indicate that all devices should be stopped
         msg = messages.VariableMessage(value=[], metadata={})
+        if stop_id is not None:
+            msg.metadata["stop_id"] = stop_id
         self.connector.send(MessageEndpoints.stop_devices(), msg)
 
     def scan_interception(self, scan_mod_msg: messages.ScanQueueModificationMessage) -> None:
@@ -367,7 +374,7 @@ class QueueManager:
                 )
                 return
             que.worker_status = InstructionQueueStatus.STOPPED
-            self.stop_all_devices()
+            self.stop_all_devices(stop_id=instruction_queue.scan_id)
 
     @requires_queue
     def set_halt(self, scan_id=None, queue="primary", parameter: dict | None = None) -> None:
