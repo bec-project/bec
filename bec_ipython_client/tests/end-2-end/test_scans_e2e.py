@@ -947,3 +947,30 @@ def test_scan_repeat_decorator(bec_ipython_client_fixture):
     bec.device_manager.config_helper.send_config_request(
         action="remove", config={"positioner_with_failure": {}}
     )
+
+
+@pytest.mark.timeout(100)
+def test_scan_set_completed(bec_ipython_client_fixture):
+    """
+    Test that a scan can be manually set to completed.
+    """
+    bec = bec_ipython_client_fixture
+    scans = bec.scans
+    bec.metadata.update({"unit_test": "test_scan_set_completed"})
+    dev = bec.device_manager.devices
+
+    def _set_scan_completed(bec):
+        while True:
+            if not bec.queue.scan_storage.current_scan:
+                continue
+            if len(bec.queue.scan_storage.current_scan.live_data) >= 5:
+                bec.queue.request_set_completed()
+                break
+            time.sleep(0.1)
+
+    threading.Thread(target=_set_scan_completed, args=(bec,), daemon=True).start()
+
+    scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+
+    # Now add a second scan to ensure scans can continue after setting completed
+    scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)

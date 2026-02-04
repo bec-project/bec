@@ -302,12 +302,13 @@ def test_set_abort(queuemanager_mock):
     scan_queue = queue_manager.queues["primary"]
     while scan_queue.scan_worker.current_instruction_queue_item is None:
         time.sleep(0.1)
+    scan_id = scan_queue.queue[0].scan_id
     queue_manager.set_abort(queue="primary")
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
     assert len(queue_manager.connector.message_sent) == 5
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=[], metadata={}),
+        "msg": messages.VariableMessage(value=[], metadata={"stop_id": scan_id}),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
@@ -335,7 +336,7 @@ def test_set_abort_with_scan_id(queuemanager_mock):
     assert len(queue_manager.connector.message_sent) == 5
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=[], metadata={}),
+        "msg": messages.VariableMessage(value=[], metadata={"stop_id": [scan_id_abort]}),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
