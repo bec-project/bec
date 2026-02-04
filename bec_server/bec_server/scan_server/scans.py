@@ -9,13 +9,14 @@ from abc import ABC, abstractmethod
 from typing import Any, Literal
 
 import numpy as np
-
-from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from pydantic import BaseModel
+
+from bec_lib import messages
 from bec_server.scan_server.instruction_handler import InstructionHandler
 
 from .errors import LimitError, ScanAbortion
@@ -245,7 +246,7 @@ class RequestBase(ABC):
     """
 
     scan_name = ""
-    arg_input = {}
+    arg_input: dict[str, ScanArgType] = {}
     arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
     gui_args = {}
     required_kwargs = []
@@ -376,6 +377,28 @@ class RequestBase(ABC):
     def run(self):
         pass
 
+    @classmethod
+    def device_access(cls, scan_parameters: dict) -> ScanDeviceAccessList:
+        """Provide the devices for which permissions and locking are needed for this scan, with the given parameter set."""
+        arg_devices = set(scan_parameters.get("args", {}).keys())
+        param_kwargs = scan_parameters.get("kwargs", {})
+        kwarg_devices = set()
+        for arg, T in cls.arg_input.items():
+            if T == ScanArgType.DEVICE and arg in param_kwargs:
+                kwarg_devices.add(str(param_kwargs[arg]))
+        devices_used_in_scan = arg_devices | kwarg_devices
+        return ScanDeviceAccessList(
+            device_permissions=devices_used_in_scan, device_locking=devices_used_in_scan
+        )
+
+    def instance_device_access(self) -> ScanDeviceAccessList:
+        return self.device_access(self.parameter)
+
+
+class ScanDeviceAccessList(BaseModel):
+    device_permissions: set[str]
+    device_locking: set[str]
+
 
 class ScanBase(RequestBase, PathOptimizerMixin):
     """
@@ -403,7 +426,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     Attributes:
         scan_name (str): name of the scan
         scan_type (str): scan type. Can be "step" or "fly"
-        arg_input (list): list of scan argument types
+        arg_input (dict[str, ScanArgType]): list of scan argument types
         arg_bundle_size (dict):
             - bundle: number of arguments that are bundled together
             - min: minimum number of bundles

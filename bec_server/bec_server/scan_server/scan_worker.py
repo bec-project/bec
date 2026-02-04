@@ -4,14 +4,18 @@ import os
 import threading
 import time
 import traceback
+from functools import partial
 from string import Template
-from typing import TYPE_CHECKING, Literal
+from traceback import TracebackException
+from typing import TYPE_CHECKING, Callable, Literal
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
+from bec_lib.messages import ErrorInfo
+from bec_server.scan_server.scans import RequestBase
 
 from .errors import DeviceInstructionError, ScanAbortion
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
@@ -21,6 +25,12 @@ logger = bec_logger.logger
 
 if TYPE_CHECKING:
     from bec_server.scan_server.scan_server import ScanServer
+
+
+class _NewErrorInfo: ...
+
+
+_NEW_ERRORINFO = _NewErrorInfo()
 
 
 class ScanWorker(threading.Thread):
@@ -376,28 +386,35 @@ class ScanWorker(threading.Thread):
             metadata["scan_number"] = self.current_scan_info["scan_number"]
         return metadata
 
-    def _process_instructions(self, queue: InstructionQueueItem) -> None:
-        """
-        Process scan instructions and send DeviceInstructions to OPAAS.
-        For now this is an in-memory communication. In the future however,
-        we might want to pass it through a dedicated Kafka topic.
-        Args:
-            queue: instruction queue
+    #############################
+    # PROCESS INSTRUCTIONS LOOP #
+    #############################
 
-        Returns:
-
-        """
+    def _init_process_loop(self, queue: InstructionQueueItem) -> float | None:
+        """Sets up the conditions for the loop and returns the start time"""
         if not queue:
             return None
         self.current_instruction_queue_item = queue
 
         start = time.time()
         self.max_point_id = 0
-
         # make sure the device server is ready to receive data
         self._wait_for_device_server()
 
         queue.is_active = True
+        return start
+
+    def _propagate_instruction_error(
+        self, content: str, info: ErrorInfo | Callable[[str], ErrorInfo], exc: Exception
+    ):
+        logger.error(content)
+        info = info(content) if callable(info) else info
+        self.connector.raise_alarm(
+            severity=Alarms.MAJOR, info=info, metadata=self._get_metadata_for_alarm()
+        )
+        raise ScanAbortion from exc
+
+    def _process_instructions_inner(self, queue: InstructionQueueItem):
         try:
             for instr in queue:
                 self._check_for_interruption()
@@ -418,57 +435,58 @@ class ScanWorker(threading.Thread):
                     instr.metadata["queue_id"] = queue.queue_id
                     self._instruction_step(instr)
             except DeviceInstructionError as exc_di:
-                content = traceback.format_exc()
-                logger.error(content)
-                self.connector.raise_alarm(
-                    severity=Alarms.MAJOR,
-                    info=exc_di.error_info,
-                    metadata=self._get_metadata_for_alarm(),
-                )
-                raise ScanAbortion from exc_di
+                self._propagate_instruction_error(traceback.format_exc(), exc_di.error_info, exc_di)
             except Exception as exc_return_to_start:
                 # if the return_to_start fails, raise the original exception
-                content = traceback.format_exc()
-                logger.error(content)
-                error_info = messages.ErrorInfo(
-                    error_message=content,
-                    compact_error_message=traceback.format_exc(limit=0),
-                    exception_type=exc_return_to_start.__class__.__name__,
-                    device=None,
+                self._propagate_instruction_error(
+                    traceback.format_exc(),
+                    lambda msg: ErrorInfo(
+                        error_message=msg,
+                        compact_error_message=traceback.format_exc(limit=0),
+                        exception_type=exc_return_to_start.__class__.__name__,
+                        device=None,
+                    ),
+                    exc_return_to_start,
                 )
-                self.connector.raise_alarm(
-                    severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
-                )
-                raise ScanAbortion from exc
             raise ScanAbortion from exc
         except DeviceInstructionError as exc_di:
-            content = traceback.format_exc()
-            logger.error(content)
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                info=exc_di.error_info,
-                metadata=self._get_metadata_for_alarm(),
-            )
-
-            raise ScanAbortion from exc_di
+            self._propagate_instruction_error(traceback.format_exc(), exc_di.error_info, exc_di)
         except Exception as exc:
-            content = traceback.format_exc()
-            logger.error(content)
-            error_info = messages.ErrorInfo(
-                error_message=content,
-                compact_error_message=traceback.format_exc(limit=0),
-                exception_type=exc.__class__.__name__,
-                device=None,
-            )
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
+            self._propagate_instruction_error(
+                traceback.format_exc(),
+                lambda msg: ErrorInfo(
+                    error_message=msg,
+                    compact_error_message=traceback.format_exc(limit=0),
+                    exception_type=exc.__class__.__name__,
+                    device=None,
+                ),
+                exc,
             )
 
-            raise ScanAbortion from exc
+    def _process_instructions(self, queue: InstructionQueueItem) -> None:
+        """
+        Process scan instructions and send DeviceInstructions to OPAAS.
+        For now this is an in-memory communication. In the future however,
+        we might want to pass it through a dedicated Kafka topic.
+        Args:
+            queue: instruction queue
+
+        Returns:
+
+        """
+        if (start := self._init_process_loop(queue)) is None:
+            return None
+
+        scan_instance: RequestBase | None = getattr(queue.active_request_block, "scan", None)
+        devices_to_lock = (
+            [] if scan_instance is None else scan_instance.instance_device_access().device_locking
+        )
+        with self.parent.device_locks.lock(devices_to_lock):
+            self._process_instructions_inner(queue)
+
         queue.is_active = False
         queue.status = InstructionQueueStatus.COMPLETED
         self.current_instruction_queue_item = None
-
         logger.info(f"QUEUE ITEM finished after {time.time()-start:.2f} seconds")
         self.reset()
 

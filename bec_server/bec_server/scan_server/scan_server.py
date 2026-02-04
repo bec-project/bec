@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
@@ -10,10 +9,13 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.scan_number_container import ScanNumberContainer
 from bec_lib.service_config import ServiceConfig
+
+from bec_lib import messages
 from bec_server.procedures.container_utils import podman_available
 from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
 from bec_server.procedures.subprocess_worker import SubProcessWorker
+from bec_server.scan_server.device_locking import DeviceLockManager
 
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
@@ -36,6 +38,7 @@ class ScanServer(BECService):
 
     def __init__(self, config: ServiceConfig, connector_cls: type[RedisConnector]):
         super().__init__(config, connector_cls, unique_service=True)
+        self.device_locks = DeviceLockManager()
         self._start_scan_manager()
         self._start_device_manager()
         self._start_queue_manager()

@@ -5,7 +5,7 @@ import copy
 import os
 import time
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Callable, Literal
 
 import bec_lib
 from bec_lib import messages
@@ -860,3 +860,15 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
 
     def get_last(self, topic, key):
         return None
+
+
+def wait_until(predicate: Callable[[], bool], timeout_s: float = 0.1):
+    """Sleep until 'predicate' returns True, or raise a TimeoutError"""
+    # Yes I know this is actually more like retries than a timeout,
+    # it's just to make sure the threads have plenty of chances to switch in the test
+    elapsed, step = 0.0, timeout_s / 10
+    while not predicate():
+        time.sleep(step)
+        elapsed += step
+        if elapsed > timeout_s:
+            raise TimeoutError()
