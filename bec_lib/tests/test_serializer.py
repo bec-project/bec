@@ -6,15 +6,15 @@ import pytest
 from pydantic import BaseModel
 
 from bec_lib import messages
-from bec_lib.codecs import BECCodec
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.serialization import MsgpackSerialization, json_ext, msgpack
+from bec_lib.serialization import JsonSerialization, MsgpackSerialization
 
 
-@pytest.fixture(params=[json_ext, msgpack, MsgpackSerialization])
+@pytest.fixture(params=[MsgpackSerialization, JsonSerialization])
 def serializer(request):
+
     yield request.param
 
 

@@ -97,12 +97,12 @@ def test_redis_connector_send(connector, topic, msg):
     connector.send(topic, msg)
     topic_str = topic if isinstance(topic, str) else topic.endpoint
     connector._redis_conn.publish.assert_called_once_with(
-        topic_str, MsgpackSerialization.dumps(msg)
+        topic_str, msgpack.packb(msg.model_dump(mode="json"))
     )
 
     connector.send(topic, msg, pipe=connector.pipeline())
     connector._redis_conn.pipeline().publish.assert_called_once_with(
-        topic_str, MsgpackSerialization.dumps(msg)
+        topic_str, msgpack.packb(msg.model_dump(mode="json"))
     )
 
 
@@ -248,7 +248,7 @@ def test_redis_connector_set_and_publish(connector, topic, msg, pipe, expire):
     if not isinstance(msg, BECMessage):
         msg_sent = msg
     else:
-        msg_sent = MsgpackSerialization.dumps(msg)
+        msg_sent = msgpack.packb(msg.model_dump(mode="json"))
 
     connector.set_and_publish(topic, msg, pipe, expire)
 
@@ -447,7 +447,7 @@ def test_set_connector(
     }
     for msg in test_set_messages:
         connected_connector._redis_conn.sadd(
-            test_set_endpoint.endpoint, MsgpackSerialization.dumps(msg)
+            test_set_endpoint.endpoint, msgpack.packb(msg.model_dump(mode="json"))
         )
     yield connected_connector, test_set_endpoint, test_set_messages
 
@@ -523,7 +523,7 @@ def test_list_pop_to_sadd_rejects_wrong_message_for_set(
 
 def test_blocking_list_pop(connector):
     msg = messages.StatusMessage(name="test", status=BECStatus.BUSY, info={})
-    connector._redis_conn.blpop.return_value = [None, MsgpackSerialization.dumps(msg)]
+    connector._redis_conn.blpop.return_value = [None, msgpack.packb(msg.model_dump(mode="json"))]
     result = connector.blocking_list_pop("topic")
     connector._redis_conn.blpop.assert_called_once_with(["topic"], timeout=None)
     assert result == msg

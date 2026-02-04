@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import time
 import uuid
-import warnings
 from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
@@ -12,7 +11,9 @@ from typing import Any, ClassVar, Literal, Self
 from uuid import uuid4
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from bec_messages.bec_serializable import BECSerializable, NumpyField
+from jsonschema import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
@@ -34,7 +35,7 @@ class BECStatus(Enum):
     ERROR = -1
 
 
-class BECMessage(BaseModel):
+class BECMessage(BECSerializable):
     """Base Model class for BEC Messages
 
     Args:
@@ -43,18 +44,8 @@ class BECMessage(BaseModel):
 
     """
 
-    msg_type: ClassVar[str]
+    msg_type: ClassVar[str] = "bec_message"
     metadata: dict = Field(default_factory=dict)
-
-    @field_validator("metadata")
-    @classmethod
-    def check_metadata(cls, v):
-        """Validate the metadata, return empty dict if None
-
-        Args:
-            v (dict, None): Metadata dictionary
-        """
-        return v or {}
 
     @property
     def content(self):
@@ -74,20 +65,6 @@ class BECMessage(BaseModel):
             return False
 
         return self.msg_type == other.msg_type and self.metadata == other.metadata
-
-    def loads(self):
-        warnings.warn(
-            "BECMessage.loads() is deprecated and should not be used anymore. When calling Connector methods, it can be omitted. When a message needs to be deserialized call the appropriate function from bec_lib.serialization",
-            FutureWarning,
-        )
-        return self
-
-    def dumps(self):
-        warnings.warn(
-            "BECMessage.dumps() is deprecated and should not be used anymore. When calling Connector methods, it can be omitted. When a message needs to be serialized call the appropriate function from bec_lib.serialization",
-            FutureWarning,
-        )
-        return self
 
     def __hash__(self) -> int:
         return self.model_dump_json().__hash__()
@@ -281,7 +258,7 @@ class ScanQueueOrderMessage(BECMessage):
     target_position: int | None = None
 
 
-class RequestBlock(BaseModel):
+class RequestBlock(BECSerializable):
     """
     Model for a request block within a scan queue entry. It represents a single request in the scan queue, e.g. a single scan or rpc call.
 
@@ -309,7 +286,7 @@ class RequestBlock(BaseModel):
     report_instructions: list[dict] | None = None
 
 
-class QueueInfoEntry(BaseModel):
+class QueueInfoEntry(BECSerializable):
     """
     Model for scan queue information entries. It represents a single queue element within a scan queue but
     may contain multiple request blocks.
@@ -333,7 +310,7 @@ class QueueInfoEntry(BaseModel):
     active_request_block: RequestBlock | None = None
 
 
-class ScanQueueStatus(BaseModel):
+class ScanQueueStatus(BECSerializable):
     """
     Model for scan queue status information. It represents the status of a single queue, e.g. "primary" or "interception".
 
@@ -491,7 +468,7 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
-class ErrorInfo(BaseModel):
+class ErrorInfo(BECSerializable):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     error_message: str
     compact_error_message: str | None
@@ -538,7 +515,7 @@ class DeviceMessage(BECMessage):
         return v
 
 
-class DeviceAsyncUpdate(BaseModel):
+class DeviceAsyncUpdate(BECSerializable):
     """Model for validating async update metadata sent with device data.
 
     The async update metadata controls how data is aggregated into datasets during a scan:
@@ -631,7 +608,7 @@ class DeviceRPCMessage(BECMessage):
     msg_type: ClassVar[str] = "device_rpc_message"
     device: str
     return_val: Any
-    out: str | dict | ErrorInfo
+    out: str | dict
     success: bool = Field(default=True)
 
 
@@ -682,7 +659,16 @@ class DeviceInfoMessage(BECMessage):
     info: dict
 
 
-class DeviceMonitor2DMessage(BECMessage):
+class _DeviceDataMixin(BaseModel):
+    """Set config parameters for device messages which use numpy data"""
+
+    model_config = ConfigDict(
+        ser_json_bytes="base64", val_json_bytes="base64", arbitrary_types_allowed=True
+    )
+    data: NumpyField
+
+
+class DeviceMonitor2DMessage(BECMessage, _DeviceDataMixin):
     """Message type for sending device monitor updates from the device server.
 
     The message is send from the device_server to monitor data coming from larger detector.
@@ -696,13 +682,7 @@ class DeviceMonitor2DMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_monitor2d_message"
     device: str
-    data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
-
-    # Needed for pydantic to accept numpy arrays
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator("data")
     @classmethod
@@ -723,7 +703,7 @@ class DeviceMonitor2DMessage(BECMessage):
         )
 
 
-class DeviceMonitor1DMessage(BECMessage):
+class DeviceMonitor1DMessage(BECMessage, _DeviceDataMixin):
     """Message type for sending device monitor updates from the device server.
 
     The message is send from the device_server to monitor data coming from larger detector.
@@ -737,13 +717,7 @@ class DeviceMonitor1DMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_monitor1d_message"
     device: str
-    data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
-
-    # Needed for pydantic to accept numpy arrays
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator("data")
     @classmethod
@@ -760,7 +734,7 @@ class DeviceMonitor1DMessage(BECMessage):
         raise ValueError(f"Invalid dimenson {v.ndim} for numpy array. Must be a 1D array.")
 
 
-class DevicePreviewMessage(BECMessage):
+class DevicePreviewMessage(BECMessage, _DeviceDataMixin):
     """
     Message type for sending device preview updates from the device server.
     The message is sent from the device_server to monitor data streams, usually at
@@ -777,10 +751,7 @@ class DevicePreviewMessage(BECMessage):
     msg_type: ClassVar[str] = "device_preview_message"
     device: str
     signal: str
-    data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-    # Needed for pydantic to accept numpy arrays
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class DeviceUserROIMessage(BECMessage):
@@ -961,7 +932,7 @@ class AlarmMessage(BECMessage):
     info: ErrorInfo
 
 
-class ServiceVersions(BaseModel):
+class ServiceVersions(BECSerializable):
     _versions: ClassVar[Self | None] = None
 
     bec_lib: str
@@ -989,7 +960,7 @@ class ServiceVersions(BaseModel):
         return cls._versions
 
 
-class ServiceInfo(BaseModel):
+class ServiceInfo(BECSerializable):
     user: str
     hostname: str
     timestamp: float = Field(default_factory=time.time)
@@ -1467,7 +1438,7 @@ class EndpointInfoMessage(BECMessage):
 
     msg_type: ClassVar[str] = "endpoint_info_message"
     endpoint: str
-    metadata: dict | None = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
 
 
 class ScriptExecutionInfoMessage(BECMessage):
@@ -1500,7 +1471,7 @@ class MacroUpdateMessage(BECMessage):
     macro_name: str | None = None
     file_path: str | None = None
 
-    metadata: dict | None = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
     @classmethod

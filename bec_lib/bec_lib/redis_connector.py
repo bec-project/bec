@@ -38,6 +38,7 @@ from typing import (
 )
 
 import louie
+import msgpack
 import redis.client
 import redis.exceptions
 from redis.backoff import ExponentialBackoff
@@ -48,7 +49,6 @@ from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfoMessage, ErrorInfo
-from bec_lib.serialization import MsgpackSerialization
 
 if TYPE_CHECKING:  # pragma: no cover
     from concurrent.futures import Future
@@ -504,7 +504,7 @@ class RedisConnector:
             pipe (Pipeline, optional): redis pipe. Defaults to None.
         """
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         self.raw_send(topic, msg, pipe)  # type: ignore # using sync client
 
     def _start_events_dispatcher_thread(self, start_thread):
@@ -1041,7 +1041,7 @@ class RedisConnector:
         is not a list, an error is returned."""
         client = pipe if pipe is not None else self.pipeline()
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         client.lpush(topic, msg)
         if max_size:
             client.ltrim(topic, 0, max_size)
@@ -1054,7 +1054,7 @@ class RedisConnector:
     def lset(self, topic: str, index: int, msg: str, pipe: Pipeline | None = None) -> str:
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         return client.lset(topic, index, msg)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
@@ -1066,7 +1066,7 @@ class RedisConnector:
         key holds a value that is not a list, an error is returned."""
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         return client.rpush(topic, msg)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
@@ -1105,7 +1105,7 @@ class RedisConnector:
 
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         return client.lrem(topic, count, msg)
 
     @validate_endpoint("topic")
@@ -1115,7 +1115,7 @@ class RedisConnector:
         """piped combination of self.publish and self.set"""
         client = pipe if pipe is not None else self.pipeline()
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         client.set(topic, msg, ex=expire)
         self.raw_send(topic, msg, pipe=client)
         if not pipe:
@@ -1126,7 +1126,7 @@ class RedisConnector:
         """set redis value"""
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         client.set(topic, msg, ex=expire)
 
     @validate_endpoint("pattern")
@@ -1342,7 +1342,7 @@ class RedisConnector:
         """remove the item 'msg' from the set 'topic'"""
         client = pipe or self._redis_conn
         if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
+            msg = msgpack.packb(msg.model_dump(mode="json"))
         if msg is None:
             raise InvalidItemForOperation(f"Cannot remove None from set.")
         client.srem(topic, msg)
