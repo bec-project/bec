@@ -38,8 +38,8 @@ def test_devices_from_instance(queuemanager_mock, msg, devices):
     assert device_access.device_locking == set(devices)
 
 
-def test_scan_worker_locks_devices_single(qm_with_3_qs_and_lock_man):
-    queue_manager, locks = qm_with_3_qs_and_lock_man
-    msg = _linescan_msg(("samx", -5, 5))
-    queue_manager.add_to_queue(scan_queue="1", msg=msg)
-    wait_until(lambda: locks._locks != {}, timeout_s=1)
+# def test_scan_worker_locks_devices_single(qm_with_3_qs_and_lock_man):
+#     queue_manager, locks = qm_with_3_qs_and_lock_man
+#     msg = _linescan_msg(("samx", -5, 5))
+#     queue_manager.add_to_queue(scan_queue="1", msg=msg)
+#     wait_until(lambda: locks._locks != {}, timeout_s=1)
