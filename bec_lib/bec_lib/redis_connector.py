@@ -1148,10 +1148,7 @@ class RedisConnector:
         if pipe:
             return data
         else:
-            try:
-                return MsgpackSerialization.loads(data)
-            except RuntimeError:
-                return data
+            return MsgpackSerialization.loads(data)
 
     def mget(self, topics: list[str], pipe: Pipeline | None = None):
         """retrieve multiple entries"""

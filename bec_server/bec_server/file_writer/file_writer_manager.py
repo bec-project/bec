@@ -236,9 +236,10 @@ class FileWriterManager(BECService):
             self.scan_storage[scan_id] = ScanStorage(
                 scan_number=msg.metadata.get("scan_number"), scan_id=scan_id
             )
-        self.scan_storage[scan_id].append(
-            point_id=msg.content.get("point_id"), data=msg.content.get("data")
-        )
+        point_data = msg.content.get("data")
+        if isinstance(point_data, messages.SignalReading):
+            point_data = point_data.to_dict()
+        self.scan_storage[scan_id].append(point_id=msg.content.get("point_id"), data=point_data)
         logger.debug(msg.content.get("point_id"))
         self.check_storage_status(scan_id=scan_id)
 
