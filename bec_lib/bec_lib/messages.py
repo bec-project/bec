@@ -569,6 +569,12 @@ class DeviceInstructionResponse(BECMessage):
     instruction_id: str
     result: Any | None = None
 
+    @model_validator(mode="after")
+    def _ensure_error_info_if_error(self):
+        if self.status == "error" and self.error_info is None:
+            raise ValueError("Must supply error info for an error message!")
+        return self
+
 
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
