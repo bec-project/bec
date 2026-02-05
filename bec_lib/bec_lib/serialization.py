@@ -7,57 +7,49 @@ from __future__ import annotations
 import contextlib
 import gc
 import json
-from abc import abstractmethod
+import types
+from functools import lru_cache
+from typing import Any
 
-import msgpack as msgpack_module
+import msgpack
+from pydantic import BaseModel
 
-from bec_lib import messages as messages_module
-from bec_lib.logger import bec_logger
-from bec_lib.messages import BECMessage
-from bec_lib.serialization_registry import SerializationRegistry
-
-logger = bec_logger.logger
-
-
-class SerializationInterface:
-    """Base class for message serialization"""
-
-    @abstractmethod
-    def loads(self, msg, **kwargs) -> dict:
-        """load and de-serialize a message"""
-
-    @abstractmethod
-    def dumps(self, msg, **kwargs) -> str:
-        """serialize a message"""
+from bec_lib import endpoints, messages
+from bec_lib.bec_serializable import BECSerializable
+from bec_lib.messages import BECMessage, BundleMessage, RawMessage
 
 
-class BECMessagePack(SerializationRegistry):
-    """Encapsulates msgpack dumps/loads with extensions"""
-
-    def dumps(self, obj):
-        """Pack object `obj` and return packed bytes."""
-        return msgpack_module.packb(obj, default=self.encode)
-
-    def loads(self, raw_bytes):
-        """Unpack bytes and return the decoded object."""
-        out = msgpack_module.unpackb(
-            raw_bytes, raw=False, strict_map_key=True, object_hook=self.decode
-        )
-        return out
+@lru_cache(maxsize=2048)
+def _get_type(type_name: str) -> type[BECSerializable] | None:
+    for mod in BecSerializableCodec.registry.values():
+        if (T := mod.__dict__.get(type_name)) is not None:
+            if not issubclass(T, BECSerializable):
+                raise RuntimeError(
+                    f"BecSerializableCodec found type {T} in module {mod} from bec_codec type info '{type_name}'. Please ensure another type isn't shadowing the correct one."
+                )
+            return T
 
 
-class BECJson(SerializationRegistry):
-    """Encapsulates JSON dumps/loads with extensions"""
+class BecSerializableCodec:
+    # dicts are ordered by insertion, so later additions will not override these.
+    registry: dict[str, types.ModuleType] = {"messages": messages, "endpoints": endpoints}
 
-    use_json = True
+    @classmethod
+    def register_module(cls, mod: types.ModuleType) -> None:
+        if mod.__name__ in cls.registry:
+            raise ValueError(f"A module named {mod.__name__} is already registered!")
+        cls.registry[mod.__name__] = mod
+        _get_type.cache_clear()
 
-    def dumps(self, obj, indent: int | None = None) -> str:
-        """Pack object `obj` and return packed bytes."""
-        return json.dumps(obj, default=self.encode, indent=indent)
+    @classmethod
+    def encode(cls, obj: BaseModel) -> dict:
+        return obj.model_dump(mode="json")
 
-    def loads(self, raw_bytes):
-        """Unpack bytes and return the decoded object."""
-        return json.loads(raw_bytes, object_hook=self.decode)
+    @classmethod
+    def decode(cls, type_name: str, data: dict) -> BECSerializable | dict:
+        if (BecType := _get_type(type_name)) is not None:
+            return BecType.model_validate(data)
+        return data
 
 
 @contextlib.contextmanager
@@ -75,35 +67,48 @@ def pause_gc():
         gc.enable()
 
 
-class MsgpackSerialization(SerializationInterface):
+def _msg_object_hook(msg: dict):
+    bec_type_name: str | None = msg.get("bec_codec", {}).get("type_name")
+    if bec_type_name is None:
+        return msg
+    return BecSerializableCodec.decode(bec_type_name, msg)
+
+
+class MsgpackSerialization:
     """Message serialization using msgpack encoding"""
 
-    ext_type_offset_to_data = {199: 3, 200: 4, 201: 6}
-
     @staticmethod
-    def loads(msg) -> BECMessage | list[BECMessage]:
+    def loads(msg: bytes) -> BECMessage | list[BECMessage] | Any:
         with pause_gc():
             try:
-                msg = msgpack.loads(msg)
-            except Exception as exception:
+                msg_ = msgpack.loads(msg, object_hook=_msg_object_hook)
+            except Exception as e:
                 try:
-                    data = json.loads(msg)
-                    return messages_module.RawMessage(data=data)
+                    return RawMessage(data=json.loads(msg, object_hook=_msg_object_hook))
                 except Exception:
-                    pass
-                raise RuntimeError("Failed to decode BECMessage") from exception
+                    raise RuntimeError(f"Failed to decode BECMessage: {msg}") from e
             else:
-                if isinstance(msg, BECMessage):
-                    if msg.msg_type == "bundle_message":
-                        return msg.messages
-                return msg
+                if isinstance(msg_, BundleMessage):
+                    return msg_.messages
+                return msg_
 
     @staticmethod
-    def dumps(msg, version=None) -> str:
-        if version is None or version == 1.2:
-            return msgpack.dumps(msg)
-        raise RuntimeError(f"Unsupported BECMessage version {version}.")
+    def dumps(msg: BECMessage | Any) -> str:
+        if not isinstance(msg, BECSerializable):
+            return msgpack.dumps(msg)  # type: ignore
+        return msgpack.dumps(msg.model_dump(mode="json"))  # type: ignore
 
 
-msgpack = BECMessagePack()
-json_ext = BECJson()
+class json_ext:
+    """Message serialization using json encoding"""
+
+    @staticmethod
+    def loads(msg) -> BECMessage | list[BECMessage] | Any:
+        with pause_gc():
+            return json.loads(msg, object_hook=_msg_object_hook)
+
+    @staticmethod
+    def dumps(msg: BECMessage | Any, indent: int = 0) -> str:
+        if not isinstance(msg, BECSerializable):
+            return json.dumps(msg, indent=indent)  # type: ignore
+        return msg.model_dump_json(indent=indent)

@@ -3,18 +3,30 @@ from __future__ import annotations
 
 import time
 import uuid
-import warnings
 from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Any, ClassVar, Literal, Self, Union
+from typing import Any, ClassVar, Literal, Self
 from uuid import uuid4
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from bec_lib.metadata_schema import get_metadata_schema_for_scan
+from bec_lib.bec_serializable import BECSerializable
+
+# TODO: restore when moved to external repo
+# from bec_lib.metadata_schema import get_metadata_schema_for_scan
+
+logger = None
+
+
+def lazy_ensure_logger():
+    global logger
+    if logger is None:
+        from bec_lib.logger import bec_logger
+
+        logger = bec_logger.logger
 
 
 class ProcedureWorkerStatus(Enum):
@@ -34,7 +46,7 @@ class BECStatus(Enum):
     ERROR = -1
 
 
-class BECMessage(BaseModel):
+class BECMessage(BECSerializable):
     """Base Model class for BEC Messages
 
     Args:
@@ -43,18 +55,8 @@ class BECMessage(BaseModel):
 
     """
 
-    msg_type: ClassVar[str]
+    msg_type: ClassVar[str] = "bec_message"
     metadata: dict = Field(default_factory=dict)
-
-    @field_validator("metadata")
-    @classmethod
-    def check_metadata(cls, v):
-        """Validate the metadata, return empty dict if None
-
-        Args:
-            v (dict, None): Metadata dictionary
-        """
-        return v or {}
 
     @property
     def content(self):
@@ -74,20 +76,6 @@ class BECMessage(BaseModel):
             return False
 
         return self.msg_type == other.msg_type and self.metadata == other.metadata
-
-    def loads(self):
-        warnings.warn(
-            "BECMessage.loads() is deprecated and should not be used anymore. When calling Connector methods, it can be omitted. When a message needs to be deserialized call the appropriate function from bec_lib.serialization",
-            FutureWarning,
-        )
-        return self
-
-    def dumps(self):
-        warnings.warn(
-            "BECMessage.dumps() is deprecated and should not be used anymore. When calling Connector methods, it can be omitted. When a message needs to be serialized call the appropriate function from bec_lib.serialization",
-            FutureWarning,
-        )
-        return self
 
     def __hash__(self) -> int:
         return self.model_dump_json().__hash__()
@@ -148,19 +136,20 @@ class ScanQueueMessage(BECMessage):
         description="Whether the server is allowed to restart the scan if needed. If False, only a ScanRestartMessage will be sent.",
     )
 
-    @model_validator(mode="after")
-    @classmethod
-    def _validate_metadata(cls, data):
-        """Make sure the metadata conforms to the registered schema, but
-        leave it as a dict"""
-        schema = get_metadata_schema_for_scan(data.scan_type)
-        try:
-            schema.model_validate(data.metadata.get("user_metadata", {}))
-        except ValidationError as e:
-            raise ValueError(
-                f"Scan metadata {data.metadata} does not conform to registered schema {schema}. \n Errors: {str(e)}"
-            ) from e
-        return data
+    # TODO: restore when moved to external repo
+    # @model_validator(mode="after")
+    # @classmethod
+    # def _validate_metadata(cls, data):
+    #     """Make sure the metadata conforms to the registered schema, but
+    #     leave it as a dict"""
+    #     schema = get_metadata_schema_for_scan(data.scan_type)
+    #     try:
+    #         schema.model_validate(data.metadata.get("user_metadata", {}))
+    #     except ValidationError as e:
+    #         raise ValueError(
+    #             f"Scan metadata {data.metadata} does not conform to registered schema {schema}. \n Errors: {str(e)}"
+    #         ) from e
+    #     return data
 
 
 class ScanQueueHistoryMessage(BECMessage):
@@ -230,12 +219,11 @@ class ScanStatusMessage(BECMessage):
         dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]]
         | None
     ) = None
-    scan_parameters: dict[
-        Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any
-    ] = Field(default_factory=dict)
-    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Any] = Field(
-        default_factory=dict
-    )
+    scan_parameters: (
+        dict[Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any]
+        | None
+    ) = None
+    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Any] | None = None
     info: dict
     timestamp: float = Field(default_factory=time.time)
 
@@ -326,7 +314,7 @@ class ScanQueueOrderMessage(BECMessage):
     target_position: int | None = None
 
 
-class RequestBlock(BaseModel):
+class RequestBlock(BECSerializable):
     """
     Model for a request block within a scan queue entry. It represents a single request in the scan queue, e.g. a single scan or rpc call.
 
@@ -354,7 +342,7 @@ class RequestBlock(BaseModel):
     report_instructions: list[dict] | None = None
 
 
-class QueueInfoEntry(BaseModel):
+class QueueInfoEntry(BECSerializable):
     """
     Model for scan queue information entries. It represents a single queue element within a scan queue but
     may contain multiple request blocks.
@@ -390,7 +378,7 @@ class ScanQueueLock(BaseModel):
     identifier: str
 
 
-class ScanQueueStatus(BaseModel):
+class ScanQueueStatus(BECSerializable):
     """
     Model for scan queue status information.
     It represents the status of a single queue, e.g. "primary" or "interception".
@@ -553,7 +541,7 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
-class ErrorInfo(BaseModel):
+class ErrorInfo(BECSerializable):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     error_message: str
     compact_error_message: str | None
@@ -577,6 +565,21 @@ class DeviceInstructionResponse(BECMessage):
         return self
 
 
+class SignalReading(BECSerializable):
+    value: int | float | list[int] | list[float] | np.ndarray | Any
+    timestamp: float | None = None
+
+    def get(self, item: Literal["value", "timestamp"], default=Any):
+        """Allow dictionary-style access for legacy reasons."""
+        lazy_ensure_logger()
+        logger.warning(
+            "Get-access on SignalReading is deprecated; Just access the model.value field."
+        )
+        if item not in ["value", "timestamp"]:
+            raise KeyError('SignalReading only has "value" and "timestamp" fields!')
+        return getattr(self, item)
+
+
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
 
@@ -589,7 +592,7 @@ class DeviceMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "device_message"
-    signals: dict[str, dict[Literal["value", "timestamp"], Any]]
+    signals: dict[str, SignalReading]
 
     @field_validator("metadata")
     @classmethod
@@ -606,7 +609,7 @@ class DeviceMessage(BECMessage):
         return v
 
 
-class DeviceAsyncUpdate(BaseModel):
+class DeviceAsyncUpdate(BECSerializable):
     """Model for validating async update metadata sent with device data.
 
     The async update metadata controls how data is aggregated into datasets during a scan:
@@ -764,13 +767,8 @@ class DeviceMonitor2DMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_monitor2d_message"
     device: str
-    data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
-
-    # Needed for pydantic to accept numpy arrays
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    data: np.ndarray
 
     @field_validator("data")
     @classmethod
@@ -805,13 +803,8 @@ class DeviceMonitor1DMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_monitor1d_message"
     device: str
-    data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
-
-    # Needed for pydantic to accept numpy arrays
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    data: np.ndarray
 
     @field_validator("data")
     @classmethod
@@ -845,10 +838,8 @@ class DevicePreviewMessage(BECMessage):
     msg_type: ClassVar[str] = "device_preview_message"
     device: str
     signal: str
-    data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-    # Needed for pydantic to accept numpy arrays
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    data: np.ndarray
 
 
 class DeviceUserROIMessage(BECMessage):
@@ -898,8 +889,7 @@ class ScanHistoryMessage(BECMessage):
         scan_number (int): Scan number.
         dataset_number (int): Dataset number.
         file_path (str): Path to the file.
-        exit_status (Literal["closed", "aborted", "halted", "user_completed"]): Exit status of the scan.
-        reason (Literal["user", "alarm"] | None, optional): Reason for the exit status, if applicable.
+        exit_status (Literal["closed", "aborted", "halted"]): Exit status of the scan.
         start_time (float): Start time of the scan.
         end_time (float): End time of the scan.
         scan_name (str): Name of the scan.
@@ -915,8 +905,7 @@ class ScanHistoryMessage(BECMessage):
     scan_number: int
     dataset_number: int
     file_path: str
-    exit_status: Literal["closed", "aborted", "halted", "user_completed"]
-    reason: Literal["user", "alarm"] | None = None
+    exit_status: Literal["closed", "aborted", "halted"]
     start_time: float
     end_time: float
     scan_name: str
@@ -1031,7 +1020,7 @@ class AlarmMessage(BECMessage):
     info: ErrorInfo
 
 
-class ServiceVersions(BaseModel):
+class ServiceVersions(BECSerializable):
     _versions: ClassVar[Self | None] = None
 
     bec_lib: str
@@ -1059,7 +1048,7 @@ class ServiceVersions(BaseModel):
         return cls._versions
 
 
-class ServiceInfo(BaseModel):
+class ServiceInfo(BECSerializable):
     user: str
     hostname: str
     timestamp: float = Field(default_factory=time.time)
@@ -1235,12 +1224,14 @@ class AvailableResourceMessage(BECMessage):
     """Message for available resources such as scans, data processing plugins etc
 
     Args:
-        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description
+        resource (dict, list[dict]): Resource description
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: dict | list[dict] | BECMessage | list[BECMessage]
+    resource: (
+        dict | list[dict] | list[MessagingServiceConfig]
+    )  # | BECSerializable | list[BECSerializable]
 
 
 class ProgressMessage(BECMessage):
@@ -1640,7 +1631,6 @@ class EndpointInfoMessage(BECMessage):
 
     msg_type: ClassVar[str] = "endpoint_info_message"
     endpoint: str
-    metadata: dict | None = Field(default_factory=dict)
 
 
 class ScriptExecutionInfoMessage(BECMessage):
@@ -1673,8 +1663,6 @@ class MacroUpdateMessage(BECMessage):
     macro_name: str | None = None
     file_path: str | None = None
 
-    metadata: dict | None = Field(default_factory=dict)
-
     @model_validator(mode="after")
     @classmethod
     def check_macro(cls, values):
@@ -1706,6 +1694,8 @@ class MessagingServiceFileContent(BaseModel):
         mime_type (str): MIME type of the file
         data (bytes): File data
     """
+
+    model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")
 
     filename: str
     mime_type: str
@@ -1745,13 +1735,13 @@ class MessagingServiceGiphyContent(BaseModel):
     giphy_url: str
 
 
-MessagingServiceContent = Union[
-    MessagingServiceTextContent,
-    MessagingServiceFileContent,
-    MessagingServiceTagsContent,
-    MessagingServiceStickerContent,
-    MessagingServiceGiphyContent,
-]
+MessagingServiceContent = (
+    MessagingServiceTextContent
+    | MessagingServiceFileContent
+    | MessagingServiceTagsContent
+    | MessagingServiceStickerContent
+    | MessagingServiceGiphyContent
+)
 
 
 class MessagingServiceMessage(BECMessage):
@@ -1769,7 +1759,6 @@ class MessagingServiceMessage(BECMessage):
     service_name: Literal["signal", "teams", "scilog"]
     message: list[MessagingServiceContent]
     scope: str | list[str] | None = None
-    metadata: dict | None = Field(default_factory=dict)
 
 
 class MessagingServiceConfig(BECMessage):
@@ -1788,4 +1777,3 @@ class MessagingServiceConfig(BECMessage):
     service_name: Literal["signal", "teams", "scilog"]
     scopes: list[str]
     enabled: bool
-    metadata: dict | None = Field(default_factory=dict)

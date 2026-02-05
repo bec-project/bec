@@ -272,11 +272,9 @@ def test_async_writer_add_slice_fixed_size_data_consistency(async_writer):
     assert out.shape == (2, 20)
     assert np.allclose(
         out[0, :],
-        np.hstack(
-            (data[0].signals["monitor_async"]["value"], data[1].signals["monitor_async"]["value"])
-        ),
+        np.hstack((data[0].signals["monitor_async"].value, data[1].signals["monitor_async"].value)),
     )
-    assert np.allclose(out[1, :10], data[2].signals["monitor_async"]["value"])
+    assert np.allclose(out[1, :10], data[2].signals["monitor_async"].value)
     assert np.allclose(out[1, 10:], np.zeros(10))
 
 
@@ -389,7 +387,7 @@ def test_async_writer_replace(async_writer, data):
         out = f[async_writer.BASE_PATH]["monitor_async"]["monitor_async"]["value"][:]
 
     assert out.shape == (10,)
-    assert np.allclose(out, data[-1].signals["monitor_async"]["value"])
+    assert np.allclose(out, data[-1].signals["monitor_async"].value)
 
 
 def test_async_writer_async_signal(async_writer):
