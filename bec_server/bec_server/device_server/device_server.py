@@ -307,7 +307,6 @@ class DeviceServer(BECService):
     def __init__(self, config, connector_cls: type[RedisConnector]) -> None:
         super().__init__(config, connector_cls, unique_service=True)
         self._tasks = []
-        self.device_manager = None
         self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._start_device_manager()

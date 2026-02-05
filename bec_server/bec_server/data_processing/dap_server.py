@@ -22,10 +22,10 @@ class DAPServer(BECClient):
         super().__init__(config=config, connector_cls=connector_cls, forced=forced)
         self.config = config
         self.connector_cls = connector_cls
-        self._dap_service_manager = None
         self._provided_services = (
             provided_services if isinstance(provided_services, list) else [provided_services]
         )
+        self._dap_service_manager = DAPServiceManager(self._provided_services)
 
     @property
     def _service_id(self):
@@ -38,7 +38,6 @@ class DAPServer(BECClient):
         self._start_dap_service()
 
     def _start_dap_service(self):
-        self._dap_service_manager = DAPServiceManager(self._provided_services)
         self._dap_service_manager.start(self)
 
     def shutdown(self):

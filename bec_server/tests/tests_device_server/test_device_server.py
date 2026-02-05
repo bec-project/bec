@@ -1,7 +1,7 @@
 import threading
 from io import StringIO
 from unittest import mock
-from unittest.mock import ANY
+from unittest.mock import ANY, patch
 
 import pytest
 from loguru import logger
@@ -26,11 +26,12 @@ from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 class DeviceServerMock(DeviceServer):
     def __init__(self, device_manager, connector_cls) -> None:
         config = ServiceConfig(redis={"host": "dummy", "port": 6379})
-        super().__init__(config, connector_cls=ConnectorMock)
-        self.device_manager = device_manager
+        self.__test_device_manager = device_manager
+        with patch("bec_server.device_server.device_server.DeviceManagerDS"):
+            super().__init__(config, connector_cls=ConnectorMock)
 
     def _start_device_manager(self):
-        pass
+        self.device_manager = self.__test_device_manager
 
     def _start_metrics_emitter(self):
         pass

@@ -230,11 +230,12 @@ class ScanStatusMessage(BECMessage):
         dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]]
         | None
     ) = None
-    scan_parameters: (
-        dict[Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any]
-        | None
-    ) = None
-    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Any] | None = None
+    scan_parameters: dict[
+        Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any
+    ] = Field(default_factory=dict)
+    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Any] = Field(
+        default_factory=dict
+    )
     info: dict
     timestamp: float = Field(default_factory=time.time)
 

@@ -12,7 +12,7 @@ from bec_lib.messages import AvailableResourceMessage
 from bec_lib.signature_serializer import signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
 
-from . import scans as ScanServerScans
+from . import scans as scans_module
 
 logger = bec_logger.logger
 
@@ -28,7 +28,7 @@ class ScanManager:
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict = {}
+        self.scan_dict: dict[str, type[scans_module.RequestBase]] = {}
         self._plugins = {}
         self.load_plugins()
         self.update_available_scans()
@@ -40,7 +40,7 @@ class ScanManager:
         if not plugins:
             return
         for name, cls in plugins.items():
-            if not issubclass(cls, ScanServerScans.RequestBase):
+            if not issubclass(cls, scans_module.RequestBase):
                 logger.error(
                     f"Plugin {name} is not a valid scan plugin as it does not inherit from RequestBase. Skipping."
                 )
@@ -50,16 +50,13 @@ class ScanManager:
 
     def update_available_scans(self):
         """load all scans and plugin scans"""
-        members = inspect.getmembers(ScanServerScans)
-        for member_name, cls in self._plugins.items():
-            members.append((member_name, cls))
+        members: list[tuple[str, type]] = inspect.getmembers(
+            scans_module, predicate=inspect.isclass
+        )
+        members.extend((name, cls) for name, cls in self._plugins.items() if inspect.isclass(cls))
 
         for name, scan_cls in members:
-            try:
-                is_scan = issubclass(scan_cls, ScanServerScans.RequestBase)
-            except TypeError:
-                is_scan = False
-
+            is_scan = issubclass(scan_cls, scans_module.RequestBase)
             if not is_scan or not scan_cls.scan_name:
                 logger.debug(f"Ignoring {name}")
                 continue
@@ -68,14 +65,13 @@ class ScanManager:
                 continue
 
             report_classes = [
-                ScanServerScans.RequestBase,
-                ScanServerScans.ScanBase,
-                ScanServerScans.AsyncFlyScanBase,
-                ScanServerScans.SyncFlyScanBase,
-                ScanServerScans.ScanStubs,
-                ScanServerScans.ScanComponent,
+                scans_module.ScanBase,
+                scans_module.AsyncFlyScanBase,
+                scans_module.SyncFlyScanBase,
+                scans_module.ScanStubs,
+                scans_module.ScanComponent,
             ]
-
+            base_cls = scans_module.RequestBase.__name__
             for report_cls in report_classes:
                 if issubclass(scan_cls, report_cls):
                     base_cls = report_cls.__name__
@@ -112,9 +108,11 @@ class ScanManager:
                 f"Invalid gui_config for {scan_cls.scan_name}. gui_config must be of type GUIConfig or dict."
             )
             return {}
-        gui_config = scan_cls.gui_config
-        if isinstance(scan_cls.gui_config, dict):
-            gui_config = GUIConfig.from_dict(scan_cls)
+        gui_config = (
+            GUIConfig.from_dict(scan_cls)
+            if isinstance(scan_cls.gui_config, dict)
+            else scan_cls.gui_config
+        )
         return gui_config.model_dump()
 
     def convert_arg_input(self, arg_input) -> dict:
@@ -128,7 +126,7 @@ class ScanManager:
             dict: converted arg_input
         """
         for key, value in arg_input.items():
-            if isinstance(value, ScanServerScans.ScanArgType):
+            if isinstance(value, scans_module.ScanArgType):
                 continue
             if issubclass(value, DeviceBase):
                 # once we have generalized the device types, this should be removed
