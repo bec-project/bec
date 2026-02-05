@@ -382,6 +382,28 @@ class ScanWorker(threading.Thread):
             metadata["scan_number"] = self.current_scan_info["scan_number"]
         return metadata
 
+    #############################
+    # PROCESS INSTRUCTIONS LOOP #
+    #############################
+
+    def _init_instruction_loop(self, queue: InstructionQueueItem) -> float | None:
+        """Get ready to run the process instructions loop, and return the start time if successful."""
+        if not queue:
+            return None
+        self.current_instruction_queue_item = queue
+        start = time.time()
+        self.max_point_id = 0
+        # make sure the device server is ready to receive data
+        self._wait_for_device_server()
+        queue.is_active = True
+        return start
+
+    def _propagate_pi_error(self, content: str, error_info: messages.ErrorInfo):
+        logger.error(content)
+        self.connector.raise_alarm(
+            severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
+        )
+
     def _process_instructions(self, queue: InstructionQueueItem) -> None:
         """
         Process scan instructions and send DeviceInstructions to OPAAS.
@@ -393,17 +415,8 @@ class ScanWorker(threading.Thread):
         Returns:
 
         """
-        if not queue:
-            return None
-        self.current_instruction_queue_item = queue
-
-        start = time.time()
-        self.max_point_id = 0
-
-        # make sure the device server is ready to receive data
-        self._wait_for_device_server()
-
-        queue.is_active = True
+        if (start := self._init_instruction_loop(queue)) is None:
+            return
         try:
             for instr in queue:
                 self._check_for_interruption()
@@ -426,52 +439,32 @@ class ScanWorker(threading.Thread):
                     instr.metadata["queue_id"] = queue.queue_id
                     self._instruction_step(instr)
             except DeviceInstructionError as exc_di:
-                content = traceback.format_exc()
-                logger.error(content)
-                self.connector.raise_alarm(
-                    severity=Alarms.MAJOR,
-                    info=exc_di.error_info,
-                    metadata=self._get_metadata_for_alarm(),
-                )
+                self._propagate_pi_error(traceback.format_exc(), exc_di.error_info)
                 raise ScanAbortion from exc_di
             except Exception as exc_return_to_start:
                 # if the return_to_start fails, raise the original exception
                 content = traceback.format_exc()
-                logger.error(content)
                 error_info = messages.ErrorInfo(
                     error_message=content,
                     compact_error_message=traceback.format_exc(limit=0),
                     exception_type=exc_return_to_start.__class__.__name__,
                     device=None,
                 )
-                self.connector.raise_alarm(
-                    severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
-                )
+                self._propagate_pi_error(content, error_info)
                 raise exc
             raise exc
         except DeviceInstructionError as exc_di:
-            content = traceback.format_exc()
-            logger.error(content)
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR,
-                info=exc_di.error_info,
-                metadata=self._get_metadata_for_alarm(),
-            )
-
+            self._propagate_pi_error(traceback.format_exc(), exc_di.error_info)
             raise ScanAbortion from exc_di
         except Exception as exc:
             content = traceback.format_exc()
-            logger.error(content)
             error_info = messages.ErrorInfo(
                 error_message=content,
                 compact_error_message=traceback.format_exc(limit=0),
                 exception_type=exc.__class__.__name__,
                 device=None,
             )
-            self.connector.raise_alarm(
-                severity=Alarms.MAJOR, info=error_info, metadata=self._get_metadata_for_alarm()
-            )
-
+            self._propagate_pi_error(content, error_info)
             raise ScanAbortion from exc
         queue.is_active = False
         queue.status = InstructionQueueStatus.COMPLETED

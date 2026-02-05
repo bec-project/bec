@@ -133,7 +133,7 @@ class ScanStubStatus:
         self.done = True
         self._future.set_result(result)
 
-    def set_failed(self, error_info: messages.ErrorInfo | None = None):
+    def set_failed(self, error_info: messages.ErrorInfo):
         """
         Set the status object to failed.
 
@@ -141,9 +141,7 @@ class ScanStubStatus:
             error_info (messages.ErrorInfo, optional): Error information. Defaults to None.
         """
         self.done = True
-        exc = DeviceInstructionError(error_info.compact_error_message if error_info else None)
-        if error_info:
-            exc.set_info(error_info)
+        exc = DeviceInstructionError(error_info)
         self._future.set_exception(exc)
 
     def set_running(self):

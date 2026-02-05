@@ -29,10 +29,10 @@ class DeviceMessageError(Exception):
 
 
 class DeviceInstructionError(Exception):
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = message
-        self.error_info: ErrorInfo | None = None
+    def __init__(self, error_info: ErrorInfo):
+        super().__init__(error_info.compact_error_message)
+        self.message = error_info.compact_error_message
+        self.error_info: ErrorInfo = error_info
 
-    def set_info(self, error_info: ErrorInfo):
+    def update_info(self, error_info: ErrorInfo):
         self.error_info = error_info

@@ -73,7 +73,11 @@ def test_scan_stub_status_update_future_completed(msg, scan_stub_status):
             metadata={"device_instr_id": "test"},
             device="samx",
             status="error",
-            error_info=None,
+            error_info=messages.ErrorInfo(
+                error_message="test_error",
+                compact_error_message="test_error",
+                exception_type="TestError",
+            ),
             instruction=messages.DeviceInstructionMessage(
                 device="samx",
                 action="set",
