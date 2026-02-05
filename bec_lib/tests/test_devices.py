@@ -21,6 +21,7 @@ from bec_lib.device import (
 )
 from bec_lib.devicemanager import DeviceContainer, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import SignalReading
 from bec_lib.tests.fixtures import device_manager_class
 from bec_lib.tests.utils import ClientMock, ConnectorMock, get_device_info_mock
 
@@ -53,15 +54,21 @@ def test_read(dev: Any):
         res = dev.samx.read(cached=True)
         mock_get.assert_called_once_with(MessageEndpoints.device_readback("samx"))
         assert res == {
-            "samx": {"value": 0, "timestamp": 1701105880.1711318},
-            "samx_setpoint": {"value": 0, "timestamp": 1701105880.1693492},
-            "samx_motor_is_moving": {"value": 0, "timestamp": 1701105880.16935},
+            "samx": messages.SignalReading.model_validate(
+                {"value": 0, "timestamp": 1701105880.1711318}
+            ),
+            "samx_setpoint": messages.SignalReading.model_validate(
+                {"value": 0, "timestamp": 1701105880.1693492}
+            ),
+            "samx_motor_is_moving": messages.SignalReading.model_validate(
+                {"value": 0, "timestamp": 1701105880.16935}
+            ),
         }
 
 
 def test_read_filtered_hints(dev: Any):
     with mock.patch.object(dev.samx.root.parent.connector, "get") as mock_get:
-        mock_get.return_value = messages.DeviceMessage(
+        msg = messages.DeviceMessage(
             signals={
                 "samx": {"value": 0, "timestamp": 1701105880.1711318},
                 "samx_setpoint": {"value": 0, "timestamp": 1701105880.1693492},
@@ -69,9 +76,10 @@ def test_read_filtered_hints(dev: Any):
             },
             metadata={"scan_id": "scan_id", "scan_type": "scan_type"},
         )
+        mock_get.return_value = msg
         res = dev.samx.read(cached=True, filter_to_hints=True)
         mock_get.assert_called_once_with(MessageEndpoints.device_readback("samx"))
-        assert res == {"samx": {"value": 0, "timestamp": 1701105880.1711318}}
+        assert res == {"samx": msg.signals.get("samx")}
 
 
 def test_read_use_read(dev: Any):
@@ -86,7 +94,7 @@ def test_read_use_read(dev: Any):
         )
         res = dev.samx.read(cached=True, use_readback=False)
         mock_get.assert_called_once_with(MessageEndpoints.device_read("samx"))
-        assert res == data
+        assert res == {s: SignalReading.model_validate(sr) for s, sr in data.items()}
 
 
 def test_read_nested_device(dev: Any):
@@ -103,7 +111,7 @@ def test_read_nested_device(dev: Any):
         )
         res = dev.dyn_signals.messages.read(cached=True)
         mock_get.assert_called_once_with(MessageEndpoints.device_readback("dyn_signals"))
-        assert res == data
+        assert res == {s: SignalReading.model_validate(sr) for s, sr in data.items()}
 
 
 @pytest.mark.parametrize(
@@ -131,7 +139,9 @@ def test_read_kind_hinted(
         if cached:
             mock_get.assert_called_once_with(MessageEndpoints.device_readback("samx"))
             mock_run.assert_not_called()
-            assert res == {"samx": {"value": 0, "timestamp": 1701105880.1711318}}
+            assert res == {
+                "samx": SignalReading.model_validate({"value": 0, "timestamp": 1701105880.1711318})
+            }
         else:
             mock_run.assert_called_once_with(cached=False, fcn=dev.samx.readback.read)
             mock_get.assert_not_called()

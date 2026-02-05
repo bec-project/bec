@@ -23,6 +23,7 @@ from bec_lib.redis_connector import (
     validate_endpoint,
 )
 from bec_lib.serialization import MsgpackSerialization
+from bec_lib.tests.utils import _endpoint_info
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -393,7 +394,7 @@ def test_mget(connector):
 
 def test_validate_with_present_arg():
 
-    endpoint = EndpointInfo("test", Any, ["method"])  # type: ignore
+    endpoint = _endpoint_info("test", Any, ["method"])  # type: ignore
 
     @validate_endpoint("arg1")
     def method(_, arg1):
@@ -412,7 +413,7 @@ def test_validate_with_missing_arg():
 
 
 def test_validate_rejects_wrong_op():
-    endpoint = EndpointInfo("test", Any, ["missing_ops"])  # type: ignore
+    endpoint = _endpoint_info("test", Any, ["missing_ops"])  # type: ignore
 
     @validate_endpoint("arg1")
     def not_in_list(_, arg1): ...
@@ -441,7 +442,7 @@ def test_set_connector(
     connected_connector,
 ) -> Generator[tuple[RedisConnector, EndpointInfo, set[ProcedureExecutionMessage]], None, None]:
 
-    test_set_endpoint = EndpointInfo(
+    test_set_endpoint = _endpoint_info(
         f"{EndpointType.INFO}/procedures/active_procedures",
         ProcedureExecutionMessage,
         MessageOp.SET,
@@ -481,7 +482,7 @@ def test_list_pop_to_sadd_adds_to_set(
     test_set_connector: tuple[RedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
 ):
     connected_connector, test_set_endpoint, test_set_messages = test_set_connector
-    test_list_endpoint = EndpointInfo(
+    test_list_endpoint = _endpoint_info(
         f"{EndpointType.INTERNAL}/procedures/procedure_execution/queue5",
         ProcedureExecutionMessage,
         MessageOp.LIST,
@@ -515,7 +516,7 @@ def test_list_pop_to_sadd_rejects_wrong_message_for_set(
     test_set_connector: tuple[RedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
 ):
     connected_connector, test_set_endpoint, _ = test_set_connector
-    test_list_endpoint = EndpointInfo(
+    test_list_endpoint = _endpoint_info(
         f"{EndpointType.INTERNAL}/procedures/procedure_execution/queue5",
         ProcedureExecutionMessage,
         MessageOp.LIST,

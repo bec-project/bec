@@ -5,21 +5,16 @@ Endpoints for communication within the BEC.
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from functools import lru_cache
+from typing import Annotated, Any, Callable, ClassVar, Generic, TypeVar
 
-from bec_lib.utils.import_utils import lazy_import
+from pydantic import PlainSerializer
+
+from bec_lib import messages
+from bec_lib.bec_serializable import BECSerializable, serialize_type
 
 # pylint: disable=too-many-public-methods
 # pylint: disable=too-many-lines
-
-
-if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
-else:
-    # TODO: put back normal import when Pydantic gets faster
-    # from bec_lib import messages
-    messages = lazy_import("bec_lib.messages")
 
 
 class EndpointType(str, enum.Enum):
@@ -49,8 +44,14 @@ class MessageOp(list[str], enum.Enum):
 MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]")
 
 
-@dataclass
-class EndpointInfo(Generic[MessageType]):
+@lru_cache()
+def _resolve_msg_type(n: MessageType | str):
+    if issubclass(n, messages.BECMessage):
+        return n
+    return getattr(messages, n, messages.RawMessage)
+
+
+class EndpointInfo(BECSerializable, Generic[MessageType]):
     """
     Dataclass for endpoint info.
 
@@ -60,8 +61,12 @@ class EndpointInfo(Generic[MessageType]):
         message_op (MessageOp): Message operation.
     """
 
+    _deserialization_registry: ClassVar[dict[type, Callable[[Any], Any]]] = {
+        MessageType: _resolve_msg_type
+    }
+
     endpoint: str
-    message_type: MessageType
+    message_type: Annotated[MessageType, PlainSerializer(serialize_type)]
     message_op: MessageOp
 
 
