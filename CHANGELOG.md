@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.95.1 (2026-02-05)
+
+### Bug Fixes
+
+- Use svc name instead of id for status/metrics
+  ([`ceb192b`](https://github.com/bec-project/bec/commit/ceb192bf746379e9ed7ba4b7bf9540cbb0235463))
+
+
 ## v3.95.0 (2026-02-05)
 
 ### Bug Fixes
