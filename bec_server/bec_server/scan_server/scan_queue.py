@@ -16,6 +16,7 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_server.scan_server.types import ReadoutPriorities
 
 from .errors import DeviceInstructionError, LimitError, ScanAbortion
 from .instruction_handler import InstructionHandler
@@ -905,19 +906,16 @@ class AutoResetCM:
 
 class RequestBlock:
     def __init__(
-        self, msg, assembler: ScanAssembler, parent: RequestBlockQueue | None = None
+        self, msg: messages.ScanQueueMessage, assembler: ScanAssembler, parent: RequestBlockQueue
     ) -> None:
         self.instructions = None
-        self.scan = None
         self.scan_motors = []
-        self.readout_priority: dict[
-            Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]
-        ] = {}
+        self.readout_priority: ReadoutPriorities = {}
         self.msg = msg
         self.RID = msg.metadata["RID"]
         self.scan_assembler = assembler
-        self.is_scan = False
         self.scan_id = None
+        self.is_scan = False
         self._scan_number = None
         self.parent = parent
         self._assemble()
@@ -925,7 +923,7 @@ class RequestBlock:
 
     def _assemble(self):
         self.is_scan = self.scan_assembler.is_scan_message(self.msg)
-        if (self.is_scan or self.scan_def_id is not None) and self.scan_id is None:
+        if self.is_scan or self.scan_def_id is not None:
             self.scan_id = str(uuid.uuid4())
         self.scan = self.scan_assembler.assemble_device_instructions(self.msg, self.scan_id)
         self.instructions = self.scan.run()

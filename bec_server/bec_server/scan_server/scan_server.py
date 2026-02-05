@@ -27,13 +27,6 @@ logger = bec_logger.logger
 
 
 class ScanServer(BECService):
-    device_manager = None
-    queue_manager = None
-    scan_guard = None
-    scan_server = None
-    scan_assembler = None
-    scan_manager = None
-
     def __init__(self, config: ServiceConfig, connector_cls: type[RedisConnector]):
         super().__init__(config, connector_cls, unique_service=True)
         self._start_scan_manager()
@@ -115,7 +108,7 @@ class ScanServer(BECService):
         """set the current dataset number"""
         self.scan_number_container.dataset_number = val
 
-    def shutdown(self) -> None:
+    def shutdown(self, per_thread_timeout_s: float | None = None) -> None:
         """shutdown the scan server"""
         self.proc_manager.shutdown()
         self.device_manager.shutdown()

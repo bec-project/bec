@@ -1,6 +1,7 @@
 import threading
 import time
 import uuid
+from typing import Callable, Generator
 from unittest import mock
 
 import pytest
@@ -29,8 +30,8 @@ ScanQueue.AUTO_SHUTDOWN_TIME = 1  # Reduce auto-shutdown time for testing
 
 
 @pytest.fixture
-def queuemanager_mock(scan_server_mock) -> QueueManager:
-    def _get_queuemanager(queues=None):
+def queuemanager_mock(scan_server_mock):
+    def _get_queuemanager(queues: str | list[str] | None = None) -> QueueManager:
         scan_server = scan_server_mock
         if queues is None:
             queues = ["primary"]
@@ -512,7 +513,9 @@ def test_request_block(scan_server_mock):
         queue="primary",
         metadata={"RID": "something"},
     )
-    request_block = RequestBlock(msg, assembler=ScanAssembler(parent=scan_server))
+    request_block = RequestBlock(
+        msg, assembler=ScanAssembler(parent=scan_server), parent=mock.MagicMock()
+    )
 
 
 @pytest.mark.parametrize(
@@ -538,7 +541,9 @@ def test_request_block(scan_server_mock):
 )
 def test_request_block_scan_number(scan_server_mock, scan_queue_msg):
     scan_server = scan_server_mock
-    request_block = RequestBlock(scan_queue_msg, assembler=ScanAssembler(parent=scan_server))
+    request_block = RequestBlock(
+        scan_queue_msg, assembler=ScanAssembler(parent=scan_server), parent=mock.MagicMock()
+    )
     if not request_block.is_scan:
         assert request_block.scan_number is None
         return

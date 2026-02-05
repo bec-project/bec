@@ -270,7 +270,7 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
 def test_initialize_scan_info(scan_worker_mock, msg):
     worker = scan_worker_mock
     scan_server = scan_worker_mock.parent
-    rb = RequestBlock(msg, assembler=ScanAssembler(parent=scan_server))
+    rb = RequestBlock(msg, assembler=ScanAssembler(parent=scan_server), parent=mock.MagicMock())
     assert rb.metadata == msg.metadata
 
     with mock.patch.object(worker, "current_instruction_queue_item"):
@@ -299,7 +299,6 @@ def test_initialize_scan_info(scan_worker_mock, msg):
         assert "samy" in worker.current_scan_info["readout_priority"]["baseline"]
 
         base_path = worker.parent._service_config.config["file_writer"]["base_path"]
-        scan_nr = worker.current_scan_info["scan_number"]
         file_dir = msg.parameter["kwargs"]["system_config"]["file_directory"]
         suffix = msg.parameter["kwargs"]["system_config"]["file_suffix"]
         if file_dir is None:

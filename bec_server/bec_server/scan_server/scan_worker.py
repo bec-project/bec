@@ -41,11 +41,11 @@ class ScanWorker(threading.Thread):
         self.scan_motors = []
         self.readout_priority = {}
         self.scan_type = None
-        self.current_scan_id = None
+        self.current_scan_id: str = ""
         self.current_scan_info = None
         self.max_point_id = 0
         self._exposure_time = None
-        self.current_instruction_queue_item = None
+        self.current_instruction_queue_item: InstructionQueueItem | None = None
         self.interception_msg = None
         self.reset()
 
@@ -319,25 +319,32 @@ class ScanWorker(threading.Thread):
         logger.info(
             f"New scan status: {self.current_scan_id} / {status} / {current_scan_info_print}"
         )
+        si = self.current_scan_info
+        update_fields = [
+            "scan_name",
+            "scan_number",
+            "session_id",
+            "dataset_number",
+            "num_points",
+            "scan_type",
+            "scan_report_devices",
+            "user_metadata",
+            "readout_priority",
+            "scan_parameters",
+            "request_inputs",
+        ]
+        update = {k: si.get(k) for k in update_fields if si.get(k) is not None}
         msg = messages.ScanStatusMessage(
             scan_id=self.current_scan_id,
             status=status,
             reason=reason,
-            scan_name=self.current_scan_info.get("scan_name"),
-            scan_number=self.current_scan_info.get("scan_number"),
-            session_id=self.current_scan_info.get("session_id"),
-            dataset_number=self.current_scan_info.get("dataset_number"),
-            num_points=self.current_scan_info.get("num_points"),
-            scan_type=self.current_scan_info.get("scan_type"),
-            scan_report_devices=self.current_scan_info.get("scan_report_devices"),
-            user_metadata=self.current_scan_info.get("user_metadata"),
-            readout_priority=self.current_scan_info.get("readout_priority"),
-            scan_parameters=self.current_scan_info.get("scan_parameters"),
-            request_inputs=self.current_scan_info.get("request_inputs"),
             info=self.current_scan_info,
+            **update,
         )
-        if msg.readout_priority != self.current_scan_info.get("readout_priority"):
-            raise RuntimeError("Readout priority mismatch")
+        if msg.readout_priority != (cur_rp := self.current_scan_info.get("readout_priority")):
+            raise RuntimeError(
+                f"Readout priority mismatch: expected {cur_rp}, got {msg.readout_priority}"
+            )
         expire = None if status in ["open", "paused"] else 1800
         pipe = self.device_manager.connector.pipeline()
         self.device_manager.connector.set(
@@ -477,8 +484,7 @@ class ScanWorker(threading.Thread):
         logger.debug(instr)
         action = instr.content.get("action")
         scan_def_id = instr.metadata.get("scan_def_id")
-        if self.current_scan_id != instr.metadata.get("scan_id"):
-            self.current_scan_id = instr.metadata.get("scan_id")
+        self.current_scan_id = instr.metadata.get("scan_id", "")
 
         if "point_id" in instr.metadata:
             self.max_point_id = instr.metadata["point_id"]
