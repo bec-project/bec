@@ -1,6 +1,79 @@
 # CHANGELOG
 
 
+## v3.95.0 (2026-02-05)
+
+### Bug Fixes
+
+- Add option to suppress stop errors after sending a stop command
+  ([`9805d59`](https://github.com/bec-project/bec/commit/9805d594bcb5e02882427c40e532b0f83297e8f1))
+
+- Add scan id to cancel request
+  ([`4e3eab4`](https://github.com/bec-project/bec/commit/4e3eab4f2308568ff936db8353d14269306d3782))
+
+- Avoid locking during shutdown
+  ([`3d22976`](https://github.com/bec-project/bec/commit/3d2297694b3a8e60d92beb86b5b518eb74ccab59))
+
+- Forward alarm scan id to abort
+  ([`d6530f2`](https://github.com/bec-project/bec/commit/d6530f2dc5d656a9d1adce103a16bfb822425a51))
+
+- Only allow str stop ids
+  ([`acbdd04`](https://github.com/bec-project/bec/commit/acbdd04103d12ec7ec42ded95d0c22dc0c6806bc))
+
+- Stop live update for stopped requests
+  ([`912b695`](https://github.com/bec-project/bec/commit/912b69551fe8c0b45fc7104075cbe8364cdd68a0))
+
+- **restart**: Fix ipython restart command
+  ([`690e7fb`](https://github.com/bec-project/bec/commit/690e7fb95afb2ff93bbc35c9fc411eb86379a155))
+
+- **scan queue**: Only abort workers with matching queue item
+  ([`c880ece`](https://github.com/bec-project/bec/commit/c880ece007bee8b8dd0e36fb5192f3a6c664db3f))
+
+- **scan report**: Mark request as completed for umv
+  ([`ac03682`](https://github.com/bec-project/bec/commit/ac03682458b215691c8254c312e7261e213a8bf8))
+
+### Continuous Integration
+
+- **pytest**: Add default timeout of 300s
+  ([`d46732c`](https://github.com/bec-project/bec/commit/d46732c8fa33243611c720de1e0ddae57c2aa953))
+
+### Features
+
+- Add reason to scan history and h5 file; rename h5s exit status to status
+  ([`f0e6163`](https://github.com/bec-project/bec/commit/f0e61631e053f4418dafc355639d71bccf3704e0))
+
+- Add scan repeat decorator
+  ([`f7c5d40`](https://github.com/bec-project/bec/commit/f7c5d400ccf546c42cb82cc0e44e27066729561f))
+
+- Add support for queue locking with hold and release actions
+  ([`08d3d2f`](https://github.com/bec-project/bec/commit/08d3d2f56a0b467778a89469c3bb3287cd03b45d))
+
+- Add support for user completion of scans
+  ([`0780a99`](https://github.com/bec-project/bec/commit/0780a9965320a17edf2e603a61277165b3075498))
+
+- Only restart scan if scan message allows it
+  ([`5beb119`](https://github.com/bec-project/bec/commit/5beb119c4cbf99a241ab33cfdee371db008b4b81))
+
+### Refactoring
+
+- Move exit_info to tuple
+  ([`7c8b1ef`](https://github.com/bec-project/bec/commit/7c8b1ef9a34bee797937baaf1915510790de5600))
+
+- **scans**: Remove unused method
+  ([`5beb3d6`](https://github.com/bec-project/bec/commit/5beb3d6ae3165999bc2506d64e74d49aa22a03b9))
+
+### Testing
+
+- Add e2e test for set completing a scan
+  ([`939211e`](https://github.com/bec-project/bec/commit/939211e28fb9b165054ad72cd51540a3e4736193))
+
+- **e2e**: Fix cancelled move test
+  ([`cf46045`](https://github.com/bec-project/bec/commit/cf46045b037940269f01fc05b3cd12ab041af76d))
+
+- **queue**: Ensure thread is joined after testing the shutdown
+  ([`6e447cc`](https://github.com/bec-project/bec/commit/6e447cc9c60f3333c1d9af25b4f4eef02e2a2e9b))
+
+
 ## v3.94.1 (2026-02-02)
 
 ### Bug Fixes
