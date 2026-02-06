@@ -31,7 +31,7 @@ from bec_lib.file_utils import DeviceConfigWriter
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ConfigAction
 from bec_lib.utils.import_utils import lazy_import_from
-from bec_lib.utils.json import ExtendedEncoder
+from bec_lib.utils.json_extended import ExtendedEncoder
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.devicemanager import DeviceManagerBase

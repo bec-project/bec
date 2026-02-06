@@ -307,6 +307,16 @@ class RedisConnector:
             self._redis_conn.connection_pool.connection_kwargs.update(old_kwargs)
             raise exc
 
+    @property
+    def username(self) -> str:
+        """
+        Get the username used for authentication
+
+        Returns:
+            str: username
+        """
+        return str(self._redis_conn.acl_whoami())
+
     def _close_pubsub(self):
         if self._events_listener_thread:
             self._stop_events_listener_thread.set()
