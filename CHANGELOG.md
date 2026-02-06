@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v3.96.0 (2026-02-06)
+
+### Features
+
+- Messaging services
+  ([`02a9f7c`](https://github.com/bec-project/bec/commit/02a9f7cab982941306cadf19cf314b4211a5b105))
+
+- **redis connector**: Add option to run strict stream lengths
+  ([`b497054`](https://github.com/bec-project/bec/commit/b497054b5acbad79f2ebdc39b865204b0a3f770a))
+
+### Refactoring
+
+- Improve typing in scan server
+  ([`11e678e`](https://github.com/bec-project/bec/commit/11e678e66eb870d4da4e8e66252c40e825af1b86))
+
+- Scan worker and device error for typing and style
+  ([`50df293`](https://github.com/bec-project/bec/commit/50df293e805afed0fb0e18d28ba0414f50da5156))
+
+
 ## v3.95.1 (2026-02-05)
 
 ### Bug Fixes
