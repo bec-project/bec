@@ -53,7 +53,6 @@ class DAPServiceManager:
         Args:
             dap_request_msg (DAPRequestMessage): DAPRequestMessage instance
         """
-        logger.info(f"Processing dap request {dap_request_msg}")
         try:
             dap_cls = self._get_dap_cls(dap_request_msg)
             if not dap_cls:
