@@ -15,6 +15,7 @@ def print_versions(output_json: bool = False):
         "bec_server": "BEC Server",
         "bec_ipython_client": "BEC IPython Client",
         "bec_widgets": "BEC Widgets",
+        "ophyd_devices": "Ophyd Devices",
     }
     versions = {mod: _try_version(mod) for mod in packages.keys()}
     if not output_json:
