@@ -19,7 +19,6 @@ class SerializationRegistry:
         self._legacy_codecs = []  # can be removed in future versions, see issue #516
 
         self.register_codec(bec_codecs.BECMessageEncoder)
-        self.register_codec(bec_codecs.BECDeviceEncoder)
         self.register_codec(bec_codecs.EndpointInfoEncoder)
         self.register_codec(bec_codecs.SetEncoder)
         self.register_codec(bec_codecs.BECTypeEncoder)
