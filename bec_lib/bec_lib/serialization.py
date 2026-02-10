@@ -11,13 +11,14 @@ import types
 from functools import lru_cache
 from typing import Any
 
-import msgpack
+import msgpack as msgpack_mod
 from pydantic import BaseModel
 
 from bec_lib import bec_serializable, endpoints, messages
 from bec_lib.bec_serializable import BECSerializable, BecWrappedValue
 from bec_lib.device import DeviceBase
 from bec_lib.messages import BECMessage, BundleMessage, RawMessage
+from bec_lib.serialization_registry import SerializationRegistry
 
 
 @lru_cache(maxsize=2048)
@@ -82,19 +83,19 @@ def _msg_object_hook(msg: dict):
 
 
 def _one_way_encoding(val: Any) -> Any:
-    # TODO hacky fix, replace with registrable encoding, e.g. for QPointF
-    if isinstance(val, DeviceBase):
-        if hasattr(val, "_compile_function_path"):
-            # pylint: disable=protected-access
-            return val._compile_function_path()
-        return val.name
+    # TODO hacky fix, tidy up
     try:
-        return BecWrappedValue(data=val)
+        return msgpack.encode(val)
+    except NoCodec:
+        try:
+            return BecWrappedValue(data=val)
+        except:
+            ...
     except Exception as e:
         raise TypeError(f"Type {type(val)} not supported for serialization!") from e
 
 
-class MsgpackSerialization:
+class MsgpackSerialization(SerializationRegistry):
     """Message serialization using msgpack encoding"""
 
     @staticmethod
@@ -103,7 +104,7 @@ class MsgpackSerialization:
             return None
         with pause_gc():
             try:
-                msg_ = msgpack.loads(msg, object_hook=_msg_object_hook)
+                msg_ = msgpack_mod.loads(msg, object_hook=_msg_object_hook)
             except Exception as e:
                 try:
                     return RawMessage(data=json.loads(msg, object_hook=_msg_object_hook))
@@ -117,8 +118,12 @@ class MsgpackSerialization:
     @staticmethod
     def dumps(msg: BECMessage | Any) -> str:
         if not isinstance(msg, BECSerializable):
-            return msgpack.dumps(msg)  # type: ignore
-        return msgpack.dumps(msg.model_dump(mode="json", fallback=_one_way_encoding))  # type: ignore
+            return msgpack_mod.dumps(msg)  # type: ignore
+        return msgpack_mod.dumps(msg.model_dump(mode="json", fallback=_one_way_encoding))  # type: ignore
+
+
+# TODO change name and tidy up
+msgpack = MsgpackSerialization()
 
 
 class json_ext:

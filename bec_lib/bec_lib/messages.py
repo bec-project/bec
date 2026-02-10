@@ -571,6 +571,10 @@ class SignalReading(BECSerializable):
     timestamp: float | list[float] | None = None
 
     def to_dict(self):
+        lazy_ensure_logger()
+        logger.warning(
+            "Dictionary usage of SignalReading is deprecated; please replace it with a different access pattern."
+        )
         return {"value": self.value, "timestamp": self.timestamp}
 
     def get(self, item: Literal["value", "timestamp"], default=Any):
@@ -585,6 +589,9 @@ class SignalReading(BECSerializable):
 
     def __getitem__(self, item: str):
         return self.get(item)
+
+    def items(self):
+        return self.to_dict().items()
 
 
 class DeviceMessage(BECMessage):
