@@ -22,7 +22,9 @@ def test_grid_scan_lib(bec_client_lib):
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
     scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    status = scans.grid_scan(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
+    )
     status.wait(num_points=True, file_written=True)
     assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
@@ -34,7 +36,9 @@ def test_grid_scan_lib_cancel(bec_client_lib):
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False)
+    status = scans.grid_scan(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False
+    )
     time.sleep(0.5)
     status.cancel()
 
@@ -52,10 +56,14 @@ def test_mv_scan_lib(bec_client_lib):
     current_pos_samx = dev.samx.read()["samx"]["value"]
     current_pos_samy = dev.samy.read()["samy"]["value"]
     assert np.isclose(
-        current_pos_samx, 10, atol=dev.samx._config["deviceConfig"].get("tolerance", 0.05)
+        current_pos_samx,
+        10,
+        atol=dev.samx._config["deviceConfig"].get("tolerance", 0.05),
     )
     assert np.isclose(
-        current_pos_samy, 20, atol=dev.samy._config["deviceConfig"].get("tolerance", 0.05)
+        current_pos_samy,
+        20,
+        atol=dev.samy._config["deviceConfig"].get("tolerance", 0.05),
     )
 
 
@@ -105,7 +113,9 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
         reference_container["metadata"] = metadata
         reference_container["data"].append(data)
 
-    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=dummy_callback)
+    s = scans.line_scan(
+        dev.samx, 0, 1, steps=10, relative=False, async_callback=dummy_callback
+    )
     s.wait()
     while len(reference_container["data"]) < 10:
         time.sleep(0.1)
@@ -128,7 +138,9 @@ def test_rpc_call_in_event_callback(bec_client_lib):
             pos = yield dev.samx.position
             cb_executed.set()
 
-    bec_client_lib.connector.register(MessageEndpoints.scan_status(), cb=scan_status_update)
+    bec_client_lib.connector.register(
+        MessageEndpoints.scan_status(), cb=scan_status_update
+    )
     s = scans.line_scan(dev.samx, 0, 1, steps=10, exp_time=0.2, relative=False)
     s.wait()
     cb_executed.wait()
@@ -145,10 +157,17 @@ def test_config_updates(bec_client_lib):
     assert dev.rt_controller.limits == [-50, 50]
 
     dev.rt_controller.velocity.set(10).wait()
-    assert dev.rt_controller.velocity.read(cached=True)["rt_controller_velocity"]["value"] == 10
+    assert (
+        dev.rt_controller.velocity.read(cached=True)["rt_controller_velocity"]["value"]
+        == 10
+    )
     assert dev.rt_controller.velocity.read()["rt_controller_velocity"]["value"] == 10
-    assert dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
-    assert dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
+    assert (
+        dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
+    )
+    assert (
+        dev.rt_controller.read_configuration()["rt_controller_velocity"]["value"] == 10
+    )
 
     dev.rt_controller.velocity.put(5)
     assert dev.rt_controller.velocity.get() == 5
@@ -179,7 +198,13 @@ def test_dap_fit(bec_client_lib):
     dev.bpm4i.sim.select_model("GaussianModel")
     params = dev.bpm4i.sim.params
     params.update(
-        {"noise": "uniform", "noise_multiplier": 10, "center": 5, "sigma": 1, "amplitude": 200}
+        {
+            "noise": "uniform",
+            "noise_multiplier": 10,
+            "center": 5,
+            "sigma": 1,
+            "amplitude": 200,
+        }
     )
     dev.bpm4i.sim.params = params
     time.sleep(1)
@@ -347,11 +372,18 @@ def test_dap_fit(bec_client_lib):
     ],
 )
 def test_config_reload(
-    bec_test_config_file_path, bec_client_lib, config, raises_error, deletes_config, disabled_device
+    bec_test_config_file_path,
+    bec_client_lib,
+    config,
+    raises_error,
+    deletes_config,
+    disabled_device,
 ):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_config_reload"})
-    runtime_config_file_path = bec_test_config_file_path.parent / "e2e_runtime_config_test.yaml"
+    runtime_config_file_path = (
+        bec_test_config_file_path.parent / "e2e_runtime_config_test.yaml"
+    )
 
     # write new config to disk
     with open(runtime_config_file_path, "w") as f:
@@ -369,7 +401,9 @@ def test_config_reload(
         else:
             assert len(bec.device_manager.devices) == num_devices
     else:
-        bec.config.update_session_with_file(runtime_config_file_path, force=True, validate=False)
+        bec.config.update_session_with_file(
+            runtime_config_file_path, force=True, validate=False
+        )
         assert len(bec.device_manager.devices) == 2
     for dev in disabled_device:
         assert bec.device_manager.devices[dev].enabled is False
@@ -378,7 +412,9 @@ def test_config_reload(
 def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_config_reload"})
-    runtime_config_file_path = bec_test_config_file_path.parent / "e2e_runtime_config_test.yaml"
+    runtime_config_file_path = (
+        bec_test_config_file_path.parent / "e2e_runtime_config_test.yaml"
+    )
 
     config = {
         "hexapod": {
@@ -406,7 +442,8 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
 
     # set hexapod to fail
     bec.connector.set(
-        f"e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=1)
+        f"e2e_test_hexapod_fail",
+        messages.DeviceStatusMessage(device="hexapod", status=1),
     )
 
     # write new config to disk
@@ -414,7 +451,9 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
         f.write(yaml.dump(config))
 
     with pytest.raises(DeviceConfigError):
-        bec.config.update_session_with_file(runtime_config_file_path, force=True, validate=False)
+        bec.config.update_session_with_file(
+            runtime_config_file_path, force=True, validate=False
+        )
 
     assert len(bec.device_manager.devices) == 2
     assert bec.device_manager.devices["eyefoc"].enabled is True
@@ -422,7 +461,8 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
 
     # set hexapod to pass
     bec.connector.set(
-        f"e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=0)
+        f"e2e_test_hexapod_fail",
+        messages.DeviceStatusMessage(device="hexapod", status=0),
     )
 
     bec.config.update_session_with_file(runtime_config_file_path, force=True)
@@ -453,11 +493,15 @@ def test_config_add_remove_device(bec_client_lib):
     }
     bec.device_manager.config_helper.send_config_request(action="add", config=config)
     with pytest.raises(DeviceConfigError) as config_error:
-        bec.device_manager.config_helper.send_config_request(action="add", config=config)
+        bec.device_manager.config_helper.send_config_request(
+            action="add", config=config
+        )
     assert config_error.match("Device new_device already exists")
     assert "new_device" in dev
 
-    bec.device_manager.config_helper.send_config_request(action="remove", config={"new_device": {}})
+    bec.device_manager.config_helper.send_config_request(
+        action="remove", config={"new_device": {}}
+    )
     assert "new_device" not in dev
 
     device_config_msg = bec.connector.get(MessageEndpoints.device_config())
@@ -468,7 +512,9 @@ def test_config_add_remove_device(bec_client_lib):
 
     config["new_device"]["deviceClass"] = "ophyd_devices.doesnt_exist"
     with pytest.raises(DeviceConfigError) as config_error:
-        bec.device_manager.config_helper.send_config_request(action="add", config=config)
+        bec.device_manager.config_helper.send_config_request(
+            action="add", config=config
+        )
     assert config_error.match("module 'ophyd_devices' has no attribute 'doesnt_exist'")
     assert "new_device" not in dev
     assert "samx" in dev
@@ -579,7 +625,9 @@ def test_image_analysis(bec_client_lib):
     assert (fit_res[1]["stats"]["min"] == 0.0).all()
     assert (np.isclose(fit_res[1]["stats"]["mean"], 3.3, atol=0.5)).all()
     # Center of mass is not in the middle due to hot (fluctuating) pixels
-    assert (np.isclose(fit_res[1]["stats"]["center_of_mass"], [49.5, 40.8], atol=2)).all()
+    assert (
+        np.isclose(fit_res[1]["stats"]["center_of_mass"], [49.5, 40.8], atol=2)
+    ).all()
 
 
 @pytest.mark.timeout(100)
@@ -597,7 +645,11 @@ def test_bl_state(bec_client_lib):
         tolerance=1,
     )
     samx_config = DeviceWithinLimitsStateConfig(
-        name="samx_within_limits", device="samx", low_limit=-10, high_limit=10, tolerance=1
+        name="samx_within_limits",
+        device="samx",
+        low_limit=-10,
+        high_limit=10,
+        tolerance=1,
     )
 
     bec.beamline_states.add(hexapod_config)
@@ -632,7 +684,9 @@ def test_bl_state(bec_client_lib):
     bec.beamline_states.delete("hexapod_x_within_limits")
     assert not hasattr(bec.beamline_states, "hexapod_x_within_limits")
 
-    bec.beamline_states.samx_within_limits.update_parameters(low_limit=-5, high_limit=25)
+    bec.beamline_states.samx_within_limits.update_parameters(
+        low_limit=-5, high_limit=25
+    )
     bec.beamline_states.show_all()
 
     while bec.beamline_states.samx_within_limits.get()["status"] != "valid":

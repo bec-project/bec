@@ -49,7 +49,11 @@ def stubs():
                 device="rtx",
                 action="kickoff",
                 parameter={
-                    "configure": {"num_pos": 5, "positions": [1, 2, 3, 4, 5], "exp_time": 2}
+                    "configure": {
+                        "num_pos": 5,
+                        "positions": [1, 2, 3, 4, 5],
+                        "exp_time": 2,
+                    }
                 },
                 metadata={},
             ),
@@ -57,7 +61,9 @@ def stubs():
     ],
 )
 def test_kickoff(stubs, device, parameter, metadata, reference_msg):
-    msg = list(stubs.kickoff(device=device, parameter=parameter, metadata=metadata, wait=False))
+    msg = list(
+        stubs.kickoff(device=device, parameter=parameter, metadata=metadata, wait=False)
+    )
     reference_msg.metadata["device_instr_id"] = msg[0].metadata["device_instr_id"]
     assert msg[0] == reference_msg
 
@@ -74,12 +80,16 @@ def test_kickoff(stubs, device, parameter, metadata, reference_msg):
             False,
         ),
         (
-            messages.ProgressMessage(value=10, max_value=100, done=False, metadata={"RID": "rid"}),
+            messages.ProgressMessage(
+                value=10, max_value=100, done=False, metadata={"RID": "rid"}
+            ),
             10,
             False,
         ),
         (
-            messages.DeviceStatusMessage(device="samx", status=0, metadata={"RID": "rid"}),
+            messages.DeviceStatusMessage(
+                device="samx", status=0, metadata={"RID": "rid"}
+            ),
             None,
             True,
         ),
@@ -96,7 +106,9 @@ def test_device_progress(stubs, msg, ret_value, raised_error):
 
 
 def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
-    with mock.patch.object(stubs, "_get_result_from_status", return_value="msg") as get_rpc:
+    with mock.patch.object(
+        stubs, "_get_result_from_status", return_value="msg"
+    ) as get_rpc:
         original_rpc = stubs.send_rpc
         with mock.patch.object(stubs, "send_rpc") as mock_rpc:
 
@@ -106,12 +118,19 @@ def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
 
             mock_rpc.side_effect = mock_rpc_func
 
-            instructions = list(stubs.send_rpc_and_wait("sim_profile", "readback_profile"))
+            instructions = list(
+                stubs.send_rpc_and_wait("sim_profile", "readback_profile")
+            )
             rpc_call_1 = instructions[0]
-            instructions = list(stubs.send_rpc_and_wait("sim_profile", "readback_profile"))
+            instructions = list(
+                stubs.send_rpc_and_wait("sim_profile", "readback_profile")
+            )
             rpc_call_2 = instructions[0]
             assert rpc_call_1 != rpc_call_2
-            assert rpc_call_1.metadata["device_instr_id"] != rpc_call_2.metadata["device_instr_id"]
+            assert (
+                rpc_call_1.metadata["device_instr_id"]
+                != rpc_call_2.metadata["device_instr_id"]
+            )
 
 
 def test_stage(stubs):
@@ -131,6 +150,7 @@ def test_rpc_call_returns_status(stubs):
     fake_status = mock.MagicMock()
     fake_status._result_is_status = True
     fake_status.wait = mock.MagicMock()
+    fake_status._device_instr_id = "fake device instruction ID"
 
     with mock.patch.object(stubs, "_create_status", return_value=fake_status):
         result = stubs._rpc_call("samx", "velocity.set", 10)
@@ -146,6 +166,7 @@ def test_rpc_call_returns_dict(stubs):
     fake_status._result_is_status = False
     fake_status.result = expected
     fake_status.wait = mock.MagicMock()
+    fake_status._device_instr_id = "fake device instruction ID"
 
     with mock.patch.object(stubs, "_create_status", return_value=fake_status):
         result = stubs._rpc_call("samx", "velocity.set", 10)
