@@ -46,6 +46,8 @@ MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]")
 
 @lru_cache()
 def _resolve_msg_type(n: MessageType | str):
+    if n is Any:
+        return n
     if issubclass(n, messages.BECMessage):
         return n
     return getattr(messages, n, messages.RawMessage)
@@ -1795,7 +1797,9 @@ class MessageEndpoints:
             EndpointInfo: Endpoint for deployment ingest.
         """
         endpoint = f"{EndpointType.INTERNAL.value}/deployment/{deployment_name}/ingest"
-        return EndpointInfo(endpoint=endpoint, message_type=Any, message_op=MessageOp.STREAM)
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.BECMessage, message_op=MessageOp.STREAM
+        )
 
     @staticmethod
     def atlas_deployment_data(deployment_name: str, endpoint_suffix: str):

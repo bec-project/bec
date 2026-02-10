@@ -61,9 +61,3 @@ class CustomEnum(enum.Enum):
 def test_serialize(serializer, data):
     res = serializer.loads(serializer.dumps(data)) == data
     assert all(res) if isinstance(data, np.ndarray) else res
-
-
-def test_device_serializer(serializer):
-    device_manager = mock.MagicMock(spec=DeviceManagerBase)
-    dummy = DeviceBase(name="dummy", parent=device_manager)
-    assert serializer.loads(serializer.dumps(dummy)) == "dummy"

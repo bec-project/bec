@@ -481,6 +481,21 @@ def test_GUIRegistryStateMessage():
         )
 
 
+def test_messaging_service_config():
+    msg = messages.MessagingServiceConfig(service_name="signal", scopes=["*"], enabled=True)
+    ser = MsgpackSerialization.dumps(msg)
+    deser = MsgpackSerialization.loads(ser)
+    assert msg == deser
+
+
+def test_messaging_service_config_resource():
+    cfg = messages.MessagingServiceConfig(service_name="signal", scopes=["*"], enabled=True)
+    msg = messages.AvailableResourceMessage(resource=[cfg])
+    ser = MsgpackSerialization.dumps(msg)
+    deser = MsgpackSerialization.loads(ser)
+    assert msg == deser
+
+
 class TestDeviceAsyncUpdate:
     """Tests for DeviceAsyncUpdate model validation"""
 

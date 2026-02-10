@@ -105,7 +105,7 @@ class json_ext:
             return json.loads(msg, object_hook=_msg_object_hook)
 
     @staticmethod
-    def dumps(msg: BECMessage | Any) -> str:
+    def dumps(msg: BECMessage | Any, indent=0) -> str:
         if not isinstance(msg, BECSerializable):
             return json.dumps(msg)  # type: ignore
-        return msg.model_dump_json()
+        return msg.model_dump_json(indent=indent)

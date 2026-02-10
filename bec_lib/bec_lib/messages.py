@@ -1229,7 +1229,7 @@ class AvailableResourceMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: dict | list[dict]
+    resource: dict | list[dict] | BECMessage | list[BECMessage]
 
 
 class ProgressMessage(BECMessage):
