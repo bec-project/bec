@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Callable, Type
 
 from bec_lib import codecs as bec_codecs
+from bec_lib import messages
 from bec_lib.logger import bec_logger
 
 logger = bec_logger.logger
@@ -18,7 +19,6 @@ class SerializationRegistry:
         self._registry: dict[str, tuple[Type, Callable, Callable]] = {}
         self._legacy_codecs = []  # can be removed in future versions, see issue #516
 
-        self.register_codec(bec_codecs.BECMessageEncoder)
         self.register_codec(bec_codecs.EndpointInfoEncoder)
         self.register_codec(bec_codecs.SetEncoder)
         self.register_codec(bec_codecs.BECTypeEncoder)
@@ -97,6 +97,11 @@ class SerializationRegistry:
 
     def decode(self, data):
         """Decode an object using the registered codec."""
+        if isinstance(data, dict) and "bec_codec" in data:
+            codec_info = data.pop("bec_codec")
+            msg_cls = messages.__dict__.get(codec_info.get("type_name"))
+            if msg_cls is not None:
+                return msg_cls.model_validate(data)
         if not isinstance(data, dict) or "__bec_codec__" not in data:
             return data
         codec_info = data["__bec_codec__"]

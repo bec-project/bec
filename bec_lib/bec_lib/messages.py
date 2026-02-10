@@ -27,6 +27,7 @@ from pydantic import (
 )
 from typing_extensions import TypeAliasType
 
+from bec_lib.bec_serializable import BECSerializable
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 from bec_lib.one_way_registry import OneWaySerializationRegistry
 
@@ -114,7 +115,7 @@ class BECStatus(Enum):
     ERROR = -1
 
 
-class BECMessage(BaseModel):
+class BECMessage(BECSerializable):
     """Base Model class for BEC Messages
 
     Args:
@@ -123,7 +124,6 @@ class BECMessage(BaseModel):
 
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
     msg_type: ClassVar[str]
     metadata: JsonableDict = Field(default_factory=dict)
 
@@ -136,6 +136,13 @@ class BECMessage(BaseModel):
             v (dict, None): Metadata dictionary
         """
         return v or {}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_codec_info(cls, data: Any):
+        if isinstance(data, dict):
+            data.pop("bec_codec", None)
+        return data
 
     @property
     def content(self):
@@ -174,6 +181,11 @@ class BECMessage(BaseModel):
         return self.model_dump_json().__hash__()
 
 
+# To correctly encode a message in another message, pydantic should know it is to be dumped
+# as the concrete type it is, and not only the fields from BECMessage
+SpecificMessageType = TypeVar("MessageType", bound=BECMessage)
+
+
 class BundleMessage(BECMessage):
     """Message type to send a bundle of BECMessages.
 
@@ -189,7 +201,7 @@ class BundleMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "bundle_message"
-    messages: list = Field(default_factory=list[BECMessage])
+    messages: list[SpecificMessageType] = Field(default_factory=list)
 
     def append(self, msg: BECMessage):
         """Append a new BECMessage to the bundle"""
@@ -1362,19 +1374,19 @@ class DAPResponseMessage(BECMessage):
     success: bool
     data: tuple | None = Field(default_factory=lambda: ({}, None))
     error: str | None = None
-    dap_request: BECMessage | None = Field(default=None)
+    dap_request: SpecificMessageType | None = Field(default=None)
 
 
 class AvailableResourceMessage(BECMessage):
     """Message for available resources such as scans, data processing plugins etc
 
     Args:
-        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description
+        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description - may contain only one type of BECMessage
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: JsonableDict | list[JsonableDict] | BECMessage | list[BECMessage]
+    resource: JsonableDict | list[JsonableDict] | SpecificMessageType | list[SpecificMessageType]
 
 
 class ProgressMessage(BECMessage):
