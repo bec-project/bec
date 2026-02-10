@@ -167,7 +167,7 @@ def test_scan_move(mv_msg, reference_msg_list, scan_assembler):
                             "RID": "0bab7ee3-b384-4571-b...0fff984c05",
                             "devices": ["samx", "samy"],
                             "start": [0, 0],
-                            "end": np.array([1.0, 2.0]),
+                            "end": [1.0, 2.0],
                         }
                     },
                     metadata={
@@ -211,7 +211,7 @@ def test_scan_move(mv_msg, reference_msg_list, scan_assembler):
                             "RID": "0bab7ee3-b384-4571-b...0fff984c05",
                             "devices": ["samx", "samy", "samz"],
                             "start": [0, 0, 0],
-                            "end": np.array([1.0, 2.0, 3.0]),
+                            "end": [1.0, 2.0, 3.0],
                         }
                     },
                     metadata={
@@ -264,7 +264,7 @@ def test_scan_move(mv_msg, reference_msg_list, scan_assembler):
                             "RID": "0bab7ee3-b384-4571-b...0fff984c05",
                             "devices": ["samx"],
                             "start": [0],
-                            "end": np.array([1.0]),
+                            "end": [1.0],
                         }
                     },
                     metadata={

@@ -293,7 +293,7 @@ def test_initialize_scan_info(scan_worker_mock, msg):
         assert worker.current_scan_info["scan_msgs"] == []
         assert worker.current_scan_info["monitor_sync"] == "bec"
         assert worker.current_scan_info["frames_per_trigger"] == 1
-        assert worker.current_scan_info["args"] == {"samx": (-5, 5, 5), "samy": (-1, 1, 2)}
+        assert worker.current_scan_info["args"] == {"samx": [-5, 5, 5], "samy": [-1, 1, 2]}
         assert worker.current_scan_info["kwargs"] == msg.parameter["kwargs"]
         assert "samx" in worker.current_scan_info["readout_priority"]["monitored"]
         assert "samy" in worker.current_scan_info["readout_priority"]["baseline"]
