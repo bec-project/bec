@@ -860,3 +860,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
 
     def get_last(self, topic, key):
         return None
+
+
+def _endpoint_info(ep, msg_t, msg_op):
+    return EndpointInfo(endpoint=ep, message_type=msg_t, message_op=msg_op)

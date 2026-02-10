@@ -285,26 +285,9 @@ class AsyncWriter(threading.Thread):
                     else:
                         signal_group = device_group[signal_name]
 
-                    for key, value in signal_data.items():
-
-                        if key == "value":
-                            self.write_value_data(signal_group, value, async_update)
-                        elif key == "timestamp":
-                            self.write_timestamp_data(signal_group, value)
-                        else:  # pragma: no cover
-                            # this should never happen as the keys are fixed in the pydantic model
-                            msg = f"Unknown key: {key}. Data will not be written."
-                            error_info = messages.ErrorInfo(
-                                error_message=msg,
-                                compact_error_message=msg,
-                                exception_type="ValueError",
-                                device=device_name,
-                            )
-                            self.connector.raise_alarm(
-                                severity=Alarms.WARNING,
-                                info=error_info,
-                                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
-                            )
+                    self.write_value_data(signal_group, signal_data.value, async_update)
+                    if signal_data.timestamp is not None:
+                        self.write_timestamp_data(signal_group, signal_data.timestamp)
 
         if write_replace:
             for group_name, value in self.device_data_replace.items():

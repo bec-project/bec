@@ -10,6 +10,7 @@ from collections import defaultdict
 import h5py
 
 from bec_lib import messages, plugin_helper
+from bec_lib.bec_serializable import BecWrappedValue
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
@@ -39,6 +40,16 @@ class HDF5Storage:
         self._storage_type = storage_type
         self.attrs = {}
         self._data = data
+
+    @property
+    def data(self):
+        if isinstance(self._data, messages.SignalReading):
+            return self._data.to_dict()
+        if isinstance(self._data, list) and set(map(type, self._data)) == {messages.SignalReading}:
+            return list(map(lambda x: x.to_dict(), self._data))
+        if isinstance(self._data, BecWrappedValue):
+            return self._data.data
+        return self._data
 
     def create_group(self, name: str) -> HDF5Storage:
         """
@@ -116,7 +127,7 @@ class HDF5StorageWriter:
         self.add_attribute(group, val.attrs)
         self.add_content(group, val._storage)
 
-        data = val._data
+        data = val.data
 
         if not data:
             return
@@ -140,13 +151,12 @@ class HDF5StorageWriter:
             group.create_dataset(name=key, data=value)
 
     def add_dataset(self, name: str, container: typing.Any, val: HDF5Storage):
+        data = val.data
         try:
-            if isinstance(val._data, dict):
-                self.add_group(name, container, val)
-                return
-
-            data = val._data
             if data is None:
+                return
+            if isinstance(data, dict):
+                self.add_group(name, container, val)
                 return
             if isinstance(data, list):
                 if data and isinstance(data[0], dict):
@@ -164,7 +174,7 @@ class HDF5StorageWriter:
                     container.attrs["signal"] = "value"
         except Exception:
             content = traceback.format_exc()
-            logger.error(f"Failed to write dataset {name}: {content}")
+            logger.error(f"Failed to write dataset {name} with {data=}: {content}")
         return
 
     def add_attribute(self, container: typing.Any, attributes: dict):

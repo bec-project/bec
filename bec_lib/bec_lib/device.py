@@ -24,6 +24,7 @@ from bec_lib.alarm_handler import AlarmBase, Alarms
 from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messages import DeviceMessage
 from bec_lib.queue_items import QueueItem
 from bec_lib.utils.import_utils import lazy_import
 
@@ -1111,12 +1112,15 @@ class AdjustableMixin:
         """
         Returns the device limits.
         """
-        limit_msg = self.root.parent.connector.get(MessageEndpoints.device_limits(self.root.name))
+        limit_msg: DeviceMessage = self.root.parent.connector.get(
+            MessageEndpoints.device_limits(self.root.name)
+        )
         if not limit_msg:
             return [0, 0]
+
         limits = [
-            limit_msg.content["signals"].get("low", {}).get("value", 0),
-            limit_msg.content["signals"].get("high", {}).get("value", 0),
+            limit_msg.signals.get("low", {}).get("value", 0),
+            limit_msg.signals.get("high", {}).get("value", 0),
         ]
         return limits
 

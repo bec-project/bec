@@ -101,7 +101,7 @@ def test_publish_data_as_read(scan_worker_mock):
 
 def test_publish_data_as_read_multiple(scan_worker_mock):
     worker = scan_worker_mock
-    data = [{"samx": {}}, {"samy": {}}]
+    data = [{"samx": {"value": 0}}, {"samy": {"value": 0}}]
     devices = ["samx", "samy"]
     instr = messages.DeviceInstructionMessage(
         device=devices,

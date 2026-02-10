@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING, Literal
 # TODO: Importing bec_lib, instead of `from bec_lib.messages import LogMessage`, avoids potential
 # logger <-> messages circular import. But there could be a better solution.
 import bec_lib
+import bec_lib.endpoints
 from bec_lib.bec_errors import ServiceConfigError
-from bec_lib.endpoints import MessageEndpoints
 from bec_lib.utils.import_utils import lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -210,7 +210,7 @@ class BECLogger:
         msg["service_name"] = self.service_name
         try:
             self.connector.xadd(
-                topic=MessageEndpoints.log(),
+                topic=bec_lib.endpoints.MessageEndpoints.log(),
                 msg_dict={
                     "data": bec_lib.messages.LogMessage(
                         log_type=msg["record"]["level"]["name"].lower(), log_msg=msg
