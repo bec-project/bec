@@ -8,7 +8,7 @@ from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Any, ClassVar, Literal, Self, Union
+from typing import Annotated, Any, ClassVar, Literal, Self, Union
 from uuid import uuid4
 
 import numpy as np
@@ -1235,12 +1235,12 @@ class AvailableResourceMessage(BECMessage):
     """Message for available resources such as scans, data processing plugins etc
 
     Args:
-        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description
+        resource (dict, list[dict], BaseModel, list[BaseModel]): Resource description
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: dict | list[dict] | BECMessage | list[BECMessage]
+    resource: dict | list[dict] | BaseModel | list[BaseModel]
 
 
 class ProgressMessage(BECMessage):
@@ -1597,20 +1597,82 @@ class ExperimentInfoMessage(BECMessage):
     mainproposal: str | None = None
 
 
+class MessagingService(BaseModel):
+    id: str
+    scope: str
+    enabled: bool
+    name: str | None = None
+    service_type: str = Field(
+        ..., description="Type of the messaging service, e.g. 'signal', 'teams', 'scilog'"
+    )
+
+
+class SignalServiceInfo(MessagingService):
+    service_type: Literal["signal"] = "signal"
+    group_id: str | None = None
+    group_link: str | None = None
+
+
+class SciLogServiceInfo(MessagingService):
+    service_type: Literal["scilog"] = "scilog"
+    logbook_id: str
+
+
+class TeamsServiceInfo(MessagingService):
+    service_type: Literal["teams"] = "teams"
+    team_id: str
+    channel_id: str
+    channel_name: str
+
+
+class MessagingServiceScopeConfig(BaseModel):
+    enabled: bool
+    default: str | list[str] | None = None
+
+
+class MessagingConfig(BaseModel):
+    signal: MessagingServiceScopeConfig
+    teams: MessagingServiceScopeConfig
+    scilog: MessagingServiceScopeConfig
+
+
+AvailableMessagingServices = Annotated[
+    Union[SignalServiceInfo, SciLogServiceInfo, TeamsServiceInfo],
+    Field(discriminator="service_type"),
+]
+
+
+class AvailableMessagingServicesMessage(BECMessage):
+    """
+    Message for available messaging services, combining the information about deployment and session
+    messaging services. This message is sent by the server to the client to inform about the available messaging services
+
+    Args:
+    config (MessagingConfig): Messaging services configuration for the deployment and session
+    deployment_services (list[AvailableMessagingServices]): List of available messaging services for the deployment
+    session_services (list[AvailableMessagingServices]): List of available messaging services for the session
+    """
+
+    msg_type: ClassVar[str] = "available_messaging_services_message"
+    config: MessagingConfig
+    deployment_services: list[AvailableMessagingServices] = Field(default_factory=list)
+    session_services: list[AvailableMessagingServices] = Field(default_factory=list)
+
+
 class SessionInfoMessage(BECMessage):
     """
     Message for session information
 
     Args:
         name (str): Session name
-        experiment (ExperimentInfoMessage | None): Experiment information
-        messaging_services (list[MessagingServiceConfig]): Messaging services configurations
+        experiment (ExperimentInfoMessage | None): Experiment information for the session
+        messaging_services (list[AvailableMessagingServices]): List of available messaging services for the session
     """
 
     msg_type: ClassVar[str] = "session_info_message"
     name: str
     experiment: ExperimentInfoMessage | None = None
-    messaging_services: list[MessagingServiceConfig] = Field(default_factory=list)
+    messaging_services: list[AvailableMessagingServices] = Field(default_factory=list)
 
 
 class DeploymentInfoMessage(BECMessage):
@@ -1619,14 +1681,18 @@ class DeploymentInfoMessage(BECMessage):
 
     Args:
         name (str): Deployment name
-        messaging_services (list[MessagingServiceConfig]): Messaging services configurations
-        active_session (SessionInfoMessage | None): Active session information
+        deployment_id (str): Deployment ID
+        active_session (SessionInfoMessage | None): Active session information for the deployment
+        messaging_config (MessagingConfig): Messaging services configuration for the deployment
+        messaging_services (list[AvailableMessagingServices]): List of available messaging services for the deployment
     """
 
     msg_type: ClassVar[str] = "deployment_info_message"
+    deployment_id: str
     name: str
     active_session: SessionInfoMessage | None = None
-    messaging_services: list[MessagingServiceConfig] = Field(default_factory=list)
+    messaging_config: MessagingConfig
+    messaging_services: list[AvailableMessagingServices] = Field(default_factory=list)
 
 
 class EndpointInfoMessage(BECMessage):
@@ -1769,23 +1835,4 @@ class MessagingServiceMessage(BECMessage):
     service_name: Literal["signal", "teams", "scilog"]
     message: list[MessagingServiceContent]
     scope: str | list[str] | None = None
-    metadata: dict | None = Field(default_factory=dict)
-
-
-class MessagingServiceConfig(BECMessage):
-    """
-    Message for communicating available scopes for messaging services such as Signal, Teams or SciLog.
-    The message is typically sent as part of an AvailableResourceMessage.
-
-    Args:
-        service_name (Literal["signal", "teams", "scilog"]): Name of the messaging service
-        scopes (list[str]): List of available scopes
-        enabled (bool): True if the service is enabled
-        metadata (dict, optional): Additional metadata. Defaults to None.
-    """
-
-    msg_type: ClassVar[str] = "messaging_service_config_message"
-    service_name: Literal["signal", "teams", "scilog"]
-    scopes: list[str]
-    enabled: bool
     metadata: dict | None = Field(default_factory=dict)

@@ -110,7 +110,10 @@ class AtlasConnector:
             return
 
         self.redis_atlas.xadd(
-            MessageEndpoints.message_service_ingest(self.deployment_name), msg, max_size=50
+            MessageEndpoints.message_service_ingest(self.deployment_name),
+            msg,
+            max_size=50,
+            expire=600,
         )
 
     def update_acls(self):

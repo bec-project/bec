@@ -87,6 +87,9 @@ class MessageServiceObject:
     def send(self, scope: str | list[str] | None = None) -> None:
         """
         Send the message using the associated messaging service.
+        Please note that if the service does not provide a default scope and more than one
+        scope is available, you must specify the scope when sending the message.
+
         Args:
             scope (str | list[str] | None): The scope or recipient for the message. If None, uses the scope set during initialization.
         """
@@ -108,6 +111,7 @@ class MessagingService(ABC, Generic[MessageObjectT]):
         self._scopes: set[str] = set()
         self._enabled = False
         self._default_scope: str | list[str] | None = None
+        self._service_config: messages.AvailableMessagingServicesMessage | None = None
         self._redis_connector.register(
             MessageEndpoints.available_messaging_services(),
             cb=self._on_new_scope_change_msg,
@@ -128,44 +132,97 @@ class MessagingService(ABC, Generic[MessageObjectT]):
 
     @staticmethod
     def _on_new_scope_change_msg(
-        message: dict[str, messages.AvailableResourceMessage], parent: MessagingService
+        message: dict[str, messages.AvailableMessagingServicesMessage], parent: MessagingService
     ) -> None:
         """
         Callback for scope changes. Currently a placeholder for future functionality.
 
         Args:
-            message (dict[str, messages.AvailableResourceMessage]): The scope change message.
+            message (dict[str, messages.AvailableMessagingServicesMessage]): The scope change message.
             parent (MessagingService): The parent messaging service instance.
         """
         msg = message["data"]
         # pylint: disable=protected-access
+        parent._service_config = msg
         parent._update_messaging_services(msg)
 
-    def _update_messaging_services(self, service_info: messages.AvailableResourceMessage) -> None:
+    def _update_messaging_services(
+        self, service_info: messages.AvailableMessagingServicesMessage
+    ) -> None:
         """
         Update the messaging service scopes and enabled status based on the provided scope information.
 
         Args:
-            service_info (messages.AvailableResourceMessage): The new messaging service information.
+            service_info (messages.AvailableMessagingServicesMessage): The new messaging service information.
         """
-        for resource in service_info.resource:
-            if not isinstance(resource, messages.MessagingServiceConfig):
-                continue
-            if resource.service_name == self._SERVICE_NAME:
-                self._scopes = set(resource.scopes)
-                self._enabled = resource.enabled
-                break
+        # merge the scopes from deployment services and session services if they are enabled
+        # if a service is found in both deployment and session, the session service will take precedence
+        self._scopes = set()
 
-    def new(self) -> MessageObjectT:
+        config_for_service: messages.MessagingServiceScopeConfig | None = getattr(
+            service_info.config, self._SERVICE_NAME, None
+        )
+        if config_for_service is None or not config_for_service.enabled:
+            # If the service is disabled in the config, mark it as disabled and return early
+            self._enabled = False
+            return
+
+        self._default_scope = config_for_service.default
+
+        self._enabled = True
+
+        for service in service_info.deployment_services:
+            # Only consider services that match the service type and are enabled
+            if service.service_type != self._SERVICE_NAME:
+                continue
+            if not service.enabled:
+                continue
+            self._scopes.update(
+                service.scope if isinstance(service.scope, list) else [service.scope]
+            )
+        for service in service_info.session_services:
+            # Only consider services that match the service type and are enabled
+            if service.service_type != self._SERVICE_NAME:
+                continue
+            if not service.enabled:
+                continue
+            self._scopes.update(
+                service.scope if isinstance(service.scope, list) else [service.scope]
+            )
+
+        # If there are no scopes available for this service, or all are disabled, mark the service as disabled
+        if not self._scopes:
+            self._enabled = False
+
+    def new(self, text: str | None = None) -> MessageObjectT:
         """
         Create a new message object associated with this messaging service.
 
+        Args:
+            text (str | None): Optional initial text content for the message.
+
         Returns:
             MessageServiceObject: A new message object.
+
+        Examples:
+            >>> # Create a new message object with initial text and send it in one line
+            >>> messaging_service.new("Hello, World!").send()
+
+            >>> # Create a new message object, add text and an attachment, then send it
+            >>> msg = messaging_service.new()
+            >>> msg.add_text("Hello, World!")
+            >>> msg.add_attachment("./file.txt")
+            >>> msg.send()
+
+        Raises:
+            RuntimeError: If the messaging service is not enabled.
         """
         if not self._enabled:
             raise RuntimeError(f"Messaging service '{self._SERVICE_NAME}' is not enabled.")
-        return self._MESSAGE_OBJECT_CLASS(self, scope=self._default_scope)  # type: ignore
+        obj = self._MESSAGE_OBJECT_CLASS(self, scope=self._default_scope)  # type: ignore
+        if text is not None:
+            obj.add_text(text)
+        return obj
 
     def send(self, message: MessageServiceObject, scope: str | list[str] | None = None) -> None:
         """
@@ -174,6 +231,9 @@ class MessagingService(ABC, Generic[MessageObjectT]):
         Args:
             message (MessageServiceObject): The message to send.
             scope (str | list[str] | None): The scope or recipient for the message.
+
+        Raises:
+            RuntimeError: If the messaging service is not enabled.
         """
         if not self._enabled:
             raise RuntimeError(f"Messaging service '{self._SERVICE_NAME}' is not enabled.")
@@ -242,19 +302,6 @@ class SignalMessageServiceObject(MessageServiceObject):
             SignalMessageServiceObject: The updated message object.
         """
         self._content.append(messages.MessagingServiceStickerContent(sticker_id=sticker))
-        return self
-
-    def add_giphy(self, giphy: str) -> Self:
-        """
-        Add giphy to the Signal message object.
-
-        Args:
-            giphy (str): The giphy to add.
-
-        Returns:
-            SignalMessageServiceObject: The updated message object.
-        """
-        self._content.append(messages.MessagingServiceGiphyContent(giphy_url=giphy))
         return self
 
 
