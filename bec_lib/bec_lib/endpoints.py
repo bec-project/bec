@@ -1856,14 +1856,14 @@ class MessageEndpoints:
     def available_messaging_services():
         """
         Endpoint for available messaging services. This endpoint is used to publish the available
-        messaging services using an AvailableResourceMessage.
+        messaging services using an AvailableMessagingServicesMessage.
         Returns:
             EndpointInfo: Endpoint for available messaging services.
         """
         endpoint = f"{EndpointType.INFO.value}/messaging_services/available_messaging_services"
         return EndpointInfo(
             endpoint=endpoint,
-            message_type=messages.AvailableResourceMessage,
+            message_type=messages.AvailableMessagingServicesMessage,
             message_op=MessageOp.STREAM,
         )
 

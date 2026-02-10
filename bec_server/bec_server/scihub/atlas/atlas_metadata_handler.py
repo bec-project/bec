@@ -87,17 +87,21 @@ class AtlasMetadataHandler:
         self.atlas_connector.connector.xadd(
             MessageEndpoints.deployment_info(), {"data": info}, max_size=1, approximate=False
         )
-        self.update_messaging_services(info.messaging_services)
+        self.update_messaging_services(info)
         self.update_local_account(info)
 
-    def update_messaging_services(self, services: list[messages.MessagingServiceConfig]) -> None:
+    def update_messaging_services(self, info: messages.DeploymentInfoMessage) -> None:
         """
         Update the messaging services in the Atlas connector
         """
-        info = messages.AvailableResourceMessage(resource=services)
+        service_info = messages.AvailableMessagingServicesMessage(
+            config=info.messaging_config,
+            deployment_services=info.messaging_services,
+            session_services=info.active_session.messaging_services if info.active_session else [],
+        )
         self.atlas_connector.connector.xadd(
             MessageEndpoints.available_messaging_services(),
-            {"data": info},
+            {"data": service_info},
             max_size=1,
             approximate=False,
         )
