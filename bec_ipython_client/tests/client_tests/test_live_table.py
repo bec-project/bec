@@ -303,8 +303,11 @@ class TestLiveTable:
     @pytest.mark.parametrize(
         "value,expected",
         [
-            (np.int32(1), "1.00"),
-            (np.float64(1.00000), "1.00"),
+            # Commented out cases are not supported in unstructured serialized data, because msgpack doesn't distinguish
+            # lists, tuples, or sets. To support this, ScanMessage must be refactored to support the type information directly
+            # except for numpy arrays, which are currently special-cased but will be removed in a future refactor.
+            # (np.int32(1), "1.00"),
+            # (np.float64(1.00000), "1.00"),
             (0, "0.00"),
             (1, "1.00"),
             (0.000, "0.00"),
@@ -314,10 +317,10 @@ class TestLiveTable:
             ("False", "False"),
             ("0", "0"),
             ("1", "1"),
-            ((0, 1), "(0, 1)"),
+            # ((0, 1), "(0, 1)"),
             ({"value": 0}, "{'value': 0}"),
             (np.array([0, 1]), "[0 1]"),
-            ({1, 2}, "{1, 2}"),
+            # ({1, 2}, "{1, 2}"),
         ],
     )
     def test_print_table_data_variants(self, client_with_grid_scan, value, expected):
