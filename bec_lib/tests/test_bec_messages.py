@@ -17,7 +17,7 @@ def test_bec_message_msgpack_serialization_version(version):
         assert "Unsupported BECMessage version" in str(exception.value)
     else:
         res = MsgpackSerialization.dumps(msg)
-        res_expected = b"\x81\xad__bec_codec__\x83\xacencoder_name\xaaBECMessage\xa9type_name\xb8DeviceInstructionMessage\xa4data\x84\xa8metadata\x81\xa3RID\xa41234\xa6device\xa4samx\xa6action\xa3set\xa9parameter\x81\xa3set\xcb?\xe0\x00\x00\x00\x00\x00\x00"
+        res_expected = b"\x85\xa8metadata\x81\xa3RID\xa41234\xa6device\xa4samx\xa6action\xa3set\xa9parameter\x81\xa3set\xcb?\xe0\x00\x00\x00\x00\x00\x00\xa9bec_codec\x81\xa9type_name\xb8DeviceInstructionMessage"
         assert res == res_expected
         res_loaded = MsgpackSerialization.loads(res)
         assert res_loaded == msg
@@ -682,3 +682,14 @@ def test_message_with_np_array_in_dict():
     arr = np.zeros(5)
     msg = messages.ScanMessage(point_id=0, scan_id="", data={"device": {"value": arr}}, metadata={})
     assert isinstance(msg.data["device"]["value"], np.ndarray)
+
+
+def test_message_service_config():
+    msg = messages.MessagingServiceConfig(
+        metadata={}, service_name="signal", scopes=["*"], enabled=True
+    )
+    dump = msg.model_dump(mode="python")
+    assert dump["service_name"] == "signal"
+    resource_msg = messages.AvailableResourceMessage(resource=[msg])
+    resource_msg_dump = resource_msg.model_dump(mode="python")
+    assert resource_msg_dump["resource"][0]["service_name"] == "signal"

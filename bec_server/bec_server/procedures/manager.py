@@ -50,6 +50,7 @@ _T = TypeVar("_T", bound=BECMessage)
 
 def _resolve_dict(msg: dict[str, Any] | _T, MsgType: type[_T]) -> _T:
     if isinstance(msg, dict):
+        msg.pop("bec_codec", None)
         return MsgType.model_validate(msg)
     return msg
 
