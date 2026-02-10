@@ -13,12 +13,18 @@ from bec_lib.messaging_services import (
 @pytest.fixture
 def scilog_service(connected_connector):
     service = SciLogMessagingService(connected_connector)
-    available_services = messages.AvailableResourceMessage(
-        resource=[
-            messages.MessagingServiceConfig(
-                service_name="scilog", scopes=["default", "alerts"], enabled=True
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=True),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=True, logbook_id="test_logbook"
             )
-        ]
+        ],
+        session_services=[],
     )
     SciLogMessagingService._on_new_scope_change_msg(
         message={"data": available_services}, parent=service
@@ -29,12 +35,18 @@ def scilog_service(connected_connector):
 @pytest.fixture
 def signal_service(connected_connector):
     service = SignalMessagingService(connected_connector)
-    available_services = messages.AvailableResourceMessage(
-        resource=[
-            messages.MessagingServiceConfig(
-                service_name="signal", scopes=["default", "signals"], enabled=True
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=True),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=False),
+        ),
+        deployment_services=[
+            messages.SignalServiceInfo(
+                id="test_signal", scope="default", enabled=True, group_id="test_group"
             )
-        ]
+        ],
+        session_services=[],
     )
     SignalMessagingService._on_new_scope_change_msg(
         message={"data": available_services}, parent=service
@@ -232,12 +244,18 @@ def test_attachment_file_extensions(
 def test_disabled_service_cannot_create_message(connected_connector):
     service = SciLogMessagingService(connected_connector)
     # Create a disabled service
-    available_services = messages.AvailableResourceMessage(
-        resource=[
-            messages.MessagingServiceConfig(
-                service_name="scilog", scopes=["default"], enabled=False
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=False),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=False, logbook_id="test_logbook"
             )
-        ]
+        ],
+        session_services=[],
     )
     SciLogMessagingService._on_new_scope_change_msg(
         message={"data": available_services}, parent=service
@@ -250,10 +268,18 @@ def test_disabled_service_cannot_create_message(connected_connector):
 def test_disabled_service_cannot_send_message(connected_connector):
     # First create an enabled service and a message
     service = SciLogMessagingService(connected_connector)
-    available_services = messages.AvailableResourceMessage(
-        resource=[
-            messages.MessagingServiceConfig(service_name="scilog", scopes=["default"], enabled=True)
-        ]
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=True),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=True, logbook_id="test_logbook"
+            )
+        ],
+        session_services=[],
     )
     SciLogMessagingService._on_new_scope_change_msg(
         message={"data": available_services}, parent=service
@@ -262,12 +288,18 @@ def test_disabled_service_cannot_send_message(connected_connector):
     message.add_text("Test message")
 
     # Now disable the service
-    disabled_services = messages.AvailableResourceMessage(
-        resource=[
-            messages.MessagingServiceConfig(
-                service_name="scilog", scopes=["default"], enabled=False
+    disabled_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=False),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=False, logbook_id="test_logbook"
             )
-        ]
+        ],
+        session_services=[],
     )
     SciLogMessagingService._on_new_scope_change_msg(
         message={"data": disabled_services}, parent=service
@@ -302,31 +334,6 @@ def test_signal_messaging_service_send_with_sticker(signal_service, connected_co
     assert sticker_part.sticker_id == "sticker_123"
 
 
-def test_signal_messaging_service_send_with_giphy(signal_service, connected_connector):
-    message = signal_service.new()
-    message.add_text("Test message with giphy")
-    message.add_giphy("https://giphy.com/test.gif")
-
-    message.send()
-    out = connected_connector.xread(
-        MessageEndpoints.message_service_queue(), from_start=True, count=1
-    )
-    assert len(out) == 1
-    out = out[0]["data"]
-    assert out.service_name == "signal"
-    assert len(out.message) == 2
-
-    # Check text part
-    text_part = out.message[0]
-    assert isinstance(text_part, messages.MessagingServiceTextContent)
-    assert text_part.content == "Test message with giphy"
-
-    # Check giphy part
-    giphy_part = out.message[1]
-    assert isinstance(giphy_part, messages.MessagingServiceGiphyContent)
-    assert giphy_part.giphy_url == "https://giphy.com/test.gif"
-
-
 def test_scilog_add_tags_with_string(scilog_message, connected_connector):
     """Test that add_tags works with a string input."""
     message = scilog_message
@@ -343,10 +350,30 @@ def test_scilog_add_tags_with_string(scilog_message, connected_connector):
     assert tags_part.tags == ["single_tag"]
 
 
-def test_signal_message_service_uses_default_scope(signal_service, connected_connector):
+def test_signal_message_service_uses_default_scope(connected_connector):
     """Test that SignalMessagingService message uses default scope."""
-    service = signal_service
-    service._scopes = ["user", "admin"]  # pylint: disable=protected-access
+    service = SignalMessagingService(connected_connector)
+    # Configure signal service with multiple scopes
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=True),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=False),
+        ),
+        deployment_services=[
+            messages.SignalServiceInfo(
+                id="test_signal_1", scope="user", enabled=True, group_id="test_group_1"
+            ),
+            messages.SignalServiceInfo(
+                id="test_signal_2", scope="admin", enabled=True, group_id="test_group_2"
+            ),
+        ],
+        session_services=[],
+    )
+    SignalMessagingService._on_new_scope_change_msg(
+        message={"data": available_services}, parent=service
+    )
+
     service.set_default_scope("user")
     message = service.new()
     message.send()

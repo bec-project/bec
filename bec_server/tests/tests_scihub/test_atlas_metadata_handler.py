@@ -8,6 +8,7 @@ from bec_lib.endpoints import MessageEndpoints
 def create_dummy_deployment_info():
     """Create anonymized dummy deployment info for testing"""
     return messages.DeploymentInfoMessage(
+        deployment_id="test-deployment-id",
         metadata={},
         name="Demo Deployment 1",
         active_session=messages.SessionInfoMessage(
@@ -38,9 +39,19 @@ def create_dummy_deployment_info():
             ),
             messaging_services=[],
         ),
+        messaging_config=messages.MessagingConfig(
+            scilog=messages.MessagingServiceScopeConfig(enabled=True, default=None),
+            signal=messages.MessagingServiceScopeConfig(enabled=True, default=None),
+            teams=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+        ),
         messaging_services=[
-            messages.MessagingServiceConfig(
-                metadata={}, service_name="signal", scopes=["*"], enabled=True
+            messages.SignalServiceInfo(
+                id="service_id_1",
+                scope="signal",
+                service_type="signal",
+                group_id="group_id_1",
+                group_link="https://signal.example.com/group_id_1",
+                enabled=True,
             )
         ],
     )
@@ -130,7 +141,7 @@ def test_update_deployment_info(atlas_connector):
         assert stored_info["data"] == deployment_info
 
         # Verify that messaging services are updated
-        mock_update_messaging.assert_called_once_with(deployment_info.messaging_services)
+        mock_update_messaging.assert_called_once_with(deployment_info)
 
         # Verify that account is updated
         mock_update_account.assert_called_once_with(deployment_info)
@@ -139,21 +150,22 @@ def test_update_deployment_info(atlas_connector):
 def test_update_messaging_services(atlas_connector):
     """Test that messaging services are correctly updated"""
     handler = atlas_connector.metadata_handler
-    services = [
-        messages.MessagingServiceConfig(
-            metadata={}, service_name="signal", scopes=["*"], enabled=True
-        )
-    ]
+    deployment_info = create_dummy_deployment_info()
 
-    handler.update_messaging_services(services)
+    handler.update_messaging_services(deployment_info)
 
     # Verify the services were stored in redis
     stored_services = handler.atlas_connector.connector.get_last(
         MessageEndpoints.available_messaging_services()
     )
     assert stored_services is not None
-    assert isinstance(stored_services["data"], messages.AvailableResourceMessage)
-    assert stored_services["data"].resource == services
+    assert isinstance(stored_services["data"], messages.AvailableMessagingServicesMessage)
+    assert stored_services["data"].config == deployment_info.messaging_config
+    assert stored_services["data"].deployment_services == deployment_info.messaging_services
+    assert (
+        stored_services["data"].session_services
+        == deployment_info.active_session.messaging_services
+    )
 
 
 def test_update_local_account_new_account(atlas_connector):
@@ -191,7 +203,16 @@ def test_update_local_account_no_session(atlas_connector):
     """Test that local account update handles missing session gracefully"""
     handler = atlas_connector.metadata_handler
     deployment_info = messages.DeploymentInfoMessage(
-        metadata={}, name="Test Deployment", active_session=None, messaging_services=[]
+        metadata={},
+        deployment_id="test-id",
+        name="Test Deployment",
+        active_session=None,
+        messaging_config=messages.MessagingConfig(
+            scilog=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            signal=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            teams=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+        ),
+        messaging_services=[],
     )
 
     with mock.patch.object(handler.atlas_connector.connector, "xadd") as mock_xadd:
@@ -205,9 +226,15 @@ def test_update_local_account_no_experiment(atlas_connector):
     handler = atlas_connector.metadata_handler
     deployment_info = messages.DeploymentInfoMessage(
         metadata={},
+        deployment_id="test-id",
         name="Test Deployment",
         active_session=messages.SessionInfoMessage(
             metadata={}, name="_default_", experiment=None, messaging_services=[]
+        ),
+        messaging_config=messages.MessagingConfig(
+            scilog=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            signal=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            teams=messages.MessagingServiceScopeConfig(enabled=False, default=None),
         ),
         messaging_services=[],
     )
