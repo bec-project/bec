@@ -693,15 +693,21 @@ class DeviceManagerBase:
         return devices.content["resource"]
 
     def _add_multiple_devices_with_log(self, devices: Iterable[tuple[dict, DeviceInfoMessage]]):
+        override = self._allow_override
         try:
-            override = self._allow_override
             self._allow_override = True
             logs = (self._add_device(*conf_msg) for conf_msg in devices if conf_msg is not None)
+            if set(logs) == {None}:
+                logger.warning("No devices added!")
+                return
             logger.info(f"Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
         finally:
             self._allow_override = override
 
     def _add_device(self, dev: dict, msg: DeviceInfoMessage) -> tuple[str, str] | None:
+        if msg is None:
+            logger.error(f"No device info in Redis for: {dev}")
+            return None
         name = msg.content["device"]
         info = msg.content["info"]
 
