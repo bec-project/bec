@@ -3,8 +3,9 @@ from typing import Literal
 import pytest
 from pydantic import ValidationError
 
+from bec_lib.messages import ScanArgType
 from bec_server.scan_server.scan_gui_models import GUIConfig
-from bec_server.scan_server.scans import ScanArgType, ScanBase
+from bec_server.scan_server.scans import ScanBase
 
 
 class GoodScan(ScanBase):  # pragma: no cover
@@ -193,7 +194,7 @@ def test_gui_config_good_scan_dump():
                         "expert": False,
                         "name": "optim_trajectory",
                         "tooltip": None,
-                        "type": {"Literal": ("path", None)},
+                        "type": {"Literal": ["path", None]},
                     },
                 ],
             }

@@ -34,8 +34,8 @@ class ScanAssembler:
         Returns:
             bool: True if the message is a scan message, False otherwise
         """
-        scan = msg.content.get("scan_type")
-        cls_name = self.scan_manager.available_scans[scan]["class"]
+        scan = msg.scan_type
+        cls_name = self.scan_manager.available_scans[scan].class_name
         scan_cls = self.scan_manager.scan_dict[cls_name]
         return issubclass(scan_cls, ScanBase)
 
@@ -55,8 +55,8 @@ class ScanAssembler:
         Returns:
             RequestBase: Scan instance of the initialized scan class
         """
-        scan = msg.content.get("scan_type")
-        cls_name = self.scan_manager.available_scans[scan]["class"]
+        scan = msg.scan_type
+        cls_name = self.scan_manager.available_scans[scan].class_name
         scan_cls = self.scan_manager.scan_dict[cls_name]
 
         logger.info(f"Preparing instructions of request of type {scan} / {scan_cls.__name__}")
