@@ -1042,6 +1042,7 @@ class Device(OphydInterfaceBase):
         table.add_column("Kind")
         table.add_column("Source")
         table.add_column("Type")
+        table.add_column("Labels")
         table.add_column("Description")
         signals = self._info.get("signals", {})
         signals_grouped = defaultdict(dict)
@@ -1072,13 +1073,14 @@ class Device(OphydInterfaceBase):
                     signal_info.get("kind_str"),
                     signal_info.get("describe", {}).get("source"),
                     signal_info.get("describe", {}).get("dtype"),
+                    ", ".join(label for label in signal_info.get("labels", set(("",)))),
                     signal_info.get("doc"),
                 )
                 kind_added = True
         if bec_signals:
             table.add_row()
             table.add_section()
-            table.add_row("BECMessageSignals", "", "", "", "", "", style="bold")
+            table.add_row("BECMessageSignals", "", "", "", "", "", "", style="bold")
             table.add_section()
             for signal_name, signal_info in bec_signals:
                 table.add_row(
@@ -1087,6 +1089,7 @@ class Device(OphydInterfaceBase):
                     signal_info.get("kind_str"),
                     signal_info.get("describe", {}).get("source"),
                     signal_info.get("describe", {}).get("dtype"),
+                    ", ".join(label for label in signal_info.get("labels", set(("",)))),
                     signal_info.get("doc"),
                 )
 
