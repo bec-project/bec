@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
 from bec_lib.device import DeviceBase
+from bec_lib.messages import Jsonable, sanitize_one_way_encodable
 from bec_lib.signature_serializer import signature_to_dict
 from bec_server.scan_server.scans import ScanArgType, ScanBase
 
@@ -26,9 +27,9 @@ class GUIInput(BaseModel):
 
     arg: bool = Field(False)
     name: str = Field(None, validate_default=True)
-    type: Optional[
-        Literal["DeviceBase", "device", "float", "int", "bool", "str", "list", "dict"]
-    ] = Field(None, validate_default=True)
+    type: (
+        Literal["DeviceBase", "device", "float", "int", "bool", "str", "list", "dict"] | Jsonable
+    ) = Field(None, validate_default=True)
     display_name: Optional[str] = Field(None, validate_default=True)
     tooltip: Optional[str] = Field(None, validate_default=True)
     default: Optional[Any] = Field(None, validate_default=True)
@@ -83,7 +84,7 @@ class GUIInput(BaseModel):
     def validate_field(cls, v, values):
         # args cannot be validated with the current implementation of signature of scans
         if values.data["arg"]:
-            return v
+            return sanitize_one_way_encodable(v)
         signature = context_signature.get()
         if v is None:
             name = values.data.get("name", None)
@@ -96,7 +97,7 @@ class GUIInput(BaseModel):
             for entry in signature:
                 if entry["name"] == name:
                     v = entry["annotation"]
-                    return v
+                    return sanitize_one_way_encodable(v)
 
     @field_validator("tooltip")
     @classmethod
@@ -225,7 +226,7 @@ class GUIConfig(BaseModel):
 
     scan_class_name: str
     arg_group: Optional[GUIArgGroup] = Field(None)
-    kwarg_groups: list[GUIGroup] = Field(None)
+    kwarg_groups: list[GUIGroup] | None = Field(None)
     signature: list[dict] = Field(..., exclude=True)
     docstring: str = Field(..., exclude=True)
 

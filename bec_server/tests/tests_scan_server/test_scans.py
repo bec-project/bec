@@ -69,7 +69,7 @@ def test_unpack_scan_args_valid_input():
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,), "samy": (2,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1], "samy": [2]}, "kwargs": {}},
                 queue="primary",
             ),
             [
@@ -90,7 +90,7 @@ def test_unpack_scan_args_valid_input():
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,), "samy": (2,), "samz": (3,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1], "samy": [2], "samz": [3]}, "kwargs": {}},
                 queue="primary",
             ),
             [
@@ -116,7 +116,7 @@ def test_unpack_scan_args_valid_input():
         ),
         (
             messages.ScanQueueMessage(
-                scan_type="mv", parameter={"args": {"samx": (1,)}, "kwargs": {}}, queue="primary"
+                scan_type="mv", parameter={"args": {"samx": [1]}, "kwargs": {}}, queue="primary"
             ),
             [
                 messages.DeviceInstructionMessage(
@@ -154,7 +154,7 @@ def test_scan_move(mv_msg, reference_msg_list, scan_assembler):
         (
             messages.ScanQueueMessage(
                 scan_type="umv",
-                parameter={"args": {"samx": (1,), "samy": (2,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1], "samy": [2]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "0bab7ee3-b384-4571-b...0fff984c05"},
             ),
@@ -198,7 +198,7 @@ def test_scan_move(mv_msg, reference_msg_list, scan_assembler):
         (
             messages.ScanQueueMessage(
                 scan_type="umv",
-                parameter={"args": {"samx": (1,), "samy": (2,), "samz": (3,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1], "samy": [2], "samz": [3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "0bab7ee3-b384-4571-b...0fff984c05"},
             ),
@@ -251,7 +251,7 @@ def test_scan_move(mv_msg, reference_msg_list, scan_assembler):
         (
             messages.ScanQueueMessage(
                 scan_type="umv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "0bab7ee3-b384-4571-b...0fff984c05"},
             ),
@@ -297,8 +297,8 @@ def test_scan_updated_move(mv_msg, reference_msg_list, scan_assembler, ScanStubS
         mock_get_from_rpc.return_value = {
             dev: {"value": value}
             for dev, value in zip(
-                reference_msg_list[0].content["parameter"]["readback"]["devices"],
-                reference_msg_list[0].content["parameter"]["readback"]["start"],
+                reference_msg_list[0].parameter["readback"]["devices"],
+                reference_msg_list[0].parameter["readback"]["start"],
             )
         }
 
@@ -322,7 +322,7 @@ def test_scan_updated_move(mv_msg, reference_msg_list, scan_assembler, ScanStubS
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
             ),
             [
@@ -473,7 +473,7 @@ def test_scan_scan(scan_msg, reference_scan_list, scan_assembler):
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 2), "samy": (-5, 5, 2)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 2], "samy": [-5, 5, 2]}, "kwargs": {}},
                 queue="primary",
             ),
             [
@@ -648,7 +648,7 @@ def test_scan_scan_2d(scan_msg, reference_scan_list, scan_assembler):
         (
             messages.ScanQueueMessage(
                 scan_type="fermat_scan",
-                parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+                parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
                 queue="primary",
             ),
             [
@@ -668,7 +668,7 @@ def test_scan_scan_2d(scan_msg, reference_scan_list, scan_assembler):
             messages.ScanQueueMessage(
                 scan_type="fermat_scan",
                 parameter={
-                    "args": {"samx": (-5, 5), "samy": (-5, 5)},
+                    "args": {"samx": [-5, 5], "samy": [-5, 5]},
                     "kwargs": {"step": 3, "spiral_type": 1},
                 },
                 queue="primary",
@@ -721,7 +721,7 @@ def test_fermat_scan(scan_msg, reference_scan_list, scan_assembler):
                 },
                 scan_type="cont_line_scan",
                 parameter={
-                    "args": ("samx", -1, 1),
+                    "args": ["samx", -1, 1],
                     "kwargs": {
                         "steps": 3,
                         "exp_time": 0.1,
@@ -744,7 +744,7 @@ def test_fermat_scan(scan_msg, reference_scan_list, scan_assembler):
                     metadata={"readout_priority": "monitored"},
                     device="samx",
                     action="rpc",
-                    parameter={"device": "samx", "func": "velocity.get", "args": (), "kwargs": {}},
+                    parameter={"device": "samx", "func": "velocity.get", "args": [], "kwargs": {}},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored"},
@@ -753,7 +753,7 @@ def test_fermat_scan(scan_msg, reference_scan_list, scan_assembler):
                     parameter={
                         "device": "samx",
                         "func": "acceleration.get",
-                        "args": (),
+                        "args": [],
                         "kwargs": {},
                     },
                 ),
@@ -761,7 +761,7 @@ def test_fermat_scan(scan_msg, reference_scan_list, scan_assembler):
                     metadata={"readout_priority": "monitored"},
                     device="samx",
                     action="rpc",
-                    parameter={"device": "samx", "func": "read", "args": (), "kwargs": {}},
+                    parameter={"device": "samx", "func": "read", "args": [], "kwargs": {}},
                 ),
                 messages.DeviceInstructionMessage(
                     metadata={"readout_priority": "monitored"},
@@ -1053,7 +1053,7 @@ def test_pre_scan_macro():
     macros = inspect.getsource(pre_scan_macro).encode()
     scan_msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     args = unpack_scan_args(scan_msg.content.get("parameter", {}).get("args", []))
@@ -1077,7 +1077,7 @@ def test_pre_scan_macro():
 #     device_manager = DMMock()
 #     device_manager.add_device("samx")
 #     parameter = {
-#         "args": {"samx": (-5, 5), "samy": (-5, 5)},
+#         "args": {"samx": [-5, 5], "samy": [-5, 5]},
 #         "kwargs": {"step": 3},
 #     }
 #     request = RequestBase(device_manager=device_manager, parameter=parameter)
@@ -1099,7 +1099,7 @@ def test_round_roi_scan():
     scan_msg = messages.ScanQueueMessage(
         scan_type="round_roi_scan",
         parameter={
-            "args": {"samx": (10,), "samy": (10,)},
+            "args": {"samx": [10], "samy": [10]},
             "kwargs": {"dr": 2, "nth": 4, "exp_time": 2, "relative": True},
         },
         queue="primary",
@@ -1211,7 +1211,7 @@ def test_get_func_name_from_macro():
     macros = [inspect.getsource(pre_scan_macro).encode()]
     scan_msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     args = unpack_scan_args(scan_msg.content.get("parameter", {}).get("args", []))
@@ -1228,7 +1228,7 @@ def test_scan_report_devices():
     device_manager.add_device("samy")
     scan_msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     args = unpack_scan_args(scan_msg.content.get("parameter", {}).get("args", []))
@@ -1253,7 +1253,7 @@ def test_request_base_check_limits():
     device_manager.add_device("samy")
     scan_msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     request = RequestBaseMock(
@@ -1305,7 +1305,7 @@ def test_request_baseupdate_scan_motors():
     device_manager.add_device("samz")
     scan_msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     request = RequestBaseMock(
@@ -1318,7 +1318,7 @@ def test_request_baseupdate_scan_motors():
     assert request.scan_motors == ["samx"]
 
     request.arg_bundle_size = {"bundle": 2, "min": None, "max": None}
-    request.caller_args = {"samz": (-2, 2), "samy": (-1, 2)}
+    request.caller_args = {"samz": [-2, 2], "samy": [-1, 2]}
     request.update_scan_motors()
     assert request.scan_motors == ["samz", "samy"]
 
@@ -1340,7 +1340,7 @@ def test_scan_base_init():
 
     scan_msg = messages.ScanQueueMessage(
         scan_type="",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     with pytest.raises(ValueError) as exc_info:
@@ -1358,7 +1358,7 @@ def test_scan_base_set_position_offset():
     scan_msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
         parameter={
-            "args": {"samx": (-5, 5), "samy": (-5, 5)},
+            "args": {"samx": [-5, 5], "samy": [-5, 5]},
             "kwargs": {"step": 3, "relative": False},
         },
         queue="primary",
@@ -1385,7 +1385,7 @@ def test_round_scan_fly_simupdate_scan_motors():
     device_manager.add_device("flyer_sim")
     scan_msg = messages.ScanQueueMessage(
         scan_type="round_scan_fly",
-        parameter={"args": {"flyer_sim": (0, 50, 5, 3)}, "kwargs": {"realtive": True}},
+        parameter={"args": {"flyer_sim": [0, 50, 5, 3]}, "kwargs": {"realtive": True}},
         queue="primary",
     )
     request = RoundScanFlySim(
@@ -1408,7 +1408,7 @@ def test_round_scan_fly_sim_prepare_positions():
     device_manager.add_device("flyer_sim")
     scan_msg = messages.ScanQueueMessage(
         scan_type="round_scan_fly",
-        parameter={"args": {"flyer_sim": (0, 50, 5, 3)}, "kwargs": {"realtive": True}},
+        parameter={"args": {"flyer_sim": [0, 50, 5, 3]}, "kwargs": {"realtive": True}},
         queue="primary",
     )
     request = RoundScanFlySim(
@@ -1433,7 +1433,7 @@ def test_round_scan_fly_sim_prepare_positions():
 
 
 @pytest.mark.parametrize(
-    "in_args,reference_positions", [((1, 5, 1, 1), [[0, -3], [0, -7], [0, 7]])]
+    "in_args,reference_positions", [([1, 5, 1, 1], [[0, -3], [0, -7], [0, 7]])]
 )
 def test_round_scan_fly_sim_calculate_positions(in_args, reference_positions):
     device_manager = DMMock()
@@ -1458,7 +1458,7 @@ def test_round_scan_fly_sim_calculate_positions(in_args, reference_positions):
 
 
 @pytest.mark.parametrize(
-    "in_args,reference_positions", [((1, 5, 1, 1), [[0, -3], [0, -7], [0, 7]])]
+    "in_args,reference_positions", [([1, 5, 1, 1], [[0, -3], [0, -7], [0, 7]])]
 )
 def test_round_scan_fly_sim_scan_core(in_args, reference_positions, scan_assembler):
     scan_msg = messages.ScanQueueMessage(
@@ -2139,7 +2139,7 @@ def test_ContLineFlyScan(scan_assembler, ScanStubStatusMock):
                 "device": "samx",
                 "func": "read",
                 "rpc_id": "rpc_id",
-                "args": (),
+                "args": [],
                 "kwargs": {},
             },
         ),

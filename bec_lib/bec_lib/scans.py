@@ -21,6 +21,7 @@ from bec_lib.bec_errors import ScanAbortion
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messages import ScanArgType  # moved from here to messages - for compat with plugins
 from bec_lib.scan_repeat import _scan_repeat_depth
 from bec_lib.scan_report import ScanReport
 from bec_lib.signature_serializer import deserialize_dtype, dict_to_signature
@@ -365,14 +366,14 @@ class Scans:
 
         return messages.ScanQueueMessage(
             scan_type=scan_name,
-            parameter=params,
+            parameter=messages.sanitize_one_way_encodable(params),
             queue=scan_queue,
             metadata=metadata,
             allow_restart=allow_restart,
         )
 
     @staticmethod
-    def _parameter_bundler(args: tuple, bundle_size: int) -> tuple | dict:
+    def _parameter_bundler(args: tuple, bundle_size: int) -> list | dict:
         """
         Bundle the arguments into the correct format for the scan server.
         If the bundle size is 0, return the arguments as is.
@@ -383,11 +384,11 @@ class Scans:
             bundle_size: number of parameters per bundle
 
         Returns:
-            tuple | dict: bundled arguments
+            list | dict: bundled arguments
 
         """
         if not bundle_size:
-            return args
+            return list(args)
         params = {}
         for cmds in partition(bundle_size, args):
             params[cmds[0]] = list(cmds[1:])

@@ -124,7 +124,7 @@ def _merge_literals(vals: Generator[str | dict, None, None]) -> Generator[str | 
     if _literal_args == [None]:
         yield "NoneType"
     elif _literal_args:
-        yield {"Literal": tuple(_literal_args)}
+        yield {"Literal": list(_literal_args)}
 
 
 def serialize_dtype(dtype: object) -> list[str | dict] | str | dict:

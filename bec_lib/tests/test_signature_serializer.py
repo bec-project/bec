@@ -43,7 +43,7 @@ def test_signature_serializer_merged_literals():
             "name": "a",
             "kind": "POSITIONAL_OR_KEYWORD",
             "default": None,
-            "annotation": {"Literal": (1, 2, 3, None)},
+            "annotation": {"Literal": [1, 2, 3, None]},
         }
     ]
 
@@ -59,7 +59,7 @@ def test_signature_serializer_with_unpack():
             "name": "b",
             "kind": "POSITIONAL_OR_KEYWORD",
             "default": "_empty",
-            "annotation": {"Literal": ("test", None)},
+            "annotation": {"Literal": ["test", None]},
         },
         {"name": "args", "kind": "VAR_POSITIONAL", "default": "_empty", "annotation": "_empty"},
         {"name": "kwargs", "kind": "VAR_KEYWORD", "default": "_empty", "annotation": "_empty"},
@@ -83,13 +83,13 @@ def test_signature_serializer_with_literals():
             "name": "b",
             "kind": "POSITIONAL_OR_KEYWORD",
             "default": "_empty",
-            "annotation": {"Literal": ("test", None)},
+            "annotation": {"Literal": ["test", None]},
         },
         {
             "name": "c",
             "kind": "POSITIONAL_OR_KEYWORD",
             "default": 1,
-            "annotation": {"Literal": (1, 2, 3)},
+            "annotation": {"Literal": [1, 2, 3]},
         },
         {
             "name": "d",
@@ -265,7 +265,7 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
         (float, "float"),
         (bool, "bool"),
         (inspect._empty, "_empty"),
-        (Literal[1, 2, 3], {"Literal": (1, 2, 3)}),
+        (Literal[1, 2, 3], {"Literal": [1, 2, 3]}),
         (Union[int, str], ["int", "str"]),
         (Optional[str], ["str", "NoneType"]),
         (DeviceBase, "DeviceBase"),
@@ -336,7 +336,7 @@ def test_serialize_dtype(dtype_in, dtype_out):
         ("float", float),
         ("bool", bool),
         ("_empty", inspect._empty),
-        ({"Literal": (1, 2, 3)}, Literal[1, 2, 3]),
+        ({"Literal": [1, 2, 3]}, Literal[1, 2, 3]),
         (["int", "str"], Union[int, str]),
         (["str", "NoneType"], Optional[str]),
         ("NoneType", None),

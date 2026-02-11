@@ -3,8 +3,8 @@ from unittest import mock
 import pytest
 
 from bec_lib.device import Device, DeviceBase, Positioner
+from bec_lib.messages import ScanArgType
 from bec_server.scan_server.scan_manager import ScanManager
-from bec_server.scan_server.scans import ScanArgType
 
 
 @pytest.fixture
