@@ -315,7 +315,9 @@ class ScanStubs:
 
     def _device_msg(self, **kwargs) -> messages.DeviceInstructionMessage:
         """"""
-        msg = messages.DeviceInstructionMessage(**kwargs)
+        msg = messages.DeviceInstructionMessage.model_validate(
+            messages.sanitize_one_way_encodable(kwargs)
+        )
         msg.metadata = {**self.device_msg_metadata(), **msg.metadata}
         return msg
 

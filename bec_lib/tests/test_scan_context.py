@@ -136,7 +136,7 @@ def test_parameter_bundler(bec_client_mock):
     assert res == {dev.samx: [-5, 5, 5]}
 
     res = client.scans._parameter_bundler((-5, 5, 5), 0)
-    assert res == (-5, 5, 5)
+    assert res == [-5, 5, 5]
 
 
 @pytest.mark.parametrize(

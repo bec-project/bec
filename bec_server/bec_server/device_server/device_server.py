@@ -19,7 +19,7 @@ from bec_lib.bec_service import BECService
 from bec_lib.device import OnFailure
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECStatus
+from bec_lib.messages import BECStatus, sanitize_one_way_encodable
 from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
@@ -774,7 +774,7 @@ class DeviceServer(BECService):
 
     def _update_read_configuration(self, obj: OphydObject, metadata: dict, pipe) -> None:
         dev_config_msg = messages.DeviceMessage(
-            signals=obj.root.read_configuration(), metadata=metadata
+            signals=sanitize_one_way_encodable(obj.root.read_configuration()), metadata=metadata
         )
         self.connector.set_and_publish(
             MessageEndpoints.device_read_configuration(obj.root.name), dev_config_msg, pipe

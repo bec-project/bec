@@ -5,11 +5,11 @@ import time
 import uuid
 import warnings
 from copy import deepcopy
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
 from types import NoneType
-from typing import Annotated, Any, ClassVar, Literal, Self, TypeVar, Union
+from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypeVar, Union
 from uuid import uuid4
 
 import msgpack
@@ -18,7 +18,13 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     ConfigDict,
+    FailFast,
     Field,
+    Strict,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
     ValidationError,
     WithJsonSchema,
     field_validator,
@@ -33,67 +39,31 @@ from bec_lib.one_way_registry import OneWaySerializationRegistry
 _one_way_registry = OneWaySerializationRegistry()
 
 
-def _sanitize_one_way(data: Any) -> Any:
-    # TODO: Temporary fix for standardizing message structure, will be replaced
-    # by encoders in a future iteration
-    if isinstance(data, np.ndarray):
-        return data
-    if isinstance(data, np.bool_):
-        return bool(data)
-    if isinstance(data, (np.float16, np.float32, np.float64)):
-        return float(data)
-    if isinstance(data, (np.int16, np.int32, np.int64, np.uint16, np.uint32, np.uint64)):
-        return int(data)
+def sanitize_one_way_encodable(data: Any) -> Any:
+    """Sanitize any data which can be serialized in a json-compatible format and is not supposed to be decoded,
+    for example, a parameter dict containing devices"""
     if isinstance(data, (list, tuple, set)):
-        return [_sanitize_one_way(x) for x in data]
-    if isinstance(data, dict):
-        return {_sanitize_one_way(k): _sanitize_one_way(v) for k, v in data.items()}
+        return [sanitize_one_way_encodable(x) for x in data]
+    if isinstance(data, Mapping):
+        return {
+            sanitize_one_way_encodable(k): sanitize_one_way_encodable(v) for k, v in data.items()
+        }
     return _one_way_registry.encode(data)
 
 
-def _ignore_ndarray(data: Any) -> Any:
-    if isinstance(data, np.ndarray):
-        return []
-    raise ValueError(f"Cannot serialize unknown type for {data}: {type(data)}")
-
-
-def _test_packable(data: Any):
-    try:
-        msgpack.dumps(data, default=_ignore_ndarray)
-    except Exception as e:
-        raise ValueError(f"Non-JSONable/msgpackable data in {data}!") from e
-
-
-def _validate_packable(data: Any) -> Any:
-    # Skip sanitization if the data is already valid
-    if isinstance(data, int | float | str | bool | NoneType):
-        return data
-    if isinstance(data, np.bool_):
-        return bool(data)
-    try:
-        _test_packable(data)
-        return data
-    # Recursively check if we should replace anything which is not supposed to be decoded to a custom
-    # type on the other end
-    except ValueError:
-        data = _sanitize_one_way(data)
-    _test_packable(data)
-    return data
-
+JsonableScalar = TypeAliasType("JsonableScalar", StrictInt | StrictFloat | StrictStr | StrictBool)
 
 Jsonable = TypeAliasType(
     "Jsonable",
-    Annotated[
-        int | float | str | bool | None | list["Jsonable"] | dict[str, "Jsonable"] | np.ndarray,
-        BeforeValidator(_validate_packable),
-    ],
+    JsonableScalar
+    | None
+    | Annotated[list["Jsonable"], Strict(), FailFast()]
+    | Annotated[dict[StrictStr, "Jsonable"], Strict()],
 )
 
 JsonableDict = TypeAliasType(
     "JsonableDict",
-    Annotated[
-        dict[str, Jsonable], BeforeValidator(_validate_packable), WithJsonSchema({"type": "object"})
-    ],
+    Annotated[dict[StrictStr, Jsonable], WithJsonSchema({"type": "object"}), Strict()],
 )
 
 
@@ -126,16 +96,6 @@ class BECMessage(BECSerializable):
     msg_type: ClassVar[str]
     metadata: JsonableDict = Field(default_factory=dict)
 
-    @field_validator("metadata")
-    @classmethod
-    def check_metadata(cls, v):
-        """Validate the metadata, return empty dict if None
-
-        Args:
-            v (dict, None): Metadata dictionary
-        """
-        return v or {}
-
     @model_validator(mode="before")
     @classmethod
     def _strip_codec_info(cls, data: Any):
@@ -149,18 +109,6 @@ class BECMessage(BECSerializable):
         content = self.__dict__.copy()
         content.pop("metadata", None)
         return content
-
-    def __eq__(self, other):
-        if not isinstance(other, BECMessage):
-            # don't attempt to compare against unrelated types
-            return False
-
-        try:
-            np.testing.assert_equal(self.model_dump(), other.model_dump())
-        except AssertionError:
-            return False
-
-        return self.msg_type == other.msg_type and self.metadata == other.metadata
 
     def loads(self):
         warnings.warn(
@@ -182,7 +130,7 @@ class BECMessage(BECSerializable):
 
 # To correctly encode a message in another message, pydantic should know it is to be dumped
 # as the concrete type it is, and not only the fields from BECMessage
-SpecificMessageType = TypeVar("MessageType", bound=BECMessage)
+SpecificMessageType = TypeVar("SpecificMessageType", bound=BECMessage)
 
 
 class BundleMessage(BECMessage):
@@ -200,7 +148,7 @@ class BundleMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "bundle_message"
-    messages: list[SpecificMessageType] = Field(default_factory=list)
+    messages: Annotated[list[SpecificMessageType], Field(default_factory=list)]
 
     def append(self, msg: BECMessage):
         """Append a new BECMessage to the bundle"""
@@ -669,6 +617,46 @@ class DeviceInstructionResponse(BECMessage):
         return self
 
 
+# TODO: remove when deprecated usages of SignalReading are cleaned up
+logger = None
+
+
+def lazy_ensure_logger():
+    global logger
+    if logger is None:
+        from bec_lib.logger import bec_logger
+
+        logger = bec_logger.logger
+
+
+class SignalReading(BECSerializable):
+    value: int | float | list[int] | list[float] | np.ndarray | None | str
+    timestamp: float | list[float] | None = None
+
+    def keys(self):
+        lazy_ensure_logger()
+        logger.warning(
+            "Dictionary usage of SignalReading is deprecated; please replace it with a different access pattern."
+        )
+        return ["value", "timestamp"]
+
+    def get(self, item: Literal["value", "timestamp"], default=Any):
+        """Allow dictionary-style access for legacy reasons."""
+        lazy_ensure_logger()
+        logger.warning(
+            "Get-access on SignalReading is deprecated; Just access the model.value field."
+        )
+        if item not in ["value", "timestamp"]:
+            raise KeyError('SignalReading only has "value" and "timestamp" fields!')
+        return getattr(self, item)
+
+    def __getitem__(self, item: str):
+        return self.get(item)
+
+    def items(self):
+        return dict(self).items()
+
+
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
 
@@ -681,7 +669,7 @@ class DeviceMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "device_message"
-    signals: dict[str, dict[Literal["value", "timestamp"], Any]]
+    signals: dict[str, SignalReading]
 
     @field_validator("metadata")
     @classmethod
@@ -1319,6 +1307,29 @@ class DAPResponseMessage(BECMessage):
     dap_request: SpecificMessageType | None = Field(default=None)
 
 
+class ScanArgType(StrEnum):
+    DEVICE = "device"
+    FLOAT = "float"
+    INT = "int"
+    BOOL = "boolean"
+    STR = "str"
+    LIST = "list"
+    DICT = "dict"
+
+
+class AvailableScan(BECMessage):
+    """Information about an available scan"""
+
+    class_name: str
+    base_class: str
+    arg_input: dict[str, Jsonable | ScanArgType]
+    gui_config: JsonableDict
+    required_kwargs: list[str] | dict[str, ScanArgType]
+    arg_bundle_size: JsonableDict
+    doc: str | None = None
+    signature: list[JsonableDict]
+
+
 class AvailableResourceMessage(BECMessage):
     """Message for available resources such as scans, data processing plugins etc
 
@@ -1328,7 +1339,13 @@ class AvailableResourceMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: JsonableDict | list[JsonableDict] | SpecificMessageType | list[SpecificMessageType]
+    resource: (
+        JsonableDict
+        | list[JsonableDict]
+        | SpecificMessageType
+        | list[SpecificMessageType]
+        | dict[str, SpecificMessageType]
+    )
 
 
 class ProgressMessage(BECMessage):

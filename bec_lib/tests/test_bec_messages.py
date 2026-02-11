@@ -680,8 +680,10 @@ class TestDeviceAsyncUpdate:
 
 def test_message_with_np_array_in_dict():
     arr = np.zeros(5)
-    msg = messages.ScanMessage(point_id=0, scan_id="", data={"device": {"value": arr}}, metadata={})
-    assert isinstance(msg.data["device"]["value"], np.ndarray)
+    with pytest.raises(pydantic.ValidationError) as e:
+        msg = messages.BECMessage(metadata={"value": arr})
+    assert e.match("metadata.value")
+    assert e.match("should be a valid")
 
 
 def test_message_service_config():

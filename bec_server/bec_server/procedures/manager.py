@@ -96,7 +96,7 @@ class ProcedureManager:
             MessageEndpoints.available_procedures(),
             AvailableResourceMessage(
                 resource={
-                    name: procedure_registry.get_info(name)
+                    name: list(procedure_registry.get_info(name))
                     for name in procedure_registry.available()
                 }
             ),

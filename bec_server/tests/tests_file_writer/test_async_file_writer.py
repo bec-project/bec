@@ -549,7 +549,7 @@ def test_async_writer_raises_on_wrong_data_type(async_writer):
 
     # Send invalid data (not a DeviceMessage)
     invalid_data = messages.DeviceMessage(
-        signals={"monitor_async": {"value": {"data": None}, "timestamp": 1}},
+        signals={"monitor_async": {"value": None, "timestamp": 1}},
         metadata={"async_update": {"type": "add", "max_shape": [None]}},
     )
 

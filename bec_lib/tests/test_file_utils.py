@@ -40,7 +40,7 @@ def scan_msg():
     yield ScanStatusMessage(
         scan_id="1111",
         scan_parameters={"system_config": {"file_directory": None, "file_suffix": None}},
-        info={"scan_number": 5, "file_components": ("S00000-00999/S00005/S00005", "h5")},
+        info={"scan_number": 5, "file_components": ["S00000-00999/S00005/S00005", "h5"]},
         status="closed",
     )
 
@@ -202,7 +202,7 @@ def test_compile_file_components():
             ScanStatusMessage(
                 scan_id="1111",
                 scan_parameters={"system_config": {"file_directory": None, "file_suffix": None}},
-                info={"scan_number": 5, "file_components": ("S00000-00999/S00005/S00005", "h5")},
+                info={"scan_number": 5, "file_components": ["S00000-00999/S00005/S00005", "h5"]},
                 status="closed",
             )
         ),
@@ -212,7 +212,7 @@ def test_compile_file_components():
                 scan_parameters={
                     "system_config": {"file_directory": "/my_dir", "file_suffix": None}
                 },
-                info={"scan_number": 5, "file_components": ("/my_dir/S00005", "h5")},
+                info={"scan_number": 5, "file_components": ["/my_dir/S00005", "h5"]},
                 status="closed",
             )
         ),
@@ -224,7 +224,7 @@ def test_compile_file_components():
                 },
                 info={
                     "scan_number": 5,
-                    "file_components": ("S00000-00999/S00005_sampleA/S00005", "h5"),
+                    "file_components": ["S00000-00999/S00005_sampleA/S00005", "h5"],
                 },
                 status="closed",
             )

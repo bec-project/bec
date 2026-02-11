@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import enum
 import threading
 import time
 import uuid
@@ -16,6 +15,7 @@ from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messages import ScanArgType
 from bec_server.scan_server.instruction_handler import InstructionHandler
 
 from .errors import LimitError, ScanAbortion
@@ -23,16 +23,6 @@ from .path_optimization import PathOptimizerMixin
 from .scan_stubs import ScanStubs
 
 logger = bec_logger.logger
-
-
-class ScanArgType(str, enum.Enum):
-    DEVICE = "device"
-    FLOAT = "float"
-    INT = "int"
-    BOOL = "boolean"
-    STR = "str"
-    LIST = "list"
-    DICT = "dict"
 
 
 def unpack_scan_args(scan_args: dict[str, Any]) -> list:
@@ -941,7 +931,7 @@ class UpdatedMove(Move):
                     "RID": self.metadata["RID"],
                     "devices": self.scan_motors,
                     "start": self.start_pos,
-                    "end": self.positions[0],
+                    "end": list(self.positions[0]),
                 }
             }
         )

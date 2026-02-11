@@ -24,7 +24,7 @@ def scan_guard_mock(scan_server_mock):
         (
             messages.ScanQueueMessage(
                 scan_type="fermat_scan",
-                parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+                parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
                 queue="primary",
             )
         ),
@@ -73,7 +73,7 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
         (
             messages.ScanQueueMessage(
                 scan_type="fermat_scan",
-                parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+                parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
                 queue="primary",
             ),
             True,
@@ -122,7 +122,7 @@ def test_check_valid_scan_raises_for_unknown_scan(scan_guard_mock):
 
     request = messages.ScanQueueMessage(
         scan_type="unknown_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
 
@@ -139,7 +139,7 @@ def test_check_valid_scan_accepts_known_scan(scan_guard_mock):
 
     request = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
 
@@ -206,7 +206,7 @@ def test_append_to_scan_queue(scan_guard_mock):
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     with mock.patch.object(sg.device_manager.connector, "send") as send:
@@ -218,7 +218,7 @@ def test_scan_queue_request_callback(scan_guard_mock):
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     msg_obj = MessageObject(MessageEndpoints.scan_queue_request(), msg)
@@ -252,7 +252,7 @@ def test_handle_scan_request(scan_guard_mock):
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     with mock.patch.object(sg, "_is_valid_scan_request") as valid:
@@ -333,7 +333,7 @@ def test_handle_scan_request_rejected(scan_guard_mock):
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     with mock.patch.object(sg, "_is_valid_scan_request") as valid:
@@ -347,7 +347,7 @@ def test_is_valid_scan_request_returns_scan_status_on_error(scan_guard_mock):
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
-        parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
+        parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"step": 3}},
         queue="primary",
     )
     with mock.patch.object(sg, "_check_valid_scan") as valid:
