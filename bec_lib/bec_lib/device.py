@@ -1073,7 +1073,7 @@ class Device(OphydInterfaceBase):
                     signal_info.get("kind_str"),
                     signal_info.get("describe", {}).get("source"),
                     signal_info.get("describe", {}).get("dtype"),
-                    ", ".join(label for label in signal_info.get("labels", set(("",)))),
+                    ", ".join(label for label in sorted(signal_info.get("labels", set(("",))))),
                     signal_info.get("doc"),
                 )
                 kind_added = True
