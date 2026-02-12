@@ -9,7 +9,7 @@ from enum import Enum, StrEnum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
 from types import NoneType
-from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypeVar, Union
+from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypedDict, TypeVar, Union
 from uuid import uuid4
 
 import msgpack
@@ -629,32 +629,16 @@ def lazy_ensure_logger():
         logger = bec_logger.logger
 
 
-class SignalReading(BECSerializable):
+class _ValueOnlySignalReading(TypedDict):
     value: int | float | list[int] | list[float] | np.ndarray | None | str
-    timestamp: float | list[float] | None = None
 
-    def keys(self):
-        lazy_ensure_logger()
-        logger.warning(
-            "Dictionary usage of SignalReading is deprecated; please replace it with a different access pattern."
-        )
-        return ["value", "timestamp"]
 
-    def get(self, item: Literal["value", "timestamp"], default=Any):
-        """Allow dictionary-style access for legacy reasons."""
-        lazy_ensure_logger()
-        logger.warning(
-            "Get-access on SignalReading is deprecated; Just access the model.value field."
-        )
-        if item not in ["value", "timestamp"]:
-            raise KeyError('SignalReading only has "value" and "timestamp" fields!')
-        return getattr(self, item)
+class _ValueTimestampSignalReading(TypedDict):
+    value: int | float | list[int] | list[float] | np.ndarray | None | str
+    timestamp: float | list[float] | None
 
-    def __getitem__(self, item: str):
-        return self.get(item)
 
-    def items(self):
-        return dict(self).items()
+SignalReading = _ValueTimestampSignalReading | _ValueOnlySignalReading
 
 
 class DeviceMessage(BECMessage):
