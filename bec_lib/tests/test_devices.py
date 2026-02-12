@@ -768,6 +768,7 @@ def test_device_summary(dev: Any):
             "Kind",
             "Source",
             "Type",
+            "Labels",
             "Description",
         ]
 
@@ -788,6 +789,7 @@ def test_device_summary_signal_grouping(dev: Any):
                 "hinted",
                 "SIM:samx",
                 "integer",
+                "",
                 "readback doc string",
             )
             assert mock_add_row.call_args_list[1][0] == tuple()
@@ -797,6 +799,7 @@ def test_device_summary_signal_grouping(dev: Any):
                 "normal",
                 "SIM:samx_setpoint",
                 "integer",
+                "",
                 "setpoint doc string",
             )
             devs = [row_call[0][0] for row_call in mock_add_row.call_args_list if row_call[0]]
@@ -840,6 +843,7 @@ def test_device_summary_bec_signals(dm_with_devices):
                         "hinted",
                         "BECMessageSignal:eiger_preview",
                         "DevicePreviewMessage",
+                        "",
                         "",
                     )
                 ]
