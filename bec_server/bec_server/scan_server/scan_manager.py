@@ -4,11 +4,10 @@ Scan Manager loads the available scans and publishes them to redis.
 
 import inspect
 
-from bec_lib import plugin_helper
+from bec_lib import messages, plugin_helper
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AvailableResourceMessage
 from bec_lib.signature_serializer import signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
 
@@ -27,7 +26,7 @@ class ScanManager:
         Scan Manager loads and manages the available scans.
         """
         self.parent = parent
-        self.available_scans = {}
+        self.available_scans: dict[str, messages.AvailableScan] = {}
         self.scan_dict: dict[str, type[scans_module.RequestBase]] = {}
         self._plugins = {}
         self.load_plugins()
@@ -77,16 +76,18 @@ class ScanManager:
                     base_cls = report_cls.__name__
             self.scan_dict[scan_cls.__name__] = scan_cls
             gui_config = self.validate_gui_config(scan_cls)
-            self.available_scans[scan_cls.scan_name] = {
-                "class": scan_cls.__name__,
-                "base_class": base_cls,
-                "arg_input": self.convert_arg_input(scan_cls.arg_input),
-                "gui_config": gui_config,
-                "required_kwargs": scan_cls.required_kwargs,
-                "arg_bundle_size": scan_cls.arg_bundle_size,
-                "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
-                "signature": signature_to_dict(scan_cls.__init__),
-            }
+            self.available_scans[scan_cls.scan_name] = messages.AvailableScan.model_validate(
+                {
+                    "class_name": scan_cls.__name__,
+                    "base_class": base_cls,
+                    "arg_input": self.convert_arg_input(scan_cls.arg_input),
+                    "gui_config": gui_config,
+                    "required_kwargs": scan_cls.required_kwargs,
+                    "arg_bundle_size": scan_cls.arg_bundle_size,
+                    "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
+                    "signature": signature_to_dict(scan_cls.__init__),
+                }
+            )
 
     def validate_gui_config(self, scan_cls) -> dict:
         """
@@ -142,5 +143,5 @@ class ScanManager:
         """send all available scans to the broker"""
         self.parent.connector.set(
             MessageEndpoints.available_scans(),
-            AvailableResourceMessage(resource=self.available_scans),
+            messages.AvailableResourceMessage(resource=self.available_scans),
         )

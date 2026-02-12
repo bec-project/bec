@@ -101,7 +101,7 @@ def test_publish_data_as_read(scan_worker_mock):
 
 def test_publish_data_as_read_multiple(scan_worker_mock):
     worker = scan_worker_mock
-    data = [{"samx": {}}, {"samy": {}}]
+    data = [{"samx": {"value": None}}, {"samy": {"value": None}}]
     devices = ["samx", "samy"]
     instr = messages.DeviceInstructionMessage(
         device=devices,
@@ -217,7 +217,7 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
         messages.ScanQueueMessage(
             scan_type="grid_scan",
             parameter={
-                "args": {"samx": (-5, 5, 5), "samy": (-1, 1, 2)},
+                "args": {"samx": [-5, 5, 5], "samy": [-1, 1, 2]},
                 "kwargs": {
                     "exp_time": 1,
                     "relative": True,
@@ -234,7 +234,7 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
         messages.ScanQueueMessage(
             scan_type="grid_scan",
             parameter={
-                "args": {"samx": (-5, 5, 5), "samy": (-1, 1, 2)},
+                "args": {"samx": [-5, 5, 5], "samy": [-1, 1, 2]},
                 "kwargs": {
                     "exp_time": 1,
                     "relative": True,
@@ -251,7 +251,7 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
         messages.ScanQueueMessage(
             scan_type="grid_scan",
             parameter={
-                "args": {"samx": (-5, 5, 5), "samy": (-1, 1, 2)},
+                "args": {"samx": [-5, 5, 5], "samy": [-1, 1, 2]},
                 "kwargs": {
                     "exp_time": 1,
                     "relative": True,
@@ -293,7 +293,7 @@ def test_initialize_scan_info(scan_worker_mock, msg):
         assert worker.current_scan_info["scan_msgs"] == []
         assert worker.current_scan_info["monitor_sync"] == "bec"
         assert worker.current_scan_info["frames_per_trigger"] == 1
-        assert worker.current_scan_info["args"] == {"samx": (-5, 5, 5), "samy": (-1, 1, 2)}
+        assert worker.current_scan_info["args"] == {"samx": [-5, 5, 5], "samy": [-1, 1, 2]}
         assert worker.current_scan_info["kwargs"] == msg.parameter["kwargs"]
         assert "samx" in worker.current_scan_info["readout_priority"]["monitored"]
         assert "samy" in worker.current_scan_info["readout_priority"]["baseline"]

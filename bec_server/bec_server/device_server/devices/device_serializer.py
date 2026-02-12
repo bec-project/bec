@@ -12,6 +12,7 @@ from ophyd import Device, Kind, PositionerBase, Signal
 from ophyd_devices import BECDeviceBase, ComputedSignal
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 
+from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.logger import bec_logger
@@ -183,7 +184,9 @@ def get_device_info(
                                     "kind_int": kind,
                                     "kind_str": Kind(kind).name,
                                     "doc": doc,
-                                    "describe": signal_obj.describe().get(signal_obj.name, {}),
+                                    "describe": messages.sanitize_one_way_encodable(
+                                        signal_obj.describe().get(signal_obj.name, {})
+                                    ),
                                     # pylint: disable=protected-access
                                     "metadata": signal_obj._metadata,
                                 }
@@ -200,7 +203,9 @@ def get_device_info(
                                 "kind_int": signal_obj.kind.value,
                                 "kind_str": signal_obj.kind.name,
                                 "doc": doc,
-                                "describe": signal_obj.describe().get(signal_obj.name, {}),
+                                "describe": messages.sanitize_one_way_encodable(
+                                    signal_obj.describe().get(signal_obj.name, {})
+                                ),
                                 # pylint: disable=protected-access
                                 "metadata": signal_obj._metadata,
                             }

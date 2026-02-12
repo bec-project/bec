@@ -78,7 +78,7 @@ def test_queuemanager_add_to_queue(queuemanager_mock, queue):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue=queue,
         metadata={"RID": "something"},
     )
@@ -120,7 +120,7 @@ def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager
 
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -135,7 +135,7 @@ def test_queuemanager_add_to_queue_error_send_alarm(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -151,7 +151,7 @@ def test_queuemanager_scan_queue_callback(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -227,7 +227,7 @@ def test_set_pause(queuemanager_mock):
     # Add a queue item so worker_status has something to operate on
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -251,7 +251,7 @@ def test_set_pause_does_not_change_non_running_worker(queuemanager_mock):
     # Add a queue item
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -298,7 +298,7 @@ def test_set_abort(queuemanager_mock):
     queue_manager.connector.message_sent = []
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -327,7 +327,7 @@ def test_set_abort_with_scan_id(queuemanager_mock):
     queue_manager.connector.message_sent = []
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        parameter={"args": {"samx": [-1, 1]}, "kwargs": {"steps": 10, "relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -356,7 +356,7 @@ def test_set_abort_with_scan_id_not_active(queuemanager_mock):
     queue_manager.connector.message_sent = []
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        parameter={"args": {"samx": [-1, 1]}, "kwargs": {"steps": 10, "relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -379,7 +379,7 @@ def test_set_abort_with_wrong_scan_id(queuemanager_mock):
     queue_manager.connector.message_sent = []
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        parameter={"args": {"samx": [-1, 1]}, "kwargs": {"steps": 10, "relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -431,7 +431,7 @@ def test_set_restart(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -462,7 +462,7 @@ def test_set_restart_no_active_scan(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -488,7 +488,7 @@ def test_set_user_completed(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        parameter={"args": {"samx": [-1, 1]}, "kwargs": {"steps": 10, "relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -509,7 +509,7 @@ def test_request_block(scan_server_mock):
     scan_server = scan_server_mock
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -524,7 +524,7 @@ def test_request_block(scan_server_mock):
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something"},
             )
@@ -532,7 +532,7 @@ def test_request_block(scan_server_mock):
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something"},
             )
@@ -558,7 +558,7 @@ def test_remove_queue_item(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -572,7 +572,7 @@ def test_invalid_scan_specified_in_message(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="fake test scan which does not exist!",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -587,7 +587,7 @@ def test_set_clear(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -679,7 +679,7 @@ def test_request_block_queue_append():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -697,7 +697,7 @@ def test_request_block_queue_append():
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something"},
             ),
@@ -706,7 +706,7 @@ def test_request_block_queue_append():
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "scan_def_id": "something"},
             ),
@@ -715,7 +715,7 @@ def test_request_block_queue_append():
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "scan_def_id": "existing_scan_def_id"},
             ),
@@ -752,7 +752,7 @@ def test_append_request_block():
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "scan_def_id": "something"},
             ),
@@ -761,7 +761,7 @@ def test_append_request_block():
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "scan_def_id": "existing_scan_def_id"},
             ),
@@ -792,7 +792,7 @@ def test_update_point_id(scan_queue_msg, scan_id):
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "scan_def_id": "existing_scan_def_id"},
             ),
@@ -819,7 +819,7 @@ def test_update_point_id_takes_max(scan_queue_msg, scan_id):
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
+                parameter={"args": {"samx": [1]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something"},
             ),
@@ -828,7 +828,7 @@ def test_update_point_id_takes_max(scan_queue_msg, scan_id):
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something"},
             ),
@@ -837,7 +837,7 @@ def test_update_point_id_takes_max(scan_queue_msg, scan_id):
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "scan_def_id": "existing_scan_def_id"},
             ),
@@ -846,7 +846,7 @@ def test_update_point_id_takes_max(scan_queue_msg, scan_id):
         (
             messages.ScanQueueMessage(
                 scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                 queue="primary",
                 metadata={"RID": "something", "dataset_id_on_hold": True},
             ),
@@ -877,7 +877,7 @@ def test_pull_request_block_non_empyt_rb():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     scan_queue_msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -934,7 +934,7 @@ def test_queue_manager_get_active_scan_id(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -953,7 +953,7 @@ def test_queue_manager_get_active_scan_id_wo_rbl_returns_None(queuemanager_mock)
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -965,7 +965,7 @@ def test_request_block_queue_next():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -981,7 +981,7 @@ def test_request_block_queue_next_raises_stopiteration():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -998,7 +998,7 @@ def test_request_block_queue_next_updates_point_id():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": [1]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something", "scan_def_id": "scan_def_id"},
     )
@@ -1059,7 +1059,7 @@ def test_queue_order_change(queuemanager_mock, order_msg, position):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
-        parameter={"args": {"samx": (-5, 5)}, "kwargs": {"steps": 3}},
+        parameter={"args": {"samx": [-5, 5]}, "kwargs": {"steps": 3}},
         queue="primary",
         metadata={"RID": "something"},
     )

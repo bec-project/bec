@@ -308,7 +308,7 @@ class DeviceBase:
         client: BECClient = self.root.parent.parent
         msg = messages.ScanQueueMessage(
             scan_type="device_rpc",
-            parameter=params,
+            parameter=messages.sanitize_one_way_encodable(params),
             queue=client.queue.get_default_scan_queue(),  # type: ignore
             metadata={"RID": request_id, "response": True},
         )
@@ -1115,8 +1115,8 @@ class AdjustableMixin:
         if not limit_msg:
             return [0, 0]
         limits = [
-            limit_msg.content["signals"].get("low", {}).get("value", 0),
-            limit_msg.content["signals"].get("high", {}).get("value", 0),
+            limit_msg.signals.get("low", {}).get("value", 0),
+            limit_msg.signals.get("high", {}).get("value", 0),
         ]
         return limits
 

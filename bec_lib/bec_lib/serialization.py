@@ -36,6 +36,8 @@ class BECMessagePack(SerializationRegistry):
 
     def dumps(self, obj):
         """Pack object `obj` and return packed bytes."""
+        if isinstance(obj, BECMessage):
+            obj = obj.model_dump(mode="python", fallback=self.encode)
         return msgpack_module.packb(obj, default=self.encode)
 
     def loads(self, raw_bytes):

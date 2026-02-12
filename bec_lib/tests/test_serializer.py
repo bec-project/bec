@@ -10,6 +10,7 @@ from bec_lib.codecs import BECCodec
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.one_way_registry import OneWaySerializationRegistry
 from bec_lib.serialization import MsgpackSerialization, json_ext, msgpack
 
 
@@ -81,10 +82,11 @@ def test_serialize_model(serializer):
     assert data.model_dump() == converted_data
 
 
-def test_device_serializer(serializer):
+def test_device_serializer():
+    serializer = OneWaySerializationRegistry()
     device_manager = mock.MagicMock(spec=DeviceManagerBase)
     dummy = DeviceBase(name="dummy", parent=device_manager)
-    assert serializer.loads(serializer.dumps(dummy)) == "dummy"
+    assert serializer.encode(dummy) == "dummy"
 
 
 def test_enum_serializer(serializer):

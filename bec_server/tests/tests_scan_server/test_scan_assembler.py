@@ -39,7 +39,7 @@ class CustomScan2(RequestBase):
             # Fermat scan with args and kwargs, matching the FermatSpiralScan signature
             messages.ScanQueueMessage(
                 scan_type="fermat_scan",
-                parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"steps": 3}},
+                parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"steps": 3}},
                 queue="primary",
             ),
             {
@@ -120,7 +120,7 @@ class CustomScan2(RequestBase):
             # Line scan with arg bundle
             messages.ScanQueueMessage(
                 scan_type="line_scan",
-                parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"steps": 3}},
+                parameter={"args": {"samx": [-5, 5], "samy": [-5, 5]}, "kwargs": {"steps": 3}},
                 queue="primary",
             ),
             {"arg_bundle": ["samx", -5, 5, "samy", -5, 5], "inputs": {}, "kwargs": {"steps": 3}},
@@ -147,12 +147,23 @@ class CustomScan2(RequestBase):
 )
 def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assembler):
 
+    def _available_scan(clss: str):
+        return messages.AvailableScan(
+            class_name=clss,
+            base_class="",
+            arg_input={},
+            gui_config={},
+            required_kwargs=[],
+            arg_bundle_size={},
+            signature=[],
+        )
+
     class MockScanManager:
         available_scans = {
-            "fermat_scan": {"class": "FermatSpiralScan"},
-            "line_scan": {"class": "LineScan"},
-            "custom_scan": {"class": "CustomScan"},
-            "custom_scan2": {"class": "CustomScan2"},
+            "fermat_scan": _available_scan("FermatSpiralScan"),
+            "line_scan": _available_scan("LineScan"),
+            "custom_scan": _available_scan("CustomScan"),
+            "custom_scan2": _available_scan("CustomScan2"),
         }
         scan_dict = {
             "FermatSpiralScan": FermatSpiralScan,

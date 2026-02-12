@@ -17,7 +17,7 @@ def test_bec_message_msgpack_serialization_version(version):
         assert "Unsupported BECMessage version" in str(exception.value)
     else:
         res = MsgpackSerialization.dumps(msg)
-        res_expected = b"\x81\xad__bec_codec__\x83\xacencoder_name\xaaBECMessage\xa9type_name\xb8DeviceInstructionMessage\xa4data\x84\xa8metadata\x81\xa3RID\xa41234\xa6device\xa4samx\xa6action\xa3set\xa9parameter\x81\xa3set\xcb?\xe0\x00\x00\x00\x00\x00\x00"
+        res_expected = b"\x85\xa8metadata\x81\xa3RID\xa41234\xa6device\xa4samx\xa6action\xa3set\xa9parameter\x81\xa3set\xcb?\xe0\x00\x00\x00\x00\x00\x00\xa9bec_codec\x81\xa9type_name\xb8DeviceInstructionMessage"
         assert res == res_expected
         res_loaded = MsgpackSerialization.loads(res)
         assert res_loaded == msg
@@ -429,15 +429,13 @@ def test_DeviceInstructionMessage():
 
 def test_DeviceMonitor2DMessage():
     # Test 2D data
-    msg = messages.DeviceMonitor2DMessage(
-        device="eiger", data=np.random.rand(2, 100), metadata=None
-    )
+    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(2, 100))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
     assert res_loaded.metadata == {}
     # Test rgb image, i.e. image with 3 channels
-    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(3, 3), metadata=None)
+    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(3, 3))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
@@ -454,7 +452,7 @@ def test_DeviceMonitor2DMessage():
 
 def test_DeviceMonitor1DMessage():
     # Test 2D data
-    msg = messages.DeviceMonitor1DMessage(device="eiger", data=np.random.rand(100), metadata=None)
+    msg = messages.DeviceMonitor1DMessage(device="eiger", data=np.random.rand(100))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
@@ -678,3 +676,22 @@ class TestDeviceAsyncUpdate:
         """Test various valid index values for add_slice type"""
         update = messages.DeviceAsyncUpdate(type="add_slice", max_shape=[None, 1024], index=index)
         assert update.index == index
+
+
+def test_message_with_np_array_in_dict():
+    arr = np.zeros(5)
+    with pytest.raises(pydantic.ValidationError) as e:
+        msg = messages.BECMessage(metadata={"value": arr})
+    assert e.match("metadata.value")
+    assert e.match("should be a valid")
+
+
+def test_message_service_config():
+    msg = messages.MessagingServiceConfig(
+        metadata={}, service_name="signal", scopes=["*"], enabled=True
+    )
+    dump = msg.model_dump(mode="python")
+    assert dump["service_name"] == "signal"
+    resource_msg = messages.AvailableResourceMessage(resource=[msg])
+    resource_msg_dump = resource_msg.model_dump(mode="python")
+    assert resource_msg_dump["resource"][0]["service_name"] == "signal"

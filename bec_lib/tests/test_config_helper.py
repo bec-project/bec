@@ -72,7 +72,7 @@ def test_config_helper_save_current_session(config_helper):
             "enabled": True,
             "readOnly": False,
             "deviceClass": "SimPositioner",
-            "deviceTags": {"user motors"},
+            "deviceTags": ["user motors"],
             "deviceConfig": {
                 "delay": 1,
                 "labels": "pinz",
@@ -93,7 +93,7 @@ def test_config_helper_save_current_session(config_helper):
             "enabled": True,
             "readOnly": False,
             "deviceClass": "SimMonitor",
-            "deviceTags": {"beamline"},
+            "deviceTags": ["beamline"],
             "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
             "readoutPriority": "monitored",
             "onFailure": "retry",
@@ -238,7 +238,7 @@ def test_update_base_path_recovery(config_helper_plain):
             {
                 "pinz": {
                     "deviceClass": "SimPositioner",
-                    "deviceTags": {"user motors"},
+                    "deviceTags": ["user motors"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {
@@ -254,7 +254,7 @@ def test_update_base_path_recovery(config_helper_plain):
                 },
                 "transd": {
                     "deviceClass": "SimMonitor",
-                    "deviceTags": {"beamline"},
+                    "deviceTags": ["beamline"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -265,7 +265,7 @@ def test_update_base_path_recovery(config_helper_plain):
             {
                 "pinz": {
                     "deviceClass": "SimPositioner",
-                    "deviceTags": {"user motors"},
+                    "deviceTags": ["user motors"],
                     "enabled": True,
                     "readOnly": True,
                     "deviceConfig": {
@@ -281,7 +281,7 @@ def test_update_base_path_recovery(config_helper_plain):
                 },
                 "transd": {
                     "deviceClass": "SimMonitor",
-                    "deviceTags": {"beamline"},
+                    "deviceTags": ["beamline"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -295,7 +295,7 @@ def test_update_base_path_recovery(config_helper_plain):
             {
                 "pinz": {
                     "deviceClass": "SimPositioner",
-                    "deviceTags": {"user motors"},
+                    "deviceTags": ["user motors"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {
@@ -311,7 +311,7 @@ def test_update_base_path_recovery(config_helper_plain):
                 },
                 "transd": {
                     "deviceClass": "SimMonitor",
-                    "deviceTags": {"beamline"},
+                    "deviceTags": ["beamline"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -322,7 +322,7 @@ def test_update_base_path_recovery(config_helper_plain):
             {
                 "pinz": {
                     "deviceClass": "SimPositioner",
-                    "deviceTags": {"user motors"},
+                    "deviceTags": ["user motors"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {
@@ -338,7 +338,7 @@ def test_update_base_path_recovery(config_helper_plain):
                 },
                 "transd": {
                     "deviceClass": "SimMonitor",
-                    "deviceTags": {"beamline"},
+                    "deviceTags": ["beamline"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -352,7 +352,7 @@ def test_update_base_path_recovery(config_helper_plain):
             {
                 "pinz": {
                     "deviceClass": "SimPositioner",
-                    "deviceTags": {"user motors"},
+                    "deviceTags": ["user motors"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {
@@ -368,7 +368,7 @@ def test_update_base_path_recovery(config_helper_plain):
                 },
                 "transd": {
                     "deviceClass": "SimMonitor",
-                    "deviceTags": {"beamline"},
+                    "deviceTags": ["beamline"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -379,7 +379,7 @@ def test_update_base_path_recovery(config_helper_plain):
             {
                 "pinz": {
                     "deviceClass": "SimPositioner",
-                    "deviceTags": {"user motors"},
+                    "deviceTags": ["user motors"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {
@@ -395,7 +395,7 @@ def test_update_base_path_recovery(config_helper_plain):
                 },
                 "transd": {
                     "deviceClass": "SimMonitor",
-                    "deviceTags": {"beamline"},
+                    "deviceTags": ["beamline"],
                     "enabled": True,
                     "readOnly": False,
                     "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
@@ -419,7 +419,8 @@ def test_config_helper_get_config_conflicts(
         config.update(dev_cfg)
         config_in_redis.append(config)
     with mock.patch.object(config_helper._device_manager.connector, "get") as mock_get:
-        mock_get.return_value = messages.AvailableResourceMessage(resource=config_in_redis)
+        available_resource_message = messages.AvailableResourceMessage(resource=config_in_redis)
+        mock_get.return_value = available_resource_message
         conflicts = config_helper._get_config_conflicts(new_config)
         assert conflicts == expected_conflicts
 

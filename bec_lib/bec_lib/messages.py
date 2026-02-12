@@ -5,16 +5,66 @@ import time
 import uuid
 import warnings
 from copy import deepcopy
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Any, ClassVar, Literal, Self, Union
+from types import NoneType
+from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypeVar, Union
 from uuid import uuid4
 
+import msgpack
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    FailFast,
+    Field,
+    Strict,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    WithJsonSchema,
+    field_validator,
+    model_validator,
+)
+from typing_extensions import TypeAliasType
 
+from bec_lib.bec_serializable import BECSerializable
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
+from bec_lib.one_way_registry import OneWaySerializationRegistry
+
+_one_way_registry = OneWaySerializationRegistry()
+
+
+def sanitize_one_way_encodable(data: Any) -> Any:
+    """Sanitize any data which can be serialized in a json-compatible format and is not supposed to be decoded,
+    for example, a parameter dict containing devices"""
+    if isinstance(data, (list, tuple, set)):
+        return [sanitize_one_way_encodable(x) for x in data]
+    if isinstance(data, Mapping):
+        return {
+            sanitize_one_way_encodable(k): sanitize_one_way_encodable(v) for k, v in data.items()
+        }
+    return _one_way_registry.encode(data)
+
+
+JsonableScalar = TypeAliasType("JsonableScalar", StrictInt | StrictFloat | StrictStr | StrictBool)
+
+Jsonable = TypeAliasType(
+    "Jsonable",
+    JsonableScalar
+    | None
+    | Annotated[list["Jsonable"], Strict(), FailFast()]
+    | Annotated[dict[StrictStr, "Jsonable"], Strict()],
+)
+
+JsonableDict = TypeAliasType(
+    "JsonableDict",
+    Annotated[dict[StrictStr, Jsonable], WithJsonSchema({"type": "object"}), Strict()],
+)
 
 
 class ProcedureWorkerStatus(Enum):
@@ -34,7 +84,7 @@ class BECStatus(Enum):
     ERROR = -1
 
 
-class BECMessage(BaseModel):
+class BECMessage(BECSerializable):
     """Base Model class for BEC Messages
 
     Args:
@@ -44,17 +94,14 @@ class BECMessage(BaseModel):
     """
 
     msg_type: ClassVar[str]
-    metadata: dict = Field(default_factory=dict)
+    metadata: JsonableDict = Field(default_factory=dict)
 
-    @field_validator("metadata")
+    @model_validator(mode="before")
     @classmethod
-    def check_metadata(cls, v):
-        """Validate the metadata, return empty dict if None
-
-        Args:
-            v (dict, None): Metadata dictionary
-        """
-        return v or {}
+    def _strip_codec_info(cls, data: Any):
+        if isinstance(data, dict):
+            data.pop("bec_codec", None)
+        return data
 
     @property
     def content(self):
@@ -62,18 +109,6 @@ class BECMessage(BaseModel):
         content = self.__dict__.copy()
         content.pop("metadata", None)
         return content
-
-    def __eq__(self, other):
-        if not isinstance(other, BECMessage):
-            # don't attempt to compare against unrelated types
-            return False
-
-        try:
-            np.testing.assert_equal(self.model_dump(), other.model_dump())
-        except AssertionError:
-            return False
-
-        return self.msg_type == other.msg_type and self.metadata == other.metadata
 
     def loads(self):
         warnings.warn(
@@ -93,6 +128,11 @@ class BECMessage(BaseModel):
         return self.model_dump_json().__hash__()
 
 
+# To correctly encode a message in another message, pydantic should know it is to be dumped
+# as the concrete type it is, and not only the fields from BECMessage
+SpecificMessageType = TypeVar("SpecificMessageType", bound=BECMessage)
+
+
 class BundleMessage(BECMessage):
     """Message type to send a bundle of BECMessages.
 
@@ -108,7 +148,7 @@ class BundleMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "bundle_message"
-    messages: list = Field(default_factory=list[BECMessage])
+    messages: Annotated[list[SpecificMessageType], Field(default_factory=list)]
 
     def append(self, msg: BECMessage):
         """Append a new BECMessage to the bundle"""
@@ -141,7 +181,7 @@ class ScanQueueMessage(BECMessage):
 
     msg_type: ClassVar[str] = "scan_queue_message"
     scan_type: str
-    parameter: dict
+    parameter: JsonableDict
     queue: str = Field(default="primary")
     allow_restart: bool = Field(
         default=True,
@@ -225,18 +265,18 @@ class ScanStatusMessage(BECMessage):
     scan_type: Literal["step", "fly"] | None = Field(default=None, description="Type of scan")
     dataset_number: int | None = None
     scan_report_devices: list[str] | None = None
-    user_metadata: dict | None = None
+    user_metadata: JsonableDict | None = None
     readout_priority: (
         dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]]
         | None
     ) = None
     scan_parameters: dict[
-        Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any
+        Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Jsonable
     ] = Field(default_factory=dict)
-    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Any] = Field(
+    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Jsonable] = Field(
         default_factory=dict
     )
-    info: dict
+    info: JsonableDict
     timestamp: float = Field(default_factory=time.time)
 
     def __str__(self):
@@ -302,7 +342,7 @@ class ScanQueueModificationMessage(BECMessage):
         "release_lock",
         "user_completed",
     ]
-    parameter: dict
+    parameter: JsonableDict
     queue: str = Field(default="primary")
 
 
@@ -550,7 +590,7 @@ class DeviceInstructionMessage(BECMessage):
         "publish_data_as_read",
         "close_scan_group",
     ]
-    parameter: dict
+    parameter: JsonableDict
 
 
 class ErrorInfo(BaseModel):
@@ -577,6 +617,46 @@ class DeviceInstructionResponse(BECMessage):
         return self
 
 
+# TODO: remove when deprecated usages of SignalReading are cleaned up
+logger = None
+
+
+def lazy_ensure_logger():
+    global logger
+    if logger is None:
+        from bec_lib.logger import bec_logger
+
+        logger = bec_logger.logger
+
+
+class SignalReading(BECSerializable):
+    value: int | float | list[int] | list[float] | np.ndarray | None | str
+    timestamp: float | list[float] | None = None
+
+    def keys(self):
+        lazy_ensure_logger()
+        logger.warning(
+            "Dictionary usage of SignalReading is deprecated; please replace it with a different access pattern."
+        )
+        return ["value", "timestamp"]
+
+    def get(self, item: Literal["value", "timestamp"], default=Any):
+        """Allow dictionary-style access for legacy reasons."""
+        lazy_ensure_logger()
+        logger.warning(
+            "Get-access on SignalReading is deprecated; Just access the model.value field."
+        )
+        if item not in ["value", "timestamp"]:
+            raise KeyError('SignalReading only has "value" and "timestamp" fields!')
+        return getattr(self, item)
+
+    def __getitem__(self, item: str):
+        return self.get(item)
+
+    def items(self):
+        return dict(self).items()
+
+
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server
 
@@ -589,7 +669,7 @@ class DeviceMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "device_message"
-    signals: dict[str, dict[Literal["value", "timestamp"], Any]]
+    signals: dict[str, SignalReading]
 
     @field_validator("metadata")
     @classmethod
@@ -747,7 +827,7 @@ class DeviceInfoMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_info_message"
     device: str
-    info: dict
+    info: JsonableDict
 
 
 class DeviceMonitor2DMessage(BECMessage):
@@ -766,8 +846,6 @@ class DeviceMonitor2DMessage(BECMessage):
     device: str
     data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
 
     # Needed for pydantic to accept numpy arrays
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -807,8 +885,6 @@ class DeviceMonitor1DMessage(BECMessage):
     device: str
     data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
 
     # Needed for pydantic to accept numpy arrays
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -867,7 +943,7 @@ class DeviceUserROIMessage(BECMessage):
     device: str
     signal: str
     roi_type: str = Field(description="Type of the ROI, e.g. 'rectangle', 'circle', 'polygon'")
-    roi: dict = Field(
+    roi: JsonableDict = Field(
         description="Dictionary containing the ROI information, e.g. {'x': 100, 'y': 200, 'width': 50, 'height': 50}"
     )
     timestamp: float = Field(default_factory=time.time)
@@ -887,7 +963,7 @@ class ScanMessage(BECMessage):
     msg_type: ClassVar[str] = "scan_message"
     point_id: int
     scan_id: str
-    data: dict
+    data: JsonableDict
 
 
 class ScanHistoryMessage(BECMessage):
@@ -921,7 +997,7 @@ class ScanHistoryMessage(BECMessage):
     end_time: float
     scan_name: str
     num_points: int
-    request_inputs: dict | None = None
+    request_inputs: JsonableDict | None = None
     stored_data_info: dict[str, dict[str, _StoredDataInfo]] | None = None
 
 
@@ -949,7 +1025,7 @@ class ScanBaselineMessage(BECMessage):
 
     msg_type: ClassVar[str] = "scan_baseline_message"
     scan_id: str
-    data: dict
+    data: JsonableDict
 
 
 ConfigAction = Literal["add", "set", "update", "reload", "remove", "reset", "cancel"]
@@ -967,7 +1043,7 @@ class DeviceConfigMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_config_message"
     action: ConfigAction | None = Field(default=None, validate_default=True)
-    config: dict | None = Field(default=None)
+    config: JsonableDict | None = Field(default=None)
 
     @model_validator(mode="after")
     @classmethod
@@ -1013,7 +1089,7 @@ class LogMessage(BECMessage):
     log_type: Literal[
         "trace", "debug", "info", "success", "warning", "error", "critical", "console_log"
     ]
-    log_msg: dict | str
+    log_msg: JsonableDict | str
 
 
 class AlarmMessage(BECMessage):
@@ -1128,8 +1204,8 @@ class FileContentMessage(BECMessage):
 
     msg_type: ClassVar[str] = "file_content_message"
     file_path: str
-    data: dict
-    scan_info: dict
+    data: JsonableDict
+    scan_info: JsonableDict
 
 
 class VariableMessage(BECMessage):
@@ -1170,7 +1246,7 @@ class ServiceMetricMessage(BECMessage):
 
     msg_type: ClassVar[str] = "service_metric_message"
     name: str
-    metrics: dict
+    metrics: JsonableDict
 
 
 class ProcessedDataMessage(BECMessage):
@@ -1182,7 +1258,7 @@ class ProcessedDataMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "processed_data_message"
-    data: dict | list[dict]
+    data: JsonableDict | list[JsonableDict]
 
 
 class DAPConfigMessage(BECMessage):
@@ -1194,7 +1270,7 @@ class DAPConfigMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "dap_config_message"
-    config: dict
+    config: JsonableDict
 
 
 class DAPRequestMessage(BECMessage):
@@ -1210,7 +1286,7 @@ class DAPRequestMessage(BECMessage):
     msg_type: ClassVar[str] = "dap_request_message"
     dap_cls: str
     dap_type: Literal["continuous", "on_demand"]
-    config: dict
+    config: JsonableDict
 
 
 class DAPResponseMessage(BECMessage):
@@ -1228,19 +1304,48 @@ class DAPResponseMessage(BECMessage):
     success: bool
     data: tuple | None = Field(default_factory=lambda: ({}, None))
     error: str | None = None
-    dap_request: BECMessage | None = Field(default=None)
+    dap_request: SpecificMessageType | None = Field(default=None)
+
+
+class ScanArgType(StrEnum):
+    DEVICE = "device"
+    FLOAT = "float"
+    INT = "int"
+    BOOL = "boolean"
+    STR = "str"
+    LIST = "list"
+    DICT = "dict"
+
+
+class AvailableScan(BECMessage):
+    """Information about an available scan"""
+
+    class_name: str
+    base_class: str
+    arg_input: dict[str, Jsonable | ScanArgType]
+    gui_config: JsonableDict
+    required_kwargs: list[str] | dict[str, ScanArgType]
+    arg_bundle_size: JsonableDict
+    doc: str | None = None
+    signature: list[JsonableDict]
 
 
 class AvailableResourceMessage(BECMessage):
     """Message for available resources such as scans, data processing plugins etc
 
     Args:
-        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description
+        resource (dict, list[dict], BECMessage, list[BECMessage]): Resource description - may contain only one type of BECMessage
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: dict | list[dict] | BECMessage | list[BECMessage]
+    resource: (
+        JsonableDict
+        | list[JsonableDict]
+        | SpecificMessageType
+        | list[SpecificMessageType]
+        | dict[str, SpecificMessageType]
+    )
 
 
 class ProgressMessage(BECMessage):
@@ -1268,7 +1373,7 @@ class GUIConfigMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "gui_config_message"
-    config: dict
+    config: JsonableDict
 
 
 class GUIDataMessage(BECMessage):
@@ -1280,7 +1385,7 @@ class GUIDataMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "gui_data_message"
-    data: dict
+    data: JsonableDict
 
 
 class GUIInstructionMessage(BECMessage):
@@ -1293,7 +1398,7 @@ class GUIInstructionMessage(BECMessage):
 
     msg_type: ClassVar[str] = "gui_instruction_message"
     action: str
-    parameter: dict
+    parameter: JsonableDict
 
 
 class GUIAutoUpdateConfigMessage(BECMessage):
@@ -1329,7 +1434,7 @@ class GUIRegistryStateMessage(BECMessage):
                 "__rpc__",
                 "container_proxy",
             ],
-            str | bool | dict | None,
+            str | bool | JsonableDict | None,
         ],
     ]
 
@@ -1343,7 +1448,7 @@ class ServiceResponseMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "service_response_message"
-    response: dict
+    response: JsonableDict
 
 
 class CredentialsMessage(BECMessage):
@@ -1355,7 +1460,7 @@ class CredentialsMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "credentials_message"
-    credentials: dict
+    credentials: JsonableDict
 
 
 class RawMessage(BECMessage):
@@ -1368,7 +1473,7 @@ class RawMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "raw_message"
-    data: Any
+    data: Jsonable
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -1640,7 +1745,6 @@ class EndpointInfoMessage(BECMessage):
 
     msg_type: ClassVar[str] = "endpoint_info_message"
     endpoint: str
-    metadata: dict | None = Field(default_factory=dict)
 
 
 class ScriptExecutionInfoMessage(BECMessage):
@@ -1672,8 +1776,6 @@ class MacroUpdateMessage(BECMessage):
     update_type: Literal["add", "remove", "reload", "reload_all"]
     macro_name: str | None = None
     file_path: str | None = None
-
-    metadata: dict | None = Field(default_factory=dict)
 
     @model_validator(mode="after")
     @classmethod
@@ -1769,7 +1871,6 @@ class MessagingServiceMessage(BECMessage):
     service_name: Literal["signal", "teams", "scilog"]
     message: list[MessagingServiceContent]
     scope: str | list[str] | None = None
-    metadata: dict | None = Field(default_factory=dict)
 
 
 class MessagingServiceConfig(BECMessage):
@@ -1788,4 +1889,3 @@ class MessagingServiceConfig(BECMessage):
     service_name: Literal["signal", "teams", "scilog"]
     scopes: list[str]
     enabled: bool
-    metadata: dict | None = Field(default_factory=dict)
