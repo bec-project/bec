@@ -59,7 +59,9 @@ class CustomEnum(enum.Enum):
     ],
 )
 def test_serialize(serializer, data):
-    res = serializer.loads(serializer.dumps(data)) == data
+    ser = serializer.dumps(data)
+    deser = serializer.loads(ser)
+    res = deser == data
     assert all(res) if isinstance(data, np.ndarray) else res
 
 

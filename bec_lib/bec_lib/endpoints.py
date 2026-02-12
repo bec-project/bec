@@ -70,7 +70,7 @@ class EndpointInfo(BECSerializable, Generic[MessageType]):
     }
 
     endpoint: str
-    message_type: Annotated[MessageType, PlainSerializer(serialize_type)] | Any
+    message_type: Annotated[MessageType | Any, PlainSerializer(serialize_type)]
     message_op: MessageOp
 
 

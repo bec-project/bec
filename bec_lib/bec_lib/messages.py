@@ -579,6 +579,9 @@ class SignalReading(BECSerializable):
             raise KeyError('SignalReading only has "value" and "timestamp" fields!')
         return getattr(self, item)
 
+    def __getitem__(self, item: str):
+        return self.get(item)
+
 
 class DeviceMessage(BECMessage):
     """Message type for sending device readings from the device server

@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 from io import BytesIO
 from types import UnionType
-from typing import Any, Callable, ClassVar, get_args, get_origin
+from typing import Any, Callable, ClassVar, Union, get_args, get_origin
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
@@ -74,7 +74,7 @@ class BECSerializable(BaseModel):
             if (field_info := cls.model_fields.get(field)) is not None:
                 if field_info.annotation is None:
                     continue  # No need to do anything for NoneType
-                if get_origin(field_info.annotation) is UnionType:
+                if get_origin(field_info.annotation) in [UnionType, Union]:
                     for arg in get_args(field_info.annotation):
                         cls._try_apply_registry(arg, data, field)
                 else:

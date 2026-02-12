@@ -12,10 +12,12 @@ from functools import lru_cache
 from typing import Any
 
 import msgpack
+import numpy as np
 from pydantic import BaseModel
 
 from bec_lib import endpoints, messages
-from bec_lib.bec_serializable import BECSerializable
+from bec_lib.bec_serializable import BECSerializable, ndarray_to_bytes
+from bec_lib.device import DeviceBase
 from bec_lib.messages import BECMessage, BundleMessage, RawMessage
 
 
@@ -74,6 +76,17 @@ def _msg_object_hook(msg: dict):
     return BecSerializableCodec.decode(bec_type_name, msg)
 
 
+def _try_custom(val: Any) -> Any:
+    if isinstance(val, DeviceBase):
+        # TODO: Hacky temp fix, replace with something like original codec system,
+        # but separate messages from other types
+        return val.name
+    if isinstance(val, np.ndarray):
+        return ndarray_to_bytes(val)
+    else:
+        raise ValueError(f"unserializable object {val}")
+
+
 class MsgpackSerialization:
     """Message serialization using msgpack encoding"""
 
@@ -96,7 +109,7 @@ class MsgpackSerialization:
     def dumps(msg: BECMessage | Any) -> str:
         if not isinstance(msg, BECSerializable):
             return msgpack.dumps(msg)  # type: ignore
-        return msgpack.dumps(msg.model_dump(mode="json"))  # type: ignore
+        return msgpack.dumps(msg.model_dump(mode="json", fallback=_try_custom))  # type: ignore
 
 
 class json_ext:

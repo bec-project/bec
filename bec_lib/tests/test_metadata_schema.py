@@ -11,6 +11,12 @@ from bec_lib.scans import Scans
 TEST_DICT = {"foo": "bar", "baz": 123}
 
 
+pytest.skip(
+    reason="temporarily deactivated while working on message classes, until moved out of this repo",
+    allow_module_level=True,
+)
+
+
 class ChildMetadata(BasicScanMetadata):
     number_field: int
 

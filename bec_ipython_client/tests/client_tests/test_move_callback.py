@@ -190,7 +190,7 @@ def test_readback_data_handler_readback_callbacks(readback_data_handler):
         or "samx" not in readback_data_handler.data
     ):
         time.sleep(0.01)
-    assert readback_data_handler.data["samx"].signals["samx"]["value"] == 15
+    assert readback_data_handler.data["samx"].signals["samx"].value == 15
     dev_data = readback_data_handler.get_device_values()
     assert dev_data[0] == 15
     assert dev_data[1] == 10  # samy remains unchanged
