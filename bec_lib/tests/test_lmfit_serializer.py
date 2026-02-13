@@ -33,3 +33,19 @@ def test_serialize_lmfit_params():
 
     obj = deserialize_param_object(result)
     assert obj == params
+
+    # `name` is optional for deserialization (key is the param name)
+    result_without_names = {
+        k: {kk: vv for kk, vv in v.items() if kk != "name"} for k, v in result.items()
+    }
+    obj = deserialize_param_object(result_without_names)
+    assert obj == params
+
+
+def test_deserialize_param_object_accepts_parameter_objects():
+    params = lmfit.Parameters()
+    params.add("a", value=1.0, vary=True, min=-2.0, max=3.0)
+    params.add("b", value=2.0, vary=False)
+
+    obj = deserialize_param_object({"a": params["a"], "b": params["b"]})
+    assert obj == params
