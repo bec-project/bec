@@ -31,9 +31,6 @@ class SciHubMocked(SciHub):
     def _start_atlas_connector(self):
         pass
 
-    def _start_scilog_connector(self):
-        pass
-
 
 @pytest.fixture()
 def SciHubMock():

@@ -97,6 +97,18 @@ def test_handle_account_info_valid(atlas_connector):
         mock_send_update.assert_called_once()
 
 
+def test_handle_account_info_same_account(atlas_connector):
+    atlas_connector.metadata_handler._account = "account1"
+    msg = {"data": messages.VariableMessage(value="account1")}
+    with mock.patch.object(
+        atlas_connector.metadata_handler, "send_atlas_update"
+    ) as mock_send_update:
+        atlas_connector.metadata_handler._handle_account_info(
+            msg, parent=atlas_connector.metadata_handler
+        )
+        mock_send_update.assert_not_called()
+
+
 def test_handle_account_info_invalid(atlas_connector):
     msg = {"invalid": "data"}
     with mock.patch("bec_lib.logger.bec_logger.logger.error") as mock_logger_error:

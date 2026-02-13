@@ -6,7 +6,6 @@ from bec_lib import messages
 from bec_lib.bec_service import BECService
 from bec_lib.service_config import ServiceConfig
 from bec_server.scihub.atlas import AtlasConnector
-from bec_server.scihub.scilog import SciLogConnector
 from bec_server.scihub.service_handler.service_handler import ServiceHandler
 
 if TYPE_CHECKING:
@@ -18,10 +17,8 @@ class SciHub(BECService):
         super().__init__(config, connector_cls, unique_service=True)
         self.config = config
         self.atlas_connector = None
-        self.scilog_connector = None
         self.service_handler = None
         self._start_atlas_connector()
-        self._start_scilog_connector()
         self._start_service_handler()
         self.status = messages.BECStatus.RUNNING
 
@@ -29,9 +26,6 @@ class SciHub(BECService):
         self.wait_for_service("DeviceServer")
         self.atlas_connector = AtlasConnector(self, self.connector)
         self.atlas_connector.start()
-
-    def _start_scilog_connector(self):
-        self.scilog_connector = SciLogConnector(self, self.connector)
 
     def _start_service_handler(self):
         self.service_handler = ServiceHandler(self.connector)
@@ -41,5 +35,3 @@ class SciHub(BECService):
         super().shutdown()
         if self.atlas_connector:
             self.atlas_connector.shutdown()
-        if self.scilog_connector:
-            self.scilog_connector.shutdown()
