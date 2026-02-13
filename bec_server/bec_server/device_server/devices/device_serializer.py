@@ -186,7 +186,7 @@ def get_device_info(
                                     "describe": signal_obj.describe().get(signal_obj.name, {}),
                                     # pylint: disable=protected-access
                                     "metadata": signal_obj._metadata,
-                                    "labels": signal_obj._ophyd_labels_,
+                                    "labels": sorted(signal_obj._ophyd_labels_),
                                 }
                             }
                         )
@@ -204,7 +204,7 @@ def get_device_info(
                                 "describe": signal_obj.describe().get(signal_obj.name, {}),
                                 # pylint: disable=protected-access
                                 "metadata": signal_obj._metadata,
-                                "labels": signal_obj._ophyd_labels_,
+                                "labels": sorted(signal_obj._ophyd_labels_),
                             }
                         }
                     )
