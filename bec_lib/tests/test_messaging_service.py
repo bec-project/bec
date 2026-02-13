@@ -184,7 +184,9 @@ def test_scilog_messaging_service_add_tags(scilog_message, connected_connector):
     assert isinstance(tags_part, messages.MessagingServiceTagsContent)
 
     assert text_part.content == "Test message with tags"
-    assert tags_part.tags == ["tag1", "tag2"]
+    assert sorted(tags_part.tags) == sorted(
+        ["bec", "tag1", "tag2"]
+    )  # default "bec" tag should be included
 
 
 def test_signal_messaging_service_new(signal_service):
@@ -347,7 +349,9 @@ def test_scilog_add_tags_with_string(scilog_message, connected_connector):
 
     tags_part = out.message[1]
     assert isinstance(tags_part, messages.MessagingServiceTagsContent)
-    assert tags_part.tags == ["single_tag"]
+    assert sorted(tags_part.tags) == sorted(
+        ["bec", "single_tag"]
+    )  # default "bec" tag should be included
 
 
 def test_signal_message_service_uses_default_scope(connected_connector):
@@ -388,3 +392,44 @@ def test_signal_message_service_uses_default_scope(connected_connector):
         ValueError, match="Scope 'invalid_scope' is not available for this messaging service."
     ):
         service.set_default_scope("invalid_scope")
+
+
+def test_scilog_message_add_tags_with_default_tags(scilog_message, connected_connector):
+    """Test that add_tags correctly combines default tags with provided tags."""
+
+    scilog_message._service.set_default_tags(["default_tag1", "default_tag2"])  # type: ignore
+
+    message = scilog_message
+    message.add_text("Test message with default and additional tags")
+    message.add_tags(["additional_tag1", "additional_tag2"])
+
+    message.send()
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    assert len(out) == 1
+    out = out[0]["data"]
+
+    tags_part = out.message[1]
+    assert isinstance(tags_part, messages.MessagingServiceTagsContent)
+    assert sorted(tags_part.tags) == sorted(
+        ["default_tag1", "default_tag2", "additional_tag1", "additional_tag2"]
+    )
+
+
+def test_scilog_message_add_duplicate_tags(scilog_message, connected_connector):
+    """Test that add_tags does not create duplicate tags when default tags overlap with provided tags."""
+
+    scilog_message._service.set_default_tags(["bec", "default_tag"])  # type: ignore
+
+    message = scilog_message
+    message.add_text("Test message with duplicate tags")
+    message.add_tags(["bec", "default_tag", "additional_tag"])
+
+    message.send()
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    assert len(out) == 1
+    out = out[0]["data"]
+
+    tags_part = out.message[1]
+    assert isinstance(tags_part, messages.MessagingServiceTagsContent)
+    # The final tags should include all unique tags without duplicates
+    assert sorted(tags_part.tags) == sorted(["bec", "default_tag", "additional_tag"])
