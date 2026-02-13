@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import traceback
 import uuid
 from typing import TYPE_CHECKING
@@ -43,7 +44,9 @@ class ScanGuard:
         self.connector = self.parent.connector
 
         self.connector.register(
-            MessageEndpoints.scan_queue_request(), cb=self._scan_queue_request_callback, parent=self
+            patterns=MessageEndpoints.scan_queue_request("*"),
+            cb=self._scan_queue_request_callback,
+            parent=self,
         )
 
         self.connector.register(
@@ -57,24 +60,61 @@ class ScanGuard:
             parent=self,
         )
 
-    def _is_valid_scan_request(self, request) -> ScanStatus:
+    def _is_valid_scan_request(
+        self, request: messages.ScanQueueMessage, username: str
+    ) -> ScanStatus:
+        """
+        Perform validity checks on the scan request.
+        Args:
+            request(messages.ScanQueueMessage): A scan queue message
+            username(str): The username associated with the request
+        Returns:
+            ScanStatus: The status of the scan request
+        """
         try:
-            self._check_valid_request(request)
+            self._check_valid_request(request, username)
             self._check_valid_scan(request)
             self._check_baton(request)
             self._check_motors_movable(request)
-            self._check_soft_limits(request)
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
             return ScanStatus(False, str(content))
         return ScanStatus()
 
-    def _check_valid_request(self, request) -> None:
+    def _check_valid_request(self, request: messages.ScanQueueMessage, username: str) -> None:
+        """
+        Check if the scan request is valid.
+        It must be a proper scan queue message and the username in the topic
+        must match the client info username, thus ensuring that users cannot
+        submit scans on behalf of other users.
+
+        Args:
+            request(messages.ScanQueueMessage): A scan queue message
+            username(str): The username associated with the request
+        Raises:
+            ScanRejection: If the request is invalid
+        """
         if request is None:
             raise ScanRejection("Invalid request.")
+        client_info = request.metadata.get("client_info")
+        if not client_info:
+            raise ScanRejection("Missing client info in request metadata.")
 
-    def _check_valid_scan(self, request) -> None:
+        # Note: the default redis user does not have an acl username
+        acl_user = client_info.get("acl_user") or "default"
+        if acl_user != username:
+            raise ScanRejection("Username in topic does not match client info.")
+
+    def _check_valid_scan(self, request: messages.ScanQueueMessage) -> None:
+        """
+        Check if the scan is valid and known.
+
+        Args:
+            request(messages.ScanQueueMessage): A scan queue message
+        Raises:
+            ScanRejection: If the scan is invalid
+        """
         avail_scans = self.connector.get(MessageEndpoints.available_scans())
         scan_type = request.content.get("scan_type")
         if scan_type not in avail_scans.resource:
@@ -93,20 +133,28 @@ class ScanGuard:
             return False
         return True
 
-    def _check_baton(self, request) -> None:
+    def _check_baton(self, request: messages.ScanQueueMessage) -> None:
         # TODO: Implement baton handling
         pass
 
-    def _check_motors_movable(self, request) -> None:
-        if request.content["scan_type"] == "device_rpc":
-            device = request.content["parameter"]["device"]
+    def _check_motors_movable(self, request: messages.ScanQueueMessage) -> None:
+        """
+        Check if the motors involved in the scan request are movable.
+        Args:
+            request(messages.ScanQueueMessage): A scan queue message
+        Raises:
+            ScanRejection: If any motor is not enabled or movable
+        """
+        parameter = request.parameter
+        if request.scan_type == "device_rpc":
+            device = parameter.get("device")
             if not isinstance(device, list):
                 device = [device]
             for dev in device:
                 if not self.device_manager.devices[dev].enabled:
                     raise ScanRejection(f"Device {dev} is not enabled.")
             return
-        motor_args = request.content["parameter"].get("args")
+        motor_args = parameter.get("args")
         if not motor_args:
             return
         for motor in motor_args:
@@ -119,16 +167,18 @@ class ScanGuard:
             if not self.device_manager.devices[motor].enabled:
                 raise ScanRejection(f"Device {motor} is not enabled.")
 
-    def _check_soft_limits(self, request) -> None:
-        # TODO: Implement soft limit checks
-        pass
-
     @staticmethod
     def _scan_queue_request_callback(msg, parent, **_kwargs):
         content = msg.value.content
-        logger.info(f"Receiving scan request: {content}")
+        username_regex = f"^{MessageEndpoints.scan_queue_request('([^/]+)').endpoint}$"
+        result = re.match(username_regex, msg.topic)
+        if not result:
+            raise ScanRejection("Could not extract username from topic.")
+        username = result.group(1)
+
+        logger.info(f"Receiving scan request: {content} from user {username}")
         # pylint: disable=protected-access
-        parent._handle_scan_request(msg.value)
+        parent._handle_scan_request(msg.value, username=username)
 
     @staticmethod
     def _scan_queue_modification_request_callback(msg, parent, **_kwargs):
@@ -154,17 +204,15 @@ class ScanGuard:
         )
         self.device_manager.connector.send(sqrr, rrm)
 
-    def _handle_scan_request(self, msg: messages.ScanQueueMessage):
+    def _handle_scan_request(self, msg: messages.ScanQueueMessage, username: str):
         """
         Perform validity checks on the scan request and reply with a 'scan_request_response'.
         If the scan is accepted it will be enqueued.
         Args:
-            msg: ConsumerRecord value
-
-        Returns:
-
+            msg(messages.ScanQueueMessage): A scan queue message
+            username(str): The username associated with the request
         """
-        scan_status = self._is_valid_scan_request(msg)
+        scan_status = self._is_valid_scan_request(msg, username=username)
 
         self._send_scan_request_response(scan_status, msg.metadata)
         if not scan_status.accepted:

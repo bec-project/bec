@@ -132,6 +132,11 @@ class ScanObject:
 
         request = Scans.prepare_scan_request(self.scan_name, self.scan_info, *args, **kwargs)
         request_id = str(uuid.uuid4())
+        request.metadata["client_info"] = {
+            "acl_user": self.client.username,
+            "username": self.client._system_user,
+            "hostname": self.client._hostname,
+        }
 
         # pylint: disable=unsupported-assignment-operation
         request.metadata["RID"] = request_id
@@ -154,7 +159,9 @@ class ScanObject:
 
     def _send_scan_request(self, request: messages.ScanQueueMessage) -> None:
         """Send a scan request to the scan server"""
-        self.client.device_manager.connector.send(MessageEndpoints.scan_queue_request(), request)
+        self.client.device_manager.connector.send(
+            MessageEndpoints.scan_queue_request(self.client.username), request
+        )
 
 
 class Scans:
