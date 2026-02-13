@@ -21,7 +21,6 @@ from bec_lib.device import (
 )
 from bec_lib.devicemanager import DeviceContainer, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.tests.fixtures import device_manager_class
 from bec_lib.tests.utils import ClientMock, ConnectorMock, get_device_info_mock
 
 # pylint: disable=missing-function-docstring

@@ -6,6 +6,7 @@ import threading
 import uuid
 from unittest import mock
 
+import msgpack
 import pytest
 import yaml
 
@@ -54,6 +55,11 @@ def session_from_test_config(test_config_yaml):
     return session
 
 
+@pytest.fixture(scope="session")
+def packed_session_from_test_config(session_from_test_config):
+    return msgpack.dumps(session_from_test_config)
+
+
 @pytest.fixture
 def device_manager_class():
     return DMClientMock
@@ -70,8 +76,8 @@ def device_manager(device_manager_class):
 
 
 @pytest.fixture
-def dm_with_devices(session_from_test_config, device_manager):
-    device_manager._session = copy.deepcopy(session_from_test_config)
+def dm_with_devices(packed_session_from_test_config, device_manager):
+    device_manager._session = msgpack.loads(packed_session_from_test_config)
     device_manager._load_session()
     yield device_manager
 
