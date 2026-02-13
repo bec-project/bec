@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.96.1 (2026-02-13)
+
+### Bug Fixes
+
+- **messaging**: Adapt messaging interfaces to new atlas api
+  ([`9d6eebe`](https://github.com/bec-project/bec/commit/9d6eebe3fdef232f632b9cbedf9f92e47993f058))
+
+### Refactoring
+
+- **print-version**: Add ophyd_devices to print version
+  ([`483f1a3`](https://github.com/bec-project/bec/commit/483f1a38093f283b237e66c74604efc416d8c801))
+
+
 ## v3.96.0 (2026-02-06)
 
 ### Features
