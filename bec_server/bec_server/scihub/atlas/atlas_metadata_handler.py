@@ -35,8 +35,11 @@ class AtlasMetadataHandler:
         self._start_messaging_subscription()
 
     def _start_account_subscription(self):
+        init_data = self.atlas_connector.connector.get_last(MessageEndpoints.account())
+        if init_data is not None:
+            self._handle_account_info(init_data, parent=self, emit_update=False)
         self.atlas_connector.connector.register(
-            MessageEndpoints.account(), cb=self._handle_account_info, parent=self, from_start=True
+            MessageEndpoints.account(), cb=self._handle_account_info, parent=self
         )
 
     def _start_deployment_info_subscription(self):
@@ -120,25 +123,36 @@ class AtlasMetadataHandler:
             return
         account = experiment.pgroup
         if self._account != account:
+            self._account = account
             msg = messages.VariableMessage(value=account)
             self.atlas_connector.connector.xadd(
                 MessageEndpoints.account(), {"data": msg}, max_size=1, approximate=False
             )
             logger.info(f"Updated local account to: {account}")
-            self._account = account
 
     @staticmethod
-    def _handle_account_info(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
+    def _handle_account_info(
+        msg, *, parent: AtlasMetadataHandler, emit_update=True, **_kwargs
+    ) -> None:
         """
         Called if the account info is updated from the local redis instance.
-        It forwards the account info to Atlas.
+        It forwards the account info to Atlas if it differs from the current one and emit_update is True.
+
+        Args:
+            msg(dict): The message containing the account info
+            parent(AtlasMetadataHandler): The instance of the AtlasMetadataHandler class
+            emit_update(bool): Whether to emit an update to Atlas if the account info differs from the current one
         """
         if not isinstance(msg, dict) or "data" not in msg:
             logger.error(f"Invalid account message received: {msg}")
             return
         msg = cast(messages.VariableMessage, msg["data"])
+        if msg.value == parent._account:
+            # Account is the same as the current one, no need to update
+            return
         parent._account = msg.value
-        parent.send_atlas_update({"account": msg})
+        if emit_update:
+            parent.send_atlas_update({"account": msg})
         logger.info(f"Updated account to: {parent._account}")
 
     @staticmethod
