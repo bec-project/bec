@@ -269,6 +269,9 @@ class SciLogMessageServiceObject(MessageServiceObject):
         """
         if isinstance(tags, str):
             tags = [tags]
+
+        # Ensure that there are no duplicates...
+        tags = list(set(self._service.get_default_tags() + tags))  # type: ignore
         self._content.append(messages.MessagingServiceTagsContent(tags=tags))
         return self
 
@@ -278,6 +281,30 @@ class SciLogMessagingService(MessagingService[SciLogMessageServiceObject]):
 
     _SERVICE_NAME = "scilog"
     _MESSAGE_OBJECT_CLASS = SciLogMessageServiceObject
+
+    def __init__(self, redis_connector: RedisConnector) -> None:
+        super().__init__(redis_connector)
+        self._default_tags: list[str] = ["bec"]
+
+    def set_default_tags(self, tags: str | list[str]):
+        """
+        Set default tags for the SciLog message object. These tags will be included in every message sent using this object.
+
+        Args:
+            tags (str | list[str]): The default tag or list of tags to set.
+        """
+        if isinstance(tags, str):
+            tags = [tags]
+        self._default_tags = tags
+
+    def get_default_tags(self) -> list[str]:
+        """
+        Get the current default tags for the SciLog message object.
+
+        Returns:
+            list[str]: The current default tags.
+        """
+        return self._default_tags
 
 
 class TeamsMessagingService(MessagingService[MessageServiceObject]):

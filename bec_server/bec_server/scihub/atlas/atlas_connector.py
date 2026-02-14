@@ -113,7 +113,7 @@ class AtlasConnector:
             MessageEndpoints.message_service_ingest(self.deployment_name),
             msg,
             max_size=50,
-            expire=600,
+            expire=None,
         )
 
     def update_acls(self):
