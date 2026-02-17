@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.97.0 (2026-02-17)
+
+### Bug Fixes
+
+- **atlas**: Remove expiry for message ingestion
+  ([`bfa3ac2`](https://github.com/bec-project/bec/commit/bfa3ac22b2cb55d857a6bc791faf9d2d759e9c3e))
+
+### Features
+
+- **scilog**: Add option to set default tags
+  ([`e265f9b`](https://github.com/bec-project/bec/commit/e265f9bc7a832f8bc5c9ef00226ec41ef62743a9))
+
+
 ## v3.96.1 (2026-02-13)
 
 ### Bug Fixes
