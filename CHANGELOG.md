@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.97.1 (2026-02-17)
+
+### Bug Fixes
+
+- Avoid broadcasting the account update twice
+  ([`01ca280`](https://github.com/bec-project/bec/commit/01ca2802613cf3668fbda8c9668046c1174ebaea))
+
+### Refactoring
+
+- Remove scilog
+  ([`713aacd`](https://github.com/bec-project/bec/commit/713aacd3e560ad30b38c28cb3993c35e512295fb))
+
+
 ## v3.97.0 (2026-02-17)
 
 ### Bug Fixes
