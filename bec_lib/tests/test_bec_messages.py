@@ -678,3 +678,11 @@ class TestDeviceAsyncUpdate:
         """Test various valid index values for add_slice type"""
         update = messages.DeviceAsyncUpdate(type="add_slice", max_shape=[None, 1024], index=index)
         assert update.index == index
+
+
+def test_dynamic_metric_message():
+    message = messages.create_metric_message({"m1": 5, "m2": 5.5, "m3": "test", "m4": True})
+    assert isinstance(message.metrics["m1"], messages._IntDynamicMetricValue)
+    assert isinstance(message.metrics["m2"], messages._FloatDynamicMetricValue)
+    assert isinstance(message.metrics["m3"], messages._StrDynamicMetricValue)
+    assert isinstance(message.metrics["m4"], messages._BoolDynamicMetricValue)

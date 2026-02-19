@@ -1173,6 +1173,51 @@ class ServiceMetricMessage(BECMessage):
     metrics: dict
 
 
+class _StrDynamicMetricValue(BaseModel):
+    value: str
+    type_name: Literal["str"] = "str"
+
+
+class _IntDynamicMetricValue(BaseModel):
+    value: int
+    type_name: Literal["int"] = "int"
+
+
+class _FloatDynamicMetricValue(BaseModel):
+    value: float
+    type_name: Literal["float"] = "float"
+
+
+class _BoolDynamicMetricValue(BaseModel):
+    value: bool
+    type_name: Literal["bool"] = "bool"
+
+
+DynamicMetricValue = Annotated[
+    _StrDynamicMetricValue
+    | _IntDynamicMetricValue
+    | _FloatDynamicMetricValue
+    | _BoolDynamicMetricValue,
+    Field(discriminator="type_name"),
+]
+
+
+class DynamicMetricMessage(BECMessage):
+    """Message for propagating metrics to the log ingestor.
+
+    Args:
+        metrics (dict[str, str|int|float|bool]): Mapping of name to metric value"""
+
+    metrics: dict[str, DynamicMetricValue]
+    timestamp: float = Field(default_factory=time.time)
+
+
+def create_metric_message(metrics: dict[str, str | int | float | bool]):
+    return DynamicMetricMessage.model_validate(
+        {"metrics": {k: {"value": v, "type_name": type(v).__name__} for k, v in metrics.items()}}
+    )
+
+
 class ProcessedDataMessage(BECMessage):
     """Message for processed data
 
