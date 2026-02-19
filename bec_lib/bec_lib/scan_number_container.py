@@ -52,6 +52,7 @@ class ScanNumberContainer:
             values = old_message.value
         values[account] = val
         msg = messages.VariableMessage(value=values)
+        self.connector.publish_metrics("scan_statistics", {"scan_number": val})
         return self.connector.set(MessageEndpoints.scan_number(), msg)
 
     @property
@@ -81,4 +82,5 @@ class ScanNumberContainer:
             values = old_message.value
         values[account] = val
         msg = messages.VariableMessage(value=values)
+        self.connector.publish_metrics("scan_statistics", {"dataset_number": val})
         self.connector.set(MessageEndpoints.dataset_number(), msg)

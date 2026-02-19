@@ -41,7 +41,17 @@ class MessageOp(list[str], enum.Enum):
     SET_PUBLISH = ["register", "set_and_publish", "delete", "get", "keys"]
     SEND = ["send", "register"]
     STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last", "delete"]
-    LIST = ["lpush", "lrange", "lrem", "rpush", "ltrim", "keys", "delete", "blocking_list_pop"]
+    LIST = [
+        "llen",
+        "lpush",
+        "lrange",
+        "lrem",
+        "rpush",
+        "ltrim",
+        "keys",
+        "delete",
+        "blocking_list_pop",
+    ]
     KEY_VALUE = ["set", "get", "delete", "keys"]
     SET = ["remove_from_set", "get_set_members", "delete"]
 
@@ -1915,7 +1925,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for available logbooks.
         """
-        endpoint = f"{EndpointType.INTERNAL.value}/dynamic_metrics/{group_name}"
+        endpoint = f"{EndpointType.INFO.value}/dynamic_metrics/{group_name}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.DynamicMetricMessage,

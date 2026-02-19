@@ -434,6 +434,8 @@ class DeviceManagerDS(DeviceManagerBase):
             # re-initialize the device buffer to reflect the updated signal values
             self.devices[obj.name].initialize_device_buffer(self.connector)
 
+        self.connector.publish_metrics("device_server", {"num_devices": len(self.devices)})
+
     @staticmethod
     def construct_device_obj(
         dev: dict, device_manager: DeviceManagerDS
