@@ -17,6 +17,7 @@ from bec_lib.messages import (
     ProcedureAbortMessage,
     ProcedureClearUnhandledMessage,
     ProcedureExecutionMessage,
+    ProcedureQNotifMessage,
     ProcedureRequestMessage,
     ProcedureWorkerStatus,
     RequestResponseMessage,
@@ -91,6 +92,7 @@ class ProcedureManager:
             MessageEndpoints.procedure_clear_unhandled(), None, self._process_clear_unhandled
         )
         self._conn.register(MessageEndpoints.procedure_request(), None, self._process_queue_request)
+        self._conn.register(MessageEndpoints.procedure_queue_notif(), None, self._publish_metrics)
         self._conn.set(
             MessageEndpoints.available_procedures(),
             AvailableResourceMessage(
@@ -101,6 +103,19 @@ class ProcedureManager:
             ),
         )
         logger.success("Done initialising procedure manager.")
+
+    def _publish_metrics(self, msg: ProcedureQNotifMessage):
+        self._conn.publish_metrics(
+            "pending_procedure_queues",
+            {
+                name: self._conn.llen(MessageEndpoints.procedure_execution(name))
+                for name in self._helper.get.active_and_pending_queue_names()
+            },
+        )
+        self._conn.publish_metrics(
+            "active_procedures",
+            {msg.queue: msg.identifier for msg in self._helper.get.running_procedures()},
+        )
 
     def _startup(self):
         # If the server is restarted, clear any pending requests, they'll have to be resubmitted
