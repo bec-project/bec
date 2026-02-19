@@ -860,3 +860,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
 
     def get_last(self, topic, key):
         return None
+
+    def publish_metrics(self, group_name: str, metrics: dict[str, str | int | float | bool]):
+        if not isinstance(group_name, str) or not isinstance(metrics, dict):
+            raise TypeError("invalid arguments to publish_metrics")

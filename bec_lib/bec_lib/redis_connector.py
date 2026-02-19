@@ -55,7 +55,6 @@ from bec_lib.messages import (
     ClientInfoMessage,
     DynamicMetricMessage,
     ErrorInfo,
-    create_metric_message,
 )
 from bec_lib.serialization import MsgpackSerialization
 
@@ -1413,7 +1412,7 @@ class RedisConnector:
         return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
 
     def publish_metrics(self, group_name: str, metrics: dict[str, str | int | float | bool]):
-        msg = create_metric_message(metrics)
+        msg = DynamicMetricMessage.from_dict(metrics)
         ep = MessageEndpoints.dynamic_metric(group_name)
         self._redis_conn.publish(ep.endpoint, MsgpackSerialization.dumps(msg))
 
