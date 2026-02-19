@@ -2,7 +2,7 @@ import json
 
 from pydantic import BaseModel
 
-from bec_lib.utils.json import ExtendedEncoder
+from bec_lib.utils.json_extended import ExtendedEncoder
 
 
 def test_encoder_encodes_set():
