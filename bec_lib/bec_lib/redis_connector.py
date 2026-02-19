@@ -47,7 +47,14 @@ from redis.retry import Retry
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AlarmMessage, BECMessage, BundleMessage, ClientInfoMessage, ErrorInfo
+from bec_lib.messages import (
+    AlarmMessage,
+    BECMessage,
+    BundleMessage,
+    ClientInfoMessage,
+    DynamicMetricMessage,
+    ErrorInfo,
+)
 from bec_lib.serialization import MsgpackSerialization
 
 if TYPE_CHECKING:  # pragma: no cover
