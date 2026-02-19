@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v3.98.0 (2026-02-19)
+
+### Features
+
+- Add redis LLEN command
+  ([`35d12c0`](https://github.com/bec-project/bec/commit/35d12c0f70f1c2fe5d464a11f69ad7a747bd1290))
+
+- Dynamic metric convenience function on redis connector
+  ([`b6b7422`](https://github.com/bec-project/bec/commit/b6b7422b2f4d833ac337973cd04c94255cb36bae))
+
+- Dynamic metric message
+  ([`dc2f6c8`](https://github.com/bec-project/bec/commit/dc2f6c85a4e3cc7b9421ba0d31a305bb05a7cf43))
+
+- Publish some dynamic metrics
+  ([`996dcd4`](https://github.com/bec-project/bec/commit/996dcd43fa65193d4640c815852f513a2e9da359))
+
+### Refactoring
+
+- Create message with classmethod
+  ([`f9223f7`](https://github.com/bec-project/bec/commit/f9223f7e384d2d5cf77613a3218ba0194d89130c))
+
+
 ## v3.97.1 (2026-02-17)
 
 ### Bug Fixes
