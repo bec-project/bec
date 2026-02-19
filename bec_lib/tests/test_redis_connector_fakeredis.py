@@ -584,3 +584,27 @@ def test_lrem(connected_connector: RedisConnector):
     conn.lrem(ep(msgs[1].queue), 0, msgs[1])
     list_contents = conn.lrange(ep("primary"), 0, -1)
     assert list_contents == [msgs[0], msgs[2]]
+
+
+def test_connector_publish_metrics(connected_connector):
+
+    start = time.time()
+    data = []
+    ep = MessageEndpoints.dynamic_metric("test")
+
+    def cb(msg):
+        nonlocal data
+        data.append(msg.value)
+
+    connected_connector.register(ep, cb=cb, start_thread=False)
+    connected_connector.publish_metrics("test", {"m1": 5, "m2": 5.5, "m3": "test", "m4": True})
+    connected_connector.poll_messages(timeout=1)
+
+    stop = time.time()
+    res = data[0]
+    assert isinstance(res, messages.DynamicMetricMessage)
+    assert start <= res.timestamp <= stop
+    assert res.metrics["m1"].value == 5
+    assert res.metrics["m2"].value == 5.5
+    assert res.metrics["m3"].value == "test"
+    assert res.metrics["m4"].value is True
