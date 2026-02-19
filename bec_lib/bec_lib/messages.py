@@ -1208,6 +1208,7 @@ class DynamicMetricMessage(BECMessage):
     Args:
         metrics (dict[str, str|int|float|bool]): Mapping of name to metric value"""
 
+    msg_type: ClassVar[str] = "dynamic_metric_message"
     metrics: dict[str, DynamicMetricValue]
     timestamp: float = Field(default_factory=time.time)
 
