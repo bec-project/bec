@@ -1916,14 +1916,12 @@ class MessageEndpoints:
     @staticmethod
     def dynamic_metric(group_name: str):
         """
-        Endpoint for available logbooks. This endpoint is used to publish the available logbooks
-        using an AvailableResourceMessage.
-
+        Endpoint for dynamic metric publishing.
         Args:
-            realm_name (str): Realm name.
+            group_name (str): name for the group of metric values.
 
         Returns:
-            EndpointInfo: Endpoint for available logbooks.
+            EndpointInfo: Endpoint for dynamic metric publishing.
         """
         endpoint = f"{EndpointType.INFO.value}/dynamic_metrics/{group_name}"
         return EndpointInfo(

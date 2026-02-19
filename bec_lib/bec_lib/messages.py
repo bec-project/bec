@@ -1212,11 +1212,15 @@ class DynamicMetricMessage(BECMessage):
     metrics: dict[str, DynamicMetricValue]
     timestamp: float = Field(default_factory=time.time)
 
-
-def create_metric_message(metrics: dict[str, str | int | float | bool]):
-    return DynamicMetricMessage.model_validate(
-        {"metrics": {k: {"value": v, "type_name": type(v).__name__} for k, v in metrics.items()}}
-    )
+    @classmethod
+    def from_dict(cls, metrics: dict[str, str | int | float | bool]):
+        return cls.model_validate(
+            {
+                "metrics": {
+                    k: {"value": v, "type_name": type(v).__name__} for k, v in metrics.items()
+                }
+            }
+        )
 
 
 class ProcessedDataMessage(BECMessage):
