@@ -1886,3 +1886,70 @@ class MessagingServiceMessage(BECMessage):
     message: list[MessagingServiceContent]
     scope: str | list[str] | None = None
     metadata: dict | None = Field(default_factory=dict)
+
+
+class FeedbackMessage(BECMessage):
+    """
+    Message for user feedback
+
+    Args:
+        feedback (str): User feedback
+        rating (int): User rating (1-5)
+        contact (str | None): User contact information, if they want to be contacted regarding their feedback
+        realm_id (str | None): Realm ID, if applicable
+        deployment_id (str | None): Deployment ID, if applicable
+        experiment_id (str | None): Experiment ID, if applicable
+        username (str): Username of the user providing feedback
+        timestamp (float): Timestamp of when the feedback was provided
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "feedback_message"
+
+    feedback: str
+    rating: int = Field(ge=1, le=5)
+    contact: str | None = None
+    realm_id: str | None = None
+    deployment_id: str | None = None
+    experiment_id: str | None = None
+    username: str
+    timestamp: float = Field(default_factory=time.time)
+
+
+class GameScoreMessage(BECMessage):
+    """
+    Message for game scores
+
+    Args:
+        game_name (str): Name of the game
+        player_name (str): Name of the player (self-reported)
+        level (str | int | None): Game level, if applicable
+        score (float | int): Player's score
+        beamline_id (str | None): Beamline name. Filled in automatically on the server side
+        experiment_id (str | None): Experiment ID. Filled in automatically on the server side
+        timestamp (float): Timestamp of when the score was submitted. Filled in automatically
+    """
+
+    msg_type: ClassVar[str] = "game_score_message"
+
+    game_name: str
+    player_name: str
+    score: float | int
+    level: str | int | None = None
+    beamline_id: str | None = None
+    experiment_id: str | None = None
+    timestamp: float = Field(default_factory=time.time)
+
+
+class GameLeaderboardMessage(BECMessage):
+    """
+    Message for game leaderboard updates
+
+    Args:
+        game_name (str): Name of the game
+        leaderboard (list[GameScoreMessage]): List of game scores for the leaderboard
+    """
+
+    msg_type: ClassVar[str] = "game_leaderboard_message"
+    game_name: str
+    leaderboard: list[GameScoreMessage]
