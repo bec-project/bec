@@ -110,6 +110,26 @@ class BeamlineState(ABC, Generic[C]):
         self.stop()
         self.start()
 
+    def _emit_state(self, state_msg: messages.BeamlineStateMessage) -> None:
+        if self.connector is None:
+            return
+        is_different = (
+            state_msg.model_dump(exclude={"timestamp"})
+            != self._last_state.model_dump(exclude={"timestamp"})
+            if self._last_state
+            else True
+        )
+        if self._last_state is None:
+            is_different = True
+        if is_different:
+            self._last_state = state_msg
+            self.connector.xadd(
+                MessageEndpoints.beamline_state(self.config.name),
+                {"data": state_msg},
+                max_size=1,
+                approximate=False,
+            )
+
 
 class DeviceBeamlineState(BeamlineState[D], Generic[D]):
     """A beamline state that depends on a device reading."""
@@ -120,7 +140,6 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
         self, config: D | None = None, redis_connector: RedisConnector | None = None, **kwargs
     ) -> None:
         super().__init__(config, redis_connector, **kwargs)
-        self._last_value = None
 
     def start(self) -> None:
         if self.connector is None:
@@ -146,11 +165,9 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
 
         msg: messages.DeviceMessage = msg_obj.value  # type: ignore ; we know it's a DeviceMessage
         out = parent.evaluate(msg)
-        if out is not None and out != parent._last_state:
-            parent._last_state = out
-            parent.connector.xadd(
-                MessageEndpoints.beamline_state(parent.config.name), {"data": out}, max_size=1
-            )
+        if out is None:
+            return
+        parent._emit_state(out)
 
 
 class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
