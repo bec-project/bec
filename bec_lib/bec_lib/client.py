@@ -20,7 +20,7 @@ from rich.table import Table
 
 from bec_lib.alarm_handler import AlarmHandler, Alarms
 from bec_lib.bec_service import BECService
-from bec_lib.bl_states import BeamlineStateManager
+from bec_lib.bl_state_manager import BeamlineStateManager
 from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.config_helper import ConfigHelperUser
 from bec_lib.dap_plugins import DAPPlugins

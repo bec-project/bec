@@ -1,157 +1,99 @@
 from __future__ import annotations
 
+import keyword
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Generic, Type, TypeVar
 
-from rich.console import Console
-from rich.table import Table
+from pydantic import BaseModel, field_validator
 
 from bec_lib import messages
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.redis_connector import RedisConnector
 
 if TYPE_CHECKING:
-    from bec_lib.client import BECClient
     from bec_lib.redis_connector import MessageObject, RedisConnector
 
 
-class BeamlineStateManager:
-    """Manager for beamline states."""
+class BeamlineStateConfig(BaseModel):
+    """
+    Base Configuration for a beamline state.
+    """
 
-    def __init__(self, client: BECClient) -> None:
-        self._client = client
-        self._connector = client.connector
-        self._states: list[messages.BeamlineStateConfig] = []
-        self._connector.register(
-            MessageEndpoints.available_beamline_states(),
-            cb=self._on_state_update,
-            parent=self,
-            from_start=True,
-        )
+    state_type: ClassVar[str] = "BeamlineState"
 
-    @staticmethod
-    def _on_state_update(msg_dict: dict, *, parent: BeamlineStateManager, **_kwargs) -> None:
-        # type: ignore ; we know it's an AvailableBeamlineStatesMessage
-        msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]
-        parent._states = msg.states
+    name: str
+    title: str | None = None
 
-    def add(self, state: BeamlineState) -> None:
+    model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
         """
-        Add a new beamline state to the manager.
-        Args:
-            state (BeamlineState): The beamline state to add.
+        Validate that the state name is a valid Python identifier and does not conflict with reserved method names.
         """
+        if not v.isidentifier():
+            raise ValueError(f"State name '{v}' must be a valid Python identifier.")
+        if keyword.iskeyword(v):
+            raise ValueError(f"State name '{v}' cannot be a reserved Python keyword.")
+        if v in {"add", "remove", "show_all"}:
+            raise ValueError(f"State name '{v}' is reserved and cannot be used.")
+        return v
 
-        if any(state.name == existing_state.name for existing_state in self._states):
-            return  # state already exists
-        info: messages.BeamlineStateConfig = messages.BeamlineStateConfig(
-            name=state.name,
-            title=state.title,
-            state_type=state.__class__.__name__,
-            parameters=state.parameters(),
-        )
-        cls = state.__class__
 
-        try:
-            condi = cls(name=state.name, redis_connector=self._connector)
-            condi.configure(**state.parameters())
-        except Exception as e:
-            raise RuntimeError(f"Failed to add state {state.name}: {e}") from e
+class DeviceStateConfig(BeamlineStateConfig):
+    """
+    Configuration for a device-based beamline state.
+    """
 
-        if isinstance(state, DeviceBeamlineState):
-            self._verify_signal_exists(state)
+    state_type: ClassVar[str] = "DeviceState"
 
-        self._states.append(info)
-        msg = messages.AvailableBeamlineStatesMessage(states=self._states)
-        self._connector.xadd(
-            MessageEndpoints.available_beamline_states(), {"data": msg}, max_size=1
-        )
+    device: DeviceBase | str
+    signal: DeviceBase | str | None = None
 
-    def _verify_signal_exists(self, state: DeviceBeamlineState) -> None:
+    @field_validator("device", "signal", mode="before")
+    @classmethod
+    def validate_device(cls, v: DeviceBase | str) -> str:
         """
-        Verify that the device and signal exist in the device manager.
-
-        Args:
-            state (DeviceBeamlineState): The state to verify.
-
-        Raises: RuntimeError if the device or signal does not exist.
+        Validate that the device is either a string or a DeviceBase instance. If it's a DeviceBase instance, return its name.
         """
-        device = state.parameters().get("device")
-        signal = state.parameters().get("signal")
-        if isinstance(device, DeviceBase):
-            device = device.name
-
-        if not self._client.device_manager.devices.get(device):
-            raise RuntimeError(
-                f"Device {device} not found in device manager. Cannot add state {state.name}."
-            )
-        if signal is not None:
-            if signal not in self._client.device_manager.devices[device].read():
-                raise RuntimeError(
-                    f"Signal {signal} not found in device {device}. Cannot add state {state.name}."
-                )
-        else:
-            hinted_signals = self._client.device_manager.devices[device]._hints
-            if hinted_signals:
-                signal = hinted_signals[0]
-            else:
-                signal = device
-        state.update_parameters(device=device, signal=signal)
-
-    def remove(self, state_name: str) -> None:
-        """
-        Remove a beamline state by name.
-        Args:
-            state_name (str): The name of the state to remove.
-        """
-        if not any(state.name == state_name for state in self._states):
-            return  # state does not exist
-        self._states = [state for state in self._states if state.name != state_name]
-        msg = messages.AvailableBeamlineStatesMessage(states=self._states)
-        self._connector.xadd(
-            MessageEndpoints.available_beamline_states(), {"data": msg}, max_size=1
-        )
-
-    def show_all(self):
-        """
-        Pretty print all beamline states using rich.
-        """
-        console = Console()
-        table = Table(title="Beamline States")
-        table.add_column("Name", style="cyan", no_wrap=True)
-        table.add_column("Type", style="magenta")
-        table.add_column("Parameters", style="green")
-
-        for state in self._states:
-            params = state.parameters if state.parameters else "-"
-            table.add_row(str(state.name), str(state.state_type), str(params))
-
-        console.print(table)
+        if isinstance(v, DeviceBase):
+            return v.dotted_name
+        return v
 
 
-class BeamlineState(ABC):
+class DeviceWithinLimitsStateConfig(DeviceStateConfig):
+    """
+    Configuration for a device within limits beamline state.
+    """
+
+    state_type: ClassVar[str] = "DeviceWithinLimitsState"
+
+    min_limit: float | None = None
+    max_limit: float | None = None
+    tolerance: float = 0.1
+
+
+C = TypeVar("C", bound=BeamlineStateConfig)
+D = TypeVar("D", bound=DeviceStateConfig)
+
+
+class BeamlineState(ABC, Generic[C]):
     """Abstract base class for beamline states."""
 
+    CONFIG_CLASS: Type[C]
+
     def __init__(
-        self, name: str, redis_connector: RedisConnector | None = None, title: str | None = None
+        self, config: C | None = None, redis_connector: RedisConnector | None = None, **kwargs
     ) -> None:
-        self.name = name
+        self.config = config or self.CONFIG_CLASS(**kwargs)
         self.connector = redis_connector
-        self.title = title if title is not None else name
-        self._configured = False
         self._last_state: messages.BeamlineStateMessage | None = None
-
-    def configure(self, **kwargs) -> None:
-        """Configure the state with given parameters."""
-        self._configured = True
-
-    def parameters(self) -> dict:
-        """Return the configuration parameters of the state."""
-        return {}
 
     def update_parameters(self, **kwargs) -> None:
         """Update the configuration parameters of the state."""
-        pass
+        self.config = self.CONFIG_CLASS(**{**self.config.model_dump(), **kwargs})
 
     @abstractmethod
     def evaluate(self, *args, **kwargs) -> messages.BeamlineStateMessage | None:
@@ -163,44 +105,37 @@ class BeamlineState(ABC):
     def stop(self) -> None:
         """Stop monitoring the state if needed."""
 
+    def restart(self) -> None:
+        """Restart the state monitoring."""
+        self.stop()
+        self.start()
 
-class DeviceBeamlineState(BeamlineState):
+
+class DeviceBeamlineState(BeamlineState[D], Generic[D]):
     """A beamline state that depends on a device reading."""
 
-    def configure(self, device: str | DeviceBase, signal: str | None = None, **kwargs) -> None:
-        self.device = device if isinstance(device, str) else device.name
-        self.signal = signal
-        super().configure(**kwargs)
+    CONFIG_CLASS: Type[D]
 
-    def parameters(self) -> dict:
-        params = super().parameters()
-        params.update({"device": self.device, "signal": self.signal})
-        return params
-
-    def update_parameters(self, **kwargs) -> None:
-        if "device" in kwargs:
-            device = kwargs.pop("device")
-            self.device = device if isinstance(device, str) else device.name
-        if "signal" in kwargs:
-            self.signal = kwargs.pop("signal")
-        super().update_parameters(**kwargs)
+    def __init__(
+        self, config: D | None = None, redis_connector: RedisConnector | None = None, **kwargs
+    ) -> None:
+        super().__init__(config, redis_connector, **kwargs)
+        self._last_value = None
 
     def start(self) -> None:
-        if not self._configured:
-            raise RuntimeError("State must be configured before starting.")
         if self.connector is None:
             raise RuntimeError("Redis connector is not set.")
         self.connector.register(
-            MessageEndpoints.device_readback(self.device), cb=self._update_device_state, parent=self
+            MessageEndpoints.device_readback(self.config.device),
+            cb=self._update_device_state,
+            parent=self,
         )
 
     def stop(self) -> None:
-        if not self._configured:
-            return
         if self.connector is None:
             return
         self.connector.unregister(
-            MessageEndpoints.device_readback(self.device), cb=self._update_device_state
+            MessageEndpoints.device_readback(self.config.device), cb=self._update_device_state
         )
 
     @staticmethod
@@ -214,11 +149,11 @@ class DeviceBeamlineState(BeamlineState):
         if out is not None and out != parent._last_state:
             parent._last_state = out
             parent.connector.xadd(
-                MessageEndpoints.beamline_state(parent.name), {"data": out}, max_size=1
+                MessageEndpoints.beamline_state(parent.config.name), {"data": out}, max_size=1
             )
 
 
-class ShutterState(DeviceBeamlineState):
+class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
     """
     A state that checks if the shutter is open.
 
@@ -228,18 +163,22 @@ class ShutterState(DeviceBeamlineState):
         bec.beamline_states.add(shutter_state)
     """
 
-    def evaluate(self, msg: messages.DeviceMessage, **kwargs) -> messages.BeamlineStateMessage:
-        val = msg.signals.get(self.signal, {}).get("value", "").lower()
+    CONFIG_CLASS = DeviceStateConfig
+
+    def evaluate(
+        self, msg: messages.DeviceMessage, *args, **kwargs
+    ) -> messages.BeamlineStateMessage:
+        val = msg.signals.get(self.config.signal, {}).get("value", "").lower()
         if val == "open":
             return messages.BeamlineStateMessage(
-                name=self.name, status="valid", label="Shutter is open."
+                name=self.config.name, status="valid", label="Shutter is open."
             )
         return messages.BeamlineStateMessage(
-            name=self.name, status="invalid", label="Shutter is closed."
+            name=self.config.name, status="invalid", label="Shutter is closed."
         )
 
 
-class DeviceWithinLimitsState(DeviceBeamlineState):
+class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]):
     """
     A state that checks if a positioner is within limits.
 
@@ -250,89 +189,51 @@ class DeviceWithinLimitsState(DeviceBeamlineState):
 
     """
 
-    def configure(
-        self,
-        device: str,
-        min_limit: float | None = None,
-        max_limit: float | None = None,
-        tolerance: float = 0.1,
-        signal: str | None = None,
-        **kwargs,
-    ) -> None:
-        """
-        Configure the positioner condition.
+    CONFIG_CLASS = DeviceWithinLimitsStateConfig
 
-        Args:
-            device (str): The name of the positioner device.
-            min_limit (float | None): The minimum limit for the positioner. If None, no minimum limit is enforced.
-            max_limit (float | None): The maximum limit for the positioner. If None, no maximum limit is enforced.
-            tolerance (float): The tolerance for warning conditions (default is 0.1). When the positioner is within
-                               10% of the limits, a warning condition will be issued. Note that the tolerance is ignored
-                               if one of the limits is None.
-            signal (str, optional): The name of the signal to monitor. If not provided, defaults to the device name.
-        """
-        self.min_limit = min_limit
-        self.max_limit = max_limit
-        self.tolerance = tolerance
-        super().configure(device=device, signal=signal, **kwargs)
-
-    def parameters(self) -> dict:
-        params = super().parameters()
-        params.update(
-            {
-                "device": self.device,
-                "min_limit": self.min_limit,
-                "max_limit": self.max_limit,
-                "tolerance": self.tolerance,
-                "signal": self.signal,
-            }
-        )
-        return params
-
-    def update_parameters(self, **kwargs) -> None:
-        if "min_limit" in kwargs:
-            self.min_limit = kwargs.pop("min_limit")
-        if "max_limit" in kwargs:
-            self.max_limit = kwargs.pop("max_limit")
-        if "tolerance" in kwargs:
-            self.tolerance = kwargs.pop("tolerance")
-        super().update_parameters(**kwargs)
-
-    def evaluate(self, msg: messages.DeviceMessage, **kwargs) -> messages.BeamlineStateMessage:
+    def evaluate(
+        self, msg: messages.DeviceMessage, *args, **kwargs
+    ) -> messages.BeamlineStateMessage:
         """
         Evaluate if the positioner is within the defined limits. If it is outside the limits,
         return an invalid state. Otherwise, return a valid state. If it is within 10% of the limits,
         return a warning state.
         """
 
-        if self.min_limit is None:
-            self.min_limit = float("-inf")
-        if self.max_limit is None:
-            self.max_limit = float("inf")
+        if self.config.min_limit is None:
+            self.config.min_limit = float("-inf")
+        if self.config.max_limit is None:
+            self.config.max_limit = float("inf")
 
-        signal_name = self.signal if self.signal is not None else self.device
+        signal_name = self.config.signal if self.config.signal is not None else self.config.device
 
         val = msg.signals.get(signal_name, {}).get("value", None)
         if val is None:
             return messages.BeamlineStateMessage(
-                name=self.name, status="invalid", label=f"Positioner {self.device} value not found."
+                name=self.config.name,
+                status="invalid",
+                label=f"Positioner {self.config.device} value not found.",
             )
 
-        if val < self.min_limit or val > self.max_limit:
+        if val < self.config.min_limit or val > self.config.max_limit:
             return messages.BeamlineStateMessage(
-                name=self.name, status="invalid", label=f"Positioner {self.device} out of limits"
+                name=self.config.name,
+                status="invalid",
+                label=f"Positioner {self.config.device} out of limits",
             )
 
-        if self.min_limit == float("-inf") or self.max_limit == float("inf"):
-            self.tolerance = 0
+        min_warning_threshold = self.config.min_limit + self.config.tolerance
+        max_warning_threshold = self.config.max_limit - self.config.tolerance
 
-        min_warning_threshold = self.min_limit + self.tolerance * (self.max_limit - self.min_limit)
-        max_warning_threshold = self.max_limit - self.tolerance * (self.max_limit - self.min_limit)
         if val < min_warning_threshold or val > max_warning_threshold:
             return messages.BeamlineStateMessage(
-                name=self.name, status="warning", label=f"Positioner {self.device} near limits"
+                name=self.config.name,
+                status="warning",
+                label=f"Positioner {self.config.device} near limits",
             )
 
         return messages.BeamlineStateMessage(
-            name=self.name, status="valid", label=f"Positioner {self.device} within limits"
+            name=self.config.name,
+            status="valid",
+            label=f"Positioner {self.config.device} within limits",
         )

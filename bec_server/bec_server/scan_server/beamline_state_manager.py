@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import traceback
+
 from bec_lib import bl_states, messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import ErrorInfo
 from bec_lib.redis_connector import RedisConnector
 
 
@@ -11,7 +14,7 @@ class BeamlineStateManager:
 
     def __init__(self, connector: RedisConnector) -> None:
         self.connector = connector
-        self.states: list[bl_states.BeamlineState] = []
+        self._states: dict[str, bl_states.BeamlineState] = {}
         self.connector.register(
             MessageEndpoints.available_beamline_states(),
             cb=self._handle_state_update,
@@ -23,7 +26,16 @@ class BeamlineStateManager:
     def _handle_state_update(msg_dict: dict, *, parent: BeamlineStateManager, **_kwargs) -> None:
 
         msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]  # type: ignore ; we know it's a AvailableBeamlineStatesMessage
-        parent.update_states(msg)
+        try:
+            parent.update_states(msg)
+        except Exception as exc:
+            content = traceback.format_exc()
+            info = ErrorInfo(
+                exception_type=type(exc).__name__,
+                error_message=content,
+                compact_error_message="Error updating beamline states.",
+            )
+            parent.connector.raise_alarm(severity=Alarms.WARNING, info=info)
 
     def update_states(self, msg: messages.AvailableBeamlineStatesMessage) -> None:
         """
@@ -34,50 +46,33 @@ class BeamlineStateManager:
         """
 
         # get the states that we need to remove
-        states_in_msg = {state.name for state in msg.states}
-        current_states = {state.name for state in self.states}
-        states_to_remove = current_states - states_in_msg
-        # remove states that are no longer needed
-        for state_name in states_to_remove:
-            state = next((s for s in self.states if s.name == state_name), None)
-            if state:
-                state.stop()
-                self.states.remove(state)
-        # filter out existing states from the message
-        new_states = [state for state in msg.states if state.name not in current_states]
-        # add new states
-        for state in new_states:
-            self.states.append(self.create_state_from_message(state))
+        remove_state_names = set(self._states) - set(state.name for state in msg.states)
 
-    def create_state_from_message(
-        self, state_info: messages.BeamlineStateConfig
-    ) -> bl_states.BeamlineState:
-        """
-        Create a BeamlineState instance from a BeamlineStateConfig message.
+        added_state_names = set(state.name for state in msg.states) - set(self._states)
+        added_states = {
+            state.name: state for state in msg.states if state.name in added_state_names
+        }
 
-        Args:
-            state_info (messages.BeamlineStateConfig): The state config message.
-        Returns:
-            BeamlineState: The created BeamlineState instance.
-        """
-        try:
-            cls = getattr(bl_states, state_info.state_type, None)
-            if cls is None or not issubclass(cls, bl_states.BeamlineState):
-                raise ValueError(
-                    f"State type {state_info.state_type} not found in beamline states."
-                )
-            state = cls(
-                name=state_info.name, redis_connector=self.connector, title=state_info.title
-            )
-            state.configure(**state_info.parameters)
-            state.start()
-        except Exception as exc:
-            self.connector.raise_alarm(
-                severity=Alarms.WARNING,
-                info=messages.ErrorInfo(
-                    error_message=f"Failed to create beamline state {state_info.name}: {exc}",
-                    compact_error_message=f"Failed to create beamline state {state_info.name}",
-                    exception_type=type(exc).__name__,
-                ),
-            )
-        return state
+        for state_name in remove_state_names:
+            if hasattr(self, state_name):
+                delattr(self, state_name)
+            self._states.pop(state_name, None)
+
+        for state_name, state in added_states.items():
+            state_class = getattr(bl_states, state.state_type)
+            if not issubclass(state_class, bl_states.BeamlineState):
+                raise ValueError(f"State type {state.state_type} not found in beamline states.")
+            model_cls = state_class.CONFIG_CLASS
+            model_instance = model_cls(**state.parameters)
+            state_instance = state_class(config=model_instance, redis_connector=self.connector)
+            state_instance.start()
+            self._states[state.name] = state_instance
+
+        # Check if the config has changed for existing states and update them if needed
+        for state_msg in msg.states:
+            state = self._states.get(state_msg.name)
+            if state is None:
+                continue
+            if state.config.model_dump() != state_msg.parameters:
+                # The config has changed, we need to update the state
+                state.restart()
