@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import h5py
+import numpy as np
+
 if TYPE_CHECKING:
     from bec_lib import messages
     from bec_lib.devicemanager import DeviceManagerBase
@@ -20,6 +23,7 @@ class DefaultFormat:
         info_storage: dict,
         configuration: dict,
         file_references: dict[str, messages.FileMessage],
+        beamline_states: dict[str, list[messages.BeamlineStateMessage]],
         device_manager: DeviceManagerBase,
     ):
         self.storage = storage
@@ -28,6 +32,7 @@ class DefaultFormat:
         self.file_references = file_references
         self.device_manager = device_manager
         self.info_storage = info_storage
+        self.beamline_states = beamline_states
 
     def get_storage_format(self) -> dict:
         """
@@ -104,6 +109,29 @@ class DefaultFormat:
                     )
             else:
                 file_device.create_ext_link(name="data", target=msg.file_path, entry="/")
+
+        # create beamline states
+        states = {}
+        for state_name, state_values in self.beamline_states.items():
+            dtype = np.dtype(
+                [
+                    ("label", h5py.string_dtype("utf-8")),
+                    ("status", h5py.string_dtype("utf-8")),
+                    ("timestamp", np.float64),
+                ]
+            )
+            states[state_name] = np.array(
+                [
+                    (state_msg.label, state_msg.status, state_msg.timestamp)
+                    for state_msg in state_values
+                ],
+                dtype=dtype,
+            )
+        beamline_states_group = collection.create_group("states")
+        beamline_states_group.attrs["NX_class"] = "NXcollection"
+        for state_name, state_values in states.items():
+            state_group = beamline_states_group.create_dataset(name=state_name, data=state_values)
+            state_group.attrs["NX_class"] = "NXcollection"
 
     def format(self) -> None:
         """

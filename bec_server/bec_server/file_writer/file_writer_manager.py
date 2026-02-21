@@ -4,6 +4,7 @@ import os
 import threading
 import time
 import traceback
+from collections import defaultdict
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -35,9 +36,10 @@ class ScanStorage:
         self.status_msg: messages.ScanStatusMessage | None = None
         self.scan_segments = {}
         self.scan_finished = False
-        self.num_points = None
+        self.num_points: int | None = None
         self.baseline = {}
-        self.async_writer = None
+        self.async_writer: AsyncWriter | None = None
+        self.beamline_states: dict[str, list[messages.BeamlineStateMessage]] = defaultdict(list)
         self.metadata = {}
         self.file_references = {}
         self.start_time = None
@@ -96,6 +98,9 @@ class FileWriterManager(BECService):
         self.file_writer_config = self._service_config.config.get("file_writer")
         self._start_device_manager()
         self.device_configuration = {}
+        self.available_beamline_states: list[messages.BeamlineStateConfig] = []
+        self.beamline_state_subscriptions: set[str] = set()
+        self.beamline_states: dict[str, messages.BeamlineStateMessage] = {}
         self.connector.register(
             MessageEndpoints.scan_segment(), cb=self._scan_segment_callback, parent=self
         )
@@ -107,8 +112,14 @@ class FileWriterManager(BECService):
             cb=self._device_configuration_callback,
             parent=self,
         )
+        self.connector.register(
+            MessageEndpoints.available_beamline_states(),
+            cb=self._update_available_beamline_states,
+            parent=self,
+            from_start=True,
+        )
         self.async_writer = None
-        self.scan_storage = {}
+        self.scan_storage: dict[str, ScanStorage] = {}
         self.file_writer = HDF5FileWriter(self)
         self.status = messages.BECStatus.RUNNING
         self.refresh_device_configs()
@@ -133,6 +144,61 @@ class FileWriterManager(BECService):
         topic, msg = msg.topic, msg.value
         device = topic.split("/")[-1]
         parent.update_device_configuration(device, msg)
+
+    @staticmethod
+    def _update_available_beamline_states(
+        msg: dict[str, messages.AvailableBeamlineStatesMessage], *, parent: FileWriterManager
+    ):
+        info = msg["data"]
+        parent.available_beamline_states = info.states
+        parent.update_beamline_state_subscriptions()
+
+    def update_beamline_state_subscriptions(self):
+        """
+        Update the beamline state subscriptions.
+        This method ensures that the file writer is subscribed to the beamline states that are currently available.
+        """
+        current_subscriptions = set(self.beamline_state_subscriptions)
+        needed_subscriptions = set()
+        for state in self.available_beamline_states:
+            needed_subscriptions.add(state.name)
+            if state.name not in current_subscriptions:
+                self.connector.register(
+                    MessageEndpoints.beamline_state(state.name),
+                    cb=self._beamline_state_callback,
+                    parent=self,
+                    from_start=True,
+                )
+                self.beamline_state_subscriptions.add(state.name)
+        # Unregister from states that are no longer needed
+        for topic in current_subscriptions - needed_subscriptions:
+            self.connector.unregister(
+                MessageEndpoints.beamline_state(topic), cb=self._beamline_state_callback
+            )
+            self.beamline_state_subscriptions.remove(topic)
+
+    @staticmethod
+    def _beamline_state_callback(
+        msg: dict[str, messages.BeamlineStateMessage], *, parent: FileWriterManager
+    ):
+        state_msg = msg["data"]
+        parent.update_beamline_state(state_msg)
+
+    def update_beamline_state(self, state_msg: messages.BeamlineStateMessage):
+        """
+        Update the beamline state in the file writer.
+
+        Args:
+            state_msg (messages.BeamlineStateMessage): Beamline state message
+        """
+        # We store the latest beamline state messages in the file writer so that
+        # they can be added to the file when writing, even if they do not change
+        # during the scan
+        self.beamline_states[state_msg.name] = state_msg
+
+        for storage in self.scan_storage.values():
+            if storage.metadata.get("status") == "open":
+                storage.beamline_states[state_msg.name].append(state_msg)
 
     def _update_available_devices(self, *args) -> None:
         """
@@ -172,6 +238,10 @@ class FileWriterManager(BECService):
             self.scan_storage[scan_id] = ScanStorage(
                 scan_number=msg.content["info"].get("scan_number"), scan_id=scan_id
             )
+
+        for state in self.beamline_states.values():
+            if state.name not in self.scan_storage[scan_id].beamline_states:
+                self.scan_storage[scan_id].beamline_states[state.name].append(state)
 
         # update the status message
         self.scan_storage[scan_id].status_msg = msg
