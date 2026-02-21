@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.99.0 (2026-02-21)
+
+### Features
+
+- Add user feedback and leaderboard messages
+  ([`610030f`](https://github.com/bec-project/bec/commit/610030f92c0e01c7e4b36710bfaa4930b43c0d81))
+
+
 ## v3.98.0 (2026-02-19)
 
 ### Features
