@@ -16,13 +16,16 @@ if TYPE_CHECKING:
     from bec_lib.client import BECClient
 
 
-def build_signature_from_model(model: BaseModel) -> Signature:
+def build_signature_from_model(model: BaseModel, skip: set[str] | None = None) -> Signature:
     """
     Build a function signature from a Pydantic model. The parameters of the signature will match the fields of the model.
     """
     parameters = []
+    skip = skip or set()
 
     for name, field in model.model_fields.items():
+        if name in skip:
+            continue
         annotation = field.annotation or inspect.Parameter.empty
         parameters.append(
             Parameter(
@@ -49,6 +52,7 @@ class BeamlineStateClientBase:
         self._manager = manager
         self._connector = manager._connector
         self._state = state
+        self._skip_parameters = {"name"}
 
         # pylint: disable=unnecessary-lambda
         self._run = lambda **kwargs: self._run_update(**kwargs)
@@ -60,10 +64,14 @@ class BeamlineStateClientBase:
         setattr(
             getattr(self, "update_parameters"),
             "__signature__",
-            build_signature_from_model(self._state),
+            build_signature_from_model(self._state, skip=self._skip_parameters),
         )
 
     def _run_update(self, **kwargs) -> None:
+        if not kwargs:
+            return
+        if self._skip_parameters.intersection(kwargs):
+            raise ValueError(f"Invalid parameters: {self._skip_parameters.intersection(kwargs)}")
         self._state = self._state.model_copy(update=kwargs)
         self._manager._update_state(self._state)  # pylint: disable=protected-access
 

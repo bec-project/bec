@@ -1852,6 +1852,7 @@ class BeamlineStateMessage(BECMessage):
     name: str
     status: Literal["valid", "invalid", "warning"]
     label: str
+    timestamp: float = Field(default_factory=time.time)
 
 
 class BeamlineStateConfig(BaseModel):

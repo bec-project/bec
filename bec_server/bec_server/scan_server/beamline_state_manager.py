@@ -75,4 +75,5 @@ class BeamlineStateManager:
                 continue
             if state.config.model_dump() != state_msg.parameters:
                 # The config has changed, we need to update the state
+                state.update_parameters(**state_msg.parameters)
                 state.restart()

@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import keyword
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, ClassVar, Generic, Type, TypeVar
+from typing import ClassVar, Generic, Type, TypeVar
 
 from pydantic import BaseModel, field_validator
 
 from bec_lib import messages
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.redis_connector import RedisConnector
-
-if TYPE_CHECKING:
-    from bec_lib.redis_connector import MessageObject, RedisConnector
+from bec_lib.redis_connector import MessageObject, RedisConnector
 
 
 class BeamlineStateConfig(BaseModel):
@@ -144,6 +141,14 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
     def start(self) -> None:
         if self.connector is None:
             raise RuntimeError("Redis connector is not set.")
+        msg = self.connector.get(MessageEndpoints.device_readback(self.config.device))
+        if msg is not None:
+            self._update_device_state(
+                MessageObject(
+                    topic=MessageEndpoints.device_readback(self.config.device).endpoint, value=msg
+                ),
+                parent=self,
+            )
         self.connector.register(
             MessageEndpoints.device_readback(self.config.device),
             cb=self._update_device_state,
