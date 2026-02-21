@@ -1929,3 +1929,47 @@ class MessageEndpoints:
             message_type=messages.DynamicMetricMessage,
             message_op=MessageOp.SET_PUBLISH,
         )
+
+    @staticmethod
+    def user_feedback():
+        """
+        Endpoint for user feedback. This endpoint is used to publish user feedback using a messages.FeedbackMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for user feedback.
+        """
+        endpoint = f"{EndpointType.PUBLIC.value}/user_feedback"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.FeedbackMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
+    def game_score():
+        """
+        Endpoint for game score. This endpoint is used to publish game scores using a messages.GameScoreMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for game score.
+        """
+        endpoint = f"{EndpointType.PUBLIC.value}/game_score"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.GameScoreMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
+    def game_leaderboard(game_name: str):
+        """
+        Endpoint for game leaderboard. This endpoint is used to publish game leaderboard using a messages.GameLeaderboardMessage message.
+
+        Args:
+            game_name (str): Name of the game.
+
+        Returns:
+            EndpointInfo: Endpoint for game leaderboard.
+        """
+        endpoint = f"{EndpointType.PUBLIC.value}/game_leaderboard/{game_name}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.GameLeaderboardMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
