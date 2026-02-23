@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v3.100.0 (2026-02-23)
+
+### Features
+
+- Enhance FeedbackMessage with feedback_type and versions fields, add test for FeedbackMessage
+  serialization
+  ([`ac60f50`](https://github.com/bec-project/bec/commit/ac60f50390c1ec8d751feb17e7f5ac91beb61ee7))
+
+
 ## v3.99.0 (2026-02-21)
 
 ### Features
