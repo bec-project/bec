@@ -1,3 +1,5 @@
+import getpass
+
 import numpy as np
 import pydantic
 import pytest
@@ -688,3 +690,17 @@ def test_dynamic_metric_message():
     assert isinstance(message.metrics["m2"], messages._FloatDynamicMetricValue)
     assert isinstance(message.metrics["m3"], messages._StrDynamicMetricValue)
     assert isinstance(message.metrics["m4"], messages._BoolDynamicMetricValue)
+
+
+def test_feedback_message():
+    msg = messages.FeedbackMessage(
+        feedback="This is a test feedback.",
+        rating=4,
+        feedback_type="feature_request",
+        contact="user@example.com",
+    )
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+    assert res_loaded == msg
+    assert res_loaded.username == getpass.getuser()
+    assert res_loaded.versions == messages.ServiceVersions._get_version_numbers()
