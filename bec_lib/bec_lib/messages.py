@@ -1039,6 +1039,7 @@ class ServiceVersions(BaseModel):
     bec_server: str
     bec_ipython_client: str
     bec_widgets: str
+    ophyd_devices: str
 
     @classmethod
     def _get_version_numbers(cls):
@@ -1054,7 +1055,13 @@ class ServiceVersions(BaseModel):
         cls._versions = cls.model_validate(
             {
                 pkg: _get_safe_version(pkg)
-                for pkg in ["bec_lib", "bec_server", "bec_ipython_client", "bec_widgets"]
+                for pkg in [
+                    "bec_lib",
+                    "bec_server",
+                    "bec_ipython_client",
+                    "bec_widgets",
+                    "ophyd_devices",
+                ]
             }
         )
         return cls._versions
