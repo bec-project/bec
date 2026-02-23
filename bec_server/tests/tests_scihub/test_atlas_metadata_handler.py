@@ -311,3 +311,131 @@ def test_handle_messaging_error(atlas_connector):
             msg, parent=atlas_connector.metadata_handler
         )
         mock_logger_error.assert_called()
+
+
+def test_handle_feedback_message(atlas_connector):
+    """Test handling of feedback messages"""
+    fb_message = messages.FeedbackMessage(feedback="Great experiment!", rating=5)
+    msg_obj = MessageObject(topic=MessageEndpoints.user_feedback().endpoint, value=fb_message)
+
+    with mock.patch.object(
+        atlas_connector.metadata_handler.atlas_connector, "ingest_data"
+    ) as mock_ingest:
+        atlas_connector.metadata_handler._handle_feedback(
+            msg_obj, parent=atlas_connector.metadata_handler
+        )
+        mock_ingest.assert_called_once_with({"user_feedback": fb_message})
+
+
+def test_handle_feedback_message_fills_deployment_info(atlas_connector):
+    """Test that feedback messages are enriched with deployment info"""
+    fb_message = messages.FeedbackMessage(feedback="Great experiment!", rating=5)
+    msg_obj = MessageObject(topic=MessageEndpoints.user_feedback().endpoint, value=fb_message)
+
+    deployment_info = create_dummy_deployment_info()
+    atlas_connector.metadata_handler._deployment_info = deployment_info
+
+    with mock.patch.object(
+        atlas_connector.metadata_handler.atlas_connector, "ingest_data"
+    ) as mock_ingest:
+        atlas_connector.metadata_handler._handle_feedback(
+            msg_obj, parent=atlas_connector.metadata_handler
+        )
+        enriched_message = messages.FeedbackMessage(
+            feedback="Great experiment!",
+            rating=5,
+            experiment_id=deployment_info.active_session.experiment.pgroup,
+            realm_id=deployment_info.active_session.experiment.realm_id,
+            deployment_id=deployment_info.deployment_id,
+            timestamp=fb_message.timestamp,
+        )
+        mock_ingest.assert_called_once_with({"user_feedback": enriched_message})
+
+
+def test_handle_feedback_message_fills_deployment_info_no_session(atlas_connector):
+    """Test that feedback messages are enriched with deployment info even if session is missing"""
+    fb_message = messages.FeedbackMessage(feedback="Great experiment!", rating=5)
+    msg_obj = MessageObject(topic=MessageEndpoints.user_feedback().endpoint, value=fb_message)
+
+    deployment_info = messages.DeploymentInfoMessage(
+        metadata={},
+        deployment_id="test-id",
+        name="Test Deployment",
+        active_session=None,
+        messaging_config=messages.MessagingConfig(
+            scilog=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            signal=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            teams=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+        ),
+        messaging_services=[],
+    )
+    atlas_connector.metadata_handler._deployment_info = deployment_info
+
+    with mock.patch.object(
+        atlas_connector.metadata_handler.atlas_connector, "ingest_data"
+    ) as mock_ingest:
+        atlas_connector.metadata_handler._handle_feedback(
+            msg_obj, parent=atlas_connector.metadata_handler
+        )
+        enriched_message = messages.FeedbackMessage(
+            feedback="Great experiment!",
+            rating=5,
+            deployment_id=deployment_info.deployment_id,
+            timestamp=fb_message.timestamp,
+        )
+        mock_ingest.assert_called_once_with({"user_feedback": enriched_message})
+
+
+def test_handle_feedback_message_fills_deployment_info_no_experiment(atlas_connector):
+    """Test that feedback messages are enriched with deployment info even if experiment is missing"""
+    fb_message = messages.FeedbackMessage(feedback="Great experiment!", rating=5)
+    msg_obj = MessageObject(topic=MessageEndpoints.user_feedback().endpoint, value=fb_message)
+
+    deployment_info = messages.DeploymentInfoMessage(
+        metadata={},
+        deployment_id="test-id",
+        name="Test Deployment",
+        active_session=messages.SessionInfoMessage(
+            metadata={}, name="_default_", experiment=None, messaging_services=[]
+        ),
+        messaging_config=messages.MessagingConfig(
+            scilog=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            signal=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+            teams=messages.MessagingServiceScopeConfig(enabled=False, default=None),
+        ),
+        messaging_services=[],
+    )
+    atlas_connector.metadata_handler._deployment_info = deployment_info
+
+    with mock.patch.object(
+        atlas_connector.metadata_handler.atlas_connector, "ingest_data"
+    ) as mock_ingest:
+        atlas_connector.metadata_handler._handle_feedback(
+            msg_obj, parent=atlas_connector.metadata_handler
+        )
+        enriched_message = messages.FeedbackMessage(
+            feedback="Great experiment!",
+            rating=5,
+            deployment_id=deployment_info.deployment_id,
+            timestamp=fb_message.timestamp,
+        )
+        mock_ingest.assert_called_once_with({"user_feedback": enriched_message})
+
+
+def test_handle_feedback_message_error(atlas_connector):
+    """Test handling of feedback messages when ingest_data raises an error"""
+    fb_message = messages.FeedbackMessage(feedback="Great experiment!", rating=5)
+    msg_obj = MessageObject(topic=MessageEndpoints.user_feedback().endpoint, value=fb_message)
+
+    with (
+        mock.patch.object(
+            atlas_connector.metadata_handler.atlas_connector,
+            "ingest_data",
+            side_effect=ValueError("Test error"),
+        ),
+        mock.patch("bec_lib.logger.bec_logger.logger.exception") as mock_logger_error,
+    ):
+        atlas_connector.metadata_handler._handle_feedback(
+            msg_obj, parent=atlas_connector.metadata_handler
+        )
+        mock_logger_error.assert_called()
