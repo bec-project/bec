@@ -16,6 +16,7 @@ from bec_lib.logger import bec_logger
 logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
+    from bec_lib.redis_connector import MessageObject
     from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 
 
@@ -28,11 +29,13 @@ class AtlasMetadataHandler:
         self.atlas_connector = atlas_connector
         self._scan_status_register = None
         self._account = None
+        self._deployment_info: messages.DeploymentInfoMessage | None = None
         self._start_account_subscription()
         self._start_deployment_info_subscription()
         self._start_scan_subscription()
         self._start_scan_history_subscription()
         self._start_messaging_subscription()
+        self._start_feedback_subscription()
 
     def _start_account_subscription(self):
         init_data = self.atlas_connector.connector.get_last(MessageEndpoints.account())
@@ -69,6 +72,11 @@ class AtlasMetadataHandler:
             MessageEndpoints.message_service_queue(), cb=self._handle_messaging, parent=self
         )
 
+    def _start_feedback_subscription(self):
+        self.atlas_connector.connector.register(
+            MessageEndpoints.user_feedback(), cb=self._handle_feedback, parent=self
+        )
+
     @staticmethod
     def _update_deployment_info(
         msg: dict[str, messages.DeploymentInfoMessage], *, parent: AtlasMetadataHandler, **_kwargs
@@ -87,6 +95,7 @@ class AtlasMetadataHandler:
             info (messages.DeploymentInfoMessage): Deployment information, including session and experiment info
         """
         # We store the deployment info in the local redis instance so that other services can access it if needed
+        self._deployment_info = info
         self.atlas_connector.connector.xadd(
             MessageEndpoints.deployment_info(), {"data": info}, max_size=1, approximate=False
         )
@@ -189,6 +198,28 @@ class AtlasMetadataHandler:
         Update the scan status in Atlas
         """
         self.atlas_connector.ingest_data(msg)
+
+    @staticmethod
+    def _handle_feedback(
+        msg_obj: MessageObject, *, parent: AtlasMetadataHandler, **_kwargs
+    ) -> None:
+        msg: messages.FeedbackMessage = msg_obj.value
+        content = msg.model_dump()
+        if parent._deployment_info:
+            if (
+                parent._deployment_info.active_session
+                and parent._deployment_info.active_session.experiment
+            ):
+                content["experiment_id"] = parent._deployment_info.active_session.experiment.pgroup
+                content["realm_id"] = parent._deployment_info.active_session.experiment.realm_id
+            content["deployment_id"] = parent._deployment_info.deployment_id
+        try:
+            enriched_msg: messages.FeedbackMessage = messages.FeedbackMessage(**content)
+            parent.atlas_connector.ingest_data({"user_feedback": enriched_msg})
+        # pylint: disable=broad-except
+        except Exception:
+            traceback_info = traceback.format_exc()
+            logger.exception(f"Failed to update feedback: {traceback_info}")
 
     def shutdown(self):
         """
