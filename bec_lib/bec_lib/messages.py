@@ -1,6 +1,7 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
+import getpass
 import time
 import uuid
 import warnings
@@ -1895,11 +1896,13 @@ class FeedbackMessage(BECMessage):
     Args:
         feedback (str): User feedback
         rating (int): User rating (1-5)
+        feedback_type (Literal["bug_report", "feature_request", "general_feedback"]): Type of feedback. Defaults to "general_feedback"
         contact (str | None): User contact information, if they want to be contacted regarding their feedback
         realm_id (str | None): Realm ID, if applicable
         deployment_id (str | None): Deployment ID, if applicable
         experiment_id (str | None): Experiment ID, if applicable
-        username (str): Username of the user providing feedback
+        username (str): Username of the user providing feedback. Filled in automatically on the client side
+        versions (ServiceVersions): Version information for the services used when providing feedback. Filled in automatically on the client side
         timestamp (float): Timestamp of when the feedback was provided
         metadata (dict, optional): Additional metadata. Defaults to None.
     """
@@ -1907,12 +1910,15 @@ class FeedbackMessage(BECMessage):
     msg_type: ClassVar[str] = "feedback_message"
 
     feedback: str
+
     rating: int = Field(ge=1, le=5)
+    feedback_type: Literal["bug_report", "feature_request", "general_feedback"] = "general_feedback"
     contact: str | None = None
     realm_id: str | None = None
     deployment_id: str | None = None
     experiment_id: str | None = None
-    username: str
+    username: str = Field(default_factory=getpass.getuser)
+    versions: ServiceVersions = Field(default_factory=ServiceVersions._get_version_numbers)
     timestamp: float = Field(default_factory=time.time)
 
 
