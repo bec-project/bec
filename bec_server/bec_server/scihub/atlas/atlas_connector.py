@@ -33,6 +33,7 @@ class AtlasConnector:
         self.connected_to_atlas = False
         self.host = None
         self.deployment_name = None
+        self.use_tls = False
         self.atlas_key = None
         self._env_configured = False
         self._config_request_handler = None
@@ -55,6 +56,21 @@ class AtlasConnector:
         """get the current service config"""
         return self.scihub.config
 
+    def _connect_to_atlas_with_ssl(self, host: str, ssl: bool = True) -> None:
+        """Attempt to connect to Atlas with SSL, then without if it fails."""
+        try:
+            self.redis_atlas = RedisConnector(host, ssl=ssl, ssl_cert_reqs=False, socket_timeout=3)
+            self.redis_atlas.authenticate(
+                username=f"ingestor_{self.deployment_name}", password=self.atlas_key
+            )
+        except Exception:
+            logger.warning("Failed to connect to Atlas with SSL. Retrying without SSL.")
+            self.use_tls = False
+            self.redis_atlas = RedisConnector(host, ssl=False, socket_timeout=3)
+            self.redis_atlas.authenticate(
+                username=f"ingestor_{self.deployment_name}", password=self.atlas_key
+            )
+
     def connect_to_atlas(self):
         """
         Connect to Atlas
@@ -68,10 +84,8 @@ class AtlasConnector:
             if not self.host:
                 return  # no host configured
             if self.redis_atlas is None:
-                self.redis_atlas = RedisConnector(self.host)
-                self.redis_atlas.authenticate(
-                    username=f"ingestor_{self.deployment_name}", password=self.atlas_key
-                )
+                self._connect_to_atlas_with_ssl(self.host, ssl=self.use_tls)
+
             # pylint: disable=protected-access
             self.redis_atlas._redis_conn.ping()
             logger.success("Connected to Atlas")
@@ -203,11 +217,21 @@ class AtlasConnector:
 
     # pylint: disable=invalid-name
     def _update_config(
-        self, ATLAS_HOST: str = None, ATLAS_DEPLOYMENT: str = None, ATLAS_KEY: str = None, **kwargs
+        self,
+        ATLAS_HOST: str | None = None,
+        ATLAS_DEPLOYMENT: str | None = None,
+        ATLAS_KEY: str | None = None,
+        ATLAS_USE_TLS: str | None = None,
+        **kwargs,
     ) -> None:
         self.host = ATLAS_HOST
         self.deployment_name = ATLAS_DEPLOYMENT
         self.atlas_key = ATLAS_KEY
+        self.use_tls = (
+            ATLAS_USE_TLS.lower() == "true"
+            if isinstance(ATLAS_USE_TLS, str)
+            else bool(ATLAS_USE_TLS)
+        )
 
         if self.host and self.atlas_key:
             self._env_configured = True
