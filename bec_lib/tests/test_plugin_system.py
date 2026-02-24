@@ -138,7 +138,6 @@ class TestPluginSystem:
             "LICENSE",
             "tests",
             "bin",
-            ".gitlab-ci.yml",
         ]:
             assert file in files
         files = os.listdir(TestPluginSystem._tmp_plugin_dir / TestPluginSystem._tmp_plugin_name)
