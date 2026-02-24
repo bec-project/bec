@@ -12,17 +12,14 @@ from importlib.metadata import version as importlib_version
 from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypeVar, Union
 from uuid import uuid4
 
+import msgpack
 import numpy as np
 from pydantic import (
     BaseModel,
     BeforeValidator,
     ConfigDict,
-    FailFast,
     Field,
     Strict,
-    StrictBool,
-    StrictFloat,
-    StrictInt,
     StrictStr,
     ValidationError,
     WithJsonSchema,
@@ -50,19 +47,15 @@ def sanitize_one_way_encodable(data: Any) -> Any:
     return _one_way_registry.encode(data)
 
 
-JsonableScalar = TypeAliasType("JsonableScalar", StrictInt | StrictFloat | StrictStr | StrictBool)
+def _try_dump(v):
+    msgpack.dumps(v)
+    return v
 
-Jsonable = TypeAliasType(
-    "Jsonable",
-    JsonableScalar
-    | None
-    | Annotated[list["Jsonable"], Strict(), FailFast()]
-    | Annotated[dict[StrictStr, "Jsonable"], Strict()],
-)
+
+Jsonable = TypeAliasType("Jsonable", Annotated[Any, BeforeValidator(_try_dump)])
 
 JsonableDict = TypeAliasType(
-    "JsonableDict",
-    Annotated[dict[StrictStr, Jsonable], WithJsonSchema({"type": "object"}), Strict()],
+    "JsonableDict", Annotated[dict[str, Jsonable], WithJsonSchema({"type": "object"})]
 )
 
 
