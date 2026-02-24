@@ -244,6 +244,7 @@ class RedisConnector:
         Args:
             bootstrap (list): list of strings in the form "host:port"
             redis_cls (redis.client, optional): redis client class. Defaults to the standard client redis.Redis. Must not be an async client.
+            **kwargs: additional keyword arguments to pass to the redis client.
         """
         self.host, self.port = (
             bootstrap[0].split(":") if isinstance(bootstrap, list) else bootstrap.split(":")
@@ -265,6 +266,7 @@ class RedisConnector:
             port=int(self.port),
             redis_connect_func=redis_connect_func,
             retry=retry_policy,
+            **kwargs,
         )
 
         # main pubsub connection
