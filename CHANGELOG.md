@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.102.0 (2026-02-24)
+
+### Features
+
+- Add beamline states
+  ([`15964b5`](https://github.com/bec-project/bec/commit/15964b5cf96d7f4a0340a5fe6bf3d6e30916f39f))
+
+
 ## v3.101.1 (2026-02-24)
 
 ### Bug Fixes
