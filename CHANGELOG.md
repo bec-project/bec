@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.101.0 (2026-02-24)
+
+### Features
+
+- Add ophyd_devices to service versions
+  ([`29dd768`](https://github.com/bec-project/bec/commit/29dd768a8d51c3988fbb81d0aa7fe0802504508a))
+
+
 ## v3.100.0 (2026-02-23)
 
 ### Features
