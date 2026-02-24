@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.101.1 (2026-02-24)
+
+### Bug Fixes
+
+- Remove gitlab ci file from check
+  ([`446cde5`](https://github.com/bec-project/bec/commit/446cde575946751eb4a62b2234d8e40df57c69a7))
+
+
 ## v3.101.0 (2026-02-24)
 
 ### Features
