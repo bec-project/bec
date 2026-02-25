@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.103.1 (2026-02-25)
+
+### Bug Fixes
+
+- Tests for slow fakeredis
+  ([`3c8ef7a`](https://github.com/bec-project/bec/commit/3c8ef7ac308e6aa9a00afdabb2e3c320d0d81a45))
+
+
 ## v3.103.0 (2026-02-25)
 
 ### Documentation
