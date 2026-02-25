@@ -38,8 +38,8 @@ General purpose fixtures are useful for all tests, or unit tests.
 
 ### Threads check
 
-The `threads_check` fixture ensures a test do not leak threads. Indeed, it is important for tests reproducibility and for
-BEC integrity to make sure that threads do not remain alive across tests execution, and that BEC provides the mecanism to
+The `threads_check` fixture ensures a test does not leak threads. Indeed, it is important for tests reproducibility and for
+BEC integrity to make sure that threads do not remain alive across tests execution, and that BEC provides the mechanism to
 shut down threads gracefully to guarantee proper freeing of resources.
 
 Just add `threads_check` fixture to a test to enable this check:

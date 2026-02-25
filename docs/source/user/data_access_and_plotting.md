@@ -1,5 +1,5 @@
 (user.data_access_and_plotting)= 
-# Data Acess and Plotting
+# Data Access and Plotting
 
 Let's recapture how to do a scan, and explore the data contained within it. 
 
@@ -139,5 +139,5 @@ scan_to_csv(scan_data, "<path_to_output_file.csv>")
 ```
 
 ```{note}
-Large data from 2D detectors are usually processing by backend services and are, therefore, not available for client-based export.
+Large data from 2D detectors are usually processed by backend services and are, therefore, not available for client-based export.
 ```

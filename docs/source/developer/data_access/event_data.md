@@ -60,7 +60,7 @@ In a step scan, the scan segment is updated for each step, while in a fly scan, 
 (developer.event_data.subscription)=
 ## Subscribing to events
 
-Subscriptions to events allow you to react to a new message published on a specific endpoint. We can register our own callback funtion to an endpoint. Incoming messages are enqueued at reception, and callbacks are executed one after the other to preserve events order. Callbacks must not block, otherwise events processing is put on hold. By default a thread consumes the queue, so the callbacks are executed in this consumer thread. 
+Subscriptions to events allow you to react to a new message published on a specific endpoint. We can register our own callback function to an endpoint. Incoming messages are enqueued at reception, and callbacks are executed one after the other to preserve events order. Callbacks must not block, otherwise events processing is put on hold. By default a thread consumes the queue, so the callbacks are executed in this consumer thread. 
 
 ``` python
 def my_cb(msg, **kwargs):
@@ -84,7 +84,7 @@ It is very important to keep the execution time of the callback function as shor
 
 ## Accessing event data outside of the BECIPythonClient
 
-If you like to use the event data oustide of the *BECIPythonClient*, you can use the [`RedisConnector`](/api_reference/_autosummary/bec_lib.redis_connector.RedisConnector) to access the REDIS server. You have to provide the correct `"host:port"` to the connector which allows you to connect to REDIS from the system you are running the code. If REDIS runs locally, this would be `"localhost:6379"`.
+If you like to use the event data outside of the *BECIPythonClient*, you can use the [`RedisConnector`](/api_reference/_autosummary/bec_lib.redis_connector.RedisConnector) to access the REDIS server. You have to provide the correct `"host:port"` to the connector which allows you to connect to REDIS from the system you are running the code. If REDIS runs locally, this would be `"localhost:6379"`.
 Note, at the beamline this would be the hostname of the bec_server. The port `"6379"` is the default port for REDIS. 
 ```python
 from bec_lib.endpoints import MessageEndpoints

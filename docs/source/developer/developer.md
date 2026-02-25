@@ -80,7 +80,7 @@ Discover how to get access to data in BEC. This ranges from an introduction into
 
 ## Scans
 
-Understand the basic structure of a scan in BEC and learn how to create a scan plugin to extend BEC's functionality and furthe tailor it to your needs.
+Understand the basic structure of a scan in BEC and learn how to create a scan plugin to extend BEC's functionality and further tailor it to your needs.
 
 ```
 
