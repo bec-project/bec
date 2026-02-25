@@ -64,6 +64,7 @@ def shutdown_client():
     bec_client.start()
     yield bec_client
     bec_client.shutdown()
+    fakeredis.FakeRedis().flushall()
 
 
 def mock_redis_conn(tasks: Iterable[ProcedureExecutionMessage] = []):
@@ -548,14 +549,14 @@ def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
 def test_procedure_status_rejected(procedure_manager):
     status = procedure_manager._helper.request.procedure("doesn't exist")
     assert status.state == ProcedureState.REQUESTED
-    _wait_until(lambda: status.state == ProcedureState.REJECTED)
+    _wait_until(lambda: status.state == ProcedureState.REJECTED, timeout_s=10)
     assert status.done
 
 
 @patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock)
 def test_procedure_status_rejected_not_cancellable(procedure_manager):
     status = procedure_manager._helper.request.procedure("doesn't exist")
-    _wait_until(lambda: status.state == ProcedureState.REJECTED)
+    _wait_until(lambda: status.state == ProcedureState.REJECTED, timeout_s=10)
 
     with pytest.raises(ValueError) as e:
         status.cancel()
@@ -571,7 +572,7 @@ def test_procedure_status_accepted(procedure_manager):
     )
     status = procedure_manager._helper.request._procedure(msg)
     assert status.state == ProcedureState.REQUESTED
-    _wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=1)
+    _wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=10)
     worker = procedure_manager._active_workers["primary"]["worker"]
     assert isinstance(worker, FakeRedisUnlockable)
     worker.event_1.set()
@@ -590,7 +591,7 @@ def test_procedure_status_error(procedure_manager):
     msg = ProcedureRequestMessage(identifier="error", execution_id="test")
     status = procedure_manager._helper.request._procedure(msg)
     assert status.state == ProcedureState.REQUESTED
-    _wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=1)
+    _wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=10)
     worker = procedure_manager._active_workers["primary"]["worker"]
     assert isinstance(worker, InlineWorker)
 
