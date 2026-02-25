@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v3.103.0 (2026-02-25)
+
+### Documentation
+
+- Fix typos
+  ([`88bda18`](https://github.com/bec-project/bec/commit/88bda18f9e36ee7b99fd3c44622147a40f69e29f))
+
+### Features
+
+- **device**: Add ophyd_labels to device_info and summary
+  ([`87f523d`](https://github.com/bec-project/bec/commit/87f523d1a62680f3ba39be24807771c94089d0e0))
+
+### Refactoring
+
+- Cleanup use list[str] for labels instead of set
+  ([`0397193`](https://github.com/bec-project/bec/commit/0397193704338183c6337eab759eaa2dc1bb5c27))
+
+### Testing
+
+- **device-summary**: Fix tests for device.summary()
+  ([`e64c1c7`](https://github.com/bec-project/bec/commit/e64c1c7c89678cc42f1f2a30d817cf2477d196d6))
+
+
 ## v3.102.0 (2026-02-24)
 
 ### Features
