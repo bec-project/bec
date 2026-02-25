@@ -29,7 +29,7 @@ constraints specified in the schema.
 
 Metadata schema are based on [Pydantic models](https://docs.pydantic.dev/latest/concepts/models/), which are simple ways of declaring
 required and optional fields using Python datatypes. If the entries contain a default value, then including them in the request is optional.
-The entry can alse include `None` as an acceptable value by including `| None` in the type annotation (such as in `treatment_temperature_k`
+The entry can also include `None` as an acceptable value by including `| None` in the type annotation (such as in `treatment_temperature_k`
 below), indicating the value is optional. In many cases, this might be the default value, indicating nothing was entered by the user, such
 as for `treatment_temperature_k` below.
 

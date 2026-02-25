@@ -437,7 +437,7 @@ def test_TutorialFlyScanContLine(scan_assembler, ScanStubStatusMock):
 ````
 
 ## Step 7: (Optional) Setting up more devices 
-In general, it is good practice to keep the scan logic as simple as possible and to move as much device-specific logic as possible to the device classes. However, there are cases where it is necessary to set up devices after they have been staged for the scan. While we have already seen how to move a device to a specific position, the scan server also grants you access to any ophyd method available on the device. Let's take a delay generator (DDG) as an example: Before the scan, we want to configure the DDG and effectly run the following method on the ophyd object `ddg_detectors`:
+In general, it is good practice to keep the scan logic as simple as possible and to move as much device-specific logic as possible to the device classes. However, there are cases where it is necessary to set up devices after they have been staged for the scan. While we have already seen how to move a device to a specific position, the scan server also grants you access to any ophyd method available on the device. Let's take a delay generator (DDG) as an example: Before the scan, we want to configure the DDG and effectively run the following method on the ophyd object `ddg_detectors`:
 
 ```python
 ddg_detectors.burst_enable(count=1, delay=0.01, period=exp_time+readout_time,config="first")

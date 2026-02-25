@@ -1,7 +1,7 @@
 (user.command_line_interface)=
 ## Command-Line Interface (CLI)
 
-In the previous sections, you have succesfully started BEC and also already interacted with the CLI to update the BEC device configuration. 
+In the previous sections, you have successfully started BEC and also already interacted with the CLI to update the BEC device configuration. 
 This section aims to explore the CLI capabilities further.
 
 ### Start-up
@@ -134,7 +134,7 @@ which again returns a nested dictionary, however, this time only for the request
 
 ```{note}
 The keys in the returned dictionary are composed of `<devicename>_<signalname>`. 
-However, for positioners the signal name <readback> is typically ommited, i,e. see `dev.samx.readback.read()`.
+However, for positioners the signal name `<readback>` is typically omitted, i,e. see `dev.samx.readback.read()`.
 ```
 
 #### Get interface
@@ -346,7 +346,7 @@ It allows us to run a sequence of functions as if it were a scan, resulting in a
     @scans.scan_def
     def custom_grid_scan():
         open_shutter()
-        umv(dev.samz, 0) # move to samz to start position (absolut)
+        umv(dev.samz, 0) # move to samz to start position (absolute)
         for i in range(10):
             scans.grid_scan(dev.samx, 0, 10, 10, dev.samy, 0, 10, 10, exp_time=0.1, relative=False)
             umvr(dev.samz, 0.1) # move samz + 0.1mm after each grid scan
