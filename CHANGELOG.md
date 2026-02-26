@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.104.0 (2026-02-26)
+
+### Features
+
+- **queue**: Emit scan queue length as metric
+  ([`ab14914`](https://github.com/bec-project/bec/commit/ab14914601584069e56c27ac8b9f3a2957ac7a37))
+
+
 ## v3.103.1 (2026-02-25)
 
 ### Bug Fixes
