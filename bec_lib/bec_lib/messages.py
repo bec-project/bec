@@ -1386,6 +1386,7 @@ class GUIRegistryStateMessage(BECMessage):
                 "config",
                 "__rpc__",
                 "container_proxy",
+                "skip_rpc_namespace",
             ],
             str | bool | dict | None,
         ],
