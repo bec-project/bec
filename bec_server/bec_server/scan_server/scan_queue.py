@@ -552,6 +552,10 @@ class QueueManager:
                 MessageEndpoints.scan_queue_status(),
                 messages.ScanQueueStatusMessage(queue=queue_export),
             )
+            self.connector.publish_metrics(
+                "scan_queue_length",
+                {queue_name: len(queue.queue) for queue_name, queue in self.queues.items()},
+            )
 
     def describe_queue(self) -> list:
         """create a rich.table description of the current scan queue"""
