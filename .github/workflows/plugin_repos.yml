@@ -38,23 +38,9 @@ jobs:
 
     strategy:
       matrix:
-        beamline_repo: [
-          {url: 'github.com/bec-project/addams_bec.git', 'name': 'addams_bec'},
-          {url: 'github.com/bec-project/csaxs_bec.git', 'name': 'csaxs_bec'},
-          {url: 'github.com/bec-project/debye_bec.git', 'name': 'debye_bec'},
-          {url: 'github.com/bec-project/detector_group_bec.git', 'name': 'detector_group_bec'},
-          {url: 'github.com/bec-project/microxas_bec.git', 'name': 'microxas_bec'},
-          {url: 'github.com/bec-project/phoenix_bec.git', 'name': 'phoenix_bec'},
-          {url: 'github.com/bec-project/pxi_bec.git', 'name': 'pxi_bec'},
-          {url: 'github.com/bec-project/pxii_bec.git', 'name': 'pxii_bec'},
-          {url: 'github.com/bec-project/sim_bec.git', 'name': 'sim_bec'},
-          {url: 'github.com/bec-project/superxas_bec.git', 'name': 'superxas_bec'},
-          {url: 'github.com/bec-project/tomcat_bec.git', 'name': 'tomcat_bec'},
-          {url: 'github.com/bec-project/xtreme_bec.git', 'name': 'xtreme_bec'},
-          {url: 'github.com/bec-project/iss_bec.git', 'name': 'iss_bec'},
-        ]
+        beamline_repo: ${{ fromJSON(vars.BEAMLINE_REPO_NAMES) }}
 
-    name: Plugin ${{ matrix.beamline_repo.name }}
+    name: Plugin ${{ matrix.beamline_repo }}
 
     steps:
       - name: Checkout BEC Core
@@ -69,8 +55,8 @@ jobs:
           BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
           BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
           OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
-          BEC_PLUGIN_REPO_URL: ${{ matrix.beamline_repo.url }}
-          BEC_PLUGIN_REPO_NAME: ${{ matrix.beamline_repo.name }}
+          BEC_PLUGIN_REPO_URL: github.com/bec-project/${{ matrix.beamline_repo }}.git
+          BEC_PLUGIN_REPO_NAME: ${{ matrix.beamline_repo }}
           GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
           PYTHON_VERSION: '3.11'
 
