@@ -53,15 +53,9 @@ def test_read(dev: Any):
         res = dev.samx.read(cached=True)
         mock_get.assert_called_once_with(MessageEndpoints.device_readback("samx"))
         assert res == {
-            "samx": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.1711318}
-            ),
-            "samx_setpoint": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.1693492}
-            ),
-            "samx_motor_is_moving": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.16935}
-            ),
+            "samx": {"value": 0, "timestamp": 1701105880.1711318},
+            "samx_setpoint": {"value": 0, "timestamp": 1701105880.1693492},
+            "samx_motor_is_moving": {"value": 0, "timestamp": 1701105880.16935},
         }
 
 
@@ -77,25 +71,15 @@ def test_read_filtered_hints(dev: Any):
         )
         res = dev.samx.read(cached=True, filter_to_hints=True)
         mock_get.assert_called_once_with(MessageEndpoints.device_readback("samx"))
-        assert res == {
-            "samx": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.1711318}
-            )
-        }
+        assert res == {"samx": {"value": 0, "timestamp": 1701105880.1711318}}
 
 
 def test_read_use_read(dev: Any):
     with mock.patch.object(dev.samx.root.parent.connector, "get") as mock_get:
         data = {
-            "samx": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.1711318}
-            ),
-            "samx_setpoint": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.1693492}
-            ),
-            "samx_motor_is_moving": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.16935}
-            ),
+            "samx": {"value": 0, "timestamp": 1701105880.1711318},
+            "samx_setpoint": {"value": 0, "timestamp": 1701105880.1693492},
+            "samx_motor_is_moving": {"value": 0, "timestamp": 1701105880.16935},
         }
         mock_get.return_value = messages.DeviceMessage(
             signals=data, metadata={"scan_id": "scan_id", "scan_type": "scan_type"}
@@ -108,21 +92,11 @@ def test_read_use_read(dev: Any):
 def test_read_nested_device(dev: Any):
     with mock.patch.object(dev.dyn_signals.root.parent.connector, "get") as mock_get:
         data = {
-            "dyn_signals_messages_message1": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.0716832}
-            ),
-            "dyn_signals_messages_message2": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.071722}
-            ),
-            "dyn_signals_messages_message3": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.071739}
-            ),
-            "dyn_signals_messages_message4": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.071753}
-            ),
-            "dyn_signals_messages_message5": messages.SignalReading.model_validate(
-                {"value": 0, "timestamp": 1701105880.071766}
-            ),
+            "dyn_signals_messages_message1": {"value": 0, "timestamp": 1701105880.0716832},
+            "dyn_signals_messages_message2": {"value": 0, "timestamp": 1701105880.071722},
+            "dyn_signals_messages_message3": {"value": 0, "timestamp": 1701105880.071739},
+            "dyn_signals_messages_message4": {"value": 0, "timestamp": 1701105880.071753},
+            "dyn_signals_messages_message5": {"value": 0, "timestamp": 1701105880.071766},
         }
         mock_get.return_value = messages.DeviceMessage(
             signals=data, metadata={"scan_id": "scan_id", "scan_type": "scan_type"}
@@ -157,11 +131,7 @@ def test_read_kind_hinted(
         if cached:
             mock_get.assert_called_once_with(MessageEndpoints.device_readback("samx"))
             mock_run.assert_not_called()
-            assert res == {
-                "samx": messages.SignalReading.model_validate(
-                    {"value": 0, "timestamp": 1701105880.1711318}
-                )
-            }
+            assert res == {"samx": {"value": 0, "timestamp": 1701105880.1711318}}
         else:
             mock_run.assert_called_once_with(cached=False, fcn=dev.samx.readback.read)
             mock_get.assert_not_called()

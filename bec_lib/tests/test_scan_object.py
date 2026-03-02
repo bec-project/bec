@@ -2,26 +2,43 @@ from unittest import mock
 
 import pytest
 
+from bec_lib.messages import AvailableScan
 from bec_lib.scans import ScanObject
+
+
+def _mock_scan_info(info: dict):
+    defaults = {
+        "class_name": "test",
+        "base_class": "",
+        "arg_input": {},
+        "gui_config": {},
+        "required_kwargs": [],
+        "arg_bundle_size": {},
+        "signature": [],
+    }
+    defaults.update(info)
+    return AvailableScan.model_validate(defaults)
 
 
 @pytest.fixture
 def scan_obj(bec_client_mock):
-    scan_info = {
-        "class": "FermatSpiralScan",
-        "arg_input": {"device": "device", "start": "float", "stop": "float"},
-        "required_kwargs": ["step", "relative"],
-        "arg_bundle_size": {"bundle": 3, "min": 2, "max": 2},
-        "doc": (
-            "\n        A scan following Fermat's spiral.\n\n        Args:\n            *args: pairs"
-            " of device / start position / end position / steps arguments\n            relative:"
-            " Start from an absolute or relative position\n            burst: number of acquisition"
-            " per point\n            optim_trajectory: routine used for the trajectory"
-            " optimization, e.g. 'corridor'. Default: None\n\n        Returns:\n\n       "
-            " Examples:\n            >>> scans.fermat_scan(dev.motor1, -5, 5, dev.motor2, -5, 5,"
-            ' step=0.5, exp_time=0.1, relative=True, optim_trajectory="corridor")\n\n        '
-        ),
-    }
+    scan_info = _mock_scan_info(
+        {
+            "class_name": "FermatSpiralScan",
+            "arg_input": {"device": "device", "start": "float", "stop": "float"},
+            "required_kwargs": ["step", "relative"],
+            "arg_bundle_size": {"bundle": 3, "min": 2, "max": 2},
+            "doc": (
+                "\n        A scan following Fermat's spiral.\n\n        Args:\n            *args: pairs"
+                " of device / start position / end position / steps arguments\n            relative:"
+                " Start from an absolute or relative position\n            burst: number of acquisition"
+                " per point\n            optim_trajectory: routine used for the trajectory"
+                " optimization, e.g. 'corridor'. Default: None\n\n        Returns:\n\n       "
+                " Examples:\n            >>> scans.fermat_scan(dev.motor1, -5, 5, dev.motor2, -5, 5,"
+                ' step=0.5, exp_time=0.1, relative=True, optim_trajectory="corridor")\n\n        '
+            ),
+        }
+    )
     scan_name = "fermat_scan"
     obj = ScanObject(scan_name, scan_info, bec_client_mock)
     with mock.patch.object(bec_client_mock, "alarm_handler"):
@@ -30,16 +47,17 @@ def scan_obj(bec_client_mock):
 
 @pytest.fixture
 def scan_obj_no_args(bec_client_mock):
-    scan_info = {
-        "class": "TimeScan",
-        "base_class": "ScanBase",
-        "arg_input": {},
-        "gui_config": {"scan_class_name": "TimeScan", "arg_group": "", "kwarg_groups": ""},
-        "required_kwargs": ["points", "interval"],
-        "arg_bundle_size": {"bundle": 0, "min": None, "max": None},
-        "doc": '\n        Trigger and readout devices at a fixed interval.\n        Note that the interval time cannot be less than the exposure time.\n        The effective "sleep" time between points is\n            sleep_time = interval - exp_time\n\n        Args:\n            points: number of points\n            interval: time interval between points\n            exp_time: exposure time in s\n            burst: number of acquisition per point\n\n        Returns:\n            ScanReport\n\n        Examples:\n            >>> scans.time_scan(points=10, interval=1.5, exp_time=0.1, relative=True)\n\n        ',
-        "signature": "",
-    }
+    scan_info = _mock_scan_info(
+        {
+            "class_name": "TimeScan",
+            "base_class": "ScanBase",
+            "arg_input": {},
+            "gui_config": {"scan_class_name": "TimeScan", "arg_group": "", "kwarg_groups": ""},
+            "required_kwargs": ["points", "interval"],
+            "arg_bundle_size": {"bundle": 0, "min": None, "max": None},
+            "doc": '\n        Trigger and readout devices at a fixed interval.\n        Note that the interval time cannot be less than the exposure time.\n        The effective "sleep" time between points is\n            sleep_time = interval - exp_time\n\n        Args:\n            points: number of points\n            interval: time interval between points\n            exp_time: exposure time in s\n            burst: number of acquisition per point\n\n        Returns:\n            ScanReport\n\n        Examples:\n            >>> scans.time_scan(points=10, interval=1.5, exp_time=0.1, relative=True)\n\n        ',
+        }
+    )
     scan_name = "fermat_scan"
     obj = ScanObject(scan_name, scan_info, bec_client_mock)
     with mock.patch.object(bec_client_mock, "alarm_handler"):
