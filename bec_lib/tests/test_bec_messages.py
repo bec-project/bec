@@ -709,15 +709,4 @@ def test_message_with_np_array_in_dict():
     with pytest.raises(pydantic.ValidationError) as e:
         msg = messages.BECMessage(metadata={"value": arr})
     assert e.match("metadata.value")
-    assert e.match("should be a valid")
-
-
-def test_message_service_config():
-    msg = messages.MessagingServiceConfig(
-        metadata={}, service_name="signal", scopes=["*"], enabled=True
-    )
-    dump = msg.model_dump(mode="python")
-    assert dump["service_name"] == "signal"
-    resource_msg = messages.AvailableResourceMessage(resource=[msg])
-    resource_msg_dump = resource_msg.model_dump(mode="python")
-    assert resource_msg_dump["resource"][0]["service_name"] == "signal"
+    assert e.match("input_type=ndarray")

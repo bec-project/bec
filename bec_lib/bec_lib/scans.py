@@ -340,7 +340,7 @@ class Scans:
             for ii, arg in enumerate(args):
                 if not isinstance(arg, Scans.get_arg_type(arg_input[ii % len(arg_input)])):
                     raise TypeError(
-                        f"{scan_info.get('doc')}\n Argument {ii} must be of type"
+                        f"{scan_info.doc}\n Argument {ii} must be of type"
                         f" {arg_input[ii%len(arg_input)]}, not {type(arg).__name__}."
                     )
 
@@ -356,12 +356,12 @@ class Scans:
             max_bundles = arg_bundle_size.get("max")
             if min_bundles and num_bundles < min_bundles:
                 raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} requires at least {min_bundles} bundles"
+                    f"{scan_info.doc}\n {scan_name} requires at least {min_bundles} bundles"
                     f" of arguments ({num_bundles} given)."
                 )
             if max_bundles and num_bundles > max_bundles:
                 raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} requires at most {max_bundles} bundles"
+                    f"{scan_info.doc}\n {scan_name} requires at most {max_bundles} bundles"
                     f" of arguments ({num_bundles} given)."
                 )
         # Check if we are in a "restart" decorator context
