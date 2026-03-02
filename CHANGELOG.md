@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.104.1 (2026-03-02)
+
+### Bug Fixes
+
+- **messages**: New rpc kwargs to GUIRegistryStateMessage
+  ([`66aecb6`](https://github.com/bec-project/bec/commit/66aecb6d42f4680b52c144b43d241a014def017d))
+
+
 ## v3.104.0 (2026-02-26)
 
 ### Features
