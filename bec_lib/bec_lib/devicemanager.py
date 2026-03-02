@@ -75,7 +75,7 @@ def _rgetattr_safe(obj, attr, *args):
         return None
 
 
-class DeviceContainer(dict):
+class DeviceContainer(dict[str, DeviceBase]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for arg in args:

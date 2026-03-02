@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import getpass
+import sys
 import time
 import uuid
 import warnings
@@ -9,7 +10,7 @@ from copy import deepcopy
 from enum import Enum, StrEnum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypeVar, Union
+from typing import Annotated, Any, ClassVar, Literal, Mapping, NotRequired, Self, TypeVar
 from uuid import uuid4
 
 import msgpack
@@ -18,9 +19,8 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     ConfigDict,
+    FailFast,
     Field,
-    Strict,
-    StrictStr,
     ValidationError,
     WithJsonSchema,
     field_validator,
@@ -31,6 +31,11 @@ from typing_extensions import TypeAliasType
 from bec_lib.bec_serializable import BECSerializable
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 from bec_lib.one_way_registry import OneWaySerializationRegistry
+
+if sys.version_info >= (3, 12):
+    from typing import TypedDict
+else:
+    from typing_extensions import TypedDict  # Pydantic needs the typing_extensions version on 3.11
 
 _one_way_registry = OneWaySerializationRegistry()
 
@@ -47,8 +52,17 @@ def sanitize_one_way_encodable(data: Any) -> Any:
     return _one_way_registry.encode(data)
 
 
+# Temporary enforcement of only primitive values which can be serialized in otherwise uptyped dicts
+# This can be removed when the refactor is complete
+
+
 def _try_dump(v):
-    msgpack.dumps(v)
+    if isinstance(v, BECMessage):
+        return v  # ignore where we have mixed types
+    try:
+        msgpack.dumps(v)
+    except TypeError as e:
+        raise ValueError(str(v)) from e
     return v
 
 
@@ -609,44 +623,9 @@ class DeviceInstructionResponse(BECMessage):
         return self
 
 
-# TODO: remove when deprecated usages of SignalReading are cleaned up
-logger = None
-
-
-def lazy_ensure_logger():
-    global logger
-    if logger is None:
-        from bec_lib.logger import bec_logger
-
-        logger = bec_logger.logger
-
-
-class SignalReading(BECSerializable):
-    value: int | float | list[int] | list[float] | np.ndarray | None | str
-    timestamp: float | list[float] | None = None
-
-    def keys(self):
-        lazy_ensure_logger()
-        logger.warning(
-            "Dictionary usage of SignalReading is deprecated; please replace it with a different access pattern."
-        )
-        return ["value", "timestamp"]
-
-    def get(self, item: Literal["value", "timestamp"], default=Any):
-        """Allow dictionary-style access for legacy reasons."""
-        lazy_ensure_logger()
-        logger.warning(
-            "Get-access on SignalReading is deprecated; Just access the model.value field."
-        )
-        if item not in ["value", "timestamp"]:
-            raise KeyError('SignalReading only has "value" and "timestamp" fields!')
-        return getattr(self, item)
-
-    def __getitem__(self, item: str):
-        return self.get(item)
-
-    def items(self):
-        return dict(self).items()
+class SignalReading(TypedDict):
+    value: NotRequired[int | float | list[int] | list[float] | np.ndarray | None | str]
+    timestamp: NotRequired[float | list[float]]
 
 
 class DeviceMessage(BECMessage):
@@ -1390,9 +1369,9 @@ class AvailableResourceMessage(BECMessage):
     msg_type: ClassVar[str] = "available_resource_message"
     resource: (
         JsonableDict
-        | list[JsonableDict]
+        | Annotated[list[JsonableDict], FailFast]
         | SpecificMessageType
-        | list[SpecificMessageType]
+        | Annotated[list[SpecificMessageType], FailFast]
         | dict[str, SpecificMessageType]
     )
 
