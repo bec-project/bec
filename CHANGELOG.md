@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.106.0 (2026-03-03)
+
+### Features
+
+- **altas**: Forward feedback message to atlas
+  ([`9f3e7f8`](https://github.com/bec-project/bec/commit/9f3e7f8cc8d46d1a4478526d75207628834b9c84))
+
+
 ## v3.105.0 (2026-03-03)
 
 ### Bug Fixes
