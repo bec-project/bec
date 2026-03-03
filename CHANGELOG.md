@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v3.105.0 (2026-03-03)
+
+### Bug Fixes
+
+- **redis connector**: Forward all kwargs to redis
+  ([`75cf51f`](https://github.com/bec-project/bec/commit/75cf51f7e45f8e72e2469f0e4ef5385b234cf1ae))
+
+- **redis connector**: Reduce backoff cap to 30 s
+  ([`ad3e981`](https://github.com/bec-project/bec/commit/ad3e9816914ca7827685b42c260ef78a042799a0))
+
+- **redis connector**: Retry on BusyLoadingError
+  ([`2f05b8c`](https://github.com/bec-project/bec/commit/2f05b8c6873c2a211caaf67e91090e17603a1fbe))
+
+### Continuous Integration
+
+- Use beamline repos variable in main CI
+  ([`5280440`](https://github.com/bec-project/bec/commit/5280440d93cd122a570b979a19159eaa5a291d0a))
+
+### Features
+
+- **atlas**: Connect using tls if config indicates it
+  ([`bd52ac9`](https://github.com/bec-project/bec/commit/bd52ac9d17fea43b436c8083973d3b7e38d0adca))
+
+
 ## v3.104.1 (2026-03-02)
 
 ### Bug Fixes
