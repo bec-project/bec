@@ -351,6 +351,7 @@ class RedisConnector:
             supported_errors=(
                 redis.exceptions.TimeoutError,
                 redis.exceptions.ConnectionError,
+                redis.exceptions.BusyLoadingError,
                 ConnectionRefusedError,
                 OSError,
                 socket.timeout,
