@@ -415,6 +415,7 @@ class FileWriterManager(BECService):
                     messages.FileMessage(
                         file_path=file_path, done=False, successful=False, is_master_file=True
                     ),
+                    expire=3600,
                 )
 
             self.file_writer.write(
@@ -454,6 +455,7 @@ class FileWriterManager(BECService):
         self.connector.set_and_publish(
             MessageEndpoints.public_file(scan_id, "master"),
             messages.FileMessage(file_path=file_path, done=True, successful=successful),
+            expire=3600,
         )
 
         history_msg = messages.ScanHistoryMessage(
