@@ -495,7 +495,7 @@ class ConfigHandler:
             config.pop(index)
         self.set_config_in_redis(config)
 
-    def get_config_from_redis(self):
+    def get_config_from_redis(self) -> list[dict]:
         """
         Get the config from redis
 
@@ -503,7 +503,7 @@ class ConfigHandler:
             list: List of device configs
         """
         config = self.device_manager.connector.get(MessageEndpoints.device_config())
-        return config.content["resource"]
+        return config.resource
 
     def set_config_in_redis(self, config):
         """

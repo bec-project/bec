@@ -28,6 +28,7 @@ from pydantic import (
 )
 from typing_extensions import TypeAliasType
 
+from bec_lib.atlas_models import Device
 from bec_lib.bec_serializable import BECSerializable
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 from bec_lib.one_way_registry import OneWaySerializationRegistry
@@ -1373,6 +1374,7 @@ class AvailableResourceMessage(BECMessage):
         | SpecificMessageType
         | Annotated[list[SpecificMessageType], FailFast]
         | dict[str, SpecificMessageType]
+        | Annotated[list[Device], FailFast]
     )
 
 
