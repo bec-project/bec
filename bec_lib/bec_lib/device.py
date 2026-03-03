@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_serializer
 from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
@@ -41,7 +41,9 @@ else:
 logger = bec_logger.logger
 _MAX_RECURSION_DEPTH = 100
 
-rpc_method_context: ContextVar[Callable | None] = ContextVar("rpc_method_context", default=None)
+rpc_method_context: ContextVar[Callable | None] = ContextVar(
+    "rpc_method_context", default=None
+)
 
 
 class RPCError(AlarmBase):
@@ -148,7 +150,9 @@ class Status:
         return False
 
     @staticmethod
-    def _on_status_update(msg: dict[str, messages.DeviceReqStatusMessage], parent: Status):
+    def _on_status_update(
+        msg: dict[str, messages.DeviceReqStatusMessage], parent: Status
+    ):
         # pylint: disable=protected-access
         parent._request_status = msg["data"]
         parent._set_done()
@@ -156,7 +160,8 @@ class Status:
     def _set_done(self):
         self._status_done.set()
         self._connector.unregister(
-            MessageEndpoints.device_req_status(self._request_id), cb=self._on_status_update
+            MessageEndpoints.device_req_status(self._request_id),
+            cb=self._on_status_update,
         )
 
     def wait(self, timeout=None, raise_on_failure=True):
@@ -169,9 +174,10 @@ class Status:
             raise_on_failure (bool, optional): If True, an RPCError is raised if the request fails. Defaults to True.
         """
         try:
-
             if not self._status_done.wait(timeout):
-                raise TimeoutError("The request has not been completed within the specified time.")
+                raise TimeoutError(
+                    "The request has not been completed within the specified time."
+                )
         finally:
             self._set_done()
 
@@ -185,11 +191,21 @@ class Status:
 class _PermissiveDeviceModel(_DeviceModelCore):
     model_config = ConfigDict(extra="allow")
 
+    @field_serializer("deviceTags")
+    def serialize_devicetags(self, value: set[str], info):
+        if info.mode == "json":
+            return list[value]
+        else:
+            return value
 
-def set_device_config(device: "DeviceBase", config: dict | _PermissiveDeviceModel | None):
-    # device._config = config
+
+def set_device_config(
+    device: "DeviceBase", config: dict | _PermissiveDeviceModel | None
+):
     device._config = (  # pylint: disable=protected-access
-        _PermissiveDeviceModel.model_validate(config).model_dump() if config is not None else None
+        _PermissiveDeviceModel.model_validate(config).model_dump(mode="python")
+        if config is not None
+        else None
     )
 
 
@@ -219,7 +235,9 @@ class DeviceBase:
             class_name (str, optional): The class name of the device. Defaults to None. If None, the class name is inferred from the class of the object.
         """
         self.name = name
-        self._class_name = class_name or object.__getattribute__(self, "__class__").__name__
+        self._class_name = (
+            class_name or object.__getattribute__(self, "__class__").__name__
+        )
         self._signal_info = signal_info
         set_device_config(self, config)
         if info is None:
@@ -290,7 +308,9 @@ class DeviceBase:
     def _should_prevent_attribute_overwrite(self, name: str) -> bool:
         # pylint: disable=protected-access
         # allow override is defined on the device manager
-        if self.root.parent is None or getattr(self.root.parent, "_allow_override", True):
+        if self.root.parent is None or getattr(
+            self.root.parent, "_allow_override", True
+        ):
             return False
         if name.startswith("_"):
             return False
@@ -392,7 +412,9 @@ class DeviceBase:
 
     def _handle_client_info_msg(self):
         """Handle client messages during RPC calls"""
-        msgs = self.root.parent.connector.xread(MessageEndpoints.client_info(), block=200)
+        msgs = self.root.parent.connector.xread(
+            MessageEndpoints.client_info(), block=200
+        )
         # The client is the parent.parent of the device
         client: BECClient = self.root.parent.parent
         if client.live_updates_config.print_client_messages is False:
@@ -402,7 +424,9 @@ class DeviceBase:
         for msg in msgs:
             print(QueueItem.format_client_msg(msg["data"]))
 
-    def _run_rpc_call(self, device, func_call, *args, wait_for_rpc_response=True, **kwargs) -> Any:
+    def _run_rpc_call(
+        self, device, func_call, *args, wait_for_rpc_response=True, **kwargs
+    ) -> Any:
         """
         Runs an RPC call on the device. This method is used internally by the RPC decorator.
         If a call is interrupted by the user, the a stop signal is sent to this device.
@@ -428,7 +452,9 @@ class DeviceBase:
             # prepare RPC message
             rpc_id = str(uuid.uuid4())
             request_id = str(uuid.uuid4())
-            msg = self._prepare_rpc_msg(rpc_id, request_id, device, func_call, *args, **kwargs)
+            msg = self._prepare_rpc_msg(
+                rpc_id, request_id, device, func_call, *args, **kwargs
+            )
 
             # pylint: disable=protected-access
             if client.scans._scan_def_id:
@@ -441,7 +467,9 @@ class DeviceBase:
             }
 
             # send RPC message
-            client.connector.send(MessageEndpoints.scan_queue_request(client.username), msg)
+            client.connector.send(
+                MessageEndpoints.scan_queue_request(client.username), msg
+            )
 
             # wait for RPC response
             if not wait_for_rpc_response:
@@ -472,7 +500,9 @@ class DeviceBase:
             )
 
         if client.alarm_handler is None:
-            raise RPCError("RPC calls require an alarm handler to be set in the BECClient.")
+            raise RPCError(
+                "RPC calls require an alarm handler to be set in the BECClient."
+            )
 
     def _get_rpc_func_name(self, fcn=None, use_parent=False):
         func_call = [self._compile_function_path(use_parent=use_parent)]
@@ -545,9 +575,15 @@ class DeviceBase:
                 base_class = dev["device_info"].get("device_base_class")
                 attr_name = dev["device_info"].get("device_attr_name")
                 if base_class == "positioner":
-                    setattr(self, attr_name, Positioner(name=attr_name, info=dev, parent=self))
+                    setattr(
+                        self,
+                        attr_name,
+                        Positioner(name=attr_name, info=dev, parent=self),
+                    )
                 elif base_class == "device":
-                    setattr(self, attr_name, Device(name=attr_name, info=dev, parent=self))
+                    setattr(
+                        self, attr_name, Device(name=attr_name, info=dev, parent=self)
+                    )
 
         for user_access_name, descr in self._info.get("custom_user_access", {}).items():
             # avoid circular imports as the signature serializer imports the DeviceBase class
@@ -559,8 +595,14 @@ class DeviceBase:
                     self._custom_rpc_methods[user_access_name] = DeviceBase(
                         name=user_access_name, info=descr, parent=self
                     )
-                    setattr(self, user_access_name, self._custom_rpc_methods[user_access_name].run)
-                    setattr(getattr(self, user_access_name), "__doc__", descr.get("doc"))
+                    setattr(
+                        self,
+                        user_access_name,
+                        self._custom_rpc_methods[user_access_name].run,
+                    )
+                    setattr(
+                        getattr(self, user_access_name), "__doc__", descr.get("doc")
+                    )
                     setattr(
                         getattr(self, user_access_name),
                         "__signature__",
@@ -579,7 +621,9 @@ class DeviceBase:
                     parent=self,
                     class_name=descr["device_class"],
                 )
-                setattr(self, user_access_name, self._custom_rpc_methods[user_access_name])
+                setattr(
+                    self, user_access_name, self._custom_rpc_methods[user_access_name]
+                )
 
     def __eq__(self, other):
         if isinstance(other, DeviceBase):
@@ -632,7 +676,9 @@ class DeviceBase:
     @staticmethod
     def _compile_device_table(obj: DeviceBase) -> Table:
         # Create main table
-        table = Table(title=f"{obj._class_name}: {obj.name}", show_header=False, box=None)
+        table = Table(
+            title=f"{obj._class_name}: {obj.name}", show_header=False, box=None
+        )
         table.add_column("Property", style="cyan", no_wrap=True)
         table.add_column("Value", style="white")
 
@@ -642,7 +688,9 @@ class DeviceBase:
         table.add_row("Read only", str(obj.read_only))
         table.add_row("Software Trigger", str(obj.root.software_trigger))
         table.add_row("Device class", str(obj._config.get("deviceClass", "N/A")))
-        table.add_row("Readout Priority", str(obj._config.get("readoutPriority", "N/A")))
+        table.add_row(
+            "Readout Priority", str(obj._config.get("readoutPriority", "N/A"))
+        )
 
         if obj._config.get("deviceTags"):
             tags = ", ".join(obj._config.get("deviceTags", []))
@@ -667,7 +715,9 @@ class DeviceBase:
             # Format value (handle numpy arrays)
             if isinstance(value, np.ndarray):
                 with np.printoptions(precision=4, suppress=True, threshold=10):
-                    value_str = f"{str(value)}, shape={value.shape}, dtype={value.dtype}"
+                    value_str = (
+                        f"{str(value)}, shape={value.shape}, dtype={value.dtype}"
+                    )
             else:
                 value_str = str(value)
             # Format timestamp
@@ -696,8 +746,12 @@ class DeviceBase:
         return config_table
 
     @staticmethod
-    def _compile_rich_tables(obj: DeviceBase) -> tuple[Table, Table | None, Table | None]:
-        table = DeviceBase._compile_device_table(obj)  # Add current values section if available
+    def _compile_rich_tables(
+        obj: DeviceBase,
+    ) -> tuple[Table, Table | None, Table | None]:
+        table = DeviceBase._compile_device_table(
+            obj
+        )  # Add current values section if available
         value_table = (
             DeviceBase._compile_current_values(current_values)
             if (current_values := obj.read(cached=True))
@@ -706,7 +760,9 @@ class DeviceBase:
         # Get the updated device config. We use the cached version to avoid
         # excessive calls to Redis.
         device_config = (
-            obj.parent.get_device_config_cached().get(obj.name, {}).get("deviceConfig", {})
+            obj.parent.get_device_config_cached()
+            .get(obj.name, {})
+            .get("deviceConfig", {})
         )
         # Filter down to only config signals
         config_signals = [
@@ -717,7 +773,9 @@ class DeviceBase:
         device_config = {k: v for k, v in device_config.items() if k in config_signals}
         # Add config signals section if available
         config_table = (
-            DeviceBase._compile_config_section(device_config) if (device_config) else None
+            DeviceBase._compile_config_section(device_config)
+            if (device_config)
+            else None
         )
         return table, value_table, config_table
 
@@ -742,7 +800,6 @@ class DeviceBase:
 
 
 class DeviceBaseWithConfig(DeviceBase):
-
     @property
     def full_name(self):
         """Returns the full name of the device or signal, separated by "_" e.g. samx_velocity"""
@@ -777,10 +834,10 @@ class DeviceBaseWithConfig(DeviceBase):
             action="update", config={self.name: update}
         )
 
-    def get_device_tags(self) -> list:
+    def get_device_tags(self) -> set[str]:
         """get the device tags for this device"""
         # pylint: disable=protected-access
-        return self.root._config.get("deviceTags", [])
+        return self.root._config.get("deviceTags", {})
 
     @typechecked
     def set_device_tags(self, val: Iterable):
@@ -788,7 +845,8 @@ class DeviceBaseWithConfig(DeviceBase):
         # pylint: disable=protected-access
         self.root._config["deviceTags"] = set(val)
         return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
+            action="update",
+            config={self.name: {"deviceTags": self.root._config["deviceTags"]}},
         )
 
     @typechecked
@@ -797,7 +855,8 @@ class DeviceBaseWithConfig(DeviceBase):
         # pylint: disable=protected-access
         self.root._config["deviceTags"].add(val)
         return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
+            action="update",
+            config={self.name: {"deviceTags": self.root._config["deviceTags"]}},
         )
 
     def remove_device_tag(self, val: str):
@@ -805,7 +864,8 @@ class DeviceBaseWithConfig(DeviceBase):
         # pylint: disable=protected-access
         self.root._config["deviceTags"].remove(val)
         return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
+            action="update",
+            config={self.name: {"deviceTags": self.root._config["deviceTags"]}},
         )
 
     @property
@@ -844,7 +904,8 @@ class DeviceBaseWithConfig(DeviceBase):
         # pylint: disable=protected-access
         self.root._config["onFailure"] = val
         return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"onFailure": self.root._config["onFailure"]}}
+            action="update",
+            config={self.name: {"onFailure": self.root._config["onFailure"]}},
         )
 
     @property
@@ -936,7 +997,9 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
                     MessageEndpoints.device_readback(self.root.name)
                 )
             else:
-                val = self.root.parent.connector.get(MessageEndpoints.device_read(self.root.name))
+                val = self.root.parent.connector.get(
+                    MessageEndpoints.device_read(self.root.name)
+                )
 
             if not val:
                 return None
@@ -956,7 +1019,11 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         is_signal, is_config_signal, cached = self._get_rpc_signal_info(cached)
 
         if not cached:
-            fcn = self.read_configuration if (not is_signal or is_config_signal) else self.read
+            fcn = (
+                self.read_configuration
+                if (not is_signal or is_config_signal)
+                else self.read
+            )
             signals = self._run(cached=False, fcn=fcn)
         else:
             if is_signal and not is_config_signal:
@@ -975,7 +1042,9 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         if self._signal_info:
             obj_name = self._signal_info.get("obj_name")
             return {obj_name: signals.get(obj_name, {})}
-        return {key: val for key, val in signals.items() if key.startswith(self.full_name)}
+        return {
+            key: val for key, val in signals.items() if key.startswith(self.full_name)
+        }
 
     def _get_rpc_signal_info(self, cached: bool):
         is_config_signal = False
@@ -1160,7 +1229,9 @@ class AdjustableMixin:
         """
         Returns the device limits.
         """
-        limit_msg = self.root.parent.connector.get(MessageEndpoints.device_limits(self.root.name))
+        limit_msg = self.root.parent.connector.get(
+            MessageEndpoints.device_limits(self.root.name)
+        )
         if not limit_msg:
             return [0, 0]
         limits = [
@@ -1203,7 +1274,6 @@ class Signal(AdjustableMixin, OphydInterfaceBase):
 
 
 class ComputedSignal(Signal):
-
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._num_args_method = None
@@ -1230,7 +1300,9 @@ class ComputedSignal(Signal):
 
         # check if it is a bound method
         if hasattr(method, "__self__") and method.__self__ is not None:
-            raise ValueError("The compute method must be an unbound function, not a bound method.")
+            raise ValueError(
+                "The compute method must be an unbound function, not a bound method."
+            )
 
         # check if it is a lambda function
         if method.__name__ == "<lambda>":
@@ -1239,7 +1311,9 @@ class ComputedSignal(Signal):
         method_code = inspect.getsource(method)
         self._num_args_method = len(inspect.signature(method).parameters)
 
-        self._update_config({"deviceConfig": {"compute_method": self._header + method_code}})
+        self._update_config(
+            {"deviceConfig": {"compute_method": self._header + method_code}}
+        )
         if self._num_signals is None:
             return
         if self._num_args_method != self._num_signals:
@@ -1288,7 +1362,8 @@ class ComputedSignal(Signal):
 
         table.add_row("Compute Method", compute_method if compute_method else "Not set")
         table.add_row(
-            "Input Signals", ", ".join(input_signals) if input_signals else "No input signals set"
+            "Input Signals",
+            ", ".join(input_signals) if input_signals else "No input signals set",
         )
 
         console.print(table)

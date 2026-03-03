@@ -20,9 +20,7 @@ class SerializationRegistry:
         self._legacy_codecs = []  # can be removed in future versions, see issue #516
 
         self.register_codec(bec_codecs.EndpointInfoEncoder)
-        self.register_codec(bec_codecs.SetEncoder)
         self.register_codec(bec_codecs.BECTypeEncoder)
-        self.register_codec(bec_codecs.PydanticEncoder)
         self.register_codec(bec_codecs.EnumEncoder)
 
         if self.use_json:
