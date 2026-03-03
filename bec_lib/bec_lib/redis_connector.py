@@ -344,7 +344,7 @@ class RedisConnector:
             Retry: The retry policy object.
         """
         return Retry(
-            ExponentialBackoff(cap=300),
+            ExponentialBackoff(cap=30),
             retries=0,
             supported_errors=(
                 redis.exceptions.TimeoutError,
