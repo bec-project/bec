@@ -7,9 +7,17 @@ from __future__ import annotations
 import hashlib
 import json
 from enum import Enum
-from typing import AbstractSet, Any, Literal, TypeVar
+from typing import AbstractSet, Annotated, Any, Literal, TypeVar
 
-from pydantic import BaseModel, Field, PrivateAttr, create_model, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PlainSerializer,
+    PrivateAttr,
+    create_model,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticUndefined
 
 from bec_lib.utils.json import ExtendedEncoder
@@ -42,7 +50,7 @@ class _DeviceModelCore(BaseModel):
     deviceConfig: dict | None = None
     connectionTimeout: float = 5.0
     description: str = ""
-    deviceTags: set[str] = set()
+    deviceTags: Annotated[set[str], Field(default_factory=set), PlainSerializer(list)]
     needs: list[str] = []
     onFailure: Literal["buffer", "retry", "raise"] = "retry"
     readOnly: bool = False

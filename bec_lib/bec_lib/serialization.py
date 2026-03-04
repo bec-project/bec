@@ -10,6 +10,7 @@ import json
 from abc import abstractmethod
 
 import msgpack as msgpack_module
+from pydantic import BaseModel
 
 from bec_lib import messages as messages_module
 from bec_lib.logger import bec_logger
@@ -36,6 +37,8 @@ class BECMessagePack(SerializationRegistry):
 
     def dumps(self, obj):
         """Pack object `obj` and return packed bytes."""
+        if isinstance(obj, (BECMessage, BaseModel)):
+            obj = obj.model_dump(mode="python", fallback=self.encode)
         return msgpack_module.packb(obj, default=self.encode)
 
     def loads(self, raw_bytes):

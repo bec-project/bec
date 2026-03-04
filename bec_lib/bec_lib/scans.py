@@ -20,6 +20,8 @@ from bec_lib.bec_errors import ScanAbortion
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messages import ScanArgType  # moved from here to messages - for compat with plugins
+from bec_lib.messages import AvailableResourceMessage, AvailableScan
 from bec_lib.scan_repeat import _scan_repeat_depth
 from bec_lib.scan_report import ScanReport
 from bec_lib.signature_serializer import dict_to_signature
@@ -39,7 +41,7 @@ logger = bec_logger.logger
 class ScanObject:
     """ScanObject is a class for scans"""
 
-    def __init__(self, scan_name: str, scan_info: dict, client: BECClient = None) -> None:
+    def __init__(self, scan_name: str, scan_info: AvailableScan, client: BECClient = None) -> None:
         self.scan_name = scan_name
         self.scan_info = scan_info
         self.client = client
@@ -178,18 +180,19 @@ class Scans:
 
     def _import_scans(self):
         """Import scans from the scan server"""
-        available_scans = self.parent.connector.get(MessageEndpoints.available_scans())
-        if available_scans is None:
+        available_scans_msg: AvailableResourceMessage | None = self.parent.connector.get(
+            MessageEndpoints.available_scans()
+        )
+        if available_scans_msg is None:
             logger.warning("No scans available. Are redis and the BEC server running?")
             return
-        for scan_name, scan_info in available_scans.resource.items():
+        available_scans: dict[str, AvailableScan] = available_scans_msg.resource
+        for scan_name, scan_info in available_scans.items():
             self._available_scans[scan_name] = ScanObject(scan_name, scan_info, client=self.parent)
             setattr(self, scan_name, self._available_scans[scan_name].run)
-            setattr(getattr(self, scan_name), "__doc__", scan_info.get("doc"))
+            setattr(getattr(self, scan_name), "__doc__", scan_info.doc)
             setattr(
-                getattr(self, scan_name),
-                "__signature__",
-                dict_to_signature(scan_info.get("signature")),
+                getattr(self, scan_name), "__signature__", dict_to_signature(scan_info.signature)
             )
 
     @staticmethod
@@ -214,7 +217,7 @@ class Scans:
 
     @staticmethod
     def prepare_scan_request(
-        scan_name: str, scan_info: dict, *args, **kwargs
+        scan_name: str, scan_info: AvailableScan, *args, **kwargs
     ) -> messages.ScanQueueMessage:
         """Prepare scan request message with given scan arguments
 
@@ -232,20 +235,20 @@ class Scans:
         """
         scan_queue = kwargs.pop("scan_queue", "primary")
         # check that all required keyword arguments have been specified
-        if not all(req_kwarg in kwargs for req_kwarg in scan_info.get("required_kwargs")):
+        if not all(req_kwarg in kwargs for req_kwarg in scan_info.required_kwargs):
             raise TypeError(
-                f"{scan_info.get('doc')}\n Not all required keyword arguments have been"
-                f" specified. The required arguments are: {scan_info.get('required_kwargs')}"
+                f"{scan_info.doc}\n Not all required keyword arguments have been"
+                f" specified. The required arguments are: {scan_info.required_kwargs}"
             )
 
         # check that all required arguments have been specified
-        arg_input = list(scan_info.get("arg_input", {}).values())
-        arg_bundle_size = scan_info.get("arg_bundle_size", {})
+        arg_input = list(scan_info.arg_input.values())
+        arg_bundle_size = scan_info.arg_bundle_size
         bundle_size = arg_bundle_size.get("bundle")
         if len(arg_input) > 0:
             if len(args) % len(arg_input) != 0:
                 raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} takes multiples of"
+                    f"{scan_info.doc}\n {scan_name} takes multiples of"
                     f" {len(arg_input)} arguments ({len(args)} given)."
                 )
             # check that all specified devices in args are different objects
@@ -254,15 +257,14 @@ class Scans:
                     continue
                 if args.count(arg) > 1:
                     raise TypeError(
-                        f"{scan_info.get('doc')}\n All specified devices must be different"
-                        f" objects."
+                        f"{scan_info.doc}\n All specified devices must be different objects."
                     )
 
             # check that all arguments are of the correct type
             for ii, arg in enumerate(args):
                 if not isinstance(arg, Scans.get_arg_type(arg_input[ii % len(arg_input)])):
                     raise TypeError(
-                        f"{scan_info.get('doc')}\n Argument {ii} must be of type"
+                        f"{scan_info.doc}\n Argument {ii} must be of type"
                         f" {arg_input[ii%len(arg_input)]}, not {type(arg).__name__}."
                     )
 
@@ -278,12 +280,12 @@ class Scans:
             max_bundles = arg_bundle_size.get("max")
             if min_bundles and num_bundles < min_bundles:
                 raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} requires at least {min_bundles} bundles"
+                    f"{scan_info.doc}\n {scan_name} requires at least {min_bundles} bundles"
                     f" of arguments ({num_bundles} given)."
                 )
             if max_bundles and num_bundles > max_bundles:
                 raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} requires at most {max_bundles} bundles"
+                    f"{scan_info.doc}\n {scan_name} requires at most {max_bundles} bundles"
                     f" of arguments ({num_bundles} given)."
                 )
         # Check if we are in a "restart" decorator context
@@ -291,14 +293,14 @@ class Scans:
 
         return messages.ScanQueueMessage(
             scan_type=scan_name,
-            parameter=params,
+            parameter=messages.sanitize_one_way_encodable(params),
             queue=scan_queue,
             metadata=metadata,
             allow_restart=allow_restart,
         )
 
     @staticmethod
-    def _parameter_bundler(args: tuple, bundle_size: int) -> tuple | dict:
+    def _parameter_bundler(args: tuple, bundle_size: int) -> list | dict:
         """
         Bundle the arguments into the correct format for the scan server.
         If the bundle size is 0, return the arguments as is.
@@ -309,11 +311,11 @@ class Scans:
             bundle_size: number of parameters per bundle
 
         Returns:
-            tuple | dict: bundled arguments
+            list | dict: bundled arguments
 
         """
         if not bundle_size:
-            return args
+            return list(args)
         params = {}
         for cmds in partition(bundle_size, args):
             params[cmds[0]] = list(cmds[1:])

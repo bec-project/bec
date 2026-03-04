@@ -50,7 +50,7 @@ def client_with_grid_scan(bec_client_mock):
     client = bec_client_mock
     request_msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -88,7 +88,7 @@ class TestLiveTable:
             (
                 messages.ScanQueueMessage(
                     scan_type="grid_scan",
-                    parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+                    parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
                     queue="primary",
                     metadata={"RID": "something"},
                 ),
@@ -134,7 +134,7 @@ class TestLiveTable:
     def test_run_update(self, bec_client_mock, scan_item):
         request_msg = messages.ScanQueueMessage(
             scan_type="grid_scan",
-            parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+            parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
             queue="primary",
             metadata={"RID": "something"},
         )
@@ -161,7 +161,7 @@ class TestLiveTable:
     def test_run_update_without_monitored_devices(self, bec_client_mock, scan_item):
         request_msg = messages.ScanQueueMessage(
             scan_type="grid_scan",
-            parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+            parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
             queue="primary",
             metadata={"RID": "something"},
         )
@@ -303,8 +303,10 @@ class TestLiveTable:
     @pytest.mark.parametrize(
         "value,expected",
         [
-            (np.int32(1), "1.00"),
-            (np.float64(1.00000), "1.00"),
+            # Commented out cases are not supported in unstructured serialized data, because msgpack doesn't distinguish
+            # lists, tuples, or sets. To support this, ScanMessage must be refactored to support the type information directly
+            # (np.int32(1), "1.00"),
+            # (np.float64(1.00000), "1.00"),
             (0, "0.00"),
             (1, "1.00"),
             (0.000, "0.00"),
@@ -314,10 +316,10 @@ class TestLiveTable:
             ("False", "False"),
             ("0", "0"),
             ("1", "1"),
-            ((0, 1), "(0, 1)"),
+            # ((0, 1), "(0, 1)"),
             ({"value": 0}, "{'value': 0}"),
-            (np.array([0, 1]), "[0 1]"),
-            ({1, 2}, "{1, 2}"),
+            # (np.array([0, 1]), "[0 1]"),
+            # ({1, 2}, "{1, 2}"),
         ],
     )
     def test_print_table_data_variants(self, client_with_grid_scan, value, expected):

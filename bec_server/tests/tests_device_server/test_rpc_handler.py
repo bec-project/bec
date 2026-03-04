@@ -58,7 +58,7 @@ def test_execute_rpc_call(rpc_cls: RPCHandler, instr_params):
     msg = messages.DeviceInstructionMessage(
         device="device",
         action="rpc",
-        parameter=instr_params,
+        parameter=messages.sanitize_one_way_encodable(instr_params),
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
     out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
@@ -80,7 +80,7 @@ def test_execute_rpc_call_var(rpc_cls: RPCHandler, instr_params: dict):
     msg = messages.DeviceInstructionMessage(
         device="device",
         action="rpc",
-        parameter=instr_params,
+        parameter=messages.sanitize_one_way_encodable(instr_params),
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
     out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)

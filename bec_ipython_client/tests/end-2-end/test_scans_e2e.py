@@ -918,7 +918,7 @@ def test_scan_repeat_decorator(bec_ipython_client_fixture):
                 "update_frequency": 400,
             },
             "readoutPriority": "baseline",
-            "deviceTags": {"user motors"},
+            "deviceTags": ["user motors"],
             "enabled": True,
             "readOnly": False,
         }
