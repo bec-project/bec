@@ -74,7 +74,7 @@ class InstructionHandler:
         try:
             callback(instruction)
         except Exception as e:
-            print(f"Error in callback for instruction {instruction.instruction_id}: {e}")
+            print(f"Error in callback {callback} for instruction {instruction.instruction_id}: {e}")
 
     def register_callback(
         self, instruction_id: str, callback: Callable[[messages.DeviceInstructionResponse], None]

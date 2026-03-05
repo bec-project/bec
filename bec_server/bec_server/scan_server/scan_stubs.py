@@ -121,6 +121,9 @@ class ScanStubStatus:
         elif message.status == "error":
             self.set_failed(message.error_info)
         else:
+            logger.warning(
+                f"Setting ScanStubStatus future running for instruction {message.instruction.action}: {message.instruction.parameter.get("func")} on device {message.device} with id {message.instruction_id}"
+            )
             self.set_running()
 
     def set_done(self, result=None):

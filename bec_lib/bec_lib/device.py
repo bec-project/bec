@@ -234,7 +234,7 @@ class DeviceBase:
 
     def _run(self, *args, fcn=None, cached=False, **kwargs):
         device, func_call = self._get_rpc_func_name(fcn=fcn)
-
+        logger.warning(f"RPC _run for: {device=},{func_call=}")
         if cached:
             return fcn(self, *args, **kwargs)
         return self._run_rpc_call(device, func_call, *args, **kwargs)

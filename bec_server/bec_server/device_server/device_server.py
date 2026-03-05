@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import ophyd
+from numpy.ma import count
 from ophyd import Kind, OphydObject, Staged, StatusBase
 from ophyd.utils import errors as ophyd_errors
 
@@ -274,6 +275,9 @@ class RequestHandler:
             error_info(messages.ErrorInfo, optional): Error information. Defaults to None.
             result(Any): The result of the instruction. Defaults to None.
         """
+        logger.error(
+            f"Responding for instr {instr_id}: stack:\n{ "".join(traceback.format_stack(limit=4)[:-1])}"
+        )
         metadata = self._storage[instr_id]["instr"].metadata
         stop_keys = ["RID", "scan_id", "queue_id"]
         if any(metadata.get(key) in self._stopped_requests for key in stop_keys):
@@ -497,6 +501,9 @@ class DeviceServer(BECService):
             msg (str): A DeviceInstructionMessage string containing the action and its parameters
 
         """
+
+        logger.warning(f"\n\n HANDLING INSTRUCTION: {msg.action} {msg.parameter}\n\n")
+
         action = None
         try:
             instructions = msg
@@ -782,6 +789,9 @@ class DeviceServer(BECService):
 
     def _read_device(self, instr: messages.DeviceInstructionMessage, new_status=True) -> None:
         # check performance -- we might have to change it to a background thread
+        logger.warning(
+            f"\nREAD DEVICE CALLED THROUGH\n {"".join(traceback.format_stack(limit=5)[:-1])} \n\n"
+        )
         devices = instr.content["device"]
         if not isinstance(devices, list):
             devices = [devices]
