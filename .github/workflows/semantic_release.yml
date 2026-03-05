@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      run_build_and_push:
+        description: "Whether to run the build and push job even if no release is made"
+        required: false
+        default: false
+        type: boolean
 
 # default: least privileged permissions across all jobs
 permissions:
@@ -39,7 +46,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Setup | Force release branch to be at workflow sha
         run: |
@@ -99,47 +106,47 @@ jobs:
     name: Build and push requirements image
     runs-on: ubuntu-latest
     needs: release
-    if: ${{ needs.release.outputs.release_made == 'true' }}
+    if: ${{ needs.release.outputs.release_made == 'true' || github.event.inputs.run_build_and_push }}
     permissions:
       packages: write
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup tools
-      run: sudo apt update && sudo apt install qemu-user-static
+      - name: Setup tool'
+        run: sudo apt update && sudo apt install qemu-user-static
 
-    - name: Get version
-      id: version
-      run: |
-        git checkout main && git pull --tags
-        [ -z $(git describe --tags) ] && echo "Must have a version tag!" && exit 1
-        echo "setting version $(git describe --tags) as image tag" 
-        echo "bec_version=$(git describe --tags)" >> $GITHUB_OUTPUT
+      - name: Get version
+        id: version
+        run: |
+          git checkout main && git pull --tags
+          [ -z $(git describe --tags) ] && echo "Must have a version tag!" && exit 1
+          echo "setting version $(git describe --tags) as image tag" 
+          echo "bec_version=$(git describe --tags)" >> $GITHUB_OUTPUT
 
-    - name: Buildah build
-      id: container-build
-      uses: redhat-actions/buildah-build@v2
-      with:
-        image: bec_requirements
-        tags: ${{ steps.version.outputs.bec_version }} ${{ github.sha }}
-        containerfiles: |
-          ./bec_server/bec_server/procedures/Containerfile.requirements
-        build-args: |
-          BEC_VERSION=${{ steps.version.outputs.bec_version }}
-        archs: amd64, aarch64
-        extra-args: |
-          -v ${{ github.workspace }}:/bec:ro:z
-  
-    - name: Push to registry
-      id: container-push
-      uses: redhat-actions/push-to-registry@v2
-      with:
-        image: ${{ steps.container-build.outputs.image }}
-        tags: ${{ steps.container-build.outputs.tags }}
-        registry: ghcr.io/bec-project
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Buildah build
+        id: container-build
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: bec_requirements
+          tags: ${{ steps.version.outputs.bec_version }} ${{ github.sha }}
+          containerfiles: |
+            ./bec_server/bec_server/procedures/Containerfile.requirements
+          build-args: |
+            BEC_VERSION=${{ steps.version.outputs.bec_version }}
+          archs: amd64, aarch64
+          extra-args: |
+            -v ${{ github.workspace }}:/bec:ro:z
 
-    - name: Print image url
-      run: echo "Image pushed to ${{ steps.container-push.outputs.registry-paths }}"
+      - name: Push to registry
+        id: container-push
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.container-build.outputs.image }}
+          tags: ${{ steps.container-build.outputs.tags }}
+          registry: ghcr.io/bec-project
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print image url
+        run: echo "Image pushed to ${{ steps.container-push.outputs.registry-paths }}"
