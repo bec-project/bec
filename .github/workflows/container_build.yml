@@ -1,0 +1,52 @@
+name: BEC env container build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    name: Build and push requirements image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup tools
+      run: sudo apt update && sudo apt install qemu-user-static
+
+    - name: Get version
+      id: version
+      run: |
+        git checkout main && git pull --tags
+        [ -z $(git describe --tags) ] && echo "Must have a version tag!" && exit 1
+        echo "setting version $(git describe --tags) as image tag" 
+        echo "bec_version=$(git describe --tags)" >> $GITHUB_OUTPUT
+
+    - name: Buildah build
+      id: container-build
+      uses: redhat-actions/buildah-build@v2
+      with:
+        image: bec_requirements
+        tags: ${{ steps.version.outputs.bec_version }} ${{ github.sha }}
+        containerfiles: |
+          ./bec_server/bec_server/procedures/Containerfile.requirements
+        build-args: |
+          BEC_VERSION=${{ steps.version.outputs.bec_version }}
+        archs: amd64, aarch64
+        extra-args: |
+          -v ${{ github.workspace }}:/bec:ro:z
+  
+    - name: Push to registry
+      id: container-push
+      uses: redhat-actions/push-to-registry@v2
+      with:
+        image: ${{ steps.container-build.outputs.image }}
+        tags: ${{ steps.container-build.outputs.tags }}
+        registry: ghcr.io/bec-project
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Print image url
+      run: echo "Image pushed to ${{ steps.container-push.outputs.registry-paths }}"
