@@ -2,6 +2,7 @@ name: BEC env container build
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   build-and-push:
