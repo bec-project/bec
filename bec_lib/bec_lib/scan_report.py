@@ -6,6 +6,7 @@ the return value of a scan request.
 from __future__ import annotations
 
 import time
+import traceback
 from math import inf
 from typing import TYPE_CHECKING
 
@@ -156,12 +157,17 @@ class ScanReport:
             raise ValueError("Request is not set. Cannot cancel the scan.")
         scan_type = self.request.request.content["scan_type"]
         if scan_type == "mv":
-            motors = list(self.request.request.content["parameter"]["args"].keys())
+            motors = list(self.request.request.parameter["args"].keys())
             for motor in motors:
                 try:
+                    if not isinstance(motor, str):
+                        motor = motor.name
                     self._client.device_manager.devices.get(motor).stop()
-                except Exception:  # pylint: disable=broad-except
-                    logger.warning(f"Failed to stop motor {motor}.")
+                except Exception as e:  # pylint: disable=broad-except
+                    logger.warning(f"Failed to stop motor {motor} with error: {e}.")
+                    logger.debug(
+                        f"Stopping error details: {''.join(traceback.format_exception(e, limit=5)[:-1])}"
+                    )
         else:
             if self.request.scan and self.request.scan.scan_id:
                 scan_id = self.request.scan.scan_id
