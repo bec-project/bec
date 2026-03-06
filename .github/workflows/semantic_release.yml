@@ -96,6 +96,8 @@ jobs:
           semantic-release publish
 
   build-and-push:
+    permissions:
+      packages: write
     name: Build and push requirements image
     needs: release
     if: ${{ needs.release.outputs.release_made == 'true' }}
