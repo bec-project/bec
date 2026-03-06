@@ -1,6 +1,44 @@
 # CHANGELOG
 
 
+## v3.107.0 (2026-03-06)
+
+### Bug Fixes
+
+- Give release workflow permissions to call build
+  ([`c00edc0`](https://github.com/bec-project/bec/commit/c00edc06fa4b6d01be27488839637230c7e47202))
+
+- Scanreport.cancel() should find motor by name if passed device obj
+  ([`4536f01`](https://github.com/bec-project/bec/commit/4536f01973d15474efa7dd4f4017f906fe4bd15d))
+
+- **metadata_schema**: Standardize field titles in BasicScanMetadata
+  ([`b35f327`](https://github.com/bec-project/bec/commit/b35f327cb622d7cdc2fc7bab1a9d9e3384ad6fc3))
+
+### Continuous Integration
+
+- Allow build workflow to be called by workflow
+  ([`b46f25a`](https://github.com/bec-project/bec/commit/b46f25ac3348d62ea2691532677fbe2791aa92ee))
+
+- Separate container workflow so that it can be run independe:wq
+  ([`fd96565`](https://github.com/bec-project/bec/commit/fd96565fa03fb44b74011359fa39c9e2b6b6f9ba))
+
+### Features
+
+- Scope scan requests to acl user
+  ([`c9895ab`](https://github.com/bec-project/bec/commit/c9895abc77f69bca8daebe97b93468f03416dede))
+
+- **metadata_schema**: Add scan_name and comment fields to basic schema
+  ([`9f9967c`](https://github.com/bec-project/bec/commit/9f9967c1d2481da770d357ffe2fe6c13e206c969))
+
+- **redis connector**: Add username as RO property
+  ([`0928057`](https://github.com/bec-project/bec/commit/092805718941810c28488653fda2e1435fc9d799))
+
+### Refactoring
+
+- Rename json module to json_extended to avoid import conflicts with normal json
+  ([`3ed57af`](https://github.com/bec-project/bec/commit/3ed57af206a2e041b48ec542d8bbd00ffffc4172))
+
+
 ## v3.106.0 (2026-03-03)
 
 ### Features
