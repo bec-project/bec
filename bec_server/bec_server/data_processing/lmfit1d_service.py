@@ -51,6 +51,7 @@ class LmfitService1D(DAPServiceBase):
         self.device_y = None
         self.signal_y = None
         self.parameters = None
+        self.override_parameters = None
         self.model_definitions: list[ModelDefinition] = []
         self._parameter_override_names = []
         self.model = self._build_model(model)
@@ -262,6 +263,12 @@ class LmfitService1D(DAPServiceBase):
                 override_params.pop(name, None)
         return override_params
 
+    def _has_complete_parameter_overrides(self) -> bool:
+        if self.override_parameters is None:
+            return False
+        param_names = set(getattr(self.model, "param_names", []))
+        return bool(param_names) and param_names.issubset(self.override_parameters.keys())
+
     def _resolve_device_and_signal(
         self, device: DeviceBase | str | None, signal: DeviceBase | str | None
     ) -> tuple[DeviceBase | str | None, DeviceBase | str | None]:
@@ -416,11 +423,13 @@ class LmfitService1D(DAPServiceBase):
 
         self._parameter_override_names = list(override_params.keys())
         if len(override_params) > 0:
+            self.override_parameters = override_params.copy()
             self.parameters = self._apply_override_params(self.model.make_params(), override_params)
             logger.debug(
                 f"Configured lmfit model={self.model.__class__.__name__} with override_params={serialize_lmfit_params(override_params)}"
             )
         else:
+            self.override_parameters = None
             self.parameters = None
             if parameters:
                 logger.debug(
@@ -574,10 +583,12 @@ class LmfitService1D(DAPServiceBase):
             logger.debug(f"Running lmfit fit: model={model_name} points={len(x)} params=<default>")
 
         try:
-            if self.parameters is not None:
+            if self._has_complete_parameter_overrides():
                 fit_params = self.parameters.copy()
             else:
                 fit_params = self._guess_parameters(x, y)
+                if self.override_parameters is not None:
+                    fit_params = self._apply_override_params(fit_params, self.override_parameters)
             result = self.model.fit(y, x=x, params=fit_params)
         except Exception as exc:  # pylint: disable=broad-except
             if self.parameters is not None:
