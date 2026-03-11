@@ -559,15 +559,12 @@ class LmfitService1D(DAPServiceBase):
         if not scan_item.live_data:
             return None
         x = scan_item.live_data.get(device_x, {}).get(signal_x, {}).get("value")
-        if not x:
+        if x is None:
             logger.warning(f"Failed to find signal {device_x}.{signal_x}")
             return None
         y = scan_item.live_data.get(device_y, {}).get(signal_y, {}).get("value")
-        if not y:
+        if y is None:
             logger.warning(f"Failed to find signal {device_y}.{signal_y}")
-            return None
-
-        if len(x) < min_data_points or len(y) < min_data_points:
             return None
 
         # Track whether the caller explicitly requested an x-range limit before normalization.
@@ -583,12 +580,15 @@ class LmfitService1D(DAPServiceBase):
         x = np.asarray(x)
         y = np.asarray(y)
 
+        if x.size < min_data_points or y.size < min_data_points:
+            return None
+
         indices = np.where((x >= x_min) & (x <= x_max))
         x = x[indices]
         y = y[indices]
 
         # check if the filtered data is still long enough to fit
-        if len(x) < min_data_points or len(y) < min_data_points:
+        if x.size < min_data_points or y.size < min_data_points:
             return None
 
         return {
