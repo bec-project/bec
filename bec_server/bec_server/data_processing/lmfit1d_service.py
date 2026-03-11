@@ -582,6 +582,9 @@ class LmfitService1D(DAPServiceBase):
         if len(x) < min_data_points or len(y) < min_data_points:
             return None
 
+        # Track whether the caller explicitly requested an x-range limit before normalization.
+        x_limited = x_min is not None or x_max is not None
+
         # limit the data to the specified range
         if x_min is None:
             x_min = -np.inf
@@ -604,7 +607,7 @@ class LmfitService1D(DAPServiceBase):
             "x": x,
             "y": y,
             "x_original": x_original,
-            "x_lim": (x_min is not None or x_max is not None),
+            "x_lim": x_limited,
             "scan_data": True,
         }
 
