@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import lmfit
 import numpy as np
@@ -15,6 +16,14 @@ from bec_lib.scan_items import ScanItem
 from bec_server.data_processing.dap_service import DAPError, DAPServiceBase
 
 logger = bec_logger.logger
+
+
+@dataclass(frozen=True, slots=True)
+class ModelDefinition:
+    model_name: str
+    component_name: str
+    prefix: str
+    component: lmfit.Model
 
 
 class LmfitService1D(DAPServiceBase):
@@ -42,12 +51,8 @@ class LmfitService1D(DAPServiceBase):
         self.device_y = None
         self.signal_y = None
         self.parameters = None
-        self.model_sequence: list[str] | None = None
-        self.model_name_sequence: list[str] | None = None
-        self.model_name_to_component: dict[str, str] | None = None
+        self.model_definitions: list[ModelDefinition] = []
         self._parameter_override_names = []
-        self.model_components: dict[str, lmfit.Model] | None = None
-        self.model_prefixes: dict[str, str] | None = None
         self.model = self._build_model(model)
         self.data = None
         self.continuous = continuous
@@ -63,95 +68,108 @@ class LmfitService1D(DAPServiceBase):
     def _build_composite_model(self, model_list: Sequence[str]) -> lmfit.Model:
         if not model_list:
             raise ValueError("Composite model list cannot be empty.")
-        self.model_components = {}
-        self.model_prefixes = {}
-        self.model_sequence = []
-        self.model_name_sequence = list(model_list)
+        model_definitions: list[ModelDefinition] = []
         composite_model: lmfit.model.Model | None = None
         for index, model_name in enumerate(model_list):
             component_name = f"{model_name}_{index}"
             model_cls = self.get_model(model_name)
             prefix = f"{component_name}_"
-            self.model_sequence.append(component_name)
-            self.model_prefixes[component_name] = prefix
             component = model_cls(prefix=prefix)
-            self.model_components[component_name] = component
+            model_definitions.append(
+                ModelDefinition(
+                    model_name=model_name,
+                    component_name=component_name,
+                    prefix=prefix,
+                    component=component,
+                )
+            )
             composite_model = component if composite_model is None else composite_model + component
-        unique_names = len(set(self.model_name_sequence)) == len(self.model_name_sequence)
-        if unique_names:
-            self.model_name_to_component = {
-                name: self.model_sequence[idx] for idx, name in enumerate(self.model_name_sequence)
-            }
-        else:
-            self.model_name_to_component = None
+        self.model_definitions = model_definitions
+        prefixes = {
+            definition.component_name: definition.prefix for definition in self.model_definitions
+        }
         logger.debug(
-            f"Initialized composite lmfit model with components={list(self.model_components.keys())} "
-            f"prefixes={self.model_prefixes}"
+            "Initialized composite lmfit model with components="
+            f"{[definition.component_name for definition in self.model_definitions]} "
+            f"prefixes={prefixes}"
         )
         return composite_model
 
     def _expand_composite_parameters(self, parameters: dict | list | tuple) -> dict:
-        if self.model_components is None or self.model_prefixes is None:
+        if not self.model_definitions:
             return parameters
         expanded: dict = {}
         if isinstance(parameters, (list, tuple)):
-            if self.model_sequence is None or len(parameters) != len(self.model_sequence):
+            if len(parameters) != len(self.model_definitions):
                 raise DAPError(
                     "Composite parameters list must match the length of the composite model list."
                 )
-            for index, param_map in enumerate(parameters):
+            for index, (definition, param_map) in enumerate(
+                zip(self.model_definitions, parameters, strict=True)
+            ):
                 if param_map is None:
                     continue
                 if not isinstance(param_map, dict):
                     raise DAPError(
                         f"Composite parameters list item {index} must be a dict of parameter overrides."
                     )
-                prefix = self.model_prefixes[self.model_sequence[index]]
                 for param_name, spec in param_map.items():
-                    expanded[f"{prefix}{param_name}"] = spec
+                    expanded[f"{definition.prefix}{param_name}"] = spec
             return expanded
 
         if not isinstance(parameters, dict):
             raise DAPError("Composite parameters must be a dict or list.")
 
-        component_keys = set(self.model_components.keys())
-        if set(parameters.keys()).issubset(component_keys):
-            groups = parameters.items()
+        by_component_name = {
+            definition.component_name: definition for definition in self.model_definitions
+        }
+        if set(parameters.keys()).issubset(by_component_name):
+            groups = (
+                (by_component_name[component_name], param_map)
+                for component_name, param_map in parameters.items()
+            )
         else:
-            if self.model_name_to_component is None:
+            unique_names = len(
+                {definition.model_name for definition in self.model_definitions}
+            ) == len(self.model_definitions)
+            if not unique_names:
                 raise DAPError(
                     "Composite parameters are ambiguous with duplicate model names. "
                     "Use a list aligned to the model list or keys like 'ModelName_0'."
                 )
-            invalid_models = set(parameters.keys()) - set(self.model_name_to_component.keys())
+            by_model_name = {
+                definition.model_name: definition for definition in self.model_definitions
+            }
+            invalid_models = set(parameters.keys()) - set(by_model_name)
             if invalid_models:
                 raise DAPError(
                     f"Invalid parameter groups for composite model: {sorted(invalid_models)}"
                 )
             groups = (
-                (self.model_name_to_component[model_name], param_map)
+                (by_model_name[model_name], param_map)
                 for model_name, param_map in parameters.items()
             )
 
-        for component_name, param_map in groups:
+        for definition, param_map in groups:
             if param_map is None:
                 continue
             if not isinstance(param_map, dict):
                 raise DAPError(
-                    f"Composite parameters for '{component_name}' must be a dict of parameter overrides."
+                    f"Composite parameters for '{definition.component_name}' must be a dict of parameter overrides."
                 )
-            prefix = self.model_prefixes[component_name]
             for param_name, spec in param_map.items():
-                expanded[f"{prefix}{param_name}"] = spec
+                expanded[f"{definition.prefix}{param_name}"] = spec
         return expanded
 
     def _guess_parameters(self, x: np.ndarray, y: np.ndarray) -> lmfit.Parameters:
         guessed_params = self.model.make_params()
-        if self.model_components is not None:
-            for name, component in self.model_components.items():
-                self._update_guess_from_component(guessed_params, component, name, x, y)
-        else:
+        if not self.model_definitions:
             self._update_guess_from_component(guessed_params, self.model, None, x, y)
+        else:
+            for definition in self.model_definitions:
+                self._update_guess_from_component(
+                    guessed_params, definition.component, definition.component_name, x, y
+                )
         self._log_guess(guessed_params)
         return guessed_params
 
@@ -203,14 +221,14 @@ class LmfitService1D(DAPServiceBase):
         if not parameters:
             return raw_parameters
         if isinstance(parameters, lmfit.Parameters):
-            if self.model_components is not None:
+            if self.model_definitions:
                 raise DAPError(
                     "Composite models require parameters to be passed as a dict keyed by model name."
                 )
             raw_parameters.update({name: param for name, param in parameters.items()})
             return raw_parameters
         if isinstance(parameters, (dict, list, tuple)):
-            if self.model_components is not None:
+            if self.model_definitions:
                 raw_parameters.update(self._expand_composite_parameters(parameters))
             elif isinstance(parameters, dict):
                 raw_parameters.update(parameters)
@@ -606,7 +624,7 @@ class LmfitService1D(DAPServiceBase):
             f"model={model_name} chi-square={result.chisqr:.6g} "
             f"redchi={result.redchi:.6g} aic={result.aic:.6g} bic={result.bic:.6g}"
         )
-        if self.model_components is not None:
+        if self.model_definitions:
             logger.debug(
                 f"Composite lmfit best params for model={model_name}: {metadata['fit_parameters']}"
             )
