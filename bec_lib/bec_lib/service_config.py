@@ -105,7 +105,7 @@ class ServiceConfigModel(BaseModel):
     log_writer: LogWriterConfig = Field(default_factory=LogWriterConfig)
     user_macros: UserMacrosConfig = Field(default_factory=UserMacrosConfig)
     user_scripts: UserScriptsConfig = Field(default_factory=UserScriptsConfig)
-    bec_widgets_settings: BecWidgetsSettings = Field(default_factory=BecWidgetsSettings)
+    widgets_settings: BecWidgetsSettings = Field(default_factory=BecWidgetsSettings)
     atlas: AtlasConfig = Field(default_factory=AtlasConfig)
     scilog: SciLogConfig = Field(default_factory=SciLogConfig)
     acl: ACLConfig = Field(default_factory=ACLConfig)
