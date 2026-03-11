@@ -4,7 +4,6 @@ import inspect
 import threading
 import time
 from collections.abc import Sequence
-
 import lmfit
 import numpy as np
 
@@ -60,7 +59,7 @@ class LmfitService1D(DAPServiceBase):
         if isinstance(model, (list, tuple)):
             return self._build_composite_model(list(model))
         if isinstance(model, str):
-            return self._get_model_cls(model)
+            return self._get_model_cls(model)()
         raise ValueError(f"Unknown model {model}")
 
     def _build_composite_model(self, model_list: Sequence[str]) -> lmfit.Model:
@@ -299,6 +298,22 @@ class LmfitService1D(DAPServiceBase):
             )
         return self._apply_override_params(guessed_params, configured_overrides)
 
+    def _resolve_device_and_signal(
+        self,
+        device: DeviceBase | str | None,
+        signal: DeviceBase | str | None,
+    ) -> tuple[DeviceBase | str | None, DeviceBase | str | None]:
+        if signal:
+            return device, signal
+        if not device:
+            return device, signal
+        device_config = self.client.device_manager.devices.get(device)
+        if not device_config:
+            return device, signal
+        if len(device_config._hints) == 1:  # pylint: disable=protected-access
+            signal = device_config._hints[0]
+        return device, signal
+
     @staticmethod
     def available_models():
         models = []
@@ -496,20 +511,8 @@ class LmfitService1D(DAPServiceBase):
         else:
             scan_item = self.current_scan_item
 
-        if device_x:
-            self.device_x = device_x
-        if signal_x:
-            self.signal_x = signal_x
-        elif device_x and self.client.device_manager.devices.get(device_x):
-            if len(self.client.device_manager.devices[device_x]._hints) == 1:
-                self.signal_x = self.client.device_manager.devices[device_x]._hints[0]
-        if device_y:
-            self.device_y = device_y
-        if signal_y:
-            self.signal_y = signal_y
-        elif device_y and self.client.device_manager.devices.get(device_y):
-            if len(self.client.device_manager.devices[device_y]._hints) == 1:
-                self.signal_y = self.client.device_manager.devices[device_y]._hints[0]
+        self.device_x, self.signal_x = self._resolve_device_and_signal(device_x, signal_x)
+        self.device_y, self.signal_y = self._resolve_device_and_signal(device_y, signal_y)
 
         if not self.continuous:
             if not scan_item:
