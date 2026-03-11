@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.107.1 (2026-03-11)
+
+### Bug Fixes
+
+- **service_config**: Bec_widgets_settigns renamed to widgets_settings
+  ([`eea49ca`](https://github.com/bec-project/bec/commit/eea49ca51b9a2429e148beb1fb59618f64e240f0))
+
+
 ## v3.107.0 (2026-03-06)
 
 ### Bug Fixes
