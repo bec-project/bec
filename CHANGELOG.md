@@ -1,6 +1,59 @@
 # CHANGELOG
 
 
+## v3.108.0 (2026-03-11)
+
+### Bug Fixes
+
+- **dap**: Added guess from LMFit for more precise fitting
+  ([`858e347`](https://github.com/bec-project/bec/commit/858e347371a19213cc4dfd24808b842fbfef4da5))
+
+- **dap**: Lmfit1d can pass any parameters with kwargs
+  ([`f206eb2`](https://github.com/bec-project/bec/commit/f206eb29a2fd89be6c9ada114202a56a4c701d8c))
+
+- **dap_service_manager**: Removed verbose logging of passed data during process_dap_request
+  ([`7ae3524`](https://github.com/bec-project/bec/commit/7ae35248f03475fa5904ebd9ebdefebd8a78041b))
+
+- **lmfit1d_service**: Change model definition to dataclass
+  ([`2c698cb`](https://github.com/bec-project/bec/commit/2c698cb7ee7839f488d0b17b5c1e653399170fe6))
+
+- **lmfit1d_service**: Guessing logic
+  ([`86fb21d`](https://github.com/bec-project/bec/commit/86fb21d634f8f02ddebfa35486c92167f8dc7fd2))
+
+- **lmfit1d_service**: Improve signal value checks and data point validation
+  ([`1d16236`](https://github.com/bec-project/bec/commit/1d16236ca6f18d18496f3d4ba65274d09655c06d))
+
+- **lmfit1d_service**: Limit normalization order
+  ([`5e5dab8`](https://github.com/bec-project/bec/commit/5e5dab85648d983bda833ca7679d6c4810268cef))
+
+- **lmfit1d_service**: Overrides for guess model method preserving parameters value and metadata
+  ([`52398f8`](https://github.com/bec-project/bec/commit/52398f88514550c81b26daa4819909df16625e32))
+
+- **lmfit1d_service**: Removed amplitude, center, sigma parameters from configure
+  ([`593184a`](https://github.com/bec-project/bec/commit/593184a085a1e0b31aabcdc52eec8c527cae37e5))
+
+### Features
+
+- **dap**: Composite fitting with multiple LMFit models
+  ([`113bdd3`](https://github.com/bec-project/bec/commit/113bdd36a1ec6cfc8ad2f8a008ddca8766edd6c0))
+
+### Performance Improvements
+
+- **lmfit1d_service**: Remove sleep and event thread
+  ([`4afc3fb`](https://github.com/bec-project/bec/commit/4afc3fbd01f2f212799078d7fa941db7ca83a9d1))
+
+### Refactoring
+
+- **dap**: Modularization of the lmfit_1d service
+  ([`f5d649a`](https://github.com/bec-project/bec/commit/f5d649aca099128e20840710e14f692163f8e743))
+
+- **lmfi1d_service**: Remove duplication
+  ([`f76067a`](https://github.com/bec-project/bec/commit/f76067aef1af88e0437270f9719f180f56e42f6b))
+
+- **lmfit1d_service**: Fix formatting issues
+  ([`a5cb040`](https://github.com/bec-project/bec/commit/a5cb040a775aad860a016dcd488e878c5569143f))
+
+
 ## v3.107.2 (2026-03-11)
 
 ### Bug Fixes
