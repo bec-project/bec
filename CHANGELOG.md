@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.107.2 (2026-03-11)
+
+### Bug Fixes
+
+- **file writer**: Expire file messages after 1h
+  ([`f867ebd`](https://github.com/bec-project/bec/commit/f867ebd603e8fa73bec74c2e83a2d4112f928c69))
+
+
 ## v3.107.1 (2026-03-11)
 
 ### Bug Fixes
