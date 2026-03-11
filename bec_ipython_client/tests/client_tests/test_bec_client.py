@@ -24,8 +24,7 @@ def bec_ipython_shell(bec_client_mock):
 def test_bec_entry_point_globals_and_post_startup(tmpdir):  # , capfd):
     file_to_execute = tmpdir / "post_startup.py"
     with open(file_to_execute, "w") as f:
-        f.write(
-            """
+        f.write("""
 try:
   completer=get_ipython().Completer
   import sys
@@ -36,8 +35,7 @@ finally:
   import os
   import signal
   os.kill(os.getpid(), signal.SIGTERM)
-"""
-        )
+""")
     p = subprocess.Popen(
         [
             sys.executable,
@@ -69,8 +67,7 @@ def test_bec_load_hli_tab_completion(tmpdir):
     """Test that bec hli is loaded and tab completion in the ipython client works"""
     file_to_execute = tmpdir / "post_startup.py"
     with open(file_to_execute, "w") as f:
-        f.write(
-            """
+        f.write("""
 try:
   completer=get_ipython().Completer
   import sys
@@ -80,8 +77,7 @@ finally:
   import os
   import signal
   os.kill(os.getpid(), signal.SIGTERM)
-"""
-        )
+""")
     p = subprocess.Popen(
         [
             sys.executable,

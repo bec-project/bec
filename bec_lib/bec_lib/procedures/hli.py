@@ -11,12 +11,10 @@ class ProcedureHli:
 
     def available_procedures(self):
         """Pretty-print a list of available procedures."""
-        print(
-            """
+        print("""
 Available procedures and their signatures:
 ------------------------------------------
-"""
-        )
+""")
 
         for name, (sig, doc) in self._helper.get.available_procedures().items():
             if not name.startswith("_"):

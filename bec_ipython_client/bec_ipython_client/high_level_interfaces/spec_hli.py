@@ -37,7 +37,7 @@ def d2scan(
     m2_to: float,
     steps: int,
     exp_time: float,
-    **kwargs
+    **kwargs,
 ) -> ScanReport:
     """Relative line scan with two devices.
 
@@ -67,7 +67,7 @@ def d2scan(
         steps=steps,
         exp_time=exp_time,
         relative=True,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -121,7 +121,7 @@ def a2scan(motor1, m1_from, m1_to, motor2, m2_from, m2_to, steps, exp_time, **kw
         steps=steps,
         exp_time=exp_time,
         relative=False,
-        **kwargs
+        **kwargs,
     )
 
 

@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "black~=25.0",
+    "black~=26.0",
     "coverage~=7.0",
     "isort~=5.13, >=5.13.2",
     "pylint~=3.0",
