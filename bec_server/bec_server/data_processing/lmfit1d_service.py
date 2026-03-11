@@ -59,7 +59,7 @@ class LmfitService1D(DAPServiceBase):
         if isinstance(model, (list, tuple)):
             return self._build_composite_model(list(model))
         if isinstance(model, str):
-            return self._get_model_cls(model)()
+            return self.get_model(model)()
         raise ValueError(f"Unknown model {model}")
 
     def _build_composite_model(self, model_list: Sequence[str]) -> lmfit.Model:
@@ -81,15 +81,8 @@ class LmfitService1D(DAPServiceBase):
         )
         return composite_model
 
-    @staticmethod
-    def _get_model_cls(model_name: str):
-        model_cls = getattr(lmfit.models, model_name, None)
-        if not model_cls:
-            raise ValueError(f"Unknown model {model_name}")
-        return model_cls
-
     def _create_component(self, model_name: str, component_name: str):
-        model_cls = self._get_model_cls(model_name)
+        model_cls = self.get_model(model_name)
         prefix = f"{component_name}_"
         self.model_sequence.append(component_name)
         self.model_prefixes[component_name] = prefix
@@ -299,9 +292,7 @@ class LmfitService1D(DAPServiceBase):
         return self._apply_override_params(guessed_params, configured_overrides)
 
     def _resolve_device_and_signal(
-        self,
-        device: DeviceBase | str | None,
-        signal: DeviceBase | str | None,
+        self, device: DeviceBase | str | None, signal: DeviceBase | str | None
     ) -> tuple[DeviceBase | str | None, DeviceBase | str | None]:
         if signal:
             return device, signal
@@ -342,7 +333,7 @@ class LmfitService1D(DAPServiceBase):
                 "run_name": cls.get_user_friendly_run_name(),
                 "signature": cls.get_signature(),
                 "auto_run_supported": getattr(cls, "AUTO_FIT_SUPPORTED", False),
-                "params": serialize_lmfit_params(cls.get_model(model)().make_params()),
+                "params": serialize_lmfit_params(model().make_params()),
                 "class_args": [],
                 "class_kwargs": {"model": model.__name__},
             }
@@ -351,7 +342,7 @@ class LmfitService1D(DAPServiceBase):
         return services
 
     @classmethod
-    def get_class_doc_string(cls, model: str, *args, **kwargs):
+    def get_class_doc_string(cls, model: str | type[lmfit.model.Model], *args, **kwargs):
         """
         Get the public doc string for the model.
         """
@@ -359,7 +350,7 @@ class LmfitService1D(DAPServiceBase):
         return model.__doc__ or model.__init__.__doc__
 
     @classmethod
-    def get_run_doc_string(cls, model: str, *args, **kwargs):
+    def get_run_doc_string(cls, model: str | type[lmfit.model.Model], *args, **kwargs):
         """
         Get the fit doc string.
         """
@@ -373,14 +364,12 @@ class LmfitService1D(DAPServiceBase):
         return "fit"
 
     @staticmethod
-    def get_model(model: str) -> lmfit.Model:
-        """Get the model from the config and convert it to an lmfit model."""
-
+    def get_model(model: str | type[lmfit.model.Model]) -> type[lmfit.model.Model]:
+        """Resolve a model name to an lmfit model class."""
         if isinstance(model, str):
             model = getattr(lmfit.models, model, None)
         if not model:
             raise ValueError(f"Unknown model {model}")
-
         return model
 
     def on_scan_status_update(self, status: dict, metadata: dict):
@@ -445,6 +434,7 @@ class LmfitService1D(DAPServiceBase):
     ):
         """
         Args:
+
             scan_item (ScanItem): Scan item or scan ID
             device_x (DeviceBase | str): Device name for x
             signal_x (DeviceBase | str): Signal name for x
@@ -457,6 +447,9 @@ class LmfitService1D(DAPServiceBase):
             parameters (dict | list): Fit parameters. For composite models, pass either
                 a list aligned to the model list (each item is a param dict), or
                 `{"ModelName": {"param": {...}}}` per model (unique model names only).
+            sigma(lmfit.Parameter): Sigma parameter override for applicable models
+            center(lmfit.Parameter): Center parameter override for applicable models
+            amplitude(lmfit.Parameter): Amplitude parameter override for applicable models
             oversample (int): Oversample factor
         """
         # we only receive scan IDs from the client. However, users may
@@ -540,7 +533,7 @@ class LmfitService1D(DAPServiceBase):
             dict: Data for the x and y axes, limited to the specified range
         """
 
-        MIN_DATA_POINTS = 3
+        min_data_points = 3
 
         if not scan_item:
             logger.warning("Failed to access scan item")
@@ -586,7 +579,7 @@ class LmfitService1D(DAPServiceBase):
             logger.warning(f"Failed to find signal {device_y}.{signal_y}")
             return None
 
-        if len(x) < MIN_DATA_POINTS or len(y) < MIN_DATA_POINTS:
+        if len(x) < min_data_points or len(y) < min_data_points:
             return None
 
         # limit the data to the specified range
@@ -604,7 +597,7 @@ class LmfitService1D(DAPServiceBase):
         y = y[indices]
 
         # check if the filtered data is still long enough to fit
-        if len(x) < MIN_DATA_POINTS or len(y) < MIN_DATA_POINTS:
+        if len(x) < min_data_points or len(y) < min_data_points:
             return None
 
         return {
@@ -691,4 +684,4 @@ class LmfitService1D(DAPServiceBase):
                 f"Composite lmfit best params for model={model_name}: {metadata['fit_parameters']}"
             )
 
-        return (stream_output, metadata)
+        return stream_output, metadata
