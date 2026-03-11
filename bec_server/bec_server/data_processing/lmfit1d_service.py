@@ -426,9 +426,6 @@ class LmfitService1D(DAPServiceBase):
         x_min: float = None,
         x_max: float = None,
         parameters: dict | list | None = None,
-        amplitude: lmfit.Parameter = None,
-        center: lmfit.Parameter = None,
-        sigma: lmfit.Parameter = None,
         oversample: int = 1,
         **kwargs,
     ):
@@ -447,9 +444,6 @@ class LmfitService1D(DAPServiceBase):
             parameters (dict | list): Fit parameters. For composite models, pass either
                 a list aligned to the model list (each item is a param dict), or
                 `{"ModelName": {"param": {...}}}` per model (unique model names only).
-            sigma(lmfit.Parameter): Sigma parameter override for applicable models
-            center(lmfit.Parameter): Center parameter override for applicable models
-            amplitude(lmfit.Parameter): Amplitude parameter override for applicable models
             oversample (int): Oversample factor
         """
         # we only receive scan IDs from the client. However, users may
@@ -459,12 +453,6 @@ class LmfitService1D(DAPServiceBase):
         self.oversample = oversample
 
         raw_parameters = self._coerce_parameters(parameters)
-        if amplitude:
-            raw_parameters["amplitude"] = amplitude
-        if center:
-            raw_parameters["center"] = center
-        if sigma:
-            raw_parameters["sigma"] = sigma
 
         override_params = deserialize_param_object(raw_parameters)
         override_params = self._filter_override_params(override_params)
@@ -477,7 +465,7 @@ class LmfitService1D(DAPServiceBase):
             )
         else:
             self.parameters = None
-            if parameters or amplitude or center or sigma:
+            if parameters:
                 logger.debug(
                     f"No usable lmfit parameter overrides after validation for model={self.model.__class__.__name__} "
                     f"(input_keys={list(raw_parameters.keys())})"
