@@ -343,18 +343,22 @@ def test_LmfitService1D_process_uses_guess_when_parameters_are_not_configured(
     guess_spy.assert_called_once_with(x, y)
 
 
-def test_LmfitService1D_process_uses_configured_parameters_without_guessing(
+def test_LmfitService1D_process_uses_guess_when_only_partial_parameters_are_configured(
     monkeypatch, lmfit_service
 ):
     x = np.linspace(-1.0, 1.0, 15)
     y = np.exp(-(x**2))
-    guess_spy = mock.MagicMock()
+    guessed = lmfit.models.GaussianModel().make_params()
+    guessed["amplitude"].set(value=3.0, vary=True)
+    guess_spy = mock.MagicMock(return_value=guessed)
     monkeypatch.setattr(lmfit_service, "_guess_parameters", guess_spy)
     lmfit_service.data = {"x": x, "y": y, "x_lim": False, "x_original": x, "scan_data": False}
 
     configured = lmfit.models.GaussianModel().make_params()
     configured["amplitude"].set(value=1.0, vary=False)
     lmfit_service.parameters = configured
+    lmfit_service.override_parameters = lmfit.Parameters()
+    lmfit_service.override_parameters.add("amplitude", value=1.0, vary=False)
     fit_spy = mock.MagicMock(
         return_value=mock.MagicMock(
             best_fit=y,
@@ -373,5 +377,46 @@ def test_LmfitService1D_process_uses_configured_parameters_without_guessing(
     params = fit_spy.call_args.kwargs["params"]
     assert params["amplitude"].value == 1.0
     assert params["amplitude"].vary is False
+    assert params is not configured
+    guess_spy.assert_called_once_with(x, y)
+
+
+def test_LmfitService1D_process_uses_configured_parameters_without_guessing(
+    monkeypatch, lmfit_service
+):
+    x = np.linspace(-1.0, 1.0, 15)
+    y = np.exp(-(x**2))
+    guess_spy = mock.MagicMock()
+    monkeypatch.setattr(lmfit_service, "_guess_parameters", guess_spy)
+    lmfit_service.data = {"x": x, "y": y, "x_lim": False, "x_original": x, "scan_data": False}
+
+    configured = lmfit.models.GaussianModel().make_params()
+    configured["amplitude"].set(value=1.0, vary=False)
+    configured["center"].set(value=0.0, vary=False)
+    configured["sigma"].set(value=1.0, vary=False)
+    lmfit_service.parameters = configured
+    lmfit_service.override_parameters = lmfit.Parameters()
+    lmfit_service.override_parameters.add("amplitude", value=1.0, vary=False)
+    lmfit_service.override_parameters.add("center", value=0.0, vary=False)
+    lmfit_service.override_parameters.add("sigma", value=1.0, vary=False)
+    fit_spy = mock.MagicMock(
+        return_value=mock.MagicMock(
+            best_fit=y,
+            best_values={},
+            summary=mock.MagicMock(return_value="summary"),
+            chisqr=1.0,
+            redchi=1.0,
+            aic=1.0,
+            bic=1.0,
+        )
+    )
+    monkeypatch.setattr(lmfit_service.model, "fit", fit_spy)
+
+    lmfit_service.process()
+
+    params = fit_spy.call_args.kwargs["params"]
+    assert params["amplitude"].value == 1.0
+    assert params["center"].value == 0.0
+    assert params["sigma"].value == 1.0
     assert params is not configured
     guess_spy.assert_not_called()
