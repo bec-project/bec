@@ -73,6 +73,7 @@ def deserialize_param_object(obj: dict[str, dict | Parameter]) -> Parameters:
                 max=v.max,
                 expr=v.expr,
                 brute_step=v.brute_step,
+                user_data=v.user_data,
             )
             continue
         if isinstance(v, dict):

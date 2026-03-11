@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import threading
-import time
 from collections.abc import Sequence
 import lmfit
 import numpy as np
@@ -50,7 +48,6 @@ class LmfitService1D(DAPServiceBase):
         self.model_components: dict[str, lmfit.Model] | None = None
         self.model_prefixes: dict[str, str] | None = None
         self.model = self._build_model(model)
-        self.finish_event = None
         self.data = None
         self.continuous = continuous
         self.oversample = 1
@@ -359,13 +356,13 @@ class LmfitService1D(DAPServiceBase):
     @classmethod
     def get_user_friendly_run_name(cls):
         """
-        Get the user friendly run name.
+        Get the user-friendly run name.
         """
         return "fit"
 
     @staticmethod
     def get_model(model: str | type[lmfit.model.Model]) -> type[lmfit.model.Model]:
-        """Resolve a model name to an lmfit model class."""
+        """Resolve a model name to a lmfit model class."""
         if isinstance(model, str):
             model = getattr(lmfit.models, model, None)
         if not model:
@@ -380,39 +377,25 @@ class LmfitService1D(DAPServiceBase):
             status: (dict): Scan segment data
             metadata (dict): Scan segment metadata
         """
-        if self.finish_event is None:
-            self.finish_event = threading.Event()
-            threading.Thread(target=self.process_until_finished, args=(self.finish_event,)).start()
+        self._process_and_publish_current_scan()
+        if status.get("status") == "closed":
+            self._process_and_publish_current_scan()
 
-        if status.get("status") != "open":
-            time.sleep(0.2)
-            self.finish_event.set()
-            self.finish_event = None
-
-    def process_until_finished(self, event: threading.Event):
-        """
-        Process until the scan is finished.
-        """
-        while True:
-            data = self.get_data_from_current_scan(scan_item=self.current_scan_item)
-            if not data:
-                time.sleep(0.1)
-                continue
-            self.data = data
-            out = self.process()
-            if out:
-                stream_output, metadata = out
-                self.client.connector.xadd(
-                    MessageEndpoints.processed_data(self.model.__class__.__name__),
-                    msg_dict={
-                        "data": messages.ProcessedDataMessage(data=stream_output, metadata=metadata)
-                    },
-                    max_size=100,
-                    expire=60,
-                )
-            if event.is_set():
-                break
-            time.sleep(0.1)
+    def _process_and_publish_current_scan(self) -> None:
+        data = self.get_data_from_current_scan(scan_item=self.current_scan_item)
+        if not data:
+            return
+        self.data = data
+        out = self.process()
+        if not out:
+            return
+        stream_output, metadata = out
+        self.client.connector.xadd(
+            MessageEndpoints.processed_data(self.model.__class__.__name__),
+            msg_dict={"data": messages.ProcessedDataMessage(data=stream_output, metadata=metadata)},
+            max_size=100,
+            expire=60,
+        )
 
     def configure(
         self,
@@ -591,13 +574,7 @@ class LmfitService1D(DAPServiceBase):
         if x.size < min_data_points or y.size < min_data_points:
             return None
 
-        return {
-            "x": x,
-            "y": y,
-            "x_original": x_original,
-            "x_lim": x_limited,
-            "scan_data": True,
-        }
+        return {"x": x, "y": y, "x_original": x_original, "x_lim": x_limited, "scan_data": True}
 
     def process(self) -> tuple[dict, dict] | None:
         """
