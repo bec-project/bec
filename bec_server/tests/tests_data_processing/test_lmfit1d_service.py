@@ -287,7 +287,7 @@ def test_LmfitService1D_expand_composite_list_length_mismatch():
         model=["GaussianModel", "GaussianModel"], client=client, continuous=False
     )
     with pytest.raises(DAPError):
-        service._expand_composite_list([{"center": 0.0}])  # noqa: SLF001
+        service._expand_composite_parameters([{"center": 0.0}])  # noqa: SLF001
 
 
 def test_LmfitService1D_expand_composite_dict_component_keys():
@@ -295,7 +295,7 @@ def test_LmfitService1D_expand_composite_dict_component_keys():
     service = LmfitService1D(
         model=["GaussianModel", "GaussianModel"], client=client, continuous=False
     )
-    expanded = service._expand_composite_dict(  # noqa: SLF001
+    expanded = service._expand_composite_parameters(  # noqa: SLF001
         {
             "GaussianModel_0": {"center": {"value": -1.0}},
             "GaussianModel_1": {"center": {"value": 1.0}},
@@ -311,35 +311,67 @@ def test_LmfitService1D_resolve_model_name_map_rejects_duplicates():
         model=["GaussianModel", "GaussianModel"], client=client, continuous=False
     )
     with pytest.raises(DAPError):
-        service._resolve_model_name_map({"GaussianModel": {"center": 0.0}})  # noqa: SLF001
+        service._expand_composite_parameters({"GaussianModel": {"center": 0.0}})  # noqa: SLF001
 
 
-def test_LmfitService1D_prepare_fit_params_uses_guess(monkeypatch, lmfit_service):
+def test_LmfitService1D_process_uses_guess_when_parameters_are_not_configured(
+    monkeypatch, lmfit_service
+):
     x = np.linspace(-1.0, 1.0, 15)
     y = np.exp(-(x**2))
     guessed = lmfit.models.GaussianModel().make_params()
     guess_spy = mock.MagicMock(return_value=guessed)
     monkeypatch.setattr(lmfit_service, "_guess_parameters", guess_spy)
+    lmfit_service.data = {"x": x, "y": y, "x_lim": False, "x_original": x, "scan_data": False}
     lmfit_service.parameters = None
-    params = lmfit_service._prepare_fit_params(x, y)  # noqa: SLF001
-    assert params is guessed
+    fit_spy = mock.MagicMock(
+        return_value=mock.MagicMock(
+            best_fit=y,
+            best_values={},
+            summary=mock.MagicMock(return_value="summary"),
+            chisqr=1.0,
+            redchi=1.0,
+            aic=1.0,
+            bic=1.0,
+        )
+    )
+    monkeypatch.setattr(lmfit_service.model, "fit", fit_spy)
+
+    lmfit_service.process()
+
+    assert fit_spy.call_args.kwargs["params"] is guessed
     guess_spy.assert_called_once_with(x, y)
 
 
-def test_LmfitService1D_prepare_fit_params_applies_configured_overrides(monkeypatch, lmfit_service):
+def test_LmfitService1D_process_uses_configured_parameters_without_guessing(
+    monkeypatch, lmfit_service
+):
     x = np.linspace(-1.0, 1.0, 15)
     y = np.exp(-(x**2))
-    guessed = lmfit.models.GaussianModel().make_params()
-    guessed["amplitude"].set(value=3.0, vary=True)
-    guess_spy = mock.MagicMock(return_value=guessed)
+    guess_spy = mock.MagicMock()
     monkeypatch.setattr(lmfit_service, "_guess_parameters", guess_spy)
+    lmfit_service.data = {"x": x, "y": y, "x_lim": False, "x_original": x, "scan_data": False}
 
     configured = lmfit.models.GaussianModel().make_params()
     configured["amplitude"].set(value=1.0, vary=False)
     lmfit_service.parameters = configured
-    lmfit_service._parameter_override_names = ["amplitude"]
+    fit_spy = mock.MagicMock(
+        return_value=mock.MagicMock(
+            best_fit=y,
+            best_values={},
+            summary=mock.MagicMock(return_value="summary"),
+            chisqr=1.0,
+            redchi=1.0,
+            aic=1.0,
+            bic=1.0,
+        )
+    )
+    monkeypatch.setattr(lmfit_service.model, "fit", fit_spy)
 
-    params = lmfit_service._prepare_fit_params(x, y)  # noqa: SLF001
+    lmfit_service.process()
+
+    params = fit_spy.call_args.kwargs["params"]
     assert params["amplitude"].value == 1.0
     assert params["amplitude"].vary is False
-    guess_spy.assert_called_once_with(x, y)
+    assert params is not configured
+    guess_spy.assert_not_called()
