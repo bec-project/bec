@@ -110,8 +110,7 @@ def test_user_macros_with_safe_code(user_macros, tmpdir):
     """Test that user macros with only imports, functions, and classes are loaded correctly."""
     macros, _ = user_macros
     macro_file = tmpdir.join("safe_macro.py")
-    macro_file.write(
-        """
+    macro_file.write("""
 import os
 from typing import List
 
@@ -132,8 +131,7 @@ class MyClass:
     def method(self):
         return self.value
 
-"""
-    )
+""")
 
     # Mock run to capture namespace updates
     mock_run = macros._client.callbacks.run
@@ -256,13 +254,11 @@ def test_on_macro_update_integration_with_real_message(user_macros, tmpdir):
     macros, _ = user_macros
     # Test with a real MacroUpdateMessage instance
     macro_file = tmpdir.join("integration_macro.py")
-    macro_file.write(
-        """
+    macro_file.write("""
 def integration_test():
     '''Integration test function'''
     return 'integration_success'
-"""
-    )
+""")
 
     # Add a mock macro to the handler first
     macros._update_handler._add_macro(
@@ -554,8 +550,7 @@ def test_reload_user_macro_with_real_files(user_macros, tmpdir):
     macros, _ = user_macros
     # Create initial macro file
     macro_file = tmpdir.join("test_reload_macro.py")
-    macro_file.write(
-        """
+    macro_file.write("""
 def test_function():
     '''Initial version'''
     return 'version_1'
@@ -563,8 +558,7 @@ def test_function():
 def helper_function():
     '''Helper function'''
     return 'helper'
-"""
-    )
+""")
 
     # Load initial macro
     macros.load_user_macro(str(macro_file))
@@ -575,8 +569,7 @@ def helper_function():
     assert macros._update_handler.macros["test_function"]["cls"]() == "version_1"
 
     # Update the file content
-    macro_file.write(
-        """
+    macro_file.write("""
 def test_function():
     '''Updated version'''
     return 'version_2'
@@ -588,8 +581,7 @@ def helper_function():
 def new_function():
     '''New function added'''
     return 'new'
-"""
-    )
+""")
 
     # Reload only the test_function
     macros._update_handler.reload_user_macro("test_function", str(macro_file))
@@ -641,13 +633,11 @@ def test_reload_user_macro_integration_with_callbacks(user_macros, tmpdir):
     """Test that reload_user_macro properly triggers callbacks."""
     macros, _ = user_macros
     macro_file = tmpdir.join("callback_test_macro.py")
-    macro_file.write(
-        """
+    macro_file.write("""
 def callback_test():
     '''Test function for callbacks'''
     return 'original'
-"""
-    )
+""")
 
     # Load initial macro
     macros.load_user_macro(str(macro_file))
@@ -656,13 +646,11 @@ def callback_test():
     macros._client.callbacks.run.reset_mock()
 
     # Update file content
-    macro_file.write(
-        """
+    macro_file.write("""
 def callback_test():
     '''Updated test function for callbacks'''
     return 'updated'
-"""
-    )
+""")
 
     # Reload the macro
     macros._update_handler.reload_user_macro("callback_test", str(macro_file))
@@ -742,31 +730,25 @@ def test_load_all_user_macros_basic(user_macros, tmpdir, monkeypatch):
 
     # Create test macro files
     user_macro1 = user_macro_dir.join("user_macro1.py")
-    user_macro1.write(
-        """
+    user_macro1.write("""
 def user_function1():
     '''User macro function 1'''
     return 'user1'
-"""
-    )
+""")
 
     user_macro2 = user_macro_dir.join("user_macro2.py")
-    user_macro2.write(
-        """
+    user_macro2.write("""
 def user_function2():
     '''User macro function 2'''
     return 'user2'
-"""
-    )
+""")
 
     config_macro1 = config_macro_dir.join("config_macro1.py")
-    config_macro1.write(
-        """
+    config_macro1.write("""
 def config_function1():
     '''Config macro function 1'''
     return 'config1'
-"""
-    )
+""")
 
     # Mock the path expansion and existence checks
     def mock_expanduser(path):
