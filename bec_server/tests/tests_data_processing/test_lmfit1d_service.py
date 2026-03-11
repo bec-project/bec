@@ -122,34 +122,30 @@ def test_LmfitService1D_process(lmfit_service):
 
 
 def test_LmfitService1D_on_scan_status_update(lmfit_service):
-    with mock.patch.object(lmfit_service, "process_until_finished") as process_until_finished:
+    with mock.patch.object(
+        lmfit_service, "_process_and_publish_current_scan"
+    ) as process_and_publish:
         lmfit_service.on_scan_status_update({"status": "running"}, {})
-        process_until_finished.assert_called_once()
+        process_and_publish.assert_called_once()
 
 
-def test_LmfitService1D_on_scan_status_update_finishes_on_closed_scans(lmfit_service):
-    with mock.patch("bec_server.data_processing.lmfit1d_service.threading") as threading:
-        event = threading.Event()
-        lmfit_service.finish_event = event
-        with mock.patch.object(lmfit_service, "process_until_finished") as process_until_finished:
-            lmfit_service.on_scan_status_update({"status": "closed"}, {})
-            event.set.assert_called_once()
-            process_until_finished.assert_not_called()
-            assert lmfit_service.finish_event is None
+def test_LmfitService1D_on_scan_status_update_processes_twice_on_closed_scans(lmfit_service):
+    with mock.patch.object(
+        lmfit_service, "_process_and_publish_current_scan"
+    ) as process_and_publish:
+        lmfit_service.on_scan_status_update({"status": "closed"}, {})
+        assert process_and_publish.call_count == 2
 
 
-def test_LmfitService1D_process_until_finished(lmfit_service):
-    event = mock.MagicMock()
-    event.is_set.side_effect = [False, False, True]
-
+def test_LmfitService1D_process_and_publish_current_scan(lmfit_service):
     with mock.patch.object(lmfit_service, "get_data_from_current_scan") as get_data:
         get_data.return_value = {"x": [1, 2, 3], "y": [4, 5, 6]}
         with mock.patch.object(lmfit_service, "process") as process:
             process.return_value = ({"result": "result"}, {"metadata": "metadata"})
-            lmfit_service.process_until_finished(event)
-            assert get_data.call_count == 3
-            assert process.call_count == 3
-            assert lmfit_service.client.connector.xadd.call_count == 3
+            lmfit_service._process_and_publish_current_scan()  # noqa: SLF001
+            get_data.assert_called_once()
+            process.assert_called_once()
+            lmfit_service.client.connector.xadd.assert_called_once()
 
 
 def test_LmfitService1D_configure(lmfit_service):
