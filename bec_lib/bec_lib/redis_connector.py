@@ -750,8 +750,10 @@ class RedisConnector:
                 # callbacks for existing items, without waiting for a new element to be added
                 # to the stream
                 if from_start_stream_topics_id:
-                    # read the streams contents from beginning, not blocking
-                    from_start_msg_list = self._redis_conn.xread(from_start_stream_topics_id)
+                    # read the streams contents from beginning
+                    from_start_msg_list = self._redis_conn.xread(
+                        from_start_stream_topics_id, block=200
+                    )
                 if stream_topics_id:
                     msg_list = self._redis_conn.xread(stream_topics_id, block=200)
             except redis.exceptions.ConnectionError:
