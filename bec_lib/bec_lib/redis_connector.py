@@ -44,7 +44,6 @@ from redis.backoff import ExponentialBackoff
 from redis.client import Pipeline, Redis
 from redis.retry import Retry
 
-from bec_lib import endpoints
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
@@ -1427,6 +1426,10 @@ class RedisConnector:
         return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
 
     def publish_metrics(self, group_name: str, metrics: dict[str, str | int | float | bool]):
+        if str in set(map(type, metrics.values())):
+            bec_logger.logger.warning(
+                "Dynamic string metrics are currently not supported and will be ignored in the ingestor."
+            )
         msg = DynamicMetricMessage.from_dict(metrics)
         ep = MessageEndpoints.dynamic_metric(group_name)
         self._redis_conn.publish(ep.endpoint, MsgpackSerialization.dumps(msg))
