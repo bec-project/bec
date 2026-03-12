@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.108.1 (2026-03-12)
+
+### Bug Fixes
+
+- Block for any xread
+  ([`46f3924`](https://github.com/bec-project/bec/commit/46f392420d7f64850dee3a3b4c95c783d2e74334))
+
+### Chores
+
+- Update to black 26
+  ([`e23b038`](https://github.com/bec-project/bec/commit/e23b03854b628a0b64a5989bdf78f389239d90ea))
+
+
 ## v3.108.0 (2026-03-11)
 
 ### Bug Fixes
