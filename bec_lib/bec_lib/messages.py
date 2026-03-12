@@ -1679,9 +1679,7 @@ class SciLogServiceInfo(MessagingService):
 
 class TeamsServiceInfo(MessagingService):
     service_type: Literal["teams"] = "teams"
-    team_id: str
-    channel_id: str
-    channel_name: str
+    workflow_webhook_url: str
 
 
 class MessagingServiceScopeConfig(BaseModel):
