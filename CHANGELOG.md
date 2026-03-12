@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.108.2 (2026-03-12)
+
+### Bug Fixes
+
+- Warn on use of string metric
+  ([`ed93954`](https://github.com/bec-project/bec/commit/ed939540138f059ee301190849dd62a74bb0e562))
+
+
 ## v3.108.1 (2026-03-12)
 
 ### Bug Fixes
