@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.108.3 (2026-03-13)
+
+### Bug Fixes
+
+- **file_utils**: Prevent path traversal in compile_file_components function
+  ([`04ba447`](https://github.com/bec-project/bec/commit/04ba447fef02d4b8e76578906da12896785df452))
+
+
 ## v3.108.2 (2026-03-12)
 
 ### Bug Fixes
