@@ -196,6 +196,70 @@ def test_compile_file_components():
 
 
 @pytest.mark.parametrize(
+    "kwargs, description",
+    [
+        # file_directory traversal
+        ({"file_directory": "../etc"}, "single parent traversal via file_directory"),
+        ({"file_directory": "../../etc"}, "double parent traversal via file_directory"),
+        ({"file_directory": "valid/../../../etc"}, "hidden traversal via file_directory"),
+        ({"file_directory": "/etc"}, "absolute path escape via file_directory"),
+        ({"file_directory": "/tmp2/evil"}, "absolute path to different base via file_directory"),
+        (
+            {"file_directory": "~/../../../../../etc"},
+            "multiple parent traversal via file_directory",
+        ),
+        # user_suffix traversal (os.path.join can turn suffix segments into ..)
+        ({"user_suffix": "../../../../../evil"}, "parent traversal via user_suffix"),
+    ],
+)
+def test_compile_file_components_path_traversal(kwargs, description):
+    """Ensure that file_directory and user_suffix cannot escape the base path."""
+    with pytest.raises(FileWriterError, match="Path traversal"):
+        compile_file_components(base_path="/tmp", scan_nr=10, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "kwargs, expected_path, description",
+    [
+        # plain call – no optional args
+        ({}, "/tmp/S00000-00999/S00010/S00010", "default, no optional args"),
+        # simple relative file_directory inside base
+        ({"file_directory": "mydir"}, "/tmp/mydir/S00010", "simple relative file_directory"),
+        # nested relative file_directory
+        (
+            {"file_directory": "project/raw"},
+            "/tmp/project/raw/S00010",
+            "nested relative file_directory",
+        ),
+        # user_suffix only
+        ({"user_suffix": "SampleA"}, "/tmp/S00000-00999/S00010_SampleA/S00010", "user_suffix only"),
+        (
+            {"user_suffix": "temp.sample"},
+            "/tmp/S00000-00999/S00010_temp.sample/S00010",
+            "user_suffix only",
+        ),
+        # file_directory + user_suffix together (suffix ignored when directory given)
+        (
+            {"file_directory": "mydir", "user_suffix": "SampleA"},
+            "/tmp/mydir/S00010",
+            "file_directory + user_suffix (suffix suppressed)",
+        ),
+        # non-default scan_bundle and leading_zeros
+        (
+            {"scan_bundle": 100, "leading_zeros": 4},
+            "/tmp/S0000-0099/S0010/S0010",
+            "custom scan_bundle and leading_zeros",
+        ),
+    ],
+)
+def test_compile_file_components_valid_paths(kwargs, expected_path, description):
+    """Regression tests: valid inputs must produce the expected path without raising."""
+    file_path, extension = compile_file_components(base_path="/tmp", scan_nr=10, **kwargs)
+    assert extension == "h5", description
+    assert file_path == expected_path, description
+
+
+@pytest.mark.parametrize(
     "scan_info",
     [
         (

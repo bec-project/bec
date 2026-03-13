@@ -151,6 +151,15 @@ def compile_file_components(
         )
 
     file_path_component = os.path.join(base_path, file_directory, f"S{scan_nr:0{leading_zeros}d}")
+
+    # Prevent path traversal: the resolved path must stay inside base_path
+    base_norm = os.path.normpath(base_path)
+    result_norm = os.path.normpath(file_path_component)
+    if not result_norm.startswith(base_norm + os.sep):
+        raise FileWriterError(
+            f"Path traversal detected: '{result_norm}' escapes base path '{base_norm}'"
+        )
+
     return (file_path_component, file_extension)
 
 
