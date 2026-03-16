@@ -79,6 +79,7 @@ def test_device_server_init(device_server):
                 ),
                 instruction_id="test",
                 result=None,
+                result_is_status=True,
             ),
         ),
         (
@@ -107,6 +108,7 @@ def test_device_server_init(device_server):
                 ),
                 instruction_id="test",
                 result=None,
+                result_is_status=None,
             ),
         ),
     ],

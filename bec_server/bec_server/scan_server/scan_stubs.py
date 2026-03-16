@@ -71,6 +71,7 @@ class ScanStubStatus:
         self._done_checked = False
         self.value = None
         self.message = None
+        self._result_is_status: bool | None = None
         self._future = concurrent.futures.Future()
         self._is_container = is_container
         if is_container:
@@ -116,6 +117,9 @@ class ScanStubStatus:
 
     def _update_future(self, message: messages.DeviceInstructionResponse = None):
         self.message = message
+        if self.message.result_is_status is not None:
+            self._result_is_status = self.message.result_is_status
+
         if message.status == "completed":
             self.set_done(message.result)
         elif message.status == "error":
@@ -185,7 +189,11 @@ class ScanStubStatus:
             raise obj.exception()
 
     def wait(
-        self, min_wait: float = None, timeout: float = np.inf, logger_wait=5
+        self,
+        min_wait: float | None = None,
+        timeout: float = np.inf,
+        logger_wait=5,
+        resolve_on_known_type: bool = False,
     ) -> ScanStubStatus:
         """
         Wait for the completion of the status object.
@@ -194,14 +202,24 @@ class ScanStubStatus:
             min_wait (float, optional): Minimum wait time in seconds. Defaults to None.
             timeout (float, optional): Timeout in seconds. Defaults to None.
             logger_wait (int, optional): Time in seconds before logging the remaining status objects. Defaults to 5.
+            resolve_on_known_type (bool, optional): Whether to exit early once the return type of the rpc method is known.
+                It is used to discriminate status objects from normal return values. It is mostly for internal use and
+                should be used with caution. Defaults to False.
 
         Raises:
             TimeoutError: Raised if the timeout is reached.
             DeviceInstructionError: Raised if the instruction failed.
+            ValueError: Raised if resolve_on_known_type is True but the status object has sub status objects.
 
         Returns:
             ScanStubStatus: Status object
         """
+        if resolve_on_known_type and self._sub_status_objects:
+            # Something is wrong if we have multiple status objects and the caller expects to resolve to a single type.
+            raise ValueError(
+                "resolve_on_known_type is not supported for status objects with sub status objects."
+            )
+
         self._registry.pop(self._device_instr_id, None)
         for st in self._sub_status_objects:
             self._registry.pop(st._device_instr_id, None)
@@ -225,6 +243,8 @@ class ScanStubStatus:
         wait_time = 0
 
         while not all(e.done() for e in futures):
+            if resolve_on_known_type and self._result_is_status is not None:
+                break
             done, _ = concurrent.futures.wait(
                 futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
             )
@@ -329,8 +349,6 @@ class ScanStubs:
             "args": args,
             "kwargs": kwargs,
         }
-        status = self._create_status(name=f"rpc_{func_name}")
-
         # pylint: disable=protected-access
         metadata = {"device_instr_id": status._device_instr_id}
         msg = messages.DeviceInstructionMessage(

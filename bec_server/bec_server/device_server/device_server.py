@@ -86,6 +86,7 @@ class RequestHandler:
             "status_objects": [],
             "num_status_objects": num_status_objects,
             "done": done,
+            "is_status_obj": None,
         }
         if done and success is None:
             raise ValueError("If the instruction is done, the success status must be set.")
@@ -143,7 +144,7 @@ class RequestHandler:
         """
         self._storage[instr_id]["status_objects"].append(status_obj)
         status_obj.add_callback(self.on_status_object_update)
-        self._update_instruction(instr_id)
+        self._update_instruction(instr_id, is_status_obj=True)
 
     def set_finished(
         self,
@@ -174,7 +175,12 @@ class RequestHandler:
                 else:
                     success = True
             self.send_device_instruction_response(
-                instr_id, success, done=True, error_info=error_info, result=result
+                instr_id,
+                success,
+                done=True,
+                error_info=error_info,
+                result=result,
+                is_status_obj=request_info["is_status_obj"],
             )
             self.remove_request(instr_id)
 
@@ -187,18 +193,25 @@ class RequestHandler:
         """
         self.parent.status_callback(status_obj)
         instr_id = status_obj.instruction.metadata["device_instr_id"]
-        self._update_instruction(instr_id)
+        self._update_instruction(instr_id, is_status_obj=True)
 
-    def _update_instruction(self, instr_id: str) -> None:
+    def _update_instruction(self, instr_id: str, is_status_obj: bool = False) -> None:
         """
         Update the instruction in the storage.
 
         Args:
             instr_id(str): The ID of the instruction.
+            is_status_obj(bool): Whether we are working with an ophyd status object as result.
         """
         request_info = self.get_request(instr_id)
         if request_info is None:
             return
+
+        if not request_info["is_status_obj"] and is_status_obj:
+            request_info["is_status_obj"] = True
+            self.send_device_instruction_response(
+                instr_id, success=False, done=False, is_status_obj=True, result=None
+            )
 
         if len(request_info["status_objects"]) != request_info["num_status_objects"]:
             return
@@ -263,6 +276,7 @@ class RequestHandler:
         done: bool,
         error_info: messages.ErrorInfo | None = None,
         result: Any = None,
+        is_status_obj: bool | None = None,
     ):
         """
         Send a request status message.
@@ -273,6 +287,7 @@ class RequestHandler:
             done(bool): Whether the instruction is done.
             error_info(messages.ErrorInfo, optional): Error information. Defaults to None.
             result(Any): The result of the instruction. Defaults to None.
+            is_status_obj(bool | None): Whether the result is a status object. Defaults to None.
         """
         metadata = self._storage[instr_id]["instr"].metadata
         stop_keys = ["RID", "scan_id", "queue_id"]
@@ -294,6 +309,7 @@ class RequestHandler:
             instruction_id=instr_id,
             instruction=self._storage[instr_id]["instr"],
             result=result,
+            result_is_status=is_status_obj,
             metadata=metadata,
         )
         self.connector.send(MessageEndpoints.device_instructions_response(), response_msg)

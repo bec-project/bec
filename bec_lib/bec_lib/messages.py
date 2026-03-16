@@ -569,6 +569,7 @@ class DeviceInstructionResponse(BECMessage):
     error_info: ErrorInfo | None = None
     instruction: DeviceInstructionMessage
     instruction_id: str
+    result_is_status: bool | None = None
     result: Any | None = None
 
     @model_validator(mode="after")
