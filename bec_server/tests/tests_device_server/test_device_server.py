@@ -544,14 +544,17 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
             assert len(request_info["status_objects"]) == 1
             assert id(status) == id(request_info["status_objects"][0])
             assert status.done is False
-            assert send_response_mock.call_count == 1
-            assert send_response_mock.call_args == mock.call("diid", None, False)
+            assert send_response_mock.call_count == 2
+            assert send_response_mock.call_args_list[0] == mock.call("diid", None, False)
+            assert send_response_mock.call_args_list[1] == mock.call(
+                "diid", success=False, done=False, is_status_obj=True, result=None
+            )
             status.set_finished()
             finished_thread_event.wait()
             assert status.done is True
-            assert send_response_mock.call_count == 2
+            assert send_response_mock.call_count == 3
             assert send_response_mock.call_args == mock.call(
-                "diid", True, done=True, error_info=None, result=None
+                "diid", True, done=True, error_info=None, result=None, is_status_obj=True
             )
 
 
