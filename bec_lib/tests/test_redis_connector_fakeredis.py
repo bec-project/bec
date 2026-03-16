@@ -610,3 +610,50 @@ def test_connector_publish_metrics(connected_connector):
     assert res.metrics["m2"].value == 5.5
     assert res.metrics["m3"].value == "test"
     assert res.metrics["m4"].value is True
+
+
+def test_merging_streams_does_not_skip_messages(connected_connector: RedisConnector):
+    connector = connected_connector
+    cb_normal = mock.Mock(spec=[])  # spec is here to remove all attributes
+    cb_from_start = mock.Mock(spec=[])  # spec is here to remove all attributes
+
+    connector.xadd("test", {"data": 1})
+    connector.xadd("test", {"data": 2})
+
+    connector.register(TestStreamEndpoint, cb=cb_normal, start_thread=False, key="normal")
+    with pytest.raises(TimeoutError):
+        connector.poll_messages(timeout=0.1)
+    cb_normal.assert_not_called()
+
+    connector.xadd("test", {"data": 3})
+    connector.poll_messages()
+    cb_normal.assert_called_once_with({"data": 3}, key="normal")
+    cb_normal.reset_mock()
+
+    assert (id_3 := connected_connector._stream_subs.end_id("test")) != "+"
+
+    connector.xadd("test", {"data": 4})
+    connector.xadd("test", {"data": 5})
+    cb_normal.assert_not_called()
+    connector.register(
+        TestStreamEndpoint, cb=cb_from_start, from_start=True, start_thread=False, key="from_start"
+    )
+
+    connected_connector._read_from_start_streams_and_migrate()
+    connector.poll_messages(timeout=0)
+    connector.poll_messages(timeout=0)
+    connector.poll_messages(timeout=0)
+
+    assert cb_from_start.call_count == 3
+
+    with pytest.raises(TimeoutError):
+        connector.poll_messages(timeout=0)
+
+    assert cb_from_start.call_count == 3
+    assert connected_connector._stream_subs.from_start_subs == {}
+    assert connected_connector._stream_subs.end_id("test") == id_3
+
+    connector.poll_messages()
+
+    assert cb_from_start.call_count == 5
+    assert cb_normal.call_count == 2
