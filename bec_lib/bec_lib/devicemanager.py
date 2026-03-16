@@ -5,6 +5,7 @@ This module contains the DeviceManager class which is used to manage devices and
 from __future__ import annotations
 
 import collections
+import contextlib
 import copy
 import functools
 import re
@@ -30,6 +31,7 @@ from bec_lib.device import (
     Positioner,
     ReadoutPriority,
     Signal,
+    rpc_method_context,
     set_device_config,
 )
 from bec_lib.endpoints import MessageEndpoints
@@ -483,6 +485,23 @@ class DeviceManagerBase:
             connector=self.connector, service_name=self._service._service_name, device_manager=self
         )
         self._status_cb = status_cb if isinstance(status_cb, list) else [status_cb]
+
+    @contextlib.contextmanager
+    def _rpc_method(self, method: Callable):
+        """Context manager to set the 'rpc_method_context' context variable.
+
+        Nested calls are supported: the most recent call wins, and the previous
+        value is restored on exit. When the outermost context manager exits the
+        variable is unset.
+
+        Args:
+            method (Callable): The RPC method callable to set as the active context.
+        """
+        token = rpc_method_context.set(method)
+        try:
+            yield
+        finally:
+            rpc_method_context.reset(token)
 
     def initialize(self, bootstrap_server) -> None:
         """

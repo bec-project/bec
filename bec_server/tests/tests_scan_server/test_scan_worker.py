@@ -459,6 +459,7 @@ def test_process_instructions(scan_worker_mock, abortion):
     with mock.patch.object(worker, "_wait_for_device_server") as wait_mock:
         with mock.patch.object(worker, "reset") as reset_mock:
             with mock.patch.object(worker, "_check_for_interruption") as interruption_mock:
+                queue.queue.request_blocks.append(mock.MagicMock())
                 with mock.patch.object(queue.queue, "active_rb") as rb_mock:
                     with mock.patch.object(worker, "_instruction_step") as step_mock:
                         if abortion:

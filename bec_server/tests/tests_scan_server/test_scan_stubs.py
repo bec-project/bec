@@ -124,3 +124,31 @@ def test_stage(stubs):
     msg = list(stubs.stage())
     # Should not block, and return an empty list
     assert not msg
+
+
+def test_rpc_call_returns_status(stubs):
+    """When the RPC result is an ophyd status, _rpc_call should return the status object itself."""
+    fake_status = mock.MagicMock()
+    fake_status._result_is_status = True
+    fake_status.wait = mock.MagicMock()
+
+    with mock.patch.object(stubs, "_create_status", return_value=fake_status):
+        result = stubs._rpc_call("samx", "velocity.set", 10)
+
+    fake_status.wait.assert_called_once_with(resolve_on_known_type=True)
+    assert result is fake_status
+
+
+def test_rpc_call_returns_dict(stubs):
+    """When the RPC result is a plain value (e.g. dict), _rpc_call should return status.result."""
+    expected = {"value": 3.14, "timestamp": 1234567890}
+    fake_status = mock.MagicMock()
+    fake_status._result_is_status = False
+    fake_status.result = expected
+    fake_status.wait = mock.MagicMock()
+
+    with mock.patch.object(stubs, "_create_status", return_value=fake_status):
+        result = stubs._rpc_call("samx", "velocity.set", 10)
+
+    fake_status.wait.assert_called_once_with(resolve_on_known_type=True)
+    assert result == expected

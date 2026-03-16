@@ -425,12 +425,14 @@ class ScanWorker(threading.Thread):
         if (start := self._init_instruction_loop(queue)) is None:
             return
         try:
-            for instr in queue:
-                self._check_for_interruption()
-                if instr is None:
-                    continue
-                self._exposure_time = getattr(queue.active_request_block.scan, "exp_time", None)
-                self._instruction_step(instr)
+            rpc_method = queue.queue.request_blocks[0].scan.stubs._rpc_call
+            with self.device_manager._rpc_method(rpc_method):
+                for instr in queue:
+                    self._check_for_interruption()
+                    if instr is None:
+                        continue
+                    self._exposure_time = getattr(queue.active_request_block.scan, "exp_time", None)
+                    self._instruction_step(instr)
         except ScanAbortion as exc:
             if self.signal_event.is_set():
                 return
@@ -439,12 +441,14 @@ class ScanWorker(threading.Thread):
             queue.stopped = True
             try:
                 cleanup = queue.active_request_block.scan.move_to_start()
+                rpc_method = queue.active_request_block.scan.stubs._rpc_call
                 self.status = InstructionQueueStatus.RUNNING
-                for instr in cleanup:
-                    self._check_for_interruption()
-                    instr.metadata["scan_id"] = queue.queue.active_rb.scan_id
-                    instr.metadata["queue_id"] = queue.queue_id
-                    self._instruction_step(instr)
+                with self.device_manager._rpc_method(rpc_method):
+                    for instr in cleanup:
+                        self._check_for_interruption()
+                        instr.metadata["scan_id"] = queue.queue.active_rb.scan_id
+                        instr.metadata["queue_id"] = queue.queue_id
+                        self._instruction_step(instr)
             except DeviceInstructionError as exc_di:
                 self._propagate_pi_error(traceback.format_exc(), exc_di.error_info)
                 raise ScanAbortion from exc_di
