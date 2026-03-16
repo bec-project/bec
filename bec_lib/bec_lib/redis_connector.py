@@ -297,12 +297,15 @@ class StreamSubs:
                     read_id=topics_and_end_ids[topic], subs=self.from_start_subs.pop(topic)
                 )
 
-    def _check_registered(self, topic, new_sub: StreamSubInfo):
-        if (
+    def is_already_registered(self, topic: str, new_sub: StreamSubInfo):
+        return (
             (topic in self.from_start_subs and new_sub in self.from_start_subs[topic])
             or (topic in self._dr_subs and new_sub in self._dr_subs[topic])
             or (topic in self._subs and new_sub in self._subs[topic].subs)
-        ):
+        )
+
+    def _check_registered(self, topic: str, new_sub: StreamSubInfo):
+        if self.is_already_registered(topic, new_sub):
             raise ValueError(f"Received duplicate subscription for {new_sub=}.")
 
     def add_direct_listener(self, topic: str, new_sub: DirectReadStreamSubInfo):
@@ -708,6 +711,19 @@ class RedisConnector:
         else:
             raise ValueError("register: patterns must be a string or a list of strings")
         return patterns
+
+    def any_stream_is_registered(
+        self, topics: EndpointInfo | str | list[EndpointInfo] | list[str], cb: Callable
+    ) -> bool:
+        """Check if any stream in `topics` is already registered with this callback.
+        Does not check if the topic is a stream in Redis, it will just return False."""
+        with self._stream_subs.lock:
+            return any(
+                self._stream_subs.is_already_registered(
+                    topic, StreamSubInfo(louie.saferef.safe_ref(cb), {})
+                )
+                for topic in self._convert_endpointinfo(topics)[0]
+            )
 
     def register(
         self,
