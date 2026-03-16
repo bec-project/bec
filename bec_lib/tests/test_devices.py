@@ -199,10 +199,10 @@ def test_read_configuration_cached(
 @pytest.mark.parametrize(
     ["mock_rpc", "method", "args", "kwargs", "expected_call"],
     [
-        ("_get_rpc_response", "set", (1,), {}, (mock.ANY, mock.ANY)),
-        ("_run_rpc_call", "set", (1,), {}, ("samx", "setpoint.set", 1)),
-        ("_run_rpc_call", "put", (1,), {"wait": True}, ("samx", "setpoint.set", 1)),
-        ("_run_rpc_call", "put", (1,), {}, ("samx", "setpoint.put", 1)),
+        ("_get_rpc_response", "set", [1], {}, (mock.ANY, mock.ANY)),
+        ("_run_rpc_call", "set", [1], {}, ("samx", "setpoint.set", 1)),
+        ("_run_rpc_call", "put", [1], {"wait": True}, ("samx", "setpoint.set", 1)),
+        ("_run_rpc_call", "put", [1], {}, ("samx", "setpoint.put", 1)),
     ],
 )
 def test_run_rpc_call(dev: Any, mock_rpc, method, args, kwargs, expected_call):
@@ -326,7 +326,7 @@ def device_config():
         "readoutPriority": "monitored",
         "deviceClass": "SimCamera",
         "deviceConfig": {"device_access": True, "labels": "eiger", "name": "eiger"},
-        "deviceTags": {"detector"},
+        "deviceTags": ["detector"],
     }
 
 
@@ -360,7 +360,12 @@ def device_obj(device_config: dict[str, Any]):
 def test_create_device_saves_config(
     device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]
 ):
-    assert {k: v for k, v in device_obj._config.items() if k in device_config} == device_config
+    assert (
+        messages.sanitize_one_way_encodable(
+            {k: v for k, v in device_obj._config.items() if k in device_config}
+        )
+        == device_config
+    )
 
 
 def test_device_enabled(device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]):
@@ -454,7 +459,7 @@ def test_status_wait():
 
 @pytest.fixture
 def device_w_tags(dev_w_config: Callable[..., DeviceBaseWithConfig]):
-    yield dev_w_config({"deviceTags": {"tag1", "tag2"}})
+    yield dev_w_config({"deviceTags": ["tag1", "tag2"]})
 
 
 @pytest.mark.parametrize(
@@ -492,7 +497,7 @@ def test_properties(dev_w_config: Callable[..., DeviceBaseWithConfig], config, a
 
 @pytest.mark.parametrize(
     ["config", "method", "value"],
-    [({"deviceTags": {"tag1", "tag2"}}, "get_device_tags", {"tag1", "tag2"})],
+    [({"deviceTags": ["tag1", "tag2"]}, "get_device_tags", {"tag1", "tag2"})],
 )
 def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, method, value):
     assert getattr(dev_w_config(config), method)() == value
@@ -591,7 +596,7 @@ def test_show_all():
             "readOnly": False,
             "deviceClass": "Class1",
             "readoutPriority": "monitored",
-            "deviceTags": {"tag1", "tag2"},
+            "deviceTags": ["tag1", "tag2"],
         },
         parent=parent,
     )
@@ -603,7 +608,7 @@ def test_show_all():
             "readOnly": True,
             "deviceClass": "Class2",
             "readoutPriority": "baseline",
-            "deviceTags": {"tag3", "tag4"},
+            "deviceTags": ["tag3", "tag4"],
         },
         parent=parent,
     )

@@ -98,18 +98,6 @@ class BECDeviceEncoder(BECCodec):
         return data
 
 
-class PydanticEncoder(BECCodec):
-    obj_type: Type = BaseModel
-
-    @staticmethod
-    def encode(obj: BaseModel) -> dict:
-        return obj.model_dump()
-
-    @staticmethod
-    def decode(type_name: str, data: dict) -> dict:
-        return data
-
-
 class EndpointInfoEncoder(BECCodec):
     obj_type: Type = EndpointInfo
 
@@ -128,18 +116,6 @@ class EndpointInfoEncoder(BECCodec):
             message_type=getattr(messages_module, data["message_type"]),
             message_op=data["message_op"],
         )
-
-
-class SetEncoder(BECCodec):
-    obj_type: Type = set
-
-    @staticmethod
-    def encode(obj: set) -> list:
-        return list(obj)
-
-    @staticmethod
-    def decode(type_name: str, data: list) -> set:
-        return set(data)
 
 
 class BECTypeEncoder(BECCodec):
