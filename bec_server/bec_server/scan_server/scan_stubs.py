@@ -152,6 +152,8 @@ class ScanStubStatus:
         """
         Set the status object to running.
         """
+        if self._future.running():
+            return
         self.done = False
         self._future.set_running_or_notify_cancel()
 
