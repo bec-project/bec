@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, namedtuple
+from contextvars import ContextVar
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
@@ -39,6 +40,8 @@ else:
 
 logger = bec_logger.logger
 _MAX_RECURSION_DEPTH = 100
+
+rpc_method_context: ContextVar[Callable | None] = ContextVar("rpc_method_context", default=None)
 
 
 class RPCError(AlarmBase):
@@ -209,10 +212,11 @@ class DeviceBase:
     ) -> None:
         """
         Args:
-            name (dict): The name of the device.
+            name (str): The name of the device.
             info (dict, optional): The device info dictionary. Defaults to None.
             parent ([type], optional): The parent object. Defaults to None.
             signal_info (dict, optional): The signal info dictionary. Defaults to None.
+            class_name (str, optional): The class name of the device. Defaults to None. If None, the class name is inferred from the class of the object.
         """
         self.name = name
         self._class_name = class_name or object.__getattribute__(self, "__class__").__name__
@@ -222,6 +226,7 @@ class DeviceBase:
             info = {}
         self._info = info.get("device_info", {})
         self.parent = parent
+
         self._custom_rpc_methods = {}
         self._property_container = set()
         if self._info:
@@ -237,7 +242,9 @@ class DeviceBase:
 
         if cached:
             return fcn(self, *args, **kwargs)
-        return self._run_rpc_call(device, func_call, *args, **kwargs)
+
+        rpc_method = rpc_method_context.get() or self._run_rpc_call
+        return rpc_method(device, func_call, *args, **kwargs)
 
     def __getattribute__(self, name: str) -> Any:
         if name in object.__getattribute__(self, "_property_container"):

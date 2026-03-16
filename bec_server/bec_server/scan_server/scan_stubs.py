@@ -319,6 +319,29 @@ class ScanStubs:
         msg.metadata = {**self.device_msg_metadata(), **msg.metadata}
         return msg
 
+    def _rpc_call(self, device: str, func_name: str, *args, **kwargs):
+        status = self._create_status(name=f"rpc_{device}_{func_name}")
+        rpc_id = str(uuid.uuid4())
+        parameter = {
+            "device": device,
+            "func": func_name,
+            "rpc_id": rpc_id,
+            "args": args,
+            "kwargs": kwargs,
+        }
+        status = self._create_status(name=f"rpc_{func_name}")
+
+        # pylint: disable=protected-access
+        metadata = {"device_instr_id": status._device_instr_id}
+        msg = messages.DeviceInstructionMessage(
+            device=device, action="rpc", parameter=parameter, metadata=metadata
+        )
+        self.connector.send(MessageEndpoints.device_instructions(), msg)
+        status.wait(resolve_on_known_type=True)
+        if status._result_is_status:
+            return status
+        return status.result
+
     def send_rpc_and_wait(self, device: str, func_name: str, *args, **kwargs) -> any:
         """
         Perform an RPC (remote procedure call) on a device and wait for its return value. If

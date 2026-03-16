@@ -550,3 +550,28 @@ def test_get_device_config_signal_does_not_exist(dm_with_devices, session_from_t
 
     # Verify signal was NOT updated and retains original value
     assert samx_config["deviceConfig"]["velocity"] == 0.0
+
+
+def test_set_rpc_method_context(dm_with_devices):
+    from bec_lib.device import rpc_method_context
+
+    device_manager = dm_with_devices
+
+    def dummy_method():
+        pass
+
+    def another_dummy_method():
+        pass
+
+    # Test that the context is set correctly within the context manager and reset afterwards
+    with device_manager._rpc_method(dummy_method):
+        assert rpc_method_context.get() == dummy_method
+    assert rpc_method_context.get() is None
+
+    # Test nested context managers and ensure the context is correctly set and reset
+    with device_manager._rpc_method(another_dummy_method):
+        assert rpc_method_context.get() == another_dummy_method
+        with device_manager._rpc_method(dummy_method):
+            assert rpc_method_context.get() == dummy_method
+        assert rpc_method_context.get() == another_dummy_method
+    assert rpc_method_context.get() is None
