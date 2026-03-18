@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.109.0 (2026-03-18)
+
+### Bug Fixes
+
+- Skip setting the future to running if it is already running
+  ([`f52b609`](https://github.com/bec-project/bec/commit/f52b60986d10fb55c162333714bd0305d871bb5c))
+
+### Features
+
+- Add flag to indicate that a deviceinstruction returns an ophyd status object
+  ([`2bbdad8`](https://github.com/bec-project/bec/commit/2bbdad891627547c894955c1c04f42feaa5aeb02))
+
+- Add rpc context manager for redirecting rpc calls
+  ([`9acde24`](https://github.com/bec-project/bec/commit/9acde24e4cc7ffac56c59b3a648c8d7c5c59aab3))
+
+
 ## v3.108.3 (2026-03-13)
 
 ### Bug Fixes
