@@ -28,6 +28,7 @@ from bec_lib.device_monitor_plugin import DeviceMonitorPlugin
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messaging_services import MessagingContainer
 from bec_lib.plugin_helper import _get_available_plugins
 from bec_lib.procedures.hli import ProcedureHli
 from bec_lib.scan_history import ScanHistory
@@ -161,6 +162,7 @@ class BECClient(BECService):
         self._username = ""
         self._system_user = ""
         self.beamline_states = None
+        self.messaging: MessagingContainer = None  # type: ignore
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
@@ -219,6 +221,7 @@ class BECClient(BECService):
             self.callbacks.run(
                 EventType.NAMESPACE_UPDATE, action="add", ns_objects=default_namespace
             )
+            self.messaging = MessagingContainer(self.connector)
             logger.info("Starting new client")
             self.status = BECStatus.RUNNING
         except redis.exceptions.ConnectionError:

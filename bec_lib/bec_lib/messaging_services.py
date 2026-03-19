@@ -15,6 +15,17 @@ if TYPE_CHECKING:
 MessageObjectT = TypeVar("MessageObjectT", bound="MessageServiceObject")
 
 
+class MessagingContainer:
+    """
+    A container for providing easy access to multiple messaging services.
+    """
+
+    def __init__(self, connector: RedisConnector) -> None:
+        self.scilog = SciLogMessagingService(connector)
+        self.teams = TeamsMessagingService(connector)
+        self.signal = SignalMessagingService(connector)
+
+
 class MessageServiceObject:
     """
     A class representing a message object for a messaging service.
