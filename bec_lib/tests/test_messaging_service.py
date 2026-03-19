@@ -469,3 +469,37 @@ def test_scilog_message_add_duplicate_tags(scilog_message, connected_connector):
     assert isinstance(tags_part, messages.MessagingServiceTagsContent)
     # The final tags should include all unique tags without duplicates
     assert sorted(tags_part.tags) == sorted(["bec", "default_tag", "additional_tag"])
+
+
+def test_scilog_add_text_no_formatting(scilog_message):
+    scilog_message.add_text("plain")
+    assert scilog_message._content[0].content == "plain"
+
+
+def test_scilog_add_text_bold(scilog_message):
+    scilog_message.add_text("hello", bold=True)
+    assert scilog_message._content[0].content == "<p><strong>hello</strong></p>"
+
+
+def test_scilog_add_text_italic(scilog_message):
+    scilog_message.add_text("hello", italic=True)
+    assert scilog_message._content[0].content == "<p><em>hello</em></p>"
+
+
+def test_scilog_add_text_color(scilog_message):
+    scilog_message.add_text("warn", color="yellow")
+    assert scilog_message._content[0].content == '<p><mark class="pen-yellow">warn</mark></p>'
+
+
+def test_scilog_add_text_bold_and_color(scilog_message, connected_connector):
+    """bold + color produces the expected nested HTML and round-trips through redis."""
+    scilog_message.add_text("Beamline checks failed", bold=True, color="red")
+    scilog_message.send()
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    text_part = out[0]["data"].message[0]
+    assert isinstance(text_part, messages.MessagingServiceTextContent)
+    assert (
+        text_part.content
+        == '<p><mark class="pen-red"><strong>Beamline checks failed</strong></mark></p>'
+    )
