@@ -79,9 +79,13 @@ def test_scilog_messaging_service_send(scilog_message, connected_connector):
     assert len(out) == 1
     out = out[0]["data"]
     assert out.service_name == "scilog"
-    assert len(out.message) == 1
+    assert len(out.message) == 2
     assert isinstance(out.message[0], messages.MessagingServiceTextContent)
     assert out.message[0].content == "Test message"
+
+    tags = out.message[1]
+    assert isinstance(tags, messages.MessagingServiceTagsContent)
+    assert tags.tags == ["bec"]  # default tag should be included
 
 
 def test_scilog_messaging_service_send_with_attachment(
@@ -104,7 +108,7 @@ def test_scilog_messaging_service_send_with_attachment(
     assert len(out) == 1
     out = out[0]["data"]
     assert out.service_name == "scilog"
-    assert len(out.message) == 2
+    assert len(out.message) == 3
 
     # Check text part
     text = out.message[0]
@@ -114,6 +118,10 @@ def test_scilog_messaging_service_send_with_attachment(
     # Check attachment part
     attachment = out.message[1]
     assert isinstance(attachment, messages.MessagingServiceFileContent)
+
+    tags = out.message[2]
+    assert isinstance(tags, messages.MessagingServiceTagsContent)
+    assert tags.tags == ["bec"]  # default tag should be included
 
     assert attachment.filename == "test.txt"
     assert attachment.mime_type == "text/plain"
@@ -139,7 +147,7 @@ def test_scilog_messaging_service_send_image_attachment(
     assert len(out) == 1
     out = out[0]["data"]
     assert out.service_name == "scilog"
-    assert len(out.message) == 2
+    assert len(out.message) == 3
 
     # Check text part
     assert isinstance(out.message[0], messages.MessagingServiceTextContent)
@@ -148,6 +156,10 @@ def test_scilog_messaging_service_send_image_attachment(
     # Check attachment part
     attachment = out.message[1]
     assert isinstance(attachment, messages.MessagingServiceFileContent)
+
+    tags = out.message[2]
+    assert isinstance(tags, messages.MessagingServiceTagsContent)
+    assert tags.tags == ["bec"]  # default tag should be included
 
     assert attachment.filename == "image.png"
     assert attachment.mime_type == "image/png"
@@ -413,6 +425,30 @@ def test_scilog_message_add_tags_with_default_tags(scilog_message, connected_con
     assert sorted(tags_part.tags) == sorted(
         ["default_tag1", "default_tag2", "additional_tag1", "additional_tag2"]
     )
+
+
+def test_scilog_default_tags_added_on_send_without_explicit_tags(
+    scilog_message, connected_connector
+):
+    """Test that default tags are automatically added before sending when no tags were explicitly set."""
+    scilog_message._service.set_default_tags(["bec", "auto_tag"])  # type: ignore
+
+    message = scilog_message
+    message.add_text("Test message without explicit tags")
+    # Deliberately do NOT call add_tags - default tags should be injected by send()
+    message.send()
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    assert len(out) == 1
+    out = out[0]["data"]
+
+    # The message should contain text + tags even though add_tags was never called
+    assert len(out.message) == 2
+    text_part = out.message[0]
+    tags_part = out.message[1]
+    assert isinstance(text_part, messages.MessagingServiceTextContent)
+    assert isinstance(tags_part, messages.MessagingServiceTagsContent)
+    assert sorted(tags_part.tags) == sorted(["bec", "auto_tag"])
 
 
 def test_scilog_message_add_duplicate_tags(scilog_message, connected_connector):

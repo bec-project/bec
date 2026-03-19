@@ -275,6 +275,21 @@ class SciLogMessageServiceObject(MessageServiceObject):
         self._content.append(messages.MessagingServiceTagsContent(tags=tags))
         return self
 
+    def send(self, scope: str | list[str] | None = None) -> None:
+        """
+        Send the message using the associated messaging service. If no scope is provided, uses the default scope set for the service.
+        If there are no tags in the content, adds the default tags before sending.
+
+        Args:
+            scope (str | list[str] | None): The scope or recipient for the message. If None, uses the default scope set for the service.
+        """
+        # If there are no tags in the content, add the default tags before sending
+        if not any(
+            isinstance(content, messages.MessagingServiceTagsContent) for content in self._content
+        ):
+            self.add_tags(self._service.get_default_tags())  # type: ignore
+        super().send(scope=scope)
+
 
 class SciLogMessagingService(MessagingService[SciLogMessageServiceObject]):
     """Messaging service for SciLog platform."""
