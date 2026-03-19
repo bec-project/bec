@@ -36,12 +36,13 @@ class MessageServiceObject:
         self._scope = scope
         self._content = []
 
-    def add_text(self, text: str) -> Self:
+    def add_text(self, text: str, **kwargs) -> Self:
         """
         Add text to the message object.
 
         Args:
             text (str): The text to add.
+            **kwargs: Additional keyword arguments for specific messaging services.
 
         Returns:
             MessageObject: The updated message object.
@@ -267,6 +268,43 @@ class SciLogMessageServiceObject(MessageServiceObject):
     """
     A class representing a message object for the SciLog messaging service.
     """
+
+    def add_text(
+        self,
+        text: str,
+        bold: bool = False,
+        italic: bool = False,
+        color: str | None = None,
+        **kwargs,
+    ) -> Self:
+        """
+        Add text to the SciLog message with optional inline HTML formatting.
+
+        When any formatting option is supplied the text is wrapped in a ``<p>``
+        paragraph so SciLog renders it correctly.
+
+        Args:
+            text: The text content.
+            bold: Wrap the text in ``<strong>``.
+            italic: Wrap the text in ``<em>``.
+            color: Highlight colour using SciLog's pen marks (e.g. ``"red"``,
+                ``"yellow"``, ``"green"``, ``"blue"``, ``"pink"``).
+
+        Returns:
+            SciLogMessageServiceObject: The updated message object.
+
+        Examples:
+            >>> msg.add_text("Checks failed", bold=True, color="red")
+        """
+        if bold or italic or color:
+            if bold:
+                text = f"<strong>{text}</strong>"
+            if italic:
+                text = f"<em>{text}</em>"
+            if color:
+                text = f'<mark class="pen-{color}">{text}</mark>'
+            text = f"<p>{text}</p>"
+        return super().add_text(text)
 
     def add_tags(self, tags: str | list[str]) -> Self:
         """
