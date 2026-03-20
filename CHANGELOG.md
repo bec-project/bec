@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.111.0 (2026-03-20)
+
+### Features
+
+- **scilog**: Add method to include formatted text in SciLog messages
+  ([`950e9cc`](https://github.com/bec-project/bec/commit/950e9cc32f3de8ece35d3f54994abc54d30cf1c8))
+
+
 ## v3.110.1 (2026-03-20)
 
 ### Bug Fixes
