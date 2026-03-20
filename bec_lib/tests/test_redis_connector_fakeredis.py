@@ -369,10 +369,12 @@ def test_redis_connector_register_stream(connected_connector):
     connector.poll_messages()
     cb_mock1.assert_not_called()
     cb_mock2.assert_called_once_with({"data": 2}, a=2)
+    assert "test" in connector._stream_subs.all_topics
     connector.unregister("test")
-    assert connector._stream_topics_subscription["test"] == []
+    assert connector._stream_subs.all_topics == []
 
 
+@pytest.mark.timeout(10)
 def test_redis_connector_register_stream_identical(connected_connector):
     connector = connected_connector
 
@@ -380,9 +382,9 @@ def test_redis_connector_register_stream_identical(connected_connector):
     received_event2 = mock.Mock(spec=[])
 
     connector.register(TestStreamEndpoint, cb=received_event1, start_thread=False)
-    connector.register(TestStreamEndpoint, cb=received_event1, start_thread=False)
     connector.register(TestStreamEndpoint, cb=received_event2, start_thread=False)
     connector.register(TestStreamEndpoint2, cb=received_event1, start_thread=False)
+    connector.register(TestStreamEndpoint2, cb=received_event2, start_thread=False)
     connector.xadd("test", {"data": 1})
     connector.poll_messages(timeout=1)
     assert received_event1.call_count == 1
@@ -392,14 +394,11 @@ def test_redis_connector_register_stream_identical(connected_connector):
     assert received_event1.call_count == 2
 
     try:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError):
             connector.register(
                 TestStreamEndpoint2, cb=received_event1, newest_only=True, start_thread=False
             )
-        connector.register(
-            TestStreamEndpoint2, cb=received_event2, newest_only=True, start_thread=False
-        )
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError):
             connector.register(TestStreamEndpoint2, cb=received_event2, start_thread=False)
     finally:
         connector.unregister(TestStreamEndpoint2)
@@ -427,7 +426,8 @@ def test_redis_connector_register_stream_list(connected_connector, endpoint):
         connector.poll_messages()
     assert mock.call({"data": 2}, a=1) in cb_mock.mock_calls
     connector.unregister(endpoint)
-    assert len(connector._stream_topics_subscription) == 0
+    all_topics = connector._stream_subs.all_topics
+    assert len(all_topics) == 0
 
 
 @pytest.mark.timeout(10)
@@ -448,12 +448,14 @@ def test_redis_connector_register_stream_from_start(connected_connector):
     cb_mock1.assert_called_once_with({"data": 3}, a=1)
     cb_mock2.assert_called_once_with({"data": 3}, a=2)
     cb_mock1.reset_mock()
+    connector.unregister(TestStreamEndpoint, cb=cb_mock1)
     connector.register(TestStreamEndpoint, cb=cb_mock1, from_start=True, start_thread=False, a=3)
     connector.poll_messages(timeout=1)
     cb_mock1.assert_has_calls(
         [mock.call({"data": 1}, a=3), mock.call({"data": 2}, a=3), mock.call({"data": 3}, a=3)]
     )
     cb_mock1.reset_mock()
+    connector.unregister(TestStreamEndpoint, cb=cb_mock1)
     connector.register(TestStreamEndpoint, cb=cb_mock1, start_thread=False, a=4)
     with pytest.raises(TimeoutError):
         connector.poll_messages(timeout=1)
