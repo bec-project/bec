@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.110.1 (2026-03-20)
+
+### Bug Fixes
+
+- **teams**: Reduce to just webhook url
+  ([`484fa9a`](https://github.com/bec-project/bec/commit/484fa9a46abe1a49852418bbe5fa80c187cd4e89))
+
+
 ## v3.110.0 (2026-03-20)
 
 ### Bug Fixes
