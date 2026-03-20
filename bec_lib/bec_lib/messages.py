@@ -9,13 +9,92 @@ from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Annotated, Any, ClassVar, Literal, Self, Union
+from types import NoneType
+from typing import Annotated, Any, ClassVar, Literal, Self
 from uuid import uuid4
 
+import msgpack
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    ValidationError,
+    WithJsonSchema,
+    field_validator,
+    model_validator,
+)
+from typing_extensions import TypeAliasType
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
+from bec_lib.one_way_registry import OneWaySerializationRegistry
+
+_one_way_registry = OneWaySerializationRegistry()
+
+
+def _sanitize_one_way(data: Any) -> Any:
+    # TODO: Temporary fix for standardizing message structure, will be replaced
+    # by encoders in a future iteration
+    if isinstance(data, np.ndarray):
+        return data
+    if isinstance(data, np.bool_):
+        return bool(data)
+    if isinstance(data, (np.float16, np.float32, np.float64)):
+        return float(data)
+    if isinstance(data, (np.int16, np.int32, np.int64, np.uint16, np.uint32, np.uint64)):
+        return int(data)
+    if isinstance(data, (list, tuple, set)):
+        return [_sanitize_one_way(x) for x in data]
+    if isinstance(data, dict):
+        return {_sanitize_one_way(k): _sanitize_one_way(v) for k, v in data.items()}
+    return _one_way_registry.encode(data)
+
+
+def _ignore_ndarray(data: Any) -> Any:
+    if isinstance(data, np.ndarray):
+        return []
+    raise ValueError(f"Cannot serialize unknown type for {data}: {type(data)}")
+
+
+def _test_packable(data: Any):
+    try:
+        msgpack.dumps(data, default=_ignore_ndarray)
+    except Exception as e:
+        raise ValueError(f"Non-JSONable/msgpackable data in {data}!") from e
+
+
+def _validate_packable(data: Any) -> Any:
+    # Skip sanitization if the data is already valid
+    if isinstance(data, int | float | str | bool | NoneType):
+        return data
+    if isinstance(data, np.bool_):
+        return bool(data)
+    try:
+        _test_packable(data)
+        return data
+    # Recursively check if we should replace anything which is not supposed to be decoded to a custom
+    # type on the other end
+    except ValueError:
+        data = _sanitize_one_way(data)
+    _test_packable(data)
+    return data
+
+
+Jsonable = TypeAliasType(
+    "Jsonable",
+    Annotated[
+        int | float | str | bool | None | list["Jsonable"] | dict[str, "Jsonable"] | np.ndarray,
+        BeforeValidator(_validate_packable),
+    ],
+)
+
+JsonableDict = TypeAliasType(
+    "JsonableDict",
+    Annotated[
+        dict[str, Jsonable], BeforeValidator(_validate_packable), WithJsonSchema({"type": "object"})
+    ],
+)
 
 
 class ProcedureWorkerStatus(Enum):
@@ -44,8 +123,9 @@ class BECMessage(BaseModel):
 
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
     msg_type: ClassVar[str]
-    metadata: dict = Field(default_factory=dict)
+    metadata: JsonableDict = Field(default_factory=dict)
 
     @field_validator("metadata")
     @classmethod
@@ -142,7 +222,7 @@ class ScanQueueMessage(BECMessage):
 
     msg_type: ClassVar[str] = "scan_queue_message"
     scan_type: str
-    parameter: dict
+    parameter: JsonableDict
     queue: str = Field(default="primary")
     allow_restart: bool = Field(
         default=True,
@@ -226,18 +306,18 @@ class ScanStatusMessage(BECMessage):
     scan_type: Literal["step", "fly"] | None = Field(default=None, description="Type of scan")
     dataset_number: int | None = None
     scan_report_devices: list[str] | None = None
-    user_metadata: dict | None = None
+    user_metadata: JsonableDict | None = None
     readout_priority: (
         dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]]
         | None
     ) = None
     scan_parameters: dict[
-        Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Any
+        Literal["exp_time", "frames_per_trigger", "settling_time", "readout_time"] | str, Jsonable
     ] = Field(default_factory=dict)
-    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Any] = Field(
+    request_inputs: dict[Literal["arg_bundle", "inputs", "kwargs"], Jsonable] = Field(
         default_factory=dict
     )
-    info: dict
+    info: JsonableDict
     timestamp: float = Field(default_factory=time.time)
 
     def __str__(self):
@@ -303,7 +383,7 @@ class ScanQueueModificationMessage(BECMessage):
         "release_lock",
         "user_completed",
     ]
-    parameter: dict
+    parameter: JsonableDict
     queue: str = Field(default="primary")
 
 
@@ -551,7 +631,7 @@ class DeviceInstructionMessage(BECMessage):
         "publish_data_as_read",
         "close_scan_group",
     ]
-    parameter: dict
+    parameter: JsonableDict
 
 
 class ErrorInfo(BaseModel):
@@ -749,7 +829,7 @@ class DeviceInfoMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_info_message"
     device: str
-    info: dict
+    info: JsonableDict
 
 
 class DeviceMonitor2DMessage(BECMessage):
@@ -768,8 +848,6 @@ class DeviceMonitor2DMessage(BECMessage):
     device: str
     data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
 
     # Needed for pydantic to accept numpy arrays
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -809,8 +887,6 @@ class DeviceMonitor1DMessage(BECMessage):
     device: str
     data: np.ndarray
     timestamp: float = Field(default_factory=time.time)
-
-    metadata: dict | None = Field(default_factory=dict)
 
     # Needed for pydantic to accept numpy arrays
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -869,7 +945,7 @@ class DeviceUserROIMessage(BECMessage):
     device: str
     signal: str
     roi_type: str = Field(description="Type of the ROI, e.g. 'rectangle', 'circle', 'polygon'")
-    roi: dict = Field(
+    roi: JsonableDict = Field(
         description="Dictionary containing the ROI information, e.g. {'x': 100, 'y': 200, 'width': 50, 'height': 50}"
     )
     timestamp: float = Field(default_factory=time.time)
@@ -889,7 +965,7 @@ class ScanMessage(BECMessage):
     msg_type: ClassVar[str] = "scan_message"
     point_id: int
     scan_id: str
-    data: dict
+    data: JsonableDict
 
 
 class ScanHistoryMessage(BECMessage):
@@ -923,7 +999,7 @@ class ScanHistoryMessage(BECMessage):
     end_time: float
     scan_name: str
     num_points: int
-    request_inputs: dict | None = None
+    request_inputs: JsonableDict | None = None
     stored_data_info: dict[str, dict[str, _StoredDataInfo]] | None = None
 
 
@@ -951,7 +1027,7 @@ class ScanBaselineMessage(BECMessage):
 
     msg_type: ClassVar[str] = "scan_baseline_message"
     scan_id: str
-    data: dict
+    data: JsonableDict
 
 
 ConfigAction = Literal["add", "set", "update", "reload", "remove", "reset", "cancel"]
@@ -969,7 +1045,7 @@ class DeviceConfigMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_config_message"
     action: ConfigAction | None = Field(default=None, validate_default=True)
-    config: dict | None = Field(default=None)
+    config: JsonableDict | None = Field(default=None)
 
     @model_validator(mode="after")
     @classmethod
@@ -1015,7 +1091,7 @@ class LogMessage(BECMessage):
     log_type: Literal[
         "trace", "debug", "info", "success", "warning", "error", "critical", "console_log"
     ]
-    log_msg: dict | str
+    log_msg: JsonableDict | str
 
 
 class AlarmMessage(BECMessage):
@@ -1137,8 +1213,8 @@ class FileContentMessage(BECMessage):
 
     msg_type: ClassVar[str] = "file_content_message"
     file_path: str
-    data: dict
-    scan_info: dict
+    data: JsonableDict
+    scan_info: JsonableDict
 
 
 class VariableMessage(BECMessage):
@@ -1179,7 +1255,7 @@ class ServiceMetricMessage(BECMessage):
 
     msg_type: ClassVar[str] = "service_metric_message"
     name: str
-    metrics: dict
+    metrics: JsonableDict
 
 
 class _StrDynamicMetricValue(BaseModel):
@@ -1241,7 +1317,7 @@ class ProcessedDataMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "processed_data_message"
-    data: dict | list[dict]
+    data: JsonableDict | list[JsonableDict]
 
 
 class DAPConfigMessage(BECMessage):
@@ -1253,7 +1329,7 @@ class DAPConfigMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "dap_config_message"
-    config: dict
+    config: JsonableDict
 
 
 class DAPRequestMessage(BECMessage):
@@ -1269,7 +1345,7 @@ class DAPRequestMessage(BECMessage):
     msg_type: ClassVar[str] = "dap_request_message"
     dap_cls: str
     dap_type: Literal["continuous", "on_demand"]
-    config: dict
+    config: JsonableDict
 
 
 class DAPResponseMessage(BECMessage):
@@ -1299,7 +1375,7 @@ class AvailableResourceMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "available_resource_message"
-    resource: dict | list[dict] | BaseModel | list[BaseModel]
+    resource: JsonableDict | list[JsonableDict] | BECMessage | list[BECMessage]
 
 
 class ProgressMessage(BECMessage):
@@ -1327,7 +1403,7 @@ class GUIConfigMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "gui_config_message"
-    config: dict
+    config: JsonableDict
 
 
 class GUIDataMessage(BECMessage):
@@ -1339,7 +1415,7 @@ class GUIDataMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "gui_data_message"
-    data: dict
+    data: JsonableDict
 
 
 class GUIInstructionMessage(BECMessage):
@@ -1352,7 +1428,7 @@ class GUIInstructionMessage(BECMessage):
 
     msg_type: ClassVar[str] = "gui_instruction_message"
     action: str
-    parameter: dict
+    parameter: JsonableDict
 
 
 class GUIAutoUpdateConfigMessage(BECMessage):
@@ -1389,7 +1465,7 @@ class GUIRegistryStateMessage(BECMessage):
                 "container_proxy",
                 "skip_rpc_namespace",
             ],
-            str | bool | dict | None,
+            str | bool | JsonableDict | None,
         ],
     ]
 
@@ -1403,7 +1479,7 @@ class ServiceResponseMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "service_response_message"
-    response: dict
+    response: JsonableDict
 
 
 class CredentialsMessage(BECMessage):
@@ -1415,7 +1491,7 @@ class CredentialsMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "credentials_message"
-    credentials: dict
+    credentials: JsonableDict
 
 
 class RawMessage(BECMessage):
@@ -1428,7 +1504,7 @@ class RawMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "raw_message"
-    data: Any
+    data: Jsonable
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -1697,8 +1773,7 @@ class MessagingConfig(BaseModel):
 
 
 AvailableMessagingServices = Annotated[
-    Union[SignalServiceInfo, SciLogServiceInfo, TeamsServiceInfo],
-    Field(discriminator="service_type"),
+    SignalServiceInfo | SciLogServiceInfo | TeamsServiceInfo, Field(discriminator="service_type")
 ]
 
 
@@ -1766,7 +1841,6 @@ class EndpointInfoMessage(BECMessage):
 
     msg_type: ClassVar[str] = "endpoint_info_message"
     endpoint: str
-    metadata: dict | None = Field(default_factory=dict)
 
 
 class ScriptExecutionInfoMessage(BECMessage):
@@ -1798,8 +1872,6 @@ class MacroUpdateMessage(BECMessage):
     update_type: Literal["add", "remove", "reload", "reload_all"]
     macro_name: str | None = None
     file_path: str | None = None
-
-    metadata: dict | None = Field(default_factory=dict)
 
     @model_validator(mode="after")
     @classmethod
@@ -1871,13 +1943,13 @@ class MessagingServiceGiphyContent(BaseModel):
     giphy_url: str
 
 
-MessagingServiceContent = Union[
-    MessagingServiceTextContent,
-    MessagingServiceFileContent,
-    MessagingServiceTagsContent,
-    MessagingServiceStickerContent,
-    MessagingServiceGiphyContent,
-]
+MessagingServiceContent = (
+    MessagingServiceTextContent
+    | MessagingServiceFileContent
+    | MessagingServiceTagsContent
+    | MessagingServiceStickerContent
+    | MessagingServiceGiphyContent
+)
 
 
 class MessagingServiceMessage(BECMessage):
@@ -1895,7 +1967,6 @@ class MessagingServiceMessage(BECMessage):
     service_name: Literal["signal", "teams", "scilog"]
     message: list[MessagingServiceContent]
     scope: str | list[str] | None = None
-    metadata: dict | None = Field(default_factory=dict)
 
 
 class FeedbackMessage(BECMessage):

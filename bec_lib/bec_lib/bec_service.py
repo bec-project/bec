@@ -259,6 +259,7 @@ class BECService:
         msgs = [
             self.connector.get(MessageEndpoints.service_status(service)) for service in services
         ]
+        print(msgs)
         self._services_info = {msg.content["name"]: msg for msg in msgs if msg is not None}
         msgs = [self.connector.get(MessageEndpoints.metrics(service)) for service in services]
         self._services_metric = {msg.content["name"]: msg for msg in msgs if msg is not None}
