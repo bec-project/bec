@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.110.0 (2026-03-20)
+
+### Bug Fixes
+
+- **scilog**: Add default tags to message before sending
+  ([`e14bad8`](https://github.com/bec-project/bec/commit/e14bad80a17e3bcf0f028f564f23a27449ecc1a2))
+
+### Features
+
+- Simple container to expose messaging services through the BECClient
+  ([`dda8408`](https://github.com/bec-project/bec/commit/dda840806bcb07310a5efe302197157fdbc1a745))
+
+
 ## v3.109.0 (2026-03-18)
 
 ### Bug Fixes
