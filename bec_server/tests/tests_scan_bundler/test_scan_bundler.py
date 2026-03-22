@@ -47,7 +47,6 @@ def test_device_read_callback(scan_bundler_mock, dummy_signal_data):
                 scan_id="adlk-jalskdjs",
                 status="open",
                 info={
-                    "scan_motors": ["samx"],
                     "readout_priority": {"monitored": ["samx"], "baseline": [], "on_request": []},
                     "queue_id": "my-queue-ID",
                     "scan_number": 5,
@@ -62,7 +61,6 @@ def test_device_read_callback(scan_bundler_mock, dummy_signal_data):
                 scan_id="adlk-jalskdjs",
                 status="open",
                 info={
-                    "scan_motors": ["samx"],
                     "readout_priority": {"monitored": ["samx"], "baseline": [], "on_request": []},
                     "queue_id": "my-queue-ID",
                     "scan_number": 5,
@@ -357,7 +355,6 @@ def test_status_modification(scan_bundler_mock):
                 "scan_id": "3ea07f69-b0ee-44fa-8451-b85824a37397",
                 "queue_id": "84e5bc19-e2fc-4b03-b706-004420322813",
                 "scan_number": 5,
-                "scan_motors": ["samx", "samy"],
                 "readout_priority": {
                     "monitored": ["samx", "samy"],
                     "baseline": [],
@@ -375,7 +372,6 @@ def test_status_modification(scan_bundler_mock):
                 "scan_id": "3ea07f69-b0ee-44fa-8451-b85824a37397",
                 "queue_id": "84e5bc19-e2fc-4b03-b706-004420322813",
                 "scan_number": 5,
-                "scan_motors": ["samx", "samy", "eyex", "bpm3a"],
                 "readout_priority": {
                     "monitored": ["samx", "samy", "eyex", "bpm3a"],
                     "baseline": [],

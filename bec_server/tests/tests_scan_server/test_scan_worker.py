@@ -622,7 +622,6 @@ def test_reset(scan_worker_mock):
     worker.current_scan_info = 1
     worker.scan_id = 1
     worker.interception_msg = 1
-    worker.scan_motors = 1
 
     worker.reset()
 
