@@ -435,7 +435,6 @@ class ScanStubs:
     def open_scan(
         self,
         *,
-        scan_motors: list,
         readout_priority: dict,
         num_pos: int,
         scan_name: str,
@@ -446,7 +445,6 @@ class ScanStubs:
         """Open a new scan. This is typically not used directly but called by the underlying base class.
 
         Args:
-            scan_motors (list): List of scan motors.
             readout_priority (dict): Modification of the readout priority.
             num_pos (int): Number of positions within the scope of this scan.
             positions (list): List of positions for this scan.
@@ -462,7 +460,6 @@ class ScanStubs:
             device=None,
             action="open_scan",
             parameter={
-                "scan_motors": scan_motors,
                 "readout_priority": readout_priority,
                 "num_points": num_pos,
                 "positions": positions,
@@ -724,7 +721,7 @@ class ScanStubs:
         *,
         device: list[str] | str | None = None,
         point_id: int | None = None,
-        group: Literal["scan_motor", "monitored", None] = None,
+        group: Literal["monitored", None] = None,
         wait: bool = True,
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
@@ -736,7 +733,7 @@ class ScanStubs:
             device (list[str], str, optional): Device name. Can be a list of devices or a single device. Defaults to None.
             point_id (int, optional): point_id to assign this reading to point within the scan. If None, the read will simply update
                 the cache without assigning the read to a specific point. Defaults to None.
-            group (Literal["scan_motor", "monitored", None], optional): Device group. Can be used instead of device. Defaults to None.
+            group (Literal["monitored", None], optional): Device group. Can be used instead of device. Defaults to None.
             wait (bool, optional): If True, the read command will wait for the completion of the read operation before returning. Defaults to True.
 
         Returns:
@@ -754,7 +751,7 @@ class ScanStubs:
         metadata = {"point_id": point_id, "device_instr_id": status._device_instr_id}
         self._exclude_nones(parameter)
         self._exclude_nones(metadata)
-        if device is None:
+        if device is None and group == "monitored":
             device = [
                 dev.root.name
                 for dev in self._device_manager.devices.monitored_devices(
