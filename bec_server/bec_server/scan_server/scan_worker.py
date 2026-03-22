@@ -38,7 +38,6 @@ class ScanWorker(threading.Thread):
         self.status = InstructionQueueStatus.IDLE
         self.signal_event = threading.Event()
         self.scan_id = None
-        self.scan_motors = []
         self.readout_priority = {}
         self.scan_type = None
         self.current_scan_id: str = ""
@@ -60,10 +59,6 @@ class ScanWorker(threading.Thread):
         if not self.scan_id:
             self.scan_id = instr.metadata.get("scan_id")
             if instr.content["parameter"].get("scan_motors") is not None:
-                self.scan_motors = [
-                    self.device_manager.devices[dev]
-                    for dev in instr.content["parameter"].get("scan_motors")
-                ]
                 self.readout_priority = instr.content["parameter"].get("readout_priority", {})
             self.scan_type = instr.content["parameter"].get("scan_type")
 
@@ -536,7 +531,6 @@ class ScanWorker(threading.Thread):
         self.scan_id = None
         self.interception_msg = None
         self.current_instruction_queue_item = None
-        self.scan_motors = []
 
     def cleanup(self):
         """perform cleanup instructions"""
