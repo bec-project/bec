@@ -47,7 +47,7 @@ class AlarmBase(Exception):
     def __str__(self) -> str:
         msg = self.alarm.info.compact_error_message or self.alarm.info.error_message
         return (
-            f"An alarm has occured. Severity: {self.severity.name}.\n{self.alarm_type}.\n\t"
+            f"An alarm has occurred. Severity: {self.severity.name}.\n{self.alarm_type}.\n\t"
             f" {msg}"
         )
 

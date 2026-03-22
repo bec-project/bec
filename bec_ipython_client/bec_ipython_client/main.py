@@ -46,7 +46,7 @@ class CLIBECClient(BECClient):
         # pylint: disable=no-member
         cmdline_args = self._BECClient__init_params["config"].config.get("cmdline_args")
         # set stderr logger level to SUCCESS (will not show messages <= INFO level)
-        # (see issue #318), except if user explicitely asked for another level from cmd line
+        # (see issue #318), except if user explicitly asked for another level from cmd line
         if not cmdline_args or not cmdline_args.get("log_level"):
             # pylint: disable=protected-access
             bec_logger._stderr_log_level = "SUCCESS"

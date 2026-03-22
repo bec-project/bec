@@ -268,7 +268,7 @@ class BECService:
             try:
                 self._send_service_status()
             except Exception:
-                # exception is not explicitely specified,
+                # exception is not explicitly specified,
                 # because it depends on the underlying connector
                 pass
 
@@ -342,7 +342,7 @@ class BECService:
                 self.connector.set_and_publish(MessageEndpoints.metrics(self._service_name), msg)
             # pylint: disable=broad-except
             except Exception:
-                # exception is not explicitely specified,
+                # exception is not explicitly specified,
                 # because it depends on the underlying connector
                 pass
 

@@ -121,7 +121,7 @@ def test_get_devices_with_tags(test_config_yaml, dm_with_devices):
         dev_names = {dev.name for dev in dev_list}
         assert dev_names == set(devices)
 
-    assert len(device_manager.devices.get_devices_with_tags("someting")) == 0
+    assert len(device_manager.devices.get_devices_with_tags("something")) == 0
 
 
 def test_get_software_triggered_devices(test_config_yaml, dm_with_devices):

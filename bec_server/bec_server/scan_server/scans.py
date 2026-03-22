@@ -1399,7 +1399,7 @@ class ContLineScan(ScanBase):
             raise ScanAbortion(
                 f"Motor {self.device} is moving too fast with the calculated tolerance. Consider reducing speed {self.motor_velocity} or increasing the atol {self.atol}"
             )
-        # the lower udate limit is 100ms, so we set the atol to 0.2s/v if the atol is smaller
+        # the lower update limit is 100ms, so we set the atol to 0.2s/v if the atol is smaller
         self.atol = max(self.atol, 2 * 1 / update_freq * self.motor_velocity)
 
     def _calculate_offset(self):
@@ -2046,7 +2046,7 @@ class InteractiveTrigger(ScanComponent):
         yield from self.stubs.trigger(min_wait=self.exp_time)
 
 
-class InteractiveReadMontiored(ScanComponent):
+class InteractiveReadMonitored(ScanComponent):
     scan_name = "_interactive_read_monitored"
     required_kwargs = {"point_id": ScanArgType.INT}
 

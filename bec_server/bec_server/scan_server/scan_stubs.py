@@ -933,7 +933,7 @@ class ScanStubs:
         self, device: str, func_name: str, *args, metadata=None, rpc_id=None, **kwargs
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
-        Perfrom an RPC (remote procedure call) on a device.
+        Perform an RPC (remote procedure call) on a device.
         For blocking calls, use :func:`send_rpc_and_wait`.
         Any additional arguments and keyword arguments will be passed on to the RPC function.
 

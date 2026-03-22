@@ -301,7 +301,7 @@ class ProcedureManager:
             MessageEndpoints.procedure_request(), None, self._process_queue_request
         )
         self._conn.shutdown()
-        # cancel futures by hand to give us the opportunity to detatch them from redis if they have started
+        # cancel futures by hand to give us the opportunity to detach them from redis if they have started
         with self.lock:
             for entry in self._active_workers.values():
                 cancelled = entry["future"].cancel()

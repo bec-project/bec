@@ -43,7 +43,7 @@ def test_alarm_base_printing(msg):
     alarm_msg = AlarmBase(alarm=msg, severity=Alarms.MAJOR)
 
     # Test __str__ method
-    expected_str = f"An alarm has occured. Severity: MAJOR.\n{msg.info.exception_type}.\n\t {msg.info.compact_error_message}"
+    expected_str = f"An alarm has occurred. Severity: MAJOR.\n{msg.info.exception_type}.\n\t {msg.info.compact_error_message}"
     assert str(alarm_msg) == expected_str
 
     # Test pretty_print method (just ensure it runs without error)

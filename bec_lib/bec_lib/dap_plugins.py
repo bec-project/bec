@@ -30,7 +30,7 @@ class DAPPlugins:
         """
         Refresh the list of available DAP plugins. This is useful if new plugins have been added after
         the client has been initialized. This method is called automatically when the client is initialized.
-        A call to this method is indempotent, meaning it can be called multiple times without side effects.
+        A call to this method is idempotent, meaning it can be called multiple times without side effects.
         """
         self._import_dap_plugins()
 

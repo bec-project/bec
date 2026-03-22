@@ -180,7 +180,7 @@ class DAPPluginObjectAutoRun(DAPPluginObject):
     @property
     def auto_run(self):
         """
-        Set to True to start a continously running worker.
+        Set to True to start a continuously running worker.
         """
         return self._plugin_config.get("auto_run", False)
 

@@ -275,7 +275,7 @@ class BECClient(BECService):
     def load_high_level_interface(self, module_name: str) -> None:
         """Load a high level interface module.
         Runs a callback of type `EventType.NAMESPACE_UPDATE`
-        to inform clients about added objects in the namesapce.
+        to inform clients about added objects in the namespace.
 
         Args:
             module_name (str): The name of the module to load

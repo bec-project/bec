@@ -1221,7 +1221,7 @@ class ComputedSignal(Signal):
         The signals need to be valid signals and match the computation of the compute method.
 
         Args:
-            signals : All signals to be added for the comput method
+            signals : All signals to be added for the compute method
 
         >>> dev.<dev_name>.set_input_signals(dev.bpm4i.readback, dev.bpm5i.readback)
         """

@@ -42,7 +42,7 @@ class ImageAnalysisService(DAPServiceBase):
 
     def configure(self, scan_item=None, device=None, images=None, return_type=None, **kwargs):
         # TODO Add type hints for np.ndarray and list[np.ndarray] do not work yet in the signature_serializer
-        # This will be adressed in a different MR, issue is created #395
+        # This will be addressed in a different MR, issue is created #395
         # scan_item: ScanItem | str = None,
         # device: DeviceBase | str = None,
         # images: np.ndarray | list[np.ndarray] | None = None,
