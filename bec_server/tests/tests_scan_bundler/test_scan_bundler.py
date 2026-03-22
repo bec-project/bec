@@ -390,18 +390,14 @@ def test_initialize_scan_container(scan_bundler_mock, scan_msg):
     sb = scan_bundler_mock
     scan_id = scan_msg.content["scan_id"]
     scan_info = scan_msg.content["info"]
-    scan_motors = list(set(sb.device_manager.devices[m] for m in scan_info["scan_motors"]))
     readout_priority = scan_info["readout_priority"]
     bl_devs = sb.device_manager.devices.baseline_devices(readout_priority=readout_priority)
 
     with mock.patch.object(sb, "run_emitter") as emitter_mock:
-        sb._initialize_scan_container(
-            scan_msg
-        )  # The sb.device_manager.devices[m] will crash if m is not a motor in devices
+        sb._initialize_scan_container(scan_msg)
 
         if scan_msg.content.get("status") != "open":
             return
-        assert sb.scan_motors[scan_id] == scan_motors
         assert sb.sync_storage[scan_id] == {"info": scan_info, "status": "open", "sent": set()}
         assert sb.monitored_devices[scan_id] == {
             "devices": sb.device_manager.devices.monitored_devices(
@@ -573,7 +569,6 @@ def test_baseline_update(scan_bundler_mock, scan_id, device, signal):
     sb = scan_bundler_mock
     sb.baseline_devices[scan_id] = {"done": {device: False}}
     sb.sync_storage[scan_id] = {}
-    sb.scan_motors[scan_id] = []
     sb.readout_priority[scan_id] = {}
     with mock.patch.object(sb, "run_emitter") as emitter:
         sb._baseline_update(scan_id, device, signal)
