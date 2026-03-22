@@ -31,7 +31,7 @@ def sort_devices(devices, scan_devices) -> list:
 
 
 class LiveUpdatesTable(LiveUpdatesBase):
-    """Live updates for scans using a table and a scan progess bar.
+    """Live updates for scans using a table and a scan progress bar.
 
     Args:
         bec (BECClient): client instance

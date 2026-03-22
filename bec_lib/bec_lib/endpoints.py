@@ -884,7 +884,7 @@ class MessageEndpoints:
     @staticmethod
     def device_instructions_response():
         """
-        Endpoint for device instruction repsonses. This endpoint is used by the device
+        Endpoint for device instruction responses. This endpoint is used by the device
         server to publish responses to device instructions, typically sent by the scan
         server using a messages.DeviceInstructionResponse message. The messages are used
         to inform interested services about the status of device instructions.
@@ -1150,7 +1150,7 @@ class MessageEndpoints:
     def service_request():
         """
         Endpoint for service request. This endpoint is used to
-        request e.g. resarts of the bec server.
+        request e.g. restarts of the bec server.
 
         Returns:
             EndpointInfo: Endpoint for service request.

@@ -146,7 +146,7 @@ class MacroUpdateHandler:
         """Load all macros from the `macros` directory.
 
         Runs a callback of type `EventType.NAMESPACE_UPDATE`
-        to inform clients about added objects in the namesapce.
+        to inform clients about added objects in the namespace.
         """
         self.forget_all_user_macros()
         macro_files = []
@@ -219,7 +219,7 @@ class MacroUpdateHandler:
         """unload / remove loaded user macros from builtins. Files will remain untouched.
 
         Runs a callback of type `EventType.NAMESPACE_UPDATE`
-        to inform clients about removing objects from the namesapce.
+        to inform clients about removing objects from the namespace.
 
         """
         for name, obj in self.macros.items():

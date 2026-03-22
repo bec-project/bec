@@ -789,7 +789,7 @@ class DeviceMonitor2DMessage(BECMessage):
         if v.ndim == 3 and v.shape[2] == 3:
             return v
         raise ValueError(
-            f"Invalid dimenson {v.ndim} for numpy array. Must be a 2D array or 3D array for rgb v.shape[2]=3."
+            f"Invalid dimension {v.ndim} for numpy array. Must be a 2D array or 3D array for rgb v.shape[2]=3."
         )
 
 
@@ -827,7 +827,7 @@ class DeviceMonitor1DMessage(BECMessage):
             raise ValueError(f"Invalid array type: {type(v)}. Must be a numpy array.")
         if v.ndim == 1:
             return v
-        raise ValueError(f"Invalid dimenson {v.ndim} for numpy array. Must be a 1D array.")
+        raise ValueError(f"Invalid dimension {v.ndim} for numpy array. Must be a 1D array.")
 
 
 class DevicePreviewMessage(BECMessage):
