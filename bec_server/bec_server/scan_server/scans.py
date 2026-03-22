@@ -562,7 +562,6 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         """open the scan"""
         positions = self.positions if isinstance(self.positions, list) else self.positions.tolist()
         yield from self.stubs.open_scan(
-            scan_motors=self.scan_motors,
             readout_priority=self.readout_priority,
             num_pos=self.num_pos,
             positions=positions,

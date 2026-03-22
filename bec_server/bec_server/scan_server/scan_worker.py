@@ -58,8 +58,7 @@ class ScanWorker(threading.Thread):
         """
         if not self.scan_id:
             self.scan_id = instr.metadata.get("scan_id")
-            if instr.content["parameter"].get("scan_motors") is not None:
-                self.readout_priority = instr.content["parameter"].get("readout_priority", {})
+            self.readout_priority = instr.content["parameter"].get("readout_priority", {})
             self.scan_type = instr.content["parameter"].get("scan_type")
 
         if not instr.metadata.get("scan_def_id"):
