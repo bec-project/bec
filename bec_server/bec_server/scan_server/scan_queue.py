@@ -913,7 +913,6 @@ class RequestBlock:
         self, msg: messages.ScanQueueMessage, assembler: ScanAssembler, parent: RequestBlockQueue
     ) -> None:
         self.instructions = None
-        self.scan_motors = []
         self.readout_priority: ReadoutPriorities = {}
         self.msg = msg
         self.RID = msg.metadata["RID"]
@@ -931,8 +930,6 @@ class RequestBlock:
             self.scan_id = str(uuid.uuid4())
         self.scan = self.scan_assembler.assemble_device_instructions(self.msg, self.scan_id)
         self.instructions = self.scan.run()
-        if self.scan.caller_args:
-            self.scan_motors = self.scan.scan_motors
         self.readout_priority = self.scan.readout_priority
 
     @property
@@ -997,7 +994,6 @@ class RequestBlock:
         return messages.RequestBlock(
             msg=self.msg,
             RID=self.RID,
-            scan_motors=self.scan_motors,
             readout_priority=self.readout_priority,
             is_scan=self.is_scan,
             scan_number=self.scan_number,

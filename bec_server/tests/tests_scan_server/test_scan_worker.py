@@ -137,7 +137,7 @@ def test_check_for_interruption(scan_worker_mock):
             messages.DeviceInstructionMessage(
                 device=None,
                 action="open_scan",
-                parameter={"num_points": 150, "scan_motors": ["samx", "samy"]},
+                parameter={"num_points": 150},
                 metadata={
                     "readout_priority": "monitored",
                     "DIID": 18,
@@ -174,7 +174,6 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
         assert worker.scan_id == None
     else:
         worker.scan_id = 111
-        worker.scan_motors = ["bpm4i"]
 
     if "point_id" in instr.metadata:
         worker.max_point_id = instr.metadata["point_id"]
@@ -196,13 +195,8 @@ def test_open_scan(scan_worker_mock, instr, corr_num_points, scan_id):
 
                         if not scan_id:
                             assert worker.scan_id == instr.metadata.get("scan_id")
-                            assert worker.scan_motors == [
-                                worker.device_manager.devices["samx"],
-                                worker.device_manager.devices["samy"],
-                            ]
                         else:
                             assert worker.scan_id == 111
-                            assert worker.scan_motors == ["bpm4i"]
                         init_mock.assert_called_once_with(active_rb, instr, corr_num_points)
                         assert active_rb.scan_report_instructions == [
                             {"scan_progress": {"points": corr_num_points, "show_table": True}}
@@ -274,7 +268,6 @@ def test_initialize_scan_info(scan_worker_mock, msg):
     assert rb.metadata == msg.metadata
 
     with mock.patch.object(worker, "current_instruction_queue_item"):
-        worker.scan_motors = ["samx"]
         worker.readout_priority = {
             "monitored": ["samx"],
             "baseline": [],
@@ -629,7 +622,6 @@ def test_reset(scan_worker_mock):
     worker.current_scan_info = 1
     worker.scan_id = 1
     worker.interception_msg = 1
-    worker.scan_motors = 1
 
     worker.reset()
 
@@ -637,7 +629,6 @@ def test_reset(scan_worker_mock):
     assert worker.current_scan_info == {}
     assert worker.scan_id == None
     assert worker.interception_msg == None
-    assert worker.scan_motors == []
 
 
 def test_cleanup(scan_worker_mock):

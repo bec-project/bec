@@ -63,7 +63,6 @@ def test_atlas_metadata_handler(atlas_connector):
         scan_id="adlk-jalskdjs",
         status="open",
         info={
-            "scan_motors": ["samx"],
             "readout_priority": {"monitored": ["samx"], "baseline": [], "on_request": []},
             "queue_id": "my-queue-ID",
             "scan_number": 5,
