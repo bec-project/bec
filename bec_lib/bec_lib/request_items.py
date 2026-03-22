@@ -73,7 +73,7 @@ class RequestItem:
 
     @classmethod
     def from_response(cls, scan_manager: ScanManager, response: messages.RequestResponseMessage):
-        """initialize a request item from a RequestReponseMessage / response message"""
+        """initialize a request item from a RequestResponseMessage / response message"""
         scan_req = cls(
             scan_manager=scan_manager,
             requestID=response.metadata["RID"],

@@ -873,7 +873,7 @@ def test_increase_scan_number(scan_queue_msg, is_scan):
         assert req_block_queue.scan_queue.queue_manager.parent.scan_number == 20
 
 
-def test_pull_request_block_non_empyt_rb():
+def test_pull_request_block_non_empty_rb():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     scan_queue_msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
@@ -888,7 +888,7 @@ def test_pull_request_block_non_empyt_rb():
         rbqs.assert_not_called()
 
 
-def test_pull_request_block_empyt_rb():
+def test_pull_request_block_empty_rb():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     with mock.patch.object(req_block_queue, "request_blocks_queue") as rbqs:
         with pytest.raises(StopIteration):

@@ -46,7 +46,7 @@ class CallbackEntry:
 
     @threadlocked
     def run(self, *args, **kwargs) -> None:
-        """Run the callback function. If sync is True, the callback is run immediately. Otherwise, the callback is added to a queue and exectued in the next poll."""
+        """Run the callback function. If sync is True, the callback is run immediately. Otherwise, the callback is added to a queue and executed in the next poll."""
         if not self.sync:
             self._run_cb(*args, **kwargs)
             return

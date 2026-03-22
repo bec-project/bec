@@ -115,7 +115,7 @@ def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
 
 
 def test_stage(stubs):
-    """Test that staging wihtout a device is not blocking, the status object should resolve."""
+    """Test that staging without a device is not blocking, the status object should resolve."""
     # Have only rtx in the device manager with async readout priority
     devices = list(stubs._device_manager.devices.values())
     for device in devices:

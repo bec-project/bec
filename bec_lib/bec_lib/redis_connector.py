@@ -1391,7 +1391,7 @@ class RedisConnector:
         side: Literal["LEFT", "RIGHT"] = "LEFT",
         timeout_s: float | None = None,
     ) -> _BecMsgT | None:
-        """Block for up to timeout seconds to pop an item from 'list_enpoint' on side `side`,
+        """Block for up to timeout seconds to pop an item from 'list_endpoint' on side `side`,
         and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
         """
         for ep, ops in [(list_endpoint, MessageOp.LIST), (set_endpoint, MessageOp.SET)]:

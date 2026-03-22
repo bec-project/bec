@@ -307,7 +307,7 @@ class QueueManager:
     @requires_queue
     def set_pause(self, scan_id=None, queue="primary", parameter: dict | None = None) -> None:
         # pylint: disable=unused-argument
-        """pause the queue and the currenlty running instruction queue"""
+        """pause the queue and the currently running instruction queue"""
         que = self.queues[queue]
         with AutoResetCM(que):
             if que.worker_status == InstructionQueueStatus.RUNNING:

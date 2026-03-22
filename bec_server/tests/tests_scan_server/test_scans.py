@@ -16,7 +16,7 @@ from bec_server.scan_server.scans import (
     DeviceRPC,
     FermatSpiralScan,
     HexagonalScan,
-    InteractiveReadMontiored,
+    InteractiveReadMonitored,
     InteractiveTrigger,
     LineScan,
     ListScan,
@@ -1976,7 +1976,7 @@ def test_OpenInteractiveScan(scan_assembler):
     ]
 
 
-def test_InteractiveReadMontiored(scan_assembler):
+def test_InteractiveReadMonitored(scan_assembler):
     scan_msg = messages.ScanQueueMessage(
         scan_type="_interactive_scan_trigger",
         parameter={"args": {"samx": []}, "kwargs": {"relative": True, "exp_time": 0.1}},
@@ -1985,7 +1985,7 @@ def test_InteractiveReadMontiored(scan_assembler):
     args = unpack_scan_args(scan_msg.content["parameter"]["args"])
     kwargs = scan_msg.content["parameter"]["kwargs"]
     request = scan_assembler(
-        InteractiveReadMontiored, *args, parameter=scan_msg.content["parameter"], **kwargs
+        InteractiveReadMonitored, *args, parameter=scan_msg.content["parameter"], **kwargs
     )
 
     ref_list = list(request.run())

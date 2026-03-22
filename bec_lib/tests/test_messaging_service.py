@@ -166,7 +166,7 @@ def test_scilog_messaging_service_send_image_attachment(
     assert attachment.data == b"\x89PNG\r\n\x1a\n"
 
 
-def test_messaging_service_attachement_raises_if_too_large(scilog_message, tmp_path):
+def test_messaging_service_attachment_raises_if_too_large(scilog_message, tmp_path):
     # Create a temporary file larger than 5MB
     file_path = tmp_path / "large_file.bin"
     with open(file_path, "wb") as f:

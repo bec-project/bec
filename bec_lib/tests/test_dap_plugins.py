@@ -436,7 +436,7 @@ def test_dap_wait_for_dap_response_waits_for_RID(dap):
         dap.GaussianModel._wait_for_dap_response(request_id="1234", timeout=0.1)
 
 
-def test_dap_wait_for_dap_respnse_returns(dap):
+def test_dap_wait_for_dap_response_returns(dap):
     dap._parent.connector.get.return_value = messages.DAPResponseMessage(
         success=True, data=({}, None), metadata={"RID": "1234"}
     )

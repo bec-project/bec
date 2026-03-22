@@ -791,7 +791,7 @@ class DeviceManagerDS(DeviceManagerBase):
         DEPRECATED: Use _obj_callback_preview instead.
 
         Callback for ophyd monitor events. Sends the data to redis.
-        Introduces a check of the data size, and incoporates a limit which is defined in max_size (in MB)
+        Introduces a check of the data size, and incorporates a limit which is defined in max_size (in MB)
 
         Args:
             obj (OphydObject): ophyd object
@@ -830,7 +830,7 @@ class DeviceManagerDS(DeviceManagerBase):
         DEPRECATED: Use _obj_callback_preview instead.
 
         Callback for ophyd monitor events. Sends the data to redis.
-        Introduces a check of the data size, and incoporates a limit which is defined in max_size (in MB)
+        Introduces a check of the data size, and incorporates a limit which is defined in max_size (in MB)
 
         Args:
             obj (OphydObject): ophyd object
@@ -955,7 +955,7 @@ class DeviceManagerDS(DeviceManagerBase):
             obj (OphydObject): ophyd object
             file_path (str): file path to the created file
             done (bool): if the file is done
-            successfull (bool): if the file was created successfully
+            successful (bool): if the file was created successfully
             file_type (str): Optional, file type. Default is h5.
             hinted_h5_entry (dict[str, str] | None): Optional, hinted h5 entry. Please check FileMessage for more details
         """

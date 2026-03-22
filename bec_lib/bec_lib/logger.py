@@ -221,7 +221,7 @@ class BECLogger:
         except Exception:
             # connector disconnected?
             # just ignore the error here...
-            # Exception is not explicitely specified,
+            # Exception is not explicitly specified,
             # because it depends on the connector
             pass
 
