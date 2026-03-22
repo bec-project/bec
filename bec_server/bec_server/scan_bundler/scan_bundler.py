@@ -15,7 +15,6 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
 from .bec_emitter import BECEmitter
-from .bluesky_emitter import BlueskyEmitter
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import RedisConnector
@@ -46,7 +45,6 @@ class ScanBundler(BECService):
         self.monitored_devices = {}
         self.baseline_devices = {}
         self.device_storage = {}
-        self.scan_motors = {}
         self.readout_priority = {}
         self.storage_initialized = set()
         self.executor = ThreadPoolExecutor(max_workers=4)
@@ -58,7 +56,7 @@ class ScanBundler(BECService):
         self.status = messages.BECStatus.RUNNING
 
     def _initialize_emitters(self):
-        self._emitter = [BECEmitter(self), BlueskyEmitter(self)]
+        self._emitter = [BECEmitter(self)]
 
     def run_emitter(self, emitter_method: Callable, *args, **kwargs):
         for emi in self._emitter:
@@ -125,8 +123,6 @@ class ScanBundler(BECService):
 
         scan_id = scan_msg.content["scan_id"]
         scan_info = scan_msg.content["info"]
-        scan_motors = list(set(self.device_manager.devices[m] for m in scan_info["scan_motors"]))
-        self.scan_motors[scan_id] = scan_motors
         self.readout_priority[scan_id] = scan_info["readout_priority"]
         if scan_id not in self.storage_initialized:
             self.sync_storage[scan_id] = {"info": scan_info, "status": "open", "sent": set()}
@@ -363,14 +359,12 @@ class ScanBundler(BECService):
                 "sync_storage",
                 "monitored_devices",
                 "baseline_devices",
-                "scan_motors",
                 "readout_priority",
             ]:
                 try:
                     getattr(self, storage).pop(scan_id)
                 except KeyError:
                     logger.warning(f"Failed to remove {scan_id} from {storage}.")
-            # self.bluesky_emitter.cleanup_storage(scan_id)
             self.run_emitter("on_cleanup", scan_id)
             self.storage_initialized.remove(scan_id)
 

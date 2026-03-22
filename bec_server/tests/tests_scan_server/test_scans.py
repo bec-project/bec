@@ -337,7 +337,6 @@ def test_scan_updated_move(mv_msg, reference_msg_list, scan_assembler, ScanStubS
                     device=None,
                     action="open_scan",
                     parameter={
-                        "scan_motors": ["samx"],
                         "readout_priority": {
                             "monitored": ["samx"],
                             "baseline": [],
@@ -488,7 +487,6 @@ def test_scan_scan(scan_msg, reference_scan_list, scan_assembler):
                     device=None,
                     action="open_scan",
                     parameter={
-                        "scan_motors": ["samx", "samy"],
                         "readout_priority": {
                             "monitored": ["samx", "samy"],
                             "baseline": [],
@@ -768,7 +766,6 @@ def test_fermat_scan(scan_msg, reference_scan_list, scan_assembler):
                     device=None,
                     action="open_scan",
                     parameter={
-                        "scan_motors": ["samx"],
                         "readout_priority": {
                             "monitored": ["samx"],
                             "baseline": [],
@@ -963,7 +960,6 @@ def test_device_rpc(scan_assembler):
                     device=None,
                     action="open_scan",
                     parameter={
-                        "scan_motors": [],
                         "readout_priority": {
                             "monitored": [],
                             "baseline": [],
@@ -1593,7 +1589,6 @@ def test_list_scan_raises_for_different_lengths():
                     device=None,
                     action="open_scan",
                     parameter={
-                        "scan_motors": [],
                         "readout_priority": {
                             "monitored": [],
                             "baseline": [],
@@ -1714,7 +1709,6 @@ def test_time_scan(scan_msg, reference_scan_list, scan_assembler):
                     device=None,
                     action="open_scan",
                     parameter={
-                        "scan_motors": [],
                         "readout_priority": {
                             "monitored": [],
                             "baseline": [],
@@ -1863,7 +1857,6 @@ def test_monitor_scan_run(scan_assembler, ScanStubStatusMock):
                             device=None,
                             action="open_scan",
                             parameter={
-                                "scan_motors": ["samx"],
                                 "readout_priority": {
                                     "monitored": ["samx"],
                                     "baseline": [],
@@ -1948,7 +1941,6 @@ def test_OpenInteractiveScan(scan_assembler):
             device=None,
             action="open_scan",
             parameter={
-                "scan_motors": ["samx"],
                 "readout_priority": {
                     "monitored": ["samx"],
                     "baseline": [],
@@ -2161,7 +2153,6 @@ def test_ContLineFlyScan(scan_assembler, ScanStubStatusMock):
             device=None,
             action="open_scan",
             parameter={
-                "scan_motors": ["samx"],
                 "readout_priority": {
                     "monitored": ["samx"],
                     "baseline": [],
