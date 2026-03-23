@@ -372,6 +372,29 @@ class StreamSubs:
                 del self._subs[topic]
         return removed
 
+    def gc_cb_refs(self):
+        for topic, entry in list(self._subs.items()):
+            for info in entry.subs:
+                if not info.cb_ref():
+                    entry.subs.remove(info)
+            if len(self._subs[topic].subs) == 0:
+                del self._subs[topic]
+        for topic, entry in list(self._direct_read_subs.items()):
+            for info in entry:
+                if not info.cb_ref():
+                    info.stop_event.set()
+                    info.thread.join(0.05)
+                    if info.thread.is_alive():
+                        _error_log_with_context(f"Failed to garbage collect in 0.05s {info}")
+            if self._direct_read_subs[topic] == {}:
+                del self._direct_read_subs[topic]
+        for topic, subs in list(self.from_start_subs.items()):
+            for info in subs:
+                if not info.cb_ref():
+                    subs.remove(info)
+            if len(self.from_start_subs[topic]) == 0:
+                del self.from_start_subs[topic]
+
 
 class RedisConnector:
     """
@@ -429,7 +452,7 @@ class RedisConnector:
         self._message_callbacks_queue = queue.Queue()
         self._stop_events_listener_thread = threading.Event()
         self._stop_stream_events_listener_thread = threading.Event()
-        self.stream_keys: dict[str, str] = {}
+        self.stream_keys: dict[str, str] = {}  # for explicit reads, not subscriptions
 
         self._generator_executor = ThreadPoolExecutor()
 
@@ -891,6 +914,9 @@ class RedisConnector:
         for messages from the redis server.
         """
         while not self._stop_stream_events_listener_thread.is_set():
+            # first clear any dead callbacks
+            with self._stream_subs.lock:
+                self._stream_subs.gc_cb_refs()
             # First read the "from_start" streams, up until any id which is already in the normal
             # subs, then all those them to the normal streams
             error = self._read_from_start_streams_and_migrate()
@@ -900,6 +926,8 @@ class RedisConnector:
                 normal_subs = self._stream_subs.normal_subs
             if normal_topics and (response := self._try_read_streams(normal_topics)) is not None:
                 updated_ids = self._handle_stream_msg_list(response, normal_subs)
+            else:
+                updated_ids = {}
             with self._stream_subs.lock:
                 self._stream_subs.update_normal_ids(updated_ids)
             if error:  # Encountered an error on xread, wait a while without the lock
@@ -976,7 +1004,10 @@ class RedisConnector:
     def unregister(self, topics=None, patterns=None, cb=None):
         if self._events_listener_thread is None:
             return
-
+        if topics and patterns:
+            _error_log_with_context(
+                f"Unsubscribe called with both {topics=} and {patterns=}. Topics will be ignored in favour of patterns."
+            )
         if patterns is not None:
             patterns = self._normalize_patterns(patterns)
             # see if registered streams can be unregistered
@@ -985,17 +1016,31 @@ class RedisConnector:
             pubsub_unsubscribe_list = self._filter_topics_cb(patterns, cb)
             if pubsub_unsubscribe_list:
                 self._pubsub_conn.punsubscribe(pubsub_unsubscribe_list)
-        else:
+        elif topics is not None:
             topics, _ = self._convert_endpointinfo(topics, check_message_op=False)
             if not self._unregister_stream(topics, cb):
                 unsubscribe_list = self._filter_topics_cb(topics, cb)
                 if unsubscribe_list:
                     self._pubsub_conn.unsubscribe(unsubscribe_list)
+        else:
+            with self._topics_cb_lock:
+                topics = list(self._topics_cb.keys())
+            self.unregister(topics, cb)
+            self.unregister(self._stream_subs.all_topics, cb)
 
     def _unregister_stream(self, topics: list[str], cb: Callable | None = None) -> bool:
         """Unregister callbacks from a list of topics. Returns true if any were removed"""
         with self._stream_subs.lock:
             return any([self._stream_subs.remove(topic, cb) for topic in topics])
+
+    def _garbage_collect_cb_refs(self):
+        """Only handles normal subscriptions, for streams, see StreamSubs.gc_cb_refs()"""
+        with self._topics_cb_lock:
+            for topic, subs in list(self._topics_cb.items()):
+                for cb_ref, kwargs in reversed(subs):
+                    if not cb_ref():
+                        idx = self._topics_cb[topic].index((cb_ref, kwargs))
+                        self._topics_cb[topic].pop(idx)
 
     def _get_messages_loop(self) -> None:
         """
@@ -1007,6 +1052,7 @@ class RedisConnector:
         """
         error = False
         while not self._stop_events_listener_thread.is_set():
+            self._garbage_collect_cb_refs()
             try:
                 msg = self._pubsub_conn.get_message(timeout=0.2)
             except redis.exceptions.ConnectionError:
@@ -1040,8 +1086,7 @@ class RedisConnector:
             self._message_callbacks_queue.put(GeneratorExecution(fut, g))
         elif isinstance(msg, StreamMessage):
             for cb_ref, kwargs in msg.callbacks:
-                cb = cb_ref()
-                if cb:
+                if cb := cb_ref():
                     self._execute_callback(cb, msg.msg, kwargs)
         elif isinstance(msg, GeneratorExecution):
             fut, g = msg.fut, msg.g
@@ -1064,8 +1109,7 @@ class RedisConnector:
                     callbacks = self._topics_cb[channel]
             msg_obj = MessageObject(topic=channel, value=MsgpackSerialization.loads(msg["data"]))
             for cb_ref, kwargs in callbacks:
-                cb = cb_ref()
-                if cb:
+                if cb := cb_ref():
                     self._execute_callback(cb, msg_obj, kwargs)
 
     def poll_messages(self, timeout: float | None = None) -> bool:
