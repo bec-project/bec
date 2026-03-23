@@ -319,6 +319,7 @@ class StreamSubs:
         new_sub.thread.start()
 
     def add(self, from_start: bool, last_id: str, topic: str, new_sub: StreamSubInfo):
+        """last_id is ignored if from_start is True"""
         self._check_registered(topic, new_sub)
         if from_start:
             if topic in self.from_start_subs:
@@ -374,22 +375,23 @@ class StreamSubs:
 
     def gc_cb_refs(self):
         for topic, entry in list(self._subs.items()):
-            for info in entry.subs:
+            for info in list(entry.subs):
                 if not info.cb_ref():
                     entry.subs.remove(info)
             if len(self._subs[topic].subs) == 0:
                 del self._subs[topic]
         for topic, entry in list(self._direct_read_subs.items()):
-            for info in entry:
+            for info in list(entry.keys()):
                 if not info.cb_ref():
                     info.stop_event.set()
                     info.thread.join(0.05)
                     if info.thread.is_alive():
                         _error_log_with_context(f"Failed to garbage collect in 0.05s {info}")
+                    del entry[info]
             if self._direct_read_subs[topic] == {}:
                 del self._direct_read_subs[topic]
         for topic, subs in list(self.from_start_subs.items()):
-            for info in subs:
+            for info in list(subs):
                 if not info.cb_ref():
                     subs.remove(info)
             if len(self.from_start_subs[topic]) == 0:
