@@ -1,3 +1,4 @@
+import gc
 import threading
 import time
 from unittest import mock
@@ -657,3 +658,82 @@ def test_merging_streams_does_not_skip_messages(connected_connector: RedisConnec
 
     assert cb_from_start.call_count == 5
     assert cb_normal.call_count == 2
+
+
+def test_subs_garbage_collectioon(connected_connector):
+    sub1 = mock.MagicMock(spec=[])
+    sub2 = mock.MagicMock(spec=[])
+    sub3 = mock.MagicMock(spec=[])
+
+    connected_connector.register("test", cb=sub1)
+    connected_connector.register("test", cb=sub2)
+    connected_connector.register("test", cb=sub3)
+
+    assert len(connected_connector._topics_cb["test"]) == 3
+    connected_connector._garbage_collect_cb_refs()
+    assert len(connected_connector._topics_cb["test"]) == 3
+    del sub2
+    gc.collect()
+    connected_connector._garbage_collect_cb_refs()
+    assert len(connected_connector._topics_cb["test"]) == 2
+
+
+def test_stream_subs_garbage_collection(connected_connector):
+    with mock.patch.object(connected_connector._stream_subs, "move_from_start_to_normal"):
+        sub1 = mock.MagicMock(name="mock1", spec=[])
+        sub2 = mock.MagicMock(name="mock2", spec=[])
+        sub3 = mock.MagicMock(name="mock3", spec=[])
+
+        connected_connector.register(TestStreamEndpoint, cb=sub1)
+        connected_connector.register(TestStreamEndpoint, cb=sub2)
+        connected_connector.register(TestStreamEndpoint, cb=sub3)
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 3
+        connected_connector._stream_subs.gc_cb_refs()
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 3
+
+        del sub2
+        time.sleep(0.05)
+        gc.collect()
+        time.sleep(0.05)
+        connected_connector._stream_subs.gc_cb_refs()
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 2
+
+        sub4 = mock.MagicMock(name="mock4", spec=[])
+        sub5 = mock.MagicMock(name="mock5", spec=[])
+
+        connected_connector.register(TestStreamEndpoint, cb=sub4, from_start=True)
+        connected_connector.register(TestStreamEndpoint, cb=sub5, from_start=True)
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 2
+        assert len(connected_connector._stream_subs.from_start_subs["test"]) == 2
+
+        del sub4
+        del sub3
+        time.sleep(0.05)
+        gc.collect()
+        time.sleep(0.05)
+        connected_connector._stream_subs.gc_cb_refs()
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 1
+        assert len(connected_connector._stream_subs.from_start_subs["test"]) == 1
+
+        sub6 = mock.MagicMock(name="mock6", spec=[])
+        connected_connector.register(TestStreamEndpoint, cb=sub6, newest_only=True)
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 1
+        assert len(connected_connector._stream_subs.from_start_subs["test"]) == 1
+        assert len(connected_connector._stream_subs._direct_read_subs["test"]) == 1
+
+        del sub1
+        del sub5
+        del sub6
+        time.sleep(0.05)
+        gc.collect()
+        time.sleep(0.05)
+        connected_connector._stream_subs.gc_cb_refs()
+
+        assert "test" not in connected_connector._stream_subs._subs
+        assert "test" not in connected_connector._stream_subs.from_start_subs
+        assert "test" not in connected_connector._stream_subs._direct_read_subs
