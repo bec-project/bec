@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.111.1 (2026-03-23)
+
+### Bug Fixes
+
+- Fixing typos
+  ([`5268a7b`](https://github.com/bec-project/bec/commit/5268a7b183e53cf5df41c987b72e97adf263002c))
+
+
 ## v3.111.0 (2026-03-20)
 
 ### Features
