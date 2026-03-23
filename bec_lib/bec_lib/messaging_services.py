@@ -131,7 +131,6 @@ class MessagingService(ABC, Generic[MessageObjectT]):
         self._redis_connector.register(
             MessageEndpoints.available_messaging_services(),
             cb=self._on_new_scope_change_msg,
-            parent=self,
             from_start=True,
         )
 
@@ -146,21 +145,19 @@ class MessagingService(ABC, Generic[MessageObjectT]):
             raise ValueError(f"Scope '{scope}' is not available for this messaging service.")
         self._default_scope = scope
 
-    @staticmethod
     def _on_new_scope_change_msg(
-        message: dict[str, messages.AvailableMessagingServicesMessage], parent: MessagingService
+        self, message: dict[str, messages.AvailableMessagingServicesMessage]
     ) -> None:
         """
         Callback for scope changes. Currently a placeholder for future functionality.
 
         Args:
             message (dict[str, messages.AvailableMessagingServicesMessage]): The scope change message.
-            parent (MessagingService): The parent messaging service instance.
         """
         msg = message["data"]
         # pylint: disable=protected-access
-        parent._service_config = msg
-        parent._update_messaging_services(msg)
+        self._service_config = msg
+        self._update_messaging_services(msg)
 
     def _update_messaging_services(
         self, service_info: messages.AvailableMessagingServicesMessage
