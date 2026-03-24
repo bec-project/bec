@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout BEC Widgets
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: bec-project/bec_widgets
           ref: ${{ inputs.BEC_WIDGETS_BRANCH }}
@@ -55,7 +55,7 @@ jobs:
 
     steps:
       - name: Checkout Ophyd Devices
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: bec-project/ophyd_devices
           ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}

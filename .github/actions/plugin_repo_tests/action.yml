@@ -36,7 +36,7 @@ runs:
   steps:
     - name: Checkout BEC Plugin Repository
       shell: bash
-      id: plugin_checkout 
+      id: plugin_checkout
       run: |
         # Create a temporary directory for the plugin repository
         mkdir -p ./_checkout_plugin_/
@@ -58,13 +58,13 @@ runs:
         fi
 
     - name: Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
       with:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
     - name: Checkout BEC Core
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
       with:
         repository: bec-project/bec
@@ -72,7 +72,7 @@ runs:
         path: ./_checkout_plugin_/bec
 
     - name: Checkout Ophyd Devices
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
       with:
         repository: bec-project/ophyd_devices
@@ -80,7 +80,7 @@ runs:
         path: ./_checkout_plugin_/ophyd_devices
 
     - name: Checkout BEC Widgets
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       if: ( steps.plugin_checkout.outputs.skip_tests != 'true' )
       with:
         repository: bec-project/bec_widgets
