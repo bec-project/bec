@@ -39,7 +39,7 @@ jobs:
 
       - name: Upload E2E log artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-logs
           path: |
@@ -47,7 +47,7 @@ jobs:
           retention-days: 7
 
       - name: Upload E2E coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-e2e
           path: ./_e2e_test_checkout_/bec/coverage-e2e.xml
