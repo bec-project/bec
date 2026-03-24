@@ -37,6 +37,15 @@ jobs:
           BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
           PYTHON_VERSION: ${{ inputs.PYTHON_VERSION }}
 
+      - name: Upload E2E log artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            ./_e2e_test_checkout_/bec/logs/*.log
+          retention-days: 7
+
       - name: Upload E2E coverage artifact
         uses: actions/upload-artifact@v4
         with:
