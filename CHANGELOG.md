@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.112.0 (2026-03-24)
+
+### Chores
+
+- Remove bluesky emitter as it is not used anywhere
+  ([`26d1598`](https://github.com/bec-project/bec/commit/26d1598c21d30e8e28dcd6f76e3f509e9257b1cb))
+
+### Features
+
+- **scilog**: Add support for specifying the image dims
+  ([`427bb9a`](https://github.com/bec-project/bec/commit/427bb9acfecc269788f0f822f721a0d9cb6b1eff))
+
+
 ## v3.111.1 (2026-03-23)
 
 ### Bug Fixes
