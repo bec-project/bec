@@ -1829,11 +1829,15 @@ class MessagingServiceFileContent(BaseModel):
         filename (str): Name of the file
         mime_type (str): MIME type of the file
         data (bytes): File data
+        width (int | str | None): Width for displaying the file, if applicable. Defaults to None.
+        height (int | str | None): Height for displaying the file, if applicable. Defaults to None.
     """
 
     filename: str
     mime_type: str
     data: bytes
+    width: int | str | None = None
+    height: int | str | None = None
 
 
 class MessagingServiceTagsContent(BaseModel):

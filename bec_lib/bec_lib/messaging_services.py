@@ -51,7 +51,9 @@ class MessageServiceObject:
         self._content.append(messages.MessagingServiceTextContent(content=text))
         return self
 
-    def add_attachment(self, file_path: str) -> Self:
+    def add_attachment(
+        self, file_path: str, width: int | str | None = None, height: int | str | None = None
+    ) -> Self:
         """
         Add an attachment to the message object. The file is read from
         the given file path and included in the message, including its
@@ -61,6 +63,8 @@ class MessageServiceObject:
 
         Args:
             file_path (str): The file path of the attachment to add.
+            width (int | str | None): The display width of the attachment. Optional.
+            height (int | str | None): The display height of the attachment. Optional.
 
         Raises:
             FileNotFoundError: If the attachment file does not exist.
@@ -90,7 +94,7 @@ class MessageServiceObject:
 
         self._content.append(
             messages.MessagingServiceFileContent(
-                filename=filename, mime_type=mime_type, data=file_data
+                filename=filename, mime_type=mime_type, data=file_data, width=width, height=height
             )
         )
 
