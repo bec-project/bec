@@ -23,7 +23,7 @@ def queue_elements(bec_client_mock):
     client = bec_client_mock
     request_msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -52,7 +52,7 @@ def queue_elements(bec_client_mock):
 def sample_request_msg():
     return messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -232,7 +232,7 @@ def test_available_req_blocks_multiple_blocks(bec_client_mock):
 
     request_msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={"args": {"samx": [-5, 5, 3]}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "test_rid"},
     )

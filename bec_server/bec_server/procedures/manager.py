@@ -51,6 +51,7 @@ _T = TypeVar("_T", bound=BECMessage)
 
 def _resolve_dict(msg: dict[str, Any] | _T, MsgType: type[_T]) -> _T:
     if isinstance(msg, dict):
+        msg.pop("bec_codec", None)
         return MsgType.model_validate(msg)
     return msg
 
@@ -97,7 +98,7 @@ class ProcedureManager:
             MessageEndpoints.available_procedures(),
             AvailableResourceMessage(
                 resource={
-                    name: procedure_registry.get_info(name)
+                    name: list(procedure_registry.get_info(name))
                     for name in procedure_registry.available()
                 }
             ),
