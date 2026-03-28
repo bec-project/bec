@@ -1544,10 +1544,7 @@ class DirectInstructionQueueItem:
         expire = None if status in ["open", "paused"] else 1800
         pipe = self.worker.device_manager.connector.pipeline()
         self.worker.device_manager.connector.set(
-            MessageEndpoints.public_scan_info(scan.scan_info.scan_id),
-            msg,
-            pipe=pipe,
-            expire=expire,
+            MessageEndpoints.public_scan_info(scan.scan_info.scan_id), msg, pipe=pipe, expire=expire
         )
         self.worker.device_manager.connector.set_and_publish(
             MessageEndpoints.scan_status(), msg, pipe=pipe
@@ -1562,7 +1559,9 @@ class DirectInstructionQueueItem:
         reason: Literal["user", "alarm"] | None = None,
     ) -> messages.ScanStatusMessage:
         """Build the scan status message for the active direct scan."""
-        legacy_scan_parameters = self._get_legacy_scan_parameters(scan.scan_info.model_dump(mode="python"))
+        legacy_scan_parameters = self._get_legacy_scan_parameters(
+            scan.scan_info.model_dump(mode="python")
+        )
         resolved_readout_priority = self._get_resolved_readout_priority(scan)
         file_components = self._get_file_components(scan.scan_info.model_dump(mode="python"))
         info = self._build_scan_status_info(
