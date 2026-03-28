@@ -61,13 +61,13 @@ class ScanWorker(threading.Thread):
             while not self.signal_event.is_set():
                 try:
                     for queue in self.parent.queue_manager.queues[self.queue_name]:
+                        if self.signal_event.is_set():
+                            break
                         if not queue:
                             continue
                         self.current_instruction_queue_item = queue
                         worker = self.get_worker_for_queue(queue)
                         worker.process_instructions(queue)
-                        if self.signal_event.is_set():
-                            break
                         if not queue.stopped:
                             queue.append_to_queue_history()
 
