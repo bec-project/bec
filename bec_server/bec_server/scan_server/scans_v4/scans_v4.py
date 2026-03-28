@@ -9,7 +9,7 @@ import enum
 import threading
 import time
 import uuid
-from typing import Annotated, Callable, Literal, TypeAlias
+from typing import Annotated, Callable, Literal
 
 import numpy as np
 import pint
@@ -1008,6 +1008,15 @@ class ScanInfo(BaseModel):
             description="Number of performed readouts of monitored devices. For a step scan, this is equal to num_points * burst_at_each_point."
         ),
     ] = 0
+
+    def __str__(self) -> str:
+        data = self.model_dump(mode="python")
+        positions = self.positions
+        if isinstance(positions, np.ndarray):
+            data["positions"] = np.array2string(positions, threshold=8, edgeitems=2, precision=4)
+        return f"{self.__class__.__name__}({data})"
+
+    __repr__ = __str__
 
     model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
