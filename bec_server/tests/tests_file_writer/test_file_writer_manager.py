@@ -229,7 +229,7 @@ def test_scan_storage_append(scan_storage_mock):
 
 def test_scan_storage_ready_to_write(scan_storage_mock):
     storage = scan_storage_mock
-    storage.num_points = 1
+    storage.num_monitored_readouts = 1
     storage.scan_finished = True
     storage.append(1, {"data": "data"})
     assert storage.ready_to_write() is True
@@ -265,12 +265,12 @@ def test_ready_to_write(file_writer_manager_mock, scan_storage_mock):
     )
     file_manager.scan_storage["scan_id"] = scan_storage_mock
     file_manager.scan_storage["scan_id"].scan_finished = True
-    file_manager.scan_storage["scan_id"].num_points = 1
+    file_manager.scan_storage["scan_id"].num_monitored_readouts = 1
     file_manager.scan_storage["scan_id"].scan_segments = {"0": {"data": np.zeros((10, 10))}}
     assert file_manager.scan_storage["scan_id"].ready_to_write() is True
     file_manager.scan_storage["scan_id1"] = scan_storage_mock
     file_manager.scan_storage["scan_id1"].scan_finished = True
-    file_manager.scan_storage["scan_id1"].num_points = 2
+    file_manager.scan_storage["scan_id1"].num_monitored_readouts = 2
     file_manager.scan_storage["scan_id1"].scan_segments = {"0": {"data": np.zeros((10, 10))}}
     assert file_manager.scan_storage["scan_id1"].ready_to_write() is False
     scan_storage_mock.status_msg = messages.ScanStatusMessage(
