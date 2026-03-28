@@ -1,3 +1,4 @@
+from typing import Annotated
 from unittest import mock
 
 import pytest
@@ -31,6 +32,7 @@ def scan_manager():
         ({"a": DeviceBase}, {"a": "device"}),
         ({"a": Device}, {"a": "device"}),
         ({"a": Positioner}, {"a": "device"}),
+        ({"a": Annotated[float, "device"]}, {"a": "float"}),
     ],
 )
 def test_scan_manager_convert_arg_input(scan_manager, arg_input, arg_output):

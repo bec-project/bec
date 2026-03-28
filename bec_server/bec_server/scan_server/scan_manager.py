@@ -2,7 +2,9 @@
 Scan Manager loads the available scans and publishes them to redis.
 """
 
+import importlib
 import inspect
+import pkgutil
 
 from bec_lib import plugin_helper
 from bec_lib.device import DeviceBase
@@ -10,9 +12,10 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AvailableResourceMessage
 from bec_lib.signature_serializer import signature_to_dict
-from bec_server.scan_server.scan_gui_models import GUIConfig
+from bec_server.scan_server.scan_gui_models import GUIConfig, GUIInput
 
 from . import scans as scans_module
+from . import scans_v4 as scans_v4_module
 
 logger = bec_logger.logger
 
@@ -28,7 +31,9 @@ class ScanManager:
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase]] = {}
+        self.scan_dict: dict[
+            str, type[scans_module.RequestBase] | type[scans_v4_module.ScanBase]
+        ] = {}
         self._plugins = {}
         self.load_plugins()
         self.update_available_scans()
@@ -53,13 +58,21 @@ class ScanManager:
         members: list[tuple[str, type]] = inspect.getmembers(
             scans_module, predicate=inspect.isclass
         )
+        members.extend(self._get_v4_scan_members())
         members.extend((name, cls) for name, cls in self._plugins.items() if inspect.isclass(cls))
 
         for name, scan_cls in members:
-            is_scan = issubclass(scan_cls, scans_module.RequestBase)
+            is_scan = issubclass(scan_cls, (scans_module.RequestBase, scans_v4_module.ScanBase))
             if not is_scan or not scan_cls.scan_name:
                 logger.debug(f"Ignoring {name}")
                 continue
+            if issubclass(scan_cls, scans_v4_module.ScanBase):
+                # For now, we add a "_v4_" prefix to the scan name of scans that are derived
+                # from ScanBaseV4 to avoid conflicts with existing scans. This should be
+                # removed once we have fully transitioned to the new scan format and have
+                # updated all existing scans to be derived from ScanBaseV4.
+                scan_cls.scan_name = "_v4_" + scan_cls.scan_name
+
             if scan_cls.scan_name in self.available_scans:
                 logger.error(f"{scan_cls.scan_name} already exists. Skipping.")
                 continue
@@ -75,7 +88,11 @@ class ScanManager:
             for report_cls in report_classes:
                 if issubclass(scan_cls, report_cls):
                     base_cls = report_cls.__name__
-            self.scan_dict[scan_cls.__name__] = scan_cls
+
+            scan_cls_name = scan_cls.__name__
+            if issubclass(scan_cls, scans_v4_module.ScanBase):
+                scan_cls_name = "_v4_" + scan_cls_name
+            self.scan_dict[scan_cls_name] = scan_cls
             gui_config = self.validate_gui_config(scan_cls)
             self.available_scans[scan_cls.scan_name] = {
                 "class": scan_cls.__name__,
@@ -125,18 +142,38 @@ class ScanManager:
         Returns:
             dict: converted arg_input
         """
-        for key, value in arg_input.items():
+        converted = arg_input.copy()
+        for key, value in converted.items():
+            value = GUIInput.convert_to_legacy_scan_arg_type(value)
             if isinstance(value, scans_module.ScanArgType):
+                converted[key] = value.value
+                continue
+            if isinstance(value, str):
+                converted[key] = value
                 continue
             if issubclass(value, DeviceBase):
                 # once we have generalized the device types, this should be removed
-                arg_input[key] = "device"
+                converted[key] = "device"
             elif issubclass(value, bool):
                 # should be unified with the ScanArgType.BOOL
-                arg_input[key] = "boolean"
+                converted[key] = "boolean"
             else:
-                arg_input[key] = value.__name__
-        return arg_input
+                converted[key] = value.__name__
+        return converted
+
+    def _get_v4_scan_members(self) -> list[tuple[str, type]]:
+        """Collect classes from all modules in the scans_v4 package."""
+        members: list[tuple[str, type]] = []
+        for module_info in pkgutil.iter_modules(
+            scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."
+        ):
+            module = importlib.import_module(module_info.name)
+            members.extend(
+                (name, cls)
+                for name, cls in inspect.getmembers(module, predicate=inspect.isclass)
+                if cls.__module__ == module.__name__
+            )
+        return members
 
     def publish_available_scans(self):
         """send all available scans to the broker"""

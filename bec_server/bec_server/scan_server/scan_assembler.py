@@ -7,6 +7,7 @@ from bec_lib import messages
 from bec_lib.logger import bec_logger
 
 from .scans import RequestBase, ScanBase, unpack_scan_args
+from .scans_v4 import ScanBase as ScanBaseV4
 
 logger = bec_logger.logger
 
@@ -39,6 +40,21 @@ class ScanAssembler:
         scan_cls = self.scan_manager.scan_dict[cls_name]
         return issubclass(scan_cls, ScanBase)
 
+    def is_direct_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
+        """Check if the scan queue message would construct a new direct scan.
+
+        Args:
+            msg (messages.ScanQueueMessage): message to be checked
+        Returns:
+            bool: True if the message is a direct scan message, False otherwise
+        """
+        scan = msg.content.get("scan_type")
+        cls_name = self.scan_manager.available_scans[scan]["class"]
+        scan_cls = self.scan_manager.scan_dict.get(f"_v4_{cls_name}")
+        if scan_cls is None:
+            return False
+        return issubclass(scan_cls, ScanBaseV4)
+
     def assemble_device_instructions(
         self, msg: messages.ScanQueueMessage, scan_id: str
     ) -> RequestBase:
@@ -63,12 +79,63 @@ class ScanAssembler:
         args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
         kwargs = msg.content.get("parameter", {}).get("kwargs", {})
 
+        request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
+
+        scan_instance = scan_cls(
+            *args,
+            device_manager=self.device_manager,
+            parameter=msg.content.get("parameter"),
+            metadata=msg.metadata,
+            instruction_handler=self.parent.queue_manager.instruction_handler,
+            scan_id=scan_id,
+            request_inputs=request_inputs,
+            **kwargs,
+        )
+        return scan_instance
+
+    def assemble_direct_scan(self, msg: messages.ScanQueueMessage, scan_id: str) -> ScanBaseV4:
+        """Assemble the device instructions for a given ScanQueueMessage.
+        This will be achieved by calling the specified class (must be a derived class of ScanBaseV4)
+
+        Args:
+            msg (messages.ScanQueueMessage): scan queue message for which the instruction should be assembled
+            scan_id (str): scan id of the scan
+
+        Raises:
+            ScanAbortion: Raised if the scan initialization fails.
+
+        Returns:
+            ScanBaseV4: Scan instance of the initialized scan class
+        """
+        scan = msg.content.get("scan_type")
+        cls_name = self.scan_manager.available_scans[scan]["class"]
+        scan_cls = self.scan_manager.scan_dict[f"_v4_{cls_name}"]
+
+        logger.info(f"Preparing instructions of direct scan of type {scan} / {scan_cls.__name__}")
+        args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
+        kwargs = msg.content.get("parameter", {}).get("kwargs", {})
+
+        request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
+
+        scan_instance = scan_cls(
+            *args,
+            device_manager=self.device_manager,
+            redis_connector=self.connector,
+            metadata=msg.metadata,
+            instruction_handler=self.parent.queue_manager.instruction_handler,
+            scan_id=scan_id,
+            request_inputs=request_inputs,
+            **kwargs,
+        )
+        return scan_instance
+
+    def _assemble_request_inputs(self, scan_cls, args, kwargs) -> dict:
+
         cls_input_args = [
             name
             for name, val in inspect.signature(scan_cls).parameters.items()
             if val.default == inspect.Parameter.empty and name != "kwargs"
         ]
-
         request_inputs = {}
         if scan_cls.arg_bundle_size["bundle"] > 0:
             request_inputs["arg_bundle"] = args
@@ -100,15 +167,4 @@ class ScanAssembler:
             for key, val in kwargs.items():
                 if key not in cls_input_args:
                     request_inputs["kwargs"][key] = val
-
-        scan_instance = scan_cls(
-            *args,
-            device_manager=self.device_manager,
-            parameter=msg.content.get("parameter"),
-            metadata=msg.metadata,
-            instruction_handler=self.parent.queue_manager.instruction_handler,
-            scan_id=scan_id,
-            request_inputs=request_inputs,
-            **kwargs,
-        )
-        return scan_instance
+        return request_inputs

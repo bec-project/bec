@@ -315,11 +315,18 @@ class ScanBundler(BECService):
             device_is_monitor_sync = self.sync_storage[scan_id]["info"]["monitor_sync"] == device
             dev_obj = self.device_manager.devices.get(device)
             if dev_obj in self.monitored_devices[scan_id]["devices"] or device_is_monitor_sync:
-                if self.sync_storage[scan_id]["info"]["scan_type"] == "step":
+                if self.sync_storage[scan_id]["info"]["scan_type"] in [
+                    "step",
+                    "software_triggered",
+                    "hardware_triggered",
+                ]:
                     self._step_scan_update(scan_id, device, signal, metadata)
                 elif self.sync_storage[scan_id]["info"]["scan_type"] == "fly":
                     self._fly_scan_update(scan_id, device, signal, metadata)
                 else:
+                    logger.error(
+                        f"Unknown scan type {self.sync_storage[scan_id]['info']['scan_type']}"
+                    )
                     raise RuntimeError(
                         f"Unknown scan type {self.sync_storage[scan_id]['info']['scan_type']}"
                     )
