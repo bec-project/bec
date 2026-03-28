@@ -313,7 +313,7 @@ class ScanGuard:
 
         queue = self.parent.queue_manager.queues[target_queue]
         for scan in queue.queue:
-            if msg.scan_id in scan.queue.scan_id:
+            if msg.scan_id in scan.scan_id:
                 break
         else:
             logger.error(f"Scan {msg.scan_id} not found in queue {target_queue}")
