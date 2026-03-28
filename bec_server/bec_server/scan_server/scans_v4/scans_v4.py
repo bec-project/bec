@@ -1014,7 +1014,7 @@ class ScanInfo(BaseModel):
 
 class ScanBase:
     scan_type = ScanType.SOFTWARE_TRIGGERED
-    scan_name = "base_scan"
+    scan_name = "_v4_base_scan"
     required_kwargs = []
     arg_input = {}
     arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}

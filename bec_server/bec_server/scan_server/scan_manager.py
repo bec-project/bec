@@ -66,12 +66,6 @@ class ScanManager:
             if not is_scan or not scan_cls.scan_name:
                 logger.debug(f"Ignoring {name}")
                 continue
-            if issubclass(scan_cls, scans_v4_module.ScanBase):
-                # For now, we add a "_v4_" prefix to the scan name of scans that are derived
-                # from ScanBaseV4 to avoid conflicts with existing scans. This should be
-                # removed once we have fully transitioned to the new scan format and have
-                # updated all existing scans to be derived from ScanBaseV4.
-                scan_cls.scan_name = "_v4_" + scan_cls.scan_name
 
             if scan_cls.scan_name in self.available_scans:
                 logger.error(f"{scan_cls.scan_name} already exists. Skipping.")
@@ -89,10 +83,7 @@ class ScanManager:
                 if issubclass(scan_cls, report_cls):
                     base_cls = report_cls.__name__
 
-            scan_cls_name = scan_cls.__name__
-            if issubclass(scan_cls, scans_v4_module.ScanBase):
-                scan_cls_name = "_v4_" + scan_cls_name
-            self.scan_dict[scan_cls_name] = scan_cls
+            self.scan_dict[scan_cls.__name__] = scan_cls
             gui_config = self.validate_gui_config(scan_cls)
             self.available_scans[scan_cls.scan_name] = {
                 "class": scan_cls.__name__,

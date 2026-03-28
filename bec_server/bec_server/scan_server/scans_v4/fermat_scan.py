@@ -44,7 +44,7 @@ class FermatSpiralScan(ScanBase):
 
     # Scan name: This is the name of the scan, e.g. "line_scan". This is used for display purposes and to identify the scan type in user interfaces.
     # Choose a descriptive name that does not conflict with existing scan names.
-    scan_name = "fermat_scan"
+    scan_name = "_v4_fermat_scan"
 
     required_kwargs = ["relative"]
 

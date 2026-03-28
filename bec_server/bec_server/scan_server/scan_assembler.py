@@ -50,9 +50,7 @@ class ScanAssembler:
         """
         scan = msg.content.get("scan_type")
         cls_name = self.scan_manager.available_scans[scan]["class"]
-        scan_cls = self.scan_manager.scan_dict.get(f"_v4_{cls_name}")
-        if scan_cls is None:
-            return False
+        scan_cls = self.scan_manager.scan_dict[cls_name]
         return issubclass(scan_cls, ScanBaseV4)
 
     def assemble_device_instructions(
@@ -109,7 +107,7 @@ class ScanAssembler:
         """
         scan = msg.content.get("scan_type")
         cls_name = self.scan_manager.available_scans[scan]["class"]
-        scan_cls = self.scan_manager.scan_dict[f"_v4_{cls_name}"]
+        scan_cls = self.scan_manager.scan_dict[cls_name]
 
         logger.info(f"Preparing instructions of direct scan of type {scan} / {scan_cls.__name__}")
         args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
