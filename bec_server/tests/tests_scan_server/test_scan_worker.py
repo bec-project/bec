@@ -72,9 +72,7 @@ def test_run_delegates_scan_abortion_handling_to_selected_worker(scan_worker_moc
 
     delegated_worker._handle_scan_abortion.side_effect = _handle
 
-    with mock.patch.object(
-        scan_worker_mock, "get_worker_for_queue", return_value=delegated_worker
-    ):
+    with mock.patch.object(scan_worker_mock, "get_worker_for_queue", return_value=delegated_worker):
         scan_worker_mock.parent.queue_manager.queues[scan_worker_mock.queue_name] = [queue]
 
         scan_worker_mock.run()

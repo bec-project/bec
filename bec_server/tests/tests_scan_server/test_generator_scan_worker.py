@@ -24,7 +24,9 @@ from bec_server.scan_server.scan_worker import ScanWorker
 def scan_worker_mock(dm_with_devices) -> ScanWorker:
     dm_with_devices.connector = mock.MagicMock()
     dm_with_devices._rpc_method = mock.MagicMock()
-    queue_manager = SimpleNamespace(instruction_handler=mock.MagicMock(), queues={"primary": mock.MagicMock()})
+    queue_manager = SimpleNamespace(
+        instruction_handler=mock.MagicMock(), queues={"primary": mock.MagicMock()}
+    )
     parent = SimpleNamespace(
         device_manager=dm_with_devices,
         connector=mock.MagicMock(),
@@ -52,7 +54,9 @@ class InstructionQueueMock:
         self.return_to_start = True
         self.queue_id = "queue-id"
         self.scan_msgs = []
-        self.parent = SimpleNamespace(queue_manager=SimpleNamespace(send_queue_status=mock.MagicMock()))
+        self.parent = SimpleNamespace(
+            queue_manager=SimpleNamespace(send_queue_status=mock.MagicMock())
+        )
         self.active_request_block = mock.MagicMock()
         self.active_request_block.scan = mock.MagicMock()
         self.active_request_block.scan.exp_time = 1
@@ -60,7 +64,14 @@ class InstructionQueueMock:
         self.active_request_block.scan.move_to_start.return_value = []
         self.active_request_block.scan_report_instructions = []
         self.active_request_block.metadata = {}
-        self.queue = SimpleNamespace(request_blocks=[mock.MagicMock(scan=mock.MagicMock(stubs=SimpleNamespace(_rpc_call=mock.MagicMock())) )], active_rb=SimpleNamespace(scan_id="scan-id"))
+        self.queue = SimpleNamespace(
+            request_blocks=[
+                mock.MagicMock(
+                    scan=mock.MagicMock(stubs=SimpleNamespace(_rpc_call=mock.MagicMock()))
+                )
+            ],
+            active_rb=SimpleNamespace(scan_id="scan-id"),
+        )
 
     def append_to_queue_history(self):
         pass
@@ -217,7 +228,9 @@ def test_open_scan(generator_worker_mock, instr, corr_num_points, scan_id):
             else:
                 assert worker.scan_id == 111
                 assert worker.scan_motors == ["bpm4i"]
-            init_mock.assert_called_once_with(queue_mock.active_request_block, instr, corr_num_points)
+            init_mock.assert_called_once_with(
+                queue_mock.active_request_block, instr, corr_num_points
+            )
             assert queue_mock.active_request_block.scan_report_instructions == [
                 {"scan_progress": {"points": corr_num_points, "show_table": True}}
             ]
@@ -392,7 +405,8 @@ def test_send_scan_status(generator_worker_mock, status, expire):
     scan_info_msgs = [
         msg
         for msg in worker.worker.device_manager.connector.message_sent
-        if msg["queue"] == MessageEndpoints.public_scan_info(scan_id=worker.current_scan_id).endpoint
+        if msg["queue"]
+        == MessageEndpoints.public_scan_info(scan_id=worker.current_scan_id).endpoint
     ]
     assert len(scan_info_msgs) == 1
     assert scan_info_msgs[0]["expire"] == expire
@@ -403,8 +417,7 @@ def test_process_instructions(generator_worker_mock, abortion):
     worker = generator_worker_mock
     queue = InstructionQueueMock()
     worker.worker.device_manager._rpc_method.return_value = mock.MagicMock(
-        __enter__=mock.MagicMock(return_value=None),
-        __exit__=mock.MagicMock(return_value=None),
+        __enter__=mock.MagicMock(return_value=None), __exit__=mock.MagicMock(return_value=None)
     )
 
     with mock.patch.object(worker, "_wait_for_device_server") as wait_mock:
@@ -522,7 +535,9 @@ def test_process_instructions(generator_worker_mock, abortion):
             "forward_instruction",
         ),
         (
-            messages.DeviceInstructionMessage(device="samx", action="kickoff", parameter={}, metadata={}),
+            messages.DeviceInstructionMessage(
+                device="samx", action="kickoff", parameter={}, metadata={}
+            ),
             "forward_instruction",
         ),
         (
@@ -539,11 +554,15 @@ def test_process_instructions(generator_worker_mock, abortion):
             "close_scan",
         ),
         (
-            messages.DeviceInstructionMessage(device=None, action="publish_data_as_read", parameter={}),
+            messages.DeviceInstructionMessage(
+                device=None, action="publish_data_as_read", parameter={}
+            ),
             "publish_data_as_read",
         ),
         (
-            messages.DeviceInstructionMessage(device=None, action="scan_report_instruction", parameter={}),
+            messages.DeviceInstructionMessage(
+                device=None, action="scan_report_instruction", parameter={}
+            ),
             "process_scan_report_instruction",
         ),
         (
@@ -695,10 +714,14 @@ def test_worker_get_file_base_path(
     generator_worker_mock, base_path, current_account_msg, expected_path, raises_error
 ):
     worker = generator_worker_mock
-    file_writer_base_path_orig = worker.worker.parent._service_config.config["file_writer"]["base_path"]
+    file_writer_base_path_orig = worker.worker.parent._service_config.config["file_writer"][
+        "base_path"
+    ]
     try:
         worker.worker.parent._service_config.config["file_writer"]["base_path"] = base_path
-        with mock.patch.object(worker.worker.connector, "get_last", return_value=current_account_msg):
+        with mock.patch.object(
+            worker.worker.connector, "get_last", return_value=current_account_msg
+        ):
             if raises_error:
                 with pytest.raises(ValueError):
                     worker._get_file_base_path()
@@ -709,9 +732,9 @@ def test_worker_get_file_base_path(
                     MessageEndpoints.account(), "data"
                 )
     finally:
-        worker.worker.parent._service_config.config["file_writer"]["base_path"] = (
-            file_writer_base_path_orig
-        )
+        worker.worker.parent._service_config.config["file_writer"][
+            "base_path"
+        ] = file_writer_base_path_orig
 
 
 @pytest.mark.parametrize(
