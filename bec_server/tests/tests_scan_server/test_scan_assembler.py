@@ -155,10 +155,10 @@ def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assemb
             "custom_scan2": {"class": "CustomScan2"},
         }
         scan_dict = {
-            "FermatSpiralScan": FermatSpiralScan,
-            "LineScan": LineScan,
-            "CustomScan": CustomScan,
-            "CustomScan2": CustomScan2,
+            "fermat_scan": FermatSpiralScan,
+            "line_scan": LineScan,
+            "custom_scan": CustomScan,
+            "custom_scan2": CustomScan2,
         }
 
     with mock.patch.object(scan_assembler, "scan_manager", MockScanManager()):

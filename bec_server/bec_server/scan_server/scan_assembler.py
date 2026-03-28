@@ -36,8 +36,7 @@ class ScanAssembler:
             bool: True if the message is a scan message, False otherwise
         """
         scan = msg.content.get("scan_type")
-        cls_name = self.scan_manager.available_scans[scan]["class"]
-        scan_cls = self.scan_manager.scan_dict[cls_name]
+        scan_cls = self.scan_manager.scan_dict[scan]
         return issubclass(scan_cls, ScanBase)
 
     def is_direct_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
@@ -49,8 +48,7 @@ class ScanAssembler:
             bool: True if the message is a direct scan message, False otherwise
         """
         scan = msg.content.get("scan_type")
-        cls_name = self.scan_manager.available_scans[scan]["class"]
-        scan_cls = self.scan_manager.scan_dict[cls_name]
+        scan_cls = self.scan_manager.scan_dict[scan]
         return issubclass(scan_cls, ScanBaseV4)
 
     def assemble_device_instructions(
@@ -70,8 +68,7 @@ class ScanAssembler:
             RequestBase: Scan instance of the initialized scan class
         """
         scan = msg.content.get("scan_type")
-        cls_name = self.scan_manager.available_scans[scan]["class"]
-        scan_cls = self.scan_manager.scan_dict[cls_name]
+        scan_cls = self.scan_manager.scan_dict[scan]
 
         logger.info(f"Preparing instructions of request of type {scan} / {scan_cls.__name__}")
         args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
@@ -106,8 +103,7 @@ class ScanAssembler:
             ScanBaseV4: Scan instance of the initialized scan class
         """
         scan = msg.content.get("scan_type")
-        cls_name = self.scan_manager.available_scans[scan]["class"]
-        scan_cls = self.scan_manager.scan_dict[cls_name]
+        scan_cls = self.scan_manager.scan_dict[scan]
 
         logger.info(f"Preparing instructions of direct scan of type {scan} / {scan_cls.__name__}")
         args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))

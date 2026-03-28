@@ -83,7 +83,7 @@ class ScanManager:
                 if issubclass(scan_cls, report_cls):
                     base_cls = report_cls.__name__
 
-            self.scan_dict[scan_cls.__name__] = scan_cls
+            self.scan_dict[scan_cls.scan_name] = scan_cls
             gui_config = self.validate_gui_config(scan_cls)
             self.available_scans[scan_cls.scan_name] = {
                 "class": scan_cls.__name__,
