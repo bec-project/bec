@@ -119,6 +119,18 @@ class RichArgInputScan(ScanBase):  # pragma: no cover
         super().__init__(**kwargs)
 
 
+class GenericListArgInputScan(ScanBase):  # pragma: no cover
+    scan_name = "generic_list_arg_input_scan"
+    required_kwargs = []
+    arg_input = {"device": ScanArgType.DEVICE, "positions": list[float]}
+    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config = {"Scan Parameters": []}
+
+    def __init__(self, *args, **kwargs):
+        """Scan with generic list arg_input typing for GUI compatibility tests."""
+        super().__init__(**kwargs)
+
+
 def test_gui_config_good_scan_dump():
     gui_config = GUIConfig.from_dict(GoodScan)
     expected_config = {
@@ -324,6 +336,36 @@ def test_gui_config_rich_arg_input_is_converted_to_legacy_scan_arg_types():
             "name": "steps",
             "display_name": "Steps",
             "type": "int",
+            "tooltip": None,
+            "default": None,
+            "expert": False,
+        },
+    ]
+
+
+def test_gui_config_generic_list_arg_input_is_converted_to_legacy_scan_arg_types():
+    gui_config = GUIConfig.from_dict(GenericListArgInputScan)
+
+    assert gui_config.arg_group.model_dump()["arg_inputs"] == {
+        "device": ScanArgType.DEVICE,
+        "positions": ScanArgType.LIST,
+    }
+
+    assert gui_config.arg_group.model_dump()["inputs"] == [
+        {
+            "arg": True,
+            "name": "device",
+            "display_name": "Device",
+            "type": "device",
+            "tooltip": None,
+            "default": None,
+            "expert": False,
+        },
+        {
+            "arg": True,
+            "name": "positions",
+            "display_name": "Positions",
+            "type": "list",
             "tooltip": None,
             "default": None,
             "expert": False,

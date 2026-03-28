@@ -709,7 +709,13 @@ class ScanDataContainer:
         scan_number = f"\tScan number: {self._msg.scan_number}\n"
         scan_name = f"\tScan name: {self._msg.scan_name}\n"
         exit_status = f"\tStatus: {self._msg.exit_status}\n"
-        num_points = f"\tNumber of points (monitored): {self._msg.num_points}\n"
+        num_points = f"\tNumber of points: {self._msg.num_points}\n"
+        num_monitored_readouts = (
+            f"\tNumber of monitored readouts: {self._msg.num_monitored_readouts}\n"
+            if self._msg.num_monitored_readouts is not None
+            else ""
+        )
+
         public_file = f"\tFile: {self._msg.file_path}\n"
         details = (
             start_time
@@ -720,6 +726,7 @@ class ScanDataContainer:
             + scan_name
             + exit_status
             + num_points
+            + num_monitored_readouts
             + public_file
         )
         return f"ScanDataContainer:\n {details}"
