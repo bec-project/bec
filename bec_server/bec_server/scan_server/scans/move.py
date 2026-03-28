@@ -1,5 +1,5 @@
 """
-Updated Move Scan.
+Move Scan.
 
 Scan procedure:
     - prepare_scan
@@ -17,13 +17,13 @@ Scan procedure:
 from __future__ import annotations
 
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.scans import ScanArgType
-from bec_server.scan_server.scans_v4 import ScanBase, scan_hook
+from bec_server.scan_server.legacy_scans import ScanArgType
+from bec_server.scan_server.scans import ScanBase, scan_hook
 
 logger = bec_logger.logger
 
 
-class UpdatedMoveScan(ScanBase):
+class MoveScan(ScanBase):
 
     # Scan Type: Hardware triggered or software triggered?
     # If the main trigger and readout logic is done within the at_each_point method in scan_core, choose SOFTWARE_TRIGGERED.
@@ -34,7 +34,7 @@ class UpdatedMoveScan(ScanBase):
 
     # Scan name: This is the name of the scan, e.g. "line_scan". This is used for display purposes and to identify the scan type in user interfaces.
     # Choose a descriptive name that does not conflict with existing scan names.
-    scan_name = "_v4_umv"
+    scan_name = "_v4_mv"
 
     # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
@@ -48,19 +48,19 @@ class UpdatedMoveScan(ScanBase):
     def __init__(self, *args, relative: bool = False, **kwargs):
         """
         Simple move command that moves one or more motors to the specified positions.
-        The umv command is the blocking version of the mv command.
-        It waits for the motors to reach their target positions before returning control to the user.
+        The mv command gives back control to the user immediately after sending the command. For a blocking call
+        with live updates, use the umv command instead.
 
 
         Args:
             *args (Device, float): pairs of device / target position arguments
-            relative (bool): if True, the motors will be moved relative to their current position. Default is False.
+            relative (bool): if True, the motors will be moved relative to their current position.
 
         Returns:
             ScanReport
 
         Examples:
-            >>> scans.umv(dev.motor1, -5, dev.motor2, 5, relative=True)
+            >>> scans.mv(dev.motor1, -5, dev.motor2, 5, relative=True)
 
         """
         super().__init__(**kwargs)
@@ -78,6 +78,7 @@ class UpdatedMoveScan(ScanBase):
         before the scan is opened, such as preparing the positions (if not done already)
         or setting up the devices.
         """
+        self.actions.add_device_with_required_response(self.motors)
 
     @scan_hook
     def open_scan(self):
@@ -114,17 +115,10 @@ class UpdatedMoveScan(ScanBase):
         Core scan logic to be executed during the scan.
         This is where the main scan logic should be implemented.
         """
-        current_positions = self.components.get_start_positions(self.motors)
         target_positions = list(self.motor_args.values())
         if self.relative:
+            current_positions = self.components.get_start_positions(self.motors)
             target_positions += current_positions
-
-        self.actions.add_scan_report_instruction_readback(
-            devices=self.motors,
-            start=current_positions,
-            stop=target_positions,
-            request_id=self.scan_info.metadata["RID"],
-        )
 
         for position, motor in zip(target_positions, self.motors):
             self.dev[motor].set(position)

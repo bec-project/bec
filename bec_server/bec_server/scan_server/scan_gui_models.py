@@ -10,7 +10,7 @@ from pydantic_core import PydanticCustomError
 
 from bec_lib.device import DeviceBase
 from bec_lib.signature_serializer import signature_to_dict
-from bec_server.scan_server.scans import ScanArgType, ScanBase
+from bec_server.scan_server.legacy_scans import ScanArgType, ScanBase
 
 context_signature = ContextVar("context_signature")
 context_docstring = ContextVar("context_docstring")

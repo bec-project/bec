@@ -27,7 +27,7 @@ from bec_server.scan_server.errors import LimitError
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.path_optimization import PathOptimizerMixin
 from bec_server.scan_server.scan_stubs import ScanStubStatus
-from bec_server.scan_server.scans_v4.scan_modifier import scan_hook
+from bec_server.scan_server.scans.scan_modifier import scan_hook
 
 logger = bec_logger.logger
 

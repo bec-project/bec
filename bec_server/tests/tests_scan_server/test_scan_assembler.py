@@ -4,7 +4,7 @@ import pytest
 
 from bec_lib import messages
 from bec_server.scan_server.scan_assembler import ScanAssembler
-from bec_server.scan_server.scans import FermatSpiralScan, LineScan, RequestBase
+from bec_server.scan_server.legacy_scans import FermatSpiralScan, LineScan, RequestBase
 
 
 @pytest.fixture

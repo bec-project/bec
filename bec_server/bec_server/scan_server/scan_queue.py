@@ -30,7 +30,7 @@ logger = bec_logger.logger
 if TYPE_CHECKING:
     from bec_server.scan_server.scan_server import ScanServer
     from bec_server.scan_server.scan_worker import ScanWorker
-    from bec_server.scan_server.scans_v4.scans_v4 import ScanBase as ScanBase_v4
+    from bec_server.scan_server.scans import ScanBase as ScanBase_v4
 
 
 def requires_queue(fcn):

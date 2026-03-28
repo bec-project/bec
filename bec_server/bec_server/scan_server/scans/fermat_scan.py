@@ -1,5 +1,5 @@
 """
-Grid Scan.
+Fermat Scan.
 
 Scan procedure:
     - prepare_scan
@@ -16,18 +16,16 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 import numpy as np
 
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.scans import ScanArgType, unpack_scan_args
-from bec_server.scan_server.scans_v4 import (
+from bec_server.scan_server.scans import (
     ScanBase,
     ScanType,
     Units,
-    bundle_args,
     position_generators,
     scan_hook,
 )
@@ -35,7 +33,7 @@ from bec_server.scan_server.scans_v4 import (
 logger = bec_logger.logger
 
 
-class GridScan(ScanBase):
+class FermatSpiralScan(ScanBase):
 
     # Scan Type: Hardware triggered or software triggered?
     # If the main trigger and readout logic is done within the at_each_point method in scan_core, choose SOFTWARE_TRIGGERED.
@@ -46,74 +44,76 @@ class GridScan(ScanBase):
 
     # Scan name: This is the name of the scan, e.g. "line_scan". This is used for display purposes and to identify the scan type in user interfaces.
     # Choose a descriptive name that does not conflict with existing scan names.
-    scan_name = "_v4_grid_scan"
+    scan_name = "_v4_fermat_scan"
 
-    # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
-    # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
-    arg_input = {
-        "device": ScanArgType.DEVICE,
-        "start": Annotated[float, "device"],
-        "stop": Annotated[float, "device"],
-        "steps": ScanArgType.INT,
-    }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 2, "max": None}
     required_kwargs = ["relative"]
 
     gui_config = {
-        "Scan Parameters": [
-            "exp_time",
-            "settling_time",
-            "burst_at_each_point",
-            "relative",
-            "snaked",
-        ]
+        "Device 1": ["motor1", "start_motor1", "stop_motor1"],
+        "Device 2": ["motor2", "start_motor2", "stop_motor2"],
+        "Movement Parameters": ["step", "spiral_type", "relative", "optim_trajectory"],
+        "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],
     }
 
     def __init__(
         self,
-        *args,
+        motor1: DeviceBase,
+        start_motor1: Annotated[float, "motor1"],
+        stop_motor1: Annotated[float, "motor1"],
+        motor2: DeviceBase,
+        start_motor2: Annotated[float, "motor2"],
+        stop_motor2: Annotated[float, "motor2"],
+        step: Annotated[float, "motor1"] = 0.1,
         exp_time: Annotated[float, Units.s] = 0,
         settling_time: Annotated[float, Units.s] = 0,
         relative: bool = False,
-        snaked: bool = True,
+        spiral_type: float = 0,
+        optim_trajectory: Literal["corridor", "shell", "nearest", None] = None,
         burst_at_each_point: int = 1,
         **kwargs,
     ):
         """
-        Scan two or more motors in a grid.
+        A scan following Fermat's spiral.
 
         Args:
-            *args (Device, float, float, int): pairs of device / start / stop / steps arguments
-            exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
-            settling_time (Annotated[float, Units.s]): settling time in seconds. Default is 0.
-            relative (bool): if True, the motors will be moved relative to their current position. Default is False.
+            motor1 (DeviceBase): first motor
+            start_motor1 (float): start position motor 1
+            stop_motor1 (float): end position motor 1
+            motor2 (DeviceBase): second motor
+            start_motor2 (float): start position motor 2
+            stop_motor2 (float): end position motor 2
+            step (float): step size in motor units. Default is 0.1.
+            exp_time (float): exposure time in seconds. Default is 0.
+            settling_time (float): settling time in seconds. Default is 0.
+            relative (bool): if True, the motors will be moved relative to their current position.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
-            snaked (bool): if True, the scan will be snaked. Default is True.
+            spiral_type (float): Angular offset (e.g. 0, 0.25,... ) in radians that determines the shape of the spiral. Default is 0.
+            optim_trajectory (str): trajectory optimization method. Default is None. Options are "corridor", "shell", "nearest".
 
         Returns:
             ScanReport
 
         Examples:
-            >>> scans.grid_scan(dev.motor1, -5, 5, 10, dev.motor2, -5, 5, 10, exp_time=0.1, relative=True)
+            >>> scans.fermat_scan(dev.motor1, -5, 5, dev.motor2, -5, 5, step=0.5, exp_time=0.1, relative=True, optim_trajectory="corridor")
 
         """
         super().__init__(**kwargs)
-        self.motor_args = args
-        self.motor_input_bundles = bundle_args(args, bundle_size=self.arg_bundle_size["bundle"])
-        self.motors = list(self.motor_input_bundles.keys())
-        self.exp_time = exp_time
-        self.settling_time = settling_time
+        self.motors = [motor1, motor2]
         self.relative = relative
-        self.snaked = snaked
-        self.burst_at_each_point = burst_at_each_point
+        self.motor1_start_stop = (start_motor1, stop_motor1)
+        self.motor2_start_stop = (start_motor2, stop_motor2)
+        self.step = step
+        self.spiral_type = spiral_type
+        self.optim_trajectory = optim_trajectory
 
         # Update the default scan info with provided parameters.
         self.update_scan_info(
             exp_time=exp_time,
             settling_time=settling_time,
             relative=relative,
-            snaked=snaked,
             burst_at_each_point=burst_at_each_point,
+            spiral_type=spiral_type,
+            optim_trajectory=optim_trajectory,
         )
 
         # We elevate the readout priority of the scan motors to "monitored" to ensure
@@ -127,8 +127,13 @@ class GridScan(ScanBase):
         before the scan is opened, such as preparing the positions (if not done already)
         or setting up the devices.
         """
-        self.positions = position_generators.nd_grid_positions(
-            self.motor_input_bundles.values(), snaked=self.snaked
+        self.positions = position_generators.fermat_spiral_pos(
+            m1_start=self.motor1_start_stop[0],
+            m1_stop=self.motor1_start_stop[1],
+            m2_start=self.motor2_start_stop[0],
+            m2_stop=self.motor2_start_stop[1],
+            step=self.step,
+            spiral_type=self.spiral_type,
         )
 
         if self.relative:
@@ -187,10 +192,7 @@ class GridScan(ScanBase):
 
     @scan_hook
     def at_each_point(
-        self,
-        motors: list[str | DeviceBase],
-        positions: np.ndarray,
-        last_positions: np.ndarray | None,
+        self, motors: list[str], positions: np.ndarray, last_positions: np.ndarray | None
     ):
         """
         Logic to be executed at each point during the scan. This is called by the step_scan method at each point.

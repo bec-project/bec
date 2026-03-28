@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from bec_server.scan_server.scan_gui_models import GUIConfig
-from bec_server.scan_server.scans import ScanArgType, ScanBase
+from bec_server.scan_server.legacy_scans import ScanArgType, ScanBase
 
 
 class GoodScan(ScanBase):  # pragma: no cover

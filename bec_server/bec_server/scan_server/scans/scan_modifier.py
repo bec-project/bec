@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bec_lib.device import DeviceBase
-    from bec_server.scan_server.scans_v4.scans_v4 import ScanBase
+    from bec_server.scan_server.scans import ScanBase
 
 
 def scan_hook(func):

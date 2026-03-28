@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from bec_server.scan_server.path_optimization import PathOptimizerMixin
-from bec_server.scan_server.scans import get_fermat_spiral_pos, get_round_roi_scan_positions
+from bec_server.scan_server.legacy_scans import get_fermat_spiral_pos, get_round_roi_scan_positions
 
 
 def test_shell_optimization():

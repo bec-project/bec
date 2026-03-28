@@ -116,6 +116,35 @@ def round_scan_positions(
     return np.array(positions, dtype=float)
 
 
+def get_round_roi_scan_positions(lx: float, ly: float, dr: float, nth: int, cenx=0, ceny=0):
+    """
+    get_round_roi_scan_positions calculates and returns the positions for a round scan in a rectangular region of interest.
+
+    Args:
+        lx (float): length in x
+        ly (float): length in y
+        dr (float): step size
+        nth (int): number of angles in the inner ring
+        cenx (int, optional): center in x. Defaults to 0.
+        ceny (int, optional): center in y. Defaults to 0.
+
+    Returns:
+        array: calculated positions in the form [[x, y], ...]
+    """
+    positions = []
+    nr = 1 + int(np.floor(max([lx, ly]) / dr))
+    for ir in range(1, nr + 2):
+        rr = ir * dr
+        dth = 2 * np.pi / (nth * ir)
+        pos = [
+            (rr * np.cos(ith * dth) + cenx, rr * np.sin(ith * dth) + ceny)
+            for ith in range(nth * ir)
+            if np.abs(rr * np.cos(ith * dth)) < lx / 2 and np.abs(rr * np.sin(ith * dth)) < ly / 2
+        ]
+        positions.extend(pos)
+    return np.array(positions)
+
+
 def hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True) -> np.ndarray:
     """
     Generate a 2D hexagonal grid clipped to (start, stop) bounds.

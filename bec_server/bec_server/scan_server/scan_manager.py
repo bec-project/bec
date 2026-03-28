@@ -14,8 +14,8 @@ from bec_lib.messages import AvailableResourceMessage
 from bec_lib.signature_serializer import signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig, GUIInput
 
-from . import scans as scans_module
-from . import scans_v4 as scans_v4_module
+from . import legacy_scans as scans_module
+from . import scans as scans_v4_module
 
 logger = bec_logger.logger
 
@@ -153,7 +153,7 @@ class ScanManager:
         return converted
 
     def _get_v4_scan_members(self) -> list[tuple[str, type]]:
-        """Collect classes from all modules in the scans_v4 package."""
+        """Collect classes from all modules in the scans package."""
         members: list[tuple[str, type]] = []
         for module_info in pkgutil.iter_modules(
             scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."

@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from bec_lib import messages
 from bec_lib.logger import bec_logger
 
-from .scans import RequestBase, ScanBase, unpack_scan_args
-from .scans_v4 import ScanBase as ScanBaseV4
+from .legacy_scans import RequestBase, ScanBase, unpack_scan_args
+from .scans import ScanBase as ScanBaseV4
 
 logger = bec_logger.logger
 

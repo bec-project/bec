@@ -9,7 +9,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.errors import ScanAbortion, UserScanInterruption
 from bec_server.scan_server.scan_queue import InstructionQueueStatus
-from bec_server.scan_server.scans_v4.scans_v4 import ScanBase
+from bec_server.scan_server.scans import ScanBase
 
 logger = bec_logger.logger
 
