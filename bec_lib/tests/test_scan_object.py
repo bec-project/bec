@@ -2,6 +2,7 @@ from unittest import mock
 
 import pytest
 
+from bec_lib.bec_errors import ScanInputValidationError
 from bec_lib.scans import ScanObject
 
 
@@ -9,9 +10,15 @@ from bec_lib.scans import ScanObject
 def scan_obj(bec_client_mock):
     scan_info = {
         "class": "FermatSpiralScan",
-        "arg_input": {"device": "device", "start": "float", "stop": "float"},
+        "arg_input": {"device": "DeviceBase", "start": "float", "stop": "float"},
         "required_kwargs": ["step", "relative"],
         "arg_bundle_size": {"bundle": 3, "min": 2, "max": 2},
+        "signature": [
+            {"name": "args", "kind": "VAR_POSITIONAL", "default": "_empty", "annotation": "_empty"},
+            {"name": "step", "kind": "KEYWORD_ONLY", "default": "_empty", "annotation": "float"},
+            {"name": "exp_time", "kind": "KEYWORD_ONLY", "default": 0, "annotation": "float"},
+            {"name": "relative", "kind": "KEYWORD_ONLY", "default": "_empty", "annotation": "bool"},
+        ],
         "doc": (
             "\n        A scan following Fermat's spiral.\n\n        Args:\n            *args: pairs"
             " of device / start position / end position / steps arguments\n            relative:"
@@ -37,8 +44,33 @@ def scan_obj_no_args(bec_client_mock):
         "gui_config": {"scan_class_name": "TimeScan", "arg_group": "", "kwarg_groups": ""},
         "required_kwargs": ["points", "interval"],
         "arg_bundle_size": {"bundle": 0, "min": None, "max": None},
+        "signature": [
+            {
+                "name": "points",
+                "kind": "POSITIONAL_OR_KEYWORD",
+                "default": "_empty",
+                "annotation": "int",
+            },
+            {
+                "name": "interval",
+                "kind": "POSITIONAL_OR_KEYWORD",
+                "default": "_empty",
+                "annotation": "float",
+            },
+            {
+                "name": "exp_time",
+                "kind": "POSITIONAL_OR_KEYWORD",
+                "default": 0,
+                "annotation": "float",
+            },
+            {
+                "name": "relative",
+                "kind": "POSITIONAL_OR_KEYWORD",
+                "default": False,
+                "annotation": "bool",
+            },
+        ],
         "doc": '\n        Trigger and readout devices at a fixed interval.\n        Note that the interval time cannot be less than the exposure time.\n        The effective "sleep" time between points is\n            sleep_time = interval - exp_time\n\n        Args:\n            points: number of points\n            interval: time interval between points\n            exp_time: exposure time in s\n            burst: number of acquisition per point\n\n        Returns:\n            ScanReport\n\n        Examples:\n            >>> scans.time_scan(points=10, interval=1.5, exp_time=0.1, relative=True)\n\n        ',
-        "signature": "",
     }
     scan_name = "fermat_scan"
     obj = ScanObject(scan_name, scan_info, bec_client_mock)
@@ -53,29 +85,59 @@ def dev(scan_obj):
 
 
 def test_scan_object_raises(scan_obj):
-    with pytest.raises(TypeError):
+    with pytest.raises(ScanInputValidationError):
         scan_obj._run()
 
 
 def test_scan_object_raises_not_enough_bundles(scan_obj, dev):
-    with pytest.raises(TypeError):
+    with pytest.raises(ScanInputValidationError):
         scan_obj._run(dev.samx, -5, 5, step=0.5, exp_time=0.1, relative=False)
 
 
 def test_scan_object_raises_kwargs(scan_obj_no_args, dev):
-    with pytest.raises(TypeError) as exc:
+    with pytest.raises(ScanInputValidationError) as exc:
         scan_obj_no_args._run(10)
-    assert "The required arguments are: ['points', 'interval']" in str(exc.value)
+    assert "missing a required argument: 'interval'" in str(exc.value)
 
 
-def test_scan_object_with_device_kwargs(scan_obj_no_args, dev):
+def test_scan_object_accepts_additional_kwargs(scan_obj_no_args, dev):
     scan_obj_no_args._run(
         points=10, interval=1.5, exp_time=0.1, relative=True, additional_device=dev.samx
     )
 
 
+def test_scan_object_v4_rejects_additional_kwargs(scan_obj_no_args, dev):
+    scan_obj_no_args.scan_info["base_class"] = "ScanBaseV4"
+    with pytest.raises(ScanInputValidationError) as exc:
+        scan_obj_no_args._run(
+            dev.samx, -5, 5, step=0.5, exp_time=0.1, relative=False, additional_device=dev.samy
+        )
+    assert "Unknown keyword argument(s) for scan: 'additional_device'" in str(exc.value)
+
+
+def test_scan_object_raises_signature_kwargs_type_for_arg_input_scan(scan_obj, dev):
+    with pytest.raises(ScanInputValidationError, match="step': .*float or int"):
+        scan_obj._run(dev.samx, -5, 5, dev.samy, -5, 5, step="bad", exp_time=0.1, relative=False)
+
+
+def test_scan_object_raises_signature_kwargs_type(scan_obj_no_args):
+    with pytest.raises(ScanInputValidationError, match="interval': .*float or int") as exc:
+        scan_obj_no_args._run(points=10, interval="bad", exp_time=0.1, relative=True)
+    assert exc.value.error_info is not None
+    assert (
+        exc.value.error_info.compact_error_message
+        == "Invalid type for scan argument 'interval': str is neither float or int"
+    )
+    assert exc.value.error_info.exception_type == "ScanInputValidationError"
+
+
+def test_scan_object_raises_signature_positional_type(scan_obj_no_args):
+    with pytest.raises(ScanInputValidationError, match="interval': .*float or int"):
+        scan_obj_no_args._run(10, "bad", 0.1, True)
+
+
 def test_scan_object_raises_too_many_bundles(scan_obj, dev):
-    with pytest.raises(TypeError):
+    with pytest.raises(ScanInputValidationError):
         scan_obj._run(
             dev.samx,
             -5,

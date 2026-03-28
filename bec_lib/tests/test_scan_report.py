@@ -171,20 +171,20 @@ def test_scan_report_file_written_no_master(scan_report):
 
 def test_scan_report_num_points_reached(scan_report):
     with mock.patch.object(scan_report.request, "scan") as mock_scan:
-        mock_scan.num_points = 10
+        mock_scan.num_monitored_readouts = 10
         mock_scan.live_data = {"0": "msg", "1": "msg", "2": "msg"}
         assert scan_report._num_points_reached() is False
 
 
 def test_scan_report_num_points_reached_no_points(scan_report):
     with mock.patch.object(scan_report.request, "scan") as mock_scan:
-        mock_scan.num_points = 0
+        mock_scan.num_monitored_readouts = 0
         mock_scan.live_data = {}
         assert scan_report._num_points_reached() is True
 
 
 def test_scan_report_num_points_reached_match(scan_report):
     with mock.patch.object(scan_report.request, "scan") as mock_scan:
-        mock_scan.num_points = 3
+        mock_scan.num_monitored_readouts = 3
         mock_scan.live_data = {"0": "msg", "1": "msg", "2": "msg"}
         assert scan_report._num_points_reached() is True

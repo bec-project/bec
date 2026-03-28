@@ -1,3 +1,7 @@
+import os
+
+os.environ.setdefault("OPHYD_CONTROL_LAYER", "dummy")
+
 import fakeredis
 import pytest
 
@@ -6,6 +10,8 @@ from bec_lib.redis_connector import RedisConnector
 
 # overwrite threads_check fixture from bec_lib,
 # to have it in autouse
+
+pytest_plugins = ["bec_server.scan_server.tests.scan_fixtures"]
 
 
 @pytest.fixture(autouse=True)

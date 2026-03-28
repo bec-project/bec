@@ -253,6 +253,20 @@ def test_update_with_scan_status_updates_end_time():
         assert scan_item.end_time == 10
 
 
+def test_update_with_scan_status_does_not_update_end_time_for_paused():
+    scan_manager = ScanManager(ConnectorMock(""))
+    with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
+        scan_item = mock.MagicMock()
+        scan_item.end_time = 0
+        mock_find_scan.return_value = scan_item
+        scan_manager.scan_storage.update_with_scan_status(
+            messages.ScanStatusMessage(
+                scan_id="scan_id", status="paused", scan_number=1, info={}, timestamp=10
+            )
+        )
+        assert scan_item.end_time == 0
+
+
 def test_update_with_scan_status_does_not_update_end_time():
     scan_manager = ScanManager(ConnectorMock(""))
     with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
@@ -369,6 +383,26 @@ def test_update_with_scan_status_removes_scan_def_id():
             )
         )
         assert "scan_def_id" not in scan_item.open_scan_defs
+
+
+def test_update_with_scan_status_keeps_scan_def_id_for_paused():
+    scan_manager = ScanManager(ConnectorMock(""))
+    scan_manager.scan_storage.last_scan_number = 0
+    with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
+        scan_item = mock.MagicMock()
+        scan_item.open_scan_defs = {"scan_def_id"}
+        mock_find_scan.return_value = scan_item
+        scan_manager.scan_storage.update_with_scan_status(
+            messages.ScanStatusMessage(
+                scan_id="scan_id",
+                status="paused",
+                scan_number=1,
+                num_points=10,
+                info={"scan_def_id": "scan_def_id"},
+                timestamp=10,
+            )
+        )
+        assert "scan_def_id" in scan_item.open_scan_defs
 
 
 def test_add_scan_segment_emits_data():

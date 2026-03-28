@@ -226,10 +226,10 @@ class LiveUpdatesTable(LiveUpdatesBase):
             while True:
                 self.check_alarms()
                 self.point_data = self.scan_item.live_data.get(self.point_id)
-                if self.scan_item.num_points:
-                    progressbar.max_points = self.scan_item.num_points
+                if self.scan_item.num_monitored_readouts:
+                    progressbar.max_points = self.scan_item.num_monitored_readouts
                     if target_num_points == 0:
-                        target_num_points = self.scan_item.num_points
+                        target_num_points = self.scan_item.num_monitored_readouts
 
                 progressbar.update(self.point_id)
                 if self.point_data:
@@ -256,12 +256,12 @@ class LiveUpdatesTable(LiveUpdatesBase):
                         f"Scan {self.scan_item.scan_number} was aborted by user."
                     )
 
-                if not self.scan_item.num_points:
+                if not self.scan_item.num_monitored_readouts and self.scan_item.status != "closed":
                     continue
 
                 if self.point_id == target_num_points:
                     break
-                if self.point_id > self.scan_item.num_points:
+                if self.point_id > self.scan_item.num_monitored_readouts:
                     raise RuntimeError("Received more points than expected.")
 
                 if len(self.scan_item.live_data) == 0 and self.scan_item.status == "closed":
