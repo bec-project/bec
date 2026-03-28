@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import inspect
 import re
 from contextvars import ContextVar
-from typing import Any, Literal, Optional, Type
+from typing import Annotated, Any, Literal, Optional, Type, get_args, get_origin
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
 
+from bec_lib.device import DeviceBase
 from bec_lib.signature_serializer import signature_to_dict
-from bec_server.scan_server.scans import ScanBase
+from bec_server.scan_server.scans import ScanArgType, ScanBase
 
 context_signature = ContextVar("context_signature")
 context_docstring = ContextVar("context_docstring")
@@ -31,6 +33,34 @@ class GUIInput(BaseModel):
     tooltip: Optional[str] = Field(None, validate_default=True)
     default: Optional[Any] = Field(None, validate_default=True)
     expert: Optional[bool] = Field(False)  # TODO decide later how to implement
+
+    @classmethod
+    def convert_to_legacy_scan_arg_type(cls, value):
+        """Convert richer typing annotations to the legacy ScanArgType enum."""
+        if isinstance(value, ScanArgType):
+            return value
+
+        if get_origin(value) is Annotated:
+            value = get_args(value)[0]
+
+        if not inspect.isclass(value):
+            return value
+
+        if issubclass(value, DeviceBase):
+            return ScanArgType.DEVICE
+        if issubclass(value, bool):
+            return ScanArgType.BOOL
+        if issubclass(value, int):
+            return ScanArgType.INT
+        if issubclass(value, float):
+            return ScanArgType.FLOAT
+        if issubclass(value, str):
+            return ScanArgType.STR
+        if issubclass(value, list):
+            return ScanArgType.LIST
+        if issubclass(value, dict):
+            return ScanArgType.DICT
+        return value
 
     @field_validator("name")
     @classmethod
@@ -167,13 +197,21 @@ class GUIArgGroup(BaseModel):
     min: Optional[int] = Field(None)
     max: Optional[int] = Field(None)
 
+    @field_validator("arg_inputs")
+    @classmethod
+    def validate_arg_inputs(cls, v):
+        return {key: GUIInput.convert_to_legacy_scan_arg_type(value) for key, value in v.items()}
+
     @field_validator("inputs")
     @classmethod
     def validate_inputs(cls, v, values):
         if v is not None:
             return v
         arg_inputs = values.data["arg_inputs"]
-        arg_inputs_str = {key: value.value for key, value in arg_inputs.items()}
+        arg_inputs_str = {
+            key: value.value if isinstance(value, ScanArgType) else value
+            for key, value in arg_inputs.items()
+        }
         v = []
         for name, type_ in arg_inputs_str.items():
             v.append(GUIInput(name=name, type=type_, arg=True))
