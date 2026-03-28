@@ -37,6 +37,7 @@ class ScanStorage:
         self.scan_segments = {}
         self.scan_finished = False
         self.num_points: int | None = None
+        self.num_monitored_readouts: int | None = None
         self.baseline = {}
         self.async_writer: AsyncWriter | None = None
         self.beamline_states: dict[str, list[messages.BeamlineStateMessage]] = defaultdict(list)
@@ -66,14 +67,16 @@ class ScanStorage:
         if self.enforce_sync:
             # wait for all points to be received. Since this method will be called for every
             # update of the scan segments, we can also accept to write after the scan is finished
-            _ready_to_write = self.scan_finished and (self.num_points == len(self.scan_segments))
+            _ready_to_write = self.scan_finished and (
+                self.num_monitored_readouts == len(self.scan_segments)
+            )
             if not _ready_to_write:
                 if self.status_msg is None or self.status_msg.readout_priority is None:
                     return False
                 monitored_devices = self.status_msg.readout_priority.get("monitored")
                 if not monitored_devices:
                     logger.info(
-                        f"Received number of segments: {len(self.scan_segments)}, Number of points (expected): {self.num_points},  Ready to write: {_ready_to_write}"
+                        f"Received number of segments: {len(self.scan_segments)}, Number of monitored readouts (expected): {self.num_monitored_readouts},  Ready to write: {_ready_to_write}"
                     )
                     return self.scan_finished
             return _ready_to_write
@@ -267,6 +270,7 @@ class FileWriterManager(BECService):
 
             scan_storage.scan_finished = True
             scan_storage.num_points = msg.num_points
+            scan_storage.num_monitored_readouts = msg.num_monitored_readouts
             info = msg.content.get("info")
             if info:
                 if msg.scan_type == "step":
@@ -455,6 +459,7 @@ class FileWriterManager(BECService):
             start_time=storage.start_time,
             end_time=storage.end_time,
             num_points=storage.num_points,
+            num_monitored_readouts=storage.num_monitored_readouts,
             scan_name=storage.metadata.get("scan_name"),
             request_inputs=storage.metadata.get("request_inputs", {}),
             stored_data_info=self.file_writer.stored_data_info or {},

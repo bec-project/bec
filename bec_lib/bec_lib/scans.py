@@ -7,12 +7,11 @@ from __future__ import annotations
 
 import builtins
 import time
-import types
 import uuid
 from collections.abc import Callable
 from contextlib import ContextDecorator
 from copy import deepcopy
-from typing import TYPE_CHECKING, Annotated, Literal, get_args, get_origin
+from typing import TYPE_CHECKING
 
 from toolz import partition
 from typeguard import typechecked
@@ -21,9 +20,10 @@ from bec_lib.bec_errors import ScanAbortion
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.scan_input_validator import ScanInputValidator
 from bec_lib.scan_repeat import _scan_repeat_depth
 from bec_lib.scan_report import ScanReport
-from bec_lib.signature_serializer import deserialize_dtype, dict_to_signature
+from bec_lib.signature_serializer import dict_to_signature
 from bec_lib.utils import scan_to_csv
 from bec_lib.utils.import_utils import lazy_import
 
@@ -131,7 +131,7 @@ class ScanObject:
         scan_queue = scan_queue or self.client.queue.get_default_scan_queue()
         kwargs["scan_queue"] = scan_queue
 
-        request = Scans.prepare_scan_request(self.scan_name, self.scan_info, *args, **kwargs)
+        request = scans.prepare_scan_request(self.scan_name, self.scan_info, *args, **kwargs)
         request_id = str(uuid.uuid4())
         request.metadata["client_info"] = {
             "acl_user": self.client.username,
@@ -171,6 +171,7 @@ class Scans:
     def __init__(self, parent):
         self.parent = parent
         self._available_scans = {}
+        self._input_validator = ScanInputValidator(device_manager=self.parent.device_manager)
         self._import_scans()
         self._scan_group = None
         self._scan_def_id = None
@@ -206,6 +207,8 @@ class Scans:
     def _strip_scan_signature_annotations(params: list[dict]) -> list[dict]:
         """
         Strip rich scan argument metadata from serialized params for IPython signatures.
+        Note: It also removes **kwargs from the signature as we do not want users
+        to get wrong ideas.
 
         Args:
             params (list[dict]): Serialized function signature parameter dictionaries.
@@ -217,6 +220,7 @@ class Scans:
         return [
             {**param, "annotation": Scans._strip_scan_arg_annotation(param["annotation"])}
             for param in params
+            if param["kind"] != "VAR_KEYWORD"
         ]
 
     @staticmethod
@@ -236,59 +240,8 @@ class Scans:
             return Scans._strip_scan_arg_annotation(annotated["type"])
         return annotation
 
-    @staticmethod
-    def _get_runtime_arg_type(dtype: object) -> type | tuple[type, ...]:
-        """
-        Convert a deserialized annotation into a type suitable for isinstance checks.
-
-        Args:
-            dtype (object): Deserialized annotation value.
-
-        Returns:
-            type | tuple[type, ...]: Runtime type or tuple of types accepted by isinstance.
-        """
-        if get_origin(dtype) is Annotated:
-            return Scans._get_runtime_arg_type(get_args(dtype)[0])
-        if get_origin(dtype) is Literal:
-            return tuple(type(arg) for arg in get_args(dtype))
-        if dtype.__class__.__name__ == "_UnionGenericAlias" or dtype.__class__ == types.UnionType:
-            runtime_types = []
-            for arg in get_args(dtype):
-                runtime_type = Scans._get_runtime_arg_type(arg)
-                if isinstance(runtime_type, tuple):
-                    runtime_types.extend(runtime_type)
-                    continue
-                runtime_types.append(runtime_type)
-            return tuple(runtime_types)
-        if dtype is None:
-            return types.NoneType
-        return dtype
-
-    @staticmethod
-    def get_arg_type(in_type: str | dict | list):
-        """translate type string into python type"""
-        # pylint: disable=too-many-return-statements
-        if in_type == "float":
-            return (float, int)
-        if in_type == "int":
-            return int
-        if in_type == "list":
-            return list
-        if in_type in ("boolean", "bool"):
-            return bool
-        if in_type == "str":
-            return str
-        if in_type == "dict":
-            return dict
-        if in_type in ("device", "DeviceBase"):
-            return DeviceBase
-        if dtype := deserialize_dtype(in_type):
-            return Scans._get_runtime_arg_type(dtype)
-        raise TypeError(f"Unknown type {in_type}")
-
-    @staticmethod
     def prepare_scan_request(
-        scan_name: str, scan_info: dict, *args, **kwargs
+        self, scan_name: str, scan_info: dict, *args, **kwargs
     ) -> messages.ScanQueueMessage:
         """Prepare scan request message with given scan arguments
 
@@ -305,61 +258,15 @@ class Scans:
             messages.ScanQueueMessage: scan request message
         """
         scan_queue = kwargs.pop("scan_queue", "primary")
-        # check that all required keyword arguments have been specified
-        if not all(req_kwarg in kwargs for req_kwarg in scan_info.get("required_kwargs")):
-            raise TypeError(
-                f"{scan_info.get('doc')}\n Not all required keyword arguments have been"
-                f" specified. The required arguments are: {scan_info.get('required_kwargs')}"
-            )
-
-        # check that all required arguments have been specified
-        arg_input = list(scan_info.get("arg_input", {}).values())
         arg_bundle_size = scan_info.get("arg_bundle_size", {})
         bundle_size = arg_bundle_size.get("bundle")
-        if len(arg_input) > 0:
-            if len(args) % len(arg_input) != 0:
-                raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} takes multiples of"
-                    f" {len(arg_input)} arguments ({len(args)} given)."
-                )
-            # check that all specified devices in args are different objects
-            for arg in args:
-                if not isinstance(arg, DeviceBase):
-                    continue
-                if args.count(arg) > 1:
-                    raise TypeError(
-                        f"{scan_info.get('doc')}\n All specified devices must be different"
-                        f" objects."
-                    )
-
-            # check that all arguments are of the correct type
-            for ii, arg in enumerate(args):
-                if not isinstance(arg, Scans.get_arg_type(arg_input[ii % len(arg_input)])):
-                    raise TypeError(
-                        f"{scan_info.get('doc')}\n Argument {ii} must be of type"
-                        f" {arg_input[ii%len(arg_input)]}, not {type(arg).__name__}."
-                    )
+        args, kwargs = self._input_validator.validate(scan_name, scan_info, args, kwargs)
 
         metadata = {}
         metadata.update(kwargs["system_config"])
         metadata["user_metadata"] = kwargs.pop("user_metadata", {})
 
         params = {"args": Scans._parameter_bundler(args, bundle_size), "kwargs": kwargs}
-        # check the number of arg bundles against the number of required bundles
-        if bundle_size:
-            num_bundles = len(params["args"])
-            min_bundles = arg_bundle_size.get("min")
-            max_bundles = arg_bundle_size.get("max")
-            if min_bundles and num_bundles < min_bundles:
-                raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} requires at least {min_bundles} bundles"
-                    f" of arguments ({num_bundles} given)."
-                )
-            if max_bundles and num_bundles > max_bundles:
-                raise TypeError(
-                    f"{scan_info.get('doc')}\n {scan_name} requires at most {max_bundles} bundles"
-                    f" of arguments ({num_bundles} given)."
-                )
         # Check if we are in a "restart" decorator context
         allow_restart = _scan_repeat_depth.get() == 0
 

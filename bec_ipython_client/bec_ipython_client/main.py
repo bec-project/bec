@@ -5,7 +5,6 @@ import collections
 import functools
 import os
 import sys
-from importlib.metadata import version
 from typing import Iterable, Literal, Tuple
 
 import IPython
@@ -24,7 +23,7 @@ from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
 from bec_ipython_client.signals import OperationMode, ScanInterruption, SigintHandler
 from bec_lib import plugin_helper
 from bec_lib.alarm_handler import AlarmBase
-from bec_lib.bec_errors import DeviceConfigError
+from bec_lib.bec_errors import DeviceConfigError, ExceptionWithErrorInfo
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.callback_handler import EventType
 from bec_lib.client import BECClient
@@ -268,6 +267,9 @@ def _ip_exception_handler(
         msg = f"The current user ({bec._client.username}) does not have the required permissions.\n {evalue}"
         logger.info(f"Unauthorized: {msg}")
         print(f"\x1b[31m Unauthorized:\x1b[0m {msg}")
+        return
+    if issubclass(etype, ExceptionWithErrorInfo):
+        evalue.pretty_print()
         return
     self.showtraceback((etype, evalue, tb), tb_offset=None)  # standard IPython's printout
 

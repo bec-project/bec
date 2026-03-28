@@ -1,7 +1,6 @@
 import threading
 import time
 import uuid
-from typing import Callable, Generator
 from unittest import mock
 
 import pytest
@@ -13,6 +12,7 @@ from bec_lib.redis_connector import MessageObject
 from bec_server.scan_server.errors import LimitError, ScanAbortion
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
+    DirectInstructionQueueItem,
     InstructionQueueItem,
     InstructionQueueStatus,
     QueueManager,
@@ -22,6 +22,8 @@ from bec_server.scan_server.scan_queue import (
     ScanQueueStatus,
 )
 from bec_server.scan_server.scan_worker import ScanWorker
+from bec_server.scan_server.scans.scan_base import ScanBase as ScanBaseV4
+from bec_server.scan_server.scans.scan_base import ScanType
 from bec_server.scan_server.tests.fixtures import scan_server_mock
 
 # pylint: disable=missing-function-docstring
@@ -68,6 +70,24 @@ class InstructionQueueMock(InstructionQueueItem):
     def append_scan_request(self, msg):
         self.scan_msgs.append(msg)
         self.queue.append(msg)
+
+
+class _DummyV4Scan(ScanBaseV4):
+    scan_name = "_v4_dummy_scan"
+
+
+def _build_dummy_v4_scan(scan_id: str, scan_number: int | None = None) -> _DummyV4Scan:
+    scan = _DummyV4Scan(
+        scan_id=scan_id,
+        redis_connector=mock.MagicMock(),
+        device_manager=mock.MagicMock(),
+        instruction_handler=mock.MagicMock(),
+        request_inputs={},
+        system_config={},
+    )
+    scan.scan_info.scan_type = ScanType.SOFTWARE_TRIGGERED
+    scan.scan_info.scan_number = scan_number
+    return scan
 
 
 def test_queuemanager_queue_contains_primary(queuemanager_mock):
@@ -214,6 +234,234 @@ def test_set_halt_disables_return_to_start(queuemanager_mock):
             scan_id="dummy", queue="primary", exit_info=("halted", "user")
         )
         assert queue.return_to_start is False
+
+
+def test_set_halt_disables_return_to_start_for_direct_instruction_queue(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.queues["primary"].active_instruction_queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+    queue_manager.queues["primary"].active_instruction_queue.run_on_exception_hook = True
+    with mock.patch.object(queue_manager, "set_abort") as set_abort:
+        queue = queue_manager.queues["primary"].active_instruction_queue
+        queue_manager.set_halt(scan_id="dummy", parameter={})
+        set_abort.assert_called_once_with(
+            scan_id="dummy", queue="primary", exit_info=("halted", "user")
+        )
+        assert queue.run_on_exception_hook is False
+
+
+def test_direct_instruction_queue_run_on_exception_hook_uses_scan_info(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+    scan = _build_dummy_v4_scan(scan_id="scan-id-test")
+    scan.scan_info.run_on_exception_hook = False
+    queue.active_scan = scan
+
+    assert queue.run_on_exception_hook is False
+
+    scan.scan_info.run_on_exception_hook = True
+
+    assert queue.run_on_exception_hook is True
+
+
+def test_direct_instruction_queue_status_updates_worker_and_sends_queue_status(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    worker = mock.MagicMock()
+    queue = DirectInstructionQueueItem(queue_manager.queues["primary"], mock.MagicMock(), worker)
+    queue.stop = mock.MagicMock()
+    queue_manager.send_queue_status = mock.MagicMock()
+
+    queue.status = InstructionQueueStatus.RUNNING
+    queue.status = InstructionQueueStatus.STOPPED
+
+    assert worker.status == InstructionQueueStatus.STOPPED
+    queue.stop.assert_called_once_with()
+    assert queue_manager.send_queue_status.call_count == 2
+
+
+def test_direct_instruction_queue_append_scan_request_assembles_and_stores_scan(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    assembler = mock.MagicMock()
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"], assembler, queue_manager.queues["primary"].scan_worker
+    )
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    scan = _build_dummy_v4_scan("scan-id-test")
+    assembler.assemble_direct_scan.return_value = scan
+
+    queue.append_scan_request(msg)
+
+    assembler.assemble_direct_scan.assert_called_once_with(msg, scan_id=queue._scan_id)
+    assert queue.scans == [scan]
+    assert queue.scan_msgs == [msg]
+
+
+def test_direct_instruction_queue_describe_active_scan_returns_none_when_missing(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"],
+        mock.MagicMock(),
+        queue_manager.queues["primary"].scan_worker,
+    )
+    scan = _build_dummy_v4_scan("scan-id-test")
+
+    assert queue.describe_active_scan() is None
+
+    queue.active_scan = scan
+
+    assert queue.describe_active_scan() is None
+
+
+def test_direct_instruction_queue_describe_active_scan_returns_request_block(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"],
+        mock.MagicMock(),
+        queue_manager.queues["primary"].scan_worker,
+    )
+    scan = _build_dummy_v4_scan("scan-id-test")
+    scan.scan_info.readout_priority_modification = {"monitored": ["samx"]}
+    scan.scan_info.scan_report_instructions = [{"device": "samx"}]
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    queue.scans = [scan]
+    queue.scan_msgs = [msg]
+    queue.active_scan = scan
+
+    info = queue.describe_active_scan()
+
+    assert info.msg == msg
+    assert info.RID == "rid-1"
+    assert info.report_instructions == [{"device": "samx"}]
+    assert info.scan_id == "scan-id-test"
+
+
+def test_direct_instruction_queue_move_to_next_scan_activates_and_assigns_numbers(
+    queuemanager_mock,
+):
+    queue_manager = queuemanager_mock()
+    scan_queue = queue_manager.queues["primary"]
+    queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
+    scan_queue.queue.append(queue)
+    first_scan = _build_dummy_v4_scan("scan-1", scan_number=None)
+    second_scan = _build_dummy_v4_scan("scan-2", scan_number=None)
+    second_scan.scan_info.metadata["dataset_id_on_hold"] = True
+    msg1 = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    msg2 = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (2,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-2", "dataset_id_on_hold": True},
+    )
+    queue.scans = [first_scan, second_scan]
+    queue.scan_msgs = [msg1, msg2]
+
+    active_scan = queue.move_to_next_scan()
+
+    assert active_scan is first_scan
+    assert queue.active_request_block is first_scan
+    assert queue.status == InstructionQueueStatus.RUNNING
+    assert first_scan.scan_info.scan_number is not None
+    first_dataset_number = first_scan.scan_info.dataset_number
+
+    active_scan = queue.move_to_next_scan()
+
+    assert active_scan is second_scan
+    assert second_scan.scan_info.scan_number is not None
+    assert second_scan.scan_info.dataset_number == first_dataset_number
+
+
+def test_direct_instruction_queue_move_to_next_scan_raises_when_empty_or_exhausted(
+    queuemanager_mock,
+):
+    queue_manager = queuemanager_mock()
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"],
+        mock.MagicMock(),
+        queue_manager.queues["primary"].scan_worker,
+    )
+
+    with pytest.raises(StopIteration, match="No active scan and no scans"):
+        queue.move_to_next_scan()
+
+    scan = _build_dummy_v4_scan("scan-id-test")
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    queue.scans = [scan]
+    queue.scan_msgs = [msg]
+    queue.active_scan = scan
+
+    with pytest.raises(StopIteration, match="No more scans"):
+        queue.move_to_next_scan()
+
+
+def test_direct_instruction_queue_append_to_queue_history_pushes_message(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    connector = mock.MagicMock()
+    queue_manager.connector = connector
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"],
+        mock.MagicMock(),
+        queue_manager.queues["primary"].scan_worker,
+    )
+    queue.status = InstructionQueueStatus.COMPLETED
+
+    queue.append_to_queue_history()
+
+    connector.lpush.assert_called_once()
+    endpoint, msg = connector.lpush.call_args.args[:2]
+    assert endpoint == MessageEndpoints.scan_queue_history()
+    assert msg.status == "COMPLETED"
+    assert msg.queue_id == queue.queue_id
+    assert connector.lpush.call_args.kwargs["max_size"] == 100
+
+
+def test_direct_instruction_queue_stop_and_abort_update_internal_state(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"],
+        mock.MagicMock(),
+        queue_manager.queues["primary"].scan_worker,
+    )
+    first_scan = _build_dummy_v4_scan("scan-1")
+    second_scan = _build_dummy_v4_scan("scan-2")
+    first_scan._shutdown_event = mock.MagicMock()
+    second_scan._shutdown_event = mock.MagicMock()
+    queue.scans = [first_scan, second_scan]
+    queue.scan_msgs = [mock.MagicMock(), mock.MagicMock()]
+    queue.active_scan = first_scan
+
+    queue.stop()
+
+    first_scan._shutdown_event.set.assert_called_once_with()
+    second_scan._shutdown_event.set.assert_called_once_with()
+
+    queue.abort()
+
+    assert queue.active_scan is None
+    assert queue.scans == []
+    assert queue.scan_msgs == []
 
 
 def wait_to_reach_state(queue_manager, queue, state):
@@ -566,6 +814,42 @@ def test_request_block_scan_number(scan_server_mock, scan_queue_msg):
     ):
         with mock.patch.object(RequestBlock, "scan_ids_head", return_value=0):
             assert request_block.scan_number == 5
+
+
+def test_direct_instruction_queue_item_scan_number_projection_within_item(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    scan_queue = queue_manager.queues["primary"]
+    base_scan_number = queue_manager.parent.scan_number
+    instruction_queue = DirectInstructionQueueItem(
+        scan_queue, mock.MagicMock(), scan_queue.scan_worker
+    )
+    scan_queue.queue.append(instruction_queue)
+
+    scan1 = _build_dummy_v4_scan("scan-1")
+    scan2 = _build_dummy_v4_scan("scan-2")
+
+    instruction_queue.scans = [scan1, scan2]
+
+    assert instruction_queue.scan_number == [base_scan_number + 1, base_scan_number + 2]
+
+
+def test_direct_instruction_queue_item_scan_number_projection_across_queue_items(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    scan_queue = queue_manager.queues["primary"]
+    base_scan_number = queue_manager.parent.scan_number
+
+    first_queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
+    second_queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
+    scan_queue.queue.extend([first_queue, second_queue])
+
+    first_scan = _build_dummy_v4_scan("scan-1")
+    second_scan = _build_dummy_v4_scan("scan-2")
+
+    first_queue.scans = [first_scan]
+    second_queue.scans = [second_scan]
+
+    assert first_queue.scan_number == [base_scan_number + 1]
+    assert second_queue.scan_number == [base_scan_number + 2]
 
 
 def test_remove_queue_item(queuemanager_mock):

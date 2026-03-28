@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from bec_lib import metadata_schema
 from bec_lib.messages import ScanQueueMessage
 from bec_lib.metadata_schema import BasicScanMetadata
+from bec_lib.scan_input_validator import ScanInputValidator
 from bec_lib.scans import Scans
 
 TEST_DICT = {"foo": "bar", "baz": 123}
@@ -99,21 +100,24 @@ def test_default_schema_is_used_as_fallback():
 
 
 def test_prepare_scan_request_produces_conforming_message():
+    scans = Scans.__new__(Scans)
+    scans._input_validator = ScanInputValidator()
+
     with patch.dict(metadata_schema._METADATA_SCHEMA_REGISTRY, TEST_REGISTRY, clear=True):
         with pytest.raises(ValidationError):
-            Scans.prepare_scan_request(
+            scans.prepare_scan_request(
                 scan_name="fake_scan_with_extra_metadata",
                 scan_info={"required_kwargs": []},
                 system_config={},
             )
         with pytest.raises(ValidationError):
-            Scans.prepare_scan_request(
+            scans.prepare_scan_request(
                 scan_name="fake_scan_with_extra_metadata",
                 scan_info={"required_kwargs": []},
                 system_config={},
                 user_metadata={"number_field": "string"},
             )
-        msg = Scans.prepare_scan_request(
+        msg = scans.prepare_scan_request(
             scan_name="fake_scan_with_extra_metadata",
             scan_info={"required_kwargs": []},
             system_config={},

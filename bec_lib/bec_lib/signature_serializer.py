@@ -40,6 +40,14 @@ def _serialize_dtype(dtype: object) -> Generator[str | dict, None, None]:
         yield from itertools.chain.from_iterable(_serialize_union_arg(x) for x in dtype.__args__)  # type: ignore
     if dtype.__class__.__name__ == "_LiteralGenericAlias":
         yield {"Literal": dtype.__args__}  # type: ignore
+    origin = get_origin(dtype)
+    if origin is not None and origin not in {Annotated, Literal, Union, types.UnionType}:
+        yield {
+            "Generic": {
+                "origin": serialize_dtype(origin),
+                "args": [serialize_dtype(arg) for arg in get_args(dtype)],
+            }
+        }
 
 
 def _serialize_union_arg(dtype: object) -> list[str | dict]:
@@ -209,6 +217,13 @@ def deserialize_dtype(dtype: list | dict | str) -> object:
         if "Annotated" in dtype:
             annotated_dtype = dtype.get("Annotated")
             return _deserialize_annotated_dtype(annotated_dtype)
+        if "Generic" in dtype:
+            generic_dtype = dtype["Generic"]
+            origin = deserialize_dtype(generic_dtype["origin"])
+            args = tuple(deserialize_dtype(arg) for arg in generic_dtype.get("args", []))
+            if origin is inspect._empty:
+                return inspect._empty
+            return origin[args] if args else origin
         return Literal[*dtype["Literal"]]
     if dtype == "_empty":
         # pylint: disable=protected-access

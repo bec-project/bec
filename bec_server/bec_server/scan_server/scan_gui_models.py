@@ -10,7 +10,7 @@ from pydantic_core import PydanticCustomError
 
 from bec_lib.device import DeviceBase
 from bec_lib.signature_serializer import signature_to_dict
-from bec_server.scan_server.scans import ScanArgType, ScanBase
+from bec_server.scan_server.scans.legacy_scans import ScanArgType, ScanBase
 
 context_signature = ContextVar("context_signature")
 context_docstring = ContextVar("context_docstring")
@@ -42,6 +42,10 @@ class GUIInput(BaseModel):
 
         if get_origin(value) is Annotated:
             value = get_args(value)[0]
+
+        origin = get_origin(value)
+        if origin is not None:
+            value = origin
 
         if not inspect.isclass(value):
             return value
