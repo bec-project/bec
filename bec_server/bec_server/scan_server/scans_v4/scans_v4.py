@@ -965,9 +965,9 @@ class ScanInfo(BaseModel):
     settling_time_after_trigger: Annotated[
         float, Field(description="Settling time after the software trigger", ge=0.0)
     ] = 0.0
-    readout_time: Annotated[
-        float, Field(description="Readout time after the trigger", ge=0.0)
-    ] = 0.0
+    readout_time: Annotated[float, Field(description="Readout time after the trigger", ge=0.0)] = (
+        0.0
+    )
     burst_at_each_point: Annotated[
         int, Field(description="Number of bursts at each point", ge=1)
     ] = 1
