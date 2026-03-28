@@ -105,9 +105,12 @@ class BECEmitter(EmitterBase):
             )
             return
         info = self.scan_bundler.sync_storage[scan_id]["info"]
+
+        num_monitored_readouts = info.get("num_monitored_readouts", info.get("num_points", 0))
+
         msg = messages.ProgressMessage(
             value=point_id + 1,
-            max_value=info.get("num_points", point_id + 1),
+            max_value=num_monitored_readouts or point_id + 1,
             done=done,
             metadata={
                 "scan_id": scan_id,
@@ -143,8 +146,9 @@ class BECEmitter(EmitterBase):
             return
 
         num_points = max(status_msg.info.get("num_points", 0) - 1, 0)
+        num_monitored_readouts = status_msg.info.get("num_monitored_readouts", num_points)
         if status_msg.status == "closed":
-            self._update_scan_progress(status_msg.scan_id, num_points, done=True)
+            self._update_scan_progress(status_msg.scan_id, num_monitored_readouts, done=True)
             return
 
         sb = self.scan_bundler

@@ -2,17 +2,29 @@
 Scan Manager loads the available scans and publishes them to redis.
 """
 
+from __future__ import annotations
+
+import functools
+import importlib
 import inspect
+import pkgutil
+from typing import TYPE_CHECKING, Type
 
 from bec_lib import plugin_helper
+from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AvailableResourceMessage
+from bec_lib.messages import AvailableResourceMessage, ErrorInfo
 from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
 
-from . import scans as scans_module
+from . import scans as scans_v4_module
+from .scans import legacy_scans as scans_module
+from .scans.scan_base import ScanBase as ScanBaseV4
+
+if TYPE_CHECKING:
+    from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
 
@@ -32,46 +44,79 @@ class ScanManager:
     Scan Manager loads the available scans and publishes them to redis.
     """
 
-    def __init__(self, *, parent):
+    def __init__(self, *, parent: ScanServer):
         """
         Scan Manager loads and manages the available scans.
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase]] = {}
+        self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
         self._plugins = {}
-        self.load_plugins()
         self.update_available_scans()
         self.publish_available_scans()
 
-    def load_plugins(self):
-        """load scan plugins"""
-        plugins = plugin_helper.get_scan_plugins()
-        if not plugins:
-            return
-        for name, cls in plugins.items():
-            if not issubclass(cls, scans_module.RequestBase):
-                logger.error(
-                    f"Plugin {name} is not a valid scan plugin as it does not inherit from RequestBase. Skipping."
-                )
-                continue
-            self._plugins[name] = cls
-            logger.info(f"Loading scan plugin {name}")
+    @functools.lru_cache(maxsize=1)
+    @staticmethod
+    def get_available_scans() -> list[tuple[str, Type]]:
+        """
+        Get all available scans, including legacy scans, v4 scans and plugin scans.
+
+        Returns:
+            list[tuple[str, Type]]: list of scan name and scan class tuples
+        """
+        # internal, legacy scans
+        members: list[tuple[str, Type]] = inspect.getmembers(
+            scans_module, predicate=inspect.isclass
+        )
+
+        # internal, v4 scans
+        members.extend(ScanManager._get_v4_scan_members())
+
+        # plugin scans
+        members.extend((name, cls) for name, cls in ScanManager._get_scan_plugins().items())
+
+        to_remove = []
+        for name, scan_cls in members:
+            is_scan = issubclass(scan_cls, (scans_module.RequestBase, ScanBaseV4))
+            if not is_scan or not scan_cls.scan_name:
+                logger.debug(f"Ignoring {name}")
+                to_remove.append((name, scan_cls))
+        for item in to_remove:
+            members.remove(item)
+        return members
 
     def update_available_scans(self):
         """load all scans and plugin scans"""
-        members: list[tuple[str, type]] = inspect.getmembers(
-            scans_module, predicate=inspect.isclass
-        )
-        members.extend((name, cls) for name, cls in self._plugins.items() if inspect.isclass(cls))
+        members = ScanManager.get_available_scans()
 
         for name, scan_cls in members:
-            is_scan = issubclass(scan_cls, scans_module.RequestBase)
-            if not is_scan or not scan_cls.scan_name:
-                logger.debug(f"Ignoring {name}")
+
+            if not scan_cls.scan_name.isidentifier():
+                logger.error(
+                    f"Invalid scan_name '{scan_cls.scan_name}' for scan class {name}. scan_name must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number. Skipping."
+                )
+                self.parent.connector.raise_alarm(
+                    severity=Alarms.WARNING,
+                    info=ErrorInfo(
+                        error_message=f"Invalid scan_name '{scan_cls.scan_name}' for scan class {name}. scan_name must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number. Skipping.",
+                        compact_error_message=f"Invalid scan_name '{scan_cls.scan_name}' for scan class {name}.",
+                        exception_type="InvalidScanName",
+                        device=None,
+                    ),
+                )
                 continue
+
             if scan_cls.scan_name in self.available_scans:
                 logger.error(f"{scan_cls.scan_name} already exists. Skipping.")
+                self.parent.connector.raise_alarm(
+                    severity=Alarms.WARNING,
+                    info=ErrorInfo(
+                        error_message=f"Scan name '{scan_cls.scan_name}' for scan class {name} already exists. Skipping.",
+                        compact_error_message=f"Scan name '{scan_cls.scan_name}' for scan class {name} already exists.",
+                        exception_type="DuplicateScanName",
+                        device=None,
+                    ),
+                )
                 continue
 
             report_classes = [
@@ -85,7 +130,10 @@ class ScanManager:
             for report_cls in report_classes:
                 if issubclass(scan_cls, report_cls):
                     base_cls = report_cls.__name__
-            self.scan_dict[scan_cls.__name__] = scan_cls
+            if issubclass(scan_cls, ScanBaseV4):
+                base_cls = "ScanBaseV4"
+
+            self.scan_dict[scan_cls.scan_name] = scan_cls
             gui_config = self.validate_gui_config(scan_cls)
             gui_visibility = {}
             if hasattr(scan_cls, "gui_visibility"):
@@ -149,6 +197,37 @@ class ScanManager:
                 dtype = DeviceBase
             converted_arg_input[key] = serialize_dtype(dtype)
         return converted_arg_input
+
+    @staticmethod
+    def _get_scan_plugins() -> dict[str, type]:
+        verified_plugins = {}
+        plugins = plugin_helper.get_scan_plugins()
+        if not plugins:
+            return verified_plugins
+        for name, cls in plugins.items():
+            if not issubclass(cls, (scans_module.RequestBase, ScanBaseV4)):
+                continue
+            verified_plugins[name] = cls
+            logger.info(f"Loading scan plugin {name}")
+
+        return verified_plugins
+
+    @staticmethod
+    def _get_v4_scan_members() -> list[tuple[str, Type[ScanBaseV4]]]:
+        """Collect classes from all modules in the scans package."""
+        members: list[tuple[str, Type[ScanBaseV4]]] = []
+        for module_info in pkgutil.iter_modules(
+            scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."
+        ):
+            if module_info.name == f"{scans_v4_module.__name__}.legacy_scans":
+                continue
+            module = importlib.import_module(module_info.name)
+            members.extend(
+                (name, cls)
+                for name, cls in inspect.getmembers(module, predicate=inspect.isclass)
+                if cls.__module__ == module.__name__
+            )
+        return members
 
     def publish_available_scans(self):
         """send all available scans to the broker"""

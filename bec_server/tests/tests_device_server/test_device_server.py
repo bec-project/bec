@@ -732,6 +732,30 @@ def test_read_device(device_server_mock, instr):
         assert res[-1]["msg"].metadata["stream"] == "primary"
 
 
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_read_device_can_return_result(device_server_mock):
+    device_server = device_server_mock
+    instr = messages.DeviceInstructionMessage(
+        device=["samx", "samy"],
+        action="read",
+        parameter={"return_result": True},
+        metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
+    )
+
+    device_server._read_device(instr)
+
+    responses = [
+        msg["msg"]
+        for msg in device_server.connector.message_sent
+        if msg["queue"] == MessageEndpoints.device_instructions_response()
+    ]
+    response = responses[-1]
+    assert response.result is not None
+    assert len(response.result) == 2
+    assert response.result[0].keys() == device_server.device_manager.devices.samx.obj.read().keys()
+    assert response.result[1].keys() == device_server.device_manager.devices.samy.obj.read().keys()
+
+
 @pytest.mark.parametrize("devices", [["samx", "samy"], ["samx"]])
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_read_config_and_update_devices(device_server_mock, devices):
