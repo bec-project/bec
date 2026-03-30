@@ -235,6 +235,47 @@ class ScanActions:
             status.wait()
         return status
 
+    def set(
+        self,
+        device: str | DeviceBase | list[str | DeviceBase],
+        value: float | list[float],
+        wait=True,
+    ) -> ScanStubStatus:
+        """
+        Set one or multiple devices to specific values.
+
+        Args:
+            device (str or DeviceBase or list[str or DeviceBase]): device(s) to set
+            value (float or list[float]): target value(s) for the device(s)
+            wait (bool, optional): if True, wait for the set operation to complete. Defaults to True.
+
+        Returns:
+            ScanStubStatus: status object to track the set process
+        """
+        devices = device if isinstance(device, list) else [device]
+        values = value.tolist() if isinstance(value, np.ndarray) else value
+        values = values if isinstance(values, list) else [values]
+
+        if len(devices) != len(values):
+            raise ValueError("The number of devices and values must match.")
+
+        status = self._create_status(is_container=True, name="set")
+        for dev, val in zip(devices, values, strict=False):
+            device_name = dev.name if isinstance(dev, DeviceBase) else dev
+            sub_status = self._create_status(name=f"set_{device_name}")
+            instr = messages.DeviceInstructionMessage(
+                device=device_name,
+                action="set",
+                parameter={"value": val},
+                metadata={"device_instr_id": sub_status._device_instr_id},
+            )
+            self._send(instr)
+            status.add_status(sub_status)
+
+        if wait:
+            status.wait()
+        return status
+
     def kickoff(
         self, device: str | DeviceBase, parameters: dict | None = None, wait=True
     ) -> ScanStubStatus:
@@ -744,19 +785,17 @@ class ScanComponents:
             last_positions (np.ndarray, optional): Array of last positions, shape (len(motors),).
                 If provided, only motors with changed positions will be moved. Defaults to None.
         """
-        status_objects = []
+        motors_to_move = []
+        positions_to_move = []
         for motor_index, motor in enumerate(motors):
             if last_positions is not None:
                 if np.isclose(positions[motor_index], last_positions[motor_index]):
                     continue
-            if isinstance(motor, str):
-                status = self._dev[motor].set(positions[motor_index], wait=False)
-            else:
-                status = motor.set(positions[motor_index], wait=False)
-            status_objects.append(status)
+            motors_to_move.append(motor)
+            positions_to_move.append(positions[motor_index])
 
-        for status in status_objects:
-            status.wait()
+        if motors_to_move:
+            self._actions.set(motors_to_move, positions_to_move, wait=True)
 
     def trigger_and_read(self):
         """

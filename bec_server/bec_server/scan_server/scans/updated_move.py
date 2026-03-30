@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.legacy_scans import ScanArgType
-from bec_server.scan_server.scans import ScanBase, scan_hook
+from bec_server.scan_server.scans import ScanBase, bundle_args, scan_hook
 
 logger = bec_logger.logger
 
@@ -65,7 +65,8 @@ class UpdatedMoveScan(ScanBase):
         """
         super().__init__(**kwargs)
         self.motor_args = args
-        self.motors = list(self.motor_args.keys())
+        self.motor_args_bundles = bundle_args(args, self.arg_bundle_size["bundle"])
+        self.motors = list(self.motor_args_bundles.keys())
         self.relative = relative
 
         # Update the default scan info with provided parameters.
@@ -115,7 +116,8 @@ class UpdatedMoveScan(ScanBase):
         This is where the main scan logic should be implemented.
         """
         current_positions = self.components.get_start_positions(self.motors)
-        target_positions = list(self.motor_args.values())
+        target_positions = list(self.motor_args_bundles.values())
+        target_positions = [pos[0] for pos in target_positions]
         if self.relative:
             target_positions += current_positions
 
@@ -126,8 +128,7 @@ class UpdatedMoveScan(ScanBase):
             request_id=self.scan_info.metadata["RID"],
         )
 
-        for position, motor in zip(target_positions, self.motors):
-            self.dev[motor].set(position)
+        self.components.move_and_wait(self.motors, target_positions)
 
     @scan_hook
     def at_each_point(self):
