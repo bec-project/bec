@@ -761,7 +761,10 @@ class DeviceServer(BECService):
 
         content = status.instruction.content
         is_config_set = content["action"] == "set"
-        is_rpc_set = content["action"] == "rpc" and (".set" in content["parameter"]["func"])
+        rpc_func = content["parameter"].get("func", "")
+        is_rpc_set = content["action"] == "rpc" and (
+            rpc_func == "set" or ".set" in rpc_func
+        )
 
         if is_config_set or is_rpc_set:
             if obj.kind == Kind.config:
