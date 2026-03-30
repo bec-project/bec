@@ -4,8 +4,8 @@ from unittest import mock
 import pytest
 
 from bec_lib.device import Device, DeviceBase, Positioner
-from bec_server.scan_server.scan_manager import ScanManager
 from bec_server.scan_server.legacy_scans import ScanArgType
+from bec_server.scan_server.scan_manager import ScanManager
 
 
 @pytest.fixture
