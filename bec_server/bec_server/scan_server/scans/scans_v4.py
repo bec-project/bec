@@ -67,8 +67,6 @@ class ScanActions:
         self._instruction_handler = scan._instruction_handler
         self._status_registry = {}
         self._shutdown_event = scan._shutdown_event
-        self._status_registry = {}
-        self._shutdown_event = threading.Event()
         self._num_monitored_readouts = 0
         self._interruption_callback: Callable[[], None] | None = None
         self._update_queue_info_callback: Callable[[], None] | None = None

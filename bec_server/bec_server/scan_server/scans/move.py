@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.legacy_scans import ScanArgType
-from bec_server.scan_server.scans import ScanBase, scan_hook
+from bec_server.scan_server.scans import ScanBase, bundle_args, scan_hook
 
 logger = bec_logger.logger
 
@@ -65,7 +65,8 @@ class MoveScan(ScanBase):
         """
         super().__init__(**kwargs)
         self.motor_args = args
-        self.motors = list(self.motor_args.keys())
+        self.motor_args_bundles = bundle_args(args, self.arg_bundle_size["bundle"])
+        self.motors = list(self.motor_args_bundles.keys())
         self.relative = relative
 
         # Update the default scan info with provided parameters.
@@ -115,13 +116,15 @@ class MoveScan(ScanBase):
         Core scan logic to be executed during the scan.
         This is where the main scan logic should be implemented.
         """
-        target_positions = list(self.motor_args.values())
+        target_positions = [pos[0] for pos in self.motor_args_bundles.values()]
         if self.relative:
             current_positions = self.components.get_start_positions(self.motors)
-            target_positions += current_positions
+            target_positions = [
+                target + current
+                for target, current in zip(target_positions, current_positions, strict=False)
+            ]
 
-        for position, motor in zip(target_positions, self.motors):
-            self.dev[motor].set(position)
+        self.actions.set(self.motors, target_positions, wait=False)
 
     @scan_hook
     def at_each_point(self):

@@ -119,7 +119,10 @@ class UpdatedMoveScan(ScanBase):
         target_positions = list(self.motor_args_bundles.values())
         target_positions = [pos[0] for pos in target_positions]
         if self.relative:
-            target_positions += current_positions
+            target_positions = [
+                target + current
+                for target, current in zip(target_positions, current_positions, strict=False)
+            ]
 
         self.actions.add_scan_report_instruction_readback(
             devices=self.motors,
