@@ -64,6 +64,7 @@ def device_manager(device_manager_class):
     service_mock = mock.MagicMock()
     service_mock.connector = ConnectorMock("", store_data=False)
     dev_manager = device_manager_class(service_mock)
+    dev_manager._allow_override = True
     dev_manager.config_update_handler = mock.MagicMock()
     yield dev_manager
     dev_manager.shutdown()

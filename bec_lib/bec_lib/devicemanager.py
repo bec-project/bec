@@ -477,6 +477,9 @@ class DeviceManagerBase:
         self._connector_base_register = {}
         self._device_cls = DeviceBase
 
+        # flag to allow overriding device attributes without raising an error - primarily used in tests
+        self._allow_override = False
+
         self._service = service
         self.parent = service  # for backwards compatibility; will be removed in the future
         self.connector = self._service.connector
@@ -664,7 +667,12 @@ class DeviceManagerBase:
 
         """
         logger.info(f"Received new config: {str(msg)}")
-        parent.parse_config_message(msg.value)
+        allow_override = parent._allow_override
+        try:
+            parent._allow_override = True
+            parent.parse_config_message(msg.value)
+        finally:
+            parent._allow_override = allow_override
 
     @staticmethod
     def _update_scan_info(msg, *, parent, **kwargs) -> None:
@@ -685,8 +693,13 @@ class DeviceManagerBase:
         return devices.content["resource"]
 
     def _add_multiple_devices_with_log(self, devices: Iterable[tuple[dict, DeviceInfoMessage]]):
-        logs = (self._add_device(*conf_msg) for conf_msg in devices if conf_msg is not None)
-        logger.info(f"Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
+        try:
+            override = self._allow_override
+            self._allow_override = True
+            logs = (self._add_device(*conf_msg) for conf_msg in devices if conf_msg is not None)
+            logger.info(f"Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
+        finally:
+            self._allow_override = override
 
     def _add_device(self, dev: dict, msg: DeviceInfoMessage) -> tuple[str, str] | None:
         name = msg.content["device"]
