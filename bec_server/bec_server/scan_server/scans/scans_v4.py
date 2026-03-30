@@ -490,8 +490,9 @@ class ScanActions:
         """
         device_names = [dev.name if isinstance(dev, DeviceBase) else dev for dev in devices]
         scan_report_instruction = {
-            "readback": {"RID": request_id, "devices": device_names, "start": start, "stop": stop}
+            "readback": {"RID": request_id, "devices": device_names, "start": start, "end": stop}
         }
+        self.add_device_with_required_response(device_names)
         self._scan.scan_info.scan_report_instructions.append(scan_report_instruction)
         if self._update_queue_info_callback is not None:
             self._update_queue_info_callback()
