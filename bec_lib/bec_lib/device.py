@@ -273,7 +273,38 @@ class DeviceBase:
                 value, fcn=name, cached=False, _set_property=True
             )
 
+        if self._should_prevent_attribute_overwrite(name):
+            current_value = object.__getattribute__(self, name)
+            if isinstance(current_value, Signal):
+                raise AttributeError(
+                    f"Cannot overwrite signal '{name}' on {self._class_name}. "
+                    f"Use '{name}.set(...)' or '{name}.put(...)' instead."
+                )
+            raise AttributeError(
+                f"Cannot overwrite '{name}' on {self._class_name}. "
+                f"It is already bound to {type(current_value).__name__!s}."
+            )
+
         super().__setattr__(name, value)
+
+    def _should_prevent_attribute_overwrite(self, name: str) -> bool:
+        # pylint: disable=protected-access
+        # allow override is defined on the device manager
+        if self.root.parent is None or getattr(self.root.parent, "_allow_override", True):
+            return False
+        if name.startswith("_"):
+            return False
+
+        descriptor = inspect.getattr_static(type(self), name, None)
+        if descriptor is not None and hasattr(descriptor, "__set__"):
+            return False
+
+        try:
+            current_value = object.__getattribute__(self, name)
+        except AttributeError:
+            return False
+
+        return isinstance(current_value, DeviceBase) or callable(current_value)
 
     @property
     def _hints(self):

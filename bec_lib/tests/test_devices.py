@@ -28,8 +28,16 @@ from bec_lib.tests.utils import ClientMock, ConnectorMock, get_device_info_mock
 # pylint: disable=protected-access
 
 
+@pytest.fixture
+def dm_with_override():
+    dm = mock.MagicMock(spec=DeviceManagerBase)
+    dm._allow_override = True
+    yield dm
+
+
 @pytest.fixture(name="dev")
 def fixture_dev(bec_client_mock: ClientMock | BECClient):
+    bec_client_mock.device_manager._allow_override = True
     yield bec_client_mock.device_manager.devices
 
 
@@ -498,6 +506,32 @@ def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, meth
     assert getattr(dev_w_config(config), method)() == value
 
 
+def test_existing_signal_attributes_cannot_be_overwritten(dev: Any):
+    with mock.patch.object(dev.samx.root.parent, "_allow_override", False):
+        with pytest.raises(
+            AttributeError,
+            match=r"Use 'readback\.set\(\.\.\.\)' or 'readback\.put\(\.\.\.\)' instead",
+        ):
+            dev.samx.readback = 5
+
+
+def test_existing_subdevice_attributes_cannot_be_overwritten(dev: Any):
+    with mock.patch.object(dev.dyn_signals.root.parent, "_allow_override", False):
+        with pytest.raises(AttributeError, match="Cannot overwrite 'messages'"):
+            dev.dyn_signals.messages = "shadowed"
+
+
+def test_existing_methods_cannot_be_overwritten(dev: Any):
+    with mock.patch.object(dev.samx.root.parent, "_allow_override", False):
+        with pytest.raises(AttributeError, match="Cannot overwrite 'read'"):
+            dev.samx.read = "shadowed"
+
+
+def test_new_public_attributes_can_still_be_assigned(dev: Any):
+    dev.samx.user_label = "sample motor"
+    assert dev.samx.user_label == "sample motor"
+
+
 @pytest.mark.parametrize(
     ["config", "attr", "value", "result"],
     [
@@ -516,9 +550,9 @@ def test_properties_assign(
 
 
 @pytest.fixture
-def dev_container():
+def dev_container(dm_with_override):
     (devs := DeviceContainer())["test"] = Device(
-        name="test", config=BASIC_CONFIG, parent=mock.MagicMock(spec=DeviceManagerBase)
+        name="test", config=BASIC_CONFIG, parent=dm_with_override
     )
     return devs
 
@@ -555,9 +589,10 @@ def test_device_container_wm_with_setpoint_names(dev_container, reading):
 
 
 @pytest.mark.parametrize("device_cls", [Device, Signal, Positioner])
-def test_device_has_describe_method(device_cls: Device | Signal | Positioner, dev_container):
-    parent = mock.MagicMock(spec=DeviceManagerBase)
-    dev_container["test"] = device_cls(name="test", config=BASIC_CONFIG, parent=parent)
+def test_device_has_describe_method(
+    device_cls: Device | Signal | Positioner, dev_container, dm_with_override
+):
+    dev_container["test"] = device_cls(name="test", config=BASIC_CONFIG, parent=dm_with_override)
     assert hasattr(dev_container.test, "describe")
     with mock.patch.object(dev_container.test, "_run_rpc_call") as mock_rpc:
         dev_container.test.describe()
@@ -565,21 +600,22 @@ def test_device_has_describe_method(device_cls: Device | Signal | Positioner, de
 
 
 @pytest.mark.parametrize("device_cls", [Device, Signal, Positioner])
-def test_device_has_describe_configuration_method(device_cls: Device | Signal | Positioner):
+def test_device_has_describe_configuration_method(
+    device_cls: Device | Signal | Positioner, dm_with_override
+):
     devs = DeviceContainer()
-    parent = mock.MagicMock(spec=DeviceManagerBase)
-    devs["test"] = device_cls(name="test", config=BASIC_CONFIG, parent=parent)
+    devs["test"] = device_cls(name="test", config=BASIC_CONFIG, parent=dm_with_override)
     assert hasattr(devs.test, "describe_configuration")
     with mock.patch.object(devs.test, "_run_rpc_call") as mock_rpc:
         devs.test.describe_configuration()
         mock_rpc.assert_not_called()
 
 
-def test_show_all():
+def test_show_all(dm_with_override):
     # Create a mock Console object
     console = mock.MagicMock()
     parent = mock.MagicMock()
-    parent.parent = mock.MagicMock(spec=DeviceManagerBase)
+    parent.parent = dm_with_override
 
     # Create a DeviceContainer with some mock Devices
     devs = DeviceContainer()
@@ -659,8 +695,8 @@ def test_adjustable_mixin_set_high_limit(adj):
     adj._update_config.assert_called_once_with({"deviceConfig": {"limits": [-12, 20]}})
 
 
-def test_computed_signal_set_compute_method():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_set_compute_method(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
 
     def my_compute_method():
         return "a + b"
@@ -677,8 +713,8 @@ def test_computed_signal_set_compute_method():
         )
 
 
-def test_computed_signal_set_bound_method_raises_error():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_set_bound_method_raises_error(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
 
     class MyClass:
         def my_method(self):
@@ -691,16 +727,16 @@ def test_computed_signal_set_bound_method_raises_error():
     assert "bound method" in str(excinfo.value)
 
 
-def test_computed_signal_set_lambda_raises_error():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_set_lambda_raises_error(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
 
     with pytest.raises(ValueError) as excinfo:
         comp_signal.set_compute_method(lambda: "a + b")
     assert "lambda function" in str(excinfo.value)
 
 
-def test_computed_signal_show_all():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_show_all(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
     comp_signal._config = {
         "deviceConfig": {
             "input_signals": ["a", "b"],
@@ -726,31 +762,30 @@ def test_computed_signal_show_all():
         ]
 
 
-def test_computed_signal_set_signals():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_set_signals(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
     with mock.patch.object(comp_signal, "_update_config") as _update_config:
         comp_signal.set_input_signals(
-            Signal(name="a", parent=mock.MagicMock(spec=DeviceManagerBase)),
-            Signal(name="b", parent=mock.MagicMock(spec=DeviceManagerBase)),
+            Signal(name="a", parent=dm_with_override), Signal(name="b", parent=dm_with_override)
         )
         _update_config.assert_called_once_with({"deviceConfig": {"input_signals": ["a", "b"]}})
 
 
-def test_computed_signal_set_signals_raises_error():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_set_signals_raises_error(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
     with pytest.raises(ValueError):
         comp_signal.set_input_signals("a", "b")
 
 
-def test_computed_signal_set_signals_empty():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_set_signals_empty(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
     with mock.patch.object(comp_signal, "_update_config") as _update_config:
         comp_signal.set_input_signals()
         _update_config.assert_called_once_with({"deviceConfig": {"input_signals": []}})
 
 
-def test_computed_signal_raises_error_on_set_compute_method():
-    comp_signal = ComputedSignal(name="comp_signal", parent=mock.MagicMock())
+def test_computed_signal_raises_error_on_set_compute_method(dm_with_override):
+    comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
     with pytest.raises(ValueError):
         comp_signal.set_compute_method("a + b")
 
