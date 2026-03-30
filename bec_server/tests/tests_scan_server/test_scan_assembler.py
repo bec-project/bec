@@ -4,10 +4,9 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.tests.fixtures import dm_with_devices
+from bec_server.scan_server.legacy_scans import FermatSpiralScan, LineScan, RequestBase, ScanArgType
 from bec_server.scan_server.scan_assembler import ScanAssembler
-from bec_server.scan_server.legacy_scans import FermatSpiralScan, LineScan, RequestBase
 from bec_server.scan_server.scans import ScanBase as ScanBaseV4
-from bec_server.scan_server.legacy_scans import ScanArgType
 
 
 @pytest.fixture
@@ -202,5 +201,10 @@ def test_scan_assembler_assemble_direct_scan_resolves_device_args(dm_with_device
     with mock.patch.object(assembler, "scan_manager", MockScanManager()):
         request = assembler.assemble_direct_scan(msg, "scan_id")
 
-    assert request.received_args == (dm_with_devices.devices["samx"], 1, dm_with_devices.devices["samy"], 2)
+    assert request.received_args == (
+        dm_with_devices.devices["samx"],
+        1,
+        dm_with_devices.devices["samy"],
+        2,
+    )
     assert request.scan_info.request_inputs["arg_bundle"] == ["samx", 1, "samy", 2]
