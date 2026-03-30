@@ -3,8 +3,11 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
+from bec_lib.tests.fixtures import dm_with_devices
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.legacy_scans import FermatSpiralScan, LineScan, RequestBase
+from bec_server.scan_server.scans import ScanBase as ScanBaseV4
+from bec_server.scan_server.legacy_scans import ScanArgType
 
 
 @pytest.fixture
@@ -30,6 +33,17 @@ class CustomScan2(RequestBase):
 
     def run(self):
         pass
+
+
+class CustomDirectScan(ScanBaseV4):
+    scan_name = "custom_direct_scan"
+    arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
+    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    is_scan = False
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(**kwargs)
+        self.received_args = args
 
 
 @pytest.mark.parametrize(
@@ -164,3 +178,29 @@ def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assemb
     with mock.patch.object(scan_assembler, "scan_manager", MockScanManager()):
         request = scan_assembler.assemble_device_instructions(msg, "scan_id")
         assert request.request_inputs == request_inputs_expected
+
+
+def test_scan_assembler_assemble_direct_scan_resolves_device_args(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"custom_direct_scan": CustomDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="custom_direct_scan",
+        parameter={
+            "args": {"samx": (1,), "samy": (2,)},
+            "kwargs": {"system_config": {"file_directory": "/tmp/data"}},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.received_args == (dm_with_devices.devices["samx"], 1, dm_with_devices.devices["samy"], 2)
+    assert request.scan_info.request_inputs["arg_bundle"] == ["samx", 1, "samy", 2]

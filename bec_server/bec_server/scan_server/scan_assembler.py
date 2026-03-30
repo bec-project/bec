@@ -4,9 +4,12 @@ import inspect
 from typing import TYPE_CHECKING
 
 from bec_lib import messages
+from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 
 from .legacy_scans import RequestBase, ScanBase, unpack_scan_args
+from .legacy_scans import ScanArgType
+from .scan_gui_models import GUIInput
 from .scans import ScanBase as ScanBaseV4
 
 logger = bec_logger.logger
@@ -110,16 +113,17 @@ class ScanAssembler:
         kwargs = msg.content.get("parameter", {}).get("kwargs", {})
 
         request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
+        resolved_args, resolved_kwargs = self._resolve_direct_scan_inputs(scan_cls, args, kwargs)
 
         scan_instance = scan_cls(
-            *args,
+            *resolved_args,
             device_manager=self.device_manager,
             redis_connector=self.connector,
             metadata=msg.metadata,
             instruction_handler=self.parent.queue_manager.instruction_handler,
             scan_id=scan_id,
             request_inputs=request_inputs,
-            **kwargs,
+            **resolved_kwargs,
         )
         return scan_instance
 
@@ -162,3 +166,50 @@ class ScanAssembler:
                 if key not in cls_input_args:
                     request_inputs["kwargs"][key] = val
         return request_inputs
+
+    def _resolve_direct_scan_inputs(self, scan_cls, args, kwargs) -> tuple[list, dict]:
+        """Resolve v4 scan device arguments from names to device objects."""
+        arg_input = getattr(scan_cls, "arg_input", {}) or {}
+        if not arg_input:
+            return args, kwargs
+
+        resolved_args = list(args)
+        resolved_kwargs = kwargs.copy()
+        arg_names = list(arg_input.keys())
+
+        if scan_cls.arg_bundle_size["bundle"] > 0:
+            bundle_size = scan_cls.arg_bundle_size["bundle"]
+            for bundle_start in range(0, len(resolved_args), bundle_size):
+                for offset, arg_name in enumerate(arg_names):
+                    arg_index = bundle_start + offset
+                    if arg_index >= len(resolved_args):
+                        break
+                    if self._is_device_arg(arg_input.get(arg_name)):
+                        resolved_args[arg_index] = self._resolve_device(resolved_args[arg_index])
+            for key, value in resolved_kwargs.items():
+                if self._is_device_arg(arg_input.get(key)):
+                    resolved_kwargs[key] = self._resolve_device(value)
+            return resolved_args, resolved_kwargs
+
+        for arg_index, arg_name in enumerate(arg_names):
+            if arg_index >= len(resolved_args):
+                break
+            if self._is_device_arg(arg_input.get(arg_name)):
+                resolved_args[arg_index] = self._resolve_device(resolved_args[arg_index])
+
+        for key, value in resolved_kwargs.items():
+            if self._is_device_arg(arg_input.get(key)):
+                resolved_kwargs[key] = self._resolve_device(value)
+
+        return resolved_args, resolved_kwargs
+
+    def _is_device_arg(self, arg_type) -> bool:
+        converted = GUIInput.convert_to_legacy_scan_arg_type(arg_type)
+        if converted == ScanArgType.DEVICE:
+            return True
+        return inspect.isclass(converted) and issubclass(converted, DeviceBase)
+
+    def _resolve_device(self, value):
+        if isinstance(value, DeviceBase):
+            return value
+        return self.device_manager.devices[value]
