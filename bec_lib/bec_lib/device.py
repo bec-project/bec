@@ -599,21 +599,9 @@ class DeviceBase:
             p.text(str(self))
 
     @staticmethod
-    def _compile_rich_str(obj: DeviceBase) -> str | None:
-        """Compile rich formatted string for IPython display"""
-        # pylint: disable=import-outside-toplevel
-        # avoid circular imports
-        from bec_lib.devicemanager import DeviceManagerBase
-
-        if not isinstance(obj.parent, DeviceManagerBase):
-            return None
-
-        class_name = obj._class_name
-
-        console = Console()
-
+    def _compile_device_table(obj: DeviceBase) -> Table:
         # Create main table
-        table = Table(title=f"{class_name}: {obj.name}", show_header=False, box=None)
+        table = Table(title=f"{obj._class_name}: {obj.name}", show_header=False, box=None)
         table.add_column("Property", style="cyan", no_wrap=True)
         table.add_column("Value", style="white")
 
@@ -628,13 +616,62 @@ class DeviceBase:
         if obj._config.get("deviceTags"):
             tags = ", ".join(obj._config.get("deviceTags", []))
             table.add_row("Device tags", tags)
-
         if obj._config.get("userParameter"):
             table.add_row("User parameter", str(obj._config.get("userParameter")))
-
         if hasattr(obj, "limits"):
             table.add_row("Limits", str(obj.limits))
 
+        return table
+
+    @staticmethod
+    def _compile_current_values(current_values: dict) -> Table:
+        value_table = Table(title="Current Values", show_header=True, box=None)
+        value_table.add_column("Signal", style="cyan")
+        value_table.add_column("Value", style="yellow")
+        value_table.add_column("Timestamp", style="dim")
+
+        for signal_name, signal_data in current_values.items():
+            value = signal_data.get("value")
+            timestamp = signal_data.get("timestamp")
+            # Format value (handle numpy arrays)
+            if isinstance(value, np.ndarray):
+                with np.printoptions(precision=4, suppress=True, threshold=10):
+                    value_str = f"{str(value)}, shape={value.shape}, dtype={value.dtype}"
+            else:
+                value_str = str(value)
+            # Format timestamp
+            if timestamp:
+                dt = datetime.fromtimestamp(timestamp)
+                timestamp_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                timestamp_str = "N/A"
+            value_table.add_row(signal_name, value_str, timestamp_str)
+        return value_table
+
+    @staticmethod
+    def _compile_config_section(device_config: dict) -> Table:
+        config_table = Table(title="Config Signals", show_header=True, box=None)
+        config_table.add_column("Signal", style="cyan")
+        config_table.add_column("Value", style="green")
+
+        for key, val in device_config.items():
+            # Format value (handle numpy arrays)
+            if isinstance(val, np.ndarray):
+                with np.printoptions(precision=4, suppress=True, threshold=10):
+                    val_str = f"{str(val)}, shape={val.shape}, dtype={val.dtype}"
+            else:
+                val_str = str(val)
+            config_table.add_row(key, val_str)
+        return config_table
+
+    @staticmethod
+    def _compile_rich_tables(obj: DeviceBase) -> tuple[Table, Table | None, Table | None]:
+        table = DeviceBase._compile_device_table(obj)  # Add current values section if available
+        value_table = (
+            DeviceBase._compile_current_values(current_values)
+            if (current_values := obj.read(cached=True))
+            else None
+        )
         # Get the updated device config. We use the cached version to avoid
         # excessive calls to Redis.
         device_config = (
@@ -647,66 +684,30 @@ class DeviceBase:
             if sig.get("kind_str") == "config"
         ]
         device_config = {k: v for k, v in device_config.items() if k in config_signals}
+        # Add config signals section if available
+        config_table = (
+            DeviceBase._compile_config_section(device_config) if (device_config) else None
+        )
+        return table, value_table, config_table
 
-        # Get current values
-        current_values = obj.read(cached=True)
+    @staticmethod
+    def _compile_rich_str(obj: DeviceBase) -> str | None:
+        """Compile rich formatted string for IPython display"""
+        # pylint: disable=import-outside-toplevel
+        # avoid circular imports
+        from bec_lib.devicemanager import DeviceManagerBase
 
-        # Render main table to string
+        if not isinstance(obj.parent, DeviceManagerBase):
+            return None
+        table, value_table, config_table = DeviceBase._compile_rich_tables(obj)
+        console = Console()
         with console.capture() as capture:
             console.print(table)
-        output = capture.get()
-
-        # Add current values section if available
-        if current_values:
-            value_table = Table(title="Current Values", show_header=True, box=None)
-            value_table.add_column("Signal", style="cyan")
-            value_table.add_column("Value", style="yellow")
-            value_table.add_column("Timestamp", style="dim")
-
-            for signal_name, signal_data in current_values.items():
-                value = signal_data.get("value")
-                timestamp = signal_data.get("timestamp")
-
-                # Format value (handle numpy arrays)
-                if isinstance(value, np.ndarray):
-                    with np.printoptions(precision=4, suppress=True, threshold=10):
-                        value_str = f"{str(value)}, shape={value.shape}, dtype={value.dtype}"
-                else:
-                    value_str = str(value)
-
-                # Format timestamp
-                if timestamp:
-                    dt = datetime.fromtimestamp(timestamp)
-                    timestamp_str = dt.strftime("%Y-%m-%d %H:%M:%S")
-                else:
-                    timestamp_str = "N/A"
-
-                value_table.add_row(signal_name, value_str, timestamp_str)
-
-            with console.capture() as capture:
-                console.print(value_table)
-            output += "\n" + capture.get()
-
-        # Add config signals section if available
-        if device_config:
-            config_table = Table(title="Config Signals", show_header=True, box=None)
-            config_table.add_column("Signal", style="cyan")
-            config_table.add_column("Value", style="green")
-
-            for key, val in device_config.items():
-                # Format value (handle numpy arrays)
-                if isinstance(val, np.ndarray):
-                    with np.printoptions(precision=4, suppress=True, threshold=10):
-                        val_str = f"{str(val)}, shape={val.shape}, dtype={val.dtype}"
-                else:
-                    val_str = str(val)
-                config_table.add_row(key, val_str)
-
-            with console.capture() as capture:
-                console.print(config_table)
-            output += "\n" + capture.get()
-
-        return output
+            if value_table:
+                console.print("", value_table)
+            if config_table:
+                console.print("", config_table)
+        return capture.get()
 
 
 class DeviceBaseWithConfig(DeviceBase):
