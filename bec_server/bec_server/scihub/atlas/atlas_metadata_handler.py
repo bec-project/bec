@@ -37,6 +37,8 @@ class AtlasMetadataHandler:
         self._start_messaging_subscription()
         self._start_feedback_subscription()
 
+        self._update_account_if_needed()
+
     def _start_account_subscription(self):
         init_data = self.atlas_connector.connector.get_last(MessageEndpoints.account())
         if init_data is not None:
@@ -138,6 +140,24 @@ class AtlasMetadataHandler:
                 MessageEndpoints.account(), {"data": msg}, max_size=1, approximate=False
             )
             logger.info(f"Updated local account to: {account}")
+
+    def _update_account_if_needed(self):
+        """
+        If the account is set locally but diverged from the account in Atlas,
+        we need to send the account info to Atlas.
+        """
+        if self._account is None:
+            return
+        info = self._deployment_info
+        if info is None:
+            return
+        if info.active_session is None:
+            return
+        if info.active_session.experiment is None:
+            return
+        if info.active_session.experiment.pgroup == self._account:
+            return
+        self.send_atlas_update({"account": self._account})
 
     @staticmethod
     def _handle_account_info(

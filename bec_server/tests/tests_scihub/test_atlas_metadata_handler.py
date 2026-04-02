@@ -257,6 +257,32 @@ def test_update_local_account_no_experiment(atlas_connector):
         mock_xadd.assert_not_called()
 
 
+def test_update_account_if_needed_same_account_does_not_forward(atlas_connector):
+    """Test that Atlas is not updated when deployment info already has the same account"""
+    handler = atlas_connector.metadata_handler
+    deployment_info = create_dummy_deployment_info()
+    handler._account = deployment_info.active_session.experiment.pgroup
+    handler._deployment_info = deployment_info
+
+    with mock.patch.object(handler, "send_atlas_update") as mock_send_update:
+        handler._update_account_if_needed()
+
+    mock_send_update.assert_not_called()
+
+
+def test_update_account_if_needed_different_account_forwards(atlas_connector):
+    """Test that Atlas is updated when local and deployment accounts diverge"""
+    handler = atlas_connector.metadata_handler
+    deployment_info = create_dummy_deployment_info()
+    handler._account = "local-account"
+    handler._deployment_info = deployment_info
+
+    with mock.patch.object(handler, "send_atlas_update") as mock_send_update:
+        handler._update_account_if_needed()
+
+    mock_send_update.assert_called_once_with({"account": "local-account"})
+
+
 def test_handle_deployment_info_valid(atlas_connector):
     """Test handling of valid deployment info message"""
     deployment_info = create_dummy_deployment_info()
