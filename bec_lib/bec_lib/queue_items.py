@@ -180,50 +180,61 @@ class QueueStorage:
         self._update_current_scan_queue()
         self._update_queue_history()
 
-    def describe_queue(self) -> list[str]:
+    @staticmethod
+    def _queue_table(
+        queue_name: str, scan_queue: messages.ScanQueueStatus
+    ) -> tuple[Table, str | None]:
+        status = scan_queue.status
+        if status == "LOCKED":
+            status = "PAUSED (LOCKED 🔒)"
+        table = Table(title=f"{queue_name} queue / {status}")
+        table.add_column("queue_id", justify="center")
+        table.add_column("scan_id", justify="center")
+        table.add_column("is_scan", justify="center")
+        table.add_column("type", justify="center")
+        table.add_column("scan_number", justify="center")
+        table.add_column("IQ status", justify="center")
+
+        for instruction_queue in scan_queue.info:
+            scan_msgs = [msg.msg for msg in instruction_queue.request_blocks or []]
+            table.add_row(
+                instruction_queue.queue_id,
+                ", ".join([str(s) for s in instruction_queue.scan_id]),
+                ", ".join([str(s) for s in instruction_queue.is_scan]),
+                ", ".join([msg.scan_type for msg in scan_msgs]),
+                ", ".join([str(s) for s in instruction_queue.scan_number]),
+                instruction_queue.status,
+            )
+
+        def fmt_lock(lock):
+            return f"  • [cyan]{lock.identifier}[/cyan]: {lock.reason}"
+
+        # Add dedicated section for locks if queue is locked
+        locks_message = (
+            "\n".join(("\n[bold yellow]Locks:[/bold yellow]", *(map(fmt_lock, scan_queue.locks))))
+            if scan_queue.status == "LOCKED" and scan_queue.locks
+            else None
+        )
+        return table, locks_message
+
+    def describe_queue(self) -> str:
         """
         Create a rich table description of the current scan queue.
         Returns:
             list[str]: list of rich table strings for each queue
         """
-        queue_tables = []
         self._update_queue()
-        console = Console()
         if not self.current_scan_queue:
-            return queue_tables
-        for queue_name, scan_queue in self.current_scan_queue.items():
-            status = scan_queue.status
-            if status == "LOCKED":
-                status = "PAUSED (LOCKED 🔒)"
-            table = Table(title=f"{queue_name} queue / {status}")
-            table.add_column("queue_id", justify="center")
-            table.add_column("scan_id", justify="center")
-            table.add_column("is_scan", justify="center")
-            table.add_column("type", justify="center")
-            table.add_column("scan_number", justify="center")
-            table.add_column("IQ status", justify="center")
-
-            for instruction_queue in scan_queue.info:
-                scan_msgs = [msg.msg for msg in instruction_queue.request_blocks or []]
-                table.add_row(
-                    instruction_queue.queue_id,
-                    ", ".join([str(s) for s in instruction_queue.scan_id]),
-                    ", ".join([str(s) for s in instruction_queue.is_scan]),
-                    ", ".join([msg.scan_type for msg in scan_msgs]),
-                    ", ".join([str(s) for s in instruction_queue.scan_number]),
-                    instruction_queue.status,
-                )
-            with console.capture() as capture:
+            return "No current scan queue!"
+        console = Console()
+        with console.capture() as capture:
+            for table, lock in (
+                self._queue_table(name, status) for name, status in self.current_scan_queue.items()
+            ):
                 console.print(table)
-
-                # Add dedicated section for locks if queue is locked
-                if scan_queue.status == "LOCKED" and scan_queue.locks:
-                    console.print("\n[bold yellow]Locks:[/bold yellow]")
-                    for lock in scan_queue.locks:
-                        console.print(f"  • [cyan]{lock.identifier}[/cyan]: {lock.reason}")
-
-            queue_tables.append(capture.get())
-        return queue_tables
+                if lock:
+                    console.print(lock)
+        return capture.get()
 
     @threadlocked
     def update_with_status(self, queue_msg: messages.ScanQueueStatusMessage) -> None:
