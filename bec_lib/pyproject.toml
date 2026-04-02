@@ -89,4 +89,6 @@ known_first_party = ["bec_lib", "bec_server", "bec_ipython_client"]
 
 [tool.ruff]
 line-length = 100
-format = { skip-magic-trailing-comma = true }
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
