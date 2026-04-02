@@ -48,7 +48,7 @@ def test_queue_storage_describe_queue_empty(queue_storage: QueueStorage):
     """
     Test describing an empty queue should not fail.
     """
-    assert queue_storage.describe_queue() == []
+    assert queue_storage.describe_queue() == "No current scan queue!"
 
 
 def test_queue_storage_describe_queue_item(queue_storage: QueueStorage, scan_queue_status_message):
@@ -58,8 +58,7 @@ def test_queue_storage_describe_queue_item(queue_storage: QueueStorage, scan_que
     with mock.patch.object(queue_storage.scan_manager.connector, "get") as mock_get_current_queue:
         mock_get_current_queue.return_value = scan_queue_status_message
         out = queue_storage.describe_queue()
-        assert len(out) == 1
-        assert "primary queue / RUNNING" in out[0]
+        assert "primary queue / RUNNING" in out
 
 
 def test_queue_storage_find_queue_item_by_requestID(
@@ -329,12 +328,9 @@ def test_queue_storage_describe_queue_multiple_queues(queue_storage: QueueStorag
     with mock.patch.object(queue_storage.scan_manager.connector, "get", return_value=queue_msg):
         with mock.patch.object(queue_storage.scan_manager.connector, "lrange", return_value=[]):
             out = queue_storage.describe_queue()
-
-    assert len(out) == 2
     # Check that both queues are in the output
-    output_text = "".join(out)
-    assert "primary queue" in output_text
-    assert "interception queue" in output_text
+    assert "primary queue" in out
+    assert "interception queue" in out
 
 
 # QueueItem Tests
