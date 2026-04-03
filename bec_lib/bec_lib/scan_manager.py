@@ -418,12 +418,7 @@ class ScanManager:
         self.scan_storage.update_with_scan_restart(restart_msg)
 
     def __str__(self) -> str:
-        try:
-            return "\n".join(self.queue_storage.describe_queue())
-        except Exception:
-            # queue_storage.describe_queue() can fail,
-            # for example if there is no current scan queue (None)
-            return super().__str__()
+        return self.queue_storage.describe_queue()
 
     def shutdown(self):
         pass
