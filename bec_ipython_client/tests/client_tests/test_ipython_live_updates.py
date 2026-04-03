@@ -30,7 +30,6 @@ def queue_elements(bec_client_mock):
     request_block = messages.RequestBlock(
         msg=request_msg,
         RID="req_id",
-        scan_motors=["samx"],
         report_instructions=[],
         readout_priority={"monitored": ["samx"]},
         is_scan=True,
@@ -63,7 +62,6 @@ def sample_request_block(sample_request_msg):
     return messages.RequestBlock(
         msg=sample_request_msg,
         RID="req_id",
-        scan_motors=["samx"],
         report_instructions=[],
         readout_priority={"monitored": ["samx"]},
         is_scan=True,
@@ -240,7 +238,6 @@ def test_available_req_blocks_multiple_blocks(bec_client_mock):
     request_block1 = messages.RequestBlock(
         msg=request_msg,
         RID="test_rid",
-        scan_motors=["samx"],
         report_instructions=[],
         readout_priority={"monitored": ["samx"]},
         is_scan=True,
@@ -251,7 +248,6 @@ def test_available_req_blocks_multiple_blocks(bec_client_mock):
     request_block2 = messages.RequestBlock(
         msg=request_msg,
         RID="test_rid",
-        scan_motors=["samy"],
         report_instructions=[],
         readout_priority={"monitored": ["samy"]},
         is_scan=True,
@@ -262,7 +258,6 @@ def test_available_req_blocks_multiple_blocks(bec_client_mock):
     request_block3 = messages.RequestBlock(
         msg=request_msg,
         RID="different_rid",
-        scan_motors=["samz"],
         report_instructions=[],
         readout_priority={"monitored": ["samz"]},
         is_scan=True,

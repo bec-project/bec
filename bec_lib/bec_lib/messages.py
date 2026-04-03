@@ -334,7 +334,6 @@ class RequestBlock(BaseModel):
     Args:
         msg (ScanQueueMessage): The original scan queue message containing the request details
         RID (str): Request ID associated with the request
-        scan_motors (list[str]): List of motors involved in the scan
         readout_priority (dict[Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]]): Readout priority for the request
         is_scan (bool): True if the request is a scan, False if it is an rpc call
         scan_number (int | None): Scan number if applicable
@@ -345,7 +344,6 @@ class RequestBlock(BaseModel):
 
     msg: ScanQueueMessage
     RID: str
-    scan_motors: list[str]
     readout_priority: dict[
         Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]
     ]
