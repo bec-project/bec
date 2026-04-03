@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.113.0 (2026-04-03)
+
+### Features
+
+- **device**: Prevent overwriting existing signal and subdevice attributes
+  ([`d8ab0c3`](https://github.com/bec-project/bec/commit/d8ab0c3f689871fc200e52f83df6888d1150b72d))
+
+### Refactoring
+
+- Device pretty print
+  ([`acf1b61`](https://github.com/bec-project/bec/commit/acf1b61197d2dd04c081d8622a5cc2b90ceecfdc))
+
+
 ## v3.112.0 (2026-03-24)
 
 ### Chores
