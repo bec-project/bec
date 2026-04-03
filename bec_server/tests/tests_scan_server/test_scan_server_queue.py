@@ -47,8 +47,10 @@ def queuemanager_mock(scan_server_mock):
 
 
 class RequestBlockQueueMock(RequestBlockQueue):
-    request_blocks = []
-    _scan_id = []
+    def __init__(self, instruction_queue, assembler) -> None:
+        super().__init__(instruction_queue, assembler)
+        self.request_blocks = []
+        self._scan_id = []
 
     @property
     def scan_id(self):
@@ -429,6 +431,12 @@ def test_set_clear_sends_message(queuemanager_mock):
 @pytest.mark.timeout(5)
 def test_set_restart(queuemanager_mock):
     queue_manager = queuemanager_mock()
+    primary_queue = queue_manager.queues["primary"]
+    primary_queue.signal_event.set()
+    primary_queue.scan_worker.shutdown()
+
+    # Replace the live queue worker with a queue whose worker thread has not been started.
+    queue_manager.queues["primary"] = ScanQueue(queue_manager, queue_name="primary")
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
         parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
@@ -460,6 +468,12 @@ def test_set_restart_no_active_scan(queuemanager_mock):
     RUNNING or PAUSED state to be active.
     """
     queue_manager = queuemanager_mock()
+    primary_queue = queue_manager.queues["primary"]
+    primary_queue.signal_event.set()
+    primary_queue.scan_worker.shutdown()
+
+    # Replace the live queue worker with a queue whose worker thread has not been started.
+    queue_manager.queues["primary"] = ScanQueue(queue_manager, queue_name="primary")
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
         parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},

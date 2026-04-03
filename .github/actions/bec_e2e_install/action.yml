@@ -29,7 +29,9 @@ runs:
       uses: conda-incubator/setup-miniconda@v3
       with:
         auto-update-conda: true
-        auto-activate-base: true
+        auto-activate: true
+        activate-environment: base
+        channels: defaults
         python-version: ${{ inputs.PYTHON_VERSION }}
 
     - name: Install dependencies
@@ -46,21 +48,21 @@ runs:
         echo -e "\033[35;1m Installing dependencies for branch ${{ inputs.OPHYD_DEVICES_BRANCH }} for ophyd_devices. \033[0;m";
 
     - name: Checkout BEC Core
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: bec-project/bec
         ref: ${{ inputs.BEC_CORE_BRANCH }}
         path: ./_e2e_test_checkout_/bec
 
     - name: Checkout Ophyd Devices
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: bec-project/ophyd_devices
         ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
         path: ./_e2e_test_checkout_/ophyd_devices
 
     - name: Checkout Testing Plugin
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: bec-project/bec_testing_plugin
         ref: ${{ inputs.BEC_TESTING_PLUGIN_BRANCH }}

@@ -18,26 +18,26 @@ runs:
   using: "composite"
   steps:
     - name: Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.PYTHON_VERSION }}
 
     - name: Checkout BEC Core
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: bec-project/bec
         ref: ${{ inputs.BEC_CORE_BRANCH }}
         path: ./bec
 
     - name: Checkout Ophyd Devices
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: bec-project/ophyd_devices
         ref: ${{ inputs.OPHYD_DEVICES_BRANCH }}
         path: ./ophyd_devices
 
     - name: Checkout Testing Plugin
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: bec-project/bec_testing_plugin
         path: ./bec_testing_plugin

@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout BEC
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: bec-project/bec
           ref: ${{ inputs.BEC_CORE_BRANCH }}
@@ -52,7 +52,7 @@ jobs:
           coverage xml -o coverage-unit.xml
 
       - name: Upload unit test coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-unit
           path: ./bec/coverage-unit.xml
