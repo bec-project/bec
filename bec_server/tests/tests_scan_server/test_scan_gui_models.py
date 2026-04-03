@@ -1,10 +1,10 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 import pytest
 from pydantic import ValidationError
 
 from bec_server.scan_server.scan_gui_models import GUIConfig
-from bec_server.scan_server.scans import ScanArgType, ScanBase
+from bec_server.scan_server.legacy_scans import ScanArgType, ScanBase
 
 
 class GoodScan(ScanBase):  # pragma: no cover
@@ -100,6 +100,23 @@ class WrongDocs(ScanBase):  # pragma: no cover
         """
 
     print("I am a scan with wrong docs.")
+
+
+class RichArgInputScan(ScanBase):  # pragma: no cover
+    scan_name = "rich_arg_input_scan"
+    required_kwargs = []
+    arg_input = {
+        "device": ScanArgType.DEVICE,
+        "start": Annotated[float, "device"],
+        "stop": Annotated[float, "device"],
+        "steps": int,
+    }
+    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config = {"Scan Parameters": []}
+
+    def __init__(self, *args, **kwargs):
+        """Scan with richer arg_input typing for GUI compatibility tests."""
+        super().__init__(**kwargs)
 
 
 def test_gui_config_good_scan_dump():
@@ -262,3 +279,53 @@ def test_gui_config_wrong_docs():
         ],
     }
     assert gui_config.model_dump() == expected
+
+
+def test_gui_config_rich_arg_input_is_converted_to_legacy_scan_arg_types():
+    gui_config = GUIConfig.from_dict(RichArgInputScan)
+
+    assert gui_config.arg_group.model_dump()["arg_inputs"] == {
+        "device": ScanArgType.DEVICE,
+        "start": ScanArgType.FLOAT,
+        "stop": ScanArgType.FLOAT,
+        "steps": ScanArgType.INT,
+    }
+
+    assert gui_config.arg_group.model_dump()["inputs"] == [
+        {
+            "arg": True,
+            "name": "device",
+            "display_name": "Device",
+            "type": "device",
+            "tooltip": None,
+            "default": None,
+            "expert": False,
+        },
+        {
+            "arg": True,
+            "name": "start",
+            "display_name": "Start",
+            "type": "float",
+            "tooltip": None,
+            "default": None,
+            "expert": False,
+        },
+        {
+            "arg": True,
+            "name": "stop",
+            "display_name": "Stop",
+            "type": "float",
+            "tooltip": None,
+            "default": None,
+            "expert": False,
+        },
+        {
+            "arg": True,
+            "name": "steps",
+            "display_name": "Steps",
+            "type": "int",
+            "tooltip": None,
+            "default": None,
+            "expert": False,
+        },
+    ]

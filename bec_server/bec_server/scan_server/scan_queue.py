@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import collections
 import functools
+import os
 import threading
 import time
 import traceback
 import uuid
 from enum import Enum
+from string import Template
 from typing import TYPE_CHECKING, Deque, Literal, TypeAlias
 
 from rich.console import Console
@@ -15,6 +17,7 @@ from rich.table import Table
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.types import ReadoutPriorities
 
@@ -26,6 +29,8 @@ logger = bec_logger.logger
 
 if TYPE_CHECKING:
     from bec_server.scan_server.scan_server import ScanServer
+    from bec_server.scan_server.scan_worker import ScanWorker
+    from bec_server.scan_server.scans import ScanBase as ScanBase_v4
 
 
 def requires_queue(fcn):
@@ -42,6 +47,9 @@ def requires_queue(fcn):
 
 ExitInfoType: TypeAlias = tuple[
     Literal["halted", "aborted", "user_completed"], Literal["user", "alarm"]
+]
+ReadoutPriorityMap: TypeAlias = dict[
+    Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]
 ]
 
 
@@ -269,7 +277,7 @@ class QueueManager:
         """
         queue = self.queues[msg.queue]
         for instruction_queue in queue.queue:
-            if msg.scan_id in instruction_queue.queue.scan_id:
+            if msg.scan_id in instruction_queue.scan_id:
                 return instruction_queue
         return None
 
@@ -511,9 +519,14 @@ class QueueManager:
     def _get_active_scan_id(self, queue):
         if len(self.queues[queue].queue) == 0:
             return None
-        if self.queues[queue].queue[0].active_request_block is None:
+        instr_queue = self.queues[queue].queue[0]
+        if instr_queue.active_request_block is None:
             return None
-        return self.queues[queue].queue[0].active_request_block.scan_id
+        if isinstance(instr_queue, DirectInstructionQueueItem):
+            if instr_queue.active_scan is None:
+                return None
+            return instr_queue.active_scan.scan_info.scan_id
+        return instr_queue.active_request_block.scan_id
 
     def _wait_for_queue_to_appear_in_history(
         self, scan_id, queue, timeout=60
@@ -627,20 +640,18 @@ class ScanQueue:
         self,
         queue_manager: QueueManager,
         queue_name="primary",
-        instruction_queue_item_cls: type[InstructionQueueItem] | None = None,
+        instruction_queue_item_cls: (
+            type[InstructionQueueItem] | type[DirectInstructionQueueItem] | None
+        ) = None,
     ) -> None:
-        self.queue: Deque[InstructionQueueItem] = collections.deque()
+        self.queue: Deque[InstructionQueueItem | DirectInstructionQueueItem] = collections.deque()
         self.queue_name = queue_name
-        self.history_queue: collections.deque[InstructionQueueItem] = collections.deque(
-            maxlen=self.MAX_HISTORY
+        self.history_queue: collections.deque[InstructionQueueItem | DirectInstructionQueueItem] = (
+            collections.deque(maxlen=self.MAX_HISTORY)
         )
         self.active_instruction_queue = None
         self.queue_manager = queue_manager
-        self._instruction_queue_item_cls = (
-            instruction_queue_item_cls
-            if instruction_queue_item_cls is not None
-            else InstructionQueueItem
-        )
+        self._instruction_queue_item_cls_override = instruction_queue_item_cls
         # self.open_instruction_queue = None
         self._status = self.DEFAULT_QUEUE_STATUS
         self.signal_event = threading.Event()
@@ -851,11 +862,21 @@ class ScanQueue:
                 queue_exists = True
         if not queue_exists:
             # create new queue element (InstructionQueueItem)
-            instruction_queue = self._instruction_queue_item_cls(
+            assembler = self.queue_manager.parent.scan_assembler
+            if assembler.is_direct_scan_message(msg):
+                iq_class = DirectInstructionQueueItem
+            else:
+                iq_class = InstructionQueueItem
+            iq_class = self._instruction_queue_item_cls_override or iq_class
+
+            instruction_queue = iq_class(
                 parent=self,
                 assembler=self.queue_manager.parent.scan_assembler,
                 worker=self.scan_worker,
             )
+        if instruction_queue is None:
+            logger.error("Failed to create instruction queue item.")
+            return
         instruction_queue.append_scan_request(msg)
         if not queue_exists:
             instruction_queue.queue_group = target_group
@@ -1351,3 +1372,359 @@ class InstructionQueueItem:
             for blck in blcks:
                 # pylint: disable=protected-access
                 blck.scan._shutdown_event.set()
+
+
+class DirectInstructionQueueItem:
+    """
+    An instruction queue item for v4 scans.
+    """
+
+    def __init__(self, parent: ScanQueue, assembler: ScanAssembler, worker: ScanWorker) -> None:
+        self.parent = parent
+        self.assembler = assembler
+        self.worker = worker
+        self.exit_info: ExitInfoType | None = None
+        self.queue_id = str(uuid.uuid4())
+        self.stopped = False
+        self._scan_id = str(uuid.uuid4())
+        self.queue_group = None
+        self.queue_group_is_closed = False
+
+        self._status = InstructionQueueStatus.PENDING
+        self._return_to_start = None
+
+        self.active_scan: ScanBase_v4 | None = None
+        self.scans: list[ScanBase_v4] = []
+        self.scan_msgs: list[messages.ScanQueueMessage] = []
+
+    @property
+    def status(self) -> InstructionQueueStatus:
+        """get the status of the instruction queue item"""
+        return self._status
+
+    @status.setter
+    def status(self, val: InstructionQueueStatus) -> None:
+        """set the status of the instruction queue item and update the worker and queue status accordingly"""
+        logger.debug(
+            f"Setting status of direct instruction queue {self.parent.queue_name} to {val.name} from thread {threading.current_thread().name}"
+        )
+        self._status = val
+        self.worker.status = val
+        if val == InstructionQueueStatus.STOPPED:
+            self.stop()
+        self.parent.queue_manager.send_queue_status()
+
+    @property
+    def active_request_block(self) -> None | ScanBase_v4:
+        """there are no request blocks for direct instruction queue items"""
+        return self.active_scan
+
+    @property
+    def scan_id(self) -> list[str | None]:
+        return [scan.scan_info.scan_id for scan in self.scans]
+
+    @property
+    def is_scan(self) -> list[bool]:
+        return [scan.scan_info.scan_type is not None for scan in self.scans]
+
+    @property
+    def scan_number(self) -> list[int | None]:
+        return [scan.scan_info.scan_number for scan in self.scans]
+
+    def append_scan_request(self, msg: messages.ScanQueueMessage) -> None:
+        """
+        Append a new scan from a scan queue message. The scan will be assembled but not executed until it becomes active.
+
+        Args:
+            msg (ScanQueueMessage): the scan queue message containing the scan information
+        """
+        scan = self.assembler.assemble_direct_scan(msg, scan_id=self._scan_id)
+        self.scans.append(scan)
+        self.scan_msgs.append(msg)
+
+    def set_active(self):
+        """change the instruction queue status to RUNNING"""
+        if self.status == InstructionQueueStatus.PENDING:
+            self.status = InstructionQueueStatus.RUNNING
+
+    def describe(self):
+        """description of the instruction queue"""
+        request_blocks = self.describe_scans()
+        content = messages.QueueInfoEntry(
+            queue_id=self.queue_id,
+            scan_id=self.scan_id,
+            is_scan=self.is_scan,
+            request_blocks=request_blocks,
+            scan_number=self.scan_number,
+            status=self.status.name,
+            active_request_block=self.describe_active_scan(),
+        )
+        return content
+
+    def describe_active_scan(self):
+        """description of the active scan"""
+        if self.active_scan is None:
+            return None
+        if self.active_scan not in self.scans:
+            return None
+        msg = self.scan_msgs[self.scans.index(self.active_scan)]
+        scan_info = self._get_request_block_message(self.active_scan, msg)
+        return scan_info
+
+    def describe_scans(self):
+        """description of the scans in the instruction queue item"""
+        info = []
+        for scan, msg in zip(self.scans, self.scan_msgs):
+            scan_info = self._get_request_block_message(scan, msg)
+            info.append(scan_info)
+        return info
+
+    def _get_request_block_message(
+        self, scan: ScanBase_v4, msg: messages.ScanQueueMessage
+    ) -> messages.RequestBlock:
+        """
+        Get the request block message for a given scan and scan queue message
+
+        Args:
+            scan (ScanBase_v4): the scan for which to get the request block message
+            msg (ScanQueueMessage): the scan queue message containing the scan information
+
+        Returns:
+            RequestBlock: the request block message containing the scan information
+        """
+        return messages.RequestBlock(
+            msg=msg,
+            RID=msg.metadata["RID"],
+            scan_motors=scan.scan_info.readout_priority_modification.get("monitored", []),
+            readout_priority=scan.scan_info.readout_priority_modification,
+            is_scan=scan.scan_info.scan_type is not None,
+            scan_number=scan.scan_info.scan_number,
+            scan_id=scan.scan_info.scan_id,
+            report_instructions=scan.scan_info.scan_report_instructions,
+        )
+
+    def move_to_next_scan(self):
+        """move to the next scan in the instruction queue item"""
+        if self.active_scan is None:
+            if len(self.scans) > 0:
+                self._set_scan_as_active(self.scans[0])
+                return self.active_scan
+            raise StopIteration("No active scan and no scans in the queue.")
+        current_index = self.scans.index(self.active_scan)
+        if current_index + 1 < len(self.scans):
+            self._set_scan_as_active(self.scans[current_index + 1])
+            return self.active_scan
+        raise StopIteration("No more scans in the queue.")
+
+    def _set_scan_as_active(self, scan: ScanBase_v4):
+        """set a given scan as the active scan"""
+        self.active_scan = scan
+        if scan.scan_info.scan_number is None:
+            with self.parent.queue_manager._lock:
+                self.parent.queue_manager.parent.scan_number += 1
+                if not self.scan_msgs[self.scans.index(scan)].metadata.get("dataset_id_on_hold"):
+                    self.parent.queue_manager.parent.dataset_number += 1
+                scan.scan_info.scan_number = self.parent.queue_manager.parent.scan_number
+                scan.scan_info.dataset_number = self.parent.queue_manager.parent.dataset_number
+        self.set_active()
+
+    def _send_scan_status(
+        self,
+        status: Literal["open", "paused", "closed", "aborted", "halted", "user_completed"],
+        reason: Literal["user", "alarm"] | None = None,
+    ) -> None:
+        """Publish the current scan status for the active direct scan."""
+        scan = self.active_scan
+        if scan is None:
+            return
+
+        logger.info(f"New scan status: {scan.scan_info.scan_id} / {status} / {scan.scan_info}")
+        msg = self._build_scan_status_message(scan=scan, status=status, reason=reason)
+
+        expire = None if status in ["open", "paused"] else 1800
+        pipe = self.worker.device_manager.connector.pipeline()
+        self.worker.device_manager.connector.set(
+            MessageEndpoints.public_scan_info(scan.scan_info.scan_id), msg, pipe=pipe, expire=expire
+        )
+        self.worker.device_manager.connector.set_and_publish(
+            MessageEndpoints.scan_status(), msg, pipe=pipe
+        )
+        pipe.execute()
+
+    def _build_scan_status_message(
+        self,
+        *,
+        scan: ScanBase_v4,
+        status: Literal["open", "paused", "closed", "aborted", "halted", "user_completed"],
+        reason: Literal["user", "alarm"] | None = None,
+    ) -> messages.ScanStatusMessage:
+        """Build the scan status message for the active direct scan."""
+        legacy_scan_parameters = self._get_legacy_scan_parameters(
+            scan.scan_info.model_dump(mode="python")
+        )
+        resolved_readout_priority = self._get_resolved_readout_priority(scan)
+        file_components = self._get_file_components(scan.scan_info.model_dump(mode="python"))
+        info = self._build_scan_status_info(
+            scan,
+            legacy_scan_parameters=legacy_scan_parameters,
+            resolved_readout_priority=resolved_readout_priority,
+            file_components=file_components,
+        )
+        scan_info = scan.scan_info
+        scan_type = scan_info.scan_type
+        return messages.ScanStatusMessage(
+            scan_id=scan_info.scan_id,
+            status=status,
+            reason=reason,
+            scan_name=scan_info.scan_name,
+            scan_number=scan_info.scan_number,
+            session_id=scan_info.metadata.get("session_id"),
+            dataset_number=scan_info.dataset_number,
+            num_points=scan_info.num_points,
+            scan_type=scan_type if scan_type in {"step", "fly"} else None,
+            scan_report_devices=scan_info.scan_report_devices,
+            user_metadata=scan_info.user_metadata,
+            readout_priority=resolved_readout_priority,
+            scan_parameters=legacy_scan_parameters,
+            request_inputs=scan_info.request_inputs,
+            info=info,
+        )
+
+    def _build_scan_status_info(
+        self,
+        scan: ScanBase_v4,
+        *,
+        legacy_scan_parameters: dict,
+        resolved_readout_priority: ReadoutPriorityMap,
+        file_components: tuple[str, str] | None,
+    ) -> dict:
+        """Build the compatibility-augmented info payload for scan status messages."""
+        base_info = scan.scan_info.model_dump(mode="python")
+        if base_info.get("positions") is not None:
+            base_info["positions"] = base_info["positions"].tolist()
+        compatibility_fields = {
+            "scan_parameters": legacy_scan_parameters,
+            "readout_priority": resolved_readout_priority,
+            "file_components": file_components,
+        }
+        return {**base_info, **compatibility_fields}
+
+    def _get_legacy_scan_parameters(self, scan_info: dict) -> dict:
+        scan_parameters = {
+            "exp_time": scan_info.get("exp_time"),
+            "frames_per_trigger": scan_info.get("frames_per_trigger"),
+            "settling_time": scan_info.get("settling_time"),
+            "readout_time": scan_info.get("readout_time", 0),
+            "return_to_start": scan_info.get("return_to_start"),
+            "relative": scan_info.get("relative"),
+        }
+        scan_parameters.update(scan_info.get("additional_scan_parameters") or {})
+        if scan_info.get("system_config") is not None:
+            scan_parameters["system_config"] = scan_info.get("system_config")
+        return {key: value for key, value in scan_parameters.items() if value is not None}
+
+    def _get_resolved_readout_priority(self, scan: ScanBase_v4) -> ReadoutPriorityMap:
+        readout_priority = scan.scan_info.readout_priority_modification
+        return {
+            "monitored": [
+                dev.full_name
+                for dev in self.worker.device_manager.devices.monitored_devices(
+                    readout_priority=readout_priority
+                )
+            ],
+            "baseline": [
+                dev.full_name
+                for dev in self.worker.device_manager.devices.baseline_devices(
+                    readout_priority=readout_priority
+                )
+            ],
+            "async": [
+                dev.full_name
+                for dev in self.worker.device_manager.devices.async_devices(
+                    readout_priority=readout_priority
+                )
+            ],
+            "continuous": [
+                dev.full_name
+                for dev in self.worker.device_manager.devices.continuous_devices(
+                    readout_priority=readout_priority
+                )
+            ],
+            "on_request": [
+                dev.full_name
+                for dev in self.worker.device_manager.devices.on_request_devices(
+                    readout_priority=readout_priority
+                )
+            ],
+        }
+
+    def _get_file_components(self, scan_info: dict) -> tuple[str, str] | None:
+        scan_number = scan_info.get("scan_number")
+        system_config = scan_info.get("system_config") or {}
+        if scan_number is None or "file_directory" not in system_config:
+            return None
+        return compile_file_components(
+            base_path=self._get_file_base_path(),
+            scan_nr=scan_number,
+            file_directory=system_config["file_directory"],
+            user_suffix=system_config.get("file_suffix"),
+        )
+
+    def _get_file_base_path(self) -> str:
+        current_account_msg = self.parent.queue_manager.connector.get_last(
+            MessageEndpoints.account(), "data"
+        )
+        if current_account_msg:
+            current_account = current_account_msg.value
+            if not isinstance(current_account, str):
+                logger.warning(
+                    f"Account name is not a string: {current_account}. Ignoring specified value."
+                )
+                current_account = None
+            else:
+                if "/" in current_account:
+                    raise ValueError(
+                        f"Account name cannot contain a slash (/): {current_account}. "
+                    )
+                check_value = current_account.replace("_", "").replace("-", "")
+                if not check_value.isalnum() or not check_value.isascii():
+                    raise ValueError(
+                        f"Account name can only contain alphanumeric characters: {current_account}. "
+                    )
+        else:
+            current_account = None
+
+        file_base_path = self.worker.device_manager.parent._service_config.config["file_writer"][
+            "base_path"
+        ]
+        if "$" not in file_base_path:
+            if current_account:
+                return os.path.abspath(os.path.join(file_base_path, current_account))
+            return os.path.abspath(file_base_path)
+
+        file_base_path = Template(file_base_path)
+        try:
+            return os.path.abspath(file_base_path.substitute(account=current_account or ""))
+        except KeyError as exc:
+            raise ValueError(
+                f"Invalid template variable: {exc} in the file base path. Please check your service config."
+            ) from exc
+
+    def append_to_queue_history(self):
+        """append a new queue item to the redis history buffer"""
+        msg = messages.ScanQueueHistoryMessage(
+            status=self.status.name, queue_id=self.queue_id, info=self.describe()
+        )
+        self.parent.queue_manager.connector.lpush(
+            MessageEndpoints.scan_queue_history(), msg, max_size=100
+        )
+
+    def stop(self):
+        """stop the instruction queue item and all active scans"""
+        for scan in self.scans:
+            scan._shutdown_event.set()
+
+    def abort(self):
+        self.active_scan = None
+        self.scans = []
+        self.scan_msgs = []

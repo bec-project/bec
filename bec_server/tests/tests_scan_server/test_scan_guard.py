@@ -451,6 +451,7 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
     class MockInstructionItem:
         def __init__(self):
             self.queue = MockRequestBlockQueue()
+            self.scan_id = ["scan_id"]
 
     class MockRequestBlockQueue:
         def __init__(self):

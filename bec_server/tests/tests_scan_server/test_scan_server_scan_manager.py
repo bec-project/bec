@@ -1,10 +1,11 @@
+from typing import Annotated
 from unittest import mock
 
 import pytest
 
 from bec_lib.device import Device, DeviceBase, Positioner
+from bec_server.scan_server.legacy_scans import ScanArgType
 from bec_server.scan_server.scan_manager import ScanManager
-from bec_server.scan_server.scans import ScanArgType
 
 
 @pytest.fixture
@@ -31,6 +32,7 @@ def scan_manager():
         ({"a": DeviceBase}, {"a": "device"}),
         ({"a": Device}, {"a": "device"}),
         ({"a": Positioner}, {"a": "device"}),
+        ({"a": Annotated[float, "device"]}, {"a": "float"}),
     ],
 )
 def test_scan_manager_convert_arg_input(scan_manager, arg_input, arg_output):

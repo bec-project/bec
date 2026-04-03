@@ -8,7 +8,7 @@ import pytest
 from bec_lib import messages
 from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.scan_plugins.otf_scan import OTFScan
-from bec_server.scan_server.scans import (
+from bec_server.scan_server.legacy_scans import (
     Acquire,
     CloseInteractiveScan,
     ContLineFlyScan,
