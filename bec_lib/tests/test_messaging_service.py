@@ -26,9 +26,7 @@ def scilog_service(connected_connector):
         ],
         session_services=[],
     )
-    SciLogMessagingService._on_new_scope_change_msg(
-        message={"data": available_services}, parent=service
-    )
+    service._on_new_scope_change_msg(message={"data": available_services})
     yield service
 
 
@@ -48,9 +46,7 @@ def signal_service(connected_connector):
         ],
         session_services=[],
     )
-    SignalMessagingService._on_new_scope_change_msg(
-        message={"data": available_services}, parent=service
-    )
+    service._on_new_scope_change_msg(message={"data": available_services})
     yield service
 
 
@@ -271,9 +267,7 @@ def test_disabled_service_cannot_create_message(connected_connector):
         ],
         session_services=[],
     )
-    SciLogMessagingService._on_new_scope_change_msg(
-        message={"data": available_services}, parent=service
-    )
+    service._on_new_scope_change_msg(message={"data": available_services})
 
     with pytest.raises(RuntimeError, match="Messaging service 'scilog' is not enabled."):
         service.new()
@@ -295,9 +289,7 @@ def test_disabled_service_cannot_send_message(connected_connector):
         ],
         session_services=[],
     )
-    SciLogMessagingService._on_new_scope_change_msg(
-        message={"data": available_services}, parent=service
-    )
+    service._on_new_scope_change_msg(message={"data": available_services})
     message = service.new()
     message.add_text("Test message")
 
@@ -315,9 +307,7 @@ def test_disabled_service_cannot_send_message(connected_connector):
         ],
         session_services=[],
     )
-    SciLogMessagingService._on_new_scope_change_msg(
-        message={"data": disabled_services}, parent=service
-    )
+    service._on_new_scope_change_msg(message={"data": disabled_services})
 
     with pytest.raises(RuntimeError, match="Messaging service 'scilog' is not enabled."):
         message.send()
@@ -386,9 +376,7 @@ def test_signal_message_service_uses_default_scope(connected_connector):
         ],
         session_services=[],
     )
-    SignalMessagingService._on_new_scope_change_msg(
-        message={"data": available_services}, parent=service
-    )
+    service._on_new_scope_change_msg(message={"data": available_services})
 
     service.set_default_scope("user")
     message = service.new()

@@ -1,3 +1,4 @@
+import gc
 import threading
 import time
 from unittest import mock
@@ -369,10 +370,12 @@ def test_redis_connector_register_stream(connected_connector):
     connector.poll_messages()
     cb_mock1.assert_not_called()
     cb_mock2.assert_called_once_with({"data": 2}, a=2)
+    assert "test" in connector._stream_subs.all_topics
     connector.unregister("test")
-    assert connector._stream_topics_subscription["test"] == []
+    assert connector._stream_subs.all_topics == []
 
 
+@pytest.mark.timeout(10)
 def test_redis_connector_register_stream_identical(connected_connector):
     connector = connected_connector
 
@@ -380,9 +383,9 @@ def test_redis_connector_register_stream_identical(connected_connector):
     received_event2 = mock.Mock(spec=[])
 
     connector.register(TestStreamEndpoint, cb=received_event1, start_thread=False)
-    connector.register(TestStreamEndpoint, cb=received_event1, start_thread=False)
     connector.register(TestStreamEndpoint, cb=received_event2, start_thread=False)
     connector.register(TestStreamEndpoint2, cb=received_event1, start_thread=False)
+    connector.register(TestStreamEndpoint2, cb=received_event2, start_thread=False)
     connector.xadd("test", {"data": 1})
     connector.poll_messages(timeout=1)
     assert received_event1.call_count == 1
@@ -392,14 +395,11 @@ def test_redis_connector_register_stream_identical(connected_connector):
     assert received_event1.call_count == 2
 
     try:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError):
             connector.register(
                 TestStreamEndpoint2, cb=received_event1, newest_only=True, start_thread=False
             )
-        connector.register(
-            TestStreamEndpoint2, cb=received_event2, newest_only=True, start_thread=False
-        )
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError):
             connector.register(TestStreamEndpoint2, cb=received_event2, start_thread=False)
     finally:
         connector.unregister(TestStreamEndpoint2)
@@ -427,7 +427,8 @@ def test_redis_connector_register_stream_list(connected_connector, endpoint):
         connector.poll_messages()
     assert mock.call({"data": 2}, a=1) in cb_mock.mock_calls
     connector.unregister(endpoint)
-    assert len(connector._stream_topics_subscription) == 0
+    all_topics = connector._stream_subs.all_topics
+    assert len(all_topics) == 0
 
 
 @pytest.mark.timeout(10)
@@ -448,12 +449,14 @@ def test_redis_connector_register_stream_from_start(connected_connector):
     cb_mock1.assert_called_once_with({"data": 3}, a=1)
     cb_mock2.assert_called_once_with({"data": 3}, a=2)
     cb_mock1.reset_mock()
+    connector.unregister(TestStreamEndpoint, cb=cb_mock1)
     connector.register(TestStreamEndpoint, cb=cb_mock1, from_start=True, start_thread=False, a=3)
     connector.poll_messages(timeout=1)
     cb_mock1.assert_has_calls(
         [mock.call({"data": 1}, a=3), mock.call({"data": 2}, a=3), mock.call({"data": 3}, a=3)]
     )
     cb_mock1.reset_mock()
+    connector.unregister(TestStreamEndpoint, cb=cb_mock1)
     connector.register(TestStreamEndpoint, cb=cb_mock1, start_thread=False, a=4)
     with pytest.raises(TimeoutError):
         connector.poll_messages(timeout=1)
@@ -608,3 +611,129 @@ def test_connector_publish_metrics(connected_connector):
     assert res.metrics["m2"].value == 5.5
     assert res.metrics["m3"].value == "test"
     assert res.metrics["m4"].value is True
+
+
+def test_merging_streams_does_not_skip_messages(connected_connector: RedisConnector):
+    connector = connected_connector
+    cb_normal = mock.Mock(spec=[])  # spec is here to remove all attributes
+    cb_from_start = mock.Mock(spec=[])  # spec is here to remove all attributes
+
+    connector.xadd("test", {"data": 1})
+    connector.xadd("test", {"data": 2})
+
+    connector.register(TestStreamEndpoint, cb=cb_normal, start_thread=False, key="normal")
+    with pytest.raises(TimeoutError):
+        connector.poll_messages(timeout=0.1)
+    cb_normal.assert_not_called()
+
+    connector.xadd("test", {"data": 3})
+    connector.poll_messages()
+    cb_normal.assert_called_once_with({"data": 3}, key="normal")
+    cb_normal.reset_mock()
+
+    assert (id_3 := connected_connector._stream_subs.end_id("test")) != "+"
+
+    connector.xadd("test", {"data": 4})
+    connector.xadd("test", {"data": 5})
+    cb_normal.assert_not_called()
+    connector.register(
+        TestStreamEndpoint, cb=cb_from_start, from_start=True, start_thread=False, key="from_start"
+    )
+
+    connected_connector._read_from_start_streams_and_migrate()
+    connector.poll_messages(timeout=0)
+    connector.poll_messages(timeout=0)
+    connector.poll_messages(timeout=0)
+
+    assert cb_from_start.call_count == 3
+
+    with pytest.raises(TimeoutError):
+        connector.poll_messages(timeout=0)
+
+    assert cb_from_start.call_count == 3
+    assert connected_connector._stream_subs.from_start_subs == {}
+    assert connected_connector._stream_subs.end_id("test") == id_3
+
+    connector.poll_messages()
+
+    assert cb_from_start.call_count == 5
+    assert cb_normal.call_count == 2
+
+
+def test_subs_garbage_collectioon(connected_connector):
+    sub1 = mock.MagicMock(spec=[])
+    sub2 = mock.MagicMock(spec=[])
+    sub3 = mock.MagicMock(spec=[])
+
+    connected_connector.register("test", cb=sub1)
+    connected_connector.register("test", cb=sub2)
+    connected_connector.register("test", cb=sub3)
+
+    assert len(connected_connector._topics_cb["test"]) == 3
+    connected_connector._garbage_collect_cb_refs()
+    assert len(connected_connector._topics_cb["test"]) == 3
+    del sub2
+    gc.collect()
+    connected_connector._garbage_collect_cb_refs()
+    assert len(connected_connector._topics_cb["test"]) == 2
+
+
+def test_stream_subs_garbage_collection(connected_connector):
+    with mock.patch.object(connected_connector._stream_subs, "move_from_start_to_normal"):
+        sub1 = mock.MagicMock(name="mock1", spec=[])
+        sub2 = mock.MagicMock(name="mock2", spec=[])
+        sub3 = mock.MagicMock(name="mock3", spec=[])
+
+        connected_connector.register(TestStreamEndpoint, cb=sub1)
+        connected_connector.register(TestStreamEndpoint, cb=sub2)
+        connected_connector.register(TestStreamEndpoint, cb=sub3)
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 3
+        connected_connector._stream_subs.gc_cb_refs()
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 3
+
+        del sub2
+        time.sleep(0.05)
+        gc.collect()
+        time.sleep(0.05)
+        connected_connector._stream_subs.gc_cb_refs()
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 2
+
+        sub4 = mock.MagicMock(name="mock4", spec=[])
+        sub5 = mock.MagicMock(name="mock5", spec=[])
+
+        connected_connector.register(TestStreamEndpoint, cb=sub4, from_start=True)
+        connected_connector.register(TestStreamEndpoint, cb=sub5, from_start=True)
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 2
+        assert len(connected_connector._stream_subs.from_start_subs["test"]) == 2
+
+        del sub4
+        del sub3
+        time.sleep(0.05)
+        gc.collect()
+        time.sleep(0.05)
+        connected_connector._stream_subs.gc_cb_refs()
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 1
+        assert len(connected_connector._stream_subs.from_start_subs["test"]) == 1
+
+        sub6 = mock.MagicMock(name="mock6", spec=[])
+        connected_connector.register(TestStreamEndpoint, cb=sub6, newest_only=True)
+
+        assert len(connected_connector._stream_subs._subs["test"].subs) == 1
+        assert len(connected_connector._stream_subs.from_start_subs["test"]) == 1
+        assert len(connected_connector._stream_subs._direct_read_subs["test"]) == 1
+
+        del sub1
+        del sub5
+        del sub6
+        time.sleep(0.05)
+        gc.collect()
+        time.sleep(0.05)
+        connected_connector._stream_subs.gc_cb_refs()
+
+        assert "test" not in connected_connector._stream_subs._subs
+        assert "test" not in connected_connector._stream_subs.from_start_subs
+        assert "test" not in connected_connector._stream_subs._direct_read_subs
