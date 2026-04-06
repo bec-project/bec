@@ -1,5 +1,5 @@
 name: Run child repository tests for ophyd_devices and bec_widgets
-on: 
+on:
   workflow_call:
     inputs:
       BEC_WIDGETS_BRANCH:
@@ -25,7 +25,7 @@ jobs:
     defaults:
       run:
         shell: bash -el {0}
-    env: 
+    env:
       QTWEBENGINE_DISABLE_SANDBOX: 1
       QT_QPA_PLATFORM: "offscreen"
 
@@ -47,6 +47,65 @@ jobs:
         run: |
           pip install pytest pytest-random-order
           pytest -v --maxfail=2 --junitxml=report.xml --random-order ./tests/unit_tests
+
+  bec-widgets-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+      OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+      QTWEBENGINE_DISABLE_SANDBOX: 1
+      QT_QPA_PLATFORM: "offscreen"
+      PLUGIN_REPO_BRANCH: main
+
+    steps:
+      - name: Checkout BEC Widgets
+        uses: actions/checkout@v4
+        with:
+          repository: bec-project/bec_widgets
+          ref: ${{ inputs.BEC_WIDGETS_BRANCH }}
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          auto-activate-base: true
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 x11-utils libxkbcommon-x11-0 libdbus-1-3 xvfb
+          sudo apt-get -y install libnss3 libxdamage1 libasound2t64 libatomic1 libxcursor1
+          sudo apt-get -y install ttyd
+
+      - name: Run end-to-end tests
+        run: |
+          pip install pytest pytest-random-order
+          echo -e "\033[35;1m Using branch $BEC_CORE_BRANCH of BEC CORE \033[0;m";
+          git clone --branch $BEC_CORE_BRANCH https://github.com/bec-project/bec.git
+          echo -e "\033[35;1m Using branch $OPHYD_DEVICES_BRANCH of OPHYD_DEVICES \033[0;m";
+          git clone --branch $OPHYD_DEVICES_BRANCH https://github.com/bec-project/ophyd_devices.git
+          export OHPYD_DEVICES_PATH=$PWD/ophyd_devices
+          echo -e "\033[35;1m Using branch $PLUGIN_REPO_BRANCH of bec_testing_plugin \033[0;m";
+          git clone --branch $PLUGIN_REPO_BRANCH https://github.com/bec-project/bec_testing_plugin.git
+          cd ./bec
+          conda create -q -n test-environment python=3.11
+          source ./bin/install_bec_dev.sh -t
+          cd ../
+          pip install -e ./ophyd_devices -e .[dev,pyside6] -e ./bec_testing_plugin
+          pytest -v --files-path ./ --start-servers --random-order --junitxml=report.xml ./tests/end-2-end
+
+      - name: Upload logs if job fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bec-widgets-e2e-logs
+          path: ./bec/logs/*.log
+          retention-days: 7
+
   ophyd_devices:
     runs-on: ubuntu-latest
     defaults:
@@ -70,6 +129,3 @@ jobs:
         run: |
           pip install pytest pytest-random-order
           pytest -v --maxfail=2 --junitxml=report.xml --random-order ./tests
-      
-
-    
