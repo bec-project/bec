@@ -9,12 +9,22 @@ from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AvailableResourceMessage
-from bec_lib.signature_serializer import signature_to_dict
+from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
 
 from . import scans as scans_module
 
 logger = bec_logger.logger
+
+_SCAN_ARG_TYPE_TO_DTYPE = {
+    scans_module.ScanArgType.DEVICE: DeviceBase,
+    scans_module.ScanArgType.FLOAT: float,
+    scans_module.ScanArgType.INT: int,
+    scans_module.ScanArgType.BOOL: bool,
+    scans_module.ScanArgType.STR: str,
+    scans_module.ScanArgType.LIST: list,
+    scans_module.ScanArgType.DICT: dict,
+}
 
 
 class ScanManager:
@@ -77,15 +87,22 @@ class ScanManager:
                     base_cls = report_cls.__name__
             self.scan_dict[scan_cls.__name__] = scan_cls
             gui_config = self.validate_gui_config(scan_cls)
+            gui_visibility = {}
+            if hasattr(scan_cls, "gui_visibility"):
+                gui_visibility = scan_cls.gui_visibility  # type: ignore
+            elif hasattr(scan_cls, "gui_config"):  # type: ignore
+                gui_visibility = scan_cls.gui_config  # type: ignore
+
             self.available_scans[scan_cls.scan_name] = {
                 "class": scan_cls.__name__,
                 "base_class": base_cls,
                 "arg_input": self.convert_arg_input(scan_cls.arg_input),
-                "gui_config": gui_config,
                 "required_kwargs": scan_cls.required_kwargs,
                 "arg_bundle_size": scan_cls.arg_bundle_size,
                 "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
                 "signature": signature_to_dict(scan_cls.__init__),
+                "gui_visibility": gui_visibility,
+                "gui_config": gui_config,  # deprecated! - should be removed
             }
 
     def validate_gui_config(self, scan_cls) -> dict:
@@ -125,18 +142,13 @@ class ScanManager:
         Returns:
             dict: converted arg_input
         """
+        converted_arg_input = {}
         for key, value in arg_input.items():
-            if isinstance(value, scans_module.ScanArgType):
-                continue
-            if issubclass(value, DeviceBase):
-                # once we have generalized the device types, this should be removed
-                arg_input[key] = "device"
-            elif issubclass(value, bool):
-                # should be unified with the ScanArgType.BOOL
-                arg_input[key] = "boolean"
-            else:
-                arg_input[key] = value.__name__
-        return arg_input
+            dtype = _SCAN_ARG_TYPE_TO_DTYPE.get(value, value)
+            if inspect.isclass(dtype) and issubclass(dtype, DeviceBase):
+                dtype = DeviceBase
+            converted_arg_input[key] = serialize_dtype(dtype)
+        return converted_arg_input
 
     def publish_available_scans(self):
         """send all available scans to the broker"""

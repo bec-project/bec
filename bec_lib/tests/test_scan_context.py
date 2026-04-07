@@ -1,8 +1,10 @@
+from typing import Annotated
 from unittest import mock
 
 import pytest
 
 from bec_lib.device import DeviceBase
+from bec_lib.scan_args import ScanArgument
 from bec_lib.scans import (
     DatasetIdOnHold,
     FileWriter,
@@ -11,7 +13,9 @@ from bec_lib.scans import (
     ScanDef,
     ScanExport,
     ScanGroup,
+    Scans,
 )
+from bec_lib.signature_serializer import serialize_dtype
 
 # pylint: disable=no-member
 # pylint: disable=missing-function-docstring
@@ -146,15 +150,56 @@ def test_parameter_bundler(bec_client_mock):
         ("int", int),
         ("list", list),
         ("boolean", bool),
+        ("bool", bool),
         ("str", str),
         ("dict", dict),
         ("device", DeviceBase),
+        ("DeviceBase", DeviceBase),
+        (serialize_dtype(Annotated[float, ScanArgument(description="Step size")]), float),
+        (
+            serialize_dtype(Annotated[float, ScanArgument(description="Step size")] | None),
+            (float, type(None)),
+        ),
     ],
 )
 def test_get_arg_type(bec_client_mock, in_type, out):
     client = bec_client_mock
     res = client.scans.get_arg_type(in_type)
     assert res == out
+
+
+def test_strip_scan_signature_annotations_for_ipython_signature():
+    signature = [
+        {
+            "name": "step",
+            "kind": "POSITIONAL_OR_KEYWORD",
+            "default": "_empty",
+            "annotation": serialize_dtype(Annotated[float, ScanArgument(description="Step size")]),
+        },
+        {
+            "name": "optional_step",
+            "kind": "POSITIONAL_OR_KEYWORD",
+            "default": None,
+            "annotation": serialize_dtype(
+                Annotated[float, ScanArgument(description="Optional step size")] | None
+            ),
+        },
+    ]
+
+    assert Scans._strip_scan_signature_annotations(signature) == [
+        {
+            "name": "step",
+            "kind": "POSITIONAL_OR_KEYWORD",
+            "default": "_empty",
+            "annotation": "float",
+        },
+        {
+            "name": "optional_step",
+            "kind": "POSITIONAL_OR_KEYWORD",
+            "default": None,
+            "annotation": ["float", "NoneType"],
+        },
+    ]
 
 
 def test_get_arg_type_raises(bec_client_mock):

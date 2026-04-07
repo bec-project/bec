@@ -35,6 +35,7 @@ dependencies = [
     "prettytable~=3.9",
     "h5py~=3.10",
     "hdf5plugin >=4.3, < 6.0",
+    "pint~=0.25",
     "python-dotenv~=1.0",
     "python-slugify~=8.0",
 ]
