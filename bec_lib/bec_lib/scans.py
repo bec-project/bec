@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import builtins
 import time
+import types
 import uuid
 from collections.abc import Callable
 from contextlib import ContextDecorator
 from copy import deepcopy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal, get_args, get_origin
 
 from toolz import partition
 from typeguard import typechecked
@@ -22,7 +23,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.scan_repeat import _scan_repeat_depth
 from bec_lib.scan_report import ScanReport
-from bec_lib.signature_serializer import dict_to_signature
+from bec_lib.signature_serializer import deserialize_dtype, dict_to_signature
 from bec_lib.utils import scan_to_csv
 from bec_lib.utils.import_utils import lazy_import
 
@@ -196,11 +197,75 @@ class Scans:
             setattr(
                 getattr(self, scan_name),
                 "__signature__",
-                dict_to_signature(scan_info.get("signature")),
+                dict_to_signature(
+                    self._strip_scan_signature_annotations(scan_info.get("signature"))
+                ),
             )
 
     @staticmethod
-    def get_arg_type(in_type: str):
+    def _strip_scan_signature_annotations(params: list[dict]) -> list[dict]:
+        """
+        Strip rich scan argument metadata from serialized params for IPython signatures.
+
+        Args:
+            params (list[dict]): Serialized function signature parameter dictionaries.
+
+        Returns:
+            list[dict]: Serialized parameter dictionaries with rich Annotated metadata replaced by
+            base types.
+        """
+        return [
+            {**param, "annotation": Scans._strip_scan_arg_annotation(param["annotation"])}
+            for param in params
+        ]
+
+    @staticmethod
+    def _strip_scan_arg_annotation(annotation: str | dict | list) -> str | dict | list:
+        """
+        Return the base serialized type for rich Annotated scan argument metadata.
+
+        Args:
+            annotation (str | dict | list): Serialized annotation value from a signature parameter.
+
+        Returns:
+            str | dict | list: The serialized base annotation with scan argument metadata removed.
+        """
+        if isinstance(annotation, list):
+            return [Scans._strip_scan_arg_annotation(entry) for entry in annotation]
+        if isinstance(annotation, dict) and (annotated := annotation.get("Annotated")):
+            return Scans._strip_scan_arg_annotation(annotated["type"])
+        return annotation
+
+    @staticmethod
+    def _get_runtime_arg_type(dtype: object) -> type | tuple[type, ...]:
+        """
+        Convert a deserialized annotation into a type suitable for isinstance checks.
+
+        Args:
+            dtype (object): Deserialized annotation value.
+
+        Returns:
+            type | tuple[type, ...]: Runtime type or tuple of types accepted by isinstance.
+        """
+        if get_origin(dtype) is Annotated:
+            return Scans._get_runtime_arg_type(get_args(dtype)[0])
+        if get_origin(dtype) is Literal:
+            return tuple(type(arg) for arg in get_args(dtype))
+        if dtype.__class__.__name__ == "_UnionGenericAlias" or dtype.__class__ == types.UnionType:
+            runtime_types = []
+            for arg in get_args(dtype):
+                runtime_type = Scans._get_runtime_arg_type(arg)
+                if isinstance(runtime_type, tuple):
+                    runtime_types.extend(runtime_type)
+                    continue
+                runtime_types.append(runtime_type)
+            return tuple(runtime_types)
+        if dtype is None:
+            return types.NoneType
+        return dtype
+
+    @staticmethod
+    def get_arg_type(in_type: str | dict | list):
         """translate type string into python type"""
         # pylint: disable=too-many-return-statements
         if in_type == "float":
@@ -209,14 +274,16 @@ class Scans:
             return int
         if in_type == "list":
             return list
-        if in_type == "boolean":
+        if in_type in ("boolean", "bool"):
             return bool
         if in_type == "str":
             return str
         if in_type == "dict":
             return dict
-        if in_type == "device":
+        if in_type in ("device", "DeviceBase"):
             return DeviceBase
+        if dtype := deserialize_dtype(in_type):
+            return Scans._get_runtime_arg_type(dtype)
         raise TypeError(f"Unknown type {in_type}")
 
     @staticmethod
