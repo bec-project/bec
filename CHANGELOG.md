@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.113.1 (2026-04-07)
+
+### Bug Fixes
+
+- Sync local account with atlas if needed
+  ([`73c66de`](https://github.com/bec-project/bec/commit/73c66dee85603107c7af74011d781ece24767938))
+
+
 ## v3.113.0 (2026-04-03)
 
 ### Features
