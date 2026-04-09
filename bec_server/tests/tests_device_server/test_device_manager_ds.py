@@ -5,6 +5,7 @@ from unittest import mock
 import numpy as np
 import pytest
 from ophyd_devices.devices.psi_motor import EpicsMotor
+from ophyd_devices.tests.utils import patched_device
 
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
@@ -451,9 +452,8 @@ def epics_motor_config():
 
 @pytest.fixture
 def epics_motor():
-
-    motor = EpicsMotor(prefix="TEST:MOTOR", name="test_motor")
-    return motor
+    with patched_device(EpicsMotor, prefix="TEST:MOTOR", name="test_motor") as motor:
+        yield motor
 
 
 @pytest.mark.parametrize(
