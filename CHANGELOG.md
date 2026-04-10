@@ -1,6 +1,45 @@
 # CHANGELOG
 
 
+## v3.114.0 (2026-04-10)
+
+### Continuous Integration
+
+- Add step to upload E2E log artifacts on failure
+  ([`223983c`](https://github.com/bec-project/bec/commit/223983c68188ce007600d1a442df2e2f33e67bb6))
+
+- Minor patch for default channels to avoid warnings in ci
+  ([`858b900`](https://github.com/bec-project/bec/commit/858b900976c29c6bd51a9f2afe6d50e7ec0593e7))
+
+- Upgrade actions/checkout from v4 to v6 across workflows and actions
+  ([`38a0db6`](https://github.com/bec-project/bec/commit/38a0db6bf5e0617fc7df90435d4229ff9f89f7de))
+
+- Upgrade actions/download-artifact from v4 to v5 in CI workflow
+  ([`d367353`](https://github.com/bec-project/bec/commit/d367353c865f526895dc0983a8fbf5ac539bf3cd))
+
+- Upgrade actions/github-script from v7 to v8 in check_pr workflow
+  ([`aac9ee9`](https://github.com/bec-project/bec/commit/aac9ee9aa0f9c9f6943a09eaca3331082179bc6f))
+
+- Upgrade actions/setup-python from v5 to v6 in workflows and actions
+  ([`ed77007`](https://github.com/bec-project/bec/commit/ed77007066da8816cff67318fe59b269bf552acb))
+
+- Upgrade actions/upload-artifact from v4 to v6 in workflows
+  ([`0c20f37`](https://github.com/bec-project/bec/commit/0c20f37feb6d79fbfbb258cce86fd6bbd6c60841))
+
+### Features
+
+- Add support for proper python types in scan signature serialization
+  ([`c543615`](https://github.com/bec-project/bec/commit/c543615a1638ef6e8aebe7e1f3eae5fb507fc035))
+
+- **gui models**: Add support for annotated gui configs with conversion to legacy system
+  ([`ce7b2b0`](https://github.com/bec-project/bec/commit/ce7b2b053d8a5d7c0bc3ffcd22614287b7ae9962))
+
+### Testing
+
+- Avoid restarting a worker thread
+  ([`f54351d`](https://github.com/bec-project/bec/commit/f54351d687f230f0dd15411b933aa27d1226fd25))
+
+
 ## v3.113.1 (2026-04-07)
 
 ### Bug Fixes
