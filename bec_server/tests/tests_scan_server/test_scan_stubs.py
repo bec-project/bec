@@ -131,6 +131,7 @@ def test_rpc_call_returns_status(stubs):
     fake_status = mock.MagicMock()
     fake_status._result_is_status = True
     fake_status.wait = mock.MagicMock()
+    fake_status._device_instr_id = "fake device instruction ID"
 
     with mock.patch.object(stubs, "_create_status", return_value=fake_status):
         result = stubs._rpc_call("samx", "velocity.set", 10)
@@ -146,6 +147,7 @@ def test_rpc_call_returns_dict(stubs):
     fake_status._result_is_status = False
     fake_status.result = expected
     fake_status.wait = mock.MagicMock()
+    fake_status._device_instr_id = "fake device instruction ID"
 
     with mock.patch.object(stubs, "_create_status", return_value=fake_status):
         result = stubs._rpc_call("samx", "velocity.set", 10)

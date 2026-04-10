@@ -419,7 +419,8 @@ def test_config_helper_get_config_conflicts(
         config.update(dev_cfg)
         config_in_redis.append(config)
     with mock.patch.object(config_helper._device_manager.connector, "get") as mock_get:
-        mock_get.return_value = messages.AvailableResourceMessage(resource=config_in_redis)
+        available_resource_message = messages.AvailableResourceMessage(resource=config_in_redis)
+        mock_get.return_value = available_resource_message
         conflicts = config_helper._get_config_conflicts(new_config)
         assert conflicts == expected_conflicts
 
