@@ -505,6 +505,18 @@ class DeviceServer(BECService):
             metadata["scan_number"] = msg.scan_number
         return metadata
 
+    def _ensure_request_registered(
+        self, instruction: messages.DeviceInstructionMessage | None
+    ) -> None:
+        """Register a placeholder request so early failures can still resolve."""
+        if instruction is None:
+            return
+        instr_id = instruction.metadata.get("device_instr_id")
+        if instr_id is None:
+            return
+        if self.requests_handler.get_request(instr_id) is None:
+            self.requests_handler.add_request(instruction, num_status_objects=0)
+
     def handle_device_instructions(self, msg: messages.DeviceInstructionMessage) -> None:
         """Parse a device instruction message and handle the requested action. Action
         types are set, read, rpc, kickoff or trigger.
@@ -554,6 +566,7 @@ class DeviceServer(BECService):
                 exception_type=limit_error.__class__.__name__,
                 device=self.get_device_from_exception(limit_error),
             )
+            self._ensure_request_registered(instructions)
             self.requests_handler.set_finished(
                 instructions.metadata["device_instr_id"], success=False, error_info=error_info
             )
@@ -568,6 +581,7 @@ class DeviceServer(BECService):
                 exception_type=exc.__class__.__name__,
                 device=self.get_device_from_exception(exc),
             )
+            self._ensure_request_registered(instructions)
             if action == "rpc":
                 self.rpc_handler._send_rpc_exception(exc, instructions)
             else:
