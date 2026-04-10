@@ -347,10 +347,20 @@ def test_handle_device_instruction_disabled_device(device_server_mock, instructi
     """
     device_server = device_server_mock
     with mock.patch.object(device_server, "assert_device_is_enabled", side_effect=RuntimeError):
-        with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
+        with mock.patch.object(device_server.connector, "send") as send_mock:
             device_server.handle_device_instructions(instructions)
-            set_finished_mock.assert_called_once_with(
-                instructions.metadata["device_instr_id"], success=False, error_info=ANY
+            assert send_mock.call_count == 2
+            pending_msg = send_mock.call_args_list[0].args[1]
+            error_msg = send_mock.call_args_list[1].args[1]
+
+            assert pending_msg.instruction_id == instructions.metadata["device_instr_id"]
+            assert pending_msg.status == "running"
+            assert error_msg.instruction_id == instructions.metadata["device_instr_id"]
+            assert error_msg.status == "error"
+            assert error_msg.error_info is not None
+            assert (
+                device_server.requests_handler.get_request(instructions.metadata["device_instr_id"])
+                is None
             )
 
 
