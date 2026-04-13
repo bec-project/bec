@@ -50,9 +50,7 @@ class ScanHistory:
             self._loading_thread.start()
         else:
             self._load_data()
-        self._connector.register(
-            MessageEndpoints.scan_history(), cb=self._on_scan_history_update, parent=self
-        )
+        self._connector.register(MessageEndpoints.scan_history(), cb=self._on_scan_history_update)
 
     def _load_data(self) -> None:
         data = self._connector.xread(
@@ -90,19 +88,18 @@ class ScanHistory:
             if self._scan_numbers:
                 self._scan_numbers.pop(0)
 
-    @staticmethod
-    def _on_scan_history_update(msg: dict, parent: ScanHistory) -> None:
+    def _on_scan_history_update(self, msg: dict) -> None:
         # pylint: disable=protected-access
-        with parent._scan_data_lock:
+        with self._scan_data_lock:
             msg: messages.ScanHistoryMessage = msg["data"]
             if not os.access(msg.file_path, os.R_OK):
                 # If the file is not readable, we skip adding it to the history
                 return
-            parent._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
-            parent._scan_data[msg.scan_id] = msg
-            parent._scan_ids.append(msg.scan_id)
-            parent._scan_numbers.append(msg.scan_number)
-            parent._remove_oldest_scan()
+            self._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
+            self._scan_data[msg.scan_id] = msg
+            self._scan_ids.append(msg.scan_id)
+            self._scan_numbers.append(msg.scan_number)
+            self._remove_oldest_scan()
 
     def get_by_scan_id(self, scan_id: str) -> ScanDataContainer | None:
         """Get the scan data by scan ID."""
