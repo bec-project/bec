@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v3.115.0 (2026-04-13)
+
+### Bug Fixes
+
+- _on_new_scope_change_msg not static
+  ([`6224dd6`](https://github.com/bec-project/bec/commit/6224dd6d3f304758d1524ea34f1778e269338819))
+
+- Add public method to check existing subs
+  ([`cd24309`](https://github.com/bec-project/bec/commit/cd243094634890424518a76ed46598b09e275028))
+
+### Features
+
+- Garbage collect subs
+  ([`87b2433`](https://github.com/bec-project/bec/commit/87b2433055ffb9acf8e6f69c92427ffadd381441))
+
+### Refactoring
+
+- Stream subs in redisconnector
+  ([`caa906d`](https://github.com/bec-project/bec/commit/caa906de2042d4c3f110c34b2be5d6a406a3e3a5))
+
+- clearer organisation: class to handle subscription tasks - more correct: no multiple
+  subscriptions, test logic
+
+### Testing
+
+- Add tests for subscription gc
+  ([`9f860d5`](https://github.com/bec-project/bec/commit/9f860d5ff61e4e063ae07b0b559ae5ac1a698f5a))
+
+
 ## v3.114.0 (2026-04-10)
 
 ### Continuous Integration
