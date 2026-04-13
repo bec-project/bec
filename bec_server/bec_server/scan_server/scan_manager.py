@@ -10,7 +10,6 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AvailableResourceMessage
 from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
-
 from bec_server.scan_server.scan_gui_models import GUIConfig
 
 from . import scans as scans_module
@@ -64,9 +63,7 @@ class ScanManager:
         members: list[tuple[str, type]] = inspect.getmembers(
             scans_module, predicate=inspect.isclass
         )
-        members.extend(
-            (name, cls) for name, cls in self._plugins.items() if inspect.isclass(cls)
-        )
+        members.extend((name, cls) for name, cls in self._plugins.items() if inspect.isclass(cls))
 
         for name, scan_cls in members:
             is_scan = issubclass(scan_cls, scans_module.RequestBase)
@@ -96,19 +93,17 @@ class ScanManager:
             elif hasattr(scan_cls, "gui_config"):  # type: ignore
                 gui_visibility = scan_cls.gui_config  # type: ignore
 
-            self.available_scans[scan_cls.scan_name] = (
-                messages.AvailableScan.model_validate(
-                    {
-                        "class_name": scan_cls.__name__,
-                        "base_class": base_cls,
-                        "arg_input": self.convert_arg_input(scan_cls.arg_input),
-                        "gui_config": gui_config,
-                        "required_kwargs": scan_cls.required_kwargs,
-                        "arg_bundle_size": scan_cls.arg_bundle_size,
-                        "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
-                        "signature": signature_to_dict(scan_cls.__init__),
-                    }
-                )
+            self.available_scans[scan_cls.scan_name] = messages.AvailableScan.model_validate(
+                {
+                    "class_name": scan_cls.__name__,
+                    "base_class": base_cls,
+                    "arg_input": self.convert_arg_input(scan_cls.arg_input),
+                    "gui_config": gui_config,
+                    "required_kwargs": scan_cls.required_kwargs,
+                    "arg_bundle_size": scan_cls.arg_bundle_size,
+                    "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
+                    "signature": signature_to_dict(scan_cls.__init__),
+                }
             )
 
     def validate_gui_config(self, scan_cls) -> dict:

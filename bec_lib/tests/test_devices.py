@@ -100,47 +100,26 @@ def test_read_use_read(dev: Any):
 def test_read_nested_device(dev: Any):
     with mock.patch.object(dev.dyn_signals.root.parent.connector, "get") as mock_get:
         data = {
-            "dyn_signals_messages_message1": {
-                "value": 0,
-                "timestamp": 1701105880.0716832,
-            },
-            "dyn_signals_messages_message2": {
-                "value": 0,
-                "timestamp": 1701105880.071722,
-            },
-            "dyn_signals_messages_message3": {
-                "value": 0,
-                "timestamp": 1701105880.071739,
-            },
-            "dyn_signals_messages_message4": {
-                "value": 0,
-                "timestamp": 1701105880.071753,
-            },
-            "dyn_signals_messages_message5": {
-                "value": 0,
-                "timestamp": 1701105880.071766,
-            },
+            "dyn_signals_messages_message1": {"value": 0, "timestamp": 1701105880.0716832},
+            "dyn_signals_messages_message2": {"value": 0, "timestamp": 1701105880.071722},
+            "dyn_signals_messages_message3": {"value": 0, "timestamp": 1701105880.071739},
+            "dyn_signals_messages_message4": {"value": 0, "timestamp": 1701105880.071753},
+            "dyn_signals_messages_message5": {"value": 0, "timestamp": 1701105880.071766},
         }
         mock_get.return_value = messages.DeviceMessage(
             signals=data, metadata={"scan_id": "scan_id", "scan_type": "scan_type"}
         )
         res = dev.dyn_signals.messages.read(cached=True)
-        mock_get.assert_called_once_with(
-            MessageEndpoints.device_readback("dyn_signals")
-        )
+        mock_get.assert_called_once_with(MessageEndpoints.device_readback("dyn_signals"))
         assert res == data
 
 
 @pytest.mark.parametrize(
-    "kind,cached",
-    [("normal", True), ("hinted", True), ("config", False), ("omitted", False)],
+    "kind,cached", [("normal", True), ("hinted", True), ("config", False), ("omitted", False)]
 )
 def test_read_kind_hinted(
     dev: Any,
-    kind: Literal["normal"]
-    | Literal["hinted"]
-    | Literal["config"]
-    | Literal["omitted"],
+    kind: Literal["normal"] | Literal["hinted"] | Literal["config"] | Literal["omitted"],
     cached: bool,
 ):
     with (
@@ -189,9 +168,7 @@ def test_read_configuration_not_cached(
         mock.patch.object(dev.samx.readback, "_run") as mock_run,
     ):
         dev.samx.readback.read_configuration(cached=False)
-        mock_run.assert_called_once_with(
-            cached=False, fcn=getattr(dev.samx.readback, method)
-        )
+        mock_run.assert_called_once_with(cached=False, fcn=getattr(dev.samx.readback, method))
 
 
 @pytest.mark.parametrize(
@@ -199,10 +176,7 @@ def test_read_configuration_not_cached(
     [(True, False, "read"), (False, True, "redis"), (False, False, "redis")],
 )
 def test_read_configuration_cached(
-    dev: Any,
-    is_signal: bool,
-    is_config_signal: bool,
-    method: Literal["read"] | Literal["redis"],
+    dev: Any, is_signal: bool, is_config_signal: bool, method: Literal["read"] | Literal["redis"]
 ):
     with (
         mock.patch.object(
@@ -223,9 +197,7 @@ def test_read_configuration_cached(
         )
         dev.samx.readback.read_configuration(cached=True)
         if method == "redis":
-            mock_get.assert_called_once_with(
-                MessageEndpoints.device_read_configuration("samx")
-            )
+            mock_get.assert_called_once_with(MessageEndpoints.device_read_configuration("samx"))
             mock_read.assert_not_called()
         else:
             mock_read.assert_called_once_with(cached=True)
@@ -256,15 +228,11 @@ def test_get_rpc_func_name_read(dev: Any):
 
 
 @pytest.mark.parametrize(
-    "kind,cached",
-    [("normal", True), ("hinted", True), ("config", False), ("omitted", False)],
+    "kind,cached", [("normal", True), ("hinted", True), ("config", False), ("omitted", False)]
 )
 def test_get_rpc_func_name_readback_get(
     dev: Any,
-    kind: Literal["normal"]
-    | Literal["hinted"]
-    | Literal["config"]
-    | Literal["omitted"],
+    kind: Literal["normal"] | Literal["hinted"] | Literal["config"] | Literal["omitted"],
     cached: bool,
 ):
     with (
@@ -297,26 +265,17 @@ def test_get_rpc_func_name_nested(dev: Any):
         "_run_rpc_call",
     ) as mock_rpc:
         dev.rt_controller.dummy_controller._func_with_args(1, 2)
-        mock_rpc.assert_called_once_with(
-            "rt_controller", "dummy_controller._func_with_args", 1, 2
-        )
+        mock_rpc.assert_called_once_with("rt_controller", "dummy_controller._func_with_args", 1, 2)
 
 
 def test_handle_rpc_response(dev: Any):
-    msg = messages.DeviceRPCMessage(
-        device="samx", return_val=1, out="done", success=True
-    )
+    msg = messages.DeviceRPCMessage(device="samx", return_val=1, out="done", success=True)
     assert dev.samx._handle_rpc_response(msg) == 1
 
 
-def test_handle_rpc_response_returns_status(
-    dev: Any, bec_client_mock: ClientMock | BECClient
-):
+def test_handle_rpc_response_returns_status(dev: Any, bec_client_mock: ClientMock | BECClient):
     msg = messages.DeviceRPCMessage(
-        device="samx",
-        return_val={"type": "status", "RID": "request_id"},
-        out="done",
-        success=True,
+        device="samx", return_val={"type": "status", "RID": "request_id"}, out="done", success=True
     )
     assert dev.samx._handle_rpc_response(msg) == Status(
         bec_client_mock.device_manager.connector, "request_id"
@@ -324,9 +283,7 @@ def test_handle_rpc_response_returns_status(
 
 
 def test_rpc_status_raises_error(dev: Any):
-    msg = messages.DeviceReqStatusMessage(
-        device="samx", success=False, request_id="request_id"
-    )
+    msg = messages.DeviceReqStatusMessage(device="samx", success=False, request_id="request_id")
     connector = mock.MagicMock()
     status = Status(connector, "request_id")
     status._on_status_update({"data": msg}, parent=status)
@@ -341,9 +298,7 @@ def test_handle_rpc_response_raises(dev: Any):
         device="samx",
         return_val={"type": "status", "RID": "request_id"},
         out=messages.ErrorInfo(
-            exception_type="RPCError",
-            error_message="An error occurred",
-            compact_error_message=None,
+            exception_type="RPCError", error_message="An error occurred", compact_error_message=None
         ),
         success=False,
     )
@@ -352,9 +307,7 @@ def test_handle_rpc_response_raises(dev: Any):
 
 
 def test_handle_rpc_response_returns_dict(dev: Any):
-    msg = messages.DeviceRPCMessage(
-        device="samx", return_val={"a": "b"}, out="done", success=True
-    )
+    msg = messages.DeviceRPCMessage(device="samx", return_val={"a": "b"}, out="done", success=True)
     assert dev.samx._handle_rpc_response(msg) == {"a": "b"}
 
 
@@ -397,9 +350,7 @@ def dev_w_config():
     def _func(config: dict = {}):
         dm_base = DeviceManagerBase(mock.MagicMock())
         dm_base.config_helper = mock.MagicMock(spec=ConfigHelper)
-        return DeviceBaseWithConfig(
-            name="test", config=BASIC_CONFIG | config, parent=dm_base
-        )
+        return DeviceBaseWithConfig(name="test", config=BASIC_CONFIG | config, parent=dm_base)
 
     return _func
 
@@ -417,17 +368,12 @@ def device_obj(device_config: dict[str, Any]):
 def test_create_device_saves_config(
     device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]
 ):
-    assert (
-        messages.sanitize_one_way_encodable(
-            {k: v for k, v in device_obj._config.items() if k in device_config}
-        )
-        == device_config
-    )
+    assert messages.sanitize_one_way_encodable(
+        {k: v for k, v in device_obj._config.items() if k in device_config}
+    ) == messages.sanitize_one_way_encodable(device_config)
 
 
-def test_device_enabled(
-    device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]
-):
+def test_device_enabled(device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]):
     assert device_obj.enabled == device_config["enabled"]
     device_config["enabled"] = False
     set_device_config(device_obj, device_config)
@@ -435,9 +381,7 @@ def test_device_enabled(
 
 
 def test_device_enable(device_obj: DeviceBaseWithConfig):
-    with mock.patch.object(
-        device_obj.parent.config_helper, "send_config_request"
-    ) as config_req:
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         device_obj.enabled = True
         config_req.assert_called_once_with(
             action="update", config={device_obj.name: {"enabled": True}}
@@ -445,9 +389,7 @@ def test_device_enable(device_obj: DeviceBaseWithConfig):
 
 
 def test_device_enable_set(device_obj: DeviceBaseWithConfig):
-    with mock.patch.object(
-        device_obj.parent.config_helper, "send_config_request"
-    ) as config_req:
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         device_obj.read_only = False
         config_req.assert_called_once_with(
             action="update", config={device_obj.name: {"readOnly": False}}
@@ -463,9 +405,7 @@ def test_device_set_user_parameter(
     val: dict[str, int] | set[str],
     raised_error: None | TypeCheckError,
 ):
-    with mock.patch.object(
-        device_obj.parent.config_helper, "send_config_request"
-    ) as config_req:
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         if raised_error is None:
             device_obj.set_user_parameter(val)
             config_req.assert_called_once_with(
@@ -493,9 +433,7 @@ def test_device_update_user_parameter(
     raised_error: None | TypeCheckError,
 ):
     device_obj._config["userParameter"] = user_param
-    with mock.patch.object(
-        device_obj.parent.config_helper, "send_config_request"
-    ) as config_req:
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
         if raised_error is None:
             device_obj.update_user_parameter(val)
             config_req.assert_called_once_with(
@@ -558,9 +496,7 @@ def test_device_wm(device_w_tags):
         ({"read_only": False}, "read_only", False),
     ],
 )
-def test_properties(
-    dev_w_config: Callable[..., DeviceBaseWithConfig], config, attr, value
-):
+def test_properties(dev_w_config: Callable[..., DeviceBaseWithConfig], config, attr, value):
     assert getattr(dev_w_config(config), attr) == value
 
 
@@ -568,9 +504,7 @@ def test_properties(
     ["config", "method", "value"],
     [({"deviceTags": ["tag1", "tag2"]}, "get_device_tags", {"tag1", "tag2"})],
 )
-def test_methods(
-    dev_w_config: Callable[..., DeviceBaseWithConfig], config, method, value
-):
+def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, method, value):
     assert getattr(dev_w_config(config), method)() == value
 
 
@@ -626,9 +560,7 @@ def dev_container(dm_with_override):
 
 
 def test_device_container_wm(dev_container, capsys):
-    with mock.patch.object(
-        dev_container.test, "read", return_value={"test": {"value": 1}}
-    ) as read:
+    with mock.patch.object(dev_container.test, "read", return_value={"test": {"value": 1}}) as read:
         dev_container.wm("test")
         dev_container.wm("tes*")
         captured = capsys.readouterr()
@@ -662,9 +594,7 @@ def test_device_container_wm_with_setpoint_names(dev_container, reading):
 def test_device_has_describe_method(
     device_cls: Device | Signal | Positioner, dev_container, dm_with_override
 ):
-    dev_container["test"] = device_cls(
-        name="test", config=BASIC_CONFIG, parent=dm_with_override
-    )
+    dev_container["test"] = device_cls(name="test", config=BASIC_CONFIG, parent=dm_with_override)
     assert hasattr(dev_container.test, "describe")
     with mock.patch.object(dev_container.test, "_run_rpc_call") as mock_rpc:
         dev_container.test.describe()
@@ -838,12 +768,9 @@ def test_computed_signal_set_signals(dm_with_override):
     comp_signal = ComputedSignal(name="comp_signal", parent=dm_with_override)
     with mock.patch.object(comp_signal, "_update_config") as _update_config:
         comp_signal.set_input_signals(
-            Signal(name="a", parent=dm_with_override),
-            Signal(name="b", parent=dm_with_override),
+            Signal(name="a", parent=dm_with_override), Signal(name="b", parent=dm_with_override)
         )
-        _update_config.assert_called_once_with(
-            {"deviceConfig": {"input_signals": ["a", "b"]}}
-        )
+        _update_config.assert_called_once_with({"deviceConfig": {"input_signals": ["a", "b"]}})
 
 
 def test_computed_signal_set_signals_raises_error(dm_with_override):
@@ -891,9 +818,7 @@ def test_device_summary_signal_grouping(dev: Any):
             dev.samx.summary()
 
             num_rows = mock_add_row.call_count
-            assert (
-                num_rows == len(dev.samx._info["signals"]) + 3
-            )  # 3 extra rows for headers
+            assert num_rows == len(dev.samx._info["signals"]) + 3  # 3 extra rows for headers
 
             assert mock_add_row.call_args_list[0][0] == (
                 "readback",
@@ -914,11 +839,7 @@ def test_device_summary_signal_grouping(dev: Any):
                 "",
                 "setpoint doc string",
             )
-            devs = [
-                row_call[0][0]
-                for row_call in mock_add_row.call_args_list
-                if row_call[0]
-            ]
+            devs = [row_call[0][0] for row_call in mock_add_row.call_args_list if row_call[0]]
             assert devs == [
                 "readback",
                 "setpoint",
@@ -1025,9 +946,7 @@ def test_device_repr_pretty_rich_format(dm_with_devices):
             self.text_output = value
 
     with mock.patch.object(
-        dev,
-        "read",
-        return_value={"eiger": {"value": 1, "timestamp": 1701105880.1711318}},
+        dev, "read", return_value={"eiger": {"value": 1, "timestamp": 1701105880.1711318}}
     ):
         p = MockPrinter()
         dev._repr_pretty_(p, cycle=False)
@@ -1050,10 +969,7 @@ def test_device_compile_rich_str_with_values(dm_with_devices):
         "read",
         return_value={
             "eiger": {"value": 5.0, "timestamp": 1701105880.1711318},
-            "eiger_array": {
-                "value": np.array([1, 2, 3, 4, 5]),
-                "timestamp": 1701105880.1711318,
-            },
+            "eiger_array": {"value": np.array([1, 2, 3, 4, 5]), "timestamp": 1701105880.1711318},
         },
     ):
         result = dev._compile_rich_str(dev)
@@ -1076,9 +992,7 @@ def test_device_compile_rich_str_with_config_signals(dev):
         }
 
         with mock.patch.object(
-            dev.samx,
-            "read",
-            return_value={"samx": {"value": 5.0, "timestamp": 1701105880.1711318}},
+            dev.samx, "read", return_value={"samx": {"value": 5.0, "timestamp": 1701105880.1711318}}
         ):
             result = dev.samx._compile_rich_str(dev.samx)
 
@@ -1094,9 +1008,7 @@ def test_rpc_call_without_client_raises(dm_with_devices):
     dev = dm_with_devices.devices.eiger
     dev.parent.parent = None  # Remove reference to DeviceManagerBase
 
-    with pytest.raises(
-        RPCError, match="RPC calls can only be made from a BECClient instance"
-    ):
+    with pytest.raises(RPCError, match="RPC calls can only be made from a BECClient instance"):
         dev.read(cached=False)
 
 
@@ -1113,11 +1025,8 @@ def test_rpc_call_without_alarm_handler_raises(dev):
         return original_isinstance(obj, classinfo)
 
     with mock.patch.object(dev.samx.root.parent.parent, "alarm_handler", None):
-        with mock.patch(
-            "bec_lib.device.isinstance", side_effect=isinstance_side_effect
-        ):
+        with mock.patch("bec_lib.device.isinstance", side_effect=isinstance_side_effect):
             with pytest.raises(
-                RPCError,
-                match="RPC calls require an alarm handler to be set in the BECClient",
+                RPCError, match="RPC calls require an alarm handler to be set in the BECClient"
             ):
                 dev.samx.read(cached=False)

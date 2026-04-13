@@ -43,7 +43,7 @@ _one_way_registry = OneWaySerializationRegistry()
 
 def sanitize_one_way_encodable(data: Any) -> Any:
     """Sanitize any data which can be serialized in a json-compatible format and is not supposed to be decoded,
-    for example, a parameter dict containing devices"""
+    # for example, a parameter dict containing devices"""
     if isinstance(data, (list, tuple, set)):
         return [sanitize_one_way_encodable(x) for x in data]
     if isinstance(data, Mapping):
@@ -63,7 +63,7 @@ def _try_dump(v):
     try:
         msgpack.dumps(v)
     except TypeError as e:
-        raise ValueError("Non-JSONable/msgpackable data in " + str(v)) from e
+        raise ValueError(f"Non-JSONable/msgpackable data in {str(v)}\n {e}") from e
     return v
 
 
@@ -1279,6 +1279,12 @@ class DynamicMetricMessage(BECMessage):
         )
 
 
+DictPossibleNumpy = TypeAliasType(
+    "DictPossibleNumpy",
+    dict[str, list[int] | list[float] | int | bool | float | str | np.ndarray | None],
+)
+
+
 class ProcessedDataMessage(BECMessage):
     """Message for processed data
 
@@ -1288,7 +1294,7 @@ class ProcessedDataMessage(BECMessage):
     """
 
     msg_type: ClassVar[str] = "processed_data_message"
-    data: JsonableDict | list[JsonableDict]
+    data: DictPossibleNumpy | list[DictPossibleNumpy] | JsonableDict | list[JsonableDict]
 
 
 class DAPConfigMessage(BECMessage):

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from bec_lib import messages as messages_module
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BECMessage
+from bec_lib.messages import BECMessage, sanitize_one_way_encodable
 from bec_lib.serialization_registry import SerializationRegistry
 
 logger = bec_logger.logger
@@ -39,6 +39,7 @@ class BECMessagePack(SerializationRegistry):
         """Pack object `obj` and return packed bytes."""
         if isinstance(obj, (BECMessage, BaseModel)):
             obj = obj.model_dump(mode="python", fallback=self.encode)
+        obj = sanitize_one_way_encodable(obj)
         return msgpack_module.packb(obj, default=self.encode)
 
     def loads(self, raw_bytes):
@@ -56,6 +57,9 @@ class BECJson(SerializationRegistry):
 
     def dumps(self, obj, indent: int | None = None) -> str:
         """Pack object `obj` and return packed bytes."""
+        if isinstance(obj, (BECMessage, BaseModel)):
+            obj = obj.model_dump(mode="python", fallback=self.encode)
+        obj = sanitize_one_way_encodable(obj)
         return json.dumps(obj, default=self.encode, indent=indent)
 
     def loads(self, raw_bytes):

@@ -202,9 +202,7 @@ class Scans:
             setattr(
                 getattr(self, scan_name),
                 "__signature__",
-                dict_to_signature(
-                    self._strip_scan_signature_annotations(scan_info.get("signature"))
-                ),
+                dict_to_signature(self._strip_scan_signature_annotations(scan_info.signature)),
             )
 
     @staticmethod
@@ -341,7 +339,7 @@ class Scans:
                 if not isinstance(arg, Scans.get_arg_type(arg_input[ii % len(arg_input)])):
                     raise TypeError(
                         f"{scan_info.doc}\n Argument {ii} must be of type"
-                        f" {arg_input[ii%len(arg_input)]}, not {type(arg).__name__}."
+                        f" {arg_input[ii % len(arg_input)]}, not {type(arg).__name__}."
                     )
 
         metadata = {}

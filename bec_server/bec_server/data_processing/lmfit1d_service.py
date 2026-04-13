@@ -371,6 +371,7 @@ class LmfitService1D(DAPServiceBase):
         if not out:
             return
         stream_output, metadata = out
+        # TODO: refactor processed data message to allow numpy types in specific structure
         self.client.connector.xadd(
             MessageEndpoints.processed_data(self.model.__class__.__name__),
             msg_dict={"data": messages.ProcessedDataMessage(data=stream_output, metadata=metadata)},

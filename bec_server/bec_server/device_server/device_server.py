@@ -247,7 +247,6 @@ class RequestHandler:
             device_name = obj.obj.dotted_name or obj.obj.name
         else:
             device_name = None
-
         msg = (
             f"{error.__class__.__name__}: {error}\n"
             f"The status {obj.__class__.__name__} from device {device_name} failed during the execution "
@@ -840,7 +839,7 @@ class DeviceServer(BECService):
             )
         pipe.execute()
         logger.trace(
-            f"Elapsed time for reading and updating status info: {(time.time()-start)*1000} ms"
+            f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
         return signal_container
 
@@ -865,7 +864,7 @@ class DeviceServer(BECService):
             )
         pipe.execute()
         logger.trace(
-            f"Elapsed time for reading and updating status info: {(time.time()-start)*1000} ms"
+            f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
         return signal_container
 
@@ -938,7 +937,7 @@ class DeviceServer(BECService):
                             break
                         except ophyd_errors.WaitTimeoutError:
                             logger.warning(
-                                f"Unstaging device {dev} still running, {timeout_on_unstage*(ii+1)} seconds passed."
+                                f"Unstaging device {dev} still running, {timeout_on_unstage * (ii + 1)} seconds passed."
                             )
                     if status is not None:
                         raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")

@@ -29,7 +29,7 @@ from bec_lib.bec_yaml_loader import yaml_load
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import DeviceConfigWriter
 from bec_lib.logger import bec_logger
-from bec_lib.messages import ConfigAction
+from bec_lib.messages import ConfigAction, sanitize_one_way_encodable
 from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.json_extended import ExtendedEncoder
 
@@ -617,7 +617,11 @@ class ConfigHelper:
         request_id = str(uuid.uuid4())
         self._connector.send(
             MessageEndpoints.device_config_request(),
-            DeviceConfigMessage(action=action, config=config, metadata={"RID": request_id}),
+            DeviceConfigMessage(
+                action=action,
+                config=sanitize_one_way_encodable(config),
+                metadata={"RID": request_id},
+            ),
         )
 
         if wait_for_response:
