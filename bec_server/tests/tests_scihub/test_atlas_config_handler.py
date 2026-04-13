@@ -513,7 +513,7 @@ def test_config_handler_remove_devices_from_redis(config_handler):
             set_config.assert_called_once_with([{"name": "samy", "deviceConfig": {}}])
 
 
-def test_config_handler_add_to_config(config_handler):
+def test_config_handler_add_to_config(config_handler: ConfigHandler):
     config = {
         "new_samx": {
             "deviceConfig": {},

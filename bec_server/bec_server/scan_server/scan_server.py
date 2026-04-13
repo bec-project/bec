@@ -66,7 +66,7 @@ class ScanServer(BECService):
         self.beamline_states = BeamlineStateManager(self.connector, self.device_manager)
 
     def _start_alarm_handler(self):
-        self.connector.register(MessageEndpoints.alarm(), cb=self._alarm_callback, parent=self)
+        self.connector.register(MessageEndpoints.alarm(), cb=self._alarm_callback)
 
     def _reset_scan_number(self):
         self.scan_number_container = ScanNumberContainer(self.connector)
@@ -83,14 +83,13 @@ class ScanServer(BECService):
         )
         self.proc_manager = ProcedureManager(self.bootstrap_server, procedure_worker)
 
-    @staticmethod
-    def _alarm_callback(msg, parent: ScanServer, **_kwargs):
+    def _alarm_callback(self, msg):
         msg = msg.value
         queue = msg.metadata.get("queue", "primary")
         if Alarms(msg.content["severity"]) == Alarms.MAJOR:
             logger.info(f"Received alarm: {msg}")
             scan_id = msg.metadata.get("scan_id")
-            parent.queue_manager.set_abort(
+            self.queue_manager.set_abort(
                 scan_id=scan_id, queue=queue, exit_info=("aborted", "alarm")
             )
 

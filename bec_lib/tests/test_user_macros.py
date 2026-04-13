@@ -127,7 +127,7 @@ class MyClass:
     '''A safe class'''
     def __init__(self):
         self.value = 42
-    
+
     def method(self):
         return self.value
 
@@ -505,21 +505,6 @@ def test_macro_update_callback_with_different_message_types(user_macros):
         mock_msg.value = {"not": "a_message"}
         macros._update_handler._macro_update_callback(mock_msg, macros._update_handler)
         mock_logger.assert_called_with("Received invalid message type: <class 'dict'>")
-
-
-def test_macro_update_callback_static_method():
-    """Test that _macro_update_callback is properly decorated as staticmethod."""
-    # Verify it's a static method by calling it directly on the class
-    mock_msg = mock.MagicMock()
-    mock_msg.value = messages.MacroUpdateMessage(update_type="reload_all")
-
-    mock_parent = mock.MagicMock()
-
-    # This should work without creating an instance
-    MacroUpdateHandler._macro_update_callback(mock_msg, mock_parent)
-
-    # Verify the parent's on_macro_update method was called
-    mock_parent.on_macro_update.assert_called_once_with(mock_msg.value)
 
 
 def test_reload_user_macro_basic(user_macros):

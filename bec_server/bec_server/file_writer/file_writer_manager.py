@@ -101,21 +101,15 @@ class FileWriterManager(BECService):
         self.available_beamline_states: list[messages.BeamlineStateConfig] = []
         self.beamline_state_subscriptions: set[str] = set()
         self.beamline_states: dict[str, messages.BeamlineStateMessage] = {}
-        self.connector.register(
-            MessageEndpoints.scan_segment(), cb=self._scan_segment_callback, parent=self
-        )
-        self.connector.register(
-            MessageEndpoints.scan_status(), cb=self._scan_status_callback, parent=self
-        )
+        self.connector.register(MessageEndpoints.scan_segment(), cb=self._scan_segment_callback)
+        self.connector.register(MessageEndpoints.scan_status(), cb=self._scan_status_callback)
         self.connector.register(
             patterns=MessageEndpoints.device_read_configuration("*"),  # type: ignore
             cb=self._device_configuration_callback,
-            parent=self,
         )
         self.connector.register(
             MessageEndpoints.available_beamline_states(),
             cb=self._update_available_beamline_states,
-            parent=self,
             from_start=True,
         )
         self.async_writer = None
@@ -129,29 +123,26 @@ class FileWriterManager(BECService):
         self.device_manager = DeviceManagerBase(self)
         self.device_manager.initialize([self.bootstrap_server])
 
-    def _scan_segment_callback(self, msg: MessageObject, *, parent: FileWriterManager):
+    def _scan_segment_callback(self, msg: MessageObject):
         msgs = msg.value
         for scan_msg in msgs:
-            parent.insert_to_scan_storage(scan_msg)
+            self.insert_to_scan_storage(scan_msg)
 
-    @staticmethod
-    def _scan_status_callback(msg, *, parent: FileWriterManager):
+    def _scan_status_callback(self, msg):
         msg = msg.value
-        parent.update_scan_storage_with_status(msg)
+        self.update_scan_storage_with_status(msg)
 
-    @staticmethod
-    def _device_configuration_callback(msg, *, parent: FileWriterManager):
+    def _device_configuration_callback(self, msg):
         topic, msg = msg.topic, msg.value
         device = topic.split("/")[-1]
-        parent.update_device_configuration(device, msg)
+        self.update_device_configuration(device, msg)
 
-    @staticmethod
     def _update_available_beamline_states(
-        msg: dict[str, messages.AvailableBeamlineStatesMessage], *, parent: FileWriterManager
+        self, msg: dict[str, messages.AvailableBeamlineStatesMessage]
     ):
         info = msg["data"]
-        parent.available_beamline_states = info.states
-        parent.update_beamline_state_subscriptions()
+        self.available_beamline_states = info.states
+        self.update_beamline_state_subscriptions()
 
     def update_beamline_state_subscriptions(self):
         """
@@ -166,7 +157,6 @@ class FileWriterManager(BECService):
                 self.connector.register(
                     MessageEndpoints.beamline_state(state.name),
                     cb=self._beamline_state_callback,
-                    parent=self,
                     from_start=True,
                 )
                 self.beamline_state_subscriptions.add(state.name)
@@ -178,12 +168,9 @@ class FileWriterManager(BECService):
             self.beamline_state_subscriptions.remove(topic)
             self.beamline_states.pop(topic, None)
 
-    @staticmethod
-    def _beamline_state_callback(
-        msg: dict[str, messages.BeamlineStateMessage], *, parent: FileWriterManager
-    ):
+    def _beamline_state_callback(self, msg: dict[str, messages.BeamlineStateMessage]):
         state_msg = msg["data"]
-        parent.update_beamline_state(state_msg)
+        self.update_beamline_state(state_msg)
 
     def update_beamline_state(self, state_msg: messages.BeamlineStateMessage):
         """

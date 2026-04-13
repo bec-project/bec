@@ -29,16 +29,13 @@ class InstructionHandler:
         self._callback_storage = collections.defaultdict(lambda: [])
         self._lock = threading.Lock()
         self._connector.register(
-            MessageEndpoints.device_instructions_response(),
-            cb=self._device_instructions_callback,
-            parent=self,
+            MessageEndpoints.device_instructions_response(), cb=self._device_instructions_callback
         )
 
-    @staticmethod
-    def _device_instructions_callback(msg, parent):
+    def _device_instructions_callback(self, msg):
         # pylint: disable=protected-access
-        with parent._lock:
-            parent.add_instruction(msg.value)
+        with self._lock:
+            self.add_instruction(msg.value)
 
     def add_instruction(self, instruction: messages.DeviceInstructionResponse) -> None:
         """

@@ -112,17 +112,13 @@ class BeamlineStateManager:
         self._connector = client.connector
         self._states: dict[str, BeamlineStateConfig] = {}
         self._connector.register(
-            MessageEndpoints.available_beamline_states(),
-            cb=self._on_state_update,
-            parent=self,
-            from_start=True,
+            MessageEndpoints.available_beamline_states(), cb=self._on_state_update, from_start=True
         )
 
-    @staticmethod
-    def _on_state_update(msg_dict: dict, *, parent: BeamlineStateManager, **_kwargs) -> None:
+    def _on_state_update(self, msg_dict: dict, **_kwargs) -> None:
         # type: ignore ; we know it's an AvailableBeamlineStatesMessage
         msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]
-        parent._update_states(msg.states)  # pylint: disable=protected-access
+        self._update_states(msg.states)  # pylint: disable=protected-access
 
     def _update_state(self, state: BeamlineStateConfig) -> None:
         if state.name in self._states:

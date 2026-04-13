@@ -26,10 +26,11 @@ def with_state_error_handling(func: Callable) -> Callable:
     3. If the decorated function fails, emits an "unknown" state and raises an alarm
 
     The decorated function should expect a 'parent' parameter of type DeviceBeamlineState.
+    This could be the 'self' parameter of an instance method on a DeviceBeamlineState subclass.
     """
 
     @functools.wraps(func)
-    def wrapper(msg_obj: MessageObject, parent: "DeviceBeamlineState") -> None:
+    def wrapper(parent: "DeviceBeamlineState", msg_obj: MessageObject) -> None:
         assert parent.connector is not None
 
         try:
@@ -39,7 +40,7 @@ def with_state_error_handling(func: Callable) -> Callable:
             return
 
         try:
-            result = func(msg_obj, parent)
+            result = func(parent, msg_obj)
             if result is not None:
                 parent._emit_state(result)
         except Exception as exc:
@@ -293,13 +294,11 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
                 MessageObject(
                     topic=MessageEndpoints.device_readback(self.device_obj.root.name).endpoint,
                     value=msg,
-                ),
-                parent=self,
+                )
             )
         self.connector.register(
             MessageEndpoints.device_readback(self.device_obj.root.name),
             cb=self._update_device_state,
-            parent=self,
         )
 
     def stop(self) -> None:
@@ -314,16 +313,13 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
 
         super().stop()
 
-    @staticmethod
     @with_state_error_handling
-    def _update_device_state(
-        msg_obj: MessageObject, parent: DeviceBeamlineState
-    ) -> messages.BeamlineStateMessage | None:
+    def _update_device_state(self, msg_obj: MessageObject) -> messages.BeamlineStateMessage | None:
         """
         Update the device state based on the received message.
         """
         msg: messages.DeviceMessage = msg_obj.value  # type: ignore ; we know it's a DeviceMessage
-        return parent.evaluate(msg)
+        return self.evaluate(msg)
 
 
 class ShutterState(DeviceBeamlineState[DeviceStateConfig]):

@@ -167,41 +167,31 @@ class QueueManager:
             self.send_queue_status()
 
     def _start_scan_queue_register(self) -> None:
+        self.connector.register(MessageEndpoints.scan_queue_insert(), cb=self._scan_queue_callback)
         self.connector.register(
-            MessageEndpoints.scan_queue_insert(), cb=self._scan_queue_callback, parent=self
+            MessageEndpoints.scan_queue_modification(), cb=self._scan_queue_modification_callback
         )
         self.connector.register(
-            MessageEndpoints.scan_queue_modification(),
-            cb=self._scan_queue_modification_callback,
-            parent=self,
-        )
-        self.connector.register(
-            MessageEndpoints.scan_queue_order_change(),
-            cb=self._scan_queue_order_callback,
-            parent=self,
+            MessageEndpoints.scan_queue_order_change(), cb=self._scan_queue_order_callback
         )
 
-    @staticmethod
-    def _scan_queue_callback(msg, parent, **_kwargs) -> None:
+    def _scan_queue_callback(self, msg) -> None:
         scan_msg = msg.value
         logger.info(f"Receiving scan: {scan_msg.content}")
-        # instructions = parent.scan_assembler.assemble_device_instructions(scan_msg)
+        # instructions = self.scan_assembler.assemble_device_instructions(scan_msg)
         queue = scan_msg.content.get("queue", "primary")
-        parent.add_to_queue(queue, scan_msg)
-        parent.send_queue_status()
+        self.add_to_queue(queue, scan_msg)
+        self.send_queue_status()
 
-    @staticmethod
-    def _scan_queue_modification_callback(msg, parent, **_kwargs):
+    def _scan_queue_modification_callback(self, msg):
         scan_mod_msg = msg.value
         logger.info(f"Receiving scan modification: {scan_mod_msg.content}")
         if scan_mod_msg:
-            parent.scan_interception(scan_mod_msg)
-            parent.send_queue_status()
+            self.scan_interception(scan_mod_msg)
+            self.send_queue_status()
 
-    @staticmethod
-    def _scan_queue_order_callback(msg, parent, **_kwargs):
-        # pylint: disable=protected-access
-        parent._handle_scan_order_change(msg.value)
+    def _scan_queue_order_callback(self, msg):
+        self._handle_scan_order_change(msg.value)
 
     def _handle_scan_order_change(self, msg: messages.ScanQueueOrderMessage) -> None:
         """Handle the scan queue order change request.

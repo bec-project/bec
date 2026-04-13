@@ -307,13 +307,13 @@ class ScanManager:
         """set the next dataset number in redis"""
         self._scan_number_container.dataset_number = max(val, 1) - 1
 
-    def _scan_queue_status_callback(self, msg, **_kwargs) -> None:
+    def _scan_queue_status_callback(self, msg) -> None:
         queue_status: messages.ScanQueueStatusMessage = msg.value
         if not queue_status:
             return
         self.update_with_queue_status(queue_status)
 
-    def _scan_queue_request_response_callback(self, msg, **_kwargs) -> None:
+    def _scan_queue_request_response_callback(self, msg) -> None:
         response = msg.value
         self.request_storage.update_with_response(response)
 
@@ -321,11 +321,11 @@ class ScanManager:
         message = msg["data"]
         self.queue_storage.update_with_client_message(message)
 
-    def _scan_status_callback(self, msg, **_kwargs) -> None:
+    def _scan_status_callback(self, msg) -> None:
         scan = msg.value
         self.scan_storage.update_with_scan_status(scan)
 
-    def _scan_segment_callback(self, msg, **_kwargs) -> None:
+    def _scan_segment_callback(self, msg) -> None:
         scan_msgs = msg.value
         if not isinstance(scan_msgs, list):
             scan_msgs = [scan_msgs]

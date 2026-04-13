@@ -44,20 +44,15 @@ class ScanGuard:
         self.connector = self.parent.connector
 
         self.connector.register(
-            patterns=MessageEndpoints.scan_queue_request("*"),
-            cb=self._scan_queue_request_callback,
-            parent=self,
+            patterns=MessageEndpoints.scan_queue_request("*"), cb=self._scan_queue_request_callback
         )
 
         self.connector.register(
             MessageEndpoints.scan_queue_modification_request(),
             cb=self._scan_queue_modification_request_callback,
-            parent=self,
         )
         self.connector.register(
-            MessageEndpoints.scan_queue_order_change_request(),
-            cb=self._scan_queue_order_callback,
-            parent=self,
+            MessageEndpoints.scan_queue_order_change_request(), cb=self._scan_queue_order_callback
         )
 
     def _is_valid_scan_request(
@@ -167,8 +162,7 @@ class ScanGuard:
             if not self.device_manager.devices[motor].enabled:
                 raise ScanRejection(f"Device {motor} is not enabled.")
 
-    @staticmethod
-    def _scan_queue_request_callback(msg, parent, **_kwargs):
+    def _scan_queue_request_callback(self, msg):
         content = msg.value.content
         username_regex = f"^{MessageEndpoints.scan_queue_request('([^/]+)').endpoint}$"
         result = re.match(username_regex, msg.topic)
@@ -178,10 +172,9 @@ class ScanGuard:
 
         logger.info(f"Receiving scan request: {content} from user {username}")
         # pylint: disable=protected-access
-        parent._handle_scan_request(msg.value, username=username)
+        self._handle_scan_request(msg.value, username=username)
 
-    @staticmethod
-    def _scan_queue_modification_request_callback(msg, parent, **_kwargs):
+    def _scan_queue_modification_request_callback(self, msg):
         mod_msg = msg.value
         if mod_msg is None:
             logger.warning("Failed to parse scan queue modification message.")
@@ -189,7 +182,7 @@ class ScanGuard:
         content = mod_msg.content
         logger.info(f"Receiving scan modification request: {content}")
         # pylint: disable=protected-access
-        parent._handle_scan_modification_request(msg.value)
+        self._handle_scan_modification_request(msg.value)
 
     def _send_scan_request_response(self, scan_status: ScanStatus, metadata: dict):
         """
@@ -279,10 +272,8 @@ class ScanGuard:
         sqi = MessageEndpoints.scan_queue_insert()
         self.device_manager.connector.send(sqi, msg)
 
-    @staticmethod
-    def _scan_queue_order_callback(msg, parent, **_kwargs):
-        # pylint: disable=protected-access
-        parent._handle_scan_order_change(msg.value)
+    def _scan_queue_order_callback(self, msg):
+        self._handle_scan_order_change(msg.value)
 
     def _handle_scan_order_change(self, msg: messages.ScanQueueOrderMessage):
         """

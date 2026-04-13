@@ -20,16 +20,14 @@ class BeamlineStateManager:
         self.connector.register(
             MessageEndpoints.available_beamline_states(),
             cb=self._handle_state_update,
-            parent=self,
             from_start=True,
         )
 
-    @staticmethod
-    def _handle_state_update(msg_dict: dict, *, parent: BeamlineStateManager, **_kwargs) -> None:
+    def _handle_state_update(self, msg_dict: dict, **_kwargs) -> None:
 
         msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]  # type: ignore ; we know it's a AvailableBeamlineStatesMessage
         try:
-            parent.update_states(msg)
+            self.update_states(msg)
         except Exception as exc:
             content = traceback.format_exc()
             info = ErrorInfo(
@@ -37,7 +35,7 @@ class BeamlineStateManager:
                 error_message=content,
                 compact_error_message="Error updating beamline states.",
             )
-            parent.connector.raise_alarm(severity=Alarms.WARNING, info=info)
+            self.connector.raise_alarm(severity=Alarms.WARNING, info=info)
 
     def update_states(self, msg: messages.AvailableBeamlineStatesMessage) -> None:
         """

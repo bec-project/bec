@@ -170,7 +170,7 @@ def test_device_config_callback_normal_request(dm_with_devices):
         mock_future = mock.MagicMock()
         submit.return_value = mock_future
 
-        ConfigUpdateHandler._device_config_callback(msg_mock, parent=handler)
+        handler._device_config_callback(msg_mock)
 
         # Verify executor.submit was called with parse_config_request
         submit.assert_called_once()
@@ -198,7 +198,7 @@ def test_device_config_callback_cancel_request(dm_with_devices):
     )
 
     with mock.patch.object(handler, "_cancel_config_request") as cancel_request:
-        ConfigUpdateHandler._device_config_callback(msg_mock, parent=handler)
+        handler._device_config_callback(msg_mock)
 
         # Verify _cancel_config_request was called
         cancel_request.assert_called_once_with(msg_mock.value)

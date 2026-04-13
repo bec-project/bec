@@ -34,33 +34,30 @@ class ConfigUpdateHandler:
         self._active_request: RequestInfo | None = None
         self._lock = threading.Lock()
         self.connector.register(
-            MessageEndpoints.device_server_config_request(),
-            cb=self._device_config_callback,
-            parent=self,
+            MessageEndpoints.device_server_config_request(), cb=self._device_config_callback
         )
 
-    @staticmethod
-    def _device_config_callback(msg, *, parent: ConfigUpdateHandler, **_kwargs) -> None:
+    def _device_config_callback(self, msg) -> None:
         logger.info(f"Received request: {msg}")
         config_msg: messages.DeviceConfigMessage = msg.value
 
         # Handle cancel requests immediately
         if config_msg.action == "cancel":
-            parent._cancel_config_request(config_msg)
+            self._cancel_config_request(config_msg)
             return
 
         # Create a cancel event for this request
         cancel_event = threading.Event()
 
         # Submit to executor and store both future and cancel_event
-        future = parent.executor.submit(parent.parse_config_request, msg.value, cancel_event)
+        future = self.executor.submit(self.parse_config_request, msg.value, cancel_event)
 
-        with parent._lock:
-            parent._active_request = RequestInfo(
+        with self._lock:
+            self._active_request = RequestInfo(
                 future=future, cancel_event=cancel_event, request_id=msg.value.metadata.get("RID")
             )
             # Add callback to clean up when done
-            future.add_done_callback(lambda f: parent._remove_active_request())
+            future.add_done_callback(lambda f: self._remove_active_request())
 
     def _remove_active_request(self) -> None:
         """Clear the active request."""

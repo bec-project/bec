@@ -238,15 +238,12 @@ class AtlasConnector:
 
     def _start_config_request_handler(self) -> None:
         self._config_request_handler = self.connector.register(
-            MessageEndpoints.device_config_request(),
-            cb=self._device_config_request_callback,
-            parent=self,
+            MessageEndpoints.device_config_request(), cb=self._device_config_request_callback
         )
 
-    @staticmethod
-    def _device_config_request_callback(msg, *, parent, **_kwargs) -> None:
+    def _device_config_request_callback(self, msg, **_kwargs) -> None:
         """Callback for device config requests - delegates to config_handler."""
-        parent.config_handler.handle_config_request_callback(msg.value)
+        self.config_handler.handle_config_request_callback(msg.value)
 
     def shutdown(self):
         """

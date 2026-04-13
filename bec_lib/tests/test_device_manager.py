@@ -402,7 +402,7 @@ def test_device_config_update_callback(dm_with_devices):
     msg = MessageObject(value=dev_config_msg, topic="")
 
     with mock.patch.object(device_manager, "parse_config_message") as parse_config_message:
-        device_manager._device_config_update_callback(msg, parent=device_manager)
+        device_manager._device_config_update_callback(msg)
         parse_config_message.assert_called_once_with(dev_config_msg)
 
 

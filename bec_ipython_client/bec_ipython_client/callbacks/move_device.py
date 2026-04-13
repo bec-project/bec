@@ -48,13 +48,12 @@ class ReadbackDataHandler:
         """register callbacks for device readback messages."""
         for dev in self.devices:
             self.connector.register(
-                MessageEndpoints.device_readback(dev), cb=self.on_readback, parent=self, device=dev
+                MessageEndpoints.device_readback(dev), cb=self.on_readback, device=dev
             )
         self.connector.register(
             MessageEndpoints.device_req_status(self.request_id),
             cb=self.on_req_status,
             from_start=True,
-            parent=self,
         )
 
     def _unregister_callbacks(self):
@@ -65,10 +64,7 @@ class ReadbackDataHandler:
             MessageEndpoints.device_req_status(self.request_id), cb=self.on_req_status
         )
 
-    @staticmethod
-    def on_req_status(
-        msg_obj: dict[str, messages.DeviceReqStatusMessage], parent: ReadbackDataHandler
-    ):
+    def on_req_status(self, msg_obj: dict[str, messages.DeviceReqStatusMessage]):
         """Callback for device request status messages to track which devices are done.
 
         Args:
@@ -77,19 +73,18 @@ class ReadbackDataHandler:
         """
         # pylint: disable=protected-access
         msg = msg_obj["data"]
-        if msg.request_id != parent.request_id:
+        if msg.request_id != self.request_id:
             return
         device = msg.device
-        parent._devices_done_state[device] = (True, msg.success)
+        self._devices_done_state[device] = (True, msg.success)
 
         if (
-            all(done for done, _ in parent._devices_done_state.values())
-            and not parent.requests_done.is_set()
+            all(done for done, _ in self._devices_done_state.values())
+            and not self.requests_done.is_set()
         ):
-            parent._on_request_done()
+            self._on_request_done()
 
-    @staticmethod
-    def on_readback(msg_obj: MessageObject, parent: ReadbackDataHandler, device: str):
+    def on_readback(self, msg_obj: MessageObject, device: str):
         """Callback for updating device readback data.
 
         Args:
@@ -99,8 +94,8 @@ class ReadbackDataHandler:
         """
         # pylint: disable=protected-access
         msg: messages.DeviceMessage = cast(messages.DeviceMessage, msg_obj.value)
-        parent._devices_received[device] = True
-        parent.data[device] = msg
+        self._devices_received[device] = True
+        self.data[device] = msg
 
     def _on_request_done(self):
         """Callback for when all requests are done."""
