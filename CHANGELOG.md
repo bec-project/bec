@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.115.1 (2026-04-13)
+
+### Bug Fixes
+
+- Don't use staticmethod for subscriptions
+  ([`e5d61fa`](https://github.com/bec-project/bec/commit/e5d61fafaae873eddb55a474ee388ebc6bcfb6a3))
+
+
 ## v3.115.0 (2026-04-13)
 
 ### Bug Fixes
