@@ -1,6 +1,5 @@
 import os
 import sys
-import threading
 
 import numpy as np  # not needed but always nice to have
 
@@ -11,12 +10,46 @@ from bec_lib.acl_login import BECAuthenticationError
 from bec_lib.logger import bec_logger as _bec_logger
 from bec_lib.redis_connector import RedisConnector as _RedisConnector
 
-try:
-    from bec_widgets.cli.client_utils import BECGuiClient
-except ImportError:
-    BECGuiClient = None
-
 logger = _bec_logger.logger
+
+
+class _LazyBECGuiClient:
+    """Defer BEC Widgets import while preserving the interactive ``gui`` object."""
+
+    def __init__(self, gui_id: str | None = None):
+        self._gui_id = gui_id
+        self._client = None
+
+    def _materialize(self):
+        if self._client is None:
+            try:
+                from bec_widgets.cli.client_utils import BECGuiClient
+            except ImportError:
+                logger.warning("BEC Widgets is not available; skipping GUI startup.")
+                bec.gui = None
+                globals().pop("gui", None)
+                raise
+
+            self._client = BECGuiClient()
+            if self._gui_id:
+                self._client.connect_to_gui_server(self._gui_id)
+            bec.gui = self._client
+            globals()["gui"] = self._client
+        return self._client
+
+    def __getattr__(self, name):
+        return getattr(self._materialize(), name)
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            return super().__setattr__(name, value)
+        return setattr(self._materialize(), name, value)
+
+    def __repr__(self) -> str:
+        if self._client is None:
+            return "LazyBECGuiClient(uninitialized)"
+        return repr(self._client)
+
 
 bec = _BECIPythonClient(
     _main_dict["config"], _RedisConnector, wait_for_server=_main_dict["wait_for_server"]
@@ -32,12 +65,14 @@ except (BECAuthenticationError, KeyboardInterrupt) as exc:
 except Exception:
     sys.excepthook(*sys.exc_info())
 else:
-    if bec.started and BECGuiClient is not None:
-        gui = bec.gui = BECGuiClient()
-        if _main_dict["args"].gui_id:
-            gui.connect_to_gui_server(_main_dict["args"].gui_id)
+    if bec.started:
+        gui = bec.gui = _LazyBECGuiClient(gui_id=_main_dict["args"].gui_id)
         if not _main_dict["args"].nogui:
-            gui.show()
+            try:
+                gui.show()
+            except ImportError:
+                logger.warning("BEC Widgets is not available")
+                pass
 
     _available_plugins = plugin_helper.get_ipython_client_startup_plugins(state="post")
     if _available_plugins:
