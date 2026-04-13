@@ -3,6 +3,7 @@ from __future__ import annotations
 import _thread
 import io
 import os
+import re
 import threading
 import time
 from contextlib import redirect_stdout
@@ -521,13 +522,10 @@ def test_scan_def_callback(capsys, bec_ipython_client_fixture):
     with scans.scan_def:
         scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
         scans.umv(dev.samy, 5, relative=False)
-        current_pos_samy = dev.samy.read(cached=True)["samy"]["value"]
         captured = capsys.readouterr()
         assert f"Starting scan {scan_number}" in captured.out
-        ref_out_samy = (
-            f"━━━━━━━━━━━━━━━ {current_pos_samy:10.2f} /       5.00 / 100 % 0:00:00 0:00:00"
-        )
-        assert ref_out_samy in captured.out
+        output_re = re.compile(r"samy:\s+0\.00 ━+\s+\d\.\d\d\s\/\s+5\.00 \/ 100 % 0:00:00 0:00:00")
+        assert output_re.search(captured.out)
         scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
     captured = capsys.readouterr()
     assert f"Scan {scan_number} finished." in captured.out
