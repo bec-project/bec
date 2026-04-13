@@ -100,7 +100,7 @@ class MacroUpdateHandler:
         self.client = macros._client
         self._macro_path = self.client._service_config.model.user_macros.base_path
         self.client.connector.register(
-            MessageEndpoints.macro_update(), cb=self._macro_update_callback, parent=self
+            MessageEndpoints.macro_update(), cb=self._macro_update_callback
         )
 
     @property
@@ -271,8 +271,7 @@ class MacroUpdateHandler:
         self.forget_user_macro(name)
         self.load_user_macro(file, ignore_existing=True)
 
-    @staticmethod
-    def _macro_update_callback(msg, parent):
+    def _macro_update_callback(self, msg, parent):
         """Callback to handle macro update messages.
 
         Args:
@@ -284,7 +283,7 @@ class MacroUpdateHandler:
             logger.error(f"Received invalid message type: {type(msg)}")
             return
 
-        parent.on_macro_update(msg)
+        self.on_macro_update(msg)
 
     def get_macros_from_file(self, file: str) -> dict[str, dict[str, Any]]:
         """

@@ -286,7 +286,7 @@ def test_rpc_status_raises_error(dev: Any):
     msg = messages.DeviceReqStatusMessage(device="samx", success=False, request_id="request_id")
     connector = mock.MagicMock()
     status = Status(connector, "request_id")
-    status._on_status_update({"data": msg}, parent=status)
+    status._on_status_update({"data": msg})
     with pytest.raises(RPCError):
         status.wait(raise_on_failure=True)
 
@@ -455,8 +455,7 @@ def test_status_wait():
             "data": messages.DeviceReqStatusMessage(
                 device="test_device", success=True, request_id="test_rid"
             )
-        },
-        parent=status,
+        }
     )
     status.wait()
 

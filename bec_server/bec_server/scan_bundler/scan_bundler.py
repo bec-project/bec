@@ -81,7 +81,7 @@ class ScanBundler(BECService):
         task = self.executor.submit(self._add_device_to_storage, msgs, dev)
         self.executor_tasks.append(task)
 
-    def _scan_status_callback(self, msg, **_kwargs):
+    def _scan_status_callback(self, msg):
         msg: messages.ScanStatusMessage = msg.value
         self.handle_scan_status_message(msg)
 

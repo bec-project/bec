@@ -98,7 +98,7 @@ class TestDeviceBeamlineState:
             state.start()
 
         register.assert_called_once_with(
-            MessageEndpoints.device_readback("samx"), cb=state._update_device_state, parent=state
+            MessageEndpoints.device_readback("samx"), cb=state._update_device_state
         )
 
     def test_stop_unregisters_device_callback(self, connected_connector, dm_with_devices):
@@ -134,7 +134,7 @@ class TestDeviceBeamlineState:
         )
         msg_obj = MessageObject(value=msg, topic="test")
 
-        state._update_device_state(msg_obj, parent=state)
+        state._update_device_state(MessageObject(value=msg, topic="test"))
 
         assert state._last_state is not None
         assert state._last_state.status == "valid"
@@ -206,10 +206,7 @@ class TestBeamlineStateManager:
             BeamlineStateManager(client)
 
         register.assert_called_once_with(
-            MessageEndpoints.available_beamline_states(),
-            cb=mock.ANY,
-            parent=mock.ANY,
-            from_start=True,
+            MessageEndpoints.available_beamline_states(), cb=mock.ANY, from_start=True
         )
 
     def test_on_state_update_creates_client_attribute(self, state_manager):

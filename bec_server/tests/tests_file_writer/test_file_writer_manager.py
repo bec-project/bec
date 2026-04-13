@@ -72,7 +72,7 @@ def test_scan_segment_callback(file_writer_manager_mock):
     with mock.patch.object(
         file_writer_manager_mock, "check_storage_status"
     ) as mock_check_storage_status:
-        file_manager._scan_segment_callback(msg_raw, parent=file_manager)
+        file_manager._scan_segment_callback(msg_raw)
         assert mock_check_storage_status.call_args == mock.call(scan_id="scan_id")
         assert file_manager.scan_storage["scan_id"].scan_segments[1] == {"data": "data"}
 
@@ -92,7 +92,7 @@ def test_scan_status_callback(file_writer_manager_mock):
     with mock.patch.object(
         file_writer_manager_mock, "check_storage_status"
     ) as mock_check_storage_status:
-        file_manager._scan_status_callback(msg_raw, parent=file_manager)
+        file_manager._scan_status_callback(msg_raw)
         assert mock_check_storage_status.call_args == mock.call(scan_id="scan_id")
         assert file_manager.scan_storage["scan_id"].status_msg == msg
         assert file_manager.scan_storage["scan_id"].scan_finished is True
@@ -308,9 +308,7 @@ def test_file_writer_manager_update_configuration(file_writer_manager_mock):
         topic=MessageEndpoints.device_read_configuration("samx").endpoint, value=msg
     )
     with mock.patch.object(file_writer_manager_mock, "update_device_configuration") as mock_update:
-        file_writer_manager_mock._device_configuration_callback(
-            msg_obj, parent=file_writer_manager_mock
-        )
+        file_writer_manager_mock._device_configuration_callback(msg_obj)
         mock_update.assert_called_once_with("samx", msg)
 
 
@@ -326,9 +324,7 @@ def test_file_writer_manager_update_available_beamline_states(file_writer_manage
         ]
     )
 
-    file_writer_manager_mock._update_available_beamline_states(
-        {"data": msg}, parent=file_writer_manager_mock
-    )
+    file_writer_manager_mock._update_available_beamline_states({"data": msg})
     assert "State1" in file_writer_manager_mock.beamline_state_subscriptions
 
     msg = messages.AvailableBeamlineStatesMessage(
@@ -341,9 +337,7 @@ def test_file_writer_manager_update_available_beamline_states(file_writer_manage
             )
         ]
     )
-    file_writer_manager_mock._update_available_beamline_states(
-        {"data": msg}, parent=file_writer_manager_mock
-    )
+    file_writer_manager_mock._update_available_beamline_states({"data": msg})
     assert "State1" not in file_writer_manager_mock.beamline_state_subscriptions
     assert "State2" in file_writer_manager_mock.beamline_state_subscriptions
 
@@ -389,7 +383,7 @@ def test_file_writer_manager_removes_beamline_state_subscription(file_writer_man
             )
         ]
     )
-    file_manager._update_available_beamline_states({"data": msg}, parent=file_manager)
+    file_manager._update_available_beamline_states({"data": msg})
     assert "State1" in file_manager.beamline_state_subscriptions
 
     state_msg = messages.BeamlineStateMessage(name="State1", status="valid", label="Shutter")
@@ -399,6 +393,6 @@ def test_file_writer_manager_removes_beamline_state_subscription(file_writer_man
 
     # Remove the state by sending an empty list of states
     msg = messages.AvailableBeamlineStatesMessage(states=[])
-    file_manager._update_available_beamline_states({"data": msg}, parent=file_manager)
+    file_manager._update_available_beamline_states({"data": msg})
     assert "State1" not in file_manager.beamline_state_subscriptions
     assert "State1" not in file_manager.beamline_states

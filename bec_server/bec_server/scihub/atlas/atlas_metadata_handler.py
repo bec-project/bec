@@ -42,9 +42,9 @@ class AtlasMetadataHandler:
     def _start_account_subscription(self):
         init_data = self.atlas_connector.connector.get_last(MessageEndpoints.account())
         if init_data is not None:
-            self._handle_account_info(init_data, parent=self, emit_update=False)
+            self._handle_account_info(init_data, emit_update=False)
         self.atlas_connector.connector.register(
-            MessageEndpoints.account(), cb=self._handle_account_info, parent=self
+            MessageEndpoints.account(), cb=self._handle_account_info
         )
 
     def _start_deployment_info_subscription(self):
@@ -55,39 +55,37 @@ class AtlasMetadataHandler:
         self.atlas_connector.redis_atlas.register(
             MessageEndpoints.atlas_deployment_info(self.atlas_connector.deployment_name),
             cb=self._update_deployment_info,
-            parent=self,
             from_start=True,
         )
 
     def _start_scan_subscription(self):
         self._scan_status_register = self.atlas_connector.connector.register(
-            MessageEndpoints.scan_status(), cb=self._handle_scan_status, parent=self
+            MessageEndpoints.scan_status(), cb=self._handle_scan_status
         )
 
     def _start_scan_history_subscription(self):
         self._scan_history_register = self.atlas_connector.connector.register(
-            MessageEndpoints.scan_history(), cb=self._handle_scan_history, parent=self
+            MessageEndpoints.scan_history(), cb=self._handle_scan_history
         )
 
     def _start_messaging_subscription(self):
         self.atlas_connector.connector.register(
-            MessageEndpoints.message_service_queue(), cb=self._handle_messaging, parent=self
+            MessageEndpoints.message_service_queue(), cb=self._handle_messaging
         )
 
     def _start_feedback_subscription(self):
         self.atlas_connector.connector.register(
-            MessageEndpoints.user_feedback(), cb=self._handle_feedback, parent=self
+            MessageEndpoints.user_feedback(), cb=self._handle_feedback
         )
 
-    @staticmethod
     def _update_deployment_info(
-        msg: dict[str, messages.DeploymentInfoMessage], *, parent: AtlasMetadataHandler, **_kwargs
+        self, msg: dict[str, messages.DeploymentInfoMessage], **_kwargs
     ) -> None:
         if not isinstance(msg, dict) or "data" not in msg:
             logger.error(f"Invalid deployment info message received: {msg}")
             return
 
-        parent.update_deployment_info(msg["data"])
+        self.update_deployment_info(msg["data"])
 
     def update_deployment_info(self, info: messages.DeploymentInfoMessage) -> None:
         """
@@ -159,10 +157,7 @@ class AtlasMetadataHandler:
             return
         self.send_atlas_update({"account": self._account})
 
-    @staticmethod
-    def _handle_account_info(
-        msg, *, parent: AtlasMetadataHandler, emit_update=True, **_kwargs
-    ) -> None:
+    def _handle_account_info(self, msg, emit_update=True, **_kwargs) -> None:
         """
         Called if the account info is updated from the local redis instance.
         It forwards the account info to Atlas if it differs from the current one and emit_update is True.
@@ -176,38 +171,35 @@ class AtlasMetadataHandler:
             logger.error(f"Invalid account message received: {msg}")
             return
         msg = cast(messages.VariableMessage, msg["data"])
-        if msg.value == parent._account:
+        if msg.value == self._account:
             # Account is the same as the current one, no need to update
             return
-        parent._account = msg.value
+        self._account = msg.value
         if emit_update:
-            parent.send_atlas_update({"account": msg})
-        logger.info(f"Updated account to: {parent._account}")
+            self.send_atlas_update({"account": msg})
+        logger.info(f"Updated account to: {self._account}")
 
-    @staticmethod
-    def _handle_scan_status(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
+    def _handle_scan_status(self, msg, **_kwargs) -> None:
         msg = msg.value
         try:
-            parent.send_atlas_update({"scan_status": msg})
+            self.send_atlas_update({"scan_status": msg})
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update scan status: {content}")
 
-    @staticmethod
-    def _handle_scan_history(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
+    def _handle_scan_history(self, msg, **_kwargs) -> None:
         msg = msg["data"]
         try:
-            parent.send_atlas_update({"scan_history": msg})
+            self.send_atlas_update({"scan_history": msg})
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update scan history: {content}")
 
-    @staticmethod
-    def _handle_messaging(msg, *, parent: AtlasMetadataHandler, **_kwargs) -> None:
+    def _handle_messaging(self, msg, **_kwargs) -> None:
         try:
-            parent.atlas_connector.ingest_message(msg)
+            self.atlas_connector.ingest_message(msg)
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
@@ -219,23 +211,20 @@ class AtlasMetadataHandler:
         """
         self.atlas_connector.ingest_data(msg)
 
-    @staticmethod
-    def _handle_feedback(
-        msg_obj: MessageObject, *, parent: AtlasMetadataHandler, **_kwargs
-    ) -> None:
+    def _handle_feedback(self, msg_obj: MessageObject, **_kwargs) -> None:
         msg: messages.FeedbackMessage = msg_obj.value
         content = msg.model_dump()
-        if parent._deployment_info:
+        if self._deployment_info:
             if (
-                parent._deployment_info.active_session
-                and parent._deployment_info.active_session.experiment
+                self._deployment_info.active_session
+                and self._deployment_info.active_session.experiment
             ):
-                content["experiment_id"] = parent._deployment_info.active_session.experiment.pgroup
-                content["realm_id"] = parent._deployment_info.active_session.experiment.realm_id
-            content["deployment_id"] = parent._deployment_info.deployment_id
+                content["experiment_id"] = self._deployment_info.active_session.experiment.pgroup
+                content["realm_id"] = self._deployment_info.active_session.experiment.realm_id
+            content["deployment_id"] = self._deployment_info.deployment_id
         try:
             enriched_msg: messages.FeedbackMessage = messages.FeedbackMessage(**content)
-            parent.atlas_connector.ingest_data({"user_feedback": enriched_msg})
+            self.atlas_connector.ingest_data({"user_feedback": enriched_msg})
         # pylint: disable=broad-except
         except Exception:
             traceback_info = traceback.format_exc()

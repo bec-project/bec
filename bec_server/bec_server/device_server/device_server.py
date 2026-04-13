@@ -342,7 +342,6 @@ class DeviceServer(BECService):
             MessageEndpoints.device_instructions(),
             event=register_stop,
             cb=self.instructions_callback,
-            parent=self,
         )
 
         self.status = BECStatus.RUNNING
@@ -598,10 +597,9 @@ class DeviceServer(BECService):
             tb = tb.tb_next
         return None
 
-    @staticmethod
-    def instructions_callback(msg, *, parent, **_kwargs) -> None:
+    def instructions_callback(self, msg, **_kwargs) -> None:
         """callback for handling device instructions"""
-        parent.executor.submit(parent.handle_device_instructions, msg.value)
+        self.executor.submit(self.handle_device_instructions, msg.value)
 
     def _add_status_object_info(
         self,

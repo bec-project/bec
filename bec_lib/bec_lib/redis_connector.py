@@ -1074,7 +1074,8 @@ class RedisConnector:
         try:
             g = cb(msg, **kwargs)
         # pylint: disable=broad-except
-        except Exception:
+        except Exception as e:
+            logger.error(e)
             sys.excepthook(*sys.exc_info())  # type: ignore # inside except
         else:
             if inspect.isgenerator(g):

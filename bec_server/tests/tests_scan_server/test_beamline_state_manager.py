@@ -49,7 +49,6 @@ def test_state_manager_fetches_states(dm_with_devices):
     connector.register.assert_called_once_with(
         MessageEndpoints.available_beamline_states(),
         cb=state_manager._handle_state_update,
-        parent=state_manager,
         from_start=True,
     )
 

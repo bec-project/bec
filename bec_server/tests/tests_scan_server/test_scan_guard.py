@@ -226,7 +226,7 @@ def test_scan_queue_request_callback(scan_guard_mock):
     )
     msg_obj = MessageObject(MessageEndpoints.scan_queue_request("default").endpoint, msg)
     with mock.patch.object(sg, "_handle_scan_request") as handle:
-        sg._scan_queue_request_callback(msg_obj, sg)
+        sg._scan_queue_request_callback(msg_obj)
         handle.assert_called_once_with(msg, username="default")
 
 
@@ -237,7 +237,7 @@ def test_scan_queue_modification_request_callback(scan_guard_mock):
     )
     msg_obj = MessageObject(MessageEndpoints.scan_queue_modification(), msg)
     with mock.patch.object(sg, "_handle_scan_modification_request") as handle:
-        sg._scan_queue_modification_request_callback(msg_obj, sg)
+        sg._scan_queue_modification_request_callback(msg_obj)
         handle.assert_called_once_with(msg)
 
 
@@ -458,7 +458,7 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
 
     sg.parent.queue_manager.queues = {"primary": MockQueue()}
     msg_obj = MessageObject(MessageEndpoints.scan_queue_order_change_request(), msg)
-    sg._scan_queue_order_callback(msg_obj, sg)
+    sg._scan_queue_order_callback(msg_obj)
     success_call = mock.call(MessageEndpoints.scan_queue_order_change(), msg)
     if valid:
         assert success_call in sg.device_manager.connector.send.mock_calls

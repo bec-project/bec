@@ -101,15 +101,11 @@ class AlarmHandler:
     def start(self):
         """start the alarm handler and its subscriptions"""
         self.connector.register(
-            topics=MessageEndpoints.alarm(),
-            name="AlarmHandler",
-            cb=self._alarm_register_callback,
-            parent=self,
+            topics=MessageEndpoints.alarm(), name="AlarmHandler", cb=self._alarm_register_callback
         )
 
-    @staticmethod
-    def _alarm_register_callback(msg, *, parent, **_kwargs):
-        parent.add_alarm(msg.value)
+    def _alarm_register_callback(self, msg, **_kwargs):
+        self.add_alarm(msg.value)
 
     @threadlocked
     def add_alarm(self, msg: messages.AlarmMessage):

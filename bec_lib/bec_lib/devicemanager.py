@@ -633,16 +633,11 @@ class DeviceManagerBase:
 
         """
         self.connector.register(
-            MessageEndpoints.device_config_update(),
-            cb=self._device_config_update_callback,
-            parent=self,
+            MessageEndpoints.device_config_update(), cb=self._device_config_update_callback
         )
-        self.connector.register(
-            MessageEndpoints.scan_status(), cb=self._update_scan_info, parent=self
-        )
+        self.connector.register(MessageEndpoints.scan_status(), cb=self._update_scan_info)
 
-    @staticmethod
-    def _log_callback(msg, *, parent, **kwargs) -> None:
+    def _log_callback(self, msg, **kwargs) -> None:
         """
         Consumer callback for handling log messages.
         Args:
@@ -655,8 +650,7 @@ class DeviceManagerBase:
         """
         logger.info(f"Received log message: {str(msg)}")
 
-    @staticmethod
-    def _device_config_update_callback(msg, *, parent, **kwargs) -> None:
+    def _device_config_update_callback(self, msg) -> None:
         """
         Consumer callback for handling new device configuration
         Args:
@@ -667,18 +661,17 @@ class DeviceManagerBase:
 
         """
         logger.info(f"Received new config: {str(msg)}")
-        allow_override = parent._allow_override
+        allow_override = self._allow_override
         try:
-            parent._allow_override = True
-            parent.parse_config_message(msg.value)
+            self._allow_override = True
+            self.parse_config_message(msg.value)
         finally:
-            parent._allow_override = allow_override
+            self._allow_override = allow_override
 
-    @staticmethod
-    def _update_scan_info(msg, *, parent, **kwargs) -> None:
+    def _update_scan_info(self, msg, **kwargs) -> None:
         msg = msg.value
         logger.info(f"Received new ScanStatusMessage with ID {msg.scan_id}")
-        parent.scan_info.msg = msg
+        self.scan_info.msg = msg
 
     def _get_config(self, cancel_event: threading.Event | None = None) -> None:
         self._session["devices"] = self._get_redis_device_config()

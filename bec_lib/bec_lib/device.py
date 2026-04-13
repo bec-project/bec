@@ -138,7 +138,6 @@ class Status:
         self._connector.register(
             MessageEndpoints.device_req_status(self._request_id),
             cb=self._on_status_update,
-            parent=self,
             from_start=True,
         )
 
@@ -147,11 +146,10 @@ class Status:
             return self._request_id == __value._request_id
         return False
 
-    @staticmethod
-    def _on_status_update(msg: dict[str, messages.DeviceReqStatusMessage], parent: Status):
+    def _on_status_update(self, msg: dict[str, messages.DeviceReqStatusMessage]):
         # pylint: disable=protected-access
-        parent._request_status = msg["data"]
-        parent._set_done()
+        self._request_status = msg["data"]
+        self._set_done()
 
     def _set_done(self):
         self._status_done.set()

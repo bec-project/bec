@@ -21,15 +21,12 @@ class ServiceHandler:
         self.command = f"{sys.executable} -m bec_server.bec_server_utils.launch"
 
     def start(self):
-        self.connector.register(
-            MessageEndpoints.service_request(), cb=self.handle_service_request, parent=self
-        )
+        self.connector.register(MessageEndpoints.service_request(), cb=self.handle_service_request)
 
-    @staticmethod
-    def handle_service_request(msg: MessageObject, parent: ServiceHandler) -> None:
+    def handle_service_request(self, msg: MessageObject) -> None:
         message: messages.ServiceRequestMessage = msg.value
         if message.action == "restart":
-            parent.on_restart()
+            self.on_restart()
 
     def on_restart(self):
         logger.info("Restarting services through service handler")

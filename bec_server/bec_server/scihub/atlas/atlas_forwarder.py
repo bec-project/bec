@@ -35,14 +35,12 @@ class AtlasForwarder:
                 self.atlas_connector.deployment_name, "*"
             ),
             cb=self._update_deployment_subscriptions,
-            parent=self,
         )
         self.atlas_connector.redis_atlas.register(
             patterns=MessageEndpoints.atlas_deployment_request(
                 self.atlas_connector.deployment_name
             ),
             cb=self._on_redis_request,
-            parent=self,
         )
 
     def _start_deployment_cleanup_loop(self):
@@ -66,11 +64,10 @@ class AtlasForwarder:
                     self.update_deployment_state(msg)
             self._shutdown_event.wait(60)
 
-    @staticmethod
-    def _on_redis_request(msg_obj, parent):
+    def _on_redis_request(self, msg_obj):
         msg: messages.RawMessage = msg_obj.value
-        redis_atlas: RedisConnector = parent.atlas_connector.redis_atlas
-        redis_bec: RedisConnector = parent.atlas_connector.connector
+        redis_atlas: RedisConnector = self.atlas_connector.redis_atlas
+        redis_bec: RedisConnector = self.atlas_connector.connector
         if msg.data.get("action") == "get":
             key = msg.data.get("key")
 
@@ -80,10 +77,9 @@ class AtlasForwarder:
                 out = json.dumps({"out": None})
             redis_atlas.send(topic, out)
 
-    @staticmethod
-    def _update_deployment_subscriptions(msg_obj, parent):
+    def _update_deployment_subscriptions(self, msg_obj):
         msg = msg_obj.value
-        parent.update_deployment_state(msg)
+        self.update_deployment_state(msg)
 
     def update_deployment_state(self, msg: messages.RawMessage):
         requested_subscriptions = {
@@ -96,7 +92,7 @@ class AtlasForwarder:
             self.active_subscriptions.add(subscription)
             endpoint = self._get_endpoint_from_subscription(subscription)
             self.atlas_connector.connector.register(
-                endpoint, cb=self.forward_message, parent=self, endpoint=endpoint
+                endpoint, cb=self.forward_message, endpoint=endpoint
             )
 
         # Remove subscriptions that are no longer needed
@@ -117,17 +113,14 @@ class AtlasForwarder:
             endpoint = func()
         return endpoint
 
-    @staticmethod
-    def forward_message(msg, parent, endpoint):
+    def forward_message(self, msg, endpoint):
         endpoint = endpoint.endpoint
         if isinstance(msg, MessageObject):
             data = msg.value
         else:
             data = msg
-        parent.atlas_connector.redis_atlas.xadd(
-            MessageEndpoints.atlas_deployment_data(
-                parent.atlas_connector.deployment_name, endpoint
-            ),
+        self.atlas_connector.redis_atlas.xadd(
+            MessageEndpoints.atlas_deployment_data(self.atlas_connector.deployment_name, endpoint),
             data if isinstance(data, dict) else {"pubsub_data": data},
             max_size=10,
             expire=60,
