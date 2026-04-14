@@ -99,7 +99,7 @@ def test_get_start_positions_supports_motor_names_and_instances(v4_scan_assemble
     assert start_positions == [1.25, -3.5]
 
 
-def test_optimize_trajectory_uses_corridor_defaults_without_preferred_direction(v4_scan_assembler):
+def test_optimize_trajectory_uses_corridor_defaults(v4_scan_assembler):
     scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=False)
     positions = np.array([[0.0, 1.0], [1.0, 0.0]])
     optimized = np.array([[1.0, 0.0], [0.0, 1.0]])
@@ -110,12 +110,17 @@ def test_optimize_trajectory_uses_corridor_defaults_without_preferred_direction(
     )
 
     scan.components._path_optimizer.optimize_corridor.assert_called_once_with(
-        positions, num_iterations=7, corridor_size=4, sort_axis=1
+        positions,
+        num_iterations=7,
+        corridor_size=4,
+        fast_axis=1,
+        first_corridor_direction=1,
+        snaked=True,
     )
     np.testing.assert_allclose(result, optimized)
 
 
-def test_optimize_trajectory_passes_primary_axis_preference_for_corridor(v4_scan_assembler):
+def test_optimize_trajectory_passes_first_direction_for_corridor(v4_scan_assembler):
     scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=False)
     positions = np.array([[0.0, 1.0], [1.0, 0.0]])
     scan.components._path_optimizer.optimize_corridor = mock.MagicMock(return_value=positions)
@@ -123,14 +128,47 @@ def test_optimize_trajectory_passes_primary_axis_preference_for_corridor(v4_scan
     scan.components.optimize_trajectory(
         positions,
         optimization_type="corridor",
-        primary_axis=1,
-        preferred_directions=[-1, 1],
+        fast_axis=0,
+        first_direction=-1,
+        snaked=True,
         corridor_size=2,
         num_iterations=3,
     )
 
     scan.components._path_optimizer.optimize_corridor.assert_called_once_with(
-        positions, num_iterations=3, sort_axis=1, preferred_direction=1, corridor_size=2
+        positions,
+        num_iterations=3,
+        fast_axis=0,
+        first_corridor_direction=-1,
+        snaked=True,
+        corridor_size=2,
+    )
+
+
+def test_optimize_trajectory_passes_first_direction_when_first_axis_is_corridor_axis(
+    v4_scan_assembler,
+):
+    scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=False)
+    positions = np.array([[0.0, 1.0], [1.0, 0.0]])
+    scan.components._path_optimizer.optimize_corridor = mock.MagicMock(return_value=positions)
+
+    scan.components.optimize_trajectory(
+        positions,
+        optimization_type="corridor",
+        fast_axis=1,
+        first_direction=1,
+        snaked=True,
+        corridor_size=2,
+        num_iterations=3,
+    )
+
+    scan.components._path_optimizer.optimize_corridor.assert_called_once_with(
+        positions,
+        num_iterations=3,
+        fast_axis=1,
+        first_corridor_direction=1,
+        snaked=True,
+        corridor_size=2,
     )
 
 

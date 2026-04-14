@@ -23,6 +23,7 @@ import numpy as np
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 from bec_lib.scan_args import ScanArgument, Units
+from bec_server.scan_server.path_optimization import Direction
 from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
@@ -190,6 +191,17 @@ class FermatSpiralScan(ScanBase):
         if self.relative:
             self.start_positions = self.components.get_start_positions(self.motors)
             self.positions += self.start_positions
+
+        if self.optim_trajectory:
+            self.positions = self.components.optimize_trajectory(
+                self.positions,
+                optimization_type=self.optim_trajectory,
+                first_direction=(
+                    Direction.ASCENDING
+                    if self.motor2_start_stop[1] > self.motor2_start_stop[0]
+                    else Direction.DESCENDING
+                ),
+            )
 
         self.components.check_limits(self.motors, self.positions)
 

@@ -19,7 +19,7 @@ from bec_lib.logger import bec_logger
 from bec_server.scan_server.instruction_handler import InstructionHandler
 
 from ..errors import LimitError, ScanAbortion
-from ..path_optimization import PathOptimizerMixin
+from ..path_optimization import Direction, PathOptimizerMixin
 from ..scan_stubs import ScanStubs
 
 logger = bec_logger.logger
@@ -520,26 +520,14 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         if not self.optim_trajectory:
             return
 
-        # Get preferred directions from scan parameters if available
-        preferred_directions = getattr(self, "preferred_directions", None)
-
         if self.optim_trajectory == "corridor":
-            # For corridor optimization, we use the primary axis preferred direction
-            if preferred_directions and len(preferred_directions) > 0:
-                primary_axis = getattr(self, "sort_axis", 1)
-                preferred_direction = (
-                    preferred_directions[primary_axis]
-                    if len(preferred_directions) > primary_axis
-                    else None
-                )
-                self.positions = self.optimize_corridor(
-                    self.positions,
-                    num_iterations=5,
-                    sort_axis=primary_axis,
-                    preferred_direction=preferred_direction,
-                )
-            else:
-                self.positions = self.optimize_corridor(self.positions, num_iterations=5)
+            # Corridor traversal direction follows the first pass along the axis within each corridor.
+            self.positions = self.optimize_corridor(
+                self.positions,
+                num_iterations=5,
+                fast_axis=getattr(self, "fast_axis", 1),
+                first_corridor_direction=getattr(self, "first_direction", 1),
+            )
             return
 
         if self.optim_trajectory == "shell":
@@ -1103,6 +1091,9 @@ class FermatSpiralScan(ScanBase):
         self.stop_motor2 = stop_motor2
         self.step = step
         self.spiral_type = spiral_type
+        self.first_direction = (
+            Direction.ASCENDING if self.stop_motor2 > self.start_motor2 else Direction.DESCENDING
+        )
 
     def update_scan_motors(self):
         self.scan_motors = [self.motor1, self.motor2]

@@ -1,3 +1,4 @@
+import enum
 from typing import Literal
 
 import numpy as np
@@ -12,6 +13,11 @@ class PathQualityStats(BaseModel):
     total_length: float
 
     model_config = {"arbitrary_types_allowed": True}
+
+
+class Direction(int, enum.Enum):
+    ASCENDING = 1
+    DESCENDING = -1
 
 
 class PathOptimizerMixin:
@@ -31,10 +37,11 @@ class PathOptimizerMixin:
         self,
         positions: np.ndarray,
         corridor_size: float | None = None,
-        sort_axis: int = 1,
+        fast_axis: Literal[0, 1] = 1,
         num_iterations: int = 1,
-        preferred_direction: int | None = None,
-        corridor_estimation: Literal["density", "median_distance"] = "median_distance",
+        first_corridor_direction: Direction | Literal[-1, 1] = Direction.ASCENDING,
+        snaked: bool = True,
+        corridor_estimation: Literal["density", "median_distance"] = "density",
     ):
         """
         Optimize positions using a corridor-based approach.
@@ -45,11 +52,14 @@ class PathOptimizerMixin:
         Args:
             positions (np.ndarray): Array of positions
             corridor_size (float, optional): Width of each corridor. Defaults to None (auto-estimated).
-            sort_axis (int, optional): Axis along which to create corridors (0 or 1). Defaults to 1.
+            fast_axis (Literal[0, 1], optional): Axis traversed within each corridor (0 or 1). Defaults to 1.
             num_iterations (int, optional): Number of corridor sizes to try. Defaults to 1.
-            preferred_direction (int | None, optional): Preferred direction for the primary axis (1 or -1).
-                If None, alternates direction for each corridor.
-            corridor_estimation (str, optional): Method for estimating corridor size if not provided.
+            first_corridor_direction (Direction | Literal[-1, 1], optional): Traversal direction of the first
+                corridor along the fast axis. Positive means ascending, negative means
+                descending. Defaults to Direction.ASCENDING.
+            snaked (bool, optional): If True, alternate the traversal direction between
+                successive corridors. If False, keep the same direction in every corridor.
+            corridor_estimation (Literal["density", "median_distance"], optional): Method for estimating corridor size if not provided.
                 Options are "density" or "median_distance". Defaults to "density".
 
         Returns:
@@ -70,8 +80,14 @@ class PathOptimizerMixin:
                     'Choose "density" or "median_distance".'
                 )
 
-        axis_vals = positions[:, sort_axis]
-        sec_axis = int(not sort_axis)
+        if not isinstance(first_corridor_direction, Direction):
+            first_corridor_direction = Direction(first_corridor_direction)
+
+        if fast_axis not in (0, 1):
+            raise ValueError("fast_axis must be 0 or 1")
+
+        slow_axis = int(not fast_axis)
+        axis_vals = positions[:, slow_axis]
 
         best_length = np.inf
         best_path = positions
@@ -97,17 +113,15 @@ class PathOptimizerMixin:
                 if block.size == 0:
                     continue
 
-                # Sort within corridor along secondary axis
-                block = block[np.argsort(positions[block, sec_axis])]
+                # Sort within corridor along fast axis
+                block = block[np.argsort(positions[block, fast_axis])]
 
                 # Direction handling
-                if preferred_direction is not None:
-                    if preferred_direction < 0:
-                        block = block[::-1]
-                else:
-                    # Alternate direction between corridors
-                    if step % 2 == 0:
-                        block = block[::-1]
+                direction = first_corridor_direction
+                if snaked and step % 2 == 1:
+                    direction = Direction(-direction)
+                if direction == Direction.DESCENDING:
+                    block = block[::-1]
 
                 index_sorted.append(block)
 
