@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.115.3 (2026-04-14)
+
+### Bug Fixes
+
+- **scan_stub_status**: Check shutdown event in done status
+  ([`9581b51`](https://github.com/bec-project/bec/commit/9581b515d9ff14371e1522fe0f3ec5549df5324d))
+
+
 ## v3.115.2 (2026-04-14)
 
 ### Performance Improvements
