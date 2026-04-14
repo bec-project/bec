@@ -8,7 +8,7 @@ from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.errors import DeviceMessageError
 from bec_server.scan_server.instruction_handler import InstructionHandler
-from bec_server.scan_server.scan_stubs import ScanStubs
+from bec_server.scan_server.scan_stubs import ScanStubs, ScanStubStatus
 from bec_server.scan_server.tests.fixtures import ScanStubStatusMock
 
 
@@ -112,6 +112,18 @@ def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
             rpc_call_2 = instructions[0]
             assert rpc_call_1 != rpc_call_2
             assert rpc_call_1.metadata["device_instr_id"] != rpc_call_2.metadata["device_instr_id"]
+
+
+def test_scan_stub_status_done_returns_true_on_shutdown_event():
+    shutdown_event = threading.Event()
+    instruction_handler = mock.MagicMock()
+    status = ScanStubStatus(instruction_handler=instruction_handler, shutdown_event=shutdown_event)
+
+    shutdown_event.set()
+
+    assert status.done is True
+    assert status._done_checked is True
+    instruction_handler.register_callback.assert_called_once()
 
 
 def test_stage(stubs):
