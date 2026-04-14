@@ -43,17 +43,17 @@ def test_multi_region_grid_scan_prepare_scan_updates_scan_info_and_queue(v4_scan
     expected_positions = np.array(
         [
             [-3.0, -2.0],
+            [-1.0, -2.0],
+            [-1.0, 0.0],
             [-3.0, 0.0],
             [-3.0, 2.0],
             [-1.0, 2.0],
-            [-1.0, 0.0],
-            [-1.0, -2.0],
             [1.0, -2.0],
+            [3.0, -2.0],
+            [3.0, 0.0],
             [1.0, 0.0],
             [1.0, 2.0],
             [3.0, 2.0],
-            [3.0, 0.0],
-            [3.0, -2.0],
         ]
     )
     assert np.allclose(scan.positions, expected_positions)
@@ -80,17 +80,17 @@ def test_multi_region_grid_scan_prepare_scan_offsets_positions_when_relative(v4_
     expected_positions = np.array(
         [
             [-2.0, -3.0],
+            [0.0, -3.0],
+            [0.0, -1.0],
             [-2.0, -1.0],
             [-2.0, 1.0],
             [0.0, 1.0],
-            [0.0, -1.0],
-            [0.0, -3.0],
             [2.0, -3.0],
+            [4.0, -3.0],
+            [4.0, -1.0],
             [2.0, -1.0],
             [2.0, 1.0],
             [4.0, 1.0],
-            [4.0, -1.0],
-            [4.0, -3.0],
         ]
     )
     assert scan.start_positions == [1.0, -1.0]
