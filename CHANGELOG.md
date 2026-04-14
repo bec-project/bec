@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.116.0 (2026-04-14)
+
+### Features
+
+- **device**: Add 'done' property to Status class
+  ([`6ba00ff`](https://github.com/bec-project/bec/commit/6ba00ff76df0ca438cfd6cda83563264d6587496))
+
+
 ## v3.115.3 (2026-04-14)
 
 ### Bug Fixes

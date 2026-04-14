@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bec_lib"
-version = "3.115.3"
+version = "3.116.0"
 description = "BEC library"
 requires-python = ">=3.11"
 classifiers = [
