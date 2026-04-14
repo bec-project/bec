@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.115.2 (2026-04-14)
+
+### Performance Improvements
+
+- **bec_startup**: Lazily create GUI client for no-GUI startup
+  ([`c8bb40d`](https://github.com/bec-project/bec/commit/c8bb40d856455b27f386edc094be08e75c8059d2))
+
+- **bec_startup**: Lazy initialize DAP plugins
+  ([`52a6740`](https://github.com/bec-project/bec/commit/52a6740c2cc0cd5d0431967fb0c4f86ab276aa5b))
+
+### Refactoring
+
+- Pretty print scan queue
+  ([`a7d695f`](https://github.com/bec-project/bec/commit/a7d695f2702bb9dcf8f028e3acc404b9e372311e))
+
+### Testing
+
+- Update tests to match
+  ([`6259014`](https://github.com/bec-project/bec/commit/62590146042be85325aea337963015c97e0a4c67))
+
+
 ## v3.115.1 (2026-04-13)
 
 ### Bug Fixes
