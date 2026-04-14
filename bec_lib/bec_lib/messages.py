@@ -1900,6 +1900,23 @@ class MessagingServiceMessage(BECMessage):
     metadata: dict | None = Field(default_factory=dict)
 
 
+class NotificationMessage(BECMessage):
+    """
+    Message for user notifications
+
+    Args:
+        event_type (str): Type of the event to notify about
+        message (str): Notification message
+
+    """
+
+    msg_type: ClassVar[str] = "notification_message"
+
+    event_type: str
+    message: str
+    image: bytes | None = None
+
+
 class FeedbackMessage(BECMessage):
     """
     Message for user feedback
@@ -2016,3 +2033,15 @@ class AvailableBeamlineStatesMessage(BECMessage):
 
     msg_type: ClassVar[str] = "beamline_state_update_message"
     states: list[BeamlineStateConfig]
+
+
+class AvailableActorsMessage(BECMessage):
+    """
+    Message for available actors
+
+    Args:
+        actors (list[ActorConfig]): List of available actors with their descriptions
+    """
+
+    msg_type: ClassVar[str] = "available_actors_message"
+    actors: list[ActorConfig]

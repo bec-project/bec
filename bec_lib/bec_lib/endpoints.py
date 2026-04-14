@@ -1803,6 +1803,22 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def available_actors():
+        """
+        Endpoint for available actors. This endpoint is used to publish the available actors
+        using a messages.AvailableActorsMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for available actors.
+        """
+        endpoint = f"{EndpointType.INFO.value}/available_actors"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.AvailableActorsMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def atlas_websocket_state(deployment_name: str, host_id: str):
         """
         Endpoint for the websocket state information, containing the users and their subscriptions
@@ -1930,6 +1946,21 @@ class MessageEndpoints:
             endpoint=endpoint,
             message_type=messages.MessagingServiceMessage,
             message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def notification(event: str):
+        """
+        Endpoint for notifications. This endpoint is used to publish notifications using a messages.NotificationMessage message.
+
+        Args:
+            event (str): Event name.
+        Returns:
+            EndpointInfo: Endpoint for notifications.
+        """
+        endpoint = f"{EndpointType.PUBLIC.value}/notifications/{event}"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.NotificationMessage, message_op=MessageOp.SEND
         )
 
     @staticmethod

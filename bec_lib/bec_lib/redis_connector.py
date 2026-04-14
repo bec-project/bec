@@ -57,6 +57,7 @@ from bec_lib.messages import (
     ClientInfoMessage,
     DynamicMetricMessage,
     ErrorInfo,
+    NotificationMessage,
 )
 from bec_lib.serialization import MsgpackSerialization
 
@@ -642,6 +643,18 @@ class RedisConnector:
         """
         alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
         self.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
+
+    def send_notification(self, event: str, message: str, image: bytes | None = None):
+        """
+        Send a notification message to the client
+
+        Args:
+            event (str): event name
+            message (str): message content
+            image (bytes, optional): image content. Defaults to None.
+        """
+        notification_msg = NotificationMessage(event_type=event, message=message, image=image)
+        self.send(MessageEndpoints.notification(event), notification_msg)
 
     def pipeline(self) -> redis.client.Pipeline:
         """Create a new pipeline"""
