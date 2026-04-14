@@ -87,6 +87,9 @@ class ScanStubStatus:
         Returns:
             bool: Done flag
         """
+        if self._shutdown_event.is_set():
+            self.set_done_checked()
+            return True
         self.set_done_checked()
         sub_status_done = self._get_sub_status_done()
         return self._done and sub_status_done
