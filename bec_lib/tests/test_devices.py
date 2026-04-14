@@ -449,6 +449,7 @@ def test_status_wait():
 
     with pytest.raises(TimeoutError):
         status.wait(0.1)
+    assert status.done is False
     status._on_status_update(
         {
             "data": messages.DeviceReqStatusMessage(
@@ -458,6 +459,24 @@ def test_status_wait():
         parent=status,
     )
     status.wait()
+
+
+def test_status_done_flag():
+    connector = mock.MagicMock()
+    status = Status(connector, "test_rid")
+
+    assert status.done is False
+
+    status._on_status_update(
+        {
+            "data": messages.DeviceReqStatusMessage(
+                device="test_device", success=True, request_id="test_rid"
+            )
+        },
+        parent=status,
+    )
+
+    assert status.done is True
 
 
 @pytest.fixture

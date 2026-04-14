@@ -159,6 +159,11 @@ class Status:
             MessageEndpoints.device_req_status(self._request_id), cb=self._on_status_update
         )
 
+    @property
+    def done(self) -> bool:
+        """Returns True if the RPC call is done, False otherwise."""
+        return self._status_done.is_set()
+
     def wait(self, timeout=None, raise_on_failure=True):
         """
         Wait for the request to complete. If the request is not completed within the specified time,
@@ -168,12 +173,8 @@ class Status:
             timeout (float, optional): Timeout in seconds. Defaults to None. If None, the method waits indefinitely.
             raise_on_failure (bool, optional): If True, an RPCError is raised if the request fails. Defaults to True.
         """
-        try:
-
-            if not self._status_done.wait(timeout):
-                raise TimeoutError("The request has not been completed within the specified time.")
-        finally:
-            self._set_done()
+        if not self._status_done.wait(timeout):
+            raise TimeoutError("The request has not been completed within the specified time.")
 
         if not raise_on_failure or self._request_status is None:
             return
