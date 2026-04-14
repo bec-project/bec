@@ -117,7 +117,8 @@ class DSDevice(DeviceBaseWithConfig):
         if not isinstance(self.obj, ophyd.Signal):
             # signals have the same read and read_configuration values; no need to publish twice
             dev_config_msg = messages.DeviceMessage(
-                signals=self.obj.read_configuration(), metadata={}
+                signals=messages.sanitize_one_way_encodable(self.obj.read_configuration()),
+                metadata={},
             )
             connector.set_and_publish(
                 MessageEndpoints.device_read_configuration(self.name), dev_config_msg, pipe=pipe

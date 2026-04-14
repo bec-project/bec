@@ -10,10 +10,11 @@ from bec_lib.codecs import BECCodec
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.serialization import MsgpackSerialization, json_ext, msgpack
+from bec_lib.one_way_registry import OneWaySerializationRegistry
+from bec_lib.serialization import json_ext, msgpack
 
 
-@pytest.fixture(params=[json_ext, msgpack, MsgpackSerialization])
+@pytest.fixture(params=[json_ext, msgpack])
 def serializer(request):
     yield request.param
 
@@ -66,12 +67,11 @@ class CustomEnum(enum.Enum):
     ],
 )
 def test_serialize(serializer, data):
-    res = serializer.loads(serializer.dumps(data)) == data
+    res = serializer.loads(serializer.dumps(data)) == messages.sanitize_one_way_encodable(data)
     assert all(res) if isinstance(data, np.ndarray) else res
 
 
 def test_serialize_model(serializer):
-
     class DummyModel(BaseModel):
         a: int
         b: int
@@ -81,10 +81,11 @@ def test_serialize_model(serializer):
     assert data.model_dump() == converted_data
 
 
-def test_device_serializer(serializer):
+def test_device_serializer():
+    serializer = OneWaySerializationRegistry()
     device_manager = mock.MagicMock(spec=DeviceManagerBase)
     dummy = DeviceBase(name="dummy", parent=device_manager)
-    assert serializer.loads(serializer.dumps(dummy)) == "dummy"
+    assert serializer.encode(dummy) == "dummy"
 
 
 def test_enum_serializer(serializer):

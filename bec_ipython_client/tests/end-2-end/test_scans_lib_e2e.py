@@ -563,13 +563,13 @@ def test_image_analysis(bec_client_lib):
     dev.eiger.sim.select_model("gaussian")
     dev.eiger.sim.params = {
         "amplitude": 100,
-        "center_offset": np.array([0, 0]),
-        "covariance": np.array([[1, 0], [0, 1]]),
+        "center_offset": [0, 0],
+        "covariance": [[1, 0], [0, 1]],
         "noise": "uniform",
         "noise_multiplier": 10,
-        "hot_pixel_coords": np.array([[24, 24], [50, 20], [4, 40]]),
+        "hot_pixel_coords": [[24, 24], [50, 20], [4, 40]],
         "hot_pixel_types": ["fluctuating", "constant", "fluctuating"],
-        "hot_pixel_values": np.array([1000.0, 10000.0, 1000.0]),
+        "hot_pixel_values": [1000.0, 10000.0, 1000.0],
     }
 
     res = scans.line_scan(dev.samx, -5, 5, steps=10, relative=False, exp_time=0)

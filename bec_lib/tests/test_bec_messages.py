@@ -19,7 +19,7 @@ def test_bec_message_msgpack_serialization_version(version):
         assert "Unsupported BECMessage version" in str(exception.value)
     else:
         res = MsgpackSerialization.dumps(msg)
-        res_expected = b"\x81\xad__bec_codec__\x83\xacencoder_name\xaaBECMessage\xa9type_name\xb8DeviceInstructionMessage\xa4data\x84\xa8metadata\x81\xa3RID\xa41234\xa6device\xa4samx\xa6action\xa3set\xa9parameter\x81\xa3set\xcb?\xe0\x00\x00\x00\x00\x00\x00"
+        res_expected = b"\x85\xa8metadata\x81\xa3RID\xa41234\xa6device\xa4samx\xa6action\xa3set\xa9parameter\x81\xa3set\xcb?\xe0\x00\x00\x00\x00\x00\x00\xa9bec_codec\x81\xa9type_name\xb8DeviceInstructionMessage"
         assert res == res_expected
         res_loaded = MsgpackSerialization.loads(res)
         assert res_loaded == msg
@@ -431,15 +431,13 @@ def test_DeviceInstructionMessage():
 
 def test_DeviceMonitor2DMessage():
     # Test 2D data
-    msg = messages.DeviceMonitor2DMessage(
-        device="eiger", data=np.random.rand(2, 100), metadata=None
-    )
+    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(2, 100))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
     assert res_loaded.metadata == {}
     # Test rgb image, i.e. image with 3 channels
-    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(3, 3), metadata=None)
+    msg = messages.DeviceMonitor2DMessage(device="eiger", data=np.random.rand(3, 3))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
@@ -456,7 +454,7 @@ def test_DeviceMonitor2DMessage():
 
 def test_DeviceMonitor1DMessage():
     # Test 2D data
-    msg = messages.DeviceMonitor1DMessage(device="eiger", data=np.random.rand(100), metadata=None)
+    msg = messages.DeviceMonitor1DMessage(device="eiger", data=np.random.rand(100))
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
     assert res_loaded == msg
@@ -704,3 +702,11 @@ def test_feedback_message():
     assert res_loaded == msg
     assert res_loaded.username == getpass.getuser()
     assert res_loaded.versions == messages.ServiceVersions._get_version_numbers()
+
+
+def test_message_with_np_array_in_dict():
+    arr = np.zeros(5)
+    with pytest.raises(pydantic.ValidationError) as e:
+        msg = messages.BECMessage(metadata={"value": arr})
+    assert e.match("metadata.value")
+    assert e.match("input_type=ndarray")

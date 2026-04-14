@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_serializer
 from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
@@ -169,7 +169,6 @@ class Status:
             raise_on_failure (bool, optional): If True, an RPCError is raised if the request fails. Defaults to True.
         """
         try:
-
             if not self._status_done.wait(timeout):
                 raise TimeoutError("The request has not been completed within the specified time.")
         finally:
@@ -185,11 +184,19 @@ class Status:
 class _PermissiveDeviceModel(_DeviceModelCore):
     model_config = ConfigDict(extra="allow")
 
+    @field_serializer("deviceTags")
+    def serialize_devicetags(self, value: set[str], info):
+        if info.mode == "json":
+            return list[value]
+        else:
+            return value
+
 
 def set_device_config(device: "DeviceBase", config: dict | _PermissiveDeviceModel | None):
-    # device._config = config
     device._config = (  # pylint: disable=protected-access
-        _PermissiveDeviceModel.model_validate(config).model_dump() if config is not None else None
+        _PermissiveDeviceModel.model_validate(config).model_dump(mode="python")
+        if config is not None
+        else None
     )
 
 
@@ -346,7 +353,7 @@ class DeviceBase:
         client: BECClient = self.root.parent.parent
         msg = messages.ScanQueueMessage(
             scan_type="device_rpc",
-            parameter=params,
+            parameter=messages.sanitize_one_way_encodable(params),
             queue=client.queue.get_default_scan_queue(),  # type: ignore
             metadata={"RID": request_id, "response": True},
         )
@@ -742,7 +749,6 @@ class DeviceBase:
 
 
 class DeviceBaseWithConfig(DeviceBase):
-
     @property
     def full_name(self):
         """Returns the full name of the device or signal, separated by "_" e.g. samx_velocity"""
@@ -777,10 +783,10 @@ class DeviceBaseWithConfig(DeviceBase):
             action="update", config={self.name: update}
         )
 
-    def get_device_tags(self) -> list:
+    def get_device_tags(self) -> set[str]:
         """get the device tags for this device"""
         # pylint: disable=protected-access
-        return self.root._config.get("deviceTags", [])
+        return self.root._config.get("deviceTags", {})
 
     @typechecked
     def set_device_tags(self, val: Iterable):
@@ -1164,8 +1170,8 @@ class AdjustableMixin:
         if not limit_msg:
             return [0, 0]
         limits = [
-            limit_msg.content["signals"].get("low", {}).get("value", 0),
-            limit_msg.content["signals"].get("high", {}).get("value", 0),
+            limit_msg.signals.get("low", {}).get("value", 0),
+            limit_msg.signals.get("high", {}).get("value", 0),
         ]
         return limits
 
@@ -1203,7 +1209,6 @@ class Signal(AdjustableMixin, OphydInterfaceBase):
 
 
 class ComputedSignal(Signal):
-
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._num_args_method = None
