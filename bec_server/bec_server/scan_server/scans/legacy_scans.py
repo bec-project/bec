@@ -195,10 +195,8 @@ def get_hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True)
     Generate a 2D hexagonal grid clipped to (start, stop) bounds.
 
     Args:
-        axes: [(x_start, x_stop, x_step),
-               (y_start, y_stop, y_step)]
-              x_step = horizontal spacing between columns
-              y_step = vertical spacing between rows
+        axes: [(axis0_start, axis0_stop, axis0_step),
+               (axis1_start, axis1_stop, axis1_step)]
         snaked: if True, reverse direction on alternate rows to minimize travel distance
 
     Returns:
@@ -207,28 +205,27 @@ def get_hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True)
     if len(axes) != 2:
         raise ValueError("2D hex grid requires exactly 2 dimensions")
 
-    (x0, x1, sx), (y0, y1, sy) = axes
+    (a0_start, a0_stop, a0_step), (a1_start, a1_stop, a1_step) = axes
 
     points = []
 
-    # Number of rows needed
-    n_rows = int(np.ceil((y1 - y0) / sy)) + 2
+    # The first axis is the slow row axis and the second axis is the fast axis.
+    n_rows = int(np.ceil((a0_stop - a0_start) / a0_step)) + 2
 
     for row in range(n_rows):
-        y = y0 + row * sy
+        axis0 = a0_start + row * a0_step
 
-        # Alternate row offset - shift by half the x step
-        x_offset = (sx / 2) if (row % 2) else 0.0
+        # Alternate row offset - shift by half the fast-axis step
+        axis1_offset = (a1_step / 2) if (row % 2) else 0.0
 
-        # Number of columns needed
-        n_cols = int(np.ceil((x1 - x0) / sx)) + 2
+        n_cols = int(np.ceil((a1_stop - a1_start) / a1_step)) + 2
 
         row_points = []
         for col in range(n_cols):
-            x = x0 + x_offset + col * sx
+            axis1 = a1_start + axis1_offset + col * a1_step
 
-            if x0 <= x <= x1 and y0 <= y <= y1:
-                row_points.append((x, y))
+            if a0_start <= axis0 <= a0_stop and a1_start <= axis1 <= a1_stop:
+                row_points.append((axis0, axis1))
 
         # Reverse every other row if snaking is enabled
         if snaked and (row % 2 == 1):
