@@ -39,6 +39,17 @@ def test_hexagonal_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembl
     assert np.array_equal(scan.scan_info.positions, expected_positions)
 
 
+def test_hexagonal_scan_uses_second_axis_as_fast_axis(v4_scan_assembler):
+    scan = v4_scan_assembler(
+        "_v4_hexagonal_scan", "samx", 0.0, 2.0, 1.0, "samy", 0.0, 1.0, 1.0, relative=False
+    )
+
+    scan.prepare_scan()
+
+    expected_positions = np.array([[0.0, 0.0], [0.0, 1.0], [1.0, 0.5], [2.0, 0.0], [2.0, 1.0]])
+    assert np.array_equal(scan.positions, expected_positions)
+
+
 def test_hexagonal_scan_prepare_scan_offsets_positions_when_relative(v4_scan_assembler):
     scan = v4_scan_assembler(
         "_v4_hexagonal_scan", "samx", -1.0, 1.0, 1.0, "samy", -1.0, 1.0, 1.0, relative=True

@@ -2287,17 +2287,17 @@ def test_close_scan_implicitly(scan_assembler):
     "axes,snaked,reference_positions",
     [
         # Simple 2x2 grid with snaking
-        ([(0, 1, 1), (0, 1, 1)], True, [[0, 0], [1, 0], [0.5, 1]]),
+        ([(0, 1, 1), (0, 1, 1)], True, [[0, 0], [0, 1], [1, 0.5]]),
         # Simple 2x2 grid without snaking
-        ([(0, 1, 1), (0, 1, 1)], False, [[0, 0], [1, 0], [0.5, 1]]),
+        ([(0, 1, 1), (0, 1, 1)], False, [[0, 0], [0, 1], [1, 0.5]]),
         # 3x2 grid with different step sizes and snaking
         (
             [(0, 2, 1), (0, 1, 0.5)],
             True,
-            [[0, 0], [1, 0], [2, 0], [1.5, 0.5], [0.5, 0.5], [0, 1], [1, 1], [2, 1]],
+            [[0, 0], [0, 0.5], [0, 1], [1, 0.75], [1, 0.25], [2, 0], [2, 0.5], [2, 1]],
         ),
         # Small grid with exact boundaries
-        ([(0, 0.5, 0.5), (0, 0.5, 0.5)], True, [[0, 0], [0.5, 0], [0.25, 0.5]]),
+        ([(0, 0.5, 0.5), (0, 0.5, 0.5)], True, [[0, 0], [0, 0.5], [0.5, 0.25]]),
     ],
 )
 def test_get_hex_grid_2d(axes, snaked, reference_positions):
@@ -2397,11 +2397,11 @@ def test_hexagonal_scan_snaking():
     request_snaked = HexagonalScan(
         "samx",
         0,
-        2,
+        1,
         1,
         "samy",
         0,
-        1,
+        2,
         1,
         device_manager=device_manager,
         exp_time=0.1,
@@ -2414,11 +2414,11 @@ def test_hexagonal_scan_snaking():
     request_unsnaked = HexagonalScan(
         "samx",
         0,
-        2,
+        1,
         1,
         "samy",
         0,
-        1,
+        2,
         1,
         device_manager=device_manager,
         exp_time=0.1,
