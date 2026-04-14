@@ -257,3 +257,20 @@ def test_optimize_corridor_raises_corridor_estimation():
         optim.optimize_corridor(
             positions_orig, num_iterations=10, corridor_estimation="invalid_method"
         )
+
+
+def test_optimize_corridor_respects_first_corridor_direction_and_snaking():
+    optim = PathOptimizerMixin()
+    positions = np.asarray([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+
+    snaked = optim.optimize_corridor(
+        positions, corridor_size=1.0, fast_axis=1, first_corridor_direction=1, snaked=True
+    )
+    non_snaked = optim.optimize_corridor(
+        positions, corridor_size=1.0, fast_axis=1, first_corridor_direction=1, snaked=False
+    )
+
+    np.testing.assert_allclose(snaked, np.asarray([[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]]))
+    np.testing.assert_allclose(
+        non_snaked, np.asarray([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+    )
