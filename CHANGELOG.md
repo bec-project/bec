@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.116.1 (2026-04-15)
+
+### Bug Fixes
+
+- Remove parent arg
+  ([`cd63fb3`](https://github.com/bec-project/bec/commit/cd63fb34d7f2ed2c9ef1079c3ff0c22606c8c870))
+
+### Refactoring
+
+- Make all callbacks not staticmethod
+  ([`5bf7133`](https://github.com/bec-project/bec/commit/5bf7133ebcd4f7ab24ae29a18443deafc1d21e8f))
+
+
 ## v3.116.0 (2026-04-14)
 
 ### Features
