@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.117.0 (2026-04-15)
+
+### Features
+
+- **device**: Support wildcard '*' in device name expansion
+  ([`9ed0d74`](https://github.com/bec-project/bec/commit/9ed0d74d7786f6489c3272d2e20ff53cc00d62cf))
+
+
 ## v3.116.1 (2026-04-15)
 
 ### Bug Fixes
