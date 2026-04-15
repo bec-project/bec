@@ -583,6 +583,33 @@ def test_device_container_wm(dev_container, capsys):
         assert "1.0000" in captured.out
 
 
+def test_device_container_wm_supports_all_wildcard(dev_container, dm_with_override, capsys):
+    dev_container["other"] = Device(name="other", config=BASIC_CONFIG, parent=dm_with_override)
+    with (
+        mock.patch.object(dev_container.test, "read", return_value={"test": {"value": 1}}),
+        mock.patch.object(dev_container.other, "read", return_value={"other": {"value": 2}}),
+    ):
+        dev_container.wm("*")
+        captured = capsys.readouterr()
+        assert "test" in captured.out
+        assert "other" in captured.out
+        assert "1.0000" in captured.out
+        assert "2.0000" in captured.out
+
+
+def test_device_container_wm_uses_glob_matching(dev_container, dm_with_override, capsys):
+    dev_container["samy"] = Device(name="samy", config=BASIC_CONFIG, parent=dm_with_override)
+    dev_container["samytb"] = Device(name="samytb", config=BASIC_CONFIG, parent=dm_with_override)
+    with (
+        mock.patch.object(dev_container.samy, "read", return_value={"samy": {"value": 1}}),
+        mock.patch.object(dev_container.samytb, "read", return_value={"samytb": {"value": 2}}),
+    ):
+        dev_container.wm("s*?y")
+        captured = capsys.readouterr()
+        assert "samy" in captured.out
+        assert "samytb" not in captured.out
+
+
 def test_device_container_wm_read_contains_None(dev_container, capsys):
     with mock.patch.object(
         dev_container.test, "read", return_value={"test": {"value": None}}
