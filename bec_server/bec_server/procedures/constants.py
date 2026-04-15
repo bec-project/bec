@@ -1,17 +1,30 @@
 import os
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum, StrEnum
 from importlib.metadata import version
 from pathlib import Path
-from typing import ParamSpec, Protocol, TypedDict, runtime_checkable
+from typing import (
+    Annotated,
+    NotRequired,
+    ParamSpec,
+    Protocol,
+    TypedDict,
+    runtime_checkable,
+)
 
 import bec_lib
+
+
+class BecClientType(StrEnum):
+    BECClient = "BECClient"
+    BECIPythonClient = "BECIPythonClient"
 
 
 class ContainerWorkerEnv(TypedDict):
     redis_server: str
     queue: str
     timeout_s: str
+    client_class: Annotated[BecClientType, NotRequired]
 
 
 P = ParamSpec("P")
