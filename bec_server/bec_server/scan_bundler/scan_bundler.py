@@ -34,12 +34,7 @@ class ScanBundler(BECService):
             cb=self._device_read_callback,
             name="device_read_register",
         )
-        self.connector.register(
-            MessageEndpoints.scan_status(),
-            cb=self._scan_status_callback,
-            group_id="scan_bundler",
-            name="scan_status_register",
-        )
+        self.connector.register(MessageEndpoints.scan_status(), cb=self._scan_status_callback)
 
         self.sync_storage = {}
         self.monitored_devices = {}
