@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.117.1 (2026-04-15)
+
+### Bug Fixes
+
+- Remove unused kwargs in subscription
+  ([`472d637`](https://github.com/bec-project/bec/commit/472d637294eb3d0088fc41426fcfb11864c5168b))
+
+
 ## v3.117.0 (2026-04-15)
 
 ### Features
