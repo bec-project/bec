@@ -7,8 +7,8 @@ from __future__ import annotations
 import collections
 import contextlib
 import copy
+import fnmatch
 import functools
-import re
 import threading
 import time
 import traceback
@@ -317,25 +317,30 @@ class DeviceContainer(dict):
         return [dev for dev in set(devices) if dev not in excluded_devices]
 
     def _expand_device_name(self, device_name: str) -> list[str]:
-        try:
-            regex = re.compile(device_name)
-        except re.error:
-            return [device_name]
-        return [dev for dev in self.keys() if regex.match(dev)]
+        if any(char in device_name for char in "*?[]"):
+            return fnmatch.filter(self.keys(), device_name)
+        return [device_name]
 
     def wm(self, device_names: list[str | DeviceBase | None] = None, *args):
-        """Get the current position of one or more devices.
+        """
+        Get the current position of one or more devices.
+        The device name can be specified either as a string or as a Device object.
+        If no device names are provided, the positions of all devices will be returned.
+        If the device name contains wildcard characters (*, ?, []), it will be expanded
+        to match all device names that fit the pattern.
 
         Args:
             device_names (list): List of device names or Device objects
 
         Examples:
-            >>> dev.wm()
-            >>> dev.wm('sam*')
-            >>> dev.wm('samx')
-            >>> dev.wm(['samx', 'samy'])
-            >>> dev.wm(dev.monitored_devices())
-            >>> dev.wm(dev.get_devices_with_tags('user motors'))
+            >>> dev.wm() # returns the position of all devices
+            >>> dev.wm('sam*') # returns all devices with names starting with 'sam'
+            >>> dev.wm('sam[xy]') # returns all devices with names 'samx' and 'samy'
+            >>> dev.wm('sam?') # returns all devices with names starting with 'sam' and followed by one character (e.g. 'samx', 'samy', but not 'sam' or 'samxy')
+            >>> dev.wm('samx') # returns the position of device 'samx'
+            >>> dev.wm(['samx', 'samy']) # returns the positions of devices 'samx' and 'samy'
+            >>> dev.wm(dev.monitored_devices()) # returns the positions of all monitored devices
+            >>> dev.wm(dev.get_devices_with_tags('user motors')) # returns the positions of all devices with the tag 'user motors'
 
         """
         if not device_names:
