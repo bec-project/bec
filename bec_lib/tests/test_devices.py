@@ -471,8 +471,7 @@ def test_status_done_flag():
             "data": messages.DeviceReqStatusMessage(
                 device="test_device", success=True, request_id="test_rid"
             )
-        },
-        parent=status,
+        }
     )
 
     assert status.done is True
