@@ -2,14 +2,12 @@
 This module contains functions for serializing and deserializing lmfit objects.
 """
 
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-from bec_lib.utils.import_utils import lazy_import_from
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from lmfit import Parameter, Parameters
-else:
-    Parameter, Parameters = lazy_import_from("lmfit", ("Parameter", "Parameters"))
 
 
 def serialize_param_object(param: Parameter) -> dict:
@@ -44,6 +42,8 @@ def serialize_lmfit_params(params: Parameters) -> dict:
     Returns:
         dict: Dictionary representation of the parameters
     """
+    from lmfit import Parameters
+
     if not params:
         return {}
     if isinstance(params, Parameters):
@@ -62,6 +62,8 @@ def deserialize_param_object(obj: dict[str, dict | Parameter]) -> Parameters:
     Returns:
         Parameters: Parameters object
     """
+    from lmfit import Parameter, Parameters
+
     param = Parameters()
     for k, v in obj.items():
         if isinstance(v, Parameter):
