@@ -81,7 +81,10 @@ else:
             base = os.path.dirname(plugin["module"].__file__)
             with open(os.path.join(base, "post_startup.py"), "r", encoding="utf-8") as file:
                 # pylint: disable=exec-used
-                exec(file.read())
+                try:
+                    exec(file.read())
+                except Exception as exc:
+                    logger.error(f"Error running `post startup` for plugin {name}: {exc}")
 
     else:
         bec._ip.prompts.status = 1
