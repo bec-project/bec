@@ -89,8 +89,6 @@ else:
     else:
         bec._ip.prompts.status = 1
 
-    if not bec._hli_funcs:
-        bec.load_high_level_interface("bec_hli")
 
 if _main_dict["startup_file"]:
     with open(_main_dict["startup_file"], "r", encoding="utf-8") as file:
