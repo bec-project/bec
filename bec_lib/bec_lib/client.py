@@ -9,7 +9,6 @@ import builtins
 import getpass
 import importlib
 import inspect
-import threading
 import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, TypedDict
@@ -39,42 +38,6 @@ from bec_lib.user_macros import UserMacros
 from bec_lib.utils.import_utils import lazy_import_from
 
 logger = bec_logger.logger
-
-
-class LazyDAPPlugins:
-    """Lazily materialize DAP plugins on first access."""
-
-    def __init__(self, parent: "BECClient", dap_plugins_cls: Any = DAPPlugins):
-        self._parent = parent
-        self._dap_plugins_cls = dap_plugins_cls
-        self._dap_plugins: DAPPlugins | None = None
-        self._lock = threading.Lock()
-
-    def _ensure(self) -> DAPPlugins:
-        if self._dap_plugins is not None:
-            return self._dap_plugins
-        with self._lock:
-            if self._dap_plugins is None:
-                self._dap_plugins = self._dap_plugins_cls(self._parent)
-        return self._dap_plugins
-
-    def refresh(self):
-        return self._ensure().refresh()
-
-    def __getattr__(self, name):
-        return getattr(self._ensure(), name)
-
-    def __dir__(self):
-        names = set(object.__dir__(self))
-        if self._dap_plugins is not None:
-            names.update(dir(self._dap_plugins))
-        return sorted(names)
-
-    def __repr__(self) -> str:
-        if self._dap_plugins is None:
-            return "LazyDAPPlugins(uninitialized)"
-        return repr(self._dap_plugins)
-
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.messages import BECStatus, ServiceRequestMessage, VariableMessage
@@ -274,7 +237,7 @@ class BECClient(BECService):
         self.macros.load_all_user_macros()
         self.config = ConfigHelperUser(self.device_manager)
         self.history = ScanHistory(client=self)
-        self.dap = LazyDAPPlugins(self, DAPPlugins)
+        self.dap = DAPPlugins(self)
         self.device_monitor = DeviceMonitorPlugin(self.connector)
         self._update_username()
         self.beamline_states = BeamlineStateManager(client=self)
