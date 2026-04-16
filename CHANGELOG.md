@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.117.2 (2026-04-16)
+
+### Performance Improvements
+
+- **lmfit_serializer**: Optimize imports for type checking and serialization
+  ([`8a89275`](https://github.com/bec-project/bec/commit/8a892753ef6464743f135ea33ad0ab01dfcfb4dc))
+
+
 ## v3.117.1 (2026-04-15)
 
 ### Bug Fixes
