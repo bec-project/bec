@@ -90,7 +90,7 @@ class LineSweepScan(ScanBase):
         self.relative = relative
         self._readback_update_event = threading.Event()
 
-        self.update_scan_info(relative=relative)
+        self.update_scan_info(relative=relative, scan_report_devices=self.motors)
         self.actions.set_device_readout_priority(self.motors, priority="monitored")
 
     @scan_hook

@@ -89,7 +89,10 @@ class ContLineFlyScan(ScanBase):
         self.relative = relative
 
         self.update_scan_info(
-            exp_time=exp_time, frames_per_trigger=frames_per_trigger, relative=relative
+            exp_time=exp_time,
+            frames_per_trigger=frames_per_trigger,
+            relative=relative,
+            scan_report_devices=self.motors,
         )
         self.actions.set_device_readout_priority(self.motors, priority="monitored")
 

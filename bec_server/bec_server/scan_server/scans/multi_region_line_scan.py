@@ -124,6 +124,7 @@ class MultiRegionLineScan(ScanBase):
             relative=relative,
             burst_at_each_point=burst_at_each_point,
             regions=regions,
+            scan_report_devices=self.motors,
         )
         self.actions.set_device_readout_priority(self.motors, priority="monitored")
 

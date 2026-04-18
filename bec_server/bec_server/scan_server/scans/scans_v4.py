@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import enum
 import threading
+from collections.abc import Sequence
 from typing import Annotated
 
 import numpy as np
 import pint
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from toolz import partition
 
+from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
 from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.instruction_handler import InstructionHandler
@@ -128,6 +130,22 @@ class ScanInfo(BaseModel):
 
     __repr__ = __str__
 
+    @field_validator("scan_report_devices", mode="before")
+    @classmethod
+    def _serialize_scan_report_devices(cls, value: object) -> object:
+        """
+        Convert scan report devices to device names.
+
+        Args:
+            value (object): List of device names or ``DeviceBase`` instances.
+
+        Returns:
+            object: List with ``DeviceBase`` instances replaced by their names.
+        """
+        if value is None:
+            return value
+        return [device.name if isinstance(device, DeviceBase) else device for device in value]
+
     model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
 
@@ -195,6 +213,7 @@ class ScanBase:
         burst_at_each_point: int | None = None,
         relative: bool | None = None,
         run_on_exception_hook: bool | None = None,
+        scan_report_devices: Sequence[str | DeviceBase] | None = None,
         **kwargs,
     ):
         """
@@ -215,6 +234,8 @@ class ScanBase:
             burst_at_each_point (int, optional): Number of bursts at each point. Defaults to None.
             relative (bool, optional): Whether the positions are relative or absolute. Defaults to None.
             run_on_exception_hook (bool, optional): Whether to run the on_exception hook if the scan is interrupted. Defaults to None.
+            scan_report_devices (Sequence[str | DeviceBase], optional): Devices to report
+                during the scan. Device objects are stored by name. Defaults to None.
             **kwargs: Keyword arguments to update the scan info with.
         """
         for attr_name, value in [
@@ -228,6 +249,7 @@ class ScanBase:
             ("burst_at_each_point", burst_at_each_point),
             ("relative", relative),
             ("run_on_exception_hook", run_on_exception_hook),
+            ("scan_report_devices", scan_report_devices),
         ]:
             if value is not None:
                 setattr(self.scan_info, attr_name, value)

@@ -12,7 +12,7 @@ from bec_lib.tests.fixtures import dm_with_devices  # noqa: F401
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_stubs import ScanStubStatus
-from bec_server.scan_server.scans.scans_v4 import ScanBase
+from bec_server.scan_server.scans.scans_v4 import ScanBase, ScanInfo
 
 
 class _TestScan(ScanBase):
@@ -89,6 +89,21 @@ def _sent_device_instructions(ctx, action):
         for entry in ctx.connector.message_sent
         if getattr(entry["msg"], "action", None) == action
     ]
+
+
+def test_scan_info_stores_scan_report_device_objects_as_names(dm_with_devices):
+    scan_info = ScanInfo(
+        scan_name="_v4_test_scan",
+        scan_id="scan-id-test",
+        scan_type=None,
+        scan_report_devices=[dm_with_devices.devices["samx"], "samy"],
+    )
+
+    assert scan_info.scan_report_devices == ["samx", "samy"]
+
+    scan_info.scan_report_devices = [dm_with_devices.devices["samz"]]
+
+    assert scan_info.scan_report_devices == ["samz"]
 
 
 def _last_device_instruction(ctx, action):

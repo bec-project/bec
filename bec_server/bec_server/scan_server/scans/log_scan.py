@@ -128,6 +128,7 @@ class LogScan(ScanBase):
             readout_time=readout_time,
             relative=relative,
             burst_at_each_point=burst_at_each_point,
+            scan_report_devices=self.motors,
         )
         self.actions.set_device_readout_priority(self.motors, priority="monitored")
 

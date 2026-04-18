@@ -71,7 +71,7 @@ class MoveScan(ScanBase):
         self.relative = relative
 
         # Update the default scan info with provided parameters.
-        self.update_scan_info(relative=relative)
+        self.update_scan_info(relative=relative, scan_report_devices=self.motors)
 
     @scan_hook
     def prepare_scan(self):

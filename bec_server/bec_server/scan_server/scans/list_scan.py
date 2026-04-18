@@ -123,6 +123,7 @@ class ListScan(ScanBase):
             readout_time=readout_time,
             relative=relative,
             burst_at_each_point=burst_at_each_point,
+            scan_report_devices=self.motors,
         )
 
         # We elevate the readout priority of the scan motors to "monitored" to ensure

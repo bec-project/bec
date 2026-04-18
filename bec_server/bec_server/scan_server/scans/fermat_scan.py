@@ -165,6 +165,7 @@ class FermatSpiralScan(ScanBase):
             burst_at_each_point=burst_at_each_point,
             spiral_type=spiral_type,
             optim_trajectory=optim_trajectory,
+            scan_report_devices=self.motors,
         )
 
         # We elevate the readout priority of the scan motors to "monitored" to ensure

@@ -136,6 +136,7 @@ class GridScan(ScanBase):
             relative=relative,
             snaked=snaked,
             burst_at_each_point=burst_at_each_point,
+            scan_report_devices=self.motors,
         )
 
         # We elevate the readout priority of the scan motors to "monitored" to ensure
