@@ -218,7 +218,6 @@ class LineSweepScan(ScanBase):
         self.redis_connector.register(
             MessageEndpoints.device_readback(self.device.root.name),
             cb=self._device_readback_callback,
-            parent=self,
         )
 
     def _unregister_readback_updates(self):

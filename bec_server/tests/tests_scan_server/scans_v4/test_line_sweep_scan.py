@@ -1,9 +1,10 @@
-from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
 import pytest
 
+from bec_lib import messages
+from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 
 from .scan_test_utils import (
@@ -26,6 +27,14 @@ LINE_SWEEP_DEFAULT_HOOK_TESTS = [
     ("close_scan", [assert_close_scan_waits_for_baseline_and_closes]),
     *PREMOVE_HOOK_TESTS,
 ]
+
+
+def _device_readback_message(device_name: str, value: float) -> MessageObject:
+    endpoint = MessageEndpoints.device_readback(device_name)
+    return MessageObject(
+        topic=endpoint.endpoint,
+        value=messages.DeviceMessage(signals={device_name: {"value": value}}),
+    )
 
 
 @pytest.mark.parametrize(("hook_name", "hook_tests"), LINE_SWEEP_DEFAULT_HOOK_TESTS)
@@ -68,9 +77,9 @@ def test_line_sweep_scan_scan_core_moves_and_reads_until_done(
     scan.at_each_point = mock.MagicMock()
     scan.redis_connector.unregister = mock.MagicMock()
 
-    def register_readback(endpoint, cb, parent):
+    def register_readback(endpoint, cb):
         assert endpoint == MessageEndpoints.device_readback("samx")
-        cb(SimpleNamespace(value={"samx": {"value": 1.0}}), parent=parent)
+        cb(_device_readback_message("samx", 1.0))
 
     scan.redis_connector.register = mock.MagicMock(side_effect=register_readback)
     with mock.patch("bec_server.scan_server.scans.line_sweep_scan.time.sleep") as sleep_mock:
@@ -78,7 +87,7 @@ def test_line_sweep_scan_scan_core_moves_and_reads_until_done(
 
     scan.device.set.assert_called_once_with(5.0)
     scan.redis_connector.register.assert_called_once_with(
-        MessageEndpoints.device_readback("samx"), cb=scan._device_readback_callback, parent=scan
+        MessageEndpoints.device_readback("samx"), cb=scan._device_readback_callback
     )
     scan.redis_connector.unregister.assert_called_once_with(
         MessageEndpoints.device_readback("samx"), cb=scan._device_readback_callback
@@ -97,10 +106,10 @@ def test_line_sweep_scan_scan_core_coalesces_multiple_readback_updates(
     scan.at_each_point = mock.MagicMock()
     scan.redis_connector.unregister = mock.MagicMock()
 
-    def register_readback(endpoint, cb, parent):
+    def register_readback(endpoint, cb):
         assert endpoint == MessageEndpoints.device_readback("samx")
-        cb(SimpleNamespace(value={"samx": {"value": 1.0}}), parent=parent)
-        cb(SimpleNamespace(value={"samx": {"value": 2.0}}), parent=parent)
+        cb(_device_readback_message("samx", 1.0))
+        cb(_device_readback_message("samx", 2.0))
 
     scan.redis_connector.register = mock.MagicMock(side_effect=register_readback)
 
@@ -109,17 +118,19 @@ def test_line_sweep_scan_scan_core_coalesces_multiple_readback_updates(
     scan.at_each_point.assert_called_once_with()
 
 
-def test_line_sweep_scan_scan_core_reads_final_pending_update(v4_scan_assembler):
+def test_line_sweep_scan_scan_core_reads_final_pending_update(
+    v4_scan_assembler, nth_done_status_mock
+):
     scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     scan.prepare_scan()
-    done_status = SimpleNamespace(done=False)
+    done_status = nth_done_status_mock(resolve_after=2)
     scan.device.set = mock.MagicMock(return_value=done_status)
-    scan.at_each_point = mock.MagicMock(side_effect=lambda: setattr(done_status, "done", True))
+    scan.at_each_point = mock.MagicMock()
     scan.redis_connector.unregister = mock.MagicMock()
 
-    def register_readback(endpoint, cb, parent):
+    def register_readback(endpoint, cb):
         assert endpoint == MessageEndpoints.device_readback("samx")
-        cb(SimpleNamespace(value={"samx": {"value": 1.0}}), parent=parent)
+        cb(_device_readback_message("samx", 1.0))
 
     scan.redis_connector.register = mock.MagicMock(side_effect=register_readback)
 
@@ -128,10 +139,12 @@ def test_line_sweep_scan_scan_core_reads_final_pending_update(v4_scan_assembler)
     scan.at_each_point.assert_called_once_with()
 
 
-def test_line_sweep_scan_scan_core_waits_for_event_when_no_update(v4_scan_assembler):
+def test_line_sweep_scan_scan_core_waits_for_event_when_no_update(
+    v4_scan_assembler, nth_done_status_mock
+):
     scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     scan.prepare_scan()
-    done_status = SimpleNamespace(done=False)
+    done_status = nth_done_status_mock(resolve_after=2)
     scan.device.set = mock.MagicMock(return_value=done_status)
     scan.at_each_point = mock.MagicMock()
     scan.redis_connector.unregister = mock.MagicMock()
@@ -139,7 +152,6 @@ def test_line_sweep_scan_scan_core_waits_for_event_when_no_update(v4_scan_assemb
 
     def wait(timeout):
         wait_calls.append(timeout)
-        done_status.done = True
         return False
 
     scan._readback_update_event.wait = mock.MagicMock(side_effect=wait)
@@ -154,7 +166,7 @@ def test_line_sweep_scan_scan_core_waits_for_event_when_no_update(v4_scan_assemb
 
 def test_line_sweep_scan_consume_received_update_consumes_registered_readback(v4_scan_assembler):
     scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
-    scan._device_readback_callback(SimpleNamespace(value={"samx": {"value": 2.0}}), parent=scan)
+    scan._device_readback_callback(_device_readback_message("samx", 2.0))
 
     readback = scan._consume_received_update()
     empty_readback = scan._consume_received_update()

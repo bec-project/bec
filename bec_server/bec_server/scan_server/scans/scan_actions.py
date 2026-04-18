@@ -50,14 +50,16 @@ class ScanActions:
     def open_scan(self):
         """
         Open the scan.
-        We fetch all relevant metadata from the scan object and emit a new scan status
+        We fetch all relevant metadata from the scan object and emit a new scan status.
         """
         self._send_scan_status("open")
 
     def stage_all_devices(self, wait=True) -> ScanStubStatus:
         """
         Stage all devices for the scan. This will call the "stage" method
-        on all devices. If you want to stage only specific devices, use the "stage" method.
+        on all devices.
+
+        If you want to stage only specific devices, use the "stage" method.
 
         .. note ::
             We exclude devices that are on_request or continuous as they are not expected to be staged for a scan.
@@ -120,7 +122,10 @@ class ScanActions:
         wait=True,
     ) -> ScanStubStatus:
         """
-        Stage a device for the scan. If you want to stage all devices, use the `stage_all_devices` method.
+        Stage a device for the scan. This will call the "stage" method
+        on the specified device(s).
+
+        If you want to stage all devices, use the `stage_all_devices` method.
 
         Args:
             device (str or DeviceBase or list[str or DeviceBase]): device(s) to stage
@@ -164,7 +169,9 @@ class ScanActions:
 
     def pre_scan(self, wait=True) -> ScanStubStatus:
         """
-        Pre-scan steps to be executed before the main scan logic.
+        Pre-scan steps to be executed before the main scan logic. This will call
+        the "pre_scan" method all devices that implement it.
+
         This is typically the last chance to prepare the devices before the core scan
         logic is executed. For example, this is a good place to initialize time-critical
         devices, e.g. devices that have a short timeout.
@@ -199,7 +206,8 @@ class ScanActions:
         wait=True,
     ) -> ScanStubStatus:
         """
-        Set one or multiple devices to specific values.
+        Set one or multiple devices to specific values. This will call the "set" method
+        on the specified device(s) with the given value(s).
 
         Args:
             device (str or DeviceBase or list[str or DeviceBase] or list[str] or list[DeviceBase]): device(s) to set
@@ -237,7 +245,8 @@ class ScanActions:
         self, device: str | DeviceBase, parameters: dict | None = None, wait=True
     ) -> ScanStubStatus:
         """
-        Kickoff a device with the given parameters.
+        Kickoff a device with the given parameters. This will call the
+        "kickoff" method on the specified device with the given parameters.
 
         Args:
             device (str or DeviceBase): device to kickoff
@@ -265,6 +274,8 @@ class ScanActions:
         """
         Complete a device. This will call the "complete" method on the device.
 
+        To complete all devices, use the `complete_all_devices` method.
+
         Args:
             device (str or DeviceBase): device to complete
             wait (bool, optional): if True, wait for the completion to complete. Defaults to True.
@@ -288,7 +299,10 @@ class ScanActions:
 
     def complete_all_devices(self, wait=True) -> ScanStubStatus:
         """
-        Complete all devices for the scan.
+        Complete all devices for the scan. This will call the
+        "complete" method on all devices that are enabled for the scan.
+
+        If you want to complete only specific devices, use the `complete` method.
 
         Args:
             wait (bool, optional): if True, wait for the completion to complete. Defaults to True.
@@ -311,7 +325,8 @@ class ScanActions:
 
     def read_monitored_devices(self, wait=True) -> ScanStubStatus:
         """
-        Read from the monitored devices.
+        Read from the monitored devices. This will call the "read" method on
+        all devices that are currently configured with readout priority "monitored".
 
         Args:
             wait (bool, optional): if True, wait for the read to complete. Defaults to True.
@@ -355,11 +370,19 @@ class ScanActions:
         self, devices: str | DeviceBase | list[str | DeviceBase], wait=True
     ) -> Any | ScanStubStatus:
         """
-        Read the given devices and return the read data.
+        Read the given devices and return the read data. This will call the
+        "read" method on the specified device(s).
 
         This action performs a regular device-server read and asks the device server
         to include the read result in the instruction response. If ``wait`` is
         False, the status object is returned instead of the read data.
+
+        .. note ::
+            Reading manually is rarely the right choice; in almost all cases,
+            :meth:`read_monitored_devices` is the preferred and optimized action because it lets
+            the device server read and publish the monitored devices directly. Use ``read_manually``
+            only when you need to intercept the read data for some reason before it is published and
+            cannot implement the interception on the device.
 
         Args:
             devices (str | DeviceBase | list[str | DeviceBase]): device(s) to read.
@@ -439,7 +462,8 @@ class ScanActions:
 
     def read_baseline_devices(self, wait=True) -> ScanStubStatus:
         """
-        Read from the baseline devices.
+        Read from the baseline devices. This will call the "read" method on all devices
+        that are configured with readout priority "baseline".
 
         Args:
             wait (bool, optional): if True, wait for the read to complete. Defaults to True.
@@ -510,7 +534,9 @@ class ScanActions:
 
     def unstage(self, device: str | DeviceBase, wait=True) -> ScanStubStatus:
         """
-        Unstage a device for the scan.
+        Unstage a device for the scan. This will call the "unstage" method on the specified device(s).
+
+        If you want to unstage all devices, use the `unstage_all_devices` method.
 
         Args:
             device (str or DeviceBase): device to unstage
@@ -535,8 +561,9 @@ class ScanActions:
 
     def unstage_all_devices(self, wait=True) -> ScanStubStatus:
         """
-        Unstage all devices for the scan.
-        This will call the "unstage" method on all devices. If you want to unstage only specific devices, use the "unstage" method.
+        Unstage all devices for the scan. This will call the "unstage" method on all devices.
+
+        If you want to unstage only specific devices, use the "unstage" method.
 
         Args:
             wait (bool, optional): if True, wait for the unstaging to complete. Defaults to True.
@@ -601,7 +628,7 @@ class ScanActions:
         if self._update_queue_info_callback is not None:
             self._update_queue_info_callback()
 
-    def add_scan_report_instruction_scan_progress(self, points: int, show_table: bool = True):
+    def add_scan_report_instruction_scan_progress(self, points: int = 0, show_table: bool = True):
         """
         Add a scan progress report instruction to the instruction handler.
         Scan progress instructions inform clients to print a table-like report of the scan progress.
@@ -609,7 +636,7 @@ class ScanActions:
         not be able to estimate the remaining time in this case, but it will still show the elapsed time and the number of points completed.
 
         Args:
-            points (int): total number of points in the scan, used to calculate the progress percentage
+            points (int, optional): total number of points in the scan, used to calculate the progress percentage. Defaults to 0.
             show_table (bool, optional): if True, show a progress table with estimated time remaining. Defaults to True.
         """
         scan_report_instruction = {"scan_progress": {"points": points, "show_table": show_table}}
@@ -738,6 +765,14 @@ class ScanActions:
             func_name (str): name of the function to call on the device
             *args: positional arguments to pass to the function
             **kwargs: keyword arguments to pass to the function
+
+        Example:
+            >>> # Call the "acquire_image" method on the "detector1" device with an exposure time of 1 second.
+            >>> # Similar to calling detector1.acquire_image(exposure_time=1.0) on the device server.
+            >>> result = self.actions.rpc_call("detector1", "acquire_image", exposure_time=1.0)
+
+            >>> # Call the "start_interferometer" method on the "controller" sub-device of the "rt" device with some parameters.
+            >>> result = self.actions.rpc_call("rt.controller", "start_interferometer", param1=42, param2="foo")
 
         Returns:
             Any | ScanStubStatus: The result of the RPC call or a ScanStubStatus object if the result is a status object.
