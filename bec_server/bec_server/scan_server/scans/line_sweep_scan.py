@@ -227,9 +227,8 @@ class LineSweepScan(ScanBase):
             cb=self._device_readback_callback,
         )
 
-    @staticmethod
-    def _device_readback_callback(msg: MessageObject, *, parent: "LineSweepScan", **_kwargs):
-        parent._readback_update_event.set()
+    def _device_readback_callback(self, _msg: MessageObject):
+        self._readback_update_event.set()
 
     def _consume_received_update(self) -> bool:
         if not self._readback_update_event.is_set():
