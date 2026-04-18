@@ -8,6 +8,7 @@ from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 
 from .scan_gui_models import GUIInput
+from .scan_input_validator import ScanInputValidator
 from .scans.legacy_scans import RequestBase, ScanArgType, ScanBase, unpack_scan_args
 from .scans.scans_v4 import ScanBase as ScanBaseV4
 
@@ -27,6 +28,7 @@ class ScanAssembler:
         self.device_manager = self.parent.device_manager
         self.connector = self.parent.connector
         self.scan_manager = self.parent.scan_manager
+        self.input_validator = ScanInputValidator()
 
     def is_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
         """Check if the scan queue message would construct a new scan.
@@ -113,6 +115,7 @@ class ScanAssembler:
 
         request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
         resolved_args, resolved_kwargs = self._resolve_direct_scan_inputs(scan_cls, args, kwargs)
+        self.input_validator.validate(scan_cls, resolved_args, resolved_kwargs)
 
         scan_instance = scan_cls(
             *resolved_args,
@@ -169,15 +172,18 @@ class ScanAssembler:
     def _resolve_direct_scan_inputs(self, scan_cls, args, kwargs) -> tuple[list, dict]:
         """Resolve v4 scan device arguments from names to device objects."""
         arg_input = getattr(scan_cls, "arg_input", {}) or {}
-        if not arg_input:
+        signature_annotations = self.input_validator.scan_signature_annotations(scan_cls)
+        kwarg_annotations = {**signature_annotations, **arg_input}
+        if not arg_input and not signature_annotations:
             return args, kwargs
 
         resolved_args = list(args)
         resolved_kwargs = kwargs.copy()
-        arg_names = list(arg_input.keys())
 
-        if scan_cls.arg_bundle_size["bundle"] > 0:
+        if arg_input and scan_cls.arg_bundle_size["bundle"] > 0:
+            # Convert arg bundles if present
             bundle_size = scan_cls.arg_bundle_size["bundle"]
+            arg_names = list(arg_input.keys())
             for bundle_start in range(0, len(resolved_args), bundle_size):
                 for offset, arg_name in enumerate(arg_names):
                     arg_index = bundle_start + offset
@@ -185,19 +191,18 @@ class ScanAssembler:
                         break
                     if self._is_device_arg(arg_input.get(arg_name)):
                         resolved_args[arg_index] = self._resolve_device(resolved_args[arg_index])
-            for key, value in resolved_kwargs.items():
-                if self._is_device_arg(arg_input.get(key)):
-                    resolved_kwargs[key] = self._resolve_device(value)
-            return resolved_args, resolved_kwargs
+        else:
+            # Convert normal arg inputs
+            arg_names = list(signature_annotations.keys())
+            for arg_index, arg_name in enumerate(arg_names):
+                if arg_index >= len(resolved_args):
+                    break
+                if self._is_device_arg(signature_annotations.get(arg_name)):
+                    resolved_args[arg_index] = self._resolve_device(resolved_args[arg_index])
 
-        for arg_index, arg_name in enumerate(arg_names):
-            if arg_index >= len(resolved_args):
-                break
-            if self._is_device_arg(arg_input.get(arg_name)):
-                resolved_args[arg_index] = self._resolve_device(resolved_args[arg_index])
-
+        # Convert kwarg inputs
         for key, value in resolved_kwargs.items():
-            if self._is_device_arg(arg_input.get(key)):
+            if self._is_device_arg(kwarg_annotations.get(key)):
                 resolved_kwargs[key] = self._resolve_device(value)
 
         return resolved_args, resolved_kwargs

@@ -225,7 +225,7 @@ def test_v4_cont_line_fly_scan_lib(bec_client_lib):
 
 
 @pytest.mark.timeout(120)
-def test_v4_monitor_scan_lib(bec_client_lib):
+def test_v4_line_sweep_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
     original_velocity = dev.samx.velocity.get()
@@ -234,7 +234,7 @@ def test_v4_monitor_scan_lib(bec_client_lib):
         dev.samx.limits = [-50, 50]
         status = _run_v4_scan(
             bec,
-            "monitor_scan",
+            "line_sweep_scan",
             dev.samx,
             -5.0,
             5.0,
