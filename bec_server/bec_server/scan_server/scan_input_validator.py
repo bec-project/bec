@@ -2,23 +2,28 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping, Sequence
-from typing import Annotated, Any, TypeAlias, get_args, get_origin, get_type_hints
+from types import UnionType
+from typing import Annotated, Any, TypeAlias, Union, get_args, get_origin, get_type_hints
 
+from pydantic import ConfigDict, TypeAdapter, ValidationError
+
+from bec_lib.device import DeviceBase
 from bec_lib.scan_args import ScanArgument
 
 from .errors import ScanInputValidationError
+from .scans.legacy_scans import ScanArgType
 
 ScanClass: TypeAlias = type[Any]
 AnnotationMap: TypeAlias = dict[str, Any]
 
 
 class ScanInputValidator:
-    """Validate scan inputs against supported ``ScanArgument`` annotation metadata.
+    """Validate scan inputs against supported scan input annotations.
 
-    The validator checks numeric bounds declared on ``ScanArgument`` metadata inside
-    ``typing.Annotated`` declarations. It supports both v4 scan input styles:
-    bundled positional arguments declared through ``scan_cls.arg_input`` and fixed
-    constructor inputs declared on ``scan_cls.__init__``.
+    The validator checks input types and numeric bounds declared on ``ScanArgument``
+    metadata inside ``typing.Annotated`` declarations. It supports both v4 scan
+    input styles: bundled positional arguments declared through ``scan_cls.arg_input``
+    and fixed constructor inputs declared on ``scan_cls.__init__``.
     """
 
     def validate(self, scan_cls: ScanClass, args: Sequence[Any], kwargs: Mapping[str, Any]) -> None:
@@ -30,7 +35,8 @@ class ScanInputValidator:
             kwargs (Mapping[str, Any]): Keyword scan arguments after device-name resolution.
 
         Raises:
-            ScanInputValidationError: If an input violates a supported ``ScanArgument`` bound.
+            ScanInputValidationError: If an input has the wrong type or violates a supported
+                ``ScanArgument`` bound.
         """
         self._validate_arg_input_bundle(scan_cls, args)
         self._validate_signature_inputs(scan_cls, args, kwargs)
@@ -43,7 +49,8 @@ class ScanInputValidator:
             args (Sequence[Any]): Positional scan arguments after device-name resolution.
 
         Raises:
-            ScanInputValidationError: If a bundled input violates a supported ``ScanArgument`` bound.
+            ScanInputValidationError: If a bundled input has the wrong type or violates a
+                supported ``ScanArgument`` bound.
         """
         arg_input = getattr(scan_cls, "arg_input", {}) or {}
         bundle_size = getattr(scan_cls, "arg_bundle_size", {}).get("bundle", 0)
@@ -69,7 +76,8 @@ class ScanInputValidator:
             kwargs (Mapping[str, Any]): Keyword scan arguments after device-name resolution.
 
         Raises:
-            ScanInputValidationError: If a constructor input violates a supported ``ScanArgument`` bound.
+            ScanInputValidationError: If a constructor input has the wrong type or violates a
+                supported ``ScanArgument`` bound.
         """
         signature_annotations = self.scan_signature_annotations(scan_cls)
         if not self._uses_arg_input_bundle(scan_cls):
@@ -116,7 +124,7 @@ class ScanInputValidator:
         }
 
     def _validate_value(self, arg_name: str, value: Any, annotation: Any) -> None:
-        """Validate a single input value against any ``ScanArgument`` bounds.
+        """Validate a single input value against the annotated type and bounds.
 
         Args:
             arg_name (str): Name of the scan input being validated.
@@ -124,8 +132,10 @@ class ScanInputValidator:
             annotation (Any): Type annotation that may contain ``ScanArgument`` metadata.
 
         Raises:
-            ScanInputValidationError: If the input violates a supported ``ScanArgument`` bound.
+            ScanInputValidationError: If the input has the wrong type or violates a supported
+                ``ScanArgument`` bound.
         """
+        self._validate_type(arg_name, value, annotation)
         scan_argument = self._scan_argument_from_annotation(annotation)
         if scan_argument is None:
             return
@@ -140,7 +150,7 @@ class ScanInputValidator:
                 continue
             if not self._satisfies_bound(value, operator_name, limit):
                 raise ScanInputValidationError(
-                    f"Invalid value for scan argument '{arg_name}': {value!r} must be "
+                    f"Invalid value for scan argument '{arg_name}': {value!r}. Input must be "
                     f"{self._bound_description(operator_name)} {limit!r}."
                 )
 
@@ -159,6 +169,147 @@ class ScanInputValidator:
             if isinstance(metadata, ScanArgument):
                 return metadata
         return None
+
+    def _validate_type(self, arg_name: str, value: Any, annotation: Any) -> None:
+        """Validate a single input value against the type part of an annotation.
+
+        Args:
+            arg_name (str): Name of the scan input being validated.
+            value (Any): Input value after device-name resolution.
+            annotation (Any): Type annotation or legacy ``ScanArgType`` to check.
+
+        Raises:
+            ScanInputValidationError: If the value does not match the annotated type.
+        """
+        type_annotation = self._type_annotation(annotation)
+        if type_annotation is Any or type_annotation is inspect.Parameter.empty:
+            return
+
+        value = self._normalize_tuple_payloads(value, type_annotation)
+        try:
+            TypeAdapter(
+                type_annotation, config=ConfigDict(arbitrary_types_allowed=True, strict=True)
+            ).validate_python(value)
+        except ValidationError:
+            raise ScanInputValidationError(
+                f"Invalid type for scan argument '{arg_name}': expected "
+                f"{self._type_description(type_annotation)}, got {type(value).__name__}."
+            ) from None
+
+    def _type_annotation(self, annotation: Any) -> Any:
+        """Return the runtime-checkable type annotation for a scan input annotation.
+
+        ``ScanArgument`` metadata is stripped from ``Annotated`` declarations
+        because bounds are validated explicitly by this component.
+
+        Args:
+            annotation (Any): Type annotation or legacy ``ScanArgType`` to convert.
+
+        Returns:
+            Any: Annotation suitable for Pydantic ``TypeAdapter`` validation.
+        """
+        if isinstance(annotation, ScanArgType):
+            return self._legacy_scan_arg_type_annotation(annotation)
+
+        origin = get_origin(annotation)
+        if origin is Annotated:
+            return self._type_annotation(get_args(annotation)[0])
+
+        return annotation
+
+    def _legacy_scan_arg_type_annotation(self, scan_arg_type: ScanArgType) -> Any:
+        """Return the Python type represented by a legacy ``ScanArgType``.
+
+        Args:
+            scan_arg_type (ScanArgType): Legacy scan argument type to convert.
+
+        Returns:
+            Any: Python type represented by the legacy scan argument type.
+        """
+        return {
+            ScanArgType.DEVICE: DeviceBase,
+            ScanArgType.FLOAT: float,
+            ScanArgType.INT: int,
+            ScanArgType.BOOL: bool,
+            ScanArgType.STR: str,
+            ScanArgType.LIST: list,
+            ScanArgType.DICT: dict,
+        }[scan_arg_type]
+
+    def _normalize_tuple_payloads(self, value: Any, annotation: Any) -> Any:
+        """Convert list payloads to tuples where the annotation expects tuples.
+
+        Scan request payloads are serialized through JSON-like message data where
+        tuple-shaped inputs arrive as lists. This normalization keeps type validation
+        strict while preserving the accepted request shape.
+
+        Args:
+            value (Any): Input value after device-name resolution.
+            annotation (Any): Runtime-checkable type annotation.
+
+        Returns:
+            Any: Value with tuple-shaped nested lists converted to tuples.
+        """
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+
+        if origin is Annotated:
+            return self._normalize_tuple_payloads(value, self._type_annotation(annotation))
+
+        if origin in {Union, UnionType}:
+            return value
+
+        if not args:
+            return value
+
+        if origin is list and isinstance(value, list):
+            item_type = args[0]
+            return [self._normalize_tuple_payloads(item, item_type) for item in value]
+
+        if origin is dict and isinstance(value, dict):
+            key_type, value_type = args if len(args) == 2 else (Any, Any)
+            return {
+                self._normalize_tuple_payloads(key, key_type): self._normalize_tuple_payloads(
+                    item, value_type
+                )
+                for key, item in value.items()
+            }
+
+        if origin is tuple and isinstance(value, (list, tuple)):
+            if len(args) == 2 and args[1] is Ellipsis:
+                return tuple(self._normalize_tuple_payloads(item, args[0]) for item in value)
+            if len(args) == len(value):
+                return tuple(
+                    self._normalize_tuple_payloads(item, item_type)
+                    for item, item_type in zip(value, args, strict=True)
+                )
+
+        return value
+
+    def _type_description(self, annotation: Any) -> str:
+        """Return a user-facing type description for an annotation.
+
+        Args:
+            annotation (Any): Type annotation or legacy ``ScanArgType`` to describe.
+
+        Returns:
+            str: Human-readable type description.
+        """
+        origin = get_origin(annotation)
+        if origin is Annotated:
+            annotation = self._type_annotation(annotation)
+            origin = get_origin(annotation)
+
+        if origin in {Union, UnionType}:
+            return " or ".join(self._type_description(arg) for arg in get_args(annotation))
+
+        if origin is not None:
+            return str(annotation).replace("typing.", "")
+
+        if annotation is None or annotation is type(None):
+            return "None"
+
+        return getattr(annotation, "__name__", str(annotation))
 
     def _satisfies_bound(self, value: Any, operator_name: str, limit: float) -> bool:
         """Return whether ``value`` satisfies the named numeric bound.

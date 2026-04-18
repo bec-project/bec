@@ -327,6 +327,30 @@ def test_scan_assembler_validates_fixed_direct_scan_input_bounds(dm_with_devices
             assembler.assemble_direct_scan(msg, "scan_id")
 
 
+def test_scan_assembler_validates_fixed_direct_scan_input_type(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"custom_fixed_direct_scan": CustomFixedDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="custom_fixed_direct_scan",
+        parameter={
+            "args": ["samx", "invalid"],
+            "kwargs": {"system_config": {"file_directory": "/tmp/data"}},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with pytest.raises(ScanInputValidationError, match="target.*expected float"):
+            assembler.assemble_direct_scan(msg, "scan_id")
+
+
 def test_scan_assembler_validates_bundled_direct_scan_input_bounds(dm_with_devices):
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
@@ -351,6 +375,30 @@ def test_scan_assembler_validates_bundled_direct_scan_input_bounds(dm_with_devic
             assembler.assemble_direct_scan(msg, "scan_id")
 
 
+def test_scan_assembler_validates_bundled_direct_scan_input_type(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"custom_direct_scan": CustomDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="custom_direct_scan",
+        parameter={
+            "args": {"samx": ("invalid",)},
+            "kwargs": {"system_config": {"file_directory": "/tmp/data"}},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with pytest.raises(ScanInputValidationError, match="target.*expected float"):
+            assembler.assemble_direct_scan(msg, "scan_id")
+
+
 def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_devices):
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
@@ -372,6 +420,30 @@ def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_de
 
     with mock.patch.object(assembler, "scan_manager", MockScanManager()):
         with pytest.raises(ScanInputValidationError, match="scale.*less than or equal to"):
+            assembler.assemble_direct_scan(msg, "scan_id")
+
+
+def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="custom_bundled_bounded_direct_scan",
+        parameter={
+            "args": {"samx": (1,)},
+            "kwargs": {"scale": "invalid", "system_config": {"file_directory": "/tmp/data"}},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with pytest.raises(ScanInputValidationError, match="scale.*expected float"):
             assembler.assemble_direct_scan(msg, "scan_id")
 
 
