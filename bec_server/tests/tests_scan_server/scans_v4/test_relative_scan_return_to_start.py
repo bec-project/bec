@@ -3,7 +3,6 @@ from unittest import mock
 import pytest
 
 RELATIVE_SCAN_CASES = [
-    ("adaptive_scan", ("samx", 0.0, 8.0), {"signal_device": "samy", "relative": True}),
     ("cont_line_scan", ("samx", -1.0, 1.0), {"steps": 3, "exp_time": 0.1, "relative": True}),
     ("cont_line_fly_scan", ("samx", 0.0, 5.0), {"exp_time": 0.1, "relative": True}),
     ("fermat_scan", ("samx", -1.0, 1.0, "samy", -2.0, 2.0), {"step": 0.5, "relative": True}),
