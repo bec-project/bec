@@ -24,7 +24,14 @@ def test_log_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
 
     scan.prepare_scan()
 
-    expected_positions = np.array([[0.1, 0.01], [1.0, 0.1], [10.0, 1.0]])
+    middle_progress = (np.sqrt(10) - 1) / 9
+    expected_positions = np.array(
+        [
+            [0.1, 0.01],
+            [0.1 + middle_progress * 9.9, 0.01 + middle_progress * 0.99],
+            [10.0, 1.0],
+        ]
+    )
     assert np.allclose(scan.positions, expected_positions)
     assert scan.scan_info.num_points == 3
     assert np.allclose(scan.scan_info.positions, expected_positions)
@@ -35,19 +42,15 @@ def test_log_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
 
 def test_log_scan_prepare_scan_offsets_positions_when_relative(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "log_scan", "samx", 0.1, 1.0, "samy", 0.01, 1.0, steps=3, relative=True
+        "log_scan", "samx", -1.0, 1.0, "samy", 0.0, 1.0, steps=3, relative=True
     )
     scan.components.get_start_positions = lambda motors: [2.0, 3.0]
 
     scan.prepare_scan()
 
-    expected_positions = np.array([[2.1, 3.01], [2.31622777, 3.1], [3.0, 4.0]])
+    middle_progress = (np.sqrt(10) - 1) / 9
+    expected_positions = np.array(
+        [[1.0, 3.0], [1.0 + middle_progress * 2.0, 3.0 + middle_progress], [3.0, 4.0]]
+    )
     assert scan.start_positions == [2.0, 3.0]
     assert np.allclose(scan.positions, expected_positions)
-
-
-def test_log_scan_rejects_invalid_log_ranges(v4_scan_assembler):
-    scan = v4_scan_assembler("log_scan", "samx", -1.0, 1.0, steps=5)
-
-    with pytest.raises(ValueError, match="same sign"):
-        scan.prepare_scan()

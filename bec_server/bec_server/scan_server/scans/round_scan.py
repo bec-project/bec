@@ -42,7 +42,14 @@ class RoundScan(ScanBase):
 
     gui_config = {
         "Motors": ["motor_1", "motor_2"],
-        "Ring Parameters": ["inner_ring", "outer_ring", "number_of_rings", "pos_in_first_ring"],
+        "Ring Parameters": [
+            "inner_radius",
+            "outer_radius",
+            "center_1",
+            "center_2",
+            "number_of_rings",
+            "pos_in_first_ring",
+        ],
         "Scan Parameters": ["relative", "burst_at_each_point"],
         "Acquisition Parameters": [
             "exp_time",
@@ -58,11 +65,11 @@ class RoundScan(ScanBase):
         self,
         motor_1: DeviceBase,
         motor_2: DeviceBase,
-        inner_ring: Annotated[
-            float, ScanArgument(display_name="Inner Ring", reference_units="motor_1", ge=0)
+        inner_radius: Annotated[
+            float, ScanArgument(display_name="Inner Radius", reference_units="motor_1", ge=0)
         ],
-        outer_ring: Annotated[
-            float, ScanArgument(display_name="Outer Ring", reference_units="motor_1", ge=0)
+        outer_radius: Annotated[
+            float, ScanArgument(display_name="Outer Radius", reference_units="motor_1", ge=0)
         ],
         number_of_rings: Annotated[int, ScanArgument(display_name="Number of Rings", ge=1)],
         pos_in_first_ring: Annotated[
@@ -84,6 +91,12 @@ class RoundScan(ScanBase):
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
         relative: bool = False,
+        center_1: Annotated[
+            float, ScanArgument(display_name="Center Motor 1", reference_units="motor_1")
+        ] = 0,
+        center_2: Annotated[
+            float, ScanArgument(display_name="Center Motor 2", reference_units="motor_2")
+        ] = 0,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
         ] = 1,
@@ -96,8 +109,8 @@ class RoundScan(ScanBase):
         Args:
             motor_1 (DeviceBase): first motor
             motor_2 (DeviceBase): second motor
-            inner_ring (float): inner radius
-            outer_ring (float): outer radius
+            inner_radius (float): inner radius
+            outer_radius (float): outer radius
             number_of_rings (int): number of rings
             pos_in_first_ring (int): number of positions in the first ring
             exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
@@ -106,6 +119,8 @@ class RoundScan(ScanBase):
             settling_time_after_trigger (Annotated[float, Units.s]): settling time after trigger in seconds. Default is 0.
             readout_time (Annotated[float, Units.s]): readout time in seconds. Default is 0.
             relative (bool): if True, the motors will be moved relative to their current position. Default is False.
+            center_1 (float): center position for motor_1. Default is 0.
+            center_2 (float): center position for motor_2. Default is 0.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
 
         Returns:
@@ -116,10 +131,12 @@ class RoundScan(ScanBase):
         """
         super().__init__(**kwargs)
         self.motors = [motor_1, motor_2]
-        self.inner_ring = inner_ring
-        self.outer_ring = outer_ring
+        self.inner_radius = inner_radius
+        self.outer_radius = outer_radius
         self.number_of_rings = number_of_rings
         self.pos_in_first_ring = pos_in_first_ring
+        self.center_1 = center_1
+        self.center_2 = center_2
         self.relative = relative
         self.exp_time = exp_time
         self.settling_time = settling_time
@@ -149,10 +166,12 @@ class RoundScan(ScanBase):
         or setting up the devices.
         """
         self.positions = position_generators.round_scan_positions(
-            r_in=self.inner_ring,
-            r_out=self.outer_ring,
-            nr=self.number_of_rings,
-            nth=self.pos_in_first_ring,
+            inner_radius=self.inner_radius,
+            outer_radius=self.outer_radius,
+            number_of_rings=self.number_of_rings,
+            points_in_first_ring=self.pos_in_first_ring,
+            center_1=self.center_1,
+            center_2=self.center_2,
         )
 
         if self.relative:

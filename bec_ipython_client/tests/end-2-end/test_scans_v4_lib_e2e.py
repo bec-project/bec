@@ -130,15 +130,47 @@ def _wait_for_queue_status(bec, queue_name: str, expected_status: str, timeout: 
             "round_scan",
             ("dev.samx", "dev.samy", 0.0, 2.0, 2, 3),
             {"exp_time": 0.01, "relative": False},
-            len(position_generators.round_scan_positions(0.0, 2.0, 2, 3)),
-            len(position_generators.round_scan_positions(0.0, 2.0, 2, 3)),
+            len(
+                position_generators.round_scan_positions(
+                    inner_radius=0.0,
+                    outer_radius=2.0,
+                    number_of_rings=2,
+                    points_in_first_ring=3,
+                )
+            ),
+            len(
+                position_generators.round_scan_positions(
+                    inner_radius=0.0,
+                    outer_radius=2.0,
+                    number_of_rings=2,
+                    points_in_first_ring=3,
+                )
+            ),
         ),
         (
             "round_roi_scan",
-            ("dev.samx", 2.0, "dev.samy", 2.0),
+            ("dev.samx", -1.0, 1.0, "dev.samy", -1.0, 1.0),
             {"dr": 1.0, "nth": 3, "exp_time": 0.01, "relative": False},
-            len(position_generators.get_round_roi_scan_positions(2.0, 2.0, dr=1.0, nth=3)),
-            len(position_generators.get_round_roi_scan_positions(2.0, 2.0, dr=1.0, nth=3)),
+            len(
+                position_generators.get_round_roi_scan_positions(
+                    motor_1_start=-1.0,
+                    motor_1_stop=1.0,
+                    motor_2_start=-1.0,
+                    motor_2_stop=1.0,
+                    radial_step=1.0,
+                    points_in_first_shell=3,
+                )
+            ),
+            len(
+                position_generators.get_round_roi_scan_positions(
+                    motor_1_start=-1.0,
+                    motor_1_stop=1.0,
+                    motor_2_start=-1.0,
+                    motor_2_stop=1.0,
+                    radial_step=1.0,
+                    points_in_first_shell=3,
+                )
+            ),
         ),
         ("time_scan", (), {"points": 3, "interval": 0.05, "exp_time": 0.01}, 3, 3),
     ],

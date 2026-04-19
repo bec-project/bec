@@ -26,7 +26,11 @@ RELATIVE_SCAN_CASES = [
         ("samx",),
         {"regions": [(-5.0, -2.0, 4), (-1.0, 6.0, 4)], "relative": True},
     ),
-    ("round_roi_scan", ("samx", 6.0, "samy", 4.0), {"dr": 1.0, "nth": 4, "relative": True}),
+    (
+        "round_roi_scan",
+        ("samx", -3.0, 3.0, "samy", -2.0, 2.0),
+        {"dr": 1.0, "nth": 4, "relative": True},
+    ),
     ("round_scan", ("samx", "samy", 0.0, 2.0, 2, 3), {"relative": True}),
 ]
 

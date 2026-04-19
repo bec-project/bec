@@ -90,13 +90,16 @@ def spiral_positions(
     return _filter_points_in_box(points, x_center, y_center, x_range, y_range)
 
 
-def line_scan_positions(axes: list[tuple[float, float]], steps: int) -> np.ndarray:
+def line_scan_positions(
+    axes: list[tuple[float, float]], steps: int, endpoint: bool = True
+) -> np.ndarray:
     """
     Generate linearly spaced positions for one or more axes.
 
     Args:
         axes (list[tuple[float, float]]): Sequence of ``(start, stop)`` pairs, one per axis.
         steps (int): Number of points to generate along the trajectory.
+        endpoint (bool): If True, include the stop value in the generated positions.
 
     Returns:
         np.ndarray: Array of shape ``(steps, len(axes))`` containing the scan positions.
@@ -104,35 +107,39 @@ def line_scan_positions(axes: list[tuple[float, float]], steps: int) -> np.ndarr
     if steps <= 0:
         raise ValueError("steps must be positive")
 
-    axis_positions = [np.linspace(start, stop, steps, dtype=float) for start, stop in axes]
+    axis_positions = [
+        np.linspace(start, stop, steps, dtype=float, endpoint=endpoint) for start, stop in axes
+    ]
     return np.column_stack(axis_positions)
 
 
 def log_scan_positions(axes: list[tuple[float, float]], steps: int) -> np.ndarray:
     """
-    Generate logarithmically spaced positions for one or more axes.
+    Generate positions with logarithmically increasing step sizes.
+
+    The logarithmic spacing is applied to the normalized distance between each
+    ``start`` and ``stop`` pair, not to the absolute position values. This means
+    ranges may include zero or cross zero.
 
     Args:
         axes (list[tuple[float, float]]): Sequence of ``(start, stop)`` pairs, one per axis.
-            Each pair must be non-zero and have the same sign.
         steps (int): Number of points to generate along the trajectory.
 
     Returns:
         np.ndarray: Array of shape ``(steps, len(axes))`` containing the scan positions.
 
     Raises:
-        ValueError: If ``steps`` is not positive, or if any axis crosses zero.
+        ValueError: If ``steps`` is not positive.
     """
     if steps <= 0:
         raise ValueError("steps must be positive")
 
+    # Log spacing from 0 to 1
+    log_progress = (np.logspace(0, 1, steps, dtype=float) - 1) / 9
+
     axis_positions = []
     for start, stop in axes:
-        if start == 0 or stop == 0:
-            raise ValueError("log scan start/stop values must be non-zero")
-        if np.sign(start) != np.sign(stop):
-            raise ValueError("log scan start/stop values must have the same sign")
-        axis_positions.append(np.geomspace(start, stop, steps, dtype=float))
+        axis_positions.append(start + log_progress * (stop - start))
     return np.column_stack(axis_positions)
 
 
@@ -379,64 +386,110 @@ def fermat_spiral_pos(
 
 
 def round_scan_positions(
-    r_in: float, r_out: float, nr: int, nth: int, cenx=0, ceny=0
+    inner_radius: float,
+    outer_radius: float,
+    number_of_rings: int,
+    points_in_first_ring: int,
+    center_1: float = 0,
+    center_2: float = 0,
 ) -> np.ndarray:
     """
-    round_scan_positions calculates and returns the positions for a round scan.
+    Calculate positions for a circular shell scan.
 
     Args:
-        r_in (float): inner radius
-        r_out (float): outer radius
-        nr (int): number of radii
-        nth (int): number of angles in the inner ring
-        cenx (int, optional): center in x. Defaults to 0.
-        ceny (int, optional): center in y. Defaults to 0.
+        inner_radius (float): inner radius
+        outer_radius (float): outer radius
+        number_of_rings (int): number of radii
+        points_in_first_ring (int): number of angles in the inner ring
+        center_1 (float, optional): center position for axis 1. Defaults to 0.
+        center_2 (float, optional): center position for axis 2. Defaults to 0.
 
     Returns:
         np.ndarray: calculated positions in the form [[x, y], ...]
-
     """
     positions = []
-    dr = (r_in - r_out) / nr
-    for ir in range(1, nr + 2):
-        rr = r_in + ir * dr
-        dth = 2 * np.pi / (nth * ir)
+    radius_step = (inner_radius - outer_radius) / number_of_rings
+    for ring_index in range(1, number_of_rings + 2):
+        radius = inner_radius + ring_index * radius_step
+        points_on_ring = points_in_first_ring * ring_index
+        angular_step = 2 * np.pi / points_on_ring
         positions.extend(
             [
-                (rr * np.sin(ith * dth) + cenx, rr * np.cos(ith * dth) + ceny)
-                for ith in range(nth * ir)
+                (
+                    radius * np.sin(point_index * angular_step) + center_1,
+                    radius * np.cos(point_index * angular_step) + center_2,
+                )
+                for point_index in range(points_on_ring)
             ]
         )
-    return np.array(positions, dtype=float)
+    positions_array = np.array(positions, dtype=float)
+    return positions_array
 
 
-def get_round_roi_scan_positions(lx: float, ly: float, dr: float, nth: int, cenx=0, ceny=0):
+def get_round_roi_scan_positions(
+    motor_1_start: float,
+    motor_1_stop: float,
+    motor_2_start: float,
+    motor_2_stop: float,
+    radial_step: float,
+    points_in_first_shell: int,
+    center_1: float = 0,
+    center_2: float = 0,
+):
     """
-    get_round_roi_scan_positions calculates and returns the positions for a round scan in a rectangular region of interest.
+    Calculate round scan positions clipped to a rectangular region of interest.
+
+    The circular shells are centered around ``center_1`` / ``center_2``. The center does
+    not need to be inside the rectangular ROI defined by the motor start/stop
+    bounds.
 
     Args:
-        lx (float): length in x
-        ly (float): length in y
-        dr (float): step size
-        nth (int): number of angles in the inner ring
-        cenx (int, optional): center in x. Defaults to 0.
-        ceny (int, optional): center in y. Defaults to 0.
+        motor_1_start (float): start position of the ROI for motor 1
+        motor_1_stop (float): stop position of the ROI for motor 1
+        motor_2_start (float): start position of the ROI for motor 2
+        motor_2_stop (float): stop position of the ROI for motor 2
+        radial_step (float): radial shell spacing
+        points_in_first_shell (int): number of angles in the first shell
+        center_1 (float, optional): center position for motor 1. Defaults to 0.
+        center_2 (float, optional): center position for motor 2. Defaults to 0.
 
     Returns:
-        array: calculated positions in the form [[x, y], ...]
+        np.ndarray: calculated positions in the form [[x, y], ...]
     """
+    motor_1_min, motor_1_max = sorted((motor_1_start, motor_1_stop))
+    motor_2_min, motor_2_max = sorted((motor_2_start, motor_2_stop))
+    corners = [
+        (motor_1_min, motor_2_min),
+        (motor_1_min, motor_2_max),
+        (motor_1_max, motor_2_min),
+        (motor_1_max, motor_2_max),
+    ]
+    max_radius = max(
+        np.hypot(motor_1_position - center_1, motor_2_position - center_2)
+        for motor_1_position, motor_2_position in corners
+    )
+
     positions = []
-    nr = 1 + int(np.floor(max([lx, ly]) / dr))
-    for ir in range(1, nr + 2):
-        rr = ir * dr
-        dth = 2 * np.pi / (nth * ir)
-        pos = [
-            (rr * np.cos(ith * dth) + cenx, rr * np.sin(ith * dth) + ceny)
-            for ith in range(nth * ir)
-            if np.abs(rr * np.cos(ith * dth)) < lx / 2 and np.abs(rr * np.sin(ith * dth)) < ly / 2
-        ]
-        positions.extend(pos)
-    return np.array(positions)
+    number_of_shells = 1 + int(np.ceil(max_radius / radial_step))
+    for shell_index in range(1, number_of_shells + 2):
+        radius = shell_index * radial_step
+        points_on_shell = points_in_first_shell * shell_index
+        angular_step = 2 * np.pi / points_on_shell
+        for point_index in range(points_on_shell):
+            angle = point_index * angular_step
+            local_position = np.array(
+                [[radius * np.cos(angle), radius * np.sin(angle)]], dtype=float
+            )
+            motor_1_offset, motor_2_offset = local_position[0]
+            motor_1_position = motor_1_offset + center_1
+            motor_2_position = motor_2_offset + center_2
+            if not (
+                motor_1_min <= motor_1_position <= motor_1_max
+                and motor_2_min <= motor_2_position <= motor_2_max
+            ):
+                continue
+            positions.append((motor_1_position, motor_2_position))
+    return np.array(positions, dtype=float)
 
 
 def hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True) -> np.ndarray:

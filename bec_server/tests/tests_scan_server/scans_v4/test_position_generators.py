@@ -27,16 +27,33 @@ def test_line_scan_positions_generates_linear_trajectory():
 
 def test_log_scan_positions_generates_log_trajectory():
     positions = position_generators.log_scan_positions([(1.0, 100.0), (10.0, 1000.0)], steps=3)
+    middle_progress = (np.sqrt(10) - 1) / 9
 
-    assert np.allclose(positions, [[1.0, 10.0], [10.0, 100.0], [100.0, 1000.0]])
+    assert np.allclose(
+        positions,
+        [
+            [1.0, 10.0],
+            [1.0 + middle_progress * 99.0, 10.0 + middle_progress * 990.0],
+            [100.0, 1000.0],
+        ],
+    )
 
 
-def test_log_scan_positions_rejects_zero_and_mixed_sign_ranges():
-    with np.testing.assert_raises_regex(ValueError, "non-zero"):
-        position_generators.log_scan_positions([(0.0, 10.0)], steps=5)
+def test_log_scan_positions_spans_distance_for_zero_crossing_ranges():
+    positions = position_generators.log_scan_positions([(0.0, 10.0), (-5.0, 5.0)], steps=3)
+    middle_progress = (np.sqrt(10) - 1) / 9
 
-    with np.testing.assert_raises_regex(ValueError, "same sign"):
-        position_generators.log_scan_positions([(-1.0, 10.0)], steps=5)
+    assert np.allclose(
+        positions,
+        [[0.0, -5.0], [middle_progress * 10.0, -5.0 + middle_progress * 10.0], [10.0, 5.0]],
+    )
+
+
+def test_log_scan_positions_supports_reverse_ranges():
+    positions = position_generators.log_scan_positions([(10.0, 0.0)], steps=3)
+    middle_progress = (np.sqrt(10) - 1) / 9
+
+    assert np.allclose(positions, [[10.0], [10.0 - middle_progress * 10.0], [0.0]])
 
 
 def test_oscillating_positions_cycles_back_and_forth():

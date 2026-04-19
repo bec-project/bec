@@ -41,8 +41,8 @@ class RoundROIScan(ScanBase):
     required_kwargs = ["dr", "nth", "relative"]
 
     gui_config = {
-        "Motor 1": ["motor_1", "width_1"],
-        "Motor 2": ["motor_2", "width_2"],
+        "Motor 1": ["motor_1", "start_motor_1", "stop_motor_1", "center_1"],
+        "Motor 2": ["motor_2", "start_motor_2", "stop_motor_2", "center_2"],
         "Shell Parameters": ["dr", "nth"],
         "Acquisition Parameters": [
             "exp_time",
@@ -51,21 +51,28 @@ class RoundROIScan(ScanBase):
             "settling_time_after_trigger",
             "readout_time",
             "burst_at_each_point",
+            "relative",
         ],
     }
 
     def __init__(
         self,
         motor_1: DeviceBase,
-        width_1: Annotated[
-            float, ScanArgument(display_name="Scan Range", reference_units="motor_1", ge=0)
+        start_motor_1: Annotated[
+            float, ScanArgument(display_name="Start Position", reference_units="motor_1")
+        ],
+        stop_motor_1: Annotated[
+            float, ScanArgument(display_name="Stop Position", reference_units="motor_1")
         ],
         motor_2: DeviceBase,
-        width_2: Annotated[
-            float, ScanArgument(display_name="Scan Range", reference_units="motor_2", ge=0)
+        start_motor_2: Annotated[
+            float, ScanArgument(display_name="Start Position", reference_units="motor_2")
+        ],
+        stop_motor_2: Annotated[
+            float, ScanArgument(display_name="Stop Position", reference_units="motor_2")
         ],
         dr: Annotated[
-            float, ScanArgument(display_name="Shell Spacing", reference_units="motor_1", ge=0)
+            float, ScanArgument(display_name="Shell Spacing", reference_units="motor_1", gt=0)
         ] = 1,
         nth: Annotated[int, ScanArgument(display_name="Number of Points in First Shell", ge=1)] = 5,
         exp_time: Annotated[
@@ -84,6 +91,12 @@ class RoundROIScan(ScanBase):
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
         relative: bool = False,
+        center_1: Annotated[
+            float, ScanArgument(display_name="Center Motor 1", reference_units="motor_1")
+        ] = 0,
+        center_2: Annotated[
+            float, ScanArgument(display_name="Center Motor 2", reference_units="motor_2")
+        ] = 0,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
         ] = 1,
@@ -94,9 +107,11 @@ class RoundROIScan(ScanBase):
 
         Args:
             motor_1 (DeviceBase): first motor
-            width_1 (float): width of region of interest for motor_1
+            start_motor_1 (float): start position of the ROI for motor_1
+            stop_motor_1 (float): stop position of the ROI for motor_1
             motor_2 (DeviceBase): second motor
-            width_2 (float): width of region of interest for motor_2
+            start_motor_2 (float): start position of the ROI for motor_2
+            stop_motor_2 (float): stop position of the ROI for motor_2
             dr (float): shell width. Default is 1.
             nth (int): number of points in the first shell. Default is 5.
             exp_time (float): exposure time in seconds. Default is 0.
@@ -105,18 +120,28 @@ class RoundROIScan(ScanBase):
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
             relative (bool): Start from an absolute or relative position. Default is False.
+            center_1 (float): center position for motor_1. The center may be outside the ROI.
+                Default is 0.
+            center_2 (float): center position for motor_2. The center may be outside the ROI.
+                Default is 0.
             burst_at_each_point (int): number of acquisition per point. Default is 1.
 
         Returns:
             ScanReport
 
         Examples:
-            >>> scans.round_roi_scan(dev.motor1, 20, dev.motor2, 20, dr=2, nth=3, exp_time=0.1, relative=True)
+            >>> scans.round_roi_scan(
+            ...     dev.motor1, -10, 10, dev.motor2, -10, 10, dr=2, nth=3, exp_time=0.1
+            ... )
         """
         super().__init__(**kwargs)
         self.motors = [motor_1, motor_2]
-        self.width_1 = width_1
-        self.width_2 = width_2
+        self.start_motor_1 = start_motor_1
+        self.stop_motor_1 = stop_motor_1
+        self.start_motor_2 = start_motor_2
+        self.stop_motor_2 = stop_motor_2
+        self.center_1 = center_1
+        self.center_2 = center_2
         self.dr = dr
         self.nth = nth
         self.relative = relative
@@ -148,7 +173,14 @@ class RoundROIScan(ScanBase):
         or setting up the devices.
         """
         self.positions = position_generators.get_round_roi_scan_positions(
-            lx=self.width_1, ly=self.width_2, dr=self.dr, nth=self.nth
+            motor_1_start=self.start_motor_1,
+            motor_1_stop=self.stop_motor_1,
+            motor_2_start=self.start_motor_2,
+            motor_2_stop=self.stop_motor_2,
+            radial_step=self.dr,
+            points_in_first_shell=self.nth,
+            center_1=self.center_1,
+            center_2=self.center_2,
         )
 
         if self.relative:
