@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.117.3 (2026-04-21)
+
+### Bug Fixes
+
+- Removing scan motors
+  ([`b0ccbc9`](https://github.com/bec-project/bec/commit/b0ccbc9f6897e24167742dd5b261a6f08349e4d3))
+
+
 ## v3.117.2 (2026-04-16)
 
 ### Performance Improvements
