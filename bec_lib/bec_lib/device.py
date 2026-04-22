@@ -799,10 +799,10 @@ class DeviceBaseWithConfig(DeviceBase):
             action="update", config={self.name: update}
         )
 
-    def get_device_tags(self) -> list:
+    def get_device_tags(self) -> set:
         """get the device tags for this device"""
         # pylint: disable=protected-access
-        return self.root._config.get("deviceTags", [])
+        return self.root._config.get("deviceTags", set())
 
     @typechecked
     def set_device_tags(self, val: Iterable):
