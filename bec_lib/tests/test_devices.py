@@ -737,9 +737,9 @@ def test_attribute_access_on_sub_device(positioner_as_subdevice):
         dev.enabled = False
 
     # Readout priority
-    assert dev.readout_priority == ReadoutPriority.MONITORED.value
+    assert dev.readout_priority == ReadoutPriority.MONITORED
     with pytest.raises(NotImplementedOnSubdeviceError):
-        dev.readout_priority = ReadoutPriority.BASELINE.value
+        dev.readout_priority = ReadoutPriority.BASELINE
 
     # Device tags
     assert dev.get_device_tags() == set()

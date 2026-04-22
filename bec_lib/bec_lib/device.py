@@ -79,13 +79,20 @@ class RPCError(AlarmBase):
 class NotImplementedOnSubdeviceError(AlarmBase):
     """Exception raised when a method is not implemented for a subdevice."""
 
-    def __init__(self, device: str, sub_device: str, method: str) -> None:
+    def __init__(
+        self, device: str, sub_device: str, method: str, additional_info: str | None = None
+    ) -> None:
+        compact_error_message = f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'."
+        error_message = compact_error_message
+        if additional_info:
+            error_message += f" Additional info: {additional_info}"
+
         alarm = messages.AlarmMessage(
             severity=Alarms.MAJOR,
             info=messages.ErrorInfo(
                 exception_type="NotImplemented",
-                error_message=f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'.",
-                compact_error_message=f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'.",
+                error_message=error_message,
+                compact_error_message=compact_error_message,
             ),
         )
         super().__init__(alarm, Alarms.MAJOR, handled=False)
@@ -793,7 +800,10 @@ class DeviceBaseWithConfig(DeviceBase):
         """
         if self.name != self.root.name:
             raise NotImplementedOnSubdeviceError(
-                device=self.root.name, sub_device=self.dotted_name, method="_update_config"
+                device=self.root.name,
+                sub_device=self.dotted_name,
+                method="_update_config",
+                additional_info=f"Received update: {update}",
             )
         self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: update}
