@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any, Callable, Literal
 from unittest import mock
 
@@ -12,6 +13,7 @@ from bec_lib.device import (
     ComputedSignal,
     Device,
     DeviceBaseWithConfig,
+    NotImplementedOnSubdeviceError,
     Positioner,
     ReadoutPriority,
     RPCError,
@@ -700,9 +702,69 @@ def test_show_all(dm_with_override):
 
 
 @pytest.fixture()
+def positioner_as_subdevice(dm_with_override):
+    dm_with_override.connector = ConnectorMock("")
+    dev = Device(name="test_device", config=BASIC_CONFIG, parent=dm_with_override)
+    positioner = Positioner(name="positioner1", config=BASIC_CONFIG, parent=dev)
+    return positioner
+
+
+def test_limits_on_sub_device(positioner_as_subdevice):
+    with mock.patch.object(positioner_as_subdevice.root.parent.connector, "get") as mock_get:
+        mock_get.return_value = None
+        assert positioner_as_subdevice.limits == [0, 0]
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        positioner_as_subdevice.limits = [-10, 10]
+
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        positioner_as_subdevice.low_limit = -10
+
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        positioner_as_subdevice.high_limit = 10
+
+
+def test_attribute_access_on_sub_device(positioner_as_subdevice):
+    dev = positioner_as_subdevice
+
+    # Read-only
+    assert dev.read_only == False
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.read_only = True
+
+    # Enabled
+    assert dev.enabled == True
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.enabled = False
+
+    # Readout priority
+    assert dev.readout_priority == ReadoutPriority.MONITORED.value
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.readout_priority = ReadoutPriority.BASELINE.value
+
+    # Device tags
+    assert dev.get_device_tags() == set()
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.set_device_tags({"tag1", "tag2"})
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.add_device_tag("tag1")
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.remove_device_tag("tag1")
+
+    # User parameter
+    assert dev.user_parameter == {}
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.set_user_parameter({"param1": 1})
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.update_user_parameter({"param1": 1})
+
+
+@pytest.fixture()
 def adj():
     (adj := AdjustableMixin()).root = mock.MagicMock()
     adj._update_config = mock.MagicMock()
+    # attributes that exist on the DeviceBase
+    adj.name = "test_mixin"
+    adj.root.name = "test_mixin"
     return adj
 
 
