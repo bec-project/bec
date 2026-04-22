@@ -76,6 +76,21 @@ class RPCError(AlarmBase):
         super().__init__(alarm, Alarms.MAJOR, handled=False)
 
 
+class NotImplementedOnSubdeviceError(AlarmBase):
+    """Exception raised when a method is not implemented for a subdevice."""
+
+    def __init__(self, device: str, sub_device: str, method: str) -> None:
+        alarm = messages.AlarmMessage(
+            severity=Alarms.MAJOR,
+            info=messages.ErrorInfo(
+                exception_type="NotImplemented",
+                error_message=f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'.",
+                compact_error_message=f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'.",
+            ),
+        )
+        super().__init__(alarm, Alarms.MAJOR, handled=False)
+
+
 class ScanRequestError(Exception):
     """Exception raised when a scan request is rejected."""
 
@@ -767,6 +782,10 @@ class DeviceBaseWithConfig(DeviceBase):
     @enabled.setter
     def enabled(self, val):
         # pylint: disable=protected-access
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="enabled"
+            )
         self._update_config({"enabled": val})
         self.root._config["enabled"] = val
 
@@ -778,6 +797,10 @@ class DeviceBaseWithConfig(DeviceBase):
             update (dict): The update dictionary.
 
         """
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="_update_config"
+            )
         self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: update}
         )
@@ -791,6 +814,10 @@ class DeviceBaseWithConfig(DeviceBase):
     def set_device_tags(self, val: Iterable):
         """set the device tags for this device - any duplicates will be discarded"""
         # pylint: disable=protected-access
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="set_device_tags"
+            )
         self.root._config["deviceTags"] = set(val)
         return self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
@@ -800,6 +827,10 @@ class DeviceBaseWithConfig(DeviceBase):
     def add_device_tag(self, val: str):
         """add a device tag for this device"""
         # pylint: disable=protected-access
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="add_device_tag"
+            )
         self.root._config["deviceTags"].add(val)
         return self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
@@ -808,6 +839,10 @@ class DeviceBaseWithConfig(DeviceBase):
     def remove_device_tag(self, val: str):
         """remove a device tag for this device"""
         # pylint: disable=protected-access
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="remove_device_tag"
+            )
         self.root._config["deviceTags"].remove(val)
         return self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"deviceTags": self.root._config["deviceTags"]}}
@@ -816,6 +851,10 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def wm(self) -> None:
         """get the current position of a device"""
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="wm"
+            )
         self.parent.devices.wm(self.name)
 
     @property
@@ -829,6 +868,10 @@ class DeviceBaseWithConfig(DeviceBase):
         """set the readout priority for this device"""
         if not isinstance(val, ReadoutPriority):
             val = ReadoutPriority(val)
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="readout_priority"
+            )
         # pylint: disable=protected-access
         self.root._config["readoutPriority"] = val
         return self.root.parent.config_helper.send_config_request(
@@ -846,6 +889,10 @@ class DeviceBaseWithConfig(DeviceBase):
         """set the failure behaviour for this device"""
         if not isinstance(val, OnFailure):
             val = OnFailure(val)
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="on_failure"
+            )
         # pylint: disable=protected-access
         self.root._config["onFailure"] = val
         return self.root.parent.config_helper.send_config_request(
@@ -862,6 +909,10 @@ class DeviceBaseWithConfig(DeviceBase):
     def read_only(self, value: bool):
         """Whether or not the device is read only"""
         # pylint: disable=protected-access
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="read_only"
+            )
         self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"readOnly": value}}
         )
@@ -877,6 +928,10 @@ class DeviceBaseWithConfig(DeviceBase):
     def software_trigger(self, value: bool):
         """Whether or not the device can be software triggered"""
         # pylint: disable=protected-access
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="software_trigger"
+            )
         self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"softwareTrigger": value}}
         )
@@ -891,6 +946,10 @@ class DeviceBaseWithConfig(DeviceBase):
     @typechecked
     def set_user_parameter(self, val: dict):
         """set the user parameter for this device"""
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="set_user_parameter"
+            )
         self.root.parent.config_helper.send_config_request(
             action="update", config={self.name: {"userParameter": val}}
         )
@@ -1176,6 +1235,10 @@ class AdjustableMixin:
 
     @limits.setter
     def limits(self, val: list):
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="limits"
+            )
         self._update_config({"deviceConfig": {"limits": val}})
 
     @property
@@ -1187,6 +1250,10 @@ class AdjustableMixin:
 
     @low_limit.setter
     def low_limit(self, val: float):
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="low_limit"
+            )
         limits = [val, self.high_limit]
         self._update_config({"deviceConfig": {"limits": limits}})
 
@@ -1199,6 +1266,10 @@ class AdjustableMixin:
 
     @high_limit.setter
     def high_limit(self, val: float):
+        if self.name != self.root.name:
+            raise NotImplementedOnSubdeviceError(
+                device=self.root.name, sub_device=self.dotted_name, method="high_limit"
+            )
         limits = [self.low_limit, val]
         self._update_config({"deviceConfig": {"limits": limits}})
 
