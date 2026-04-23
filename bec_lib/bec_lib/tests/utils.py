@@ -432,6 +432,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
             device="rt_controller", info=positioner_info_with_user_access
         ),
         "samx": messages.DeviceInfoMessage(device="samx", info=positioner_info),
+        "samy": messages.DeviceInfoMessage(device="samy", info=positioner_info),
         "dyn_signals": messages.DeviceInfoMessage(
             device="dyn_signals",
             info={
