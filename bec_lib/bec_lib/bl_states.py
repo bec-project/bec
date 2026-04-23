@@ -488,12 +488,13 @@ class AggregatedState(BeamlineState[AggregatedStateConfig]):
             raise RuntimeError("Redis connector is not set.")
 
         try:
+            msg = None
             self._build_rules()
             affected_labels = self._fill_cache()
+            msg = self.evaluate(affected_labels=affected_labels)
         except Exception as exc:
             self._handle_state_exception(exc)
 
-        msg = self.evaluate(affected_labels=affected_labels)
         if msg is not None:
             self._emit_state(msg)
         for device, source in self._subscriptions:
