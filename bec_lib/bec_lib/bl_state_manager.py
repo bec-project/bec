@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import inspect
 import time
+from collections.abc import Mapping, Sequence
 from inspect import Parameter, Signature
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from pydantic import BaseModel
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
+from rich.tree import Tree
 
 from bec_lib import bl_states, messages
 from bec_lib.endpoints import MessageEndpoints
@@ -73,6 +76,47 @@ class BeamlineStateGet(TypedDict):
     label: str
 
 
+def _add_parameter_to_tree(parent: Tree, name: str, value: Any) -> None:
+    """Add a configuration value to a Rich tree without interpreting it as markup."""
+    if isinstance(value, Mapping):
+        branch = parent.add(Text(str(name), style="cyan"))
+        if not value:
+            branch.add(Text("{}", style="grey70"))
+            return
+        for child_name, child_value in value.items():
+            _add_parameter_to_tree(branch, str(child_name), child_value)
+        return
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        branch = parent.add(Text(str(name), style="cyan"))
+        if not value:
+            branch.add(Text("[]", style="grey70"))
+            return
+        for index, child_value in enumerate(value):
+            _add_parameter_to_tree(branch, f"[{index}]", child_value)
+        return
+
+    line = Text()
+    line.append(f"{name}: ", style="cyan")
+    line.append(repr(value), style="grey70")
+    parent.add(line)
+
+
+def _truncate_text(value: str, max_length: int) -> str:
+    """Truncate text to a deterministic maximum length."""
+    if len(value) <= max_length:
+        return value
+    return f"{value[: max_length - 1]}…"
+
+
+def _summarize_label(label: str, max_labels: int = 3, max_length: int = 64) -> str:
+    """Bound the potentially large set of matching labels shown by ``show_all``."""
+    labels = label.split("|")
+    if len(labels) > max_labels:
+        label = f"{'|'.join(labels[:max_labels])}|… (+{len(labels) - max_labels})"
+    return _truncate_text(label.replace("\n", " "), max_length=max_length)
+
+
 class BeamlineStateClientBase:
     """Base class for beamline state clients."""
 
@@ -117,6 +161,24 @@ class BeamlineStateClientBase:
             return {"status": "unknown", "label": "No state information available."}
         msg = msg_container["data"]
         return {"status": msg.status, "label": msg.label}
+
+    def describe(self) -> None:
+        """Pretty print the complete, validated configuration for this state."""
+        title = Text(self._state.name, style="bold magenta")
+        title.append(f" ({self._state.state_type})", style="grey70")
+        tree = Tree(title)
+        parameters = self._state.model_dump(exclude={"name"}, exclude_none=True)
+        if (
+            isinstance(self._state, bl_states.AggregatedStateConfig)
+            and self._state.evaluation_method is None
+        ):
+            parameters = {"evaluation_method": None, **parameters}
+        if not parameters:
+            tree.add(Text("No parameters", style="grey70"))
+        else:
+            for name, value in parameters.items():
+                _add_parameter_to_tree(tree, name, value)
+        Console().print(tree)
 
     def remove(self) -> None:
         """
@@ -221,16 +283,26 @@ class BeamlineStateManager:
     ##### Public API #########
     ##########################
 
-    def add(self, state: bl_states.BeamlineStateConfig) -> None:
+    def add(self, state: bl_states.BeamlineStateConfig, skip_existing: bool = False) -> None:
         """
         Add a new beamline state to the manager.
         Args:
             state (BeamlineStateConfig): The beamline state to add.
+            skip_existing (bool): If True, existing states in the manager will be skipped during loading.
         """
-
+        if skip_existing and state.name in self._states:
+            return
         self._add_state(state)
         self._publish_states()
         self._wait_for_initial_state(state.name)
+
+    def clear_all(self) -> None:
+        """
+        Clear all beamline states from the manager.
+        """
+        for state_name in list(self._states.keys()):
+            self._delete_state(state_name)
+        self._publish_states()
 
     def delete(self, state_name: str) -> None:
         """
@@ -257,12 +329,6 @@ class BeamlineStateManager:
         Pretty print all beamline states using rich.
         """
 
-        def _format_parameters(state_config: bl_states.BeamlineStateConfig) -> str:
-            parameter_dict = state_config.model_dump(exclude={"name"}, exclude_none=True)
-            if not parameter_dict:
-                return "-"
-            return "\n".join(f"{key}={value}" for key, value in parameter_dict.items())
-
         def _status_style(status_value: str) -> str:
             status_styles = {"valid": "green3", "invalid": "red3", "warning": "yellow3"}
             return status_styles.get(status_value.lower(), "grey50")
@@ -276,7 +342,8 @@ class BeamlineStateManager:
         table.add_column("Label")
 
         for state in self._states.values():
-            params = _format_parameters(state)
+            state_class = _state_class_for_state_type(state.state_type)
+            params = state_class.format_config_summary(state)
             status = (
                 getattr(self, state.name).get()
                 if hasattr(self, state.name)
@@ -288,8 +355,8 @@ class BeamlineStateManager:
                 str(state.name),
                 str(state.state_type),
                 str(params),
-                f"[{status_style}]{status_value}[/{status_style}]",
-                f"[{status_style}]{str(status.get('label', ''))}[/{status_style}]",
+                Text(status_value, style=status_style),
+                Text(_summarize_label(str(status.get("label", ""))), style=status_style),
             )
 
         console.print(table)

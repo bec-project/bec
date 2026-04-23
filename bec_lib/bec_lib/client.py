@@ -20,6 +20,7 @@ from rich.table import Table
 
 from bec_lib.alarm_handler import AlarmHandler, Alarms
 from bec_lib.bec_service import BECService
+from bec_lib.bl_state_machine import BeamlineStateMachine
 from bec_lib.bl_state_manager import BeamlineStateManager
 from bec_lib.builtin_actor_hli import BuiltinActorHli
 from bec_lib.callback_handler import CallbackHandler, EventType
@@ -162,6 +163,7 @@ class BECClient(BECService):
         self._username = ""
         self._system_user = ""
         self.beamline_states = None
+        self.state_machine = None
         self.messaging: MessagingContainer = None  # type: ignore
         self.builtin_actors: BuiltinActorHli = None  # type: ignore
 
@@ -244,6 +246,7 @@ class BECClient(BECService):
         self.dap = DAPPlugins(self)
         self._update_username()
         self.beamline_states = BeamlineStateManager(client=self)
+        self.state_machine = BeamlineStateMachine(manager=self.beamline_states)
 
     def alarms(self, severity=Alarms.WARNING):
         """get the next alarm with at least the specified severity"""
