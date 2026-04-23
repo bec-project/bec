@@ -196,6 +196,221 @@ class TestConcreteStates:
         assert state.evaluate(invalid).status == "invalid"
         assert state.evaluate(missing).status == "invalid"
 
+    @pytest.fixture(scope="function")
+    def aggregated_state_config(self):
+        return bl_states.AggregatedStateConfig(
+            name="alignment",
+            states={
+                "alignment": {
+                    "devices": {
+                        "samx": {
+                            "readback": {"value": 0, "abs_tol": 0.1},
+                            "velocity": {"value": 5, "abs_tol": 0.1},
+                            "low_limit": {"value": -20, "abs_tol": 0.1},
+                            "high_limit": {"value": 20, "abs_tol": 0.1},
+                        },
+                        "samy": {"readback": {"value": 0, "abs_tol": 0.1}},
+                    }
+                },
+                "measurement": {
+                    "devices": {
+                        "samx": {
+                            "readback": {"value": 19, "abs_tol": 0.1},
+                            "velocity": {"value": 5, "abs_tol": 0.1},
+                            "low_limit_travel": {"value": -20, "abs_tol": 0.1},
+                            "high_limit_travel": {"value": 20, "abs_tol": 0.1},
+                        },
+                        "samy": {"readback": {"value": 2, "abs_tol": 0.1}},
+                    }
+                },
+                "test": {"devices": {"samy": {"readback": {"value": 0, "abs_tol": 0.1}}}},
+            },
+        )
+
+    def test_aggregated_state_init(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+
+        state = bl_states.AggregatedState(
+            name=aggregated_state_config.name,
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.start()
+        # We should now have subscriptions on samx limits, readback and read_configuration, and samy readback
+        info = [
+            MessageEndpoints.device_readback("samx"),
+            MessageEndpoints.device_read_configuration("samx"),
+            MessageEndpoints.device_limits("samx"),
+            MessageEndpoints.device_readback("samy"),
+        ]
+        for endpoint in info:
+            assert endpoint.endpoint in state.connector._topics_cb
+
+    def test_aggregated_state_evaluation(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            name=aggregated_state_config.name,
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.start()
+
+        with (
+            mock.patch.object(state, "evaluate", return_value=None) as evaluate,
+            mock.patch.object(state, "_emit_state") as emit_state,
+        ):
+
+            msg_with_2_states = messages.DeviceMessage(
+                signals={"samx": {"value": 5.0, "timestamp": 1.0}}, metadata={"stream": "primary"}
+            )
+            msg_obj = MessageObject(
+                value=msg_with_2_states, topic=MessageEndpoints.device_readback("samx").endpoint
+            )
+            state._update_aggregated_state(msg_obj, device="samx", source="readback")
+            evaluate.assert_called_once_with(affected_labels=set(["alignment", "measurement"]))
+            emit_state.assert_not_called()  # As evaluate is mocked to return None, _emit_state should not be called
+
+    def test_aggregated_state_evaluate(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            name=aggregated_state_config.name,
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state._build_rules()
+        state._cache_message(
+            "samx",
+            "readback",
+            messages.DeviceMessage(
+                signals={"samx": {"value": 0, "timestamp": 1.0}}, metadata={"stream": "primary"}
+            ),
+        )
+        state._cache_message(
+            "samx",
+            "configuration",
+            messages.DeviceMessage(
+                signals={"samx_velocity": {"value": 5, "timestamp": 1.0}},
+                metadata={"stream": "baseline"},
+            ),
+        )
+        state._cache_message(
+            "samx",
+            "limits",
+            messages.DeviceMessage(
+                signals={
+                    "low": {"value": -20, "timestamp": 1.0},
+                    "high": {"value": 20, "timestamp": 1.0},
+                },
+                metadata={"stream": "baseline"},
+            ),
+        )
+        state._cache_message(
+            "samy",
+            "readback",
+            messages.DeviceMessage(
+                signals={"samy": {"value": 0, "timestamp": 1.0}}, metadata={"stream": "primary"}
+            ),
+        )
+
+        msg = state.evaluate(affected_labels={"alignment"})
+
+        assert msg.status == "valid"
+        assert msg.label == "alignment"
+        assert state._current_labels == ["alignment"]
+
+        state._cache_message(
+            "samx",
+            "readback",
+            messages.DeviceMessage(
+                signals={"samx": {"value": 3, "timestamp": 2.0}}, metadata={"stream": "primary"}
+            ),
+        )
+
+        msg = state.evaluate(affected_labels={"alignment"})
+
+        assert msg.status == "invalid"
+        assert msg.label == "No matching state"
+        assert state._current_labels == []
+
+    def test_aggregated_state_exception_handling(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            name=aggregated_state_config.name,
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.start()
+        msg = messages.DeviceMessage(
+            signals={"samx": {"value": 0, "timestamp": 1.0}}, metadata={"stream": "primary"}
+        )
+        msg_obj = MessageObject(value=msg, topic=MessageEndpoints.device_readback("samx").endpoint)
+
+        with (
+            mock.patch.object(
+                state, "evaluate", side_effect=RuntimeError("broken state")
+            ) as evaluate,
+            mock.patch.object(connected_connector, "raise_alarm") as raise_alarm,
+        ):
+            state._update_aggregated_state(msg_obj, device="samx", source="readback")
+
+        evaluate.assert_called_once_with(affected_labels={"alignment", "measurement"})
+        raise_alarm.assert_called_once()
+        out = connected_connector.xread(
+            MessageEndpoints.beamline_state("alignment"), from_start=True
+        )
+        assert out[-1]["data"].status == "unknown"
+        assert out[-1]["data"].label == "broken state"
+        assert state.raised_warning is True
+
+    def test_aggregated_state_transitions_between_labels(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            name=aggregated_state_config.name,
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.start()
+
+        def update(device, source, signals):
+            msg = messages.DeviceMessage(signals=signals, metadata={"stream": "primary"})
+            msg_obj = MessageObject(value=msg, topic=state._endpoint(device, source).endpoint)
+            state._update_aggregated_state(msg_obj, device=device, source=source)
+            out = connected_connector.xread(
+                MessageEndpoints.beamline_state("alignment"), from_start=True
+            )
+            return out[-1]["data"]
+
+        msg = update("samx", "configuration", {"samx_velocity": {"value": 5, "timestamp": 1.0}})
+        assert msg.status == "invalid"
+
+        update(
+            "samx",
+            "limits",
+            {"low": {"value": -20, "timestamp": 1.0}, "high": {"value": 20, "timestamp": 1.0}},
+        )
+        update("samx", "readback", {"samx": {"value": 0, "timestamp": 1.0}})
+        msg = update("samy", "readback", {"samy": {"value": 0, "timestamp": 1.0}})
+        assert msg.status == "valid"
+        assert set(msg.label.split("|")) == {"alignment", "test"}
+
+        msg = update("samx", "readback", {"samx": {"value": 19, "timestamp": 2.0}})
+        assert msg.status == "valid"
+        assert msg.label == "test"
+
+        msg = update("samy", "readback", {"samy": {"value": 2, "timestamp": 2.0}})
+        assert msg.status == "valid"
+        assert msg.label == "measurement"
+
 
 class TestBeamlineStateManager:
     def test_manager_registers_for_state_updates(self, connected_connector):
