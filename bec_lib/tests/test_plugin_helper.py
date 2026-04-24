@@ -1,4 +1,5 @@
 import sys
+from types import ModuleType, SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -64,3 +65,30 @@ def test_reload_plugin_modules_reloads_plugin_tree():
     importlib_mock.reload.assert_any_call(plugin_module)
     importlib_mock.reload.assert_any_call(plugin_scans_module)
     importlib_mock.reload.assert_any_call(plugin_scan_submodule)
+
+
+def test_get_scan_component_plugins(monkeypatch):
+    from bec_server.scan_server.scans.scan_components import ScanComponents
+
+    package = ModuleType("example_plugin.scans.scan_customization")
+    package.__path__ = ["fake_path"]
+
+    module = ModuleType("example_plugin.scans.scan_customization.scan_components")
+    plugin_components = type("PluginComponents", (ScanComponents,), {"__module__": module.__name__})
+    module.PluginComponents = plugin_components
+
+    monkeypatch.setattr(plugin_helper, "plugin_package_name", lambda: "example_plugin")
+    monkeypatch.setattr(
+        plugin_helper,
+        "_import_module",
+        lambda name: {package.__name__: package, module.__name__: module}[name],
+    )
+    monkeypatch.setattr(
+        plugin_helper.pkgutil,
+        "iter_modules",
+        lambda path, prefix: [SimpleNamespace(name=module.__name__)],
+    )
+
+    result = plugin_helper.get_scan_component_plugins()
+
+    assert result == [plugin_components]

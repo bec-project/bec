@@ -4,6 +4,7 @@ import importlib
 import importlib.metadata
 import inspect
 import json
+import pkgutil
 import sys
 from functools import cache, lru_cache
 from typing import TYPE_CHECKING, Any, Literal, Type
@@ -12,6 +13,7 @@ from bec_lib.logger import bec_logger
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.metadata_schema import BasicScanMetadata
+    from bec_server.scan_server.scans.scan_components import ScanComponents
     from bec_server.scan_server.scans.scan_modifier import ScanModifier
 
 
@@ -92,6 +94,41 @@ def get_scan_modifier_plugin() -> Type[ScanModifier] | None:
     return None
 
 
+def get_scan_component_plugins() -> list[Type[ScanComponents]]:
+    """
+    Load all scan component plugin classes from the installed plugin's
+    ``scans.scan_customization`` package.
+
+    Returns:
+        list[Type[ScanComponents]]: All discovered ScanComponents subclasses.
+    """
+    from bec_server.scan_server.scans.scan_components import ScanComponents
+
+    package_name = plugin_package_name()
+    try:
+        customization_package = _import_module(f"{package_name}.scans.scan_customization")
+    except ModuleNotFoundError:
+        return []
+
+    modules = [customization_package]
+    package_path = getattr(customization_package, "__path__", None)
+    if package_path is not None:
+        modules.extend(
+            _import_module(module_info.name)
+            for module_info in pkgutil.iter_modules(
+                package_path, prefix=f"{customization_package.__name__}."
+            )
+        )
+
+    component_plugins = []
+    for module in modules:
+        mods = inspect.getmembers(module, predicate=_filter_plugins)
+        for _, mod_cls in mods:
+            if issubclass(mod_cls, ScanComponents) and mod_cls is not ScanComponents:
+                component_plugins.append(mod_cls)
+    return component_plugins
+
+
 def get_file_writer_plugins() -> dict:
     """
     Load all file writer plugins.
@@ -168,6 +205,7 @@ def module_dist_info(name: str) -> dict[str, Any]:
     return json.loads(dist.read_text("direct_url.json") or "{}")
 
 
+@lru_cache()
 def plugin_repo_path() -> str:
     """Get the path on disk of the installed plugin repository. Raises ValueError if no plugin is
     installed or more than one plugin is installed. Raises ValueError if the installed plugin is not

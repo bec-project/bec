@@ -38,6 +38,7 @@ dependencies = [
     "pint~=0.25",
     "python-dotenv~=1.0",
     "python-slugify~=8.0",
+    "questionary~=2.0",
 ]
 
 
