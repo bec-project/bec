@@ -1,10 +1,11 @@
 """Actors can autonomously respond to changes in beamline states."""
 
 import time
+from abc import ABC, abstractmethod
 from threading import Event
 from typing import Iterable
 
-from bec_lib.actors import Actor as ActorProtocol
+from bec_lib.actors import ActorActionTable
 from bec_lib.client import BECClient
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -12,7 +13,10 @@ from bec_lib.logger import bec_logger
 logger = bec_logger.logger
 
 
-class ActorBase(ActorProtocol):
+class ActorBase(ABC):
+    client: BECClient
+    action_table: ActorActionTable
+
     def __init__(self, client: BECClient, exec_id: str):
         self.client = client
         self.stop_event = Event()
@@ -25,6 +29,10 @@ class ActorBase(ActorProtocol):
                     f"{self.__class__.__name__} triggered, executing action for condition: {condition}"
                 )
                 action(self.client)
+
+    @abstractmethod
+    def run(self):
+        """Run forever until self.stop_event is set"""
 
     def stop(self, *_):
         self.stop_event.set()
