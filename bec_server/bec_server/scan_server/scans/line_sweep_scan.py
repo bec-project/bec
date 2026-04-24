@@ -42,7 +42,6 @@ class LineSweepScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_line_sweep_scan"
-    required_kwargs = ["relative"]
     gui_config = {
         "Device": ["device", "start", "stop"],
         "Scan Parameters": ["min_update", "relative"],
@@ -57,6 +56,8 @@ class LineSweepScan(ScanBase):
         stop: Annotated[
             float, ScanArgument(display_name="Stop Position", reference_units="device")
         ],
+        *,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -69,7 +70,6 @@ class LineSweepScan(ScanBase):
         max_update: Annotated[
             float, ScanArgument(display_name="Maximum Update", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         **kwargs,
     ):
         """
@@ -82,11 +82,12 @@ class LineSweepScan(ScanBase):
             device (DeviceBase): monitored device
             start (float): start position
             stop (float): stop position
+            relative (bool): If True, the start and stop positions are relative to
+                the current position.
             exp_time (float): exposure time. Default is 0.
             frames_per_trigger (int): number of frames per trigger. Default is 1.
             min_update (float): minimum delay between readout updates. Default is 0.
             max_update (float): maximum delay between readout updates. Default is 0.
-            relative (bool): if True, the start and stop positions are relative to the current position. Default is False.
 
         Returns:
             ScanReport

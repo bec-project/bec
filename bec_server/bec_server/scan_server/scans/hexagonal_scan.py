@@ -39,8 +39,6 @@ class HexagonalScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_hexagonal_scan"
-    required_kwargs = ["relative"]
-
     gui_config = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1", "step_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2", "step_motor2"],
@@ -77,6 +75,8 @@ class HexagonalScan(ScanBase):
         step_motor2: Annotated[
             float, ScanArgument(display_name="Step Size", reference_units="motor2", gt=0)
         ],
+        *,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -92,7 +92,6 @@ class HexagonalScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
         ] = 1,
@@ -115,12 +114,13 @@ class HexagonalScan(ScanBase):
             start_motor2 (float): start position of the second motor
             stop_motor2 (float): stop position of the second motor
             step_motor2 (float): step size of the second motor
+            relative (bool): If True, interpret the scan positions relative to the
+                current motor positions.
             exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (Annotated[float, Units.s]): settling time in seconds. Default is 0.
             settling_time_after_trigger (Annotated[float, Units.s]): settling time after trigger in seconds. Default is 0.
             readout_time (Annotated[float, Units.s]): readout time in seconds. Default is 0.
-            relative (bool): if True, interpret the scan positions relative to the current motor positions.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
             snaked (bool): if True, alternate the traversal direction between neighboring rows.
 

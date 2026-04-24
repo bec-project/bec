@@ -39,8 +39,6 @@ class RoundScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_round_scan"
-    required_kwargs = ["relative"]
-
     gui_config = {
         "Motors": ["motor_1", "motor_2"],
         "Ring Parameters": [
@@ -76,6 +74,8 @@ class RoundScan(ScanBase):
         pos_in_first_ring: Annotated[
             int, ScanArgument(display_name="Positions in First Ring", ge=1)
         ],
+        *,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -91,7 +91,6 @@ class RoundScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         center_1: Annotated[
             float, ScanArgument(display_name="Center Motor 1", reference_units="motor_1")
         ] = 0,
@@ -114,12 +113,13 @@ class RoundScan(ScanBase):
             outer_radius (float): outer radius
             number_of_rings (int): number of rings
             pos_in_first_ring (int): number of positions in the first ring
+            relative (bool): If True, the motors will be moved relative to their
+                current position.
             exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
             frames_per_trigger (Annotated[int]): number of frames acquired per trigger. Default is 1.
             settling_time (Annotated[float, Units.s]): settling time in seconds. Default is 0.
             settling_time_after_trigger (Annotated[float, Units.s]): settling time after trigger in seconds. Default is 0.
             readout_time (Annotated[float, Units.s]): readout time in seconds. Default is 0.
-            relative (bool): if True, the motors will be moved relative to their current position. Default is False.
             center_1 (float): center position for motor_1. Default is 0.
             center_2 (float): center position for motor_2. Default is 0.
             burst_at_each_point (int): number of exposures at each point. Default is 1.

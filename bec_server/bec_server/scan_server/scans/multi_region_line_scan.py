@@ -40,8 +40,6 @@ class MultiRegionLineScan(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_multi_region_line_scan"
 
-    required_kwargs = ["regions", "relative"]
-
     gui_config = {
         "Movement Parameters": ["regions", "relative"],
         "Acquisition Parameters": [
@@ -59,6 +57,7 @@ class MultiRegionLineScan(ScanBase):
         motor: DeviceBase,
         *,
         regions: list[tuple[float, float, int]],
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -74,7 +73,6 @@ class MultiRegionLineScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
         ] = 1,
@@ -92,13 +90,13 @@ class MultiRegionLineScan(ScanBase):
             motor (DeviceBase): motor to move
             regions (list[tuple[float, float, int]]): sequence of ``(start, stop, steps)``
                 region definitions
+            relative (bool): If True, the generated positions are interpreted
+                relative to the current motor position.
             exp_time (float): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (float): settling time in seconds. Default is 0.
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
-            relative (bool): if True, the generated positions are interpreted relative to the
-                current motor position. Default is False.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
 
         Returns:

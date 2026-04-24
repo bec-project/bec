@@ -52,8 +52,6 @@ class LogScan(ScanBase):
         ],
     }
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    required_kwargs = ["steps", "relative"]
-
     gui_config = {
         "Movement Parameters": ["steps", "relative"],
         "Acquisition Parameters": [
@@ -69,7 +67,8 @@ class LogScan(ScanBase):
     def __init__(
         self,
         *args,
-        steps: Annotated[int, ScanArgument(display_name="Steps", ge=1)] = 1,
+        steps: Annotated[int, ScanArgument(display_name="Steps", ge=1)],
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -85,7 +84,6 @@ class LogScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
         ] = 1,
@@ -96,13 +94,14 @@ class LogScan(ScanBase):
 
         Args:
             *args (Device, float, float): pairs of device / start / stop arguments
-            steps (int): number of points along the trajectory
+            steps (int): number of points along the trajectory.
+            relative (bool): If True, the positions are interpreted relative to the
+                current position.
             exp_time (float): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (float): settling time in seconds. Default is 0.
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
-            relative (bool): if True, the positions are interpreted relative to the current position. Default is False.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
 
         Returns:

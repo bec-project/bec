@@ -44,8 +44,6 @@ class FermatSpiralScan(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_fermat_scan"
 
-    required_kwargs = ["relative"]
-
     gui_config = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2"],
@@ -76,9 +74,9 @@ class FermatSpiralScan(ScanBase):
         stop_motor2: Annotated[
             float, ScanArgument(display_name="Stop Position", reference_units="motor2")
         ],
-        step: Annotated[
-            float, ScanArgument(display_name="Step Size", reference_units="motor1")
-        ] = 0.1,
+        step: Annotated[float, ScanArgument(display_name="Step Size", reference_units="motor1")],
+        *,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -94,7 +92,6 @@ class FermatSpiralScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         spiral_type: Annotated[
             float,
             ScanArgument(
@@ -127,13 +124,14 @@ class FermatSpiralScan(ScanBase):
             motor2 (DeviceBase): second motor
             start_motor2 (float): start position motor 2
             stop_motor2 (float): end position motor 2
-            step (float): step size in motor units. Default is 0.1.
+            step (float): step size in motor units.
+            relative (bool): If True, the motors will be moved relative to their
+                current position.
             exp_time (float): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (float): settling time in seconds. Default is 0.
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
-            relative (bool): if True, the motors will be moved relative to their current position.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
             spiral_type (float): Angular offset (e.g. 0, 0.25,... ) in radians that determines the shape of the spiral. Default is 0.
             optim_trajectory (str): trajectory optimization method. Default is None. Options are "corridor", "shell", "nearest".
@@ -142,7 +140,7 @@ class FermatSpiralScan(ScanBase):
             ScanReport
 
         Examples:
-            >>> scans.fermat_scan(dev.motor1, -5, 5, dev.motor2, -5, 5, step=0.5, exp_time=0.1, relative=True, optim_trajectory="corridor")
+            >>> scans.fermat_scan(dev.motor1, -5, 5, dev.motor2, -5, 5, 0.5, relative=True, exp_time=0.1, optim_trajectory="corridor")
 
         """
         super().__init__(**kwargs)

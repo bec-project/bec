@@ -39,8 +39,6 @@ class RoundROIScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_round_roi_scan"
-    required_kwargs = ["shell_spacing", "pos_in_first_ring", "relative"]
-
     gui_config = {
         "Motor 1": ["motor_1", "start_motor_1", "stop_motor_1", "center_1"],
         "Motor 2": ["motor_2", "start_motor_2", "stop_motor_2", "center_2"],
@@ -74,10 +72,12 @@ class RoundROIScan(ScanBase):
         ],
         shell_spacing: Annotated[
             float, ScanArgument(display_name="Shell Spacing", reference_units="motor_1", gt=0)
-        ] = 1,
+        ],
         pos_in_first_ring: Annotated[
             int, ScanArgument(display_name="Number of Points in First Shell", ge=1)
-        ] = 5,
+        ],
+        *,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -93,7 +93,6 @@ class RoundROIScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         center_1: Annotated[
             float, ScanArgument(display_name="Center Motor 1", reference_units="motor_1")
         ] = 0,
@@ -115,14 +114,14 @@ class RoundROIScan(ScanBase):
             motor_2 (DeviceBase): second motor
             start_motor_2 (float): start position of the ROI for motor_2
             stop_motor_2 (float): stop position of the ROI for motor_2
-            shell_spacing (float): shell width. Default is 1.
-            pos_in_first_ring (int): number of points in the first shell. Default is 5.
+            shell_spacing (float): shell width.
+            pos_in_first_ring (int): number of points in the first shell.
+            relative (bool): If True, start from a relative position.
             exp_time (float): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (float): settling time in seconds. Default is 0.
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
-            relative (bool): Start from an absolute or relative position. Default is False.
             center_1 (float): center position for motor_1. The center may be outside the ROI.
                 Default is 0.
             center_2 (float): center position for motor_2. The center may be outside the ROI.
@@ -133,7 +132,7 @@ class RoundROIScan(ScanBase):
             ScanReport
 
         Examples:
-            >>> scans.round_roi_scan(dev.motor1, -10, 10, dev.motor2, -10, 10, shell_spacing=2, pos_in_first_ring=3, exp_time=0.1)
+            >>> scans.round_roi_scan(dev.motor1, -10, 10, dev.motor2, -10, 10, 2, 3, relative=False, exp_time=0.1)
         """
         super().__init__(**kwargs)
         self.motors = [motor_1, motor_2]

@@ -42,12 +42,10 @@ class MoveScan(ScanBase):
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
     arg_input = {"device": DeviceBase, "target": float}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    required_kwargs = ["relative"]
-
     # We set is_scan to False to separate this class from the other scans in the user interface
     is_scan = False
 
-    def __init__(self, *args, relative: bool = False, **kwargs):
+    def __init__(self, *args, relative: bool, **kwargs):
         """
         Simple move command that moves one or more motors to the specified positions.
         The mv command gives back control to the user immediately after sending the command. For a blocking call
@@ -56,7 +54,8 @@ class MoveScan(ScanBase):
 
         Args:
             *args (Device, float): pairs of device / target position arguments
-            relative (bool): if True, the motors will be moved relative to their current position.
+            relative (bool): If True, the motors will be moved relative to their
+                current position.
 
         Returns:
             ScanReport
