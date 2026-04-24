@@ -8,6 +8,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, Protocol, TypedDict, TypeVar
 
+from pydantic import ValidationError
+
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
@@ -23,8 +25,6 @@ from bec_lib.messages import (
 )
 from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
-from pydantic import ValidationError
-
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
 
