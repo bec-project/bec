@@ -18,17 +18,35 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Tuple
 
-from bec_lib.device import DeviceBase, Signal
+from bec_lib.alarm_handler import AlarmBase, Alarms
+from bec_lib.bl_states import AggregatedState, SubDeviceStateConfig
+from bec_lib.device import DeviceBase, Positioner, Signal
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messages import AlarmMessage, ErrorInfo
 from bec_server.scan_server.scans.scan_modifier import scan_hook
-from bec_server.scan_server.scans.scans_v4 import ScanBase, bundle_args
+from bec_server.scan_server.scans.scans_v4 import ScanBase
 
 if TYPE_CHECKING:
-    from bec_lib.bl_states import AggregatedStateConfig, SubDeviceStateConfig
+    from bec_lib.bl_states import AggregatedStateConfig, ResolvedStateSignal
     from bec_lib.messages import AvailableBeamlineStatesMessage
 
 logger = bec_logger.logger
+
+
+class StateTransitionScanError(AlarmBase):
+    """Exception raised when an RPC call fails."""
+
+    def __init__(self, exc_type: str, message: str, compact_message: str) -> None:
+        alarm = AlarmMessage(
+            severity=Alarms.MAJOR,
+            info=ErrorInfo(
+                exception_type=exc_type,
+                error_message=message,
+                compact_error_message=compact_message,
+            ),
+        )
+        super().__init__(alarm, Alarms.MAJOR, handled=False)
 
 
 class StateTransitionScan(ScanBase):
@@ -61,8 +79,11 @@ class StateTransitionScan(ScanBase):
 
         # We need to sort the devices and signals in the config, and identify which of them are motor setpoint/readback pairs
         # and which of them are just readouts and thereby can not be set within the transition.
-        self._settable_signals_with_setpoint: list[Tuple[Signal, Any]] = []
+        self._signals_to_set: list[Tuple[Signal, Any]] = []
+        self._limits_to_set: dict[str, Tuple[Positioner, float, float]] = {}
+        self._devices_to_set: list[Tuple[Positioner, float]] = []
 
+    # pylint: disable=protected-access
     @scan_hook
     def prepare_scan(self):
         """
@@ -70,16 +91,65 @@ class StateTransitionScan(ScanBase):
         before the scan is opened, such as preparing the positions (if not done already)
         or setting up the devices.
         """
-        for device_name, signal_configs in self.config_for_label.devices.items():
-            dev_obj = self.device_manager.devices.get(device_name, None)
+        requirements: list[ResolvedStateSignal] = AggregatedState.get_state_requirements(
+            self.target_label, self.config_for_label, self.device_manager, "StateTransitionScan"
+        )
+        for req in requirements:
+            dev_obj: DeviceBase = self.device_manager.devices.get(req.device_name)
+            # Device not found
             if dev_obj is None:
-                raise ValueError(f"Device {device_name} not found in device manager.")
+                raise StateTransitionScanError(
+                    exc_type="DeviceNotFound",
+                    message=f"Device {req.device_name} not found in device manager.",
+                    compact_message=f"Device {req.device_name} not found.",
+                )
+            # First we handle Signals logic
             if isinstance(dev_obj, Signal):
-                if dev_obj._info["write_access"] is False:
-                    logger.info(
-                        f"Signal {device_name} is read-only, skipping during state transition."
+                self._signals_to_set.append((dev_obj, req.expected_value))
+                continue
+            # Positioner and Device logic. Devices must implement .set for this to work, otherwise we can not set them and we raise an error
+            if isinstance(dev_obj, DeviceBase):
+                # Handle motor-specific logic here
+                # First we handle logic for motions of the motor. Device_name and signal_name will be equivalent here
+                if req.signal_name == req.device_name:
+                    self._devices_to_set.append((dev_obj, req.expected_value))
+                    continue
+                if req.signal_name in ["low", "high"]:
+                    if req.device_name not in self._limits_to_set:
+                        self._limits_to_set[req.device_name] = (
+                            dev_obj,
+                            dev_obj.low_limit,
+                            dev_obj.high_limit,
+                        )
+                    if req.signal_name == "low_limit":
+                        self._limits_to_set[req.device_name] = (
+                            dev_obj,
+                            req.expected_value,
+                            self._limits_to_set[req.device_name][2],
+                        )
+                    else:
+                        self._limits_to_set[req.device_name] = (
+                            dev_obj,
+                            self._limits_to_set[req.device_name][1],
+                            req.expected_value,
+                        )
+                    continue
+                signal_obj = self._get_signal_object(dev_obj, req.signal_name)
+                if signal_obj is None:
+                    raise StateTransitionScanError(
+                        exc_type="SignalNotFound",
+                        message=f"Signal {req.signal_name} for device {req.device_name} not found in device manager.",
+                        compact_message=f"Signal {req.signal_name} for device {req.device_name} not found.",
                     )
-                    continue  # This is a read-only signal, we can transition it
+                self._signals_to_set.append((signal_obj, req.expected_value))
+                continue
+
+        self.update_scan_info(scan_report_devices=[dev for dev, _ in self._devices_to_set])
+
+    def _get_signal_object(self, device_obj: DeviceBase, signal_name: str) -> Signal:
+        for component_name, info in device_obj._info["signals"].items():
+            if info["obj_name"] == signal_name:
+                return getattr(device_obj, component_name)
 
     @scan_hook
     def open_scan(self):
@@ -116,23 +186,23 @@ class StateTransitionScan(ScanBase):
         Core scan logic to be executed during the scan.
         This is where the main scan logic should be implemented.
         """
-        current_positions = self.components.get_start_positions(self.motors)
-        target_positions = list(self.motor_args_bundles.values())
-        target_positions = [pos[0] for pos in target_positions]
-        if self.relative:
-            target_positions = [
-                target + current
-                for target, current in zip(target_positions, current_positions, strict=False)
-            ]
+        motors = [element[0] for element in self._devices_to_set]
+        target_positions = [element[1] for element in self._devices_to_set]
+        current_positions = self.components.get_start_positions(motors)
 
         self.actions.add_scan_report_instruction_readback(
-            devices=self.motors,
+            devices=motors,
             start=current_positions,
             stop=target_positions,
             request_id=self.scan_info.metadata["RID"],
         )
 
-        self.components.move_and_wait(self.motors, target_positions)
+        self.components.move_and_wait(motors, target_positions)
+        # After the move is completed, we set the limits and signals.
+        for dev_name, (dev_obj, low_limit, high_limit) in self._limits_to_set.items():
+            dev_obj.limits = [low_limit, high_limit]
+        for signal_obj, target_value in self._signals_to_set:
+            signal_obj.set(target_value).wait()
 
     @scan_hook
     def at_each_point(self):
@@ -172,10 +242,12 @@ class StateTransitionScan(ScanBase):
     #################
 
     def _fetch_config_for_label(self, state_name: str, target_label: str) -> SubDeviceStateConfig:
-        available_states_msg: AvailableBeamlineStatesMessage = self.redis_connector.get(
+        available_states_msg: AvailableBeamlineStatesMessage = self.redis_connector.get_last(
             MessageEndpoints.available_beamline_states()
         )
-        configs = [state for state in available_states_msg.states if state.name == state_name]
+        configs = [
+            state for state in available_states_msg["data"].states if state.name == state_name
+        ]
         if len(configs) == 0:
             raise ValueError(f"State {state_name} not found in available states.")
         elif len(configs) > 1:  # Should not be possible, but just in case
@@ -185,9 +257,9 @@ class StateTransitionScan(ScanBase):
             raise ValueError(
                 f"State {state_name} is not an aggregated state. Transitions are only supported for aggregated states."
             )
-        available_labels = list(config.states.keys())
+        available_labels = list(config.parameters["states"].keys())
         if target_label not in available_labels:
             raise ValueError(
                 f"Target label {target_label} not found in state {state_name}. Available labels: {available_labels}"
             )
-        return config.states[target_label]
+        return SubDeviceStateConfig.model_validate(config.parameters["states"][target_label])
