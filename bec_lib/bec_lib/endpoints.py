@@ -1637,6 +1637,45 @@ class MessageEndpoints:
             endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.STREAM
         )
 
+    # Actors
+
+    @staticmethod
+    def actor_start_request():
+        """Endpoint to request starting a given actor."""
+        endpoint = f"{EndpointType.USER.value}/actors/request"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ActorStartRequestMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def actor_stop_request():
+        """Endpoint to request stopping a given actor."""
+        endpoint = f"{EndpointType.USER.value}/actors/stop"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ActorStopRequestMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def actor_stop(exec_id: str):
+        """Endpoint to trigger stopping a given actor - from the manager."""
+        endpoint = f"{EndpointType.INTERNAL.value}/actors/stop/{exec_id}"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.ActorStopMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
+    def actor_request_response() -> EndpointInfo:
+        endpoint = f"{EndpointType.INFO.value}/actor/request_response"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.RequestResponseMessage,
+            message_op=MessageOp.SEND,
+        )
+
     @staticmethod
     def gui_registry_state(gui_id: str):
         """

@@ -1484,6 +1484,8 @@ class ProcedureExecutionMessage(BECMessage):
             identifier (str): name of the procedure registered with the server
             queue (str): the procedure queue this execution belongs to
             args_kwargs (tuple[tuple[Any, ...], dict[str, Any]]): arguments for the procedure function
+            execution_id: a unique ID assigned by the procedure manager
+            env (dict[str,str]): for out of process workers, environment variables to pass in
     """
 
     msg_type: ClassVar[str] = "procedure_execution_message"
@@ -1491,6 +1493,7 @@ class ProcedureExecutionMessage(BECMessage):
     queue: str
     args_kwargs: tuple[tuple[Any, ...], dict[str, Any]] = (), {}
     execution_id: str
+    env: dict[str, str] | None = None
 
 
 class ProcedureAbortMessage(BECMessage):
@@ -2014,3 +2017,30 @@ class AvailableBeamlineStatesMessage(BECMessage):
 
     msg_type: ClassVar[str] = "beamline_state_update_message"
     states: list[BeamlineStateConfig]
+
+
+class ActorStartRequestMessage(BECMessage):
+    msg_type: ClassVar[str] = "actor_start_request"
+
+    actor_module: str
+    actor_class_name: str
+
+
+class ActorStopRequestMessage(BECMessage):
+    msg_type: ClassVar[str] = "actor_stop_request"
+
+    actor_id: str
+
+
+class ActorExecutionMessage(BECMessage):
+    msg_type: ClassVar[str] = "actor_execution"
+
+    queue: str
+    execution_id: str
+    env: dict[str, str] | None
+
+
+class ActorStopMessage(BECMessage):
+    msg_type: ClassVar[str] = "actor_stop"
+
+    execution_id: str
