@@ -208,27 +208,28 @@ class TestConcreteStates:
                 "alignment": {
                     "devices": {
                         "samx": {
-                            "readback": {"value": 0, "abs_tol": 0.1},
-                            "velocity": {"value": 5, "abs_tol": 0.1},
+                            "value": 0,
+                            "abs_tol": 0.1,
                             "low_limit": {"value": -20, "abs_tol": 0.1},
                             "high_limit": {"value": 20, "abs_tol": 0.1},
                         },
-                        "bpm4i": {"bpm4i": {"value": 0, "abs_tol": 0.1}},
+                        "bpm4i": {"value": 0, "abs_tol": 0.1},
                     }
                 },
                 "measurement": {
                     "devices": {
                         "samx": {
-                            "readback": {"value": 19, "abs_tol": 0.1},
-                            "velocity": {"value": 5, "abs_tol": 0.1},
-                            "low_limit_travel": {"value": -20, "abs_tol": 0.1},
-                            "high_limit_travel": {"value": 20, "abs_tol": 0.1},
+                            "value": 19,
+                            "abs_tol": 0.1,
+                            "low_limit": {"value": -20, "abs_tol": 0.1},
+                            "high_limit": {"value": 20, "abs_tol": 0.1},
+                            "signals": {"velocity": {"value": 5, "abs_tol": 0.1}},
                         },
-                        "bpm4i": {"bpm4i": {"value": 2, "abs_tol": 0.1}},
+                        "bpm4i": {"value": 2, "abs_tol": 0.1},
                     }
                 },
-                "test": {"devices": {"bpm4i": {"bpm4i": {"value": 0, "abs_tol": 0.1}}}},
-                "string_state": {"devices": {"bpm3i": {"bpm3i": {"value": "ok"}}}},
+                "test": {"devices": {"bpm4i": {"value": 0, "abs_tol": 0.1}}},
+                "string_state": {"devices": {"bpm3i": {"value": "ok"}}},
             },
         )
 
@@ -647,8 +648,9 @@ class TestStateMachine:
             "alignment": {
                 "devices": {
                     "samx": {
-                        "readback": {"value": 0, "abs_tol": 0.1},
-                        "velocity": {"value": 5, "abs_tol": 0.1},
+                        "value": 0,
+                        "abs_tol": 0.1,
+                        "signals": {"velocity": {"value": 5, "abs_tol": 0.1}},
                     }
                 }
             }
