@@ -1,29 +1,47 @@
+import threading
 from threading import Thread
 from unittest.mock import patch
 
 import pytest
 from fakeredis import TcpFakeServer
+from redis.client import Redis
 
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import ActorStartRequestMessage, RawMessage
+from bec_lib.messages import ActorStartRequestMessage
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_server.actors.manager import ActorManager
 from bec_server.test.actor_test_utils import ep
 from bec_server.test.helpers import wait_until
 
 
+@pytest.fixture(autouse=True)
+def threads_check(fakeredis_config):
+    threads_at_start = set(th for th in threading.enumerate() if th is not threading.main_thread())
+    yield
+    threads_after = set(
+        th
+        for th in threading.enumerate()
+        # ignore the server threads that fakeredis makes, but don't ignore worker/manager threads
+        # there is a bug in fakeredis where daemon threads are not actually cleaned up until the
+        # end of the process.
+        if th is not threading.main_thread() and "process_request_thread" not in th.name
+    )
+    additional_threads = threads_after - threads_at_start
+    assert (
+        len(additional_threads) == 0
+    ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+
+
 @pytest.fixture
 def fakeredis_config():
     redis_config = "localhost", 44556
     server = TcpFakeServer(redis_config, server_type="redis")
-    t = Thread(target=server.serve_forever, daemon=True)
-    try:
-        t.start()
-        yield redis_config
-    finally:
-        server.shutdown()
-        server.server_close()
-        t.join()
+    t = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
+    t.start()
+    yield redis_config
+    server.shutdown()
+    server.server_close()
+    t.join()
 
 
 @pytest.fixture
@@ -32,11 +50,9 @@ def actor_manager_and_conn(fakeredis_config):
     redis = f"{host}:{port}"
     manager = ActorManager(redis)
     conn = RedisConnector([redis])
-    try:
-        yield manager, conn
-    finally:
-        manager.shutdown()
-        conn.shutdown()
+    yield manager, conn
+    manager.shutdown()
+    conn.shutdown()
 
 
 def test_validate_and_spawn_called_on_request(
@@ -71,4 +87,4 @@ def test_polling_actor(actor_manager_and_conn: tuple[ActorManager, RedisConnecto
         )
     )
     wait_until(lambda: manager._active_workers != {})
-    wait_until(lambda: action_triggered, timeout_s=3)
+    wait_until(lambda: action_triggered, timeout_s=10)

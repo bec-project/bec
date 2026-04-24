@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import fakeredis
 import pytest
 
+from bec_lib.acl_login import BECAccess
 from bec_lib.client import BECClient, RedisConnector
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
@@ -55,16 +56,18 @@ def _eq_except_id(
 
 
 @pytest.fixture(autouse=True)
-@patch("bec_lib.bec_service.BECAccess", MagicMock)
 def shutdown_client():
-    bec_client = BECClient(
-        config=ServiceConfig(config={"redis": {"host": FAKEREDIS_HOST, "port": FAKEREDIS_PORT}}),
-        connector_cls=partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
-    )
-    bec_client.start()
-    yield bec_client
-    bec_client.shutdown()
-    fakeredis.FakeRedis().flushall()
+    with patch("bec_lib.bec_service.BECAccess", lambda *_, **__: MagicMock(spec=BECAccess)):
+        bec_client = BECClient(
+            config=ServiceConfig(
+                config={"redis": {"host": FAKEREDIS_HOST, "port": FAKEREDIS_PORT}}
+            ),
+            connector_cls=partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
+        )
+        bec_client.start()
+        yield bec_client
+        bec_client.shutdown()
+        fakeredis.FakeRedis().flushall()
 
 
 def mock_redis_conn(tasks: Iterable[ProcedureExecutionMessage] = []):
@@ -80,7 +83,13 @@ def mock_redis_conn(tasks: Iterable[ProcedureExecutionMessage] = []):
 
 
 class InlineWorker(SubProcessWorker):
-    def __init__(self, server: str, queue: str, lifetime_s: float | None = None):
+    def __init__(
+        self,
+        server: str,
+        queue: str,
+        lifetime_s: float | None = None,
+        env: dict[str, str] | None = None,
+    ):
         self._queue = queue
         self.key = MessageEndpoints.procedure_execution(queue)
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
@@ -98,7 +107,7 @@ class InlineWorker(SubProcessWorker):
         self._ending: bool = False
 
     def _setup_execution_environment(self):
-        self._ending: bool = False
+        self._ending = False
 
     def _kill_process(self):
         self._ending = True
@@ -114,11 +123,12 @@ class InlineWorker(SubProcessWorker):
             patch("bec_server.procedures.oop_worker_base.bec_logger", MagicMock()),
             patch("bec_server.procedures.oop_worker_base.logger", MagicMock()),
             patch(
-                "bec_server.procedures.oop_worker_base._get_env",
+                "bec_server.procedures.oop_worker_base.get_env",
                 lambda: {
                     "redis_server": self._redis_server,
                     "timeout_s": self._lifetime_s,
                     "queue": self._queue,
+                    "client_class": "BECIPythonClient",
                 },
             ),
             patch("bec_server.procedures.oop_worker_base.RedisConnector", mock_redis_conn(tasks)),
@@ -262,7 +272,14 @@ class UnlockableWorker(ProcedureWorker):
 
 
 class FakeRedisUnlockable(UnlockableWorker):
-    def __init__(self, server: str, queue: str, lifetime_s: int | None = None, execution_id="test"):
+    def __init__(
+        self,
+        server: str,
+        queue: str,
+        lifetime_s: int | None = None,
+        env: dict[str, str] | None = None,
+        exec_id: str = "test",
+    ):
         with patch(
             "bec_server.procedures.worker_base.RedisConnector",
             partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
@@ -270,7 +287,7 @@ class FakeRedisUnlockable(UnlockableWorker):
             ProcedureWorker.__init__(self, server, queue, lifetime_s)
         self.event_1 = threading.Event()
         self.event_2 = threading.Event()
-        self.execution_id = execution_id
+        self.execution_id = exec_id
 
 
 @patch("bec_server.procedures.worker_base.RedisConnector")
@@ -297,7 +314,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     # check that you can't instantiate the same worker twice - call spawn directly to
     # raise the exception in this thread
     with pytest.raises(WorkerAlreadyExists):
-        procedure_manager.spawn(queue)
+        procedure_manager.spawn(queue, {})
 
     # queue "timed out" and brpop returns None, so work() will return on the next iteration
     with procedure_manager.lock:
@@ -329,12 +346,10 @@ def test_builtin_procedure_log_args(procedure_logger: MagicMock):
     assert "'kwarg': 'test'" in log_call_arg_0
 
 
-# @patch("bec_server.procedures.oop_worker_base.BECIPythonClient")
-# @patch("bec_server.procedures.worker_base.RedisConnector")
-def test_builtin_procedure_scan_execution():
+def test_builtin_procedure_scan_execution(shutdown_client):
     args = ("samx", -10, 10)
     kwargs = {"steps": 5, "relative": False}
-    with InlineWorker("localhost:1", "primary", 1) as worker:
+    with InlineWorker(f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}", "primary", 1) as worker:
         client = worker.run_tasks(
             [
                 ProcedureExecutionMessage(
@@ -559,7 +574,7 @@ def test_procedure_status_rejected_not_cancellable(procedure_manager):
 
 @patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock)
 def test_procedure_status_accepted(procedure_manager):
-    procedure_manager._worker_cls = FakeRedisUnlockable
+    procedure_manager._worker_cls = partial(FakeRedisUnlockable, exec_id="test")
     msg = ProcedureRequestMessage(
         identifier="sleep", args_kwargs=((), {"time_s": 0.5}), execution_id="test"
     )
