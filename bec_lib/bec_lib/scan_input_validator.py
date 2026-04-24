@@ -452,7 +452,7 @@ class ScanInputValidator:
             ScanInputValidationError: If bounds are configured on a non-scalar annotation or the
                 value violates one of the configured bounds.
         """
-        if get_origin(self._strip_annotation_metadata(annotation)) is not None:
+        if not self._supports_scalar_bounds(annotation):
             self._raise_validation_error(
                 f"Invalid bounds configuration for scan argument '{arg_name}': "
                 "ScanArgument bounds are only supported for scalar annotations."
@@ -468,6 +468,30 @@ class ScanInputValidator:
                 continue
             if not self._satisfies_bound(value, operator_name, limit):
                 self._raise_bound_error(arg_name, value, operator_name, limit)
+
+    def _supports_scalar_bounds(self, annotation: Any) -> bool:
+        """Return whether ``ScanArgument`` numeric bounds are valid for an annotation.
+
+        Args:
+            annotation (Any): Annotation to inspect.
+
+        Returns:
+            bool: ``True`` for scalar-like annotations such as plain types, ``Literal`` values,
+                and unions of scalar types. ``False`` for container annotations.
+        """
+        annotation = self._strip_annotation_metadata(annotation)
+        origin = get_origin(annotation)
+
+        if origin is None or origin is Literal:
+            return True
+
+        if origin in {Union, types.UnionType}:
+            return all(self._supports_scalar_bounds(arg) for arg in get_args(annotation))
+
+        if origin in {list, dict, tuple, Sequence, Mapping, set, frozenset}:
+            return False
+
+        return True
 
     def _raise_bound_error(
         self, arg_name: str, value: Any, operator_name: str, limit: float
