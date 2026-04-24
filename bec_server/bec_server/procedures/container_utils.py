@@ -15,8 +15,8 @@ from podman.errors import APIError
 from bec_lib.logger import bec_logger
 from bec_server.procedures.constants import (
     PROCEDURE,
-    ContainerWorkerEnv,
     NoPodman,
+    OopWorkerEnv,
     PodmanContainerStates,
     ProcedureWorkerError,
 )
@@ -41,7 +41,7 @@ def _run_and_capture_error(*args: str, log: bool = True):
     output = subprocess.run([*args], capture_output=True)
     if output.returncode != 0:
         raise ProcedureWorkerError(
-            "Container shell command: \n" f"    {args}" "\n failed with output:" f"{output.stderr}"
+            f"Container shell command: \n    {args}\n failed with output:{output.stderr}"
         )
     return output
 
@@ -91,7 +91,6 @@ class PodmanApiOutput(ContainerCommandOutput):
 
 
 class PodmanApiUtils(_PodmanUtilsBase):
-
     # See https://docs.podman.io/en/latest/_static/api.html#tag/images/operation/ImageBuildLibpod
     # for libpod API specs
 
@@ -117,7 +116,7 @@ class PodmanApiUtils(_PodmanUtilsBase):
     def run(
         self,
         image_tag: str,
-        environment: ContainerWorkerEnv,
+        environment: OopWorkerEnv,
         volumes: list[VolumeSpec],
         command: str,
         pod_name: str | None = None,
@@ -180,7 +179,6 @@ class PodmanCliOutput(ContainerCommandOutput):
 
 
 class PodmanCliUtils(_PodmanUtilsBase):
-
     def _podman_ls_json(self, subcom: Literal["image", "container"] = "container"):
         return json.loads(
             _run_and_capture_error(
@@ -207,7 +205,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
     def run(
         self,
         image_tag: str,
-        environment: ContainerWorkerEnv,
+        environment: OopWorkerEnv,
         volumes: list[VolumeSpec],
         command: str,
         pod_name: str | None = None,

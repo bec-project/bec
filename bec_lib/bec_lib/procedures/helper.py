@@ -1,6 +1,6 @@
 from enum import Enum
 from threading import Event
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo
@@ -169,7 +169,6 @@ class _HelperBase:
 
 
 class _Request(_HelperBase):
-
     def __init__(self, conn: RedisConnector, monitor_responses: bool = True) -> None:
         super().__init__(conn, monitor_responses)
 
@@ -266,7 +265,6 @@ class _Get(_HelperBase):
 
 
 class FrontendProcedureHelper(_HelperBase):
-
     def __init__(self, conn: RedisConnector, monitor_responses: bool = True) -> None:
         super().__init__(conn, monitor_responses)
         self.request = _Request(conn)
