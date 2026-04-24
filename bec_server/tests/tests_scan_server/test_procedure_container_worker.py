@@ -142,8 +142,8 @@ class MockItem:
 def test_main_running(registry_mock, redis_mock, logger_mock):
     redis_mock().blocking_list_pop_to_set_add.side_effect = [MockItem("1"), MockItem("2"), None]
     function_recorder = MagicMock()
-    registry_mock.callable_from_execution_message.return_value = (
-        lambda *args, **kwargs: function_recorder(*args, **kwargs)
+    registry_mock.callable_from_execution_message.return_value = lambda *args, **kwargs: (
+        function_recorder(*args, **kwargs)
     )
     with patch.dict(
         os.environ,
