@@ -117,9 +117,11 @@ def _resolve_timeout(timeout_s: str) -> float:
 def _create_client(client_type: BecClientType, redis: dict[str, str]):
     config = ServiceConfig(redis=redis, config={"procedures": {"enable_procedures": False}})
     if client_type == BecClientType.BECIPythonClient:
-        return BECIPythonClient(config=config, mode=OperationMode.Procedure)
+        return BECIPythonClient(config=config, wait_for_server=False, mode=OperationMode.Procedure)
     elif client_type == BecClientType.BECClient:
-        return BECClient(config=config)
+        return BECClient(wait_for_server=False, config=config)
+    else:
+        raise ValueError(f"BEC client class {client_type} not recognised!")
 
 
 def setup(env: OopWorkerEnv):

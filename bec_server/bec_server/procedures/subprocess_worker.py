@@ -41,6 +41,7 @@ class SubProcessWorker(OutOfProcessWorkerBase):
         if not self._ending_or_ended():
             self._ending = True
             self._process.send_signal(SIGINT)
+            self._process.send_signal(SIGINT)
             try:
                 self._process.wait(PROCESS_TIMEOUT)
             except subprocess.TimeoutExpired:

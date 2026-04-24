@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol
 
 from typing_extensions import TypeAliasType  # only for 3.11
 
@@ -38,15 +38,3 @@ class ActorAction(Protocol):
 ActorActionTable = TypeAliasType(
     "ActorActionTable", dict[ActorConditionSet | ActorCondition, ActorAction]
 )
-
-
-@runtime_checkable
-class Actor(Protocol):
-    client: BECClient
-    action_table: ActorActionTable
-
-    def __init__(self, client: BECClient, exec_id: str):
-        """Create the actor instance"""
-
-    def run(self):
-        """The core logic loop for the actor"""
