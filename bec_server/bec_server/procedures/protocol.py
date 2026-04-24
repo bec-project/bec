@@ -1,6 +1,6 @@
 from typing import Literal, Protocol, TypedDict
 
-from bec_server.procedures.constants import ContainerWorkerEnv, PodmanContainerStates
+from bec_server.procedures.constants import OopWorkerEnv, PodmanContainerStates
 
 
 class VolumeSpec(TypedDict):
@@ -15,7 +15,6 @@ class ContainerCommandOutput(Protocol):
 
 
 class ContainerCommandBackend(Protocol):
-
     def _build_image(
         self, buildargs: dict, path: str, file: str, volume: str, tag: str
     ) -> ContainerCommandOutput: ...
@@ -25,7 +24,7 @@ class ContainerCommandBackend(Protocol):
     def run(
         self,
         image_tag: str,
-        environment: ContainerWorkerEnv,
+        environment: OopWorkerEnv,
         volumes: list[VolumeSpec],
         command: str,
         pod_name: str | None = None,

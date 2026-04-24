@@ -3,14 +3,7 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum
 from importlib.metadata import version
 from pathlib import Path
-from typing import (
-    Annotated,
-    NotRequired,
-    ParamSpec,
-    Protocol,
-    TypedDict,
-    runtime_checkable,
-)
+from typing import NotRequired, ParamSpec, Protocol, TypedDict, runtime_checkable
 
 import bec_lib
 
@@ -20,11 +13,11 @@ class BecClientType(StrEnum):
     BECIPythonClient = "BECIPythonClient"
 
 
-class ContainerWorkerEnv(TypedDict):
+class OopWorkerEnv(TypedDict):
     redis_server: str
     queue: str
     timeout_s: str
-    client_class: Annotated[BecClientType, NotRequired]
+    client_class: NotRequired[BecClientType]
 
 
 P = ParamSpec("P")

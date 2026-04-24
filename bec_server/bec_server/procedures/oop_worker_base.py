@@ -1,30 +1,24 @@
 import inspect
 import os
 import traceback
-from abc import abstractmethod
 from contextlib import redirect_stdout
 from typing import AnyStr, TextIO
 
-from bec_ipython_client.callbacks.utils import BECClient
 from bec_ipython_client.main import BECIPythonClient
 from bec_ipython_client.signals import OperationMode
 from bec_lib import messages
+from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import LogLevel, bec_logger
-from bec_lib.messages import (
-    ProcedureExecutionMessage,
-    ProcedureWorkerStatus,
-    RawMessage,
-)
+from bec_lib.messages import ProcedureExecutionMessage, ProcedureWorkerStatus, RawMessage
 from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
-
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import (
     PROCEDURE,
     BecClientType,
-    ContainerWorkerEnv,
+    OopWorkerEnv,
     ProcedureWorkerError,
 )
 from bec_server.procedures.worker_base import ProcedureWorker
@@ -43,10 +37,7 @@ class RedisOutputDiverter(TextIO):
     def write(self, data: AnyStr):
         if data:
             self._conn.xadd(
-                self._ep,
-                {"data": RawMessage(data=str(data))},
-                max_size=10000,
-                expire=3600,
+                self._ep, {"data": RawMessage(data=str(data))}, max_size=10000, expire=3600
             )
         return len(data)
 
@@ -63,7 +54,7 @@ class RedisOutputDiverter(TextIO):
 class OutOfProcessWorkerBase(ProcedureWorker):
     """A worker which runs in a separate process"""
 
-    def _worker_environment(self) -> ContainerWorkerEnv:
+    def _worker_environment(self):
         """Used to pass information to the container as environment variables - should be the
         minimum necessary, or things which are only necessary for the functioning of the worker,
         and other information should be passed through redis"""
@@ -81,14 +72,11 @@ class OutOfProcessWorkerBase(ProcedureWorker):
         status_update = None
         while not self._ending_or_ended():
             status_update = self._conn.blocking_list_pop(
-                MessageEndpoints.procedure_worker_status_update(self._queue),
-                timeout_s=0.2,
+                MessageEndpoints.procedure_worker_status_update(self._queue), timeout_s=0.2
             )
             if status_update is not None:
                 if not isinstance(status_update, messages.ProcedureWorkerStatusMessage):
-                    raise ProcedureWorkerError(
-                        f"Received unexpected message {status_update}"
-                    )
+                    raise ProcedureWorkerError(f"Received unexpected message {status_update}")
                 self.status = status_update.status
                 self._current_execution_id = status_update.current_execution_id
                 logger.info(
@@ -105,9 +93,9 @@ def _default_env() -> dict[str, str]:
     return {"client_class": BecClientType.BECIPythonClient}
 
 
-def _get_env() -> ContainerWorkerEnv:
+def get_env() -> OopWorkerEnv:
     try:
-        needed_keys = ContainerWorkerEnv.__required_keys__
+        needed_keys = OopWorkerEnv.__required_keys__
         logger.debug(f"Checking for environment variables: {needed_keys}")
         supplied_env = {k: os.environ[k] for k in needed_keys}
     except KeyError as e:
@@ -127,21 +115,15 @@ def _resolve_timeout(timeout_s: str) -> float:
 
 
 def _create_client(client_type: BecClientType, redis: dict[str, str]):
-    config = ServiceConfig(
-        redis=redis, config={"procedures": {"enable_procedures": False}}
-    )
+    config = ServiceConfig(redis=redis, config={"procedures": {"enable_procedures": False}})
     if client_type == BecClientType.BECIPythonClient:
-        return BECIPythonClient(
-            config=config,
-            mode=OperationMode.Procedure,
-        )
+        return BECIPythonClient(config=config, mode=OperationMode.Procedure)
     elif client_type == BecClientType.BECClient:
         return BECClient(config=config)
 
 
-def _setup():
+def setup(env: OopWorkerEnv):
     logger.info("Procedure worker starting up")
-    env = _get_env()
 
     logger.debug(f"Starting with environment: {env}")
     logger.debug("Configuring logger...")
@@ -166,33 +148,25 @@ def _setup():
 
     logger.success(f"Procedure worker started container for queue {env['queue']}")
     conn = RedisConnector(env["redis_server"])
-    logger.debug(
-        f"Procedure worker {env['queue']} connected to Redis at {conn.host}:{conn.port}"
-    )
+    logger.debug(f"Procedure worker {env['queue']} connected to Redis at {conn.host}:{conn.port}")
     helper = BackendProcedureHelper(conn)
 
     return env, helper, client, conn
 
 
-def _run_task(client: BECIPythonClient, item: ProcedureExecutionMessage):
+def _run_task(client: BECClient | BECIPythonClient, item: ProcedureExecutionMessage):
     logger.success(f"Executing procedure {item.identifier}.")
     kwargs = item.args_kwargs[1]
     proc_func = procedure_registry.callable_from_execution_message(item)
     if bec_arg := inspect.signature(proc_func).parameters.get("bec"):
-        if (
-            bec_arg.kind == bec_arg.KEYWORD_ONLY
-            and bec_arg.annotation.__name__ == "BECClient"
-        ):
+        if bec_arg.kind == bec_arg.KEYWORD_ONLY and bec_arg.annotation.__name__ == "BECClient":
             logger.debug(f"Injecting BEC client argument for {item}")
             kwargs["bec"] = client
     proc_func(*item.args_kwargs[0], **kwargs)
 
 
 def _push_status(
-    conn: RedisConnector,
-    queue: str,
-    status: ProcedureWorkerStatus,
-    id: str | None = None,
+    conn: RedisConnector, queue: str, status: ProcedureWorkerStatus, id: str | None = None
 ):
     status_endpoint = MessageEndpoints.procedure_worker_status_update(queue)
     logger.debug(f"Updating worker status to {status.name}")
@@ -205,7 +179,7 @@ def _push_status(
 
 
 def _main(
-    env, helper: BackendProcedureHelper, client: BECIPythonClient, conn: RedisConnector
+    env, helper: BackendProcedureHelper, client: BECClient | BECIPythonClient, conn: RedisConnector
 ):
     exec_endpoint = MessageEndpoints.procedure_execution(env["queue"])
     active_procs_endpoint = MessageEndpoints.active_procedure_executions()
@@ -228,9 +202,7 @@ def _main(
                 _run_task(client, item)
             except Exception as e:
                 logger.error(f"Encountered error running procedure {item}")
-                helper.status_update(
-                    item.execution_id, "Finished", traceback.format_exc()
-                )
+                helper.status_update(item.execution_id, "Finished", traceback.format_exc())
                 logger.error(e)
             else:
                 helper.status_update(item.execution_id, "Finished")
@@ -246,19 +218,17 @@ def _main(
     except Exception as e:
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
     finally:
-        logger.success(f"Procedure runner shutting down")
+        logger.success("Procedure runner shutting down")
         _push_status(conn, queue, ProcedureWorkerStatus.FINISHED)
         client.shutdown(per_thread_timeout_s=1)
-        if (
-            item is not None
-        ):  # in this case we are here due to an exception, not a timeout
+        if item is not None:  # in this case we are here due to an exception, not a timeout
             helper.remove_from_active.by_exec_id(item.execution_id)
 
 
 def main():
     """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
 
-    env, helper, client, conn = _setup()
+    env, helper, client, conn = setup(get_env())
     logger_connector = RedisConnector(env["redis_server"])
     output_diverter = RedisOutputDiverter(logger_connector, env["queue"])
     with redirect_stdout(output_diverter):
