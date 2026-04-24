@@ -132,7 +132,7 @@ class SignalConfig(BaseModel):
     abs_tol: float = 0.0
 
 
-class SubDeviceStates(BaseModel):
+class SubDeviceStateConfig(BaseModel):
 
     devices: dict[str, dict[str, SignalConfig]]
 
@@ -144,7 +144,7 @@ class AggregatedStateConfig(BeamlineStateConfig):
 
     state_type: ClassVar[str] = "AggregatedState"
 
-    states: dict[str, SubDeviceStates]
+    states: dict[str, SubDeviceStateConfig]
 
 
 C = TypeVar("C", bound=BeamlineStateConfig)
@@ -425,7 +425,11 @@ class AggregatedState(BeamlineState[AggregatedStateConfig]):
             return "high", "limits"
 
         signal_info = None
-        if "." in signal_name:
+        # This case is relevant if we are looking at a Signal directly
+        if device_name == signal_name and len(device_obj.root._info["signals"]) == 0:
+            signal_info = {"obj_name": signal_name, "kind_str": "hinted"}
+        # Case where we have a signal specified as a dotted name, e.g.
+        elif "." in signal_name:
             try:
                 signal_obj = devices[signal_name]
             except AttributeError:
@@ -438,6 +442,7 @@ class AggregatedState(BeamlineState[AggregatedStateConfig]):
                 )
             signal_component = ".".join(signal_name.split(".")[1:])
             signal_info = device_obj.root._info["signals"].get(signal_component)
+        # Case where the signal is specified as the signal
         else:
             signal_info = device_obj.root._info["signals"].get(signal_name)
             if signal_info is None:
@@ -582,13 +587,28 @@ class AggregatedState(BeamlineState[AggregatedStateConfig]):
 
     def _requirement_matches(self, requirement: _ResolvedStateSignal) -> bool:
         key = (requirement.device_name, requirement.source, requirement.signal_name)
-        value = self._signal_value_cache.get(key, None)
-        if value is None:
+        cached_value = self._signal_value_cache.get(key, None)
+        if cached_value is None:
             return False
+
         try:
-            return abs(value - requirement.expected_value) <= requirement.abs_tolerance
-        except TypeError:
-            return value == requirement.expected_value
+            # Cast to float to make sure comparison with abs works as expected.
+            value = float(cached_value)
+            expected_value = float(requirement.expected_value)
+            return abs(value - expected_value) <= requirement.abs_tolerance
+        # Catch TypeError and ValueError in case the value is not a number or cannot be cast to float,
+        # in that case we fall back to exact equality.
+        except (TypeError, ValueError):
+            try:
+                result = cached_value == requirement.expected_value
+            except (TypeError, ValueError):
+                return False
+            # In case this comparison runs on comparing two arrays.
+            # We do not consider this comparsion as valid currently.
+            try:
+                return bool(result)
+            except (TypeError, ValueError):
+                return False
 
 
 class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
