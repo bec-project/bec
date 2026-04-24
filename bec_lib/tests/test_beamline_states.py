@@ -496,7 +496,7 @@ class TestConcreteStates:
             redis_connector=connected_connector,
             device_manager=dm_with_devices,
         )
-        requirement = bl_states._ResolvedStateSignal(
+        requirement = bl_states.ResolvedStateSignal(
             label="alignment",
             device_name="bpm4i",
             signal_name="bpm4i",
