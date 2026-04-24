@@ -57,8 +57,6 @@ class GridScan(ScanBase):
         "steps": Annotated[int, ScanArgument(display_name="Number of Steps", ge=1)],
     }
     arg_bundle_size = {"bundle": len(arg_input), "min": 2, "max": None}
-    required_kwargs = ["relative"]
-
     gui_config = {
         "Movement Parameters": ["relative", "snaked"],
         "Acquisition Parameters": [
@@ -74,6 +72,7 @@ class GridScan(ScanBase):
     def __init__(
         self,
         *args,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -89,7 +88,6 @@ class GridScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         snaked: bool = True,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
@@ -101,12 +99,13 @@ class GridScan(ScanBase):
 
         Args:
             *args (Device, float, float, int): pairs of device / start / stop / steps arguments
+            relative (bool): If True, the motors will be moved relative to their
+                current position.
             exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (Annotated[float, Units.s]): settling time in seconds. Default is 0.
             settling_time_after_trigger (Annotated[float, Units.s]): settling time after trigger in seconds. Default is 0.
             readout_time (Annotated[float, Units.s]): readout time in seconds. Default is 0.
-            relative (bool): if True, the motors will be moved relative to their current position. Default is False.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
             snaked (bool): if True, the scan will be snaked. Default is True.
 

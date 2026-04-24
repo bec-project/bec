@@ -43,8 +43,6 @@ class ListScan(ScanBase):
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
     arg_input = {"device": DeviceBase, "positions": list[float]}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    required_kwargs = ["relative"]
-
     gui_config = {
         "Movement Parameters": ["relative"],
         "Acquisition Parameters": [
@@ -60,6 +58,7 @@ class ListScan(ScanBase):
     def __init__(
         self,
         *args,
+        relative: bool,
         exp_time: Annotated[
             float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
         ] = 0,
@@ -75,7 +74,6 @@ class ListScan(ScanBase):
         readout_time: Annotated[
             float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
         ] = 0,
-        relative: bool = False,
         burst_at_each_point: Annotated[
             int, ScanArgument(display_name="Burst at Each Point", ge=1)
         ] = 1,
@@ -87,12 +85,13 @@ class ListScan(ScanBase):
 
         Args:
             *args (Device, list[float]): pairs of device / positions arguments
+            relative (bool): If True, the positions will be moved relative to their
+                current position.
             exp_time (float): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
             settling_time (float): settling time in seconds. Default is 0.
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
-            relative (bool): if True, the positions will be moved relative to their current position. Default is False.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
 
         Returns:

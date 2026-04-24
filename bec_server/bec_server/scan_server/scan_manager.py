@@ -145,7 +145,7 @@ class ScanManager:
                 "class": scan_cls.__name__,
                 "base_class": base_cls,
                 "arg_input": self.convert_arg_input(scan_cls.arg_input),
-                "required_kwargs": scan_cls.required_kwargs,
+                "required_kwargs": getattr(scan_cls, "required_kwargs", []),
                 "arg_bundle_size": scan_cls.arg_bundle_size,
                 "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
                 "signature": signature_to_dict(scan_cls.__init__),

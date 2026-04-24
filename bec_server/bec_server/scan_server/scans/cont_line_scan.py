@@ -39,7 +39,6 @@ class ContLineScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "_v4_cont_line_scan"
-    required_kwargs = ["steps", "relative"]
     gui_config = {
         "Device": ["device", "start", "stop"],
         "Movement Parameters": ["steps", "relative", "offset", "atol"],
@@ -56,6 +55,8 @@ class ContLineScan(ScanBase):
             float, ScanArgument(display_name="Stop Position", reference_units="device")
         ],
         steps: Annotated[int, ScanArgument(display_name="Number of Steps", ge=1)],
+        *,
+        relative: bool,
         offset: Annotated[
             float | None, ScanArgument(display_name="Offset", reference_units="device")
         ] = None,
@@ -71,7 +72,6 @@ class ContLineScan(ScanBase):
         frames_per_trigger: Annotated[
             int, ScanArgument(display_name="Frames per Trigger", ge=1)
         ] = 1,
-        relative: bool = False,
         **kwargs,
     ):
         """
@@ -82,17 +82,20 @@ class ContLineScan(ScanBase):
             device (DeviceBase): motor to move continuously
             start (float): start position
             stop (float): stop position
-            offset (float | None): optional trigger offset from the nominal positions.
-            atol (float | None): optional tolerance used for position matching.
+            steps (int): number of acquisition points.
+            relative (bool): If True, interpret start and stop relative to the
+                current motor position.
+            offset (float | None): optional trigger offset from the nominal positions. If not provided,
+                it will be calculated based on the motor acceleration and velocity to ensure smooth triggering.
+            atol (float | None): optional tolerance used for position matching. If not provided,
+                it will be calculated based on the motor velocity and the exposure time.
             exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
-            steps (int): number of acquisition points. Default is 10.
-            relative (bool): if True, interpret start and stop relative to the current motor position.
 
         Returns:
             ScanReport
 
         Examples:
-            >>> scans.cont_line_scan(dev.motor1, -5, 5, steps=20, exp_time=0.05, relative=True)
+            >>> scans.cont_line_scan(dev.motor1, -5, 5, 20, relative=True, exp_time=0.05)
         """
         super().__init__(**kwargs)
         self.device = device
