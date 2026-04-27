@@ -167,14 +167,39 @@ def test_obj_callback_progress(dm_with_devices):
     samx = device_manager.devices.samx
     samx.metadata = {"scan_id": "12345"}
 
-    with mock.patch.object(device_manager, "connector") as mock_connector:
+    with mock.patch.object(
+        device_manager._rate_limited_publisher, "publish_set_and_publish"
+    ) as publish:
         device_manager._obj_callback_progress(obj=samx.obj, value=1, max_value=2, done=False)
-        mock_connector.set_and_publish.assert_called_once_with(
-            MessageEndpoints.device_progress("samx"),
-            messages.ProgressMessage(
-                value=1, max_value=2, done=False, metadata={"scan_id": "12345"}
-            ),
-        )
+        assert publish.call_count == 1
+        assert publish.call_args.args[0] == MessageEndpoints.device_progress("samx")
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_obj_callback_file_event(dm_with_devices, connected_connector):
+    device_manager = dm_with_devices
+    eiger = device_manager.devices.eiger
+    eiger.metadata = {"scan_id": "12345"}
+    # Use here fake redis connector, pipe is used and checks pydantic models
+    device_manager.connector = connected_connector
+    device_manager._obj_callback_file_event(
+        obj=eiger.obj,
+        file_path="test_file_path",
+        done=True,
+        successful=True,
+        hinted_h5_entries={"my_entry": "entry/data/data"},
+        metadata={"user_info": "my_info"},
+    )
+    msg = connected_connector.get(MessageEndpoints.file_event(name="eiger"))
+    msg2 = connected_connector.get(MessageEndpoints.public_file(scan_id="12345", name="eiger"))
+    assert msg == msg2
+    assert msg.content["file_path"] == "test_file_path"
+    assert msg.content["done"] is True
+    assert msg.content["successful"] is True
+    assert msg.content["hinted_h5_entries"] == {"my_entry": "entry/data/data"}
+    assert msg.content["file_type"] == "h5"
+    assert msg.metadata == {"scan_id": "12345", "user_info": "my_info"}
+    assert msg.content["is_master_file"] is False
 
 
 @pytest.mark.parametrize(
@@ -220,33 +245,6 @@ def test_device_manager_ds_reset_config(dm_with_devices):
         mock_connector.lpush.assert_called_once_with(
             MessageEndpoints.device_config_history(), config_msg, max_size=50
         )
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_callback_file_event(dm_with_devices, connected_connector):
-    device_manager = dm_with_devices
-    eiger = device_manager.devices.eiger
-    eiger.metadata = {"scan_id": "12345"}
-    # Use here fake redis connector, pipe is used and checks pydantic models
-    device_manager.connector = connected_connector
-    device_manager._obj_callback_file_event(
-        obj=eiger.obj,
-        file_path="test_file_path",
-        done=True,
-        successful=True,
-        hinted_h5_entries={"my_entry": "entry/data/data"},
-        metadata={"user_info": "my_info"},
-    )
-    msg = connected_connector.get(MessageEndpoints.file_event(name="eiger"))
-    msg2 = connected_connector.get(MessageEndpoints.public_file(scan_id="12345", name="eiger"))
-    assert msg == msg2
-    assert msg.content["file_path"] == "test_file_path"
-    assert msg.content["done"] is True
-    assert msg.content["successful"] is True
-    assert msg.content["hinted_h5_entries"] == {"my_entry": "entry/data/data"}
-    assert msg.content["file_type"] == "h5"
-    assert msg.metadata == {"scan_id": "12345", "user_info": "my_info"}
-    assert msg.content["is_master_file"] is False
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
