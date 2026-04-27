@@ -82,7 +82,7 @@ class NotImplementedOnSubdeviceError(AlarmBase):
     def __init__(
         self, device: str, sub_device: str, method: str, additional_info: str | None = None
     ) -> None:
-        compact_error_message = f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'."
+        compact_error_message = f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'. Try to access the root device '{device}' instead."
         error_message = compact_error_message
         if additional_info:
             error_message += f" Additional info: {additional_info}"
@@ -789,7 +789,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @enabled.setter
     def enabled(self, val):
         # pylint: disable=protected-access
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="enabled"
             )
@@ -804,7 +804,7 @@ class DeviceBaseWithConfig(DeviceBase):
             update (dict): The update dictionary.
 
         """
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name,
                 sub_device=self.dotted_name,
@@ -824,7 +824,7 @@ class DeviceBaseWithConfig(DeviceBase):
     def set_device_tags(self, val: Iterable):
         """set the device tags for this device - any duplicates will be discarded"""
         # pylint: disable=protected-access
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="set_device_tags"
             )
@@ -837,7 +837,7 @@ class DeviceBaseWithConfig(DeviceBase):
     def add_device_tag(self, val: str):
         """add a device tag for this device"""
         # pylint: disable=protected-access
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="add_device_tag"
             )
@@ -849,7 +849,7 @@ class DeviceBaseWithConfig(DeviceBase):
     def remove_device_tag(self, val: str):
         """remove a device tag for this device"""
         # pylint: disable=protected-access
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="remove_device_tag"
             )
@@ -861,7 +861,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def wm(self) -> None:
         """get the current position of a device"""
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="wm"
             )
@@ -878,7 +878,7 @@ class DeviceBaseWithConfig(DeviceBase):
         """set the readout priority for this device"""
         if not isinstance(val, ReadoutPriority):
             val = ReadoutPriority(val)
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="readout_priority"
             )
@@ -899,7 +899,7 @@ class DeviceBaseWithConfig(DeviceBase):
         """set the failure behaviour for this device"""
         if not isinstance(val, OnFailure):
             val = OnFailure(val)
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="on_failure"
             )
@@ -919,7 +919,7 @@ class DeviceBaseWithConfig(DeviceBase):
     def read_only(self, value: bool):
         """Whether or not the device is read only"""
         # pylint: disable=protected-access
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="read_only"
             )
@@ -938,7 +938,7 @@ class DeviceBaseWithConfig(DeviceBase):
     def software_trigger(self, value: bool):
         """Whether or not the device can be software triggered"""
         # pylint: disable=protected-access
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="software_trigger"
             )
@@ -956,7 +956,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @typechecked
     def set_user_parameter(self, val: dict):
         """set the user parameter for this device"""
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="set_user_parameter"
             )
@@ -1245,7 +1245,7 @@ class AdjustableMixin:
 
     @limits.setter
     def limits(self, val: list):
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="limits"
             )
@@ -1260,7 +1260,7 @@ class AdjustableMixin:
 
     @low_limit.setter
     def low_limit(self, val: float):
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="low_limit"
             )
@@ -1276,7 +1276,7 @@ class AdjustableMixin:
 
     @high_limit.setter
     def high_limit(self, val: float):
-        if self.name != self.root.name:
+        if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="high_limit"
             )
