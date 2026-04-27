@@ -82,7 +82,7 @@ class NotImplementedOnSubdeviceError(AlarmBase):
     def __init__(
         self, device: str, sub_device: str, method: str, additional_info: str | None = None
     ) -> None:
-        compact_error_message = f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'."
+        compact_error_message = f"Method '{method}' is not implemented for subdevice '{sub_device}' of device '{device}'. Try to access the root device '{device}' instead."
         error_message = compact_error_message
         if additional_info:
             error_message += f" Additional info: {additional_info}"
