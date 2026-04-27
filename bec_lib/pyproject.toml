@@ -48,7 +48,7 @@ dev = [
     "fakeredis~=2.23, >=2.23.2",
     "isort~=5.13, >=5.13.2",
     "pandas~=2.0",
-    "pytest~=8.0",
+    "pytest>=8,<10",
     "pytest-random-order~=1.1",
     "pytest-timeout~=2.2",
     "pytest-redis~=3.0",
