@@ -35,7 +35,7 @@ dev = [
     "coverage~=7.0",
     "fakeredis~=2.23, >=2.23.2",
     "isort~=5.13, >=5.13.2",
-    "pylint~=3.0",
+    "pylint>=3,<5",
     "pytest>=8,<10",
     "pytest-random-order~=1.1",
     "pytest-timeout~=2.2",
