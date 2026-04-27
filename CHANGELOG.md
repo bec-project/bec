@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v3.118.0 (2026-04-27)
+
+### Bug Fixes
+
+- Do not enforce comparison operators on literals
+  ([`85e5e29`](https://github.com/bec-project/bec/commit/85e5e292ce5e4ef6df7aa682c2ec5868d7d9dff4))
+
+- Remove required_kwargs and instead rely on scan signature
+  ([`2086424`](https://github.com/bec-project/bec/commit/2086424c11399133843193ee1a9a97cde4bb55be))
+
+- Use ophyd dummy control layer
+  ([`ca9abb7`](https://github.com/bec-project/bec/commit/ca9abb7d951c1843107dbaf31d0b6b567aec5158))
+
+- **device server**: Treat .set the same as set
+  ([`40a14dc`](https://github.com/bec-project/bec/commit/40a14dc1e1ce8a8d7fcadb0ad6eb3a8463d844c7))
+
+### Continuous Integration
+
+- Add dependabot configuration for weekly pip updates
+  ([`85bc89a`](https://github.com/bec-project/bec/commit/85bc89a1809a878e057ace588379947607a274b8))
+
+### Features
+
+- Add v4 scans
+  ([`14e3c9f`](https://github.com/bec-project/bec/commit/14e3c9fcac5bb4d1b81055d42470d3cf1ec0b677))
+
+### Refactoring
+
+- **scan guard**: Access scan id on iq item instead of requestblockqueue
+  ([`54782f5`](https://github.com/bec-project/bec/commit/54782f51881158524213a1c19200bdebbcbc10f6))
+
+
 ## v3.117.3 (2026-04-21)
 
 ### Bug Fixes
