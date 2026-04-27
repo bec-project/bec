@@ -19,3 +19,17 @@ ep = EndpointInfo(
 
 class PollingTestActor(PollingActor):
     action_table = {_test_condition: _test_action}
+
+
+sub_ep = EndpointInfo(
+    endpoint="test_subscription_actor_endpoint",
+    message_type=RawMessage,
+    message_op=MessageOp.SET_PUBLISH,
+)
+
+
+class SubscriptionTestActor(SubscriptionActor):
+    action_table = {_test_condition: _test_action}
+
+    def default_monitor_endpoints(self) -> set[EndpointInfo]:
+        return {sub_ep}

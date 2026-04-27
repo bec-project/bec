@@ -74,6 +74,9 @@ class EndpointInfo(Generic[MessageType]):
     message_type: MessageType
     message_op: MessageOp
 
+    def __hash__(self):
+        return self.endpoint.__hash__()
+
 
 class MessageEndpoints:
     """

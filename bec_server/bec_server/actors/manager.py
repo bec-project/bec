@@ -14,9 +14,6 @@ from bec_server.procedures.manager import ProcedureManagerBase, _resolve_dict
 logger = bec_logger.logger
 
 
-class ActorHelper: ...
-
-
 class ActorManager(ProcedureManagerBase[ActorStartRequestMessage, ActorExecutionMessage]):
     """A specialised procedure manager for running Actors."""
 

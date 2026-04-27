@@ -1,16 +1,16 @@
 import threading
 from threading import Thread
+from time import sleep
 from unittest.mock import patch
 
 import pytest
 from fakeredis import TcpFakeServer
-from redis.client import Redis
 
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import ActorStartRequestMessage
+from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_server.actors.manager import ActorManager
-from bec_server.test.actor_test_utils import ep
+from bec_server.test.actor_test_utils import ep, sub_ep
 from bec_server.test.helpers import wait_until
 
 
@@ -80,11 +80,40 @@ def test_polling_actor(actor_manager_and_conn: tuple[ActorManager, RedisConnecto
         if msg.value.data == {"test": "result"}:
             action_triggered = True
 
+    actor_mod = "bec_server.test.actor_test_utils"
+    actor_cls = "PollingTestActor"
     conn.register(ep, cb=action_callback)
     manager._process_queue_request(
-        msg=ActorStartRequestMessage(
-            actor_module="bec_server.test.actor_test_utils", actor_class_name="PollingTestActor"
-        )
+        msg=ActorStartRequestMessage(actor_module=actor_mod, actor_class_name=actor_cls)
     )
     wait_until(lambda: manager._active_workers != {})
-    wait_until(lambda: action_triggered, timeout_s=10)
+    wait_until(
+        lambda: manager.worker_status(f"{actor_mod}.{actor_cls}") == ProcedureWorkerStatus.RUNNING,
+        timeout_s=5,
+    )
+    wait_until(lambda: action_triggered, timeout_s=2)
+
+
+def test_subscription_actor(actor_manager_and_conn: tuple[ActorManager, RedisConnector]):
+    manager, conn = actor_manager_and_conn
+    action_triggered = False
+
+    def action_callback(msg: MessageObject):
+        nonlocal action_triggered
+        if msg.value.data == {"test": "result"}:
+            action_triggered = True
+
+    actor_mod = "bec_server.test.actor_test_utils"
+    actor_cls = "SubscriptionTestActor"
+    conn.register(ep, cb=action_callback)
+    manager._process_queue_request(
+        msg=ActorStartRequestMessage(actor_module=actor_mod, actor_class_name=actor_cls)
+    )
+    wait_until(lambda: manager._active_workers != {})
+    wait_until(
+        lambda: manager.worker_status(f"{actor_mod}.{actor_cls}") == ProcedureWorkerStatus.RUNNING,
+        timeout_s=5,
+    )
+    sleep(0.1)
+    conn.set_and_publish(sub_ep, RawMessage(data=None))
+    wait_until(lambda: action_triggered, timeout_s=1)

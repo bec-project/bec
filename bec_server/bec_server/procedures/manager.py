@@ -159,6 +159,15 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         with self.lock:
             return list(self._active_workers.keys())
 
+    def worker_status(self, queue):
+        with self.lock:
+            worker = self._active_workers.get(queue)
+            return (
+                ProcedureWorkerStatus.NONE
+                if worker is None or worker["worker"] is None
+                else worker["worker"].status
+            )
+
     def worker_statuses(self) -> dict[str, ProcedureWorkerStatus]:
         with self.lock:
             return {
