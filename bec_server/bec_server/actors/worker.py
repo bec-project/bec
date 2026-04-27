@@ -5,9 +5,10 @@ from inspect import isclass
 
 from bec_lib.client import BECClient
 from bec_lib.logger import LogLevel, bec_logger
+from bec_lib.messages import ProcedureWorkerStatus
 from bec_lib.redis_connector import RedisConnector
 from bec_server.actors.actor import ActorBase
-from bec_server.procedures.oop_worker_base import RedisOutputDiverter, get_env, setup
+from bec_server.procedures.oop_worker_base import RedisOutputDiverter, get_env, push_status, setup
 from bec_server.procedures.subprocess_worker import SubProcessWorker
 
 logger = bec_logger.logger
@@ -29,7 +30,8 @@ def actor_procedure(actor_module: str, actor_class_name: str, exec_id: str, bec:
         logger.error(f"{actor_class_name} is not a valid Actor! Exiting.")
         return
 
-    actor = actor_class(bec, exec_id)
+    actor = actor_class(bec, f"{actor_module}.{actor_class_name}", exec_id)
+    logger.success(f"Calling .run for actor {exec_id}")
     actor.run()
 
 
@@ -55,14 +57,15 @@ if __name__ == "__main__":
     actor_env = get_actor_env()
     logger_connector = RedisConnector(env["redis_server"])
     output_diverter = RedisOutputDiverter(logger_connector, env["queue"])
-    with redirect_stdout(output_diverter):
-        logger.add(
-            output_diverter,
-            level=LogLevel.SUCCESS,
-            format=bec_logger.formatting(is_container=True),
-            filter=bec_logger.filter(),
-        )
-        logger.success(f"Starting ActorProcedureWorker with env: {actor_env}")
-        actor_procedure(bec=client, **actor_env)
+    # with redirect_stdout(output_diverter):
+    #     logger.add(
+    #         output_diverter,
+    #         level=LogLevel.SUCCESS,
+    #         format=bec_logger.formatting(is_container=True),
+    #         filter=bec_logger.filter(),
+    #     )
+    #     logger.success(f"Starting ActorProcedureWorker with env: {actor_env}")
+    push_status(conn, env["queue"], ProcedureWorkerStatus.IDLE)
+    actor_procedure(bec=client, **actor_env)
     conn.shutdown()
     logger_connector.shutdown()
