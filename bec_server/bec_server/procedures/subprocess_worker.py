@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-import time
 from signal import SIGINT
 
 from bec_lib.logger import bec_logger
@@ -14,15 +13,17 @@ class SubProcessWorker(OutOfProcessWorkerBase):
     """A worker which runs scripts in a container with a full BEC environment,
     mounted from the filesystem, and only access to Redis"""
 
+    WORKER_FILE = __file__
+
     def _setup_execution_environment(self):
         env: dict[str, str] = self._worker_environment()  # type: ignore
         env.update({"redis_server": self._redis_server})
         self._process = subprocess.Popen(
-            [sys.executable, __file__],
+            [sys.executable, self.WORKER_FILE],
             stdout=subprocess.PIPE,
             text=True,
             bufsize=1000,
-            env=os.environ | env,
+            env=os.environ | env | self._additional_env,
         )
         logger.success("Subprocess Procedure Worker started.")
         self._ending: bool = False
@@ -39,6 +40,7 @@ class SubProcessWorker(OutOfProcessWorkerBase):
         """
         if not self._ending_or_ended():
             self._ending = True
+            self._process.send_signal(SIGINT)
             self._process.send_signal(SIGINT)
             try:
                 self._process.wait(PROCESS_TIMEOUT)
