@@ -167,7 +167,7 @@ def _run_task(client: BECClient | BECIPythonClient, item: ProcedureExecutionMess
     proc_func(*item.args_kwargs[0], **kwargs)
 
 
-def _push_status(
+def push_status(
     conn: RedisConnector, queue: str, status: ProcedureWorkerStatus, id: str | None = None
 ):
     status_endpoint = MessageEndpoints.procedure_worker_status_update(queue)
@@ -187,7 +187,7 @@ def _main(
     active_procs_endpoint = MessageEndpoints.active_procedure_executions()
     timeout_s = _resolve_timeout(env["timeout_s"])
     queue = env["queue"]
-    _push_status(conn, queue, ProcedureWorkerStatus.IDLE)
+    push_status(conn, queue, ProcedureWorkerStatus.IDLE)
     item = None
     try:
         logger.success(f"Worker waiting for instructions on queue {env['queue']}")
@@ -196,7 +196,7 @@ def _main(
                 exec_endpoint, active_procs_endpoint, timeout_s=timeout_s
             )
         ) is not None:
-            _push_status(conn, queue, ProcedureWorkerStatus.RUNNING, item.execution_id)
+            push_status(conn, queue, ProcedureWorkerStatus.RUNNING, item.execution_id)
             helper.status_update(item.execution_id, "Started")
             helper.notify_watchers(env["queue"], queue_type="execution")
             logger.debug(f"running task {item!r}")
@@ -211,7 +211,7 @@ def _main(
                 logger.success(f"Finished procedure {item}")
             finally:
                 helper.remove_from_active.by_exec_id(item.execution_id)
-            _push_status(conn, queue, ProcedureWorkerStatus.IDLE)
+            push_status(conn, queue, ProcedureWorkerStatus.IDLE)
     except KeyboardInterrupt:
         if item is not None:
             logger.error("Procedure cancelled by user")
@@ -221,7 +221,7 @@ def _main(
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
     finally:
         logger.success("Procedure runner shutting down")
-        _push_status(conn, queue, ProcedureWorkerStatus.FINISHED)
+        push_status(conn, queue, ProcedureWorkerStatus.FINISHED)
         client.shutdown(per_thread_timeout_s=1)
         if item is not None:  # in this case we are here due to an exception, not a timeout
             helper.remove_from_active.by_exec_id(item.execution_id)
