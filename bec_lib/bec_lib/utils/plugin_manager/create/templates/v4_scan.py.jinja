@@ -1,0 +1,171 @@
+"""
+{{ description | default("V4 scan implementation.") }}
+
+Scan procedure:
+    - prepare_scan
+    - open_scan
+    - stage
+    - pre_scan
+    - scan_core
+        - at_each_point (optionally called by scan_core)
+    - post_scan
+    - unstage
+    - close_scan
+    - on_exception (called if any exception is raised during the scan)
+"""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+import numpy as np
+
+{% if arguments | selectattr("type", "equalto", "DeviceBase") | list %}
+from bec_lib.device import DeviceBase
+{% endif %}
+from bec_lib.scan_args import ScanArgument, Units
+from bec_server.scan_server.scans.scan_modifier import scan_hook
+from bec_server.scan_server.scans.scans_v4 import ScanBase, ScanType
+
+
+class {{ name | snake_to_pascal }}(ScanBase):
+    scan_type = ScanType.{{ scan_type | default("SOFTWARE_TRIGGERED") }}
+    scan_name = "_v4_{{ name }}"
+
+{% set scan_parameter_arguments = arguments | selectattr("gui_group", "equalto", "Scan Parameters") | list %}
+{% set acquisition_arguments = arguments | selectattr("gui_group", "equalto", "Acquisition Parameters") | list %}
+{% if scan_parameter_arguments or acquisition_arguments %}
+    gui_config = {
+{% if scan_parameter_arguments %}
+        "Scan Parameters": [{% for argument in scan_parameter_arguments %}"{{ argument.name }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+{% endif %}
+{% if acquisition_arguments %}
+        "Acquisition Parameters": [{% for argument in acquisition_arguments %}"{{ argument.name }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+{% endif %}
+    }
+{% endif %}
+
+    def __init__(
+        self,
+{% for argument in arguments | default([]) %}
+        {{ argument.parameter }},
+{% endfor %}
+        **kwargs,
+    ):
+        """
+        {{ summary | default("Describe the scan here.") }}
+
+        Args:
+{% for argument in arguments | default([]) %}
+            {{ argument.name }} ({{ argument.doc_type }}): {{ argument.doc_line }}
+{% endfor %}
+
+        Returns:
+            ScanReport
+        """
+        super().__init__(**kwargs)
+        self._baseline_readout_status = None
+{% for argument in arguments | default([]) %}
+        self.{{ argument.name }} = {{ argument.name }}
+{% endfor %}
+
+        self.update_scan_info(
+            num_points=1,
+            num_monitored_readouts=1,
+{% if arguments %}
+{% for argument in arguments | default([]) %}
+            {{ argument.name }}={{ argument.name }},
+{% endfor %}
+{% endif %}
+        )
+
+    @scan_hook
+    def prepare_scan(self):
+        """
+        Prepare the scan. This can include any steps that need to be executed
+        before the scan is opened, such as preparing the positions (if not done already)
+        or setting up the devices.
+        """
+        self.actions.add_scan_report_instruction_scan_progress(
+            points=self.scan_info.num_monitored_readouts, show_table=False
+        )
+        self._baseline_readout_status = self.actions.read_baseline_devices(wait=False)
+
+    @scan_hook
+    def open_scan(self):
+        """
+        Open the scan.
+        This step must call self.actions.open_scan() to ensure that a new scan is
+        opened. Make sure to prepare the scan metadata before, either in
+        prepare_scan() or in open_scan() itself and call self.update_scan_info(...)
+        to update the scan metadata if needed.
+        """
+        self.actions.open_scan()
+
+    @scan_hook
+    def stage(self):
+        """
+        Stage the devices for the upcoming scan. The stage logic is typically
+        implemented on the device itself (i.e. by the device's stage method).
+        However, if there are any additional steps that need to be executed before
+        staging the devices, they can be implemented here.
+        """
+        self.actions.stage_all_devices()
+
+    @scan_hook
+    def pre_scan(self):
+        """
+        Pre-scan steps to be executed before the main scan logic.
+        This is typically the last chance to prepare the devices before the core scan
+        logic is executed. For example, this is a good place to initialize time-criticial
+        devices, e.g. devices that have a short timeout.
+        The pre-scan logic is typically implemented on the device itself.
+        """
+        self.actions.pre_scan_all_devices()
+
+    @scan_hook
+    def scan_core(self):
+        """
+        Core scan logic to be executed during the scan.
+        This is where the main scan logic should be implemented.
+        """
+
+    @scan_hook
+    def at_each_point(self):
+        """
+        Logic to be executed at each acquisition point during the scan.
+        """
+
+    @scan_hook
+    def post_scan(self):
+        """
+        Post-scan steps to be executed after the main scan logic.
+        """
+        self.actions.complete_all_devices()
+
+    @scan_hook
+    def unstage(self):
+        """Unstage the scan by executing post-scan steps."""
+        self.actions.unstage_all_devices()
+
+    @scan_hook
+    def close_scan(self):
+        """Close the scan."""
+        if self._baseline_readout_status is not None:
+            self._baseline_readout_status.wait()
+        self.actions.close_scan()
+        self.actions.check_for_unchecked_statuses()
+
+    @scan_hook
+    def on_exception(self, exception: Exception):
+        """
+        Handle exceptions that occur during the scan.
+        This is a good place to implement any cleanup logic that needs to be executed in case of an exception,
+        such as returning the devices to a safe state or moving the motors back to their starting position.
+        """
+
+    #######################################################
+    ######### Helper methods for the scan logic ###########
+    #######################################################
+
+    # Implement scan-specific helper methods below.

@@ -40,3 +40,15 @@ def git_stage_files(directory: Path, filenames: list[str] = []):
 def make_commit(repo: Path, message: str):
     with _goto_dir(repo):
         subprocess.call(["git", "commit", "-m", message])
+
+
+def run_formatters(directory: Path, filenames: list[str]) -> None:
+    """Run isort and black on the given files relative to `directory`."""
+    with _goto_dir(directory):
+        for command in (["isort", *filenames], ["black", *filenames]):
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Formatter {' '.join(command)} failed with exit code {result.returncode}:\n"
+                    f"{result.stdout}\n{result.stderr}"
+                )
