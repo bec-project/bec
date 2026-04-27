@@ -3,7 +3,6 @@
 import time
 from abc import ABC, abstractmethod
 from threading import Event
-from typing import Iterable
 
 from bec_lib.actors import ActorActionTable
 from bec_lib.client import BECClient
@@ -42,27 +41,35 @@ class SubscriptionActor(ActorBase):
     """An actor which subscribes to a list of redis endpoints, and evaluates on any message to any
     of those endpoints."""
 
-    def __init__(
-        self,
-        client: BECClient,
-        exec_id: str,
-        endpoints: Iterable[EndpointInfo],
-        min_delay_s: float = 0.01,
-    ):
+    min_delay_s: float = 0.01
+
+    def __init__(self, client: BECClient, exec_id: str):
         super().__init__(client, exec_id)
-        self.min_delay = min_delay_s
-        self.last_evaluated = time.monotonic()
-        for endpoint in set(endpoints):
+        self._endpoints = self.default_monitor_endpoints()
+        self.last_evaluated = 0
+
+        logger.info(f"Setting up {self.__class__.__name__}: {self._endpoints}.")
+        for endpoint in self._endpoints:
+            logger.info(f"Connecting {self.__class__.__name__} to '{endpoint.endpoint}'")
             client.connector.register(endpoint, cb=self.evaluate)
 
+    def default_monitor_endpoints(self) -> set[EndpointInfo]:
+        return set()
+
     def evaluate(self, *_, **__):
-        if (now := time.monotonic()) < self.last_evaluated + self.min_delay:
+        logger.info(f"{self.__class__.__name__} triggered")
+        if (now := time.monotonic()) < self.last_evaluated + self.min_delay_s:
+            logger.info("too little time elapsed since last trigger")
             return
         self.last_evaluated = now
         return super().evaluate(*_, **__)
 
     def run(self):
-        self.stop_event.wait()
+        try:
+            while not self.stop_event.wait(timeout=0.1):
+                continue
+        except KeyboardInterrupt:
+            ...
 
 
 class PollingActor(ActorBase):
@@ -70,8 +77,11 @@ class PollingActor(ActorBase):
 
     def __init__(self, client: BECClient, exec_id: str, poll_interval_s: float = 0.1):
         super().__init__(client, exec_id)
-        self.poll_interval = poll_interval_s
+        self.poll_interval = float(poll_interval_s)
 
     def run(self):
-        while not self.stop_event.wait(timeout=0.1):
-            self.evaluate()
+        try:
+            while not self.stop_event.wait(timeout=0.1):
+                self.evaluate()
+        except KeyboardInterrupt:
+            ...

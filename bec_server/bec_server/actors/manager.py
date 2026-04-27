@@ -8,13 +8,11 @@ from uuid import uuid4
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ActorExecutionMessage, ActorStartRequestMessage
+
 from bec_server.actors.worker import ActorProcedureWorker
 from bec_server.procedures.manager import ProcedureManagerBase, _resolve_dict
 
 logger = bec_logger.logger
-
-
-class ActorHelper: ...
 
 
 class ActorManager(ProcedureManagerBase[ActorStartRequestMessage, ActorExecutionMessage]):

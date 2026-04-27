@@ -3,14 +3,13 @@ from threading import Thread
 from unittest.mock import patch
 
 import pytest
-from fakeredis import TcpFakeServer
-from redis.client import Redis
-
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import ActorStartRequestMessage
+from bec_lib.messages import ActorStartRequestMessage, RawMessage
 from bec_lib.redis_connector import MessageObject, RedisConnector
+from fakeredis import TcpFakeServer
+
 from bec_server.actors.manager import ActorManager
-from bec_server.test.actor_test_utils import ep
+from bec_server.test.actor_test_utils import ep, sub_ep
 from bec_server.test.helpers import wait_until
 
 
@@ -27,9 +26,9 @@ def threads_check(fakeredis_config):
         if th is not threading.main_thread() and "process_request_thread" not in th.name
     )
     additional_threads = threads_after - threads_at_start
-    assert (
-        len(additional_threads) == 0
-    ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+    assert len(additional_threads) == 0, (
+        f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+    )
 
 
 @pytest.fixture
@@ -88,3 +87,24 @@ def test_polling_actor(actor_manager_and_conn: tuple[ActorManager, RedisConnecto
     )
     wait_until(lambda: manager._active_workers != {})
     wait_until(lambda: action_triggered, timeout_s=10)
+
+
+def test_subscription_actor(actor_manager_and_conn: tuple[ActorManager, RedisConnector]):
+    manager, conn = actor_manager_and_conn
+    action_triggered = False
+
+    def action_callback(msg: MessageObject):
+        nonlocal action_triggered
+        if msg.value.data == {"test": "result"}:
+            action_triggered = True
+
+    conn.register(ep, cb=action_callback)
+    manager._process_queue_request(
+        msg=ActorStartRequestMessage(
+            actor_module="bec_server.test.actor_test_utils",
+            actor_class_name="SubscriptionTestActor",
+        )
+    )
+    wait_until(lambda: manager._active_workers != {})
+    conn.set_and_publish(sub_ep, RawMessage(data=None))
+    wait_until(lambda: action_triggered, timeout_s=5)
