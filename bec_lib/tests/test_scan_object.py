@@ -9,7 +9,7 @@ from bec_lib.scans import ScanObject
 def scan_obj(bec_client_mock):
     scan_info = {
         "class": "FermatSpiralScan",
-        "arg_input": {"device": "device", "start": "float", "stop": "float"},
+        "arg_input": {"device": "DeviceBase", "start": "float", "stop": "float"},
         "required_kwargs": ["step", "relative"],
         "arg_bundle_size": {"bundle": 3, "min": 2, "max": 2},
         "doc": (

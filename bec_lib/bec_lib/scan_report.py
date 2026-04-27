@@ -274,7 +274,7 @@ class ScanReport:
         """
         if not self.scan:
             return False
-        return self.scan.num_points == len(self.scan.live_data)
+        return self.scan.num_monitored_readouts == len(self.scan.live_data)
 
     def __str__(self) -> str:
         separator = "--" * 10

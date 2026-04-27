@@ -322,6 +322,7 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
             },
         ),
         (Annotated[float, "unknown metadata"], "float"),
+        (list[float], {"Generic": {"origin": "list", "args": ["float"]}}),
     ],
 )
 def test_serialize_dtype(dtype_in, dtype_out):
@@ -372,6 +373,7 @@ def test_serialize_dtype(dtype_in, dtype_out):
         ({"Annotated": {"type": "float", "metadata": {"Other": {}}}}, float),
         ({"Annotated": {"type": "float", "metadata": {}}}, float),
         ({"Annotated": {"type": "float"}}, float),
+        ({"Generic": {"origin": "list", "args": ["float"]}}, list[float]),
         (
             {
                 "Annotated": {

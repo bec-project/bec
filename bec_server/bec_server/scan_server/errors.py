@@ -11,6 +11,10 @@ class ScanAbortion(Exception):
     pass
 
 
+class ScanInputValidationError(ValueError):
+    pass
+
+
 class UserScanInterruption(ScanAbortion):
     def __init__(self, exit_info: ExitInfoType):
         super().__init__()

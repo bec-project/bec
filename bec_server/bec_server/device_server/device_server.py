@@ -761,7 +761,8 @@ class DeviceServer(BECService):
 
         content = status.instruction.content
         is_config_set = content["action"] == "set"
-        is_rpc_set = content["action"] == "rpc" and (".set" in content["parameter"]["func"])
+        rpc_func = content["parameter"].get("func", "")
+        is_rpc_set = content["action"] == "rpc" and (rpc_func == "set" or ".set" in rpc_func)
 
         if is_config_set or is_rpc_set:
             if obj.kind == Kind.config:
@@ -807,8 +808,11 @@ class DeviceServer(BECService):
             return
 
         self.requests_handler.add_request(instr, num_status_objects=0)
-        self._read_and_update_devices(devices, instr.metadata)
-        self.requests_handler.set_finished(instr.metadata["device_instr_id"], success=True)
+        result = self._read_and_update_devices(devices, instr.metadata)
+        response_result = result if instr.parameter.get("return_result", False) else None
+        self.requests_handler.set_finished(
+            instr.metadata["device_instr_id"], success=True, result=response_result
+        )
 
     def _read_and_update_devices(self, devices: list[str], metadata: dict) -> list:
         start = time.time()

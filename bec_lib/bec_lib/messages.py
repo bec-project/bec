@@ -222,6 +222,9 @@ class ScanStatusMessage(BECMessage):
         default=None,
         description="Number of points in the scan. Only relevant if the number of points is determined by BEC.",
     )
+    num_monitored_readouts: int | None = Field(
+        default=0, description="Number of monitored readouts in the scan."
+    )
     scan_name: str | None = Field(default=None, description="Name of the scan, e.g. 'line_scan'")
     scan_type: Literal["step", "fly"] | None = Field(default=None, description="Type of scan")
     dataset_number: int | None = None
@@ -904,6 +907,7 @@ class ScanHistoryMessage(BECMessage):
         end_time (float): End time of the scan.
         scan_name (str): Name of the scan.
         num_points (int): Number of points in the scan.
+        num_monitored_readouts (int): Number of monitored readouts in the scan.
         request_inputs (dict, optional): Inputs for the scan request, if available.
         stored_data_info (dict[str, dict[str, _StoredDataInfo]], optional): Information about the stored data for each device in the scan.
         metadata (dict, optional): Additional metadata.
@@ -920,7 +924,8 @@ class ScanHistoryMessage(BECMessage):
     start_time: float
     end_time: float
     scan_name: str
-    num_points: int
+    num_points: int | None = None
+    num_monitored_readouts: int | None = None
     request_inputs: dict | None = None
     stored_data_info: dict[str, dict[str, _StoredDataInfo]] | None = None
 

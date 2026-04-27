@@ -1,3 +1,6 @@
+import os
+
+os.environ.setdefault("OPHYD_CONTROL_LAYER", "dummy")
 import fakeredis
 import pytest
 

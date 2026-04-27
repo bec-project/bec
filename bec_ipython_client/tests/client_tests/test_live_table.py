@@ -146,11 +146,13 @@ class TestLiveTable:
         )
         live_update.scan_item = scan_item
         scan_item.num_points = 2
+        scan_item.num_monitored_readouts = 2
         scan_item.live_data = {0: data}
         with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
             live_update._run_update(1)
             assert mock_print_table_data.called
         scan_item.num_points = 2
+        scan_item.num_monitored_readouts = 2
         scan_item.live_data = {0: data, 1: data}
         scan_item.status = "closed"
         with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
@@ -173,11 +175,13 @@ class TestLiveTable:
         )
         live_update.scan_item = scan_item
         scan_item.num_points = 2
+        scan_item.num_monitored_readouts = 2
         scan_item.live_data = {0: data}
         with mock.patch.object(live_update, "print_table_data") as mock_print_table_data:
             live_update._run_update(1)
             assert mock_print_table_data.called
         scan_item.num_points = 2
+        scan_item.num_monitored_readouts = 2
         scan_item.live_data = {}
         scan_item.status_message = messages.ScanStatusMessage(
             readout_priority={"monitored": [], "baseline": ["samx"]},

@@ -144,28 +144,39 @@ def test_parameter_bundler(bec_client_mock):
 
 
 @pytest.mark.parametrize(
-    "in_type,out",
+    "dtype,out",
     [
-        ("float", (float, int)),
-        ("int", int),
-        ("list", list),
-        ("boolean", bool),
-        ("bool", bool),
-        ("str", str),
-        ("dict", dict),
-        ("device", DeviceBase),
-        ("DeviceBase", DeviceBase),
-        (serialize_dtype(Annotated[float, ScanArgument(description="Step size")]), float),
-        (
-            serialize_dtype(Annotated[float, ScanArgument(description="Step size")] | None),
-            (float, type(None)),
-        ),
+        (float, (float, int)),
+        (int, int),
+        (list, list),
+        (bool, bool),
+        (str, str),
+        (dict, dict),
+        (DeviceBase, DeviceBase),
+        (list[float], list[float]),
+        (Annotated[float, ScanArgument(description="Step size")], (float, int)),
+        (Annotated[float, ScanArgument(description="Step size")] | None, (float, int, type(None))),
     ],
 )
-def test_get_arg_type(bec_client_mock, in_type, out):
+def test_get_runtime_arg_type(bec_client_mock, dtype, out):
     client = bec_client_mock
-    res = client.scans.get_arg_type(in_type)
+    res = client.scans._get_runtime_arg_type(dtype)
     assert res == out
+
+
+@pytest.mark.parametrize(
+    ("arg", "dtype", "matches"),
+    [
+        ([1, 2.5], list[float], True),
+        ([1, "nope"], list[float], False),
+        ({1: 2.0}, dict[int, float], True),
+        ({1: "nope"}, dict[int, float], False),
+    ],
+)
+def test_arg_matches_type_for_generic_containers(bec_client_mock, arg, dtype, matches):
+    client = bec_client_mock
+
+    assert client.scans._arg_matches_type(arg, dtype) is matches
 
 
 def test_strip_scan_signature_annotations_for_ipython_signature():
@@ -200,12 +211,6 @@ def test_strip_scan_signature_annotations_for_ipython_signature():
             "annotation": ["float", "NoneType"],
         },
     ]
-
-
-def test_get_arg_type_raises(bec_client_mock):
-    client = bec_client_mock
-    with pytest.raises(TypeError):
-        client.scans.get_arg_type("not_existing")
 
 
 def test_interactive_scan_cm(bec_client_mock):

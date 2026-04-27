@@ -262,29 +262,53 @@ class Scans:
             return tuple(runtime_types)
         if dtype is None:
             return types.NoneType
+        if dtype is float:
+            return (float, int)
         return dtype
 
     @staticmethod
-    def get_arg_type(in_type: str | dict | list):
-        """translate type string into python type"""
-        # pylint: disable=too-many-return-statements
-        if in_type == "float":
-            return (float, int)
-        if in_type == "int":
-            return int
-        if in_type == "list":
-            return list
-        if in_type in ("boolean", "bool"):
-            return bool
-        if in_type == "str":
-            return str
-        if in_type == "dict":
-            return dict
-        if in_type in ("device", "DeviceBase"):
-            return DeviceBase
-        if dtype := deserialize_dtype(in_type):
-            return Scans._get_runtime_arg_type(dtype)
-        raise TypeError(f"Unknown type {in_type}")
+    def _arg_matches_type(arg, dtype: object) -> bool:
+        """Validate an argument against a possibly nested type annotation."""
+        if get_origin(dtype) is Annotated:
+            return Scans._arg_matches_type(arg, get_args(dtype)[0])
+        if get_origin(dtype) is Literal:
+            return any(arg == literal for literal in get_args(dtype))
+        if dtype.__class__.__name__ == "_UnionGenericAlias" or dtype.__class__ == types.UnionType:
+            return any(Scans._arg_matches_type(arg, union_arg) for union_arg in get_args(dtype))
+        if dtype is None:
+            return arg is None
+        origin = get_origin(dtype)
+        if origin is list:
+            if not isinstance(arg, list):
+                return False
+            args = get_args(dtype)
+            if not args:
+                return True
+            return all(Scans._arg_matches_type(item, args[0]) for item in arg)
+        if origin is dict:
+            if not isinstance(arg, dict):
+                return False
+            key_type, value_type = get_args(dtype) or (object, object)
+            return all(
+                Scans._arg_matches_type(key, key_type)
+                and Scans._arg_matches_type(value, value_type)
+                for key, value in arg.items()
+            )
+        if origin is tuple:
+            if not isinstance(arg, tuple):
+                return False
+            args = get_args(dtype)
+            if not args:
+                return True
+            if len(args) == 2 and args[1] is Ellipsis:
+                return all(Scans._arg_matches_type(item, args[0]) for item in arg)
+            if len(arg) != len(args):
+                return False
+            return all(
+                Scans._arg_matches_type(item, item_type) for item, item_type in zip(arg, args)
+            )
+        runtime_type = Scans._get_runtime_arg_type(dtype)
+        return isinstance(arg, runtime_type)
 
     @staticmethod
     def prepare_scan_request(
@@ -334,10 +358,12 @@ class Scans:
 
             # check that all arguments are of the correct type
             for ii, arg in enumerate(args):
-                if not isinstance(arg, Scans.get_arg_type(arg_input[ii % len(arg_input)])):
+                serialized_dtype = arg_input[ii % len(arg_input)]
+                dtype = deserialize_dtype(serialized_dtype)
+                if not Scans._arg_matches_type(arg, dtype):
                     raise TypeError(
                         f"{scan_info.get('doc')}\n Argument {ii} must be of type"
-                        f" {arg_input[ii%len(arg_input)]}, not {type(arg).__name__}."
+                        f" {serialized_dtype}, not {type(arg).__name__}."
                     )
 
         metadata = {}

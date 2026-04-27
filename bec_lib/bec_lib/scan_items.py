@@ -48,6 +48,7 @@ class ScanItem:
         open_scan_defs: Set of open scan definition IDs.
         open_queue_group: Queue group this scan belongs to.
         num_points: Total number of data points in the scan.
+        num_monitored_readouts: Total number of monitored readouts in the scan.
         start_time: Unix timestamp when the scan started.
         end_time: Unix timestamp when the scan ended.
         scan_report_instructions: Instructions for generating scan reports.
@@ -85,6 +86,7 @@ class ScanItem:
         self.open_scan_defs = set()
         self.open_queue_group = None
         self.num_points: int | None = None
+        self.num_monitored_readouts: int | None = None
         self.start_time: float | None = None
         self.end_time: float | None = None
         self.scan_report_instructions: list[dict] = []
@@ -215,13 +217,25 @@ class ScanItem:
         scan_id = f"\tScan ID: {self.scan_id}\n" if self.scan_id else ""
         scan_number = f"\tScan number: {self.scan_number}\n" if self.scan_number else ""
         num_points = f"\tNumber of points: {self.num_points}\n" if self.num_points else ""
+        num_monitored_readouts = (
+            f"\tNumber of monitored readouts: {self.num_monitored_readouts}\n"
+            if self.num_monitored_readouts
+            else ""
+        )
         public_file = ""
         for file_path in self.public_files:
             file_name = file_path.split("/")[-1]
             if "_master" in file_name:
                 public_file = "\tFile: " + file_path + "\n"
         details = (
-            start_time + end_time + elapsed_time + scan_id + scan_number + num_points + public_file
+            start_time
+            + end_time
+            + elapsed_time
+            + scan_id
+            + scan_number
+            + num_points
+            + num_monitored_readouts
+            + public_file
         )
         return details
 
@@ -344,11 +358,13 @@ class ScanStorage:
             )
             return
 
+        terminal_states = {"aborted", "halted", "closed", "user_completed"}
+
         # update timestamps
         if scan_status.status == "open":
             scan_item.start_time = scan_status.timestamp
-        elif scan_status.timestamp:
-            # update for all other statuses if timestamp is provided
+        elif scan_status.status in terminal_states and scan_status.timestamp:
+            # Only terminal states should stamp the end time; paused scans remain open.
             scan_item.end_time = scan_status.timestamp
 
         # update status message
@@ -358,6 +374,9 @@ class ScanStorage:
         # update total number of points
         if scan_status.num_points:
             scan_item.num_points = scan_status.num_points
+
+        if scan_status.num_monitored_readouts:
+            scan_item.num_monitored_readouts = scan_status.num_monitored_readouts
 
         # update scan number
         if scan_number is not None:
@@ -369,8 +388,8 @@ class ScanStorage:
         # add scan def id
         scan_def_id = scan_status.info.get("scan_def_id")
         if scan_def_id:
-            if scan_status.status != "open":
-                scan_item.open_scan_defs.remove(scan_def_id)
+            if scan_status.status in terminal_states:
+                scan_item.open_scan_defs.discard(scan_def_id)
             else:
                 scan_item.open_scan_defs.add(scan_def_id)
 
