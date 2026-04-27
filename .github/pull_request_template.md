@@ -14,7 +14,6 @@
 ## How to test
 
 - Run unit tests
-- Open [widget] in designer and play around with the properties
 
 ## Potential side effects
 
