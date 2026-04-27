@@ -32,7 +32,7 @@ dev = [
     "pytest-redis~=3.1",
     "pytest-retry~=1.1",
     "pytest-timeout~=2.2",
-    "pytest~=8.0",
+    "pytest>=8,<10",
 ]
 
 [project.scripts]
