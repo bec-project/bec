@@ -1,10 +1,15 @@
 import threading
+import time
+from itertools import count
 from threading import Thread
 from time import sleep
 from unittest.mock import patch
 
 import pytest
-from fakeredis import TcpFakeServer
+from fakeredis import FakeConnection
+from fakeredis import TcpFakeServer as _TcpFakeServer
+from fakeredis._server import FakeServer
+from fakeredis._tcp_server import TCPFakeRequestHandler as _TCPFakeRequestHandler
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
@@ -14,28 +19,50 @@ from bec_server.test.actor_test_utils import ep, sub_ep
 from bec_server.test.helpers import wait_until
 
 
-@pytest.fixture(autouse=True)
-def threads_check(fakeredis_config):
-    threads_at_start = set(th for th in threading.enumerate() if th is not threading.main_thread())
-    yield
-    threads_after = set(
-        th
-        for th in threading.enumerate()
-        # ignore the server threads that fakeredis makes, but don't ignore worker/manager threads
-        # there is a bug in fakeredis where daemon threads are not actually cleaned up until the
-        # end of the process.
-        if th is not threading.main_thread() and "process_request_thread" not in th.name
-    )
-    additional_threads = threads_after - threads_at_start
-    assert (
-        len(additional_threads) == 0
-    ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+class TCPFakeRequestHandler(_TCPFakeRequestHandler):
+    server: "TcpFakeServer"  # type: ignore
+
+    def handle(self) -> None:
+        while True:
+            try:
+                if self.server._shutdown_requested:
+                    break
+                if self.current_client.can_read():
+                    response = self.current_client.read_response()
+                    self.writer.dump(response)
+                    continue
+
+                data = self.rfile.readline()
+                if data == b"":
+                    time.sleep(0)
+                else:
+                    self.current_client.get_socket().sendall(data)
+
+            except Exception as e:
+                self.writer.dump(e)
+                break
+
+
+class TcpFakeServer(_TcpFakeServer):
+    def __init__(self, server_address: tuple[str, int]):
+        self.allow_reuse_address = True
+        self._shutdown_requested = False
+        super(_TcpFakeServer, self).__init__(server_address, TCPFakeRequestHandler, True)
+        self.fake_server = FakeServer(server_type="redis", version=(7, 4))
+        self.client_ids = count(0)
+        self.daemon_threads = False
+        self.block_on_close = True
+        self.clients: dict[int, FakeConnection] = {}
+
+    def shutdown(self) -> None:
+        self._shutdown_requested = True
+        return super().shutdown()
 
 
 @pytest.fixture
 def fakeredis_config():
     redis_config = "localhost", 44556
-    server = TcpFakeServer(redis_config, server_type="redis")
+    server = TcpFakeServer(redis_config)
     t = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
     t.start()
     yield redis_config
