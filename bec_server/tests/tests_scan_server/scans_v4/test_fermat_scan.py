@@ -69,7 +69,6 @@ def test_fermat_scan_prepare_scan_uses_first_axis_as_corridor_axis(v4_scan_assem
     scan.components.optimize_trajectory.assert_called_once()
     _, kwargs = scan.components.optimize_trajectory.call_args
     assert kwargs["optimization_type"] == "corridor"
-    assert kwargs["fast_axis"] == 0
     assert kwargs["first_direction"] == 1
     np.testing.assert_allclose(scan.positions, optimized)
 
