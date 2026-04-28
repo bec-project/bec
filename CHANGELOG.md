@@ -1,6 +1,57 @@
 # CHANGELOG
 
 
+## v3.118.1 (2026-04-28)
+
+### Bug Fixes
+
+- Fetch a last value from redis before resolving the progressbar
+  ([`717d690`](https://github.com/bec-project/bec/commit/717d690826673f8262a770273c37840381171f68))
+
+Co-authored-by: Copilot <copilot@github.com>
+
+### Chores
+
+- Fix pr template
+  ([`2ff021d`](https://github.com/bec-project/bec/commit/2ff021dcd9ebe103ae44300d5a6f086f7a449551))
+
+- Move contributing guide from docs to root; update readme
+  ([`d438105`](https://github.com/bec-project/bec/commit/d4381052ea47d5c18d770111cf431ed24e26858c))
+
+- **dependabot**: Merge shared python dependencies into single PR
+  ([`8df0792`](https://github.com/bec-project/bec/commit/8df0792565506472223aa8f2e8fa2df7bd96583a))
+
+Consolidate pip directories for Dependabot updates and group shared dependencies.
+
+- **deps**: Update rich requirement in
+  ([`9bbbfcb`](https://github.com/bec-project/bec/commit/9bbbfcbeab5bab6f63b090f06e6af617d8658395))
+
+Updates the requirements on [rich](https://github.com/Textualize/rich) to permit the latest version.
+  - [Release notes](https://github.com/Textualize/rich/releases) -
+  [Changelog](https://github.com/Textualize/rich/blob/master/CHANGELOG.md) -
+  [Commits](https://github.com/Textualize/rich/compare/v13.7.0...v15.0.0)
+
+--- updated-dependencies: - dependency-name: rich dependency-version: 15.0.0
+
+dependency-type: direct:production ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps-dev**: Update pytest requirement
+  ([`cef00f6`](https://github.com/bec-project/bec/commit/cef00f60f04a1187f7bcdb0c099307c7d5b86f0b))
+
+Updates the requirements on [pytest](https://github.com/pytest-dev/pytest) to permit the latest
+  version. - [Release notes](https://github.com/pytest-dev/pytest/releases) -
+  [Changelog](https://github.com/pytest-dev/pytest/blob/main/CHANGELOG.rst) -
+  [Commits](https://github.com/pytest-dev/pytest/compare/8.0.0...9.0.3)
+
+--- updated-dependencies: - dependency-name: pytest dependency-version: 9.0.3
+
+dependency-type: direct:development ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+
 ## v3.118.0 (2026-04-27)
 
 ### Bug Fixes
