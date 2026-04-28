@@ -1,21 +1,23 @@
-import threading
 import time
 from itertools import count
 from threading import Thread
 from time import sleep
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from bec_lib.client import BECClient
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
+from bec_lib.redis_connector import MessageObject, RedisConnector
 from fakeredis import FakeConnection
 from fakeredis import TcpFakeServer as _TcpFakeServer
 from fakeredis._server import FakeServer
 from fakeredis._tcp_server import TCPFakeRequestHandler as _TCPFakeRequestHandler
 
-from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
-from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_server.actors.manager import ActorManager
-from bec_server.test.actor_test_utils import ep, sub_ep
+from bec_server.procedures.constants import BecClientType
+from bec_server.procedures.oop_worker_base import _create_client
+from bec_server.test.actor_test_utils import PollingActor, SubscriptionActor, ep, sub_ep
 from bec_server.test.helpers import wait_until
 
 
@@ -144,3 +146,55 @@ def test_subscription_actor(actor_manager_and_conn: tuple[ActorManager, RedisCon
     sleep(0.1)
     conn.set_and_publish(sub_ep, RawMessage(data=None))
     wait_until(lambda: action_triggered, timeout_s=1)
+
+
+def test_subscription_actor_inline(fakeredis_config):
+    host, port = fakeredis_config
+    redis = {"host": host, "port": port}
+    client: BECClient = _create_client(BecClientType.BECClient, redis=redis)  # type: ignore
+    client.start()
+    redis = f"{host}:{port}"
+    conn = RedisConnector([redis])
+    test_action = MagicMock()
+
+    class SubTestActor(SubscriptionActor):
+        action_table = {(lambda *_, **__: True): test_action}
+
+        def default_monitor_endpoints(self):
+            return {sub_ep}
+
+    try:
+        actor = SubTestActor(client, name="SubActorTest", exec_id="SubActorTest")
+        wait_until(lambda: sub_ep.endpoint in actor.client.connector._topics_cb, timeout_s=0.5)
+        for _ in range(20):
+            conn.set_and_publish(sub_ep, RawMessage(data=None))
+            if test_action.call_count > 0:
+                break
+            sleep(1)
+        assert test_action.call_count > 0
+    finally:
+        client.shutdown()
+        conn.shutdown()
+
+
+def test_polling_actor_inline(fakeredis_config):
+    host, port = fakeredis_config
+    redis = {"host": host, "port": port}
+    client: BECClient = _create_client(BecClientType.BECClient, redis=redis)  # type: ignore
+    client.start()
+    redis = f"{host}:{port}"
+    test_action = MagicMock()
+
+    class PollTestActor(PollingActor):
+        action_table = {(lambda *_, **__: True): test_action}
+
+    actor = PollTestActor(client, name="SubActorTest", exec_id="SubActorTest")
+
+    actor_thread = Thread(target=actor.run)
+    actor_thread.start()
+    try:
+        wait_until(lambda: test_action.call_count > 0, timeout_s=10)
+    finally:
+        actor.stop_event.set()
+        actor_thread.join()
+        client.shutdown()
