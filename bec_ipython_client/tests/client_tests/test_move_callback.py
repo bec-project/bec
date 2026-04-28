@@ -30,7 +30,7 @@ def test_move_callback(bec_client_mock):
     readback = collections.deque()
     readback.extend([[-10], [0], [10]])
 
-    def mock_readback(*args):
+    def mock_readback(*args, **kwargs):
         if len(readback) > 1:
             return readback.popleft()
         return readback[0]
@@ -74,7 +74,7 @@ def test_move_callback_with_report_instruction(bec_client_mock):
         "readback": {"RID": "something", "devices": ["samx"], "start": [0], "end": [10]}
     }
 
-    def mock_readback(*args):
+    def mock_readback(*args, **kwargs):
         if len(readback) > 1:
             return readback.popleft()
         return readback[0]
