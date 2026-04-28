@@ -113,7 +113,7 @@ def test_optimize_trajectory_uses_corridor_defaults(v4_scan_assembler):
         positions,
         num_iterations=7,
         corridor_size=4,
-        fast_axis=1,
+        fast_axis=0,
         first_corridor_direction=1,
         snaked=True,
     )

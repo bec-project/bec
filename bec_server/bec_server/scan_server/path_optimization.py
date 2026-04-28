@@ -1,9 +1,10 @@
-import enum
 from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel
 from scipy.spatial import cKDTree  # type: ignore
+
+from bec_server.scan_server.scans.position_generators import Direction
 
 
 class PathQualityStats(BaseModel):
@@ -13,11 +14,6 @@ class PathQualityStats(BaseModel):
     total_length: float
 
     model_config = {"arbitrary_types_allowed": True}
-
-
-class Direction(int, enum.Enum):
-    ASCENDING = 1
-    DESCENDING = -1
 
 
 class PathOptimizerMixin:
@@ -37,7 +33,7 @@ class PathOptimizerMixin:
         self,
         positions: np.ndarray,
         corridor_size: float | None = None,
-        fast_axis: Literal[0, 1] = 1,
+        fast_axis: Literal[0, 1] = 0,
         num_iterations: int = 1,
         first_corridor_direction: Direction | Literal[-1, 1] = Direction.ASCENDING,
         snaked: bool = True,
@@ -52,7 +48,7 @@ class PathOptimizerMixin:
         Args:
             positions (np.ndarray): Array of positions
             corridor_size (float, optional): Width of each corridor. Defaults to None (auto-estimated).
-            fast_axis (Literal[0, 1], optional): Axis traversed within each corridor (0 or 1). Defaults to 1.
+            fast_axis (Literal[0, 1], optional): Axis traversed within each corridor (0 or 1). Defaults to 0.
             num_iterations (int, optional): Number of corridor sizes to try. Defaults to 1.
             first_corridor_direction (Direction | Literal[-1, 1], optional): Traversal direction of the first
                 corridor along the fast axis. Positive means ascending, negative means

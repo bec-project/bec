@@ -90,7 +90,8 @@ def get_ND_grid_pos(axes: list[np.ndarray], snaked: bool = True) -> np.ndarray:
             positions.extend([[val] + sp for sp in sub_positions])
         return positions
 
-    return np.array(_get_positions_recursively(axes))
+    positions = _get_positions_recursively(axes[::-1])
+    return np.array([position[::-1] for position in positions], dtype=float)
 
 
 # pylint: disable=too-many-arguments
@@ -209,20 +210,20 @@ def get_hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True)
 
     points = []
 
-    # The first axis is the slow row axis and the second axis is the fast axis.
-    n_rows = int(np.ceil((a0_stop - a0_start) / a0_step)) + 2
+    # The second axis selects the rows and the first axis is traversed within each row.
+    n_rows = int(np.ceil((a1_stop - a1_start) / a1_step)) + 2
 
     for row in range(n_rows):
-        axis0 = a0_start + row * a0_step
+        axis1 = a1_start + row * a1_step
 
         # Alternate row offset - shift by half the fast-axis step
-        axis1_offset = (a1_step / 2) if (row % 2) else 0.0
+        axis0_offset = (a0_step / 2) if (row % 2) else 0.0
 
-        n_cols = int(np.ceil((a1_stop - a1_start) / a1_step)) + 2
+        n_cols = int(np.ceil((a0_stop - a0_start) / a0_step)) + 2
 
         row_points = []
         for col in range(n_cols):
-            axis1 = a1_start + axis1_offset + col * a1_step
+            axis0 = a0_start + axis0_offset + col * a0_step
 
             if a0_start <= axis0 <= a0_stop and a1_start <= axis1 <= a1_stop:
                 row_points.append((axis0, axis1))
@@ -522,7 +523,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
             self.positions = self.optimize_corridor(
                 self.positions,
                 num_iterations=5,
-                fast_axis=getattr(self, "fast_axis", 1),
+                fast_axis=getattr(self, "fast_axis", 0),
                 first_corridor_direction=getattr(self, "first_direction", 1),
             )
             return
@@ -1089,7 +1090,7 @@ class FermatSpiralScan(ScanBase):
         self.step = step
         self.spiral_type = spiral_type
         self.first_direction = (
-            Direction.ASCENDING if self.stop_motor2 > self.start_motor2 else Direction.DESCENDING
+            Direction.ASCENDING if self.stop_motor1 > self.start_motor1 else Direction.DESCENDING
         )
 
     def update_scan_motors(self):

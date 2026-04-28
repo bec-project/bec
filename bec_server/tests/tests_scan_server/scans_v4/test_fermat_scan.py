@@ -69,19 +69,20 @@ def test_fermat_scan_prepare_scan_uses_first_axis_as_corridor_axis(v4_scan_assem
     scan.components.optimize_trajectory.assert_called_once()
     _, kwargs = scan.components.optimize_trajectory.call_args
     assert kwargs["optimization_type"] == "corridor"
+    assert kwargs["fast_axis"] == 0
     assert kwargs["first_direction"] == 1
     np.testing.assert_allclose(scan.positions, optimized)
 
 
-def test_fermat_scan_prepare_scan_uses_fast_axis_range_for_preferred_direction(v4_scan_assembler):
+def test_fermat_scan_prepare_scan_uses_first_axis_range_for_preferred_direction(v4_scan_assembler):
     scan = v4_scan_assembler(
         "_v4_fermat_scan",
         "samx",
-        -1.0,
         1.0,
+        -1.0,
         "samy",
-        4.0,
         -4.0,
+        4.0,
         step=0.5,
         optim_trajectory="corridor",
         relative=False,
