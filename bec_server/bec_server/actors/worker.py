@@ -50,22 +50,25 @@ def get_actor_env():
     }
 
 
-if __name__ == "__main__":
-    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
-
+def main():
     env, helper, client, conn = setup(get_env())
     actor_env = get_actor_env()
     logger_connector = RedisConnector(env["redis_server"])
     output_diverter = RedisOutputDiverter(logger_connector, env["queue"])
-    # with redirect_stdout(output_diverter):
-    #     logger.add(
-    #         output_diverter,
-    #         level=LogLevel.SUCCESS,
-    #         format=bec_logger.formatting(is_container=True),
-    #         filter=bec_logger.filter(),
-    #     )
-    #     logger.success(f"Starting ActorProcedureWorker with env: {actor_env}")
+    with redirect_stdout(output_diverter):
+        logger.add(
+            output_diverter,
+            level=LogLevel.SUCCESS,
+            format=bec_logger.formatting(is_container=True),
+            filter=bec_logger.filter(),
+        )
+        logger.success(f"Starting ActorProcedureWorker with env: {actor_env}")
     push_status(conn, env["queue"], ProcedureWorkerStatus.IDLE)
     actor_procedure(bec=client, **actor_env)
     conn.shutdown()
     logger_connector.shutdown()
+
+
+if __name__ == "__main__":
+    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
+    main()
