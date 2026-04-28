@@ -102,8 +102,14 @@ class ReadbackDataHandler:
         self.requests_done.set()
         self._unregister_callbacks()
 
-    def get_device_values(self) -> list:
+    def get_device_values(self, force: bool = False) -> list:
         """get the current device values
+
+        Args:
+            force (bool): if True, it fetches again the device values from redis,
+                even if they were already received before. This is to check the last
+                values after the request is marked as done, as sometimes the request
+                done message is delivered before the last readback messages.
 
         Returns:
             list: list of device values
@@ -111,7 +117,7 @@ class ReadbackDataHandler:
         values = []
         for dev in self.devices:
             val = self.data.get(dev)
-            if val is None:
+            if val is None or force:
                 signal_data = self.device_manager.devices[dev].read(cached=True)
             else:
                 signal_data = val.signals
@@ -206,6 +212,8 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
 
                 for dev, (done, success) in data_source.device_states().items():
                     if done and success:
+                        values = data_source.get_device_values(force=True)
+                        progress.update(values=values)
                         progress.set_finished(dev)
                 # pylint: disable=protected-access
                 progress._progress.refresh()

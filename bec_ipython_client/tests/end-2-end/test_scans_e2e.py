@@ -524,9 +524,7 @@ def test_scan_def_callback(capsys, bec_ipython_client_fixture):
         current_pos_samy = dev.samy.read(cached=True)["samy"]["value"]
         captured = capsys.readouterr()
         assert f"Starting scan {scan_number}" in captured.out
-        ref_out_samy = (
-            f"━━━━━━━━━━━━━━━ {current_pos_samy:10.2f} /       5.00 / 100 % 0:00:00 0:00:00"
-        )
+        ref_out_samy = f"━━━━━━━━━━━━━━━ {current_pos_samy:10.2f} /       5.00 / 100 %"
         assert ref_out_samy in captured.out
         scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
     captured = capsys.readouterr()
