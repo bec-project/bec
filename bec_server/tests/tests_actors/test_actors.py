@@ -1,19 +1,19 @@
 import time
 from itertools import count
-from threading import Thread
+from threading import Event, Thread
 from time import sleep
 from unittest.mock import MagicMock, patch
 
 import pytest
-from bec_lib.client import BECClient
-from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
-from bec_lib.redis_connector import MessageObject, RedisConnector
 from fakeredis import FakeConnection
 from fakeredis import TcpFakeServer as _TcpFakeServer
 from fakeredis._server import FakeServer
 from fakeredis._tcp_server import TCPFakeRequestHandler as _TCPFakeRequestHandler
 
+from bec_lib.client import BECClient
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
+from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_server.actors.manager import ActorManager
 from bec_server.procedures.constants import BecClientType
 from bec_server.procedures.oop_worker_base import _create_client
@@ -150,12 +150,10 @@ def test_subscription_actor(actor_manager_and_conn: tuple[ActorManager, RedisCon
 
 def test_subscription_actor_inline(fakeredis_config):
     host, port = fakeredis_config
-    redis = {"host": host, "port": port}
-    client: BECClient = _create_client(BecClientType.BECClient, redis=redis)  # type: ignore
-    client.start()
     redis = f"{host}:{port}"
     conn = RedisConnector([redis])
     test_action = MagicMock()
+    stop_event = Event()
 
     class SubTestActor(SubscriptionActor):
         action_table = {(lambda *_, **__: True): test_action}
@@ -163,16 +161,27 @@ def test_subscription_actor_inline(fakeredis_config):
         def default_monitor_endpoints(self):
             return {sub_ep}
 
-    try:
+    redis = {"host": host, "port": port}
+    client: BECClient = _create_client(BecClientType.BECClient, redis=redis)  # type: ignore
+
+    def run_actor():
+        client.start()
         actor = SubTestActor(client, name="SubActorTest", exec_id="SubActorTest")
-        wait_until(lambda: sub_ep.endpoint in actor.client.connector._topics_cb, timeout_s=0.5)
+        actor.stop_event = stop_event
+        actor.run()
+
+    t = Thread(target=run_actor)
+    t.start()
+    try:
         for _ in range(20):
             conn.set_and_publish(sub_ep, RawMessage(data=None))
             if test_action.call_count > 0:
                 break
-            sleep(1)
+            sleep(0.5)
         assert test_action.call_count > 0
     finally:
+        stop_event.set()
+        t.join()
         client.shutdown()
         conn.shutdown()
 

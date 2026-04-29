@@ -92,3 +92,10 @@ line-length = 100
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+known-first-party = [
+  "bec_lib",
+  "bec_server",
+  "bec_ipython_client",
+]
