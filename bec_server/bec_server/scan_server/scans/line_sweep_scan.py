@@ -25,7 +25,7 @@ import numpy as np
 from bec_lib.connector import MessageObject
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.scan_args import ScanArgument, Units
+from bec_lib.scan_args import DefaultArgType, ScanArgument, Units
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -57,13 +57,9 @@ class LineSweepScan(ScanBase):
             float, ScanArgument(display_name="Stop Position", reference_units="device")
         ],
         *,
-        relative: bool,
-        exp_time: Annotated[
-            float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
-        ] = 0,
-        frames_per_trigger: Annotated[
-            int, ScanArgument(display_name="Frames per Trigger", ge=1)
-        ] = 1,
+        relative: DefaultArgType.Relative,
+        exp_time: DefaultArgType.ExposureTime = 0,
+        frames_per_trigger: DefaultArgType.FramesPerTrigger = 1,
         min_update: Annotated[
             float, ScanArgument(display_name="Minimum Update", units=Units.s, ge=0)
         ] = 0,

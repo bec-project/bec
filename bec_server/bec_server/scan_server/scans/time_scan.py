@@ -20,7 +20,7 @@ from typing import Annotated
 
 import numpy as np
 
-from bec_lib.scan_args import ScanArgument, Units
+from bec_lib.scan_args import DefaultArgType, ScanArgument, Units
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -44,12 +44,8 @@ class TimeScan(ScanBase):
         self,
         points: int,
         interval: Annotated[float, ScanArgument(display_name="Interval", units=Units.s, ge=0)],
-        exp_time: Annotated[
-            float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
-        ] = 0,
-        settling_time: Annotated[
-            float, ScanArgument(display_name="Settling Time", units=Units.s, ge=0)
-        ] = 0,
+        exp_time: DefaultArgType.ExposureTime = 0,
+        settling_time: DefaultArgType.SettlingTime = 0,
         **kwargs,
     ):
         """
