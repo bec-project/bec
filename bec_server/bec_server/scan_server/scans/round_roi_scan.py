@@ -21,7 +21,7 @@ from typing import Annotated
 import numpy as np
 
 from bec_lib.device import DeviceBase
-from bec_lib.scan_args import ScanArgument, Units
+from bec_lib.scan_args import DefaultArgType, ScanArgument
 from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
@@ -77,31 +77,19 @@ class RoundROIScan(ScanBase):
             int, ScanArgument(display_name="Number of Points in First Shell", ge=1)
         ],
         *,
-        relative: bool,
-        exp_time: Annotated[
-            float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
-        ] = 0,
-        frames_per_trigger: Annotated[
-            int, ScanArgument(display_name="Frames per Trigger", ge=1)
-        ] = 1,
-        settling_time: Annotated[
-            float, ScanArgument(display_name="Settling Time", units=Units.s, ge=0)
-        ] = 0,
-        settling_time_after_trigger: Annotated[
-            float, ScanArgument(display_name="Settling Time After Trigger", units=Units.s, ge=0)
-        ] = 0,
-        readout_time: Annotated[
-            float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
-        ] = 0,
+        relative: DefaultArgType.Relative,
+        exp_time: DefaultArgType.ExposureTime = 0,
+        frames_per_trigger: DefaultArgType.FramesPerTrigger = 1,
+        settling_time: DefaultArgType.SettlingTime = 0,
+        settling_time_after_trigger: DefaultArgType.SettlingTimeAfterTrigger = 0,
+        readout_time: DefaultArgType.ReadoutTime = 0,
         center_1: Annotated[
             float, ScanArgument(display_name="Center Motor 1", reference_units="motor_1")
         ] = 0,
         center_2: Annotated[
             float, ScanArgument(display_name="Center Motor 2", reference_units="motor_2")
         ] = 0,
-        burst_at_each_point: Annotated[
-            int, ScanArgument(display_name="Burst at Each Point", ge=1)
-        ] = 1,
+        burst_at_each_point: DefaultArgType.BurstAtEachPoint = 1,
         **kwargs,
     ):
         """

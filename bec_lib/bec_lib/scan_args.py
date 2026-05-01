@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, TypeAlias
 
 import pint
 from pint.facets.plain import PlainQuantity
@@ -89,3 +89,61 @@ class ScanArgument(BaseModel):
         if self.units is not None and self.reference_units is not None:
             raise ValueError("units and reference_units are mutually exclusive")
         return self
+
+
+################################################
+######### Frequently used ScanArguments ########
+################################################
+class DefaultArgType:
+    """Namespace for reusable scan argument type aliases."""
+
+    Relative: TypeAlias = Annotated[
+        bool,
+        ScanArgument(
+            display_name="Relative",
+            description="Whether the positions are relative to the current position",
+        ),
+    ]
+    Snaked: TypeAlias = Annotated[
+        bool,
+        ScanArgument(
+            display_name="Snaked",
+            description="Whether to snake the scan, i.e. reverse the direction of every other line",
+        ),
+    ]
+    ExposureTime: TypeAlias = Annotated[
+        float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
+    ]
+    FramesPerTrigger: TypeAlias = Annotated[
+        int, ScanArgument(display_name="Frames per Trigger", ge=1)
+    ]
+    SettlingTime: TypeAlias = Annotated[
+        float, ScanArgument(display_name="Settling Time", units=Units.s, ge=0)
+    ]
+    SettlingTimeAfterTrigger: TypeAlias = Annotated[
+        float, ScanArgument(display_name="Settling Time After Trigger", units=Units.s, ge=0)
+    ]
+    ReadoutTime: TypeAlias = Annotated[
+        float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
+    ]
+    BurstAtEachPoint: TypeAlias = Annotated[
+        int, ScanArgument(display_name="Burst at Each Point", ge=1)
+    ]
+    OptimizeTrajectory: TypeAlias = Annotated[
+        Literal["corridor", "shell", "nearest", None],
+        ScanArgument(
+            display_name="Optimize Trajectory",
+            description="Method for optimizing the scan trajectory",
+        ),
+    ]
+
+
+Relative = DefaultArgType.Relative
+Snaked = DefaultArgType.Snaked
+ExposureTime = DefaultArgType.ExposureTime
+FramesPerTrigger = DefaultArgType.FramesPerTrigger
+SettlingTime = DefaultArgType.SettlingTime
+SettlingTimeAfterTrigger = DefaultArgType.SettlingTimeAfterTrigger
+ReadoutTime = DefaultArgType.ReadoutTime
+BurstAtEachPoint = DefaultArgType.BurstAtEachPoint
+OptimizeTrajectory = DefaultArgType.OptimizeTrajectory

@@ -21,7 +21,7 @@ from typing import Annotated
 import numpy as np
 
 from bec_lib.device import DeviceBase
-from bec_lib.scan_args import ScanArgument, Units
+from bec_lib.scan_args import DefaultArgType, ScanArgument
 from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType, bundle_args
 from bec_server.scan_server.scans.scan_modifier import scan_hook
@@ -68,25 +68,13 @@ class LineScan(ScanBase):
         self,
         *args,
         steps: Annotated[int, ScanArgument(display_name="Number of Steps", gt=0)],
-        relative: bool,
-        exp_time: Annotated[
-            float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
-        ] = 0,
-        frames_per_trigger: Annotated[
-            int, ScanArgument(display_name="Frames per Trigger", ge=1)
-        ] = 1,
-        settling_time: Annotated[
-            float, ScanArgument(display_name="Settling Time", units=Units.s, ge=0)
-        ] = 0,
-        settling_time_after_trigger: Annotated[
-            float, ScanArgument(display_name="Settling Time After Trigger", units=Units.s, ge=0)
-        ] = 0,
-        readout_time: Annotated[
-            float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
-        ] = 0,
-        burst_at_each_point: Annotated[
-            int, ScanArgument(display_name="Burst at Each Point", ge=1)
-        ] = 1,
+        relative: DefaultArgType.Relative,
+        exp_time: DefaultArgType.ExposureTime = 0,
+        frames_per_trigger: DefaultArgType.FramesPerTrigger = 1,
+        settling_time: DefaultArgType.SettlingTime = 0,
+        settling_time_after_trigger: DefaultArgType.SettlingTimeAfterTrigger = 0,
+        readout_time: DefaultArgType.ReadoutTime = 0,
+        burst_at_each_point: DefaultArgType.BurstAtEachPoint = 1,
         **kwargs,
     ):
         """
@@ -97,11 +85,11 @@ class LineScan(ScanBase):
             steps (int): number of points along the line.
             relative (bool): If True, the motors will be moved relative to their
                 current position.
-            exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
+            exp_time (float): exposure time in seconds. Default is 0.
             frames_per_trigger (int): number of frames acquired per trigger. Default is 1.
-            settling_time (Annotated[float, Units.s]): settling time in seconds. Default is 0.
-            settling_time_after_trigger (Annotated[float, Units.s]): settling time after trigger in seconds. Default is 0.
-            readout_time (Annotated[float, Units.s]): readout time in seconds. Default is 0.
+            settling_time (float): settling time in seconds. Default is 0.
+            settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
+            readout_time (float): readout time in seconds. Default is 0.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
 
         Returns:

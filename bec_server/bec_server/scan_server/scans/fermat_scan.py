@@ -16,13 +16,13 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 import numpy as np
 
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
-from bec_lib.scan_args import ScanArgument, Units
+from bec_lib.scan_args import DefaultArgType, ScanArgument, Units
 from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
@@ -76,22 +76,14 @@ class FermatSpiralScan(ScanBase):
         ],
         step: Annotated[float, ScanArgument(display_name="Step Size", reference_units="motor1")],
         *,
-        relative: bool,
-        exp_time: Annotated[
-            float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
-        ] = 0,
-        frames_per_trigger: Annotated[
-            int, ScanArgument(display_name="Frames per Trigger", ge=1)
-        ] = 1,
-        settling_time: Annotated[
-            float, ScanArgument(display_name="Settling Time", units=Units.s, ge=0)
-        ] = 0,
-        settling_time_after_trigger: Annotated[
-            float, ScanArgument(display_name="Settling Time After Trigger", units=Units.s, ge=0)
-        ] = 0,
-        readout_time: Annotated[
-            float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
-        ] = 0,
+        relative: DefaultArgType.Relative,
+        exp_time: DefaultArgType.ExposureTime = 0,
+        frames_per_trigger: DefaultArgType.FramesPerTrigger = 1,
+        settling_time: DefaultArgType.SettlingTime = 0,
+        settling_time_after_trigger: DefaultArgType.SettlingTimeAfterTrigger = 0,
+        readout_time: DefaultArgType.ReadoutTime = 0,
+        optim_trajectory: DefaultArgType.OptimizeTrajectory = None,
+        burst_at_each_point: DefaultArgType.BurstAtEachPoint = 1,
         spiral_type: Annotated[
             float,
             ScanArgument(
@@ -102,16 +94,6 @@ class FermatSpiralScan(ScanBase):
                 units=Units.rad,
             ),
         ] = 0,
-        optim_trajectory: Annotated[
-            Literal["corridor", "shell", "nearest", None],
-            ScanArgument(
-                display_name="Trajectory Optimization Method",
-                description="Method for optimizing the scan trajectory",
-            ),
-        ] = None,
-        burst_at_each_point: Annotated[
-            int, ScanArgument(display_name="Burst at Each Point", ge=1)
-        ] = 1,
         **kwargs,
     ):
         """

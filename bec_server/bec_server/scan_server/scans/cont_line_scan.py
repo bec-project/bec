@@ -21,7 +21,7 @@ from typing import Annotated
 import numpy as np
 
 from bec_lib.device import DeviceBase
-from bec_lib.scan_args import ScanArgument, Units
+from bec_lib.scan_args import DefaultArgType, ScanArgument
 from bec_server.scan_server.errors import LimitError, ScanAbortion
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
@@ -56,22 +56,16 @@ class ContLineScan(ScanBase):
         ],
         steps: Annotated[int, ScanArgument(display_name="Number of Steps", ge=1)],
         *,
-        relative: bool,
+        relative: DefaultArgType.Relative,
         offset: Annotated[
             float | None, ScanArgument(display_name="Offset", reference_units="device")
         ] = None,
         atol: Annotated[
             float | None, ScanArgument(display_name="Tolerance", reference_units="device")
         ] = None,
-        exp_time: Annotated[
-            float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
-        ] = 0,
-        readout_time: Annotated[
-            float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
-        ] = 0,
-        frames_per_trigger: Annotated[
-            int, ScanArgument(display_name="Frames per Trigger", ge=1)
-        ] = 1,
+        exp_time: DefaultArgType.ExposureTime = 0,
+        readout_time: DefaultArgType.ReadoutTime = 0,
+        frames_per_trigger: DefaultArgType.FramesPerTrigger = 1,
         **kwargs,
     ):
         """
@@ -89,7 +83,7 @@ class ContLineScan(ScanBase):
                 it will be calculated based on the motor acceleration and velocity to ensure smooth triggering.
             atol (float | None): optional tolerance used for position matching. If not provided,
                 it will be calculated based on the motor velocity and the exposure time.
-            exp_time (Annotated[float, Units.s]): exposure time in seconds. Default is 0.
+            exp_time (float): exposure time in seconds. Default is 0.
 
         Returns:
             ScanReport

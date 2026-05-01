@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
+from bec_lib.scan_args import DefaultArgType
 from bec_server.scan_server.scans.scan_base import ScanBase, bundle_args
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -45,7 +46,7 @@ class UpdatedMoveScan(ScanBase):
     # We set is_scan to False to separate this class from the other scans in the user interface
     is_scan = False
 
-    def __init__(self, *args, relative: bool, **kwargs):
+    def __init__(self, *args, relative: DefaultArgType.Relative, **kwargs):
         """
         Simple move command that moves one or more motors to the specified positions.
         The umv command is the blocking version of the mv command.
