@@ -19,9 +19,9 @@ def threads_check():
     yield
     threads_after = set(th for th in threading.enumerate() if th is not threading.main_thread())
     additional_threads = threads_after - threads_at_start
-    assert (
-        len(additional_threads) == 0
-    ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+    assert len(additional_threads) == 0, (
+        f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -72,9 +72,10 @@ def device_manager(device_manager_class):
 
 @pytest.fixture
 def dm_with_devices(session_from_test_config, device_manager):
-    device_manager._session = copy.deepcopy(session_from_test_config)
-    device_manager._load_session()
-    yield device_manager
+    with mock.patch("bec_lib.devicemanager.logger"):
+        device_manager._session = copy.deepcopy(session_from_test_config)
+        device_manager._load_session()
+    return device_manager
 
 
 def create_bec_client_mock(mock_class, dm_with_devices):

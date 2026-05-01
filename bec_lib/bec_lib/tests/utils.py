@@ -294,6 +294,140 @@ def positioner_info_mock_with_user_access(device_name):
     return info
 
 
+# fmt: off
+DYN_SIGNALS_MSG = messages.DeviceInfoMessage(
+    device="dyn_signals",
+    info={
+        "device_info": {
+            "device_dotted_name": "dyn_signals",
+            "device_attr_name": "dyn_signals",
+            "device_base_class": "device",
+            "device_class": "SimDevice",
+            "signals": {},
+            "hints": {"fields": []},
+            "describe": {
+                "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
+                "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
+                "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
+                "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
+                "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
+            },
+            "describe_configuration": {},
+            "sub_devices": [
+                {
+                    "device_name": "dyn_signals_messages",
+                    "device_info": {
+                        "device_attr_name": "messages",
+                        "device_dotted_name": "messages",
+                        "device_base_class": "device",
+                        "device_class": "SimDevice",
+                        "signals": {
+                            "message1": {
+                                "component_name": "message1",
+                                "obj_name": "dyn_signals_messages_message1",
+                                "kind_int": 1,
+                                "kind_str": "normal",
+                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                            },
+                            "message2": {
+                                "component_name": "message2",
+                                "obj_name": "dyn_signals_messages_message2",
+                                "kind_int": 1,
+                                "kind_str": "normal",
+                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                            },
+                            "message3": {
+                                "component_name": "message3",
+                                "obj_name": "dyn_signals_messages_message3",
+                                "kind_int": 1,
+                                "kind_str": "normal",
+                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                            },
+                            "message4": {
+                                "component_name": "message4",
+                                "obj_name": "dyn_signals_messages_message4",
+                                "kind_int": 1,
+                                "kind_str": "normal",
+                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                            },
+                            "message5": {
+                                "component_name": "message5",
+                                "obj_name": "dyn_signals_messages_message5",
+                                "kind_int": 1,
+                                "kind_str": "normal",
+                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                            },
+                        },
+                        "hints": {"fields": []},
+                        "describe": {
+                            "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
+                            "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
+                            "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
+                            "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
+                            "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
+                        },
+                        "describe_configuration": {},
+                        "sub_devices": [],
+                        "custom_user_access": {},
+                    },
+                }
+            ],
+            "custom_user_access": {},
+        }
+    },
+)
+EIGER_MSG = messages.DeviceInfoMessage(
+        device="eiger",
+        info={
+            "device_info": {
+                "device_dotted_name": "eiger",
+                "device_attr_name": "eiger",
+                "device_base_class": "device",
+                "device_class": "SimCamera",
+                "signals": {
+                    "preview": {
+                        "component_name": "preview",
+                        "signal_class": "PreviewSignal",
+                        "obj_name": "eiger_preview",
+                        "kind_int": 5,
+                        "kind_str": "hinted",
+                        "doc": "",
+                        "describe": {
+                            "source": "BECMessageSignal:eiger_preview",
+                            "dtype": "DevicePreviewMessage",
+                            "shape": [],
+                            "signal_info": {
+                                "data_type": "raw",
+                                "saved": False,
+                                "ndim": 2,
+                                "scope": "scan",
+                                "role": "preview",
+                                "enabled": True,
+                                "rpc_access": False,
+                                "signals": [["preview", 5]],
+                                "signal_metadata": {"num_rotation_90": 0, "transpose": False},
+                            },
+                        },
+                        "metadata": {
+                            "connected": True,
+                            "read_access": True,
+                            "write_access": True,
+                            "timestamp": 1749046715.160324,
+                            "status": None,
+                            "severity": None,
+                            "precision": None,
+                        },
+                    }
+                },
+                "hints": {"fields": []},
+                "describe": {},
+                "describe_configuration": {},
+                "sub_devices": [],
+                "custom_user_access": {},
+            }
+        },
+    )
+# fmt: on
 def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessage:
     if device_name == "rt_controller":
         return messages.DeviceInfoMessage(
@@ -302,140 +436,9 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
     elif device_name == "samx":
         return messages.DeviceInfoMessage(device="samx", info=positioner_info_mock(device_name))
     elif device_name == "dyn_signals":
-        # fmt: off
-        return messages.DeviceInfoMessage(
-            device="dyn_signals",
-            info={
-                "device_info": {
-                    "device_dotted_name": "dyn_signals",
-                    "device_attr_name": "dyn_signals",
-                    "device_base_class": "device",
-                    "device_class": "SimDevice",
-                    "signals": {},
-                    "hints": {"fields": []},
-                    "describe": {
-                        "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
-                        "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
-                        "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
-                        "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
-                        "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
-                    },
-                    "describe_configuration": {},
-                    "sub_devices": [
-                        {
-                            "device_name": "dyn_signals_messages",
-                            "device_info": {
-                                "device_attr_name": "messages",
-                                "device_dotted_name": "messages",
-                                "device_base_class": "device",
-                                "device_class": "SimDevice",
-                                "signals": {
-                                    "message1": {
-                                        "component_name": "message1",
-                                        "obj_name": "dyn_signals_messages_message1",
-                                        "kind_int": 1,
-                                        "kind_str": "normal",
-                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                                    },
-                                    "message2": {
-                                        "component_name": "message2",
-                                        "obj_name": "dyn_signals_messages_message2",
-                                        "kind_int": 1,
-                                        "kind_str": "normal",
-                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                                    },
-                                    "message3": {
-                                        "component_name": "message3",
-                                        "obj_name": "dyn_signals_messages_message3",
-                                        "kind_int": 1,
-                                        "kind_str": "normal",
-                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                                    },
-                                    "message4": {
-                                        "component_name": "message4",
-                                        "obj_name": "dyn_signals_messages_message4",
-                                        "kind_int": 1,
-                                        "kind_str": "normal",
-                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                                    },
-                                    "message5": {
-                                        "component_name": "message5",
-                                        "obj_name": "dyn_signals_messages_message5",
-                                        "kind_int": 1,
-                                        "kind_str": "normal",
-                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                                    },
-                                },
-                                "hints": {"fields": []},
-                                "describe": {
-                                    "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
-                                    "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
-                                    "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
-                                    "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
-                                    "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
-                                },
-                                "describe_configuration": {},
-                                "sub_devices": [],
-                                "custom_user_access": {},
-                            },
-                        }
-                    ],
-                    "custom_user_access": {},
-                }
-            },
-        )
+        return DYN_SIGNALS_MSG
     elif device_name == "eiger":
-        return messages.DeviceInfoMessage(
-            device="eiger",
-            info={
-                "device_info": {
-                    "device_dotted_name": "eiger",
-                    "device_attr_name": "eiger",
-                    "device_base_class": "device",
-                    "device_class": "SimCamera",
-                    "signals": {
-                        "preview": {
-                            "component_name": "preview",
-                            "signal_class": "PreviewSignal",
-                            "obj_name": "eiger_preview",
-                            "kind_int": 5,
-                            "kind_str": "hinted",
-                            "doc": "",
-                            "describe": {
-                                "source": "BECMessageSignal:eiger_preview",
-                                "dtype": "DevicePreviewMessage",
-                                "shape": [],
-                                "signal_info": {
-                                    "data_type": "raw",
-                                    "saved": False,
-                                    "ndim": 2,
-                                    "scope": "scan",
-                                    "role": "preview",
-                                    "enabled": True,
-                                    "rpc_access": False,
-                                    "signals": [["preview", 5]],
-                                    "signal_metadata": {"num_rotation_90": 0, "transpose": False},
-                                },
-                            },
-                            "metadata": {
-                                "connected": True,
-                                "read_access": True,
-                                "write_access": True,
-                                "timestamp": 1749046715.160324,
-                                "status": None,
-                                "severity": None,
-                                "precision": None,
-                            },
-                        }
-                    },
-                    "hints": {"fields": []},
-                    "describe": {},
-                    "describe_configuration": {},
-                    "sub_devices": [],
-                    "custom_user_access": {},
-                }
-            },
-        )
+        return EIGER_MSG
     device_base_class = "positioner" if device_class == "SimPositioner" else "signal"
     if device_base_class == "positioner":
         signals = positioner_info_mock(device_name)["device_info"]["signals"]
