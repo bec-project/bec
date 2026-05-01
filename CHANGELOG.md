@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v3.118.2 (2026-05-01)
+
+### Bug Fixes
+
+- Mock logger in test DM setup
+  ([`d56600a`](https://github.com/bec-project/bec/commit/d56600aab690f3912422df2536027bdd1f7cbcf4))
+
+### Performance Improvements
+
+- Simplify bec client mock and remove unused test devices
+  ([`ed80c7d`](https://github.com/bec-project/bec/commit/ed80c7d1c107f402a87c4704e331cf9e797b4e35))
+
+### Refactoring
+
+- Don't copy all possible info dicts every time
+  ([`b848e78`](https://github.com/bec-project/bec/commit/b848e78d156e17cbc6afbdbe10da57433b8f54b8))
+
+- Remove fancy client mock
+  ([`075af3e`](https://github.com/bec-project/bec/commit/075af3e1cfca4e8cfa926123badef068296147fe))
+
+- Update scan arguments to use TypeAlias for better clarity and consistency
+  ([`5ff2e38`](https://github.com/bec-project/bec/commit/5ff2e387fbbddb68715b437e64871afca98f4061))
+
+
 ## v3.118.1 (2026-04-28)
 
 ### Bug Fixes
