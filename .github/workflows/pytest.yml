@@ -1,59 +1,60 @@
 name: Run Pytest with Coverage
 on:
-  workflow_call:
-    inputs:
-      pr_number:
-        description: "Pull request number"
-        required: false
-        type: number
-      BEC_CORE_BRANCH:
-        description: "Branch of BEC Core to install"
-        required: false
-        default: "main"
-        type: string
-      OPHYD_DEVICES_BRANCH:
-        description: "Branch of Ophyd Devices to install"
-        required: false
-        default: "main"
-        type: string
-      BEC_WIDGETS_BRANCH:
-        description: "Branch of BEC Widgets to install"
-        required: false
-        default: "main"
-        type: string
+    workflow_call:
+        inputs:
+            pr_number:
+                description: "Pull request number"
+                required: false
+                type: number
+            BEC_CORE_BRANCH:
+                description: "Branch of BEC Core to install"
+                required: false
+                default: "main"
+                type: string
+            OPHYD_DEVICES_BRANCH:
+                description: "Branch of Ophyd Devices to install"
+                required: false
+                default: "main"
+                type: string
+            BEC_WIDGETS_BRANCH:
+                description: "Branch of BEC Widgets to install"
+                required: false
+                default: "main"
+                type: string
 
 permissions:
-  pull-requests: write
+    pull-requests: write
 
 jobs:
-  pytest:
-    runs-on: ubuntu-latest
+    pytest:
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout BEC
-        uses: actions/checkout@v6
-        with:
-          repository: bec-project/bec
-          ref: ${{ inputs.BEC_CORE_BRANCH }}
+        steps:
+            - name: Checkout BEC
+              uses: actions/checkout@v6
+              with:
+                  repository: bec-project/bec
+                  ref: ${{ inputs.BEC_CORE_BRANCH }}
 
-      - name: Install BEC and dependencies
-        uses: ./.github/actions/bec_install
-        with:
-          BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
-          OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
-          PYTHON_VERSION: 3.11
+            - name: Install BEC and dependencies
+              uses: ./.github/actions/bec_install
+              with:
+                  BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+                  OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+                  PYTHON_VERSION: 3.11
 
-      - name: Run Pytest with Coverage
-        id: coverage
-        run: |
-          cd ./bec
-          coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -vv --timeout=300 --random-order ./bec_server/tests ./bec_ipython_client/tests/client_tests ./bec_lib/tests
-          coverage report 
-          coverage xml -o coverage-unit.xml
+            - name: Run Pytest with Coverage
+              id: coverage
+              run: |
+                  cd ./bec
+                  coverage run --rcfile=.unittest-coveragerc --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -vv --timeout=300 --random-order ./bec_server/tests ./bec_ipython_client/tests/client_tests ./bec_lib/tests
+                  coverage combine
+                  coverage report
+                  coverage xml -o coverage-unit.xml
 
-      - name: Upload unit test coverage artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: coverage-unit
-          path: ./bec/coverage-unit.xml
-          retention-days: 1
+            - name: Upload unit test coverage artifact
+              uses: actions/upload-artifact@v6
+              with:
+                  name: coverage-unit
+                  path: ./bec/coverage-unit.xml
+                  retention-days: 1
