@@ -23,8 +23,8 @@ from bec_lib.signature_serializer import serialize_dtype
 # pylint: disable=protected-access
 
 
-def test_filewriter_cm(bec_client_mock):
-    client = bec_client_mock
+def test_filewriter_cm(fancy_bec_client_mock):
+    client = fancy_bec_client_mock
     client.scans._file_writer = None
     client.system_config.file_directory = None
     client.system_config.file_suffix = None
@@ -35,8 +35,8 @@ def test_filewriter_cm(bec_client_mock):
     assert client.system_config.file_suffix is None
 
 
-def test_metadata_handler(bec_client_mock):
-    client = bec_client_mock
+def test_metadata_handler(fancy_bec_client_mock):
+    client = fancy_bec_client_mock
     client.metadata = {"descr": "test", "uid": "12345"}
     with Metadata({"descr": "alignment", "pol": 1}):
         assert client.metadata == {"descr": "alignment", "uid": "12345", "pol": 1}
@@ -193,8 +193,8 @@ def test_strip_scan_signature_annotations_for_ipython_signature():
     ]
 
 
-def test_interactive_scan_cm(bec_client_mock):
-    client = bec_client_mock
+def test_interactive_scan_cm(fancy_bec_client_mock):
+    client = fancy_bec_client_mock
     client.scans._open_interactive_scan = mock.MagicMock()
     client.scans._close_interactive_scan = mock.MagicMock()
     client.scans._interactive_trigger = mock.MagicMock()
@@ -210,8 +210,8 @@ def test_interactive_scan_cm(bec_client_mock):
     client.scans._interactive_read_monitored.assert_called_once()
 
 
-def test_interactive_scan_cm_raise_calls_close(bec_client_mock):
-    client = bec_client_mock
+def test_interactive_scan_cm_raise_calls_close(fancy_bec_client_mock):
+    client = fancy_bec_client_mock
     client.scans._open_interactive_scan = mock.MagicMock()
     client.scans._close_interactive_scan = mock.MagicMock()
     client.scans._interactive_trigger = mock.MagicMock()
