@@ -6,6 +6,7 @@ import os
 import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal
+from unittest.mock import MagicMock
 
 import bec_lib
 from bec_lib import messages
@@ -15,6 +16,7 @@ from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.scan_manager import ScanManager
 from bec_lib.scans import Scans
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -103,7 +105,15 @@ class ScansMock(Scans):
         pass
 
 
-class ClientMock(BECClient):
+class FancyClientMock(BECClient):
+    started = False
+
+    def _start_metrics_emitter(self):
+        pass
+
+    def _start_update_service_info(self):
+        pass
+
     def _load_scans(self):
         self.scans = ScansMock(self)
         builtins.__dict__["scans"] = self.scans
@@ -117,13 +127,29 @@ class ClientMock(BECClient):
             close_scan_group=self.scans.close_scan_group,
         )
 
-    # def _start_services(self):
-    #     pass
 
-    def _start_metrics_emitter(self):
-        pass
+class ClientMock(FancyClientMock):
+    started = True
 
-    def _start_update_service_info(self):
+    def __init__(
+        self,
+        config: ServiceConfig | None = None,
+        connector_cls: type[RedisConnector] | None = None,
+        wait_for_server: bool = False,
+        forced: bool = False,
+    ):
+        super().__init__(config, connector_cls, wait_for_server, forced)
+        self.connector = MagicMock()
+        self.alarm_handler = MagicMock()
+        self.metadata = {}
+        self._load_scans()
+        self._hostname = "host_name.domain"
+        self.queue = ScanManager(ConnectorMock(""))
+
+    def get_global_var(self, name: str):
+        return name
+
+    def _start_services(self):
         pass
 
 
@@ -703,7 +729,6 @@ class DMClientMock(DeviceManagerBase):
 
 
 class PipelineMock:  # pragma: no cover
-
     def __init__(self, connector) -> None:
         self._pipe_buffer = []
         self._connector = connector

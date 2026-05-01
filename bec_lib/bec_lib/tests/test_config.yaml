@@ -3,305 +3,209 @@
 ############################################################
 
 eiger:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimCamera
-  deviceConfig:
-    device_access: true
-  deviceTags:
-    - detector
-  enabled: true
-  readOnly: false
-  softwareTrigger: true
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimCamera
+    deviceConfig:
+        device_access: true
+    deviceTags:
+        - detector
+    enabled: true
+    readOnly: false
+    softwareTrigger: true
 
 ############## Cameras and detectors end here ##############
 
 dyn_signals:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.sim.sim.SynDynamicComponents
-  deviceConfig:
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.sim.sim.SynDynamicComponents
+    deviceConfig:
+    enabled: true
+    readOnly: false
 
 pseudo_signal1:
-  deviceClass: ophyd_devices.ComputedSignal
-  deviceConfig:
-    compute_method: "def compute_signals(signal1, signal2):\n    return signal1.get()*signal2.get()\n"
-    input_signals:
-      - "bpm4i"
-      - "bpm5i"
-  enabled: true
-  readOnly: false
-  readoutPriority: baseline
+    deviceClass: ophyd_devices.ComputedSignal
+    deviceConfig:
+        compute_method: "def compute_signals(signal1, signal2):
+
+            \    return signal1.get()*signal2.get()\n"
+        input_signals:
+            - "bpm4i"
+            - "bpm5i"
+    enabled: true
+    readOnly: false
+    readoutPriority: baseline
 
 failure_device:
-  deviceClass: ophyd_devices.sim.SimPositionerWithCommFailure
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  enabled: true
-  readOnly: false
-  readoutPriority: baseline
+    deviceClass: ophyd_devices.sim.SimPositionerWithCommFailure
+    deviceConfig:
+        delay: 1
+        update_frequency: 400
+    enabled: true
+    readOnly: false
+    readoutPriority: baseline
 
 bec_signals_device:
-  deviceClass: ophyd_devices.sim.sim_test_devices.SimCameraWithPSIComponents
-  deviceConfig:
-  enabled: true
-  readOnly: false
-  readoutPriority: baseline
+    deviceClass: ophyd_devices.sim.sim_test_devices.SimCameraWithPSIComponents
+    deviceConfig:
+    enabled: true
+    readOnly: false
+    readoutPriority: baseline
 
 ############################################################
 ####################### User motors ########################
 ############################################################
 
 eyefoc:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 eyex:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 eyey:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 flyer_sim:
-  readoutPriority: on_request
-  deviceClass: ophyd_devices.SynFlyer
-  deviceConfig:
-    delay: 1
-    device_access: true
-    update_frequency: 400
-  deviceTags:
-    - flyer
-  enabled: true
-  readOnly: false
+    readoutPriority: on_request
+    deviceClass: ophyd_devices.SynFlyer
+    deviceConfig:
+        delay: 1
+        device_access: true
+        update_frequency: 400
+    deviceTags:
+        - flyer
+    enabled: true
+    readOnly: false
 hrox:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 hroy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 hroz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-hx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-hy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-hz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-mbsx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-mbsy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-pinx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
-piny:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 pinz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 samx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 samy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 samz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: false
 
 ################### User motors end here ###################
 
@@ -310,1831 +214,116 @@ samz:
 ############################################################
 
 bpm3a:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm3b:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm3c:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm3d:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm3i:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm3x:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm3y:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm3z:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4a:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4b:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4c:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4d:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm4i:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4s:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4x:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4xf:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4xm:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4y:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4yf:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4ym:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4z:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5a:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5b:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5c:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5d:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm5i:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5x:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5y:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5z:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6a:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6b:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6c:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6d:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 bpm6i:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6x:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6y:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm6z:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-curr:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-diode:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebpmdx:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebpmdy:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebpmux:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebpmuy:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ftp:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 temp:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 transd:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimMonitor
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimMonitor
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 
 monitor_async:
-  readoutPriority: async
-  deviceClass: ophyd_devices.sim.sim_monitor.SimMonitorAsync
-  deviceConfig:
-    sim_init:
-      model: GaussianModel
-      params:
-        amplitude: 500
-        center: 0
-        sigma: 1
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-  softwareTrigger: true
+    readoutPriority: async
+    deviceClass: ophyd_devices.sim.sim_monitor.SimMonitorAsync
+    deviceConfig:
+        sim_init:
+            model: GaussianModel
+            params:
+                amplitude: 500
+                center: 0
+                sigma: 1
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
+    softwareTrigger: true
 
 ################ Beamline monitors end here ################
-
-############################################################
-##################### Beamline motors ######################
-############################################################
-
-aptrx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-aptry:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bim2x:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bim2y:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm1trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm1try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm2trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm2try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm3trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm3try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm4trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm4try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm5trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm5try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm6trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bm6try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm4r:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bpm5r:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bs1x:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bs1y:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bs2x:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-bs2y:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-burstn:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-burstr:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1a:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1b:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1c:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1d:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1e:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1f:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1g:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ddg1h:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-dettrx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-di2trx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-di2try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-dtpush:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-dtth:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-dttrx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-dttry:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-dttrz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebcsx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebcsy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebfi1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebfi2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebfi3:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebfi4:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebfzpx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebfzpy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebtrx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebtry:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ebtrz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fi1try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fi2try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fi3try:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fsh1x:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fsh2x:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-ftrans:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fttrx1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fttrx2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fttry1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fttry2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-fttrz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-idgap:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mibd:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mibd1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mibd2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-miroll:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mith:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mitrx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mitry:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mitry1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mitry2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mitry3:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mobd:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mobdai:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mobdbo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mobdco:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mobddi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mokev:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mopush1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-mopush2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moroll1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moroll2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moth1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moth1e:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moth2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moth2e:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-motrx2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-motry:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-motry2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-motrz1:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-motrz1e:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-moyaw2:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl0ch:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl0trxi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl0trxo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl0wh:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1ch:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1cv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1trxi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1trxo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1tryb:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1tryt:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1wh:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl1wv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2ch:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2cv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2trxi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2trxo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2tryb:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2tryt:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2wh:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl2wv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3ch:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3cv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3trxi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3trxo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3tryb:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3tryt:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3wh:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl3wv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4ch:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4cv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4trxi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4trxo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4tryb:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4tryt:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4wh:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl4wv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5ch:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5cv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5trxi:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5trxo:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5tryb:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5tryt:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5wh:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sl5wv:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-strox:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-stroy:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-stroz:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sttrx:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-sttry:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    update_frequency: 400
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
-
-################# Beamline motors end here #################
 
 ############################################################
 #################### Read-only signals #####################
 ############################################################
 
 ring_current_sim:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.ReadOnlySignal
-  deviceConfig:
-  deviceTags:
-    - beamline
-  enabled: true
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.ReadOnlySignal
+    deviceConfig:
+    deviceTags:
+        - beamline
+    enabled: true
+    readOnly: false
 ################ Read-only signals end here ################
 
 ############################################################
@@ -2142,114 +331,114 @@ ring_current_sim:
 ############################################################
 
 motor1_disabled:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    labels: motor1_disabled
-    limits:
-      - -50
-      - 50
-    name: motor1_disabled
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: false
-  readOnly: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        labels: motor1_disabled
+        limits:
+            - -50
+            - 50
+        name: motor1_disabled
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: false
+    readOnly: false
 motor1_disabled_set:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    labels: motor1_disabled_set
-    limits:
-      - -50
-      - 50
-    name: motor1_disabled_set
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: true
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        labels: motor1_disabled_set
+        limits:
+            - -50
+            - 50
+        name: motor1_disabled_set
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: true
 motor2_disabled:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    labels: motor2_disabled
-    limits:
-      - -50
-      - 50
-    name: motor2_disabled
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: false
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        labels: motor2_disabled
+        limits:
+            - -50
+            - 50
+        name: motor2_disabled
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: false
+    readOnly: false
 motor2_disabled_set:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.SimPositioner
-  deviceConfig:
-    delay: 1
-    labels: motor2_disabled_set
-    limits:
-      - -50
-      - 50
-    name: motor2_disabled_set
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-  enabled: true
-  readOnly: true
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.SimPositioner
+    deviceConfig:
+        delay: 1
+        labels: motor2_disabled_set
+        limits:
+            - -50
+            - 50
+        name: motor2_disabled_set
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+    enabled: true
+    readOnly: true
 ######### DeviceProxy and SimCamera for delayed init tests ##########
 proxy_cam_test:
-  readoutPriority: monitored
-  deviceClass: ophyd_devices.SimCamera
-  deviceConfig:
-    device_access: true
-  deviceTags:
-    - detector
-  enabled: true
-  readOnly: false
-  softwareTrigger: false
+    readoutPriority: monitored
+    deviceClass: ophyd_devices.SimCamera
+    deviceConfig:
+        device_access: true
+    deviceTags:
+        - detector
+    enabled: true
+    readOnly: false
+    softwareTrigger: false
 sim_proxy_test:
-  readoutPriority: on_request
-  deviceClass: ophyd_devices.SlitProxy
-  deviceConfig:
-    proxy_cam_test:
-      signal_name: image
-      center_offset: [0, 0] # [x,y]
-      covariance: [[1000, 500], [200, 1000]] # [[x,x],[y,y]]
-      pixel_size: 0.01
-      ref_motors: [samx, samy]
-      slit_width: [1, 1]
-      motor_dir: [0, 1] # x:0 , y:1, z:2 coordinates
-  enabled: true
-  readOnly: false
+    readoutPriority: on_request
+    deviceClass: ophyd_devices.SlitProxy
+    deviceConfig:
+        proxy_cam_test:
+            signal_name: image
+            center_offset: [0, 0] # [x,y]
+            covariance: [[1000, 500], [200, 1000]] # [[x,x],[y,y]]
+            pixel_size: 0.01
+            ref_motors: [samx, samy]
+            slit_width: [1, 1]
+            motor_dir: [0, 1] # x:0 , y:1, z:2 coordinates
+    enabled: true
+    readOnly: false
 rt_controller:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.sim.SimPositionerWithController
-  deviceConfig:
-    delay: 1
-    limits:
-      - -50
-      - 50
-    tolerance: 0.01
-    update_frequency: 400
-  deviceTags:
-    - user motors
-    - test device
-  enabled: true
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.sim.SimPositionerWithController
+    deviceConfig:
+        delay: 1
+        limits:
+            - -50
+            - 50
+        tolerance: 0.01
+        update_frequency: 400
+    deviceTags:
+        - user motors
+        - test device
+    enabled: true
+    readOnly: false
 device_with_not_resolving_status:
-  readoutPriority: baseline
-  deviceClass: ophyd_devices.sim.sim_test_devices.SimDeviceWithStatusStageUnstage
-  deviceConfig:
-  deviceTags:
-    - test device
-  enabled: false
-  readOnly: false
+    readoutPriority: baseline
+    deviceClass: ophyd_devices.sim.sim_test_devices.SimDeviceWithStatusStageUnstage
+    deviceConfig:
+    deviceTags:
+        - test device
+    enabled: false
+    readOnly: false

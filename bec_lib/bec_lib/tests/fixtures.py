@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from bec_lib.service_config import ServiceConfig
-from bec_lib.tests.utils import ClientMock, ConnectorMock, DMClientMock
+from bec_lib.tests.utils import ClientMock, ConnectorMock, DMClientMock, FancyClientMock
 
 
 @pytest.fixture
@@ -77,9 +77,8 @@ def dm_with_devices(session_from_test_config, device_manager):
     yield device_manager
 
 
-@pytest.fixture()
-def bec_client_mock(dm_with_devices):
-    client = ClientMock(
+def create_bec_client_mock(mock_class, dm_with_devices):
+    client = mock_class(
         ServiceConfig(redis={"host": "host", "port": 123}, scibec={"host": "host", "port": 123}),
         ConnectorMock,
         wait_for_server=False,
@@ -96,3 +95,13 @@ def bec_client_mock(dm_with_devices):
         client.shutdown()
         client._reset_singleton()
         device_manager.devices.flush()
+
+
+@pytest.fixture()
+def bec_client_mock(dm_with_devices):
+    yield from create_bec_client_mock(ClientMock, dm_with_devices)
+
+
+@pytest.fixture()
+def fancy_bec_client_mock(dm_with_devices):
+    yield from create_bec_client_mock(FancyClientMock, dm_with_devices)
