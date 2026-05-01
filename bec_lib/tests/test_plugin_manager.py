@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 from importlib import reload
+from pathlib import Path
 from textwrap import dedent
 from unittest.mock import MagicMock, patch
 
@@ -78,14 +79,401 @@ def test_plugin_manager_create_subapp_needs_extra_command(runner, app_none):
     assert "Missing command." in result.output
 
 
-def test_plugin_manager_create_subapp_wo_bw(runner, create_app):
-    result = runner.invoke(create_app, ["scan", "test"])
-    assert result.exit_code == 1
-    assert type(result.exception) is NotImplementedError
+def test_plugin_manager_create_subapp_wo_bw(runner, create_app, plugin_repo):
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            return_value=MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "test"],
+            input="V4 scan implementation.\nDescribe the scan here.\nn\nn\n",
+        )
+    assert result.exit_code == 0
 
     result = runner.invoke(create_app, ["device", "test"])
     assert result.exit_code == 1
     assert type(result.exception) is NotImplementedError
+
+
+@pytest.fixture
+def plugin_repo(tmp_path):
+    repo = tmp_path / "example_plugin"
+    scans_dir = repo / repo.name / "scans"
+    scans_dir.mkdir(parents=True)
+    (scans_dir / "__init__.py").write_text("", encoding="utf-8")
+    return repo
+
+
+def test_plugin_manager_create_scan(runner, create_app, plugin_repo):
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters") as run_formatters,
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            side_effect=[
+                MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+                MagicMock(ask=MagicMock(return_value="float")),
+            ],
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan"],
+            input=(
+                "example_scan\n"
+                "Example scan description\n"
+                "Example scan summary\n"
+                "n\n"
+                "y\n"
+                "start_pos\n"
+                "None\n"
+                "Start position.\n"
+                "n\n"
+            ),
+        )
+
+    assert result.exit_code == 0
+    scan_file = plugin_repo / plugin_repo.name / "scans" / "example_scan.py"
+    init_file = plugin_repo / plugin_repo.name / "scans" / "__init__.py"
+    scan_content = scan_file.read_text(encoding="utf-8")
+    assert scan_file.exists()
+    assert "Example scan description" in scan_content
+    assert "Example scan summary" in scan_content
+    assert "class ExampleScan(ScanBase):" in scan_content
+    assert 'scan_name = "_v4_example_scan"' in scan_content
+    assert "scan_type = ScanType.SOFTWARE_TRIGGERED" in scan_content
+    assert '"Scan Parameters": ["start_pos"]' in scan_content
+    assert "start_pos: Annotated[float, ScanArgument(" in scan_content
+    assert "display_name='Start Pos'" in scan_content
+    assert "description='Start position.'" in scan_content
+    assert "num_points=1," in scan_content
+    assert "num_monitored_readouts=1," in scan_content
+    assert "points=self.scan_info.num_monitored_readouts," in scan_content
+    assert "self.actions.pre_scan_all_devices()" in scan_content
+    assert init_file.read_text(encoding="utf-8") == "from .example_scan import ExampleScan\n"
+    run_formatters.assert_called_once_with(
+        plugin_repo,
+        [
+            str(Path(plugin_repo.name) / "scans" / "example_scan.py"),
+            str(Path(plugin_repo.name) / "scans" / "__init__.py"),
+        ],
+    )
+
+
+def test_plugin_manager_create_scan_rejects_duplicate(runner, create_app, plugin_repo):
+    existing_scan = plugin_repo / plugin_repo.name / "scans" / "example_scan.py"
+    existing_scan.write_text("existing", encoding="utf-8")
+
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            return_value=MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+        ),
+    ):
+        result = runner.invoke(create_app, ["scan", "example_scan"], input="n\n")
+
+    assert result.exit_code == 1
+    assert existing_scan.read_text(encoding="utf-8") == "existing"
+
+
+def test_plugin_manager_create_scan_reprompts_for_invalid_argument_name(
+    runner, create_app, plugin_repo
+):
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            side_effect=[
+                MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+                MagicMock(ask=MagicMock(return_value="float")),
+            ],
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "example_scan"],
+            input=(
+                "Example scan description\n"
+                "Example scan summary\n"
+                "n\n"
+                "y\n"
+                "asdlkj lkjasd \n"
+                "start_pos\n"
+                "None\n"
+                "Start position.\n"
+                "n\n"
+            ),
+        )
+
+    assert result.exit_code == 0
+    scan_content = (plugin_repo / plugin_repo.name / "scans" / "example_scan.py").read_text(
+        encoding="utf-8"
+    )
+    assert "start_pos: Annotated[float, ScanArgument(" in scan_content
+
+
+def test_plugin_manager_create_scan_skips_units_for_device_argument(
+    runner, create_app, plugin_repo
+):
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            side_effect=[
+                MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+                MagicMock(ask=MagicMock(return_value="DeviceBase")),
+            ],
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "device_scan"],
+            input=(
+                "Device scan description\n"
+                "Device scan summary\n"
+                "n\n"
+                "y\n"
+                "motor\n"
+                "Motor device.\n"
+                "n\n"
+            ),
+        )
+
+    assert result.exit_code == 0
+    scan_content = (plugin_repo / plugin_repo.name / "scans" / "device_scan.py").read_text(
+        encoding="utf-8"
+    )
+    assert "motor: Annotated[DeviceBase, ScanArgument(" in scan_content
+    assert "units=Units." not in scan_content
+
+
+def test_plugin_manager_create_scan_renders_builtin_arguments_after_custom_inputs(
+    runner, create_app, plugin_repo
+):
+    from bec_lib.utils.plugin_manager.create.scan import _BUILTIN_ARGUMENTS
+
+    exp_time_argument = next(
+        argument for argument in _BUILTIN_ARGUMENTS if argument.name == "exp_time"
+    )
+
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            side_effect=[
+                MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+                MagicMock(ask=MagicMock(return_value="float")),
+            ],
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[exp_time_argument])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "ordered_scan"],
+            input=(
+                "Ordered scan description\n"
+                "Ordered scan summary\n"
+                "y\n"
+                "y\n"
+                "start_pos\n"
+                "None\n"
+                "Start position.\n"
+                "n\n"
+            ),
+        )
+
+    assert result.exit_code == 0
+    scan_content = (plugin_repo / plugin_repo.name / "scans" / "ordered_scan.py").read_text(
+        encoding="utf-8"
+    )
+    assert scan_content.index("start_pos: Annotated[float, ScanArgument(") < scan_content.index(
+        "exp_time: Annotated[float | None, ScanArgument("
+    )
+
+
+def test_plugin_manager_create_scan_accepts_compound_pint_unit(runner, create_app, plugin_repo):
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            side_effect=[
+                MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+                MagicMock(ask=MagicMock(return_value="float")),
+            ],
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "unit_scan"],
+            input=(
+                "Unit scan description\n"
+                "Unit scan summary\n"
+                "n\n"
+                "y\n"
+                "ramp_rate\n"
+                "T/min\n"
+                "Ramp rate.\n"
+                "n\n"
+            ),
+        )
+
+    assert result.exit_code == 0
+    scan_content = (plugin_repo / plugin_repo.name / "scans" / "unit_scan.py").read_text(
+        encoding="utf-8"
+    )
+    assert "units=Units.T / Units.min" in scan_content
+
+
+def test_plugin_manager_create_scan_accepts_compound_pint_unit_with_power(
+    runner, create_app, plugin_repo
+):
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            side_effect=[
+                MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+                MagicMock(ask=MagicMock(return_value="float")),
+            ],
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "unit_power_scan"],
+            input=(
+                "Unit power scan description\n"
+                "Unit power scan summary\n"
+                "n\n"
+                "y\n"
+                "ramp_rate\n"
+                "T/min**2\n"
+                "Ramp rate.\n"
+                "n\n"
+            ),
+        )
+
+    assert result.exit_code == 0
+    scan_content = (plugin_repo / plugin_repo.name / "scans" / "unit_power_scan.py").read_text(
+        encoding="utf-8"
+    )
+    assert "units=Units.T / Units.min ** 2" in scan_content
+
+
+def test_plugin_manager_create_scan_builtin_relative_is_scan_parameter(
+    runner, create_app, plugin_repo
+):
+    from bec_lib.utils.plugin_manager.create.scan import _BUILTIN_ARGUMENTS
+
+    relative_argument = next(
+        argument for argument in _BUILTIN_ARGUMENTS if argument.name == "relative"
+    )
+
+    with (
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.plugin_repo_path",
+            return_value=str(plugin_repo),
+        ),
+        patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.select",
+            return_value=MagicMock(ask=MagicMock(return_value="SOFTWARE_TRIGGERED")),
+        ),
+        patch(
+            "bec_lib.utils.plugin_manager.create.scan.questionary.checkbox",
+            return_value=MagicMock(ask=MagicMock(return_value=[relative_argument])),
+        ),
+    ):
+        result = runner.invoke(
+            create_app,
+            ["scan", "relative_scan"],
+            input="Built-in relative scan.\nRelative scan summary.\ny\nn\n",
+        )
+
+    assert result.exit_code == 0
+    scan_content = (plugin_repo / plugin_repo.name / "scans" / "relative_scan.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"Scan Parameters": ["relative"]' in scan_content
+    assert '"Acquisition Parameters"' not in scan_content
+
+
+def test_plugin_manager_create_scan_sorts_exports(plugin_repo):
+    from bec_lib.utils.plugin_manager.create.scan import _ensure_scan_export
+
+    init_file = plugin_repo / plugin_repo.name / "scans" / "__init__.py"
+    init_file.write_text(
+        "from .z_scan import ZScan\nfrom .alpha_scan import AlphaScan\n", encoding="utf-8"
+    )
+
+    _ensure_scan_export(init_file, "middle_scan")
+
+    assert init_file.read_text(encoding="utf-8") == (
+        "from .alpha_scan import AlphaScan\n"
+        "from .middle_scan import MiddleScan\n"
+        "from .z_scan import ZScan\n"
+    )
 
 
 def test_plugin_manager_adds_found_command(runner, app_with_bw):

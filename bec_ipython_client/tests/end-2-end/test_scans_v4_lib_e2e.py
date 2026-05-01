@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import time
+import uuid
+from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
+from typer.testing import CliRunner
 
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.plugin_helper import plugin_repo_path
+from bec_lib.utils.plugin_manager import create as plugin_create
 from bec_server.scan_server.scans import position_generators
 
 
@@ -63,6 +70,37 @@ def _wait_for_queue_status(bec, queue_name: str, expected_status: str, timeout: 
             return
         time.sleep(0.1)
     raise TimeoutError(f"Timed out waiting for queue status {expected_status!r}.")
+
+
+def _plugin_scan_paths(scan_name: str) -> tuple[Path, Path]:
+    repo = Path(plugin_repo_path())
+    scans_dir = repo / repo.name / "scans"
+    return scans_dir / f"{scan_name}.py", scans_dir / "__init__.py"
+
+
+def _remove_scan_export(init_file: Path, scan_name: str):
+    import_line = (
+        f"from .{scan_name} import {''.join(part.capitalize() for part in scan_name.split('_'))}\n"
+    )
+    if not init_file.exists():
+        return
+    content = init_file.read_text(encoding="utf-8")
+    if import_line not in content:
+        return
+    init_file.write_text(content.replace(import_line, ""), encoding="utf-8")
+
+
+def _wait_for_v4_scan_registration(bec, scan_name: str, timeout: float = 60):
+    full_scan_name = f"_v4_{scan_name}"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        available_scans = bec.connector.get(MessageEndpoints.available_scans())
+        if available_scans and full_scan_name in available_scans.resource:
+            bec.scans._import_scans()
+            if hasattr(bec.scans, full_scan_name):
+                return getattr(bec.scans, full_scan_name)
+        time.sleep(1)
+    raise TimeoutError(f"Timed out waiting for scan {full_scan_name!r} to become available.")
 
 
 @pytest.mark.timeout(120)
@@ -266,3 +304,44 @@ def test_v4_scan_lib_stop_resolves_cleanly(bec_client_lib):
 
     bec.queue.request_scan_continuation()
     _wait_for_queue_status(bec, "primary", "RUNNING", timeout=15)
+
+
+@pytest.mark.timeout(180)
+def test_v4_generated_scan_e2e(bec_client_lib):
+    bec = bec_client_lib
+    scan_name = f"e2e_generated_scan_{uuid.uuid4().hex[:8]}"
+    scan_file, init_file = _plugin_scan_paths(scan_name)
+    runner = CliRunner()
+
+    try:
+        with (
+            patch("bec_lib.utils.plugin_manager.create.scan.run_formatters"),
+            patch(
+                "bec_lib.utils.plugin_manager.create.scan._select_option",
+                return_value="SOFTWARE_TRIGGERED",
+            ),
+        ):
+            result = runner.invoke(
+                plugin_create._app,
+                ["scan", scan_name],
+                input="E2E generated scan.\nE2E generated scan.\nn\nn\n",
+            )
+        assert result.exit_code == 0, result.output
+        assert scan_file.exists()
+
+        bec._request_server_restart()
+        scan_runner = _wait_for_v4_scan_registration(bec, scan_name)
+
+        bec.metadata.update({"unit_test": "test_v4_generated_scan_e2e"})
+        status = scan_runner()
+        status.wait(timeout=60, num_points=False, file_written=True)
+
+        assert status.scan is not None
+        assert status.request is not None
+        assert status.request.request.content["scan_type"] == f"_v4_{scan_name}"
+    finally:
+        if scan_file.exists():
+            scan_file.unlink()
+        _remove_scan_export(init_file, scan_name)
+        bec._request_server_restart()
+        time.sleep(2)
