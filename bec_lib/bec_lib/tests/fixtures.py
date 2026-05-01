@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from bec_lib.service_config import ServiceConfig
-from bec_lib.tests.utils import ClientMock, ConnectorMock, DMClientMock, FancyClientMock
+from bec_lib.tests.utils import ClientMock, ConnectorMock, DMClientMock
 
 
 @pytest.fixture
@@ -19,9 +19,9 @@ def threads_check():
     yield
     threads_after = set(th for th in threading.enumerate() if th is not threading.main_thread())
     additional_threads = threads_after - threads_at_start
-    assert len(additional_threads) == 0, (
-        f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
-    )
+    assert (
+        len(additional_threads) == 0
+    ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
 
 
 @pytest.fixture(scope="session")
@@ -101,8 +101,3 @@ def create_bec_client_mock(mock_class, dm_with_devices):
 @pytest.fixture()
 def bec_client_mock(dm_with_devices):
     yield from create_bec_client_mock(ClientMock, dm_with_devices)
-
-
-@pytest.fixture()
-def fancy_bec_client_mock(dm_with_devices):
-    yield from create_bec_client_mock(FancyClientMock, dm_with_devices)

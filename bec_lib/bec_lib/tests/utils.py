@@ -106,8 +106,24 @@ class ScansMock(Scans):
         pass
 
 
-class FancyClientMock(BECClient):
-    started = False
+class ClientMock(BECClient):
+    started = True
+
+    def __init__(
+        self,
+        config: ServiceConfig | None = None,
+        connector_cls: type[RedisConnector] | None = None,
+        wait_for_server: bool = False,
+        forced: bool = False,
+    ):
+        super().__init__(config, connector_cls, wait_for_server, forced)
+        self.connector = MagicMock()
+        self.alarm_handler = MagicMock()
+        self.macros = MagicMock()
+        self.metadata = {}
+        self._load_scans()
+        self._hostname = "host_name.domain"
+        self.queue = ScanManager(ConnectorMock(""))
 
     def _start_metrics_emitter(self):
         pass
@@ -127,25 +143,6 @@ class FancyClientMock(BECClient):
             close_scan_def=self.scans.close_scan_def,
             close_scan_group=self.scans.close_scan_group,
         )
-
-
-class ClientMock(FancyClientMock):
-    started = True
-
-    def __init__(
-        self,
-        config: ServiceConfig | None = None,
-        connector_cls: type[RedisConnector] | None = None,
-        wait_for_server: bool = False,
-        forced: bool = False,
-    ):
-        super().__init__(config, connector_cls, wait_for_server, forced)
-        self.connector = MagicMock()
-        self.alarm_handler = MagicMock()
-        self.metadata = {}
-        self._load_scans()
-        self._hostname = "host_name.domain"
-        self.queue = ScanManager(ConnectorMock(""))
 
     def get_global_var(self, name: str):
         return name
