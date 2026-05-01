@@ -1,9 +1,9 @@
+import builtins
 from typing import Annotated
 from unittest import mock
 
 import pytest
 
-from bec_lib.device import DeviceBase
 from bec_lib.scan_args import ScanArgument
 from bec_lib.scans import (
     DatasetIdOnHold,
@@ -23,25 +23,28 @@ from bec_lib.signature_serializer import serialize_dtype
 # pylint: disable=protected-access
 
 
-def test_filewriter_cm(fancy_bec_client_mock):
-    client = fancy_bec_client_mock
-    client.scans._file_writer = None
-    client.system_config.file_directory = None
-    client.system_config.file_suffix = None
-    with FileWriter(file_suffix="testsuffix", file_directory="testdirectory"):
-        assert client.system_config.file_directory == "testdirectory"
-        assert client.system_config.file_suffix == "testsuffix"
-    assert client.system_config.file_directory is None
-    assert client.system_config.file_suffix is None
+def test_filewriter_cm(bec_client_mock):
+    client = bec_client_mock
+    with mock.patch.dict(builtins.__dict__, {"bec": client}):
+        client.scans._file_writer = None
+        client.system_config.file_directory = None
+        client.system_config.file_suffix = None
+        with FileWriter(file_suffix="testsuffix", file_directory="testdirectory"):
+            assert client.system_config.file_directory == "testdirectory"
+            assert client.system_config.file_suffix == "testsuffix"
+        assert client.system_config.file_directory is None
+        assert client.system_config.file_suffix is None
 
 
-def test_metadata_handler(fancy_bec_client_mock):
-    client = fancy_bec_client_mock
-    client.metadata = {"descr": "test", "uid": "12345"}
-    with Metadata({"descr": "alignment", "pol": 1}):
-        assert client.metadata == {"descr": "alignment", "uid": "12345", "pol": 1}
+def test_metadata_handler(bec_client_mock):
+    client = bec_client_mock
 
-    assert client.metadata == {"descr": "test", "uid": "12345"}
+    with mock.patch.dict(builtins.__dict__, {"bec": client}):
+        client.metadata = {"descr": "test", "uid": "12345"}
+        with Metadata({"descr": "alignment", "pol": 1}):
+            assert client.metadata == {"descr": "alignment", "uid": "12345", "pol": 1}
+
+        assert client.metadata == {"descr": "test", "uid": "12345"}
 
 
 def test_hide_report_cm(bec_client_mock):
@@ -193,40 +196,42 @@ def test_strip_scan_signature_annotations_for_ipython_signature():
     ]
 
 
-def test_interactive_scan_cm(fancy_bec_client_mock):
-    client = fancy_bec_client_mock
-    client.scans._open_interactive_scan = mock.MagicMock()
-    client.scans._close_interactive_scan = mock.MagicMock()
-    client.scans._interactive_trigger = mock.MagicMock()
-    client.scans._interactive_read_monitored = mock.MagicMock()
+def test_interactive_scan_cm(bec_client_mock):
+    client = bec_client_mock
+    with mock.patch.dict(builtins.__dict__, {"bec": client}):
+        client.scans._open_interactive_scan = mock.MagicMock()
+        client.scans._close_interactive_scan = mock.MagicMock()
+        client.scans._interactive_trigger = mock.MagicMock()
+        client.scans._interactive_read_monitored = mock.MagicMock()
 
-    with client.scans.interactive_scan("samx") as scan:
-        scan.trigger()
-        scan.read_monitored_devices()
-
-    client.scans._open_interactive_scan.assert_called_once()
-    client.scans._close_interactive_scan.assert_called_once()
-    client.scans._interactive_trigger.assert_called_once()
-    client.scans._interactive_read_monitored.assert_called_once()
-
-
-def test_interactive_scan_cm_raise_calls_close(fancy_bec_client_mock):
-    client = fancy_bec_client_mock
-    client.scans._open_interactive_scan = mock.MagicMock()
-    client.scans._close_interactive_scan = mock.MagicMock()
-    client.scans._interactive_trigger = mock.MagicMock()
-    client.scans._interactive_read_monitored = mock.MagicMock()
-
-    with pytest.raises(AttributeError):
         with client.scans.interactive_scan("samx") as scan:
             scan.trigger()
             scan.read_monitored_devices()
-            raise AttributeError()
 
-    client.scans._open_interactive_scan.assert_called_once()
-    client.scans._close_interactive_scan.assert_called_once()
-    client.scans._interactive_trigger.assert_called_once()
-    client.scans._interactive_read_monitored.assert_called_once()
+        client.scans._open_interactive_scan.assert_called_once()
+        client.scans._close_interactive_scan.assert_called_once()
+        client.scans._interactive_trigger.assert_called_once()
+        client.scans._interactive_read_monitored.assert_called_once()
+
+
+def test_interactive_scan_cm_raise_calls_close(bec_client_mock):
+    client = bec_client_mock
+    with mock.patch.dict(builtins.__dict__, {"bec": client}):
+        client.scans._open_interactive_scan = mock.MagicMock()
+        client.scans._close_interactive_scan = mock.MagicMock()
+        client.scans._interactive_trigger = mock.MagicMock()
+        client.scans._interactive_read_monitored = mock.MagicMock()
+
+        with pytest.raises(AttributeError):
+            with client.scans.interactive_scan("samx") as scan:
+                scan.trigger()
+                scan.read_monitored_devices()
+                raise AttributeError()
+
+        client.scans._open_interactive_scan.assert_called_once()
+        client.scans._close_interactive_scan.assert_called_once()
+        client.scans._interactive_trigger.assert_called_once()
+        client.scans._interactive_read_monitored.assert_called_once()
 
 
 def test_interactive_scan_cm_raises_scan_motors(bec_client_mock):
