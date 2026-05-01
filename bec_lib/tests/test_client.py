@@ -3,7 +3,7 @@
 import pytest
 
 from bec_lib.client import SystemConfig
-from bec_lib.tests.fixtures import bec_client_mock
+from bec_lib.tests.fixtures import fancy_bec_client_mock
 
 
 def test_system_config():
@@ -23,9 +23,9 @@ def test_system_config():
         config = SystemConfig(file_directory="ä")
 
 
-def test_show_all_commands(bec_client_mock, capsys):
+def test_show_all_commands(fancy_bec_client_mock, capsys):
     """Test the show_all_commands method."""
-    client = bec_client_mock
+    client = fancy_bec_client_mock
     client.show_all_commands()
     captured = capsys.readouterr()
     assert "User macros" in captured.out
