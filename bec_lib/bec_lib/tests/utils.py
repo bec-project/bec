@@ -3,6 +3,7 @@ from __future__ import annotations
 import builtins
 import copy
 import os
+import threading
 import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal
@@ -153,9 +154,9 @@ class ClientMock(FancyClientMock):
         pass
 
 
-def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessage:
-
-    positioner_info = {
+def positioner_info_mock(device_name):
+    # fmt: off
+    return {
         "device_info": {
             "device_base_class": "positioner",
             "device_class": "SimPositioner",
@@ -166,21 +167,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 5,
                     "kind_str": "hinted",
                     "doc": "readback doc string",
-                    "describe": {
-                        "source": f"SIM:{device_name}",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": False,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": False, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "setpoint": {
                     "component_name": "setpoint",
@@ -188,21 +176,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 1,
                     "kind_str": "normal",
                     "doc": "setpoint doc string",
-                    "describe": {
-                        "source": f"SIM:{device_name}_setpoint",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_setpoint", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "motor_is_moving": {
                     "component_name": "motor_is_moving",
@@ -210,21 +185,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 1,
                     "kind_str": "normal",
                     "doc": "motor_is_moving doc string",
-                    "describe": {
-                        "source": f"SIM:{device_name}_motor_is_moving",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_motor_is_moving", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "velocity": {
                     "component_name": "velocity",
@@ -232,21 +194,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 2,
                     "kind_str": "config",
                     "doc": "velocity doc string",
-                    "describe": {
-                        "source": f"SIM:{device_name}_velocity",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_velocity", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "acceleration": {
                     "component_name": "acceleration",
@@ -254,21 +203,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 2,
                     "kind_str": "config",
                     "doc": "acceleration doc string",
-                    "describe": {
-                        "source": f"SIM:{device_name}_acceleration",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_acceleration", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "high_limit_travel": {
                     "component_name": "high_limit_travel",
@@ -276,21 +212,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 2,
                     "kind_str": "config",
                     "doc": "",
-                    "describe": {
-                        "source": f"SIM:{device_name}_high_limit_travel",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_high_limit_travel", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "low_limit_travel": {
                     "component_name": "low_limit_travel",
@@ -298,21 +221,8 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 2,
                     "kind_str": "config",
                     "doc": "",
-                    "describe": {
-                        "source": f"SIM:{device_name}_low_limit_travel",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_low_limit_travel", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
                 "unused": {
                     "component_name": "unused",
@@ -320,62 +230,31 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "kind_int": 0,
                     "kind_str": "omitted",
                     "doc": "",
-                    "describe": {
-                        "source": f"SIM:{device_name}_unused",
-                        "dtype": "integer",
-                        "shape": [],
-                        "precision": 3,
-                    },
-                    "metadata": {
-                        "connected": True,
-                        "read_access": True,
-                        "write_access": True,
-                        "timestamp": 0,
-                        "status": None,
-                        "severity": None,
-                        "precision": None,
-                    },
+                    "describe": {"source": f"SIM:{device_name}_unused", "dtype": "integer", "shape": [], "precision": 3},
+                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                 },
             },
             "hints": {"fields": [device_name]},
             "describe": {
-                device_name: {
-                    "source": f"SIM:{device_name}",
-                    "dtype": "integer",
-                    "shape": [],
-                    "precision": 3,
-                },
-                f"{device_name}_setpoint": {
-                    "source": f"SIM:{device_name}_setpoint",
-                    "dtype": "integer",
-                    "shape": [],
-                    "precision": 3,
-                },
-                f"{device_name}_motor_is_moving": {
-                    "source": f"SIM:{device_name}_motor_is_moving",
-                    "dtype": "integer",
-                    "shape": [],
-                    "precision": 3,
-                },
+                device_name: {"source": f"SIM:{device_name}", "dtype": "integer", "shape": [], "precision": 3},
+                f"{device_name}_setpoint": {"source": f"SIM:{device_name}_setpoint", "dtype": "integer", "shape": [], "precision": 3},
+                f"{device_name}_motor_is_moving": {"source": f"SIM:{device_name}_motor_is_moving", "dtype": "integer", "shape": [], "precision": 3},
             },
             "describe_configuration": {
-                f"{device_name}_velocity": {
-                    "source": f"SIM:{device_name}_velocity",
-                    "dtype": "integer",
-                    "shape": [],
-                },
-                f"{device_name}_acceleration": {
-                    "source": f"SIM:{device_name}_acceleration",
-                    "dtype": "integer",
-                    "shape": [],
-                },
+                f"{device_name}_velocity": {"source": f"SIM:{device_name}_velocity", "dtype": "integer", "shape": []},
+                f"{device_name}_acceleration": {"source": f"SIM:{device_name}_acceleration", "dtype": "integer", "shape": []},
             },
             "sub_devices": [],
             "custom_user_access": {},
         }
     }
-    positioner_info_with_user_access = copy.deepcopy(positioner_info)
-    positioner_info_with_user_access["device_info"]["custom_user_access"].update(
+    # fmt: on
+
+
+def positioner_info_mock_with_user_access(device_name):
+    info = positioner_info_mock(device_name)
+    # fmt: off
+    info["device_info"]["custom_user_access"].update(
         {
             "dummy_controller": {
                 "device_class": "DummyController",
@@ -384,62 +263,20 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                         "type": "func",
                         "doc": None,
                         "signature": [
-                            {
-                                "name": "arg1",
-                                "kind": "POSITIONAL_OR_KEYWORD",
-                                "default": "_empty",
-                                "annotation": "float",
-                            },
-                            {
-                                "name": "arg2",
-                                "kind": "POSITIONAL_OR_KEYWORD",
-                                "default": "_empty",
-                                "annotation": "int",
-                            },
+                            {"name": "arg1", "kind": "POSITIONAL_OR_KEYWORD", "default": "_empty", "annotation": "float"},
+                            {"name": "arg2", "kind": "POSITIONAL_OR_KEYWORD", "default": "_empty", "annotation": "int"},
                         ],
                     },
-                    "_func_with_args": {
-                        "type": "func",
-                        "doc": None,
-                        "signature": [
-                            {
-                                "name": "args",
-                                "kind": "VAR_POSITIONAL",
-                                "default": "_empty",
-                                "annotation": "_empty",
-                            }
-                        ],
-                    },
+                    "_func_with_args": {"type": "func", "doc": None, "signature": [{"name": "args", "kind": "VAR_POSITIONAL", "default": "_empty", "annotation": "_empty"}]},
                     "_func_with_args_and_kwargs": {
                         "type": "func",
                         "doc": None,
                         "signature": [
-                            {
-                                "name": "args",
-                                "kind": "VAR_POSITIONAL",
-                                "default": "_empty",
-                                "annotation": "_empty",
-                            },
-                            {
-                                "name": "kwargs",
-                                "kind": "VAR_KEYWORD",
-                                "default": "_empty",
-                                "annotation": "_empty",
-                            },
+                            {"name": "args", "kind": "VAR_POSITIONAL", "default": "_empty", "annotation": "_empty"},
+                            {"name": "kwargs", "kind": "VAR_KEYWORD", "default": "_empty", "annotation": "_empty"},
                         ],
                     },
-                    "_func_with_kwargs": {
-                        "type": "func",
-                        "doc": None,
-                        "signature": [
-                            {
-                                "name": "kwargs",
-                                "kind": "VAR_KEYWORD",
-                                "default": "_empty",
-                                "annotation": "_empty",
-                            }
-                        ],
-                    },
+                    "_func_with_kwargs": {"type": "func", "doc": None, "signature": [{"name": "kwargs", "kind": "VAR_KEYWORD", "default": "_empty", "annotation": "_empty"}]},
                     "_func_without_args_kwargs": {"type": "func", "doc": None, "signature": []},
                     "controller_show_all": {
                         "type": "func",
@@ -453,12 +290,20 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
             }
         }
     )
-    device_info = {
-        "rt_controller": messages.DeviceInfoMessage(
-            device="rt_controller", info=positioner_info_with_user_access
-        ),
-        "samx": messages.DeviceInfoMessage(device="samx", info=positioner_info),
-        "dyn_signals": messages.DeviceInfoMessage(
+    # fmt: on
+    return info
+
+
+def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessage:
+    if device_name == "rt_controller":
+        return messages.DeviceInfoMessage(
+            device="rt_controller", info=positioner_info_mock_with_user_access(device_name)
+        )
+    elif device_name == "samx":
+        return messages.DeviceInfoMessage(device="samx", info=positioner_info_mock(device_name))
+    elif device_name == "dyn_signals":
+        # fmt: off
+        return messages.DeviceInfoMessage(
             device="dyn_signals",
             info={
                 "device_info": {
@@ -469,36 +314,11 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "signals": {},
                     "hints": {"fields": []},
                     "describe": {
-                        "dyn_signals_messages_message1": {
-                            "source": "SIM:dyn_signals_messages_message1",
-                            "dtype": "integer",
-                            "shape": [],
-                            "precision": 3,
-                        },
-                        "dyn_signals_messages_message2": {
-                            "source": "SIM:dyn_signals_messages_message2",
-                            "dtype": "integer",
-                            "shape": [],
-                            "precision": 3,
-                        },
-                        "dyn_signals_messages_message3": {
-                            "source": "SIM:dyn_signals_messages_message3",
-                            "dtype": "integer",
-                            "shape": [],
-                            "precision": 3,
-                        },
-                        "dyn_signals_messages_message4": {
-                            "source": "SIM:dyn_signals_messages_message4",
-                            "dtype": "integer",
-                            "shape": [],
-                            "precision": 3,
-                        },
-                        "dyn_signals_messages_message5": {
-                            "source": "SIM:dyn_signals_messages_message5",
-                            "dtype": "integer",
-                            "shape": [],
-                            "precision": 3,
-                        },
+                        "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
+                        "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
+                        "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
+                        "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
+                        "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
                     },
                     "describe_configuration": {},
                     "sub_devices": [
@@ -515,109 +335,44 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                                         "obj_name": "dyn_signals_messages_message1",
                                         "kind_int": 1,
                                         "kind_str": "normal",
-                                        "metadata": {
-                                            "connected": True,
-                                            "read_access": True,
-                                            "write_access": True,
-                                            "timestamp": 0,
-                                            "status": None,
-                                            "severity": None,
-                                            "precision": None,
-                                        },
+                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                                     },
                                     "message2": {
                                         "component_name": "message2",
                                         "obj_name": "dyn_signals_messages_message2",
                                         "kind_int": 1,
                                         "kind_str": "normal",
-                                        "metadata": {
-                                            "connected": True,
-                                            "read_access": True,
-                                            "write_access": True,
-                                            "timestamp": 0,
-                                            "status": None,
-                                            "severity": None,
-                                            "precision": None,
-                                        },
+                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                                     },
                                     "message3": {
                                         "component_name": "message3",
                                         "obj_name": "dyn_signals_messages_message3",
                                         "kind_int": 1,
                                         "kind_str": "normal",
-                                        "metadata": {
-                                            "connected": True,
-                                            "read_access": True,
-                                            "write_access": True,
-                                            "timestamp": 0,
-                                            "status": None,
-                                            "severity": None,
-                                            "precision": None,
-                                        },
+                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                                     },
                                     "message4": {
                                         "component_name": "message4",
                                         "obj_name": "dyn_signals_messages_message4",
                                         "kind_int": 1,
                                         "kind_str": "normal",
-                                        "metadata": {
-                                            "connected": True,
-                                            "read_access": True,
-                                            "write_access": True,
-                                            "timestamp": 0,
-                                            "status": None,
-                                            "severity": None,
-                                            "precision": None,
-                                        },
+                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                                     },
                                     "message5": {
                                         "component_name": "message5",
                                         "obj_name": "dyn_signals_messages_message5",
                                         "kind_int": 1,
                                         "kind_str": "normal",
-                                        "metadata": {
-                                            "connected": True,
-                                            "read_access": True,
-                                            "write_access": True,
-                                            "timestamp": 0,
-                                            "status": None,
-                                            "severity": None,
-                                            "precision": None,
-                                        },
+                                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                                     },
                                 },
                                 "hints": {"fields": []},
                                 "describe": {
-                                    "dyn_signals_messages_message1": {
-                                        "source": "SIM:dyn_signals_messages_message1",
-                                        "dtype": "integer",
-                                        "shape": [],
-                                        "precision": 3,
-                                    },
-                                    "dyn_signals_messages_message2": {
-                                        "source": "SIM:dyn_signals_messages_message2",
-                                        "dtype": "integer",
-                                        "shape": [],
-                                        "precision": 3,
-                                    },
-                                    "dyn_signals_messages_message3": {
-                                        "source": "SIM:dyn_signals_messages_message3",
-                                        "dtype": "integer",
-                                        "shape": [],
-                                        "precision": 3,
-                                    },
-                                    "dyn_signals_messages_message4": {
-                                        "source": "SIM:dyn_signals_messages_message4",
-                                        "dtype": "integer",
-                                        "shape": [],
-                                        "precision": 3,
-                                    },
-                                    "dyn_signals_messages_message5": {
-                                        "source": "SIM:dyn_signals_messages_message5",
-                                        "dtype": "integer",
-                                        "shape": [],
-                                        "precision": 3,
-                                    },
+                                    "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
+                                    "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
+                                    "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
+                                    "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
+                                    "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
                                 },
                                 "describe_configuration": {},
                                 "sub_devices": [],
@@ -628,8 +383,9 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "custom_user_access": {},
                 }
             },
-        ),
-        "eiger": messages.DeviceInfoMessage(
+        )
+    elif device_name == "eiger":
+        return messages.DeviceInfoMessage(
             device="eiger",
             info={
                 "device_info": {
@@ -679,14 +435,10 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
                     "custom_user_access": {},
                 }
             },
-        ),
-    }
-    if device_name in device_info:
-        return device_info[device_name]
-
+        )
     device_base_class = "positioner" if device_class == "SimPositioner" else "signal"
     if device_base_class == "positioner":
-        signals = positioner_info["device_info"]["signals"]
+        signals = positioner_info_mock(device_name)["device_info"]["signals"]
     elif device_base_class == "signal":
         signals = {
             device_name: {
@@ -714,7 +466,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
         },
         "custom_user_access": {},
     }
-
+    # fmt: on
     return messages.DeviceInfoMessage(device=device_name, info=dev_info, metadata={})
 
 
