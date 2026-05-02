@@ -1,3 +1,5 @@
+from unittest import mock
+
 import numpy as np
 import pytest
 
@@ -44,3 +46,50 @@ def test_fermat_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler)
     assert len(read_messages) == 1
     assert read_messages[0].device == ["samz"]
     assert read_messages[0].metadata["readout_priority"] == "baseline"
+
+
+def test_fermat_scan_prepare_scan_uses_first_axis_as_corridor_axis(v4_scan_assembler):
+    scan = v4_scan_assembler(
+        "_v4_fermat_scan",
+        "samx",
+        -1.0,
+        1.0,
+        "samy",
+        -2.0,
+        2.0,
+        step=0.5,
+        optim_trajectory="corridor",
+        relative=False,
+    )
+    optimized = np.array([[1.0, 0.0], [0.0, 1.0]])
+    scan.components.optimize_trajectory = mock.MagicMock(return_value=optimized)
+
+    scan.prepare_scan()
+
+    scan.components.optimize_trajectory.assert_called_once()
+    _, kwargs = scan.components.optimize_trajectory.call_args
+    assert kwargs["optimization_type"] == "corridor"
+    assert kwargs["first_direction"] == 1
+    np.testing.assert_allclose(scan.positions, optimized)
+
+
+def test_fermat_scan_prepare_scan_uses_first_axis_range_for_preferred_direction(v4_scan_assembler):
+    scan = v4_scan_assembler(
+        "_v4_fermat_scan",
+        "samx",
+        1.0,
+        -1.0,
+        "samy",
+        -4.0,
+        4.0,
+        step=0.5,
+        optim_trajectory="corridor",
+        relative=False,
+    )
+    optimized = np.array([[1.0, 0.0], [0.0, 1.0]])
+    scan.components.optimize_trajectory = mock.MagicMock(return_value=optimized)
+
+    scan.prepare_scan()
+
+    _, kwargs = scan.components.optimize_trajectory.call_args
+    assert kwargs["first_direction"] == -1

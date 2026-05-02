@@ -81,7 +81,7 @@ class MultiRegionGridScan(ScanBase):
             settling_time (float): settling time in seconds. Default is 0.
             settling_time_after_trigger (float): settling time after trigger in seconds. Default is 0.
             readout_time (float): readout time in seconds. Default is 0.
-            snaked (bool): if True, the second axis is traversed in alternating directions
+            snaked (bool): if True, the first axis is traversed in alternating directions
                 within each sub-grid. Default is True.
             burst_at_each_point (int): number of exposures at each point. Default is 1.
 

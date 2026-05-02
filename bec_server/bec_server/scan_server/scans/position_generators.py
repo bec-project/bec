@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import enum
 from collections.abc import Iterator, Sequence
 
 import numpy as np
+
+
+class Direction(int, enum.Enum):
+    ASCENDING = 1
+    DESCENDING = -1
 
 
 def rotate_points(
@@ -263,7 +269,7 @@ def multi_region_grid_positions(
         regions (list[tuple[tuple[float, float, int], tuple[float, float, int]]]): Sequence
             of paired region definitions. Each entry contains one
             ``(start, stop, steps)`` tuple for the first motor and one for the second motor.
-        snaked (bool): If ``True``, reverse traversal of the second axis on alternating positions
+        snaked (bool): If ``True``, reverse traversal of the first axis on alternating positions
             within each sub-grid.
 
     Returns:
@@ -277,11 +283,11 @@ def multi_region_grid_positions(
         axis1_positions = _region_points(*region1)
         axis2_positions = _region_points(*region2)
 
-        for index, value1 in enumerate(axis1_positions):
-            current_axis2 = (
-                axis2_positions[::-1] if snaked and (index % 2 == 1) else axis2_positions
+        for index, value2 in enumerate(axis2_positions):
+            current_axis1 = (
+                axis1_positions[::-1] if snaked and (index % 2 == 1) else axis1_positions
             )
-            for value2 in current_axis2:
+            for value1 in current_axis1:
                 positions.append([value1, value2])
 
     return np.asarray(positions, dtype=float)
@@ -327,7 +333,9 @@ def nd_grid_positions(axes: list[tuple[float, float, int]], snaked: bool = True)
             positions.extend([[val] + sp for sp in sub_positions])
         return positions
 
-    return np.array(_get_positions_recursively(_axes_arrays))
+    # Build the traversal in reverse axis order so the first user-provided axis is the fast one.
+    positions = _get_positions_recursively(_axes_arrays[::-1])
+    return np.array([position[::-1] for position in positions], dtype=float)
 
 
 def fermat_spiral_pos(
@@ -497,10 +505,8 @@ def hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True) -> 
     Generate a 2D hexagonal grid clipped to (start, stop) bounds.
 
     Args:
-        axes: [(x_start, x_stop, x_step),
-            (y_start, y_stop, y_step)]
-            x_step = horizontal spacing between columns
-            y_step = vertical spacing between rows
+        axes: [(axis0_start, axis0_stop, axis0_step),
+            (axis1_start, axis1_stop, axis1_step)]
         snaked: if True, reverse direction on alternate rows to minimize travel distance
 
     Returns:
@@ -509,28 +515,27 @@ def hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True) -> 
     if len(axes) != 2:
         raise ValueError("2D hex grid requires exactly 2 dimensions")
 
-    (x0, x1, sx), (y0, y1, sy) = axes
+    (a0_start, a0_stop, a0_step), (a1_start, a1_stop, a1_step) = axes
 
     points = []
 
-    # Number of rows needed
-    n_rows = int(np.ceil((y1 - y0) / sy)) + 2
+    # The second axis selects the rows and the first axis is traversed within each row.
+    n_rows = int(np.ceil((a1_stop - a1_start) / a1_step)) + 2
 
     for row in range(n_rows):
-        y = y0 + row * sy
+        axis1 = a1_start + row * a1_step
 
-        # Alternate row offset - shift by half the x step
-        x_offset = (sx / 2) if (row % 2) else 0.0
+        # Alternate row offset - shift by half the fast-axis step
+        axis0_offset = (a0_step / 2) if (row % 2) else 0.0
 
-        # Number of columns needed
-        n_cols = int(np.ceil((x1 - x0) / sx)) + 2
+        n_cols = int(np.ceil((a0_stop - a0_start) / a0_step)) + 2
 
         row_points = []
         for col in range(n_cols):
-            x = x0 + x_offset + col * sx
+            axis0 = a0_start + axis0_offset + col * a0_step
 
-            if x0 <= x <= x1 and y0 <= y <= y1:
-                row_points.append((x, y))
+            if a0_start <= axis0 <= a0_stop and a1_start <= axis1 <= a1_stop:
+                row_points.append((axis0, axis1))
 
         # Reverse every other row if snaking is enabled
         if snaked and (row % 2 == 1):
