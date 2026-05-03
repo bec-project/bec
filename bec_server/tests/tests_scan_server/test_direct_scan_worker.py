@@ -13,6 +13,7 @@ from bec_server.scan_server.scan_queue import (
     ScanQueue,
 )
 from bec_server.scan_server.scans.scan_base import ScanBase
+from bec_server.scan_server.scans.scan_modifier import ScanModifier, scan_hook, scan_hook_impl
 from bec_server.scan_server.tests.utils import ScanServerMock
 
 
@@ -31,29 +32,96 @@ class _TestDirectScan(ScanBase):
         if self.fail_step == step_name:
             raise RuntimeError(f"{step_name} failed")
 
+    @scan_hook
     def prepare_scan(self):
         self._record_step("prepare_scan")
 
+    @scan_hook
     def open_scan(self):
         self._record_step("open_scan")
 
+    @scan_hook
     def stage(self):
         self._record_step("stage")
 
+    @scan_hook
     def pre_scan(self):
         self._record_step("pre_scan")
 
+    @scan_hook
     def scan_core(self):
         self._record_step("scan_core")
+        self.at_each_point("scan_core-point")
 
+    @scan_hook
+    def at_each_point(self, point):
+        self.called_steps.append(("at_each_point", point))
+
+    @scan_hook
     def post_scan(self):
         self._record_step("post_scan")
 
+    @scan_hook
     def unstage(self):
         self._record_step("unstage")
 
+    @scan_hook
     def close_scan(self):
         self._record_step("close_scan")
+
+    @scan_hook
+    def on_exception(self, exc):
+        self.called_steps.append(("on_exception", exc))
+
+
+class _HookRecordingModifier(ScanModifier):
+    @scan_hook_impl("stage", "before")
+    def before_stage(self):
+        self.scan.called_steps.append("modifier:before_stage")
+
+    @scan_hook_impl("scan_core", "before")
+    def before_scan_core(self):
+        self.scan.called_steps.append("modifier:before_scan_core")
+
+    @scan_hook_impl("pre_scan", "replace")
+    def replace_pre_scan(self):
+        self.scan.called_steps.append("modifier:replace_pre_scan")
+
+    @scan_hook_impl("scan_core", "replace")
+    def replace_scan_core(self):
+        self.scan.called_steps.append("modifier:replace_scan_core")
+
+    @scan_hook_impl("scan_core", "after")
+    def after_scan_core(self):
+        self.scan.called_steps.append("modifier:after_scan_core")
+
+    @scan_hook_impl("at_each_point", "before")
+    def before_at_each_point(self, point):
+        self.scan.called_steps.append(("modifier:before_at_each_point", point))
+
+    @scan_hook_impl("at_each_point", "replace")
+    def replace_at_each_point(self, point):
+        self.scan.called_steps.append(("modifier:replace_at_each_point", point))
+
+    @scan_hook_impl("at_each_point", "after")
+    def after_at_each_point(self, point):
+        self.scan.called_steps.append(("modifier:after_at_each_point", point))
+
+    @scan_hook_impl("close_scan", "after")
+    def after_close_scan(self):
+        self.scan.called_steps.append("modifier:after_close_scan")
+
+    @scan_hook_impl("on_exception", "before")
+    def before_on_exception(self, exc):
+        self.scan.called_steps.append(("modifier:before_on_exception", exc))
+
+    @scan_hook_impl("on_exception", "replace")
+    def replace_on_exception(self, exc):
+        self.scan.called_steps.append(("modifier:replace_on_exception", exc))
+
+    @scan_hook_impl("on_exception", "after")
+    def after_on_exception(self, exc):
+        self.scan.called_steps.append(("modifier:after_on_exception", exc))
 
 
 @pytest.fixture
@@ -96,6 +164,7 @@ def make_scan(direct_worker_context):
             redis_connector=direct_worker_context.connector,
             device_manager=direct_worker_context.device_manager,
             instruction_handler=direct_worker_context.instruction_handler,
+            scan_modifier=None,
             request_inputs={},
             system_config={},
             called_steps=called_steps,
@@ -219,6 +288,7 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
         "stage",
         "pre_scan",
         "scan_core",
+        ("at_each_point", "scan_core-point"),
         "post_scan",
         "unstage",
         "close_scan",
@@ -226,6 +296,52 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
     assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
     assert direct_worker_context.scan_worker.current_instruction_queue_item is None
     assert direct_worker_context.direct_worker.scan is None
+
+
+def test_run_executes_modifier_hooks_in_order(direct_worker_context, make_scan):
+    called_steps = []
+    scan = make_scan(called_steps=called_steps)
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+    scan._scan_modifier = _HookRecordingModifier(scan)
+    scan._scan_modifier_hooks = {
+        "stage": {"before": "before_stage"},
+        "pre_scan": {"replace": "replace_pre_scan"},
+        "scan_core": {
+            "before": "before_scan_core",
+            "replace": "replace_scan_core",
+            "after": "after_scan_core",
+        },
+        "at_each_point": {
+            "before": "before_at_each_point",
+            "replace": "replace_at_each_point",
+            "after": "after_at_each_point",
+        },
+        "close_scan": {"after": "after_close_scan"},
+        "on_exception": {
+            "before": "before_on_exception",
+            "replace": "replace_on_exception",
+            "after": "after_on_exception",
+        },
+    }
+
+    direct_worker_context.direct_worker.run(scan)
+
+    assert called_steps == [
+        "prepare_scan",
+        "open_scan",
+        "modifier:before_stage",
+        "stage",
+        "modifier:replace_pre_scan",
+        "modifier:before_scan_core",
+        "modifier:replace_scan_core",
+        "modifier:after_scan_core",
+        "post_scan",
+        "unstage",
+        "close_scan",
+        "modifier:after_close_scan",
+    ]
 
 
 def test_run_returns_early_when_signal_event_is_set(direct_worker_context, make_scan):
@@ -279,10 +395,10 @@ def test_run_reraises_when_queue_has_no_active_request_block(direct_worker_conte
 
 def test_run_uses_on_exception_cleanup_before_handling_error(direct_worker_context, make_scan):
     scan = make_scan(fail_step="scan_core")
+    scan.on_exception = mock.MagicMock()
     direct_worker_context.queue.active_scan = scan
     direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
     direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._run_on_exception_hook = mock.MagicMock()
     direct_worker_context.direct_worker._handle_exception = mock.MagicMock(
         side_effect=ScanAbortion()
     )
@@ -293,9 +409,10 @@ def test_run_uses_on_exception_cleanup_before_handling_error(direct_worker_conte
     assert direct_worker_context.queue.stopped is True
     assert direct_worker_context.scan_worker.status == InstructionQueueStatus.RUNNING
     assert scan.actions._metadata_suffix == "__on-exception"
-    direct_worker_context.direct_worker._run_on_exception_hook.assert_called_once()
+    scan.on_exception.assert_called_once()
+    assert isinstance(scan.on_exception.call_args.args[0], RuntimeError)
     assert isinstance(
-        direct_worker_context.direct_worker._run_on_exception_hook.call_args.args[0], RuntimeError
+        direct_worker_context.direct_worker._handle_exception.call_args.args[0], RuntimeError
     )
     direct_worker_context.direct_worker._handle_exception.assert_called_once()
 
@@ -303,12 +420,10 @@ def test_run_uses_on_exception_cleanup_before_handling_error(direct_worker_conte
 def test_run_handles_cleanup_exception_before_original_error(direct_worker_context, make_scan):
     scan = make_scan(fail_step="scan_core")
     cleanup_exc = UserScanInterruption(exit_info=("halted", "user"))
+    scan.on_exception = mock.MagicMock(side_effect=cleanup_exc)
     direct_worker_context.queue.active_scan = scan
     direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
     direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._run_on_exception_hook = mock.MagicMock(
-        side_effect=cleanup_exc
-    )
     direct_worker_context.direct_worker._handle_exception = mock.MagicMock(
         side_effect=ScanAbortion()
     )
@@ -316,8 +431,10 @@ def test_run_handles_cleanup_exception_before_original_error(direct_worker_conte
     with pytest.raises(ScanAbortion):
         direct_worker_context.direct_worker.run(scan)
 
-    direct_worker_context.connector.send_client_info.assert_called_once_with("")
-    assert direct_worker_context.direct_worker._handle_exception.call_args.args[0] is cleanup_exc
+    scan.actions.send_client_info.assert_called_once_with("")
+    assert isinstance(
+        direct_worker_context.direct_worker._handle_exception.call_args.args[0], RuntimeError
+    )
     direct_worker_context.queue.stopped = False
 
 
@@ -428,6 +545,38 @@ def test_run_on_exception_hook_uses_root_cause(direct_worker_context, make_scan)
     scan.on_exception.assert_called_once_with(root_cause)
 
 
+def test_run_on_exception_hook_runs_modifier_with_root_cause(direct_worker_context, make_scan):
+    called_steps = []
+    scan = make_scan(called_steps=called_steps)
+    direct_worker_context.direct_worker.scan = scan
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.queue.run_on_exception_hook = True
+    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+    scan._scan_modifier = _HookRecordingModifier(scan)
+    scan._scan_modifier_hooks = {
+        "on_exception": {
+            "before": "before_on_exception",
+            "replace": "replace_on_exception",
+            "after": "after_on_exception",
+        }
+    }
+    root_cause = RuntimeError("root cause")
+
+    try:
+        raise root_cause
+    except RuntimeError as cause:
+        exc = ScanAbortion()
+        exc.__cause__ = cause
+        direct_worker_context.direct_worker._run_on_exception_hook(exc)
+
+    assert called_steps == [
+        ("modifier:before_on_exception", root_cause),
+        ("modifier:replace_on_exception", root_cause),
+        ("modifier:after_on_exception", root_cause),
+    ]
+    assert ("on_exception", root_cause) not in called_steps
+
+
 def test_run_on_exception_hook_returns_when_scan_is_none(direct_worker_context):
     direct_worker_context.direct_worker.scan = None
     direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
@@ -449,7 +598,7 @@ def test_run_on_exception_hook_returns_when_on_exception_is_missing(
 def test_run_on_exception_hook_sends_client_info_when_hook_fails(direct_worker_context, make_scan):
     scan = make_scan()
 
-    def _fail(_exc):
+    def _fail():
         raise RuntimeError("cleanup failed")
 
     scan.on_exception = _fail

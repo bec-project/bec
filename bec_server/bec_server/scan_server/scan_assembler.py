@@ -7,9 +7,14 @@ from bec_lib import messages
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 from bec_lib.scan_input_validator import ScanInputValidator
-from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
+from bec_lib.signature_serializer import serialize_dtype
 
 from .scans.legacy_scans import RequestBase, ScanArgType, ScanBase, unpack_scan_args
+from .scans.scan_argument_modifier import (
+    apply_scan_argument_defaults,
+    get_scan_modifier,
+    scan_signature_with_modifiers,
+)
 from .scans.scan_base import ScanBase as ScanBaseV4
 
 logger = bec_logger.logger
@@ -29,6 +34,7 @@ class ScanAssembler:
         self.connector = self.parent.connector
         self.scan_manager = self.parent.scan_manager
         self.input_validator = ScanInputValidator(device_manager=self.device_manager)
+        self.scan_modifier_cls = get_scan_modifier()
 
     def is_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
         """Check if the scan queue message would construct a new scan.
@@ -114,15 +120,19 @@ class ScanAssembler:
         kwargs = msg.content.get("parameter", {}).get("kwargs", {})
         scan_info = self._get_scan_info(scan, scan_cls)
 
-        request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
         resolved_args, resolved_kwargs = self.input_validator.validate(
             scan, scan_info, args, kwargs
+        )
+        request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
+        resolved_kwargs = apply_scan_argument_defaults(
+            scan_cls, scan_info["signature"], resolved_args, resolved_kwargs
         )
 
         scan_instance = scan_cls(
             *resolved_args,
             device_manager=self.device_manager,
             redis_connector=self.connector,
+            scan_modifier=self.scan_modifier_cls,
             metadata=msg.metadata,
             instruction_handler=self.parent.queue_manager.instruction_handler,
             scan_id=scan_id,
@@ -132,43 +142,46 @@ class ScanAssembler:
         return scan_instance
 
     def _assemble_request_inputs(self, scan_cls, args, kwargs) -> dict:
-
-        cls_input_args = [
-            name
-            for name, val in inspect.signature(scan_cls).parameters.items()
-            if val.default == inspect.Parameter.empty and name != "kwargs"
-        ]
         request_inputs = {}
         if scan_cls.arg_bundle_size["bundle"] > 0:
             request_inputs["arg_bundle"] = args
             request_inputs["inputs"] = {}
             request_inputs["kwargs"] = kwargs
-        else:
-            request_inputs["arg_bundle"] = []
-            request_inputs["inputs"] = {}
-            request_inputs["kwargs"] = {}
+            return request_inputs
 
-            if "args" in cls_input_args:
-                split_index = cls_input_args.index("args")
-                defined_cls_args = cls_input_args[:split_index]
-                defined_args = args[:split_index]
+        signature = inspect.signature(scan_cls)
+        request_inputs["arg_bundle"] = []
+        request_inputs["inputs"] = {}
+        request_inputs["kwargs"] = {}
+        bound = signature.bind_partial(*args, **kwargs)
+        var_keyword_name = next(
+            (
+                name
+                for name, parameter in signature.parameters.items()
+                if parameter.kind == inspect.Parameter.VAR_KEYWORD
+            ),
+            None,
+        )
 
-                for ii, key in enumerate(defined_args):
-                    input_name = defined_cls_args[ii]
-                    request_inputs["inputs"][input_name] = key
+        for name, parameter in signature.parameters.items():
+            if name not in bound.arguments:
+                continue
 
-                request_inputs["inputs"]["args"] = args[split_index:]
+            value = bound.arguments[name]
+            if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+                request_inputs["inputs"][name] = list(value)
+            elif parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                request_inputs["kwargs"].update(value)
+            elif parameter.default == inspect.Parameter.empty:
+                request_inputs["inputs"][name] = value
             else:
-                for ii, key in enumerate(args):
-                    request_inputs["inputs"][cls_input_args[ii]] = key
+                request_inputs["kwargs"][name] = value
 
-            for key in kwargs:
-                if key in cls_input_args:
-                    request_inputs["inputs"][key] = kwargs[key]
-
-            for key, val in kwargs.items():
-                if key not in cls_input_args:
-                    request_inputs["kwargs"][key] = val
+        for key, val in kwargs.items():
+            if key not in signature.parameters and key not in (
+                bound.arguments.get(var_keyword_name) or {}
+            ):
+                request_inputs["kwargs"][key] = val
         return request_inputs
 
     def _get_scan_info(self, scan_name: str, scan_cls) -> dict:
@@ -183,7 +196,7 @@ class ScanAssembler:
                 scan_cls, "arg_bundle_size", {"bundle": 0, "min": None, "max": None}
             ),
             "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
-            "signature": signature_to_dict(scan_cls.__init__),
+            "signature": scan_signature_with_modifiers(scan_cls),
         }
 
     def _serialize_arg_input(self, arg_input: dict) -> dict[str, str | dict | list]:

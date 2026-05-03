@@ -10,6 +10,7 @@ from bec_lib.scan_args import ScanArgument
 from bec_lib.tests.fixtures import dm_with_devices
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scans import ScanArgType
+from bec_server.scan_server.scans.acquire import Acquire
 from bec_server.scan_server.scans.legacy_scans import FermatSpiralScan, LineScan, RequestBase
 from bec_server.scan_server.scans.scan_base import ScanBase as ScanBaseV4
 
@@ -103,6 +104,63 @@ class CustomBundledScanWithDeviceKwarg(ScanBaseV4):
         super().__init__(**kwargs)
         self.received_args = args
         self.monitor = monitor
+
+
+class DefaultOverrideDirectScan(ScanBaseV4):
+    scan_name = "default_override_direct_scan"
+    is_scan = False
+
+    def __init__(self, target: float, dwell: float = 0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.target = target
+        self.dwell = dwell
+
+
+class DefaultOverrideModifier:
+    @staticmethod
+    def scan_argument_overrides(scan_name, arguments, defaults):
+        if scan_name == "default_override_direct_scan":
+            defaults["dwell"] = 0.25
+        return arguments, defaults
+
+
+class RelativeHiddenDirectScan(ScanBaseV4):
+    scan_name = "relative_hidden_direct_scan"
+    is_scan = False
+
+    def __init__(self, target: float, *, relative: bool, **kwargs):
+        super().__init__(**kwargs)
+        self.target = target
+        self.relative = relative
+
+
+class RelativeHiddenModifier:
+    @staticmethod
+    def scan_argument_overrides(scan_name, arguments, defaults):
+        if scan_name == "relative_hidden_direct_scan":
+            arguments.pop("relative", None)
+            defaults["relative"] = False
+        return arguments, defaults
+
+
+class AdditionalParamsDirectScan(ScanBaseV4):
+    scan_name = "additional_params_direct_scan"
+    is_scan = False
+
+    def __init__(self, target: float, **kwargs):
+        super().__init__(**kwargs)
+        self.target = target
+
+
+class AdditionalParamsModifier:
+    @staticmethod
+    def scan_argument_overrides(scan_name, arguments, defaults):
+        if scan_name == "additional_params_direct_scan":
+            arguments["integ_time"] = Annotated[
+                float | None, ScanArgument(display_name="Integration Time", ge=0)
+            ]
+            defaults["integ_time"] = 0.5
+        return arguments, defaults
 
 
 @pytest.mark.parametrize(
@@ -474,3 +532,197 @@ def test_scan_assembler_resolves_signature_device_kwargs_for_arg_input_scan(dm_w
 
     assert request.received_args == (dm_with_devices.devices["samx"], 1)
     assert request.monitor is dm_with_devices.devices["samy"]
+
+
+def test_scan_assembler_applies_modified_defaults_before_scan_construction(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"default_override_direct_scan": DefaultOverrideDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="default_override_direct_scan",
+        parameter={"args": [1.0], "kwargs": {"system_config": {"file_directory": "/tmp/data"}}},
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with mock.patch(
+            "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
+            return_value=DefaultOverrideModifier,
+        ):
+            request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.target == 1.0
+    assert request.dwell == 0.25
+
+
+def test_scan_assembler_applies_defaults_for_removed_signature_arguments(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"relative_hidden_direct_scan": RelativeHiddenDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="relative_hidden_direct_scan",
+        parameter={"args": [1.0], "kwargs": {"system_config": {"file_directory": "/tmp/data"}}},
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with mock.patch(
+            "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
+            return_value=RelativeHiddenModifier,
+        ):
+            request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.target == 1.0
+    assert request.relative is False
+
+
+def test_scan_assembler_moves_defaulted_added_parameters_to_additional_scan_parameters(
+    dm_with_devices,
+):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"additional_params_direct_scan": AdditionalParamsDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="additional_params_direct_scan",
+        parameter={"args": [1.0], "kwargs": {"system_config": {"file_directory": "/tmp/data"}}},
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with mock.patch(
+            "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
+            return_value=AdditionalParamsModifier,
+        ):
+            request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.target == 1.0
+    assert request.scan_info.additional_scan_parameters["integ_time"] == 0.5
+
+
+def test_scan_assembler_moves_provided_added_parameters_to_additional_scan_parameters(
+    dm_with_devices,
+):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"additional_params_direct_scan": AdditionalParamsDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="additional_params_direct_scan",
+        parameter={
+            "args": [1.0],
+            "kwargs": {"integ_time": 1.25, "system_config": {"file_directory": "/tmp/data"}},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        with mock.patch(
+            "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
+            return_value=AdditionalParamsModifier,
+        ):
+            request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.scan_info.additional_scan_parameters["integ_time"] == 1.25
+
+
+def test_scan_assembler_maps_optional_positional_direct_scan_args_to_request_kwargs(
+    dm_with_devices,
+):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"_v4_acquire": Acquire}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="_v4_acquire",
+        parameter={
+            "args": [0, 1, 0, 0, 0, 1],
+            "kwargs": {"system_config": {"file_directory": "/tmp/data"}},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.exp_time == 0
+    assert request.frames_per_trigger == 1
+    assert request.readout_time == 0
+    assert request.burst_at_each_point == 1
+    assert request.scan_info.request_inputs["inputs"] == {}
+    assert request.scan_info.request_inputs["kwargs"] == {
+        "exp_time": 0,
+        "frames_per_trigger": 1,
+        "settling_time": 0,
+        "settling_time_after_trigger": 0,
+        "readout_time": 0,
+        "burst_at_each_point": 1,
+        "system_config": {"file_directory": "/tmp/data"},
+    }
+
+
+def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"_v4_acquire": Acquire}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="_v4_acquire",
+        parameter={
+            "args": [0, 1],
+            "kwargs": {
+                "readout_time": 0.25,
+                "burst_at_each_point": 3,
+                "system_config": {"file_directory": "/tmp/data"},
+            },
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.exp_time == 0
+    assert request.frames_per_trigger == 1
+    assert request.readout_time == 0.25
+    assert request.burst_at_each_point == 3
+    assert request.scan_info.request_inputs["inputs"] == {}
+    assert request.scan_info.request_inputs["kwargs"] == {
+        "exp_time": 0,
+        "frames_per_trigger": 1,
+        "readout_time": 0.25,
+        "burst_at_each_point": 3,
+        "system_config": {"file_directory": "/tmp/data"},
+    }

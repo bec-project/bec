@@ -41,15 +41,25 @@ class DirectScanWorker:
         self.scan = None
 
     def reset(self):
+        """
+        Reset the state of the scan worker after a scan is completed or aborted.
+        """
         self.scan = None
 
     def process_instructions(self, queue: DirectInstructionQueueItem) -> None:
+        """
+        Process the instructions in the given queue item. It runs the scan and handles any exceptions that may occur during the scan execution.
+
+        Args:
+            queue (DirectInstructionQueueItem): The queue item containing the scan instructions to process.
+        """
         self.worker.current_instruction_queue_item = queue
 
         scan = queue.move_to_next_scan()
         if scan is None:
             logger.error("No scan found in the queue item to process.")
             return
+
         self.run(scan)
 
         queue.status = InstructionQueueStatus.COMPLETED
@@ -124,6 +134,12 @@ class DirectScanWorker:
         raise ScanAbortion from exc
 
     def check_for_interruption(self):
+        """
+        Check if the scan has been interrupted by checking the worker's status.
+        If the status is PAUSED, it waits until the status changes to RUNNING.
+        If the status is STOPPED, it raises a ScanAbortion or UserScanInterruption
+        exception depending on the exit_info of the current queue item.
+        """
         if self.worker.status == InstructionQueueStatus.PAUSED:
             if self.scan is not None:
                 self.scan.actions._send_scan_status("paused")
@@ -136,9 +152,21 @@ class DirectScanWorker:
             raise UserScanInterruption(exit_info=item.exit_info)
 
     def update_queue_info(self):
+        """
+        Update the queue info for the current instruction queue item.
+        This is used to propagate the queue status to the client during the scan execution.
+        """
         self.worker.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
     def _propagate_error(self, content: str, exc: Exception):
+        """
+        Propagate the error to the client by sending a client info message and raising an alarm with the error information.
+
+        Args:
+            content (str): The error message content to send to the client and include in the alarm information.
+            exc (Exception): The exception that was raised, which will be included in the alarm information.
+        """
+
         logger.error(content)
         error_info = messages.ErrorInfo(
             error_message=content,
@@ -151,6 +179,11 @@ class DirectScanWorker:
         )
 
     def get_metadata_for_alarm(self) -> dict:
+        """
+        Get metadata for the alarm based on the current scan information.
+        This can include details such as the scan ID and scan number,
+        which can help with debugging and identifying the context of the error.
+        """
         if self.scan is None:
             return {}
         metadata = {}
@@ -161,6 +194,10 @@ class DirectScanWorker:
         return metadata
 
     def _run_on_exception_hook(self, exc: Exception):
+        """
+        Run the on_exception hook implemented by the scan if the current queue item has run_on_exception_hook set to True.
+        The on_exception hook allows the scan to perform cleanup tasks or other actions when an exception occurs
+        """
         scan = self.scan
         if scan is None:
             return
@@ -172,7 +209,8 @@ class DirectScanWorker:
         try:
             scan._shutdown_event.clear()
             with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
-                scan.on_exception(hook_exc)  # type: ignore
+                scan.on_exception(hook_exc)
+
         except Exception:
             scan.actions.send_client_info("")
             logger.exception("Failed to run direct scan on_exception hook")

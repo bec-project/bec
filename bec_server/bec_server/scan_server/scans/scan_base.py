@@ -8,7 +8,7 @@ from __future__ import annotations
 import enum
 import threading
 from collections.abc import Sequence
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Type
 
 import numpy as np
 import pint
@@ -21,6 +21,7 @@ from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scans.scan_actions import ScanActions
 from bec_server.scan_server.scans.scan_components import ScanComponents
+from bec_server.scan_server.scans.scan_modifier import ScanModifier, get_scan_hooks_impl
 
 Units = pint.UnitRegistry()
 
@@ -164,6 +165,7 @@ class ScanBase:
         instruction_handler: InstructionHandler,
         request_inputs: dict,
         system_config: dict,
+        scan_modifier: Type[ScanModifier] | None = None,
         user_metadata: dict | None = None,
         metadata: dict | None = None,
         scan_queue: str | None = None,
@@ -199,6 +201,10 @@ class ScanBase:
         self._premove_motor_status = None
         self.positions = np.array([])
         self.start_positions = []
+        self._scan_modifier_hooks = (
+            get_scan_hooks_impl(scan_modifier) if scan_modifier is not None else {}
+        )
+        self._scan_modifier = scan_modifier(self) if scan_modifier is not None else None
 
     def update_scan_info(
         self,

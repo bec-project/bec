@@ -33,6 +33,53 @@ def test_signature_serializer():
     assert sig == inspect.signature(test_func)
 
 
+def test_signature_serializer_accepts_signature_objects():
+    signature = inspect.Signature(
+        [
+            inspect.Parameter(
+                "step",
+                inspect.Parameter.KEYWORD_ONLY,
+                annotation=Annotated[float, ScanArgument(description="Step size")],
+            ),
+            inspect.Parameter("repeats", inspect.Parameter.KEYWORD_ONLY, default=3, annotation=int),
+        ]
+    )
+
+    params = signature_to_dict(signature)
+
+    assert params == [
+        {
+            "name": "step",
+            "kind": "KEYWORD_ONLY",
+            "default": "_empty",
+            "annotation": {
+                "Annotated": {
+                    "type": "float",
+                    "metadata": {
+                        "ScanArgument": {
+                            "description": "Step size",
+                            "display_name": None,
+                            "tooltip": None,
+                            "expert": False,
+                            "hidden": False,
+                            "example": None,
+                            "units": None,
+                            "reference_units": None,
+                            "gt": None,
+                            "ge": None,
+                            "lt": None,
+                            "le": None,
+                            "reference_limits": None,
+                            "alternative_group": None,
+                        }
+                    },
+                }
+            },
+        },
+        {"name": "repeats", "kind": "KEYWORD_ONLY", "default": 3, "annotation": "int"},
+    ]
+
+
 def test_signature_serializer_merged_literals():
     def test_func(a: Literal[1, 2, 3] | None = None):
         pass
@@ -132,6 +179,8 @@ def test_signature_serializer_with_scan_argument_annotation():
                             "display_name": None,
                             "tooltip": "Motor step size",
                             "expert": True,
+                            "hidden": False,
+                            "example": None,
                             "alternative_group": None,
                             "units": "mm",
                             "reference_units": None,
@@ -236,6 +285,8 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
                                 "display_name": None,
                                 "tooltip": None,
                                 "expert": False,
+                                "hidden": False,
+                                "example": None,
                                 "alternative_group": None,
                                 "units": None,
                                 "reference_units": None,
@@ -284,6 +335,8 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
                             "display_name": None,
                             "tooltip": None,
                             "expert": False,
+                            "hidden": False,
+                            "example": None,
                             "alternative_group": "scan_resolution",
                             "units": None,
                             "reference_units": None,
@@ -308,6 +361,8 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
                             "display_name": None,
                             "tooltip": None,
                             "expert": False,
+                            "hidden": False,
+                            "example": None,
                             "alternative_group": None,
                             "units": "mm/s",
                             "reference_units": None,

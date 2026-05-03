@@ -17,6 +17,10 @@ class ScanArgument(BaseModel):
     expert: Annotated[bool, Field(description="Whether the argument is for expert users only")] = (
         False
     )
+    hidden: Annotated[
+        bool, Field(description="Whether the argument should be hidden in the UI")
+    ] = False
+    example: Annotated[Any | None, Field(description="Example value for the argument")] = None
     units: Annotated[
         str | pint.Unit | PlainQuantity[Any] | None, Field(description="Units of the argument")
     ] = None
@@ -112,28 +116,62 @@ class DefaultArgType:
         ),
     ]
     ExposureTime: TypeAlias = Annotated[
-        float, ScanArgument(display_name="Exposure Time", units=Units.s, ge=0)
+        float,
+        ScanArgument(
+            display_name="Exposure Time",
+            description="Exposure time in seconds",
+            units=Units.s,
+            ge=0,
+        ),
     ]
     FramesPerTrigger: TypeAlias = Annotated[
-        int, ScanArgument(display_name="Frames per Trigger", ge=1)
+        int,
+        ScanArgument(
+            display_name="Frames per Trigger",
+            description="Number of frames per trigger for devices that support configurable frame counts per trigger.",
+            ge=1,
+        ),
     ]
     SettlingTime: TypeAlias = Annotated[
-        float, ScanArgument(display_name="Settling Time", units=Units.s, ge=0)
+        float,
+        ScanArgument(
+            display_name="Settling Time",
+            description="Time to settle before trigger and readout.",
+            units=Units.s,
+            ge=0,
+        ),
     ]
     SettlingTimeAfterTrigger: TypeAlias = Annotated[
-        float, ScanArgument(display_name="Settling Time After Trigger", units=Units.s, ge=0)
+        float,
+        ScanArgument(
+            display_name="Settling Time After Trigger",
+            description="Time to settle after the trigger but before the readout.",
+            units=Units.s,
+            ge=0,
+        ),
     ]
     ReadoutTime: TypeAlias = Annotated[
-        float, ScanArgument(display_name="Readout Time", units=Units.s, ge=0)
+        float,
+        ScanArgument(
+            display_name="Readout Time",
+            description="Configuration for devices that support configurable readout times.",
+            units=Units.s,
+            ge=0,
+        ),
     ]
     BurstAtEachPoint: TypeAlias = Annotated[
-        int, ScanArgument(display_name="Burst at Each Point", ge=1)
+        int,
+        ScanArgument(
+            display_name="Burst at Each Point",
+            description="Number of triggers and readouts at each point.",
+            ge=1,
+        ),
     ]
     OptimizeTrajectory: TypeAlias = Annotated[
         Literal["corridor", "shell", "nearest", None],
         ScanArgument(
             display_name="Optimize Trajectory",
-            description="Method for optimizing the scan trajectory",
+            description="Method for optimizing the scan trajectory.",
         ),
     ]
 
