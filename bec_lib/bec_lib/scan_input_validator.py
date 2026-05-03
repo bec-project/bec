@@ -58,6 +58,8 @@ class ScanInputValidator:
             scan_info, args, kwargs, uses_arg_input_bundle
         )
 
+        # TODO: Remove the section until ---> here <--- once we have migrated all scans
+        # to v4-type scans
         required_kwargs = scan_info.get("required_kwargs") or []
         required_names = (
             required_kwargs.keys() if isinstance(required_kwargs, dict) else required_kwargs
@@ -70,6 +72,8 @@ class ScanInputValidator:
                 f"{scan_info.get('doc')}\n Not all required keyword arguments have been"
                 f" specified. The required arguments are: {required_kwargs}"
             )
+
+        # ---> here <---
 
         if arg_input:
             self._validate_arg_input(scan_name, scan_info, args, arg_input)
@@ -407,6 +411,8 @@ class ScanInputValidator:
             scan_argument = self._scan_argument_from_annotation(parameter.annotation)
             if scan_argument is None:
                 continue
+            if not self._scan_argument_has_bounds(scan_argument):
+                continue
             self._validate_scan_argument_bounds(name, value, parameter.annotation, scan_argument)
 
     def _validate_value(self, *, arg_name: str, value: Any, annotation: Any, index: int) -> None:
@@ -433,8 +439,17 @@ class ScanInputValidator:
         scan_argument = self._scan_argument_from_annotation(annotation)
         if scan_argument is None:
             return
+        if not self._scan_argument_has_bounds(scan_argument):
+            return
 
         self._validate_scan_argument_bounds(arg_name, value, annotation, scan_argument)
+
+    def _scan_argument_has_bounds(self, scan_argument: ScanArgument) -> bool:
+        """Return whether a ``ScanArgument`` declares any numeric bounds."""
+        return any(
+            limit is not None
+            for limit in (scan_argument.gt, scan_argument.ge, scan_argument.lt, scan_argument.le)
+        )
 
     def _validate_scan_argument_bounds(
         self, arg_name: str, value: Any, annotation: Any, scan_argument: ScanArgument
