@@ -5,13 +5,14 @@ import importlib.metadata
 import inspect
 import json
 from functools import cache, lru_cache
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Type
 
 from bec_lib.logger import bec_logger
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.metadata_schema import BasicScanMetadata
+    from bec_server.scan_server.scans.scan_modifier import ScanModifier
+
 
 logger = bec_logger.logger
 
@@ -70,6 +71,24 @@ def get_scan_plugins() -> dict:
                 logger.warning(f"Duplicated scan plugin {name}.")
             loaded_plugins[name] = mod_cls
     return loaded_plugins
+
+
+def get_scan_modifier_plugin() -> Type[ScanModifier] | None:
+    """
+    Load all scan modifier plugins.
+
+    Returns:
+        Type[ScanModifier]: The scan modifier class.
+    """
+    from bec_server.scan_server.scans.scan_modifier import ScanModifier
+
+    modules = _get_available_plugins("bec.scans.scan_modifier")
+    for module in modules:
+        mods = inspect.getmembers(module, predicate=_filter_plugins)
+        for _, mod_cls in mods:
+            if issubclass(mod_cls, ScanModifier):
+                return mod_cls
+    return None
 
 
 def get_file_writer_plugins() -> dict:

@@ -234,36 +234,47 @@ def deserialize_dtype(dtype: list | dict | str) -> object:
         return simple_dtype
 
 
-def signature_to_dict(func: Callable, include_class_obj=False) -> list[dict]:
+def signature_to_dict(
+    func: Callable | inspect.Signature, include_class_obj: bool = False
+) -> list[dict]:
     """
     Convert a function signature to a dictionary.
     The dictionary can be used to reconstruct the signature using dict_to_signature.
 
     Args:
-        func (Callable): Function to be converted
+        func (Callable | inspect.Signature): Function or signature to be converted
+        include_class_obj (bool): Include ``self``/``cls`` parameters when serializing a callable.
 
     Returns:
         list[dict]: List of dictionaries representing the function signature
     """
     out = []
-    params = inspect.signature(func).parameters
-    try:
-        type_hints = get_type_hints(func, include_extras=True)
-    except NameError as e:
-        raise TypeError(
-            f"Couldn't find annotated type {e.name}. The type you annotate with must be available in the local scope! Check it is not hidden by TYPE_CHECKING."
-        ) from e
+    if isinstance(func, inspect.Signature):
+        params = func.parameters
+        resolved_type_hints = None
+    else:
+        params = inspect.signature(func).parameters
+        try:
+            resolved_type_hints = get_type_hints(func, include_extras=True)
+        except NameError as e:
+            raise TypeError(
+                f"Couldn't find annotated type {e.name}. The type you annotate with must be available in the local scope! Check it is not hidden by TYPE_CHECKING."
+            ) from e
     for param_name, param in params.items():
-        if not include_class_obj and param_name == "self" or param_name == "cls":
+        if (not include_class_obj and param_name == "self") or param_name == "cls":
             continue
         # pylint: disable=protected-access
-        param_typehint = type_hints.get(param_name)
+        param_typehint = (resolved_type_hints or {}).get(param_name, param.annotation)
         out.append(
             {
                 "name": param_name,
                 "kind": param.kind.name,
                 "default": param.default if param.default != inspect._empty else "_empty",
-                "annotation": serialize_dtype(param_typehint) if param_typehint else "_empty",
+                "annotation": (
+                    serialize_dtype(param_typehint)
+                    if param_typehint is not inspect._empty
+                    else "_empty"
+                ),
             }
         )
     return out

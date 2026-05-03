@@ -7,9 +7,13 @@ from bec_lib import messages
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 from bec_lib.scan_input_validator import ScanInputValidator
-from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
+from bec_lib.signature_serializer import serialize_dtype
 
 from .scans.legacy_scans import RequestBase, ScanArgType, ScanBase, unpack_scan_args
+from .scans.scan_argument_modifier import (
+    apply_scan_argument_defaults,
+    scan_signature_with_modifiers,
+)
 from .scans.scan_base import ScanBase as ScanBaseV4
 
 logger = bec_logger.logger
@@ -118,6 +122,9 @@ class ScanAssembler:
         resolved_args, resolved_kwargs = self.input_validator.validate(
             scan, scan_info, args, kwargs
         )
+        resolved_kwargs = apply_scan_argument_defaults(
+            scan_cls, scan_info["signature"], resolved_args, resolved_kwargs
+        )
 
         scan_instance = scan_cls(
             *resolved_args,
@@ -183,7 +190,7 @@ class ScanAssembler:
                 scan_cls, "arg_bundle_size", {"bundle": 0, "min": None, "max": None}
             ),
             "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
-            "signature": signature_to_dict(scan_cls.__init__),
+            "signature": scan_signature_with_modifiers(scan_cls),
         }
 
     def _serialize_arg_input(self, arg_input: dict) -> dict[str, str | dict | list]:

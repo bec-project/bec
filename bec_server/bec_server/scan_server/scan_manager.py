@@ -18,6 +18,10 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import AvailableResourceMessage, ErrorInfo
 from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
+from bec_server.scan_server.scans.scan_argument_modifier import (
+    scan_doc_with_modifiers,
+    scan_signature_with_modifiers,
+)
 
 from . import scans as scans_v4_module
 from .scans import legacy_scans as scans_module
@@ -134,7 +138,9 @@ class ScanManager:
                 base_cls = "ScanBaseV4"
 
             self.scan_dict[scan_cls.scan_name] = scan_cls
-            gui_config = self.validate_gui_config(scan_cls)
+            gui_config = (
+                self.validate_gui_config(scan_cls) if hasattr(scan_cls, "gui_config") else {}
+            )
             gui_visibility = {}
             if hasattr(scan_cls, "gui_visibility"):
                 gui_visibility = scan_cls.gui_visibility  # type: ignore
@@ -147,37 +153,40 @@ class ScanManager:
                 "arg_input": self.convert_arg_input(scan_cls.arg_input),
                 "required_kwargs": getattr(scan_cls, "required_kwargs", []),
                 "arg_bundle_size": scan_cls.arg_bundle_size,
-                "doc": scan_cls.__doc__ or scan_cls.__init__.__doc__,
-                "signature": signature_to_dict(scan_cls.__init__),
+                "doc": scan_doc_with_modifiers(scan_cls),
+                "signature": scan_signature_with_modifiers(scan_cls),
                 "gui_visibility": gui_visibility,
                 "gui_config": gui_config,  # deprecated! - should be removed
             }
 
-    def validate_gui_config(self, scan_cls) -> dict:
+    def validate_gui_config(self, scan_cls, gui_config_override: dict | None = None) -> dict:
         """
         Validate the gui_config of the scan class
 
         Args:
             scan_cls: class
+            gui_config_override (dict | None): Optional raw gui_config mapping to validate
+                instead of ``scan_cls.gui_config``.
 
         Returns:
             dict: gui_config
         """
 
-        if not hasattr(scan_cls, "gui_config"):
+        if gui_config_override is None and not hasattr(scan_cls, "gui_config"):
             return {}
-        if not isinstance(scan_cls.gui_config, GUIConfig) and not isinstance(
-            scan_cls.gui_config, dict
-        ):
+        gui_config = scan_cls.gui_config if gui_config_override is None else gui_config_override
+        if not isinstance(gui_config, GUIConfig) and not isinstance(gui_config, dict):
             logger.error(
                 f"Invalid gui_config for {scan_cls.scan_name}. gui_config must be of type GUIConfig or dict."
             )
             return {}
-        gui_config = (
-            GUIConfig.from_dict(scan_cls)
-            if isinstance(scan_cls.gui_config, dict)
-            else scan_cls.gui_config
-        )
+        if isinstance(gui_config, dict):
+            original_gui_config = getattr(scan_cls, "gui_config", None)
+            try:
+                scan_cls.gui_config = gui_config
+                gui_config = GUIConfig.from_dict(scan_cls)
+            finally:
+                scan_cls.gui_config = original_gui_config
         return gui_config.model_dump()
 
     def convert_arg_input(self, arg_input) -> dict:
