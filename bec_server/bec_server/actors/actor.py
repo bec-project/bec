@@ -3,6 +3,7 @@
 import time
 from abc import ABC, abstractmethod
 from threading import Event
+from typing import Callable
 
 from bec_lib.actors import ActorActionTable
 from bec_lib.client import BECClient
@@ -59,10 +60,14 @@ class SubscriptionActor(ActorBase):
         logger.info(f"Setting up {self.__class__.__name__}: {self._endpoints}.")
         for endpoint in self._endpoints:
             logger.info(f"Connecting {self.__class__.__name__} to '{endpoint.endpoint}'")
-            client.connector.register(endpoint, cb=self.evaluate)
+            for cb in self.default_monitor_callbacks():
+                client.connector.register(endpoint, cb=cb)
 
     def default_monitor_endpoints(self) -> set[EndpointInfo]:
         return set()
+
+    def default_monitor_callbacks(self) -> list[Callable]:
+        return [self.evaluate]
 
     def evaluate(self, *_, **__):
         logger.info(f"{self.__class__.__name__} triggered")
