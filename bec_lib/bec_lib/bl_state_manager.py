@@ -48,7 +48,7 @@ class BeamlineStateGet(TypedDict):
     TypedDict for the return value of the get method of a beamline state client.
     """
 
-    status: str
+    status: messages.BlStateStatus
     label: str
 
 
@@ -199,6 +199,16 @@ class BeamlineStateManager:
         if state_name in self._states:
             self._delete_state(state_name)
             self._publish_states()
+
+    def get_status_by_name(self, name: str) -> messages.BlStateStatus | None:
+        """
+        Get current value of a given state, or None if it does not exist.
+        Args:
+            state_name (str): The name of the state for which to get the value.
+        """
+        if not isinstance(state := getattr(self, name, None), BeamlineStateClientBase):
+            return
+        return state.get()["status"]
 
     def show_all(self):
         """

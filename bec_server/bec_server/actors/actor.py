@@ -3,12 +3,13 @@
 import time
 from abc import ABC, abstractmethod
 from threading import Event
+from typing import Callable
 
 from bec_lib.actors import ActorActionTable
 from bec_lib.client import BECClient
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import ProcedureWorkerStatus
+from bec_lib.messages import BeamlineStateMessage, BlStateStatus, ProcedureWorkerStatus
 from bec_server.procedures.oop_worker_base import push_status
 
 logger = bec_logger.logger
@@ -70,10 +71,14 @@ class SubscriptionActor(ActorBase):
         logger.info(f"Setting up {self.__class__.__name__}: {self._endpoints}.")
         for endpoint in self._endpoints:
             logger.info(f"Connecting {self.__class__.__name__} to '{endpoint.endpoint}'")
-            client.connector.register(endpoint, cb=self.evaluate)
+            for cb in self.default_monitor_callbacks():
+                client.connector.register(endpoint, cb=cb)
 
     def default_monitor_endpoints(self) -> set[EndpointInfo]:
         return set()
+
+    def default_monitor_callbacks(self) -> list[Callable]:
+        return [self.evaluate]
 
     def evaluate(self, *_, **__):
         if (now := time.monotonic()) < self.last_evaluated + self.min_delay_s:
@@ -88,6 +93,54 @@ class SubscriptionActor(ActorBase):
             self.stop_event.wait()
         except KeyboardInterrupt:
             self.push_status(ProcedureWorkerStatus.IDLE)
+
+
+class BlStateActor(SubscriptionActor):
+    """
+    Base for actors which respond to changes in beamline states.
+
+    If all current values of states in state_table match the value in the table,
+    self.all_match_action() is called. If not, self.some_mismatch_action() is called.
+    """
+
+    state_table: dict[str, BlStateStatus]
+
+    def __init__(self, client: BECClient, name: str, exec_id: str):
+        self.action_table = {
+            self.all_states_match: self.all_match_action,
+            self.not_all_states_match: self.some_mismatch_action,
+        }
+        super().__init__(client, name, exec_id)
+        self.state_cache: dict[str, BlStateStatus] = {}
+        for state in self.state_table:
+            status = self.client.beamline_states.get_status_by_name(state)
+            if status is None:
+                logger.warning(f"Beamline state actor could not get the status of {state}")
+                continue
+            self.state_cache[state] = status
+
+    def all_states_match(self, client: BECClient):
+        for state, status in self.state_table.items():
+            if self.state_cache.get(state) != status:
+                return False
+            return True
+
+    def not_all_states_match(self, client: BECClient):
+        return not self.all_states_match(client)
+
+    def all_match_action(self, client: BECClient):
+        pass
+
+    def some_mismatch_action(self, client: BECClient):
+        pass
+
+    def default_monitor_endpoints(self) -> set[EndpointInfo]:
+        return {MessageEndpoints.beamline_state(state) for state in self.state_table}
+
+    def evaluate(self, msg_dict: dict):
+        msg: BeamlineStateMessage = msg_dict["data"]
+        self.state_cache[msg.name] = msg.status
+        return super().evaluate()
 
 
 class PollingActor(ActorBase):
