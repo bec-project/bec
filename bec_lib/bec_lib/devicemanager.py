@@ -439,10 +439,11 @@ class DeviceContainer(dict):
 
         # pylint: disable=protected-access
         for dev in self.values():
+            status = "enabled" if dev.enabled else "[red]disabled[/red]"
             table.add_row(
                 dev.name,
                 dev._config.get("description", dev.name),
-                "enabled" if dev.enabled else "disabled",
+                status,
                 str(dev.read_only),
                 str(dev.software_trigger),
                 dev._config.get("deviceClass"),
