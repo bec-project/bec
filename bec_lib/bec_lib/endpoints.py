@@ -1680,6 +1680,15 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def builtin_actor_notification() -> EndpointInfo:
+        endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/state_change"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.BuiltinActorStateChangeMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def gui_registry_state(gui_id: str):
         """
         Endpoint for GUI registry state. This endpoint is used to publish the GUI registry state

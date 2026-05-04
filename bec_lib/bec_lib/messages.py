@@ -2005,6 +2005,9 @@ class GameLeaderboardMessage(BECMessage):
     leaderboard: list[GameScoreMessage]
 
 
+BlStateStatus = Literal["valid", "invalid", "warning", "unknown"]
+
+
 class BeamlineStateMessage(BECMessage):
     """
     Message for beamline state updates
@@ -2017,7 +2020,7 @@ class BeamlineStateMessage(BECMessage):
 
     msg_type: ClassVar[str] = "beamline_state_message"
     name: str
-    status: Literal["valid", "invalid", "warning", "unknown"]
+    status: BlStateStatus
     label: str
     timestamp: float = Field(default_factory=time.time)
 
@@ -2049,6 +2052,11 @@ class AvailableBeamlineStatesMessage(BECMessage):
 
     msg_type: ClassVar[str] = "beamline_state_update_message"
     states: list[BeamlineStateConfig]
+
+
+class BuiltinActorStateChangeMessage(BECMessage):
+    msg_type: ClassVar[str] = "actor_start_request"
+    actor_name: str
 
 
 class ActorStartRequestMessage(BECMessage):
