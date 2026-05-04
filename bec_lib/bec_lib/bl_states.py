@@ -1,11 +1,15 @@
+"""Module defining beamline states and their evaluation logic."""
+
 from __future__ import annotations
 
 import functools
 import keyword
 import traceback
 from abc import ABC, abstractmethod
-from typing import Callable, ClassVar, Generic, Type, TypeVar, cast
+from dataclasses import dataclass
+from typing import Any, Callable, ClassVar, Generic, Literal, Type, TypeVar, cast
 
+import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
 from bec_lib import messages
@@ -119,6 +123,61 @@ class DeviceWithinLimitsStateConfig(DeviceStateConfig):
     low_limit: float | None = None
     high_limit: float | None = None
     tolerance: float = 0.1
+
+
+class SignalConfig(BaseModel):
+    """Target value for a signal inside a named machine state."""
+
+    value: float | int | str | bool
+    abs_tol: float = 0.0
+
+
+class DeviceConfig(BaseModel):
+    """Configuration for a device inside a named machine state."""
+
+    abs_tol: float = 0.0
+    value: float | int | str | bool | None = None
+    low_limit: SignalConfig | None = None
+    high_limit: SignalConfig | None = None
+    signals: dict[str, SignalConfig] | None = None
+
+    @model_validator(mode="after")
+    def validate_config(self) -> DeviceConfig:
+        """
+        Validate that either value, low_limit, high_limit, or signals are provided.
+        """
+        if (
+            self.value is None
+            and self.low_limit is None
+            and self.high_limit is None
+            and self.signals is None
+        ):
+            raise ValueError(
+                "At least one of value, low_limit, high_limit, or signals must be provided."
+            )
+        return self
+
+
+class SubDeviceStateConfig(BaseModel):
+    """
+    Configuration for a sub-state with a specific label.
+    This is a device/signal mappping to either a DeviceConfig or SignalConfig.
+    """
+
+    devices: dict[str, DeviceConfig | SignalConfig]
+    transition_metadata: dict[str, Any] | None = None
+
+
+class AggregatedStateConfig(BeamlineStateConfig):
+    """
+    Configuration for a state machine driven by multiple device signals.
+
+    Keys of the states dictionary are the labels of the different states.
+    """
+
+    state_type: ClassVar[str] = "AggregatedState"
+
+    states: dict[str, SubDeviceStateConfig]
 
 
 C = TypeVar("C", bound=BeamlineStateConfig)
@@ -320,6 +379,366 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
         """
         msg: messages.DeviceMessage = msg_obj.value  # type: ignore ; we know it's a DeviceMessage
         return self.evaluate(msg)
+
+
+SignalSource = TypeVar("SignalSource", bound=Literal["readback", "configuration", "limits"])
+
+
+@dataclass(frozen=True)
+class ResolvedStateSignal:
+    label: str
+    device_name: str
+    signal_name: str
+    expected_value: float | int | str | bool
+    abs_tolerance: float | int
+    source: SignalSource
+
+
+class AggregatedState(BeamlineState[AggregatedStateConfig]):
+    """Beamline state that infers the current named state from multiple device signals."""
+
+    CONFIG_CLASS = AggregatedStateConfig
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Mapping from signal updates to affected state labels, used for efficient evaluation when a signal update is received
+        self._signal_info_to_labels: dict[tuple[str, SignalSource, str], set[str]] = {}
+        # Mapping from state labels to the list of signal requirements that define that state
+        self._requirements_for_label: dict[str, list[ResolvedStateSignal]] = {}
+        # Set of subscriptions to signal updates
+        self._subscriptions: set[tuple[str, SignalSource]] = set()
+        # Cache of the latest signal values
+        self._signal_value_cache: dict[tuple[str, SignalSource, str], Any] = {}
+        # List of currently active state labels
+        self._current_labels: list[str] = []
+
+    @staticmethod
+    def _endpoint(device: str, source: SignalSource):
+        """Static method to get the appropriate message endpoint based on the signal source."""
+        if source == "readback":
+            return MessageEndpoints.device_readback(device)
+        if source == "configuration":
+            return MessageEndpoints.device_read_configuration(device)
+        if source == "limits":
+            return MessageEndpoints.device_limits(device)
+        raise ValueError(
+            f"Invalid signal source '{source}', please use 'readback', 'configuration', or 'limits'."
+        )
+
+    def _get_device_manager(self):
+        if self.device_manager is None:
+            # pylint: disable=import-outside-toplevel
+            from bec_lib.client import BECClient
+
+            bec = BECClient()
+            return bec.device_manager
+        return self.device_manager
+
+    @staticmethod
+    def _get_signal_source(signal_info: dict[str, Any], error_prefix: str) -> SignalSource:
+        kind_str = str(signal_info.get("kind_str", "")).lower()
+        if "hinted" in kind_str or "normal" in kind_str:
+            return "readback"
+        if "config" in kind_str:
+            return "configuration"
+        raise ValueError(
+            f"{error_prefix} Unsupported kind: '{kind_str}' for signal : \n {yaml.dump(signal_info, indent=4)}"
+        )
+
+    @staticmethod
+    def _resolve_signal(
+        device_name: str, signal_name: str, device_manager: DeviceManagerBase, error_prefix: str
+    ) -> tuple[str, SignalSource]:
+        devices = device_manager.devices
+        try:
+            if not isinstance(device_name, str):
+                raise ValueError(
+                    f"{error_prefix} Device name must be a string, got {type(device_name)}"
+                )
+            device_obj: DeviceBase = devices[device_name]
+        except KeyError:
+            raise ValueError(f"{error_prefix} Device '{device_name}' not found.") from None
+
+        # Special handling for limits, as they are not regular signals.
+        if signal_name in ["low_limit", "low_limit_travel"]:
+            return "low", "limits"
+        if signal_name in ["high_limit", "high_limit_travel"]:
+            return "high", "limits"
+
+        signal_info = None
+        # This case is relevant if we are looking at a Signal directly
+        if device_name == signal_name and len(device_obj.root._info["signals"]) == 0:
+            signal_info = {"obj_name": signal_name, "kind_str": "hinted"}
+        # Case where we have a signal specified as a dotted name, e.g.
+        elif "." in signal_name:
+            try:
+                signal_obj = devices[signal_name]
+            except AttributeError:
+                raise ValueError(
+                    f"{error_prefix} Signal '{signal_name}' not found for device '{device_name}'."
+                ) from None
+            if signal_obj.parent != device_obj:
+                raise ValueError(
+                    f"{error_prefix} Signal '{signal_name}' does not belong to device '{device_name}'."
+                )
+            signal_component = ".".join(signal_name.split(".")[1:])
+            signal_info = device_obj.root._info["signals"].get(signal_component)
+        # Case where the signal is specified as the signal
+        else:
+            signal_info = device_obj.root._info["signals"].get(signal_name)
+            if signal_info is None:
+                for candidate in device_obj.root._info["signals"].values():
+                    if candidate.get("obj_name") == signal_name:
+                        signal_info = candidate
+                        break
+
+        if signal_info is None:
+            raise ValueError(
+                f"{error_prefix} Signal '{signal_name}' not found for device '{device_name}'."
+            )
+
+        obj_name = signal_info.get("obj_name")
+        signal_source = AggregatedState._get_signal_source(signal_info, error_prefix)
+        return obj_name, signal_source
+
+    @staticmethod
+    def get_state_requirements(
+        label: str,
+        state_config: SubDeviceStateConfig,
+        device_manager: DeviceManagerBase,
+        error_prefix: str,
+    ) -> list[ResolvedStateSignal]:
+        state_requirements: list[ResolvedStateSignal] = []
+        for device_name, config in state_config.devices.items():
+            if isinstance(config, SignalConfig):
+                state_requirements.append(
+                    AggregatedState._build_requirement_for_signal(
+                        device_name,
+                        device_name,
+                        config.value,
+                        config.abs_tol,
+                        label,
+                        device_manager,
+                        error_prefix,
+                    )
+                )
+            elif isinstance(config, DeviceConfig):
+                # If a value is specified for the device, add it as a requirement
+                if config.value is not None:
+                    state_requirements.append(
+                        AggregatedState._build_requirement_for_signal(
+                            device_name,
+                            device_name,
+                            config.value,
+                            config.abs_tol,
+                            label,
+                            device_manager,
+                            error_prefix,
+                        )
+                    )
+                if config.low_limit is not None:
+                    state_requirements.append(
+                        AggregatedState._build_requirement_for_signal(
+                            device_name,
+                            "low_limit",
+                            config.low_limit.value,
+                            config.low_limit.abs_tol,
+                            label,
+                            device_manager,
+                            error_prefix,
+                        )
+                    )
+                if config.high_limit is not None:
+                    state_requirements.append(
+                        AggregatedState._build_requirement_for_signal(
+                            device_name,
+                            "high_limit",
+                            config.high_limit.value,
+                            config.high_limit.abs_tol,
+                            label,
+                            device_manager,
+                            error_prefix,
+                        )
+                    )
+                for signal_name, signal_config in (config.signals or {}).items():
+                    state_requirements.append(
+                        AggregatedState._build_requirement_for_signal(
+                            device_name,
+                            signal_name,
+                            signal_config.value,
+                            signal_config.abs_tol,
+                            label,
+                            device_manager,
+                            error_prefix,
+                        )
+                    )
+        return state_requirements
+
+    def _build_rules(self) -> None:
+        self._signal_info_to_labels.clear()
+        self._requirements_for_label.clear()
+        self._subscriptions.clear()
+        for label, device_configs in self.config.states.items():
+            state_requirements: list[ResolvedStateSignal] = AggregatedState.get_state_requirements(
+                label, device_configs, self._get_device_manager(), self._error_prefix
+            )
+            for requirement in state_requirements:
+                device_name = requirement.device_name
+                signal_name = requirement.signal_name
+                source = requirement.source
+                self._subscriptions.add((device_name, source))
+                self._signal_info_to_labels.setdefault(
+                    (device_name, source, signal_name), set()
+                ).add(label)
+            self._requirements_for_label[label] = state_requirements
+
+    @staticmethod
+    def _build_requirement_for_signal(
+        device_name: str,
+        signal_name: str,
+        value: Any,
+        abs_tol: float,
+        label: str,
+        device_manager: DeviceManagerBase,
+        error_prefix: str,
+    ) -> ResolvedStateSignal:
+        resolved_signal_name, source = AggregatedState._resolve_signal(
+            device_name, signal_name, device_manager, error_prefix
+        )
+
+        return ResolvedStateSignal(
+            label=label,
+            device_name=device_name,
+            signal_name=resolved_signal_name,
+            expected_value=value,
+            abs_tolerance=abs_tol,
+            source=source,
+        )
+
+    def start(self) -> None:
+        if self.started:
+            return
+
+        if self.connector is None:
+            raise RuntimeError("Redis connector is not set.")
+
+        try:
+            msg = None
+            self._build_rules()
+            affected_labels = self._fill_cache()
+            msg = self.evaluate(affected_labels=affected_labels)
+        except Exception as exc:
+            self._handle_state_exception(exc)
+
+        if msg is not None:
+            self._emit_state(msg)
+        for device, source in self._subscriptions:
+            self.connector.register(
+                self._endpoint(device, source),
+                cb=self._update_aggregated_state,
+                device=device,
+                source=source,
+            )
+        super().start()
+
+    def _fill_cache(self) -> set[str]:
+        affected_labels: set[str] = set()
+        for device, source in self._subscriptions:
+            endpoint = self._endpoint(device, source)
+            msg = self.connector.get(endpoint)
+            if msg is not None:
+                affected_labels.update(self._cache_message(device, source, msg))
+        return affected_labels
+
+    def _cache_message(
+        self, device: str, source: SignalSource, msg: messages.DeviceMessage
+    ) -> set[str]:
+        affected_labels: set[str] = set()
+        for signal_name, signal_data in msg.signals.items():
+            key = (device, source, signal_name)
+            labels = self._signal_info_to_labels.get(key)
+            if labels is None:  # signal not relevant for any state
+                continue
+            self._signal_value_cache[key] = signal_data.get("value")
+            affected_labels.update(labels)
+        return affected_labels
+
+    def stop(self) -> None:
+        if not self.started:
+            return
+        if self.connector is not None:
+            for device, source in self._subscriptions:
+                self.connector.unregister(
+                    self._endpoint(device, source), cb=self._update_aggregated_state
+                )
+        super().stop()
+
+    def _update_aggregated_state(
+        self, msg_obj: MessageObject, device: str, source: SignalSource, **_kwargs
+    ) -> None:
+        try:
+            msg: messages.DeviceMessage = msg_obj.value  # type: ignore ; we know it's a DeviceMessage
+            affected_labels = self._cache_message(device, source, msg)
+            if affected_labels:
+                msg = self.evaluate(affected_labels=affected_labels)
+                if msg is not None:
+                    self._emit_state(msg)
+        except Exception as exc:
+            self._handle_state_exception(exc)
+
+    def evaluate(
+        self, affected_labels: set[str] | None = None
+    ) -> messages.BeamlineStateMessage | None:
+        if affected_labels is None:
+            return None
+        # We need to always extend the affected labels with the current labels,
+        # as the signal that updated might be not relevant for the currently active state,
+        # but the state should still be checked for validity.
+        affected_labels.update(self._current_labels)
+        matching_labels = [label for label in affected_labels if self._label_matches(label)]
+        if matching_labels:
+            self._current_labels = matching_labels
+            state_msg = messages.BeamlineStateMessage(
+                name=self.config.name, status="valid", label="|".join(matching_labels)
+            )
+            return state_msg
+
+        self._current_labels = []
+        state_msg = messages.BeamlineStateMessage(
+            name=self.config.name, status="invalid", label="No matching state"
+        )
+        return state_msg
+
+    def _label_matches(self, label: str) -> bool:
+        requirements = self._requirements_for_label.get(label, [])
+        return bool(requirements) and all(
+            self._requirement_matches(requirement) for requirement in requirements
+        )
+
+    def _requirement_matches(self, requirement: ResolvedStateSignal) -> bool:
+        key = (requirement.device_name, requirement.source, requirement.signal_name)
+        cached_value = self._signal_value_cache.get(key, None)
+        if cached_value is None:
+            return False
+
+        try:
+            # Cast to float to make sure comparison with abs works as expected.
+            value = float(cached_value)
+            expected_value = float(requirement.expected_value)
+            return abs(value - expected_value) <= requirement.abs_tolerance
+        # Catch TypeError and ValueError in case the value is not a number or cannot be cast to float,
+        # in that case we fall back to exact equality.
+        except (TypeError, ValueError):
+            try:
+                result = cached_value == requirement.expected_value
+            except (TypeError, ValueError):
+                return False
+            # In case this comparison runs on comparing two arrays.
+            # We do not consider this comparsion as valid currently.
+            try:
+                return bool(result)
+            except (TypeError, ValueError):
+                return False
 
 
 class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
