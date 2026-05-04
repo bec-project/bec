@@ -17,6 +17,10 @@ class ScanArgument(BaseModel):
     expert: Annotated[bool, Field(description="Whether the argument is for expert users only")] = (
         False
     )
+    hidden: Annotated[
+        bool, Field(description="Whether the argument should be hidden in the UI")
+    ] = False
+    example: Annotated[Any | None, Field(description="Example value for the argument")] = None
     units: Annotated[
         str | pint.Unit | PlainQuantity[Any] | None, Field(description="Units of the argument")
     ] = None
