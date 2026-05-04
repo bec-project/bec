@@ -440,19 +440,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
     if device_base_class == "positioner":
         signals = positioner_info_mock(device_name)["device_info"]["signals"]
     elif device_base_class == "signal":
-        signals = {
-            device_name: {
-                "metadata": {
-                    "connected": True,
-                    "read_access": True,
-                    "write_access": False,
-                    "timestamp": 0,
-                    "status": None,
-                    "severity": None,
-                    "precision": None,
-                }
-            }
-        }
+        signals = {}
     else:
         signals = {}
     dev_info = {

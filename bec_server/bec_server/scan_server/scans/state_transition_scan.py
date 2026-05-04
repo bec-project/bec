@@ -25,7 +25,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AlarmMessage, ErrorInfo
 from bec_server.scan_server.scans.scan_modifier import scan_hook
-from bec_server.scan_server.scans.scans_v4 import ScanBase
+from bec_server.scan_server.scans.scan_base import ScanBase
 
 if TYPE_CHECKING:
     from bec_lib.bl_states import AggregatedStateConfig, ResolvedStateSignal
