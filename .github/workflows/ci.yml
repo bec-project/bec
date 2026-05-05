@@ -83,7 +83,7 @@ jobs:
 
   upload-coverage:
     needs: [unit-test, end2end-test]
-    if: needs.check_pr_status.outputs.branch-pr == ''
+    if: needs.check_pr_status.outputs.branch-pr == '' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
