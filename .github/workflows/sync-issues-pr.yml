@@ -6,6 +6,7 @@ on:
 
 jobs:
   sync-project:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
 
     permissions:
@@ -14,11 +15,11 @@ jobs:
       contents: read
 
     env:
-        PROJECT_NUMBER: 3 # BEC Project
-        ORG: 'bec-project'
-        REPO: 'bec'
-        TOKEN: ${{ secrets.ADD_ISSUE_TO_PROJECT }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
+      PROJECT_NUMBER: 3 # BEC Project
+      ORG: "bec-project"
+      REPO: "bec"
+      TOKEN: ${{ secrets.ADD_ISSUE_TO_PROJECT }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
 
     steps:
       - name: Set up python environment
