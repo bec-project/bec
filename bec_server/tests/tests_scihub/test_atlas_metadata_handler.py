@@ -87,23 +87,17 @@ def test_atlas_metadata_handler(atlas_connector):
 
 def test_handle_account_info_valid(atlas_connector):
     msg = {"data": messages.VariableMessage(value="account2")}
-    received = []
-    atlas_connector.connector.register(
-        MessageEndpoints.dynamic_metric("active_account"),
-        cb=lambda msg: received.append(msg.value),
-        start_thread=False,
-    )
-    with mock.patch.object(
-        atlas_connector.metadata_handler, "send_atlas_update"
-    ) as mock_send_update:
+    with (
+        mock.patch.object(
+            atlas_connector.metadata_handler, "send_atlas_update"
+        ) as mock_send_update,
+        mock.patch.object(atlas_connector.connector, "publish_metrics") as mock_publish_metrics,
+    ):
         atlas_connector.metadata_handler._handle_account_info(
             msg, parent=atlas_connector.metadata_handler
         )
         mock_send_update.assert_called_once()
-    atlas_connector.connector.poll_messages(timeout=1)
-    dynamic_metric = received[-1]
-    assert isinstance(dynamic_metric, messages.DynamicMetricMessage)
-    assert dynamic_metric.metrics["active_account"].value == "account2"
+    mock_publish_metrics.assert_called_once_with("active_account", {"active_account": "account2"})
 
 
 def test_handle_account_info_same_account(atlas_connector):
@@ -194,13 +188,17 @@ def test_update_local_account_new_account(atlas_connector):
     handler = atlas_connector.metadata_handler
     handler._account = "old_account"
     deployment_info = create_dummy_deployment_info()
-    handler.update_local_account(deployment_info)
+    with mock.patch.object(
+        handler.atlas_connector.connector, "publish_metrics"
+    ) as mock_publish_metrics:
+        handler.update_local_account(deployment_info)
 
     # Verify that account update was sent
     stored_account = handler.atlas_connector.connector.get_last(MessageEndpoints.account())
     assert stored_account is not None
     assert isinstance(stored_account["data"], messages.VariableMessage)
     assert stored_account["data"].value == "p12345"
+    mock_publish_metrics.assert_called_once_with("active_account", {"active_account": "p12345"})
 
 
 def test_update_local_account_same_account(atlas_connector):
@@ -225,7 +223,7 @@ def test_update_local_account_same_account_does_not_emit_metric(atlas_connector)
     handler._account = "p12345"
     deployment_info = create_dummy_deployment_info()
 
-    with mock.patch.object(handler.atlas_connector.connector, "set_and_publish") as mock_publish:
+    with mock.patch.object(handler.atlas_connector.connector, "publish_metrics") as mock_publish:
         handler.update_local_account(deployment_info)
 
     mock_publish.assert_not_called()

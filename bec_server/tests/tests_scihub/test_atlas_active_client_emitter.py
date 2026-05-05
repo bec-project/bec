@@ -43,30 +43,24 @@ def test_get_active_client_metrics_filters_internal_services(atlas_connector):
 
 def test_handle_service_status_emits_active_client_metric(atlas_connector):
     emitter = atlas_connector.active_client_emitter
-    received = []
     service_status = {
         "BECIPythonClient/client-1": create_status_message(
             "BECIPythonClient/client-1", hostname="client-host-1"
         ),
         "ScanServer": create_status_message("ScanServer", hostname="server-host"),
     }
-    atlas_connector.connector.register(
-        MessageEndpoints.dynamic_metric("active_clients"),
-        cb=lambda msg: received.append(msg.value),
-        start_thread=False,
-    )
 
-    with mock.patch.object(
-        type(atlas_connector.scihub), "service_status", new_callable=mock.PropertyMock
-    ) as mock_service_status:
+    with (
+        mock.patch.object(
+            type(atlas_connector.scihub), "service_status", new_callable=mock.PropertyMock
+        ) as mock_service_status,
+        mock.patch.object(atlas_connector.connector, "publish_metrics") as mock_publish_metrics,
+    ):
         mock_service_status.return_value = service_status
         emitter._handle_service_status(None)
-        atlas_connector.connector.poll_messages(timeout=1)
-
-    dynamic_metric = received[-1]
-    assert isinstance(dynamic_metric, messages.DynamicMetricMessage)
-    assert dynamic_metric.metrics["BECIPythonClient/client-1"].value == "client-host-1"
-    assert "ScanServer" not in dynamic_metric.metrics
+    mock_publish_metrics.assert_called_once_with(
+        "active_clients", {"BECIPythonClient/client-1": "client-host-1"}
+    )
 
 
 def test_handle_service_status_does_not_emit_unchanged_metric(atlas_connector):
