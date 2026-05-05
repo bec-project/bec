@@ -36,29 +36,34 @@ def test_get_active_client_metrics_filters_internal_services(atlas_connector):
     ) as mock_service_status:
         mock_service_status.return_value = service_status
         assert emitter._get_active_client_metrics() == {
-            "BECIPythonClient/client-1": messages._StrDynamicMetricValue(value="client-host-1"),
-            "BECClient/client-2": messages._StrDynamicMetricValue(value="client-host-2"),
+            "BECIPythonClient/client-1": "client-host-1",
+            "BECClient/client-2": "client-host-2",
         }
 
 
 def test_handle_service_status_emits_active_client_metric(atlas_connector):
     emitter = atlas_connector.active_client_emitter
+    received = []
     service_status = {
         "BECIPythonClient/client-1": create_status_message(
             "BECIPythonClient/client-1", hostname="client-host-1"
         ),
         "ScanServer": create_status_message("ScanServer", hostname="server-host"),
     }
+    atlas_connector.connector.register(
+        MessageEndpoints.dynamic_metric("active_clients"),
+        cb=lambda msg: received.append(msg.value),
+        start_thread=False,
+    )
 
     with mock.patch.object(
         type(atlas_connector.scihub), "service_status", new_callable=mock.PropertyMock
     ) as mock_service_status:
         mock_service_status.return_value = service_status
         emitter._handle_service_status(None)
+        atlas_connector.connector.poll_messages(timeout=1)
 
-    dynamic_metric = atlas_connector.connector.get(
-        MessageEndpoints.dynamic_metric("active_clients")
-    )
+    dynamic_metric = received[-1]
     assert isinstance(dynamic_metric, messages.DynamicMetricMessage)
     assert dynamic_metric.metrics["BECIPythonClient/client-1"].value == "client-host-1"
     assert "ScanServer" not in dynamic_metric.metrics
@@ -77,7 +82,7 @@ def test_handle_service_status_does_not_emit_unchanged_metric(atlas_connector):
     ) as mock_service_status:
         mock_service_status.return_value = service_status
         emitter._emit_active_client_metrics()
-        with mock.patch.object(atlas_connector.connector, "set_and_publish") as mock_publish:
+        with mock.patch.object(atlas_connector.connector, "publish_metrics") as mock_publish:
             emitter._handle_service_status(None)
 
     mock_publish.assert_not_called()

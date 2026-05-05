@@ -181,11 +181,8 @@ class AtlasMetadataHandler:
         logger.info(f"Updated account to: {self._account}")
 
     def _emit_current_account_metric(self, account: str) -> None:
-        metric_msg = messages.DynamicMetricMessage(
-            metrics={"active_account": messages._StrDynamicMetricValue(value=account)}
-        )
-        self.atlas_connector.connector.set_and_publish(
-            MessageEndpoints.dynamic_metric("active_account"), metric_msg
+        self.atlas_connector.connector.publish_metrics(
+            "active_account", {"active_account": account}
         )
 
     def _handle_scan_status(self, msg, **_kwargs) -> None:

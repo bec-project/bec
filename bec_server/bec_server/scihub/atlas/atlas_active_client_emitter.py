@@ -39,12 +39,9 @@ class AtlasActiveClientEmitter:
         if metrics == self._last_active_client_metrics:
             return
         self._last_active_client_metrics = metrics
-        metric_msg = messages.DynamicMetricMessage(metrics=metrics)
-        self.atlas_connector.connector.set_and_publish(
-            MessageEndpoints.dynamic_metric("active_clients"), metric_msg
-        )
+        self.atlas_connector.connector.publish_metrics("active_clients", metrics)
 
-    def _get_active_client_metrics(self) -> dict[str, messages._StrDynamicMetricValue]:
+    def _get_active_client_metrics(self) -> dict[str, str]:
         active_clients = {}
         for service_name, status_msg in self.atlas_connector.scihub.service_status.items():
             if self._is_internal_service(service_name):
@@ -56,7 +53,7 @@ class AtlasActiveClientEmitter:
                 info.hostname if isinstance(info, messages.ServiceInfo) else info.get("hostname")
             )
             if hostname:
-                active_clients[service_name] = messages._StrDynamicMetricValue(value=hostname)
+                active_clients[service_name] = hostname
         return active_clients
 
     @classmethod
