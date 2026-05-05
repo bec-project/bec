@@ -27,7 +27,6 @@ class AtlasMetadataHandler:
 
     def __init__(self, atlas_connector: AtlasConnector) -> None:
         self.atlas_connector = atlas_connector
-        self._scan_status_register = None
         self._account = None
         self._deployment_info: messages.DeploymentInfoMessage | None = None
         self._start_account_subscription()
@@ -59,12 +58,12 @@ class AtlasMetadataHandler:
         )
 
     def _start_scan_subscription(self):
-        self._scan_status_register = self.atlas_connector.connector.register(
+        self.atlas_connector.connector.register(
             MessageEndpoints.scan_status(), cb=self._handle_scan_status
         )
 
     def _start_scan_history_subscription(self):
-        self._scan_history_register = self.atlas_connector.connector.register(
+        self.atlas_connector.connector.register(
             MessageEndpoints.scan_history(), cb=self._handle_scan_history
         )
 
@@ -137,6 +136,7 @@ class AtlasMetadataHandler:
             self.atlas_connector.connector.xadd(
                 MessageEndpoints.account(), {"data": msg}, max_size=1, approximate=False
             )
+            self._emit_current_account_metric(account)
             logger.info(f"Updated local account to: {account}")
 
     def _update_account_if_needed(self):
@@ -175,9 +175,15 @@ class AtlasMetadataHandler:
             # Account is the same as the current one, no need to update
             return
         self._account = msg.value
+        self._emit_current_account_metric(msg.value)
         if emit_update:
             self.send_atlas_update({"account": msg})
         logger.info(f"Updated account to: {self._account}")
+
+    def _emit_current_account_metric(self, account: str) -> None:
+        self.atlas_connector.connector.publish_metrics(
+            "active_account", {"active_account": account}
+        )
 
     def _handle_scan_status(self, msg, **_kwargs) -> None:
         msg = msg.value
@@ -234,5 +240,18 @@ class AtlasMetadataHandler:
         """
         Shutdown the metadata handler
         """
-        if self._scan_status_register:
-            self._scan_status_register.shutdown()
+        self.atlas_connector.connector.unregister(
+            MessageEndpoints.account(), cb=self._handle_account_info
+        )
+        self.atlas_connector.connector.unregister(
+            MessageEndpoints.scan_status(), cb=self._handle_scan_status
+        )
+        self.atlas_connector.connector.unregister(
+            MessageEndpoints.scan_history(), cb=self._handle_scan_history
+        )
+        self.atlas_connector.connector.unregister(
+            MessageEndpoints.message_service_queue(), cb=self._handle_messaging
+        )
+        self.atlas_connector.connector.unregister(
+            MessageEndpoints.user_feedback(), cb=self._handle_feedback
+        )
