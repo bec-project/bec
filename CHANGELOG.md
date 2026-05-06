@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.119.0 (2026-05-06)
+
+### Chores
+
+- Disable codecov for dependabot
+  ([`4768b19`](https://github.com/bec-project/bec/commit/4768b19b8221c2bf99414fa4c4b72c0d8eceab9a))
+
+- Disable pr issue sync for dependabot
+  ([`f6b2bb1`](https://github.com/bec-project/bec/commit/f6b2bb1143d1f9f861a5b71f8738e8c8186b8763))
+
+### Features
+
+- Add scan modifier
+  ([`9fb2f5f`](https://github.com/bec-project/bec/commit/9fb2f5fbcc1767b9cc971e6293ff424d4dc5a630))
+
+### Refactoring
+
+- **devicemanager**: Highlight disabled devices in dev.show_all in red
+  ([`11d8884`](https://github.com/bec-project/bec/commit/11d888412c5783c3c435091661d745e5c7befecf))
+
+
 ## v3.118.2 (2026-05-01)
 
 ### Bug Fixes
