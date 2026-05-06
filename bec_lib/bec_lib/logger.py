@@ -301,6 +301,8 @@ class BECLogger:
 
         def _format_stderr(record):
             level = _update_record(record)
+            if record["extra"].get("deprecation"):
+                return "<level>>>> DEPRECATION: {message}</level>\n"
             return self.get_format(level, is_stderr=True)
 
         if is_stderr:
