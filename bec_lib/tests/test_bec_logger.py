@@ -66,6 +66,14 @@ def test_file_sink_uses_resolved_rotation_policy(logger, tmp_path):
     assert add.call_args.kwargs["rotation"].__func__ == rotator.should_rotate.__func__
 
 
+def test_deprecation_log_has_short_stderr_format(logger):
+    record = {"level": mock.Mock(no=LogLevel.WARNING), "extra": {"deprecation": True}}
+
+    assert logger.formatting(is_stderr=True)(record) == (
+        "<level>>>> DEPRECATION: {message}</level>\n"
+    )
+
+
 @pytest.mark.parametrize(
     "log_level,sink, expected_level",
     [

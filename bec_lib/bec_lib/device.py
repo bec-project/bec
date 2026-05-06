@@ -26,6 +26,7 @@ from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.queue_items import QueueItem
+from bec_lib.utils.deprecation import deprecated
 from bec_lib.utils.import_utils import lazy_import
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -1385,10 +1386,20 @@ class Positioner(AdjustableMixin, Device):
         msg = messages.VariableMessage(value=[self.root.name])
         self.root.parent.parent.connector.send(MessageEndpoints.stop_devices(), msg)
 
+    @deprecated(
+        remove_in_version="5.0",
+        recommendation="If necessary, implement a custom ophyd signal with the desired functionality. For assistance, please contact the BEC team.",
+        stack=1,
+    )
     @rpc
     def settle_time(self):
         pass
 
+    @deprecated(
+        remove_in_version="5.0",
+        recommendation="If necessary, implement a custom ophyd signal with the desired functionality. For assistance, please contact the BEC team.",
+        stack=1,
+    )
     @rpc
     def timeout(self):
         pass
@@ -1396,16 +1407,31 @@ class Positioner(AdjustableMixin, Device):
     def egu(self):
         return self.describe_configuration().get("egu")
 
+    @deprecated(
+        remove_in_version="5.0",
+        recommendation="Use umv, umvr, mv, or mvr methods instead, depending on your use case. For assistance, please contact the BEC team.",
+        stack=1,
+    )
     def move(self, val: float, relative=False):
         return self.root.parent.parent.scans.mv(self, val, relative=relative)
 
     @property
+    @deprecated(
+        remove_in_version="5.0",
+        recommendation="Use the read method or .wm property instead to get the current position of the device. For assistance, please contact the BEC team.",
+        stack=2,
+    )
     def position(self):
         pos_signal = getattr(self, "readback", None) or getattr(self, "user_readback", None)
         if pos_signal:
             return pos_signal.get()
         return self._run(fcn="position")
 
+    @deprecated(
+        remove_in_version="5.0",
+        recommendation="Use the status object returned by the set method to check if the device is still moving. For assistance, please contact the BEC team.",
+        stack=1,
+    )
     @rpc
     def moving(self):
         pass
