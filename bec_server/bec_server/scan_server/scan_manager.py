@@ -82,7 +82,11 @@ class ScanManager:
         to_remove = []
         for name, scan_cls in members:
             is_scan = issubclass(scan_cls, (scans_module.RequestBase, ScanBaseV4))
-            if not is_scan or not scan_cls.scan_name:
+            if (
+                not is_scan
+                or not scan_cls.scan_name
+                or scan_cls in (scans_module.RequestBase, ScanBaseV4)
+            ):
                 logger.debug(f"Ignoring {name}")
                 to_remove.append((name, scan_cls))
         for item in to_remove:
