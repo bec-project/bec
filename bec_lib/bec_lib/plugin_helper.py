@@ -4,6 +4,7 @@ import importlib
 import importlib.metadata
 import inspect
 import json
+import sys
 from functools import cache, lru_cache
 from typing import TYPE_CHECKING, Any, Literal, Type
 
@@ -175,6 +176,26 @@ def plugin_repo_path() -> str:
     if not dist_info.get("dir_info", {}).get("editable", False):
         raise ValueError("Plugin repo must be installed in editable mode")
     return dist_info.get("url")[5:]  # cut off "file:" prefix # type: ignore # this must exist
+
+
+def reload_plugin_modules() -> None:
+    """Reload the installed plugin package and all loaded submodules."""
+    logger.info("Reloading plugin modules...")
+    _get_available_plugins.cache_clear()
+    _import_module.cache_clear()
+    get_metadata_schema_registry.cache_clear()
+    try:
+        _plugin_package_name = plugin_package_name()
+    except ValueError:
+        return
+    plugin_module = importlib.import_module(_plugin_package_name)
+    module_names = [
+        name
+        for name in sys.modules
+        if name == plugin_module.__name__ or name.startswith(f"{plugin_module.__name__}.")
+    ]
+    for module_name in sorted(module_names, key=lambda name: name.count("."), reverse=True):
+        importlib.reload(sys.modules[module_name])
 
 
 def _filter_plugins(module) -> bool:

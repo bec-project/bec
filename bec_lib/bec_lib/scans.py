@@ -17,6 +17,7 @@ from toolz import partition
 from typeguard import typechecked
 
 from bec_lib.bec_errors import ScanAbortion
+from bec_lib.callback_handler import EventType
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -172,7 +173,10 @@ class Scans:
         self.parent = parent
         self._available_scans = {}
         self._input_validator = ScanInputValidator(device_manager=self.parent.device_manager)
-        self._import_scans()
+        self.parent.connector.register(
+            MessageEndpoints.available_scans(), cb=self._available_scans_update
+        )
+        self._refresh_available_scans()
         self._scan_group = None
         self._scan_def_id = None
         self._interactive_scan = False
@@ -185,15 +189,44 @@ class Scans:
         self._scan_export = None
         setattr(self.interactive_scan, "__doc__", InteractiveScan.__doc__)
 
-    def _import_scans(self):
-        """Import scans from the scan server"""
+    def _refresh_available_scans(self) -> None:
+        """Refresh scans from the scan server state."""
         available_scans = self.parent.connector.get(MessageEndpoints.available_scans())
         if available_scans is None:
             logger.warning("No scans available. Are redis and the BEC server running?")
             return
+        self._update_available_scans(available_scans, notify=False)
+
+    def _available_scans_update(self, msg) -> None:
+        self._update_available_scans(msg.value, notify=True)
+
+    def _update_available_scans(
+        self, available_scans: messages.AvailableResourceMessage, notify: bool
+    ) -> None:
+        if not isinstance(available_scans, messages.AvailableResourceMessage):
+            logger.error(
+                f"Received invalid message type for available scans: {type(available_scans)}"
+            )
+            return
+
+        existing_scans = self._available_scans
+        removed_scans = {
+            scan_name: scan.run
+            for scan_name, scan in existing_scans.items()
+            if scan_name not in available_scans.resource
+        }
+        updated_scans = {}
+
+        for scan_name in removed_scans:
+            if hasattr(self, scan_name):
+                delattr(self, scan_name)
+
+        self._available_scans = {}
         for scan_name, scan_info in available_scans.resource.items():
-            self._available_scans[scan_name] = ScanObject(scan_name, scan_info, client=self.parent)
-            setattr(self, scan_name, self._available_scans[scan_name].run)
+            scan_object = ScanObject(scan_name, scan_info, client=self.parent)
+            self._available_scans[scan_name] = scan_object
+            updated_scans[scan_name] = scan_object.run
+            setattr(self, scan_name, scan_object.run)
             setattr(getattr(self, scan_name), "__doc__", scan_info.get("doc"))
             setattr(
                 getattr(self, scan_name),
@@ -201,6 +234,23 @@ class Scans:
                 dict_to_signature(
                     self._strip_scan_signature_annotations(scan_info.get("signature"))
                 ),
+            )
+
+        scans_namespace = getattr(self.parent, "scans_namespace", None)
+        if scans_namespace is not None:
+            for scan_name in removed_scans:
+                if hasattr(scans_namespace, scan_name):
+                    delattr(scans_namespace, scan_name)
+            for scan_name, scan_run in updated_scans.items():
+                setattr(scans_namespace, scan_name, scan_run)
+
+        if notify and removed_scans:
+            self.parent.callbacks.run(
+                EventType.NAMESPACE_UPDATE, action="remove", ns_objects=removed_scans
+            )
+        if notify and updated_scans:
+            self.parent.callbacks.run(
+                EventType.NAMESPACE_UPDATE, action="add", ns_objects=updated_scans
             )
 
     @staticmethod
