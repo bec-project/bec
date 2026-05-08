@@ -818,7 +818,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.AvailableResourceMessage,
-            message_op=MessageOp.KEY_VALUE,
+            message_op=MessageOp.SET_PUBLISH,
         )
 
     @staticmethod

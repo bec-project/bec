@@ -1440,12 +1440,12 @@ class ServiceRequestMessage(BECMessage):
     """Message for service requests
 
     Args:
-        action (Literal["restart"]): Action to be executed by the service
+        action (Literal["restart", "reload_scans"]): Action to be executed by the service
         metadata (dict, optional): Metadata. Defaults to None.
     """
 
     msg_type: ClassVar[str] = "service_request_message"
-    action: Literal["restart"]
+    action: Literal["restart", "reload_scans"]
 
 
 class ProcedureRequestMessage(BECMessage):

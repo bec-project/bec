@@ -1,3 +1,6 @@
+import sys
+from unittest import mock
+
 import pytest
 
 import bec_lib
@@ -25,3 +28,39 @@ def test_module_dist_info():
     result = plugin_helper.module_dist_info("bec_lib")
     assert result["dir_info"] == {"editable": True}
     assert result["url"] is not None
+
+
+def test_reload_plugin_modules_reloads_plugin_tree():
+    plugin_module = mock.MagicMock()
+    plugin_module.__name__ = "bec_plugin"
+    plugin_scans_module = mock.MagicMock()
+    plugin_scans_module.__name__ = "bec_plugin.scans"
+    plugin_scan_submodule = mock.MagicMock()
+    plugin_scan_submodule.__name__ = "bec_plugin.scans.custom_scan"
+    importlib_mock = mock.MagicMock()
+    importlib_mock.import_module.return_value = plugin_module
+
+    with (
+        mock.patch("bec_lib.plugin_helper.plugin_package_name", return_value="bec_plugin"),
+        mock.patch.object(plugin_helper, "importlib", importlib_mock),
+        mock.patch(
+            "bec_lib.plugin_helper._get_available_plugins.cache_clear"
+        ) as clear_available_plugins,
+        mock.patch("bec_lib.plugin_helper._import_module.cache_clear") as clear_import_module,
+        mock.patch.dict(
+            sys.modules,
+            {
+                plugin_module.__name__: plugin_module,
+                plugin_scans_module.__name__: plugin_scans_module,
+                plugin_scan_submodule.__name__: plugin_scan_submodule,
+            },
+            clear=False,
+        ),
+    ):
+        plugin_helper.reload_plugin_modules()
+
+    clear_available_plugins.assert_called_once_with()
+    clear_import_module.assert_called_once_with()
+    importlib_mock.reload.assert_any_call(plugin_module)
+    importlib_mock.reload.assert_any_call(plugin_scans_module)
+    importlib_mock.reload.assert_any_call(plugin_scan_submodule)

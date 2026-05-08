@@ -265,12 +265,14 @@ class BECClient(BECService):
             self.connector.lpush(MessageEndpoints.pre_scan_macros(), msg)
 
     def _load_scans(self):
-        self.scans = Scans(self._parent)
+        if not isinstance(self.scans_namespace, SimpleNamespace):
+            self.scans_namespace = SimpleNamespace()
+        if getattr(self, "scans", None) is None:
+            self.scans = Scans(self._parent)
+        else:
+            self.scans._refresh_available_scans()
         builtins.__dict__["scans"] = self.scans
-        self.scans_namespace = SimpleNamespace(
-            scan_def=self.scans.scan_def,
-            **{scan_name: scan.run for scan_name, scan in self.scans._available_scans.items()},
-        )
+        self.scans_namespace.scan_def = self.scans.scan_def
 
     def load_high_level_interface(self, module_name: str) -> None:
         """Load a high level interface module.
@@ -404,6 +406,13 @@ class BECClient(BECService):
         self._load_scans()
         self.device_manager._load_session()
         print("Server restarted successfully.")
+
+    def _request_scan_reload(self):
+        if self.connector is None or self.device_manager is None:
+            raise RuntimeError("Client not initialized. Cannot reload scans.")
+
+        msg = ServiceRequestMessage(action="reload_scans")
+        self.connector.send(MessageEndpoints.service_request(), msg)
 
     def _run_script(self, script_id: str):
         executor = ScriptExecutor(self.connector)

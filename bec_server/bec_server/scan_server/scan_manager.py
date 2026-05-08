@@ -10,7 +10,7 @@ import inspect
 import pkgutil
 from typing import TYPE_CHECKING, Type
 
-from bec_lib import plugin_helper
+from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
@@ -19,6 +19,7 @@ from bec_lib.messages import AvailableResourceMessage, ErrorInfo
 from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
 from bec_server.scan_server.scan_gui_models import GUIConfig
 from bec_server.scan_server.scans.scan_argument_modifier import (
+    get_scan_modifier,
     scan_doc_with_modifiers,
     scan_signature_with_modifiers,
 )
@@ -56,6 +57,9 @@ class ScanManager:
         self.available_scans = {}
         self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
         self._plugins = {}
+        self.parent.connector.register(
+            MessageEndpoints.service_request(), cb=self.handle_reload_scans_request
+        )
         self.update_available_scans()
         self.publish_available_scans()
 
@@ -93,8 +97,19 @@ class ScanManager:
             members.remove(item)
         return members
 
-    def update_available_scans(self):
+    @classmethod
+    def _reload_scan_discovery(cls) -> None:
+        get_scan_modifier.cache_clear()
+        cls.get_available_scans.cache_clear()
+        plugin_helper.reload_plugin_modules()
+
+    def update_available_scans(self, reload: bool = False):
         """load all scans and plugin scans"""
+        if reload:
+            self._reload_scan_discovery()
+
+        self.available_scans = {}
+        self.scan_dict = {}
         members = ScanManager.get_available_scans()
 
         for name, scan_cls in members:
@@ -211,6 +226,12 @@ class ScanManager:
             converted_arg_input[key] = serialize_dtype(dtype)
         return converted_arg_input
 
+    def handle_reload_scans_request(self, msg):
+        message: messages.ServiceRequestMessage = msg.value
+        if message.action == "reload_scans":
+            self.update_available_scans(reload=True)
+            self.publish_available_scans()
+
     @staticmethod
     def _get_scan_plugins() -> dict[str, type]:
         verified_plugins = {}
@@ -244,7 +265,7 @@ class ScanManager:
 
     def publish_available_scans(self):
         """send all available scans to the broker"""
-        self.parent.connector.set(
+        self.parent.connector.set_and_publish(
             MessageEndpoints.available_scans(),
             AvailableResourceMessage(resource=self.available_scans),
         )

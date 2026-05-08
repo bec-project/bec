@@ -2,7 +2,9 @@
 
 import pytest
 
+from bec_lib import messages
 from bec_lib.client import SystemConfig
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.tests.fixtures import bec_client_mock
 
 
@@ -30,3 +32,21 @@ def test_show_all_commands(bec_client_mock, capsys):
     captured = capsys.readouterr()
     assert "User macros" in captured.out
     assert "Scans" in captured.out
+
+
+def test_request_scan_reload(bec_client_mock):
+    client = bec_client_mock
+
+    client._request_scan_reload()
+
+    client.connector.send.assert_called_once_with(
+        MessageEndpoints.service_request(), messages.ServiceRequestMessage(action="reload_scans")
+    )
+
+
+def test_request_scan_reload_requires_initialized_client(bec_client_mock):
+    client = bec_client_mock
+    client.connector = None
+
+    with pytest.raises(RuntimeError, match="Client not initialized. Cannot reload scans."):
+        client._request_scan_reload()

@@ -34,7 +34,6 @@ class ScanAssembler:
         self.connector = self.parent.connector
         self.scan_manager = self.parent.scan_manager
         self.input_validator = ScanInputValidator(device_manager=self.device_manager)
-        self.scan_modifier_cls = get_scan_modifier()
 
     def is_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
         """Check if the scan queue message would construct a new scan.
@@ -132,7 +131,7 @@ class ScanAssembler:
             *resolved_args,
             device_manager=self.device_manager,
             redis_connector=self.connector,
-            scan_modifier=self.scan_modifier_cls,
+            scan_modifier=get_scan_modifier(),
             metadata=msg.metadata,
             instruction_handler=self.parent.queue_manager.instruction_handler,
             scan_id=scan_id,
