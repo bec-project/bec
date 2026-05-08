@@ -208,13 +208,23 @@ def get_device_info(
                             }
                         }
                     )
-                signal_names.append(obj_name)
-        # Read attrs are only available if the device is connected
-        unique_signal_names = set(signal_names)
-        if len(unique_signal_names) < len(signal_names):
-            raise DeviceConfigError(
-                f"Signal names of {obj.name} must be unique, found duplicates. All signal names: {signal_names}. \n Unique signal names: {unique_signal_names}."
-            )
+                if obj_name not in signal_names:
+                    signal_names.append(obj_name)
+                else:
+                    # Check if it is merely an alias and the components are the same object. If not, raise an error for duplicate signal names.
+                    # This is done by fetching all signals that have the same obj_name
+                    same_name_signals = [
+                        getattr(obj, signal_info["component_name"])
+                        for signal_info in signals.values()
+                        if signal_info["obj_name"] == obj_name
+                    ]
+                    if not all(signal is same_name_signals[0] for signal in same_name_signals):
+                        raise DeviceConfigError(
+                            f"Signal name {obj_name} of {obj.name} is duplicated but the components "
+                            f"are not the same object. Please rename the signal to have unique signal "
+                            f"names or use the same signal as an alias."
+                        )
+
     sub_devices = []
 
     if hasattr(obj, "walk_subdevices") and connect:
