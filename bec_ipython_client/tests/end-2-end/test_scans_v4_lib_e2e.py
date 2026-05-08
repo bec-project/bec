@@ -230,9 +230,11 @@ def test_v4_cont_line_scan_lib(bec_client_lib):
 def test_v4_line_sweep_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
+    scans = bec.scans
     original_velocity = dev.samx.velocity.get()
     try:
-        dev.samx.velocity.set(1).wait()
+        scans.umv(dev.samx, -5.0, relative=False).wait()
+        dev.samx.velocity.set(5).wait()
         dev.samx.limits = [-50, 50]
         status = _run_v4_scan(
             bec,
@@ -240,7 +242,7 @@ def test_v4_line_sweep_scan_lib(bec_client_lib):
             dev.samx,
             -5.0,
             5.0,
-            min_update=0.01,
+            min_update=0.5,
             relative=False,
             wait_for_num_points=False,
         )
