@@ -11,6 +11,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.devicemanager import CancelledError, DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.plugin_helper import reload_plugin_modules
 
 if TYPE_CHECKING:
     from bec_server.device_server.devices.devicemanager import DeviceManagerDS
@@ -237,6 +238,8 @@ class ConfigUpdateHandler:
 
     def _reload_config(self, cancel_event: threading.Event) -> None:
         self._flush_config()
+        reload_plugin_modules()
+
         self.device_manager._get_config(cancel_event=cancel_event)
         if self.device_manager.failed_devices:
             self.handle_failed_device_inits()
