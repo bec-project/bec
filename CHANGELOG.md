@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.119.1 (2026-05-08)
+
+### Bug Fixes
+
+- Do not export v4 ScanBase as scan
+  ([`fe082b9`](https://github.com/bec-project/bec/commit/fe082b949c08e5ee85d3cd22574787443d666071))
+
+
 ## v3.119.0 (2026-05-06)
 
 ### Chores
