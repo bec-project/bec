@@ -1689,6 +1689,24 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def modify_interlock_table() -> EndpointInfo:
+        endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/scan_interlock/table_mod"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ScanInterlockModifyStateTableMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def scan_interlock_states() -> EndpointInfo:
+        endpoint = f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/current_states_watched"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ScanInterlockStateTableContent,
+            message_op=MessageOp.KEY_VALUE,
+        )
+
+    @staticmethod
     def gui_registry_state(gui_id: str):
         """
         Endpoint for GUI registry state. This endpoint is used to publish the GUI registry state

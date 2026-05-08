@@ -2,7 +2,7 @@
 
 import time
 from abc import ABC, abstractmethod
-from threading import Event
+from threading import Event, RLock
 from typing import Callable
 
 from bec_lib.actors import ActorActionTable
@@ -106,23 +106,30 @@ class BlStateActor(SubscriptionActor):
     state_table: dict[str, BlStateStatus]
 
     def __init__(self, client: BECClient, name: str, exec_id: str):
+        self.state_table_lock = RLock()
         self.action_table = {
             self.all_states_match: self.all_match_action,
             self.not_all_states_match: self.some_mismatch_action,
         }
         super().__init__(client, name, exec_id)
         self.state_cache: dict[str, BlStateStatus] = {}
-        for state in self.state_table:
-            status = self.client.beamline_states.get_status_by_name(state)
-            if status is None:
-                logger.warning(f"Beamline state actor could not get the status of {state}")
-                continue
-            self.state_cache[state] = status
+        self._update_cache()
+
+    def _update_cache(self):
+        with self.state_table_lock:
+            for state in self.state_table:
+                status = self.client.beamline_states.get_status_by_name(state)
+                if status is None:
+                    logger.warning(f"Beamline state actor could not get the status of {state}")
+                    continue
+                self.state_cache[state] = status
 
     def all_states_match(self, client: BECClient):
-        for state, status in self.state_table.items():
-            if self.state_cache.get(state) != status:
-                return False
+        with self.state_table_lock:
+            for state, status in self.state_table.items():
+                if self.state_cache.get(state) != status:
+                    logger.info(f"Beamline state {state} out of bounds: expected={status}")
+                    return False
             return True
 
     def not_all_states_match(self, client: BECClient):

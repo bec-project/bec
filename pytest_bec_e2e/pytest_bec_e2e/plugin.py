@@ -243,6 +243,7 @@ def bec_ipython_client_fixture(bec_ipython_client_with_demo_config):
     bec = bec_ipython_client_with_demo_config
     bec.queue.request_queue_reset()
     bec.queue.request_scan_continuation()
+    bec.builtin_actors.scan_interlock.enabled = False
     wait_for_empty_queue(bec)
     yield bec
 
