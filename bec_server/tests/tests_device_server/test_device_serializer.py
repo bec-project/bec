@@ -78,6 +78,12 @@ class DummyDeviceWithConflictingDuplicateSignalNames(Device):
         self.signal_custom.custom.name = self.signal_custom.name
 
 
+class DummyDeviceWithAliasedSignalNames(Device):
+    """Expose the same signal object via two component names."""
+
+    signal_alias = signal = Cpt(Signal, value=1)
+
+
 @pytest.mark.parametrize(
     "obj",
     [
@@ -117,3 +123,12 @@ def test_get_device_info_USER_ACCESS():
     _ = get_device_info(device, connect=False)
     with pytest.raises(DeviceConfigError):
         _ = get_device_info(device, connect=True)
+
+
+def test_get_device_info_allows_aliased_signal_names():
+    device = DummyDeviceWithAliasedSignalNames(name="test")
+
+    info = get_device_info(device, connect=True)
+
+    assert info["device_info"]["signals"]["signal"]["obj_name"] == "test_signal"
+    assert info["device_info"]["signals"]["signal_alias"]["obj_name"] == "test_signal"
