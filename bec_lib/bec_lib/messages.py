@@ -2059,6 +2059,28 @@ class BuiltinActorStateChangeMessage(BECMessage):
     actor_name: str
 
 
+class ScanInterlockModifyStateTableMessage(BECMessage):
+    msg_type: ClassVar[str] = "scan_interlock_modify_state_table"
+    action: Literal["add", "remove", "remove_all"]
+    state_name: str | None = None
+    status: BlStateStatus | None = None
+
+    @model_validator(mode="after")
+    def _validate(self):
+        if self.action == "add" and (self.status is None or self.state_name is None):
+            raise ValueError("Must specify a name and status when adding a state")
+        if self.action in ["remove", "remove_all"] and self.status is not None:
+            raise ValueError("May not specify a status when removing a state")
+        if self.action == "remove_all" and self.state_name is not None:
+            raise ValueError("May not specify a state when removing all states")
+        return self
+
+
+class ScanInterlockStateTableContent(BECMessage):
+    msg_type: ClassVar[str] = "scan_interlock_state_table_content"
+    states_watched: dict[str, BlStateStatus]
+
+
 class ActorStartRequestMessage(BECMessage):
     """Specify an actor class by module and name, to be instantiated and started by the actor
     manager."""

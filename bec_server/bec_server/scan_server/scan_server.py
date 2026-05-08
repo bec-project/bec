@@ -122,6 +122,8 @@ class ScanServer(BECService):
 
     def shutdown(self, per_thread_timeout_s: float | None = None) -> None:
         """shutdown the scan server"""
+        self.builtin_actor_manager.shutdown()
+        self.actor_manager.shutdown()
         self.proc_manager.shutdown()
         self.device_manager.shutdown()
         self.queue_manager.shutdown()

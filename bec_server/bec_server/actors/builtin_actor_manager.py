@@ -18,7 +18,8 @@ class BuiltinActorManager:
     def __init__(self, bootstrap_server: str) -> None:
         host, port = bootstrap_server.split(":")
         self._client = BECClient(
-            config=ServiceConfig(config={"redis": {"host": host, "port": port}})
+            config=ServiceConfig(config={"redis": {"host": host, "port": port}}),
+            name="BuiltinActors",
         )
         self._client.start()
         self._actors_threads_and_stops: dict[str, tuple[ActorBase, Thread, Event]] = {}
@@ -29,7 +30,7 @@ class BuiltinActorManager:
         )
 
     def _on_state_changed(self, msg_obj: MessageObject):
-        msg: BuiltinActorStateChangeMessage = msg_obj.value  # type:ignore
+        msg: BuiltinActorStateChangeMessage = msg_obj.value  # type: ignore
         logger.info(f"Received state change notification {msg.actor_name}")
         if msg.actor_name not in self._builtin_actors:
             logger.error(f"Actor {msg.actor_name} does not exist!")
