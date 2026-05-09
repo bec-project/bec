@@ -21,9 +21,25 @@ def _run_v4_scan(
     return status
 
 
-def _assert_device_position(device, target: float):
-    current = device.read(cached=True)[device.full_name]["value"]
+def _assert_device_position(device, target: float, timeout: float | None = None):
     tolerance = device._config["deviceConfig"].get("tolerance", 0.05)
+
+    def _is_at_target():
+        current = device.read(cached=True)[device.full_name]["value"]
+        return current, np.isclose(current, target, atol=tolerance)
+
+    current, is_at_target = _is_at_target()
+    if timeout is None or is_at_target:
+        assert is_at_target
+        return
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(0.1)
+        current, is_at_target = _is_at_target()
+        if is_at_target:
+            return
+
     assert np.isclose(current, target, atol=tolerance)
 
 
@@ -192,8 +208,8 @@ def test_v4_mv_scan_lib(bec_client_lib):
     status = _run_v4_scan(bec, "mv", dev.samx, 1.5, dev.samy, -1.5, relative=False)
     status.wait(timeout=30)
 
-    _assert_device_position(dev.samx, 1.5)
-    _assert_device_position(dev.samy, -1.5)
+    _assert_device_position(dev.samx, 1.5, timeout=5)
+    _assert_device_position(dev.samy, -1.5, timeout=5)
 
 
 @pytest.mark.timeout(120)
@@ -204,8 +220,8 @@ def test_v4_umv_scan_lib(bec_client_lib):
     status = _run_v4_scan(bec, "umv", dev.samx, -1.0, dev.samy, 1.0, relative=False)
     status.wait(timeout=30)
 
-    _assert_device_position(dev.samx, -1.0)
-    _assert_device_position(dev.samy, 1.0)
+    _assert_device_position(dev.samx, -1.0, timeout=5)
+    _assert_device_position(dev.samy, 1.0, timeout=5)
 
 
 @pytest.mark.timeout(120)
