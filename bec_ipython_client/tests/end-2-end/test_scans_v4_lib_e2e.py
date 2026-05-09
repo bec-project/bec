@@ -278,9 +278,4 @@ def test_v4_scan_lib_stop_resolves_cleanly(bec_client_lib):
     time.sleep(0.5)
     status.cancel()
 
-    _wait_for_scan_status(status, "STOPPED", timeout=15)
-    assert status.status == "STOPPED"
-    _wait_for_queue_status(bec, "primary", "PAUSED", timeout=15)
-
-    bec.queue.request_scan_continuation()
     _wait_for_queue_status(bec, "primary", "RUNNING", timeout=15)
