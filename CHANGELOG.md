@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v3.119.2 (2026-05-10)
+
+### Bug Fixes
+
+- Add timeout parameter to _assert_device_position for improved reliability
+  ([`0c8a3bc`](https://github.com/bec-project/bec/commit/0c8a3bcfa3cdd7aa87caef234100fc1d88bece4a))
+
+- Adjust motor speed settings in line sweep scan test
+  ([`4d485f1`](https://github.com/bec-project/bec/commit/4d485f18582ab4cbce16e214f103dad11bd79953))
+
+- Remove unnecessary assertions in test_v4_scan_lib_stop_resolves_cleanly
+  ([`b594605`](https://github.com/bec-project/bec/commit/b5946050ec1cece75ca2f2a8a3c195efb7544f71))
+
+
 ## v3.119.1 (2026-05-08)
 
 ### Bug Fixes
