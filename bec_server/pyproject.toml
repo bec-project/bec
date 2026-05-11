@@ -74,3 +74,12 @@ known_first_party = ["bec_lib", "bec_server", "bec_ipython_client"]
 [tool.coverage.run]
 concurrency = ["thread"]
 data_file = "/tmp/.coverage"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["bec_lib", "bec_server", "bec_ipython_client"]
