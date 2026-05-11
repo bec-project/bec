@@ -2025,6 +2025,9 @@ class AvailableBeamlineStatesMessage(BECMessage):
 
 
 class ActorStartRequestMessage(BECMessage):
+    """Specify an actor class by module and name, to be instantiated and started by the actor
+    manager."""
+
     msg_type: ClassVar[str] = "actor_start_request"
 
     actor_module: str
@@ -2032,12 +2035,18 @@ class ActorStartRequestMessage(BECMessage):
 
 
 class ActorStopRequestMessage(BECMessage):
+    """Specify an actor to be stopped by the actor manager. By default, the id of a running actor
+    will be its class as a fully qualified path, since there should be only one of each type of
+    actor at any time."""
+
     msg_type: ClassVar[str] = "actor_stop_request"
 
     actor_id: str
 
 
 class ActorExecutionMessage(BECMessage):
+    """Message type for internal use to track running actors."""
+
     msg_type: ClassVar[str] = "actor_execution"
 
     queue: str
@@ -2046,6 +2055,8 @@ class ActorExecutionMessage(BECMessage):
 
 
 class ActorStopMessage(BECMessage):
+    """Message for internal use to signal a running actor to stop execution."""
+
     msg_type: ClassVar[str] = "actor_stop"
 
     execution_id: str

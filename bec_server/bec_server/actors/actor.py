@@ -30,6 +30,17 @@ class ActorBase(ABC):
         push_status(self.client.connector, self.name, st, exec)
 
     def evaluate(self, *_, **__):
+        """
+        For each `(condition, action)` entry in the `action_table` dictionary, call `condition`, and
+        if it returns `True`, call `action`. It accepts any args and kwargs but does not use any of
+        them - subclasses may use this as a callback for a function which returns anything without
+        overriding it, to trigger evaluation of the actor as a response. Each condition may be a
+        simple function which evaluates to a boolean, or a `bec_lib.actors.ActorConditionSet` with
+        a set of such functions and an operation to combine them.
+
+        This is called in a loop by the `PollingActor`, and called as a callback to any Redis event
+        it is subscribed to in the `SubscriptionActor`.
+        """
         for condition, action in self.action_table.items():
             if condition(self.client):
                 logger.info(
@@ -65,10 +76,9 @@ class SubscriptionActor(ActorBase):
         return set()
 
     def evaluate(self, *_, **__):
-        logger.info(f"{self.__class__.__name__} triggered")
         if (now := time.monotonic()) < self.last_evaluated + self.min_delay_s:
-            logger.info("too little time elapsed since last trigger")
             return
+        logger.info(f"{self.__class__.__name__} triggered")
         self.last_evaluated = now
         return super().evaluate(*_, **__)
 
