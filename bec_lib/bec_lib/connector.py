@@ -5,7 +5,7 @@ This module defines the interface for a connector
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from bec_lib.logger import bec_logger
 
@@ -21,17 +21,20 @@ class ConsumerConnectorError(Exception):
     """
 
 
-class MessageObject:
+_BecMessageT = TypeVar("_BecMessageT")
+
+
+class MessageObject(Generic[_BecMessageT]):
     """
     MessageObject is a wrapper for a message and its topic
     """
 
-    def __init__(self, topic: str, value: BECMessage | list[BECMessage]) -> None:
+    def __init__(self, topic: str, value: _BecMessageT | list[_BecMessageT]) -> None:
         self.topic = topic
         self._value = value
 
     @property
-    def value(self) -> BECMessage | list[BECMessage]:
+    def value(self) -> _BecMessageT | list[_BecMessageT]:
         """
         Get the message
         """

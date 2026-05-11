@@ -47,7 +47,10 @@ def run_macro(macro_name: str, params: tuple[tuple, dict] | None = None, *, bec:
     in a more natural fashion."""
     if params is None:
         params = ((), {})
-    if (macro := builtins.__dict__.get("_user_macros", {}).get(macro_name)) is not None:
+    user_macros = builtins.__dict__.get("_user_macros", {})
+    if (macro := user_macros.get(macro_name)) is not None:
         macro["cls"](*params[0], **params[1])
     else:
-        raise ValueError(f"Macro {macro_name} not found in the client namespace!")
+        raise ValueError(
+            f"Macro {macro_name} not found in the client namespace! Available: {list(user_macros.keys())}"
+        )

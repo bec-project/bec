@@ -1473,13 +1473,13 @@ class MessageEndpoints:
         The request is sent using a messages.ProcedureRequestMessage message.
 
         Returns:
-            EndpointInfo: Endpoint for scan queue request.
+            EndpointInfo: Endpoint for procedure request.
         """
         endpoint = f"{EndpointType.USER.value}/procedures/procedure_request"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureRequestMessage,
-            message_op=MessageOp.STREAM,
+            message_op=MessageOp.SEND,
         )
 
     @staticmethod
@@ -1561,7 +1561,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureAbortMessage,
-            message_op=MessageOp.STREAM,
+            message_op=MessageOp.SEND,
         )
 
     @staticmethod
@@ -1576,7 +1576,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureClearUnhandledMessage,
-            message_op=MessageOp.STREAM,
+            message_op=MessageOp.SEND,
         )
 
     @staticmethod
@@ -1649,7 +1649,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ActorStartRequestMessage,
-            message_op=MessageOp.STREAM,
+            message_op=MessageOp.SEND,
         )
 
     @staticmethod
@@ -1659,7 +1659,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ActorStopRequestMessage,
-            message_op=MessageOp.STREAM,
+            message_op=MessageOp.SEND,
         )
 
     @staticmethod

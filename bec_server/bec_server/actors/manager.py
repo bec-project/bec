@@ -2,14 +2,13 @@
 
 import threading
 from concurrent.futures import Future
-from typing import Any
 from uuid import uuid4
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import ActorExecutionMessage, ActorStartRequestMessage
 from bec_server.actors.worker import ActorProcedureWorker
-from bec_server.procedures.manager import ProcedureManagerBase, _resolve_dict
+from bec_server.procedures.manager import ProcedureManagerBase
 
 logger = bec_logger.logger
 
@@ -35,8 +34,8 @@ class ActorManager(ProcedureManagerBase[ActorStartRequestMessage, ActorExecution
 
     def _startup(self): ...
 
-    def _validate_request(self, msg: dict[str, Any] | ActorStartRequestMessage):
-        return _resolve_dict(msg, ActorStartRequestMessage)
+    def _validate_request(self, msg: ActorStartRequestMessage):
+        return msg
 
     def _respond_to_valid_request(self, message: ActorStartRequestMessage):
         queue = f"{message.actor_module}.{message.actor_class_name}"

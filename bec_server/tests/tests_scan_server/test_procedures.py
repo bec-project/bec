@@ -13,6 +13,7 @@ from bec_lib.acl_login import BECAccess
 from bec_lib.client import BECClient, RedisConnector
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
+    ProcedureAbortMessage,
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
     ProcedureWorkerStatus,
@@ -20,6 +21,7 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState
+from bec_lib.redis_connector import MessageObject
 from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
 from bec_server.procedures.builtin_procedures import run_macro
@@ -183,14 +185,13 @@ VALIDATION_TEST_CASES: list[tuple[dict[str, Any], ProcedureRequestMessage | None
         ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME, queue="queue2"),
     ),
     ({"identifier": "doesn't exist"}, None),
-    ({"incorrect": "arguments"}, None),
 ]
 
 
 @pytest.mark.parametrize(["message", "result"], VALIDATION_TEST_CASES)
 def test_validate(procedure_manager: ProcedureManager, message, result):
     procedure_manager._ack = MagicMock()
-    validated = procedure_manager._validate_request(message)
+    validated = procedure_manager._validate_request(ProcedureRequestMessage.model_validate(message))
     if validated is None:
         assert result is None
     else:
@@ -198,9 +199,14 @@ def test_validate(procedure_manager: ProcedureManager, message, result):
 
 
 PROCESS_REQUEST_TEST_CASES = [
-    ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME),
-    ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME, queue="queue2"),
-    ProcedureRequestMessage(identifier="test other procedure", queue="queue2"),
+    MessageObject(topic="test", value=ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME)),
+    MessageObject(
+        topic="test", value=ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME, queue="queue2")
+    ),
+    MessageObject(
+        topic="test",
+        value=ProcedureRequestMessage(identifier="test other procedure", queue="queue2"),
+    ),
 ]
 
 
@@ -214,22 +220,24 @@ def process_request_manager(procedure_manager: ProcedureManager):
 
 
 @pytest.mark.parametrize("message", PROCESS_REQUEST_TEST_CASES)
-def test_process_request_happy_paths(process_request_manager, message: ProcedureRequestMessage):
+def test_process_request_happy_paths(
+    process_request_manager, message: MessageObject[ProcedureRequestMessage]
+):
     process_request_manager._process_queue_request(message)
     process_request_manager._ack.assert_called_with(
-        True, f"Running procedure {message.identifier}", message.execution_id
+        True, f"Running procedure {message.value.identifier}", message.value.execution_id
     )
     process_request_manager._conn.rpush.assert_called()
     endpoint, execution_msg = process_request_manager._conn.rpush.call_args.args
-    queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
+    queue = message.value.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
     assert queue in endpoint.endpoint
-    assert execution_msg.identifier == message.identifier
+    assert execution_msg.identifier == message.value.identifier
     process_request_manager.spawn.assert_called()
     assert queue in process_request_manager._active_workers.keys()
 
 
 def test_process_request_failure(process_request_manager):
-    process_request_manager._process_queue_request(None)
+    process_request_manager._process_queue_request(MessageObject(topic="", value=None))
     process_request_manager._ack.assert_not_called()
     process_request_manager._conn.rpush.assert_not_called()
     process_request_manager.spawn.assert_not_called()
@@ -297,7 +305,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     message = PROCESS_REQUEST_TEST_CASES[0]
     # popping from the list queue should give the execution message
     redis_connector().blocking_list_pop_to_set_add.side_effect = [message, None]
-    queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
+    queue = message.value.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     # trigger the running of the test message
     procedure_manager._process_queue_request(message)  # type: ignore
@@ -444,7 +452,7 @@ def manager_with_test_msgs(procedure_manager: ProcedureManager):
     )
     procedure_manager._validate_request = lambda msg: next(msgs)
     for _ in range(len(contents)):
-        procedure_manager._process_queue_request({})
+        procedure_manager._process_queue_request(MessageObject(topic="", value={}))
     yield (
         procedure_manager,
         [
@@ -494,7 +502,9 @@ def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
     q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
     assert _all_eq_except_id(q2_execution_list, remaining_expected)
 
-    procedure_manager._process_abort({"queue": "queue1"})
+    procedure_manager._process_abort(
+        MessageObject(topic="", value=ProcedureAbortMessage.model_validate({"queue": "queue1"}))
+    )
 
     # on abort, the manager should move active queues to unhandled queues
     # this should happen for q1 and not q2
@@ -519,7 +529,14 @@ def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
     q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
     assert _all_eq_except_id(q2_execution_list, q2_expected)
 
-    procedure_manager._process_abort({"execution_id": q2_execution_list[1].execution_id})
+    procedure_manager._process_abort(
+        MessageObject(
+            topic="",
+            value=ProcedureAbortMessage.model_validate(
+                {"execution_id": q2_execution_list[1].execution_id}
+            ),
+        )
+    )
 
     q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
     q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
@@ -540,7 +557,9 @@ def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
     q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
     assert _all_eq_except_id(q2_execution_list, q2_expected)
 
-    procedure_manager._process_abort({"abort_all": True})
+    procedure_manager._process_abort(
+        MessageObject(topic="", value=ProcedureAbortMessage.model_validate({"abort_all": True}))
+    )
 
     q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
     q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")

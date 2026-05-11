@@ -24,7 +24,7 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.procedures.helper import BackendProcedureHelper
-from bec_lib.redis_connector import RedisConnector
+from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
 
@@ -56,12 +56,6 @@ class _ExecutionMsgProtocol(Protocol):
 _T = TypeVar("_T", bound=BECMessage)
 _ReqMsgT = TypeVar("_ReqMsgT", bound=BECMessage)
 _ExecMsgT = TypeVar("_ExecMsgT", bound=_ExecutionMsgProtocol)
-
-
-def _resolve_dict(msg: dict[str, Any] | _T, MsgType: type[_T]) -> _T:
-    if isinstance(msg, dict):
-        return MsgType.model_validate(msg)
-    return msg
 
 
 class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
@@ -113,7 +107,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
             ),
         )
 
-    def _process_queue_request(self, msg: dict[str, Any] | _ReqMsgT) -> _ExecMsgT | None:
+    def _process_queue_request(self, msg: MessageObject) -> _ExecMsgT | None:
         """Read a request message, and if it is valid, create a corresponding `ProcedureExecutionMessage`.
         If there is already a worker for the queue for that request message, add the execution message to that queue,
         otherwise create a new queue and a new worker.
@@ -122,7 +116,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
             msg (dict[str, Any]): dict corresponding to a ProcedureRequestMessage"""
 
         logger.debug(f"Procedure manager got request message {msg}")
-        if (message := self._validate_request(msg)) is None:
+        if (message := self._validate_request(msg.value)) is None:
             return
         exec_msg = self._respond_to_valid_request(message)
         queue, env = exec_msg.queue, exec_msg.env or {}
@@ -179,8 +173,8 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         """Shutdown the procedure manager. Unregisters from the request endpoint, cancel any
         procedure workers which haven't started, and abort any which have."""
         logger.debug(f"shutting down {self.__class__.__name__}")
-        self._conn.shutdown()
         self._unregister_endpoints()
+        self._conn.shutdown()
         # cancel futures by hand to give us the opportunity to detach them from redis if they have started
         with self.lock:
             for entry in self._active_workers.values():
@@ -214,7 +208,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         """Clean up any state which may have been left behind by an incorrectly terminated manager."""
 
     @abstractmethod
-    def _validate_request(self, msg: dict[str, Any] | _ReqMsgT) -> _ReqMsgT | None:
+    def _validate_request(self, msg: _ReqMsgT) -> _ReqMsgT | None:
         """Check if the information in the supplied messasge or dict is a valid request. If yes,
         return it as a message, otherwise, return None."""
 
@@ -295,7 +289,7 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         self._helper.push.exec(queue, exec_message)
         return exec_message
 
-    def _process_queue_request(self, msg: dict[str, Any] | ProcedureRequestMessage):
+    def _process_queue_request(self, msg: MessageObject):
         with self.lock:
             if (exec_msg := super()._process_queue_request(msg)) is not None:
                 self._messages_by_ids[exec_msg.execution_id] = exec_msg
@@ -316,7 +310,6 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
 
     def _startup(self):
         # If the server is restarted, clear any pending requests, they'll have to be resubmitted
-        self._conn.delete(self._request_ep)
         previous_queues = self._helper.get.active_and_pending_queue_names()
         logger.debug(f"Clearing previous procedure queues {previous_queues}...")
         self._helper.move.all_execution_queues_to_unhandled()
@@ -325,14 +318,13 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
             self._helper.notify_watchers(queue, "execution")
         self._helper.notify_all("unhandled")
 
-    def _validate_request(self, msg: dict[str, Any] | ProcedureRequestMessage):
+    def _validate_request(self, msg: ProcedureRequestMessage):
         try:
-            message_obj = _resolve_dict(msg, ProcedureRequestMessage)
-            if not procedure_registry.is_registered(message_obj.identifier):
+            if not procedure_registry.is_registered(msg.identifier):
                 self._ack(
                     False,
-                    f"Procedure {message_obj.identifier} not known to the server. Available: {list(procedure_registry.available())}",
-                    exec_id=message_obj.execution_id,
+                    f"Procedure {msg.identifier} not known to the server. Available: {list(procedure_registry.available())}",
+                    exec_id=msg.execution_id,
                 )
                 return None
         except ValidationError as e:
@@ -341,7 +333,7 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
             )
             self._ack(False, f"{e}", exec_id)
             return None
-        return message_obj
+        return msg
 
     def add_callback(self, queue: str, cb: Callable[[ProcedureWorker], Any]):
         """Add a callback to run on the worker when it is finished."""
@@ -360,8 +352,8 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
             cb(worker)
         self._callbacks[queue] = []
 
-    def _process_abort(self, msg: dict[str, Any] | ProcedureAbortMessage):
-        message = _resolve_dict(msg, ProcedureAbortMessage)
+    def _process_abort(self, msg: MessageObject):
+        message: ProcedureAbortMessage = msg.value  # type: ignore
         with self.lock:
             if message.abort_all:
                 self._abort_all()
@@ -408,8 +400,8 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         self._helper.move.all_execution_queues_to_unhandled()
         self._wait_for_all_futures()
 
-    def _process_clear_unhandled(self, msg: dict[str, Any] | ProcedureClearUnhandledMessage):
-        message = _resolve_dict(msg, ProcedureClearUnhandledMessage)
+    def _process_clear_unhandled(self, msg: MessageObject):
+        message: ProcedureClearUnhandledMessage = msg.value  # type: ignore
         with self.lock:
             if message.abort_all:
                 self._helper.clear.all_unhandled()
