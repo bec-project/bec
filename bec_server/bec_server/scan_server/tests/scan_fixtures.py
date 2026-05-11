@@ -120,6 +120,10 @@ class _MockDevice(DeviceBase):
         return self.name
 
     @property
+    def dotted_name(self):
+        return self.name
+
+    @property
     def limits(self):
         return self._limits
 
@@ -220,6 +224,10 @@ class MockCustomDevice(DeviceBase):
 
     @property
     def full_name(self):
+        return self.name
+
+    @property
+    def dotted_name(self):
         return self.name
 
     @property

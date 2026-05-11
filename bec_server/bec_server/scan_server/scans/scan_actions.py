@@ -14,6 +14,7 @@ from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
+from bec_server.scan_server.safety_check import run_safety_check
 from bec_server.scan_server.scan_stubs import ScanStubStatus
 
 if TYPE_CHECKING:
@@ -284,6 +285,11 @@ class ScanActions:
 
         if len(devices) != len(values):
             raise ValueError("The number of devices and values must match.")
+
+        for device, position in zip(devices, values, strict=False):
+            if isinstance(device, str):
+                device = getattr(self._device_manager.devices, device)
+            run_safety_check(self._device_manager.devices, device, position)
 
         status = self._create_status(is_container=True, name="set")
         for dev, val in zip(devices, values, strict=False):
