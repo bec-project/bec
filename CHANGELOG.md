@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.120.0 (2026-05-11)
+
+### Features
+
+- Implement scan reload functionality
+  ([`21c44c5`](https://github.com/bec-project/bec/commit/21c44c524d9ce6ba8e24e3cfad7107c700e76d7e))
+
+- Reload plugin modules on config reload
+  ([`c6ca7f8`](https://github.com/bec-project/bec/commit/c6ca7f8129a78aa6d7f467c2435a2d8d616c70b9))
+
+
 ## v3.119.3 (2026-05-11)
 
 ### Bug Fixes
