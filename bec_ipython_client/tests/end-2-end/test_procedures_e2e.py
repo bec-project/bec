@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Callable, Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -87,7 +87,7 @@ def test_procedure_runner_spawns_worker(
         logs = worker._backend.logs(worker._container_id)
 
     manager.add_callback("test", cb)
-    client.connector.xadd(topic=endpoint, msg_dict=msg.model_dump())
+    client.connector.send(endpoint, msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     try:
@@ -117,7 +117,7 @@ def test_happy_path_container_procedure_runner(
     msg = messages.ProcedureRequestMessage(
         identifier="_log_msg_args", args_kwargs=(test_args, test_kwargs)
     )
-    conn.xadd(topic=endpoint, msg_dict=msg.model_dump())
+    conn.send(endpoint, msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     _wait_while(lambda: manager._active_workers != {}, 90)

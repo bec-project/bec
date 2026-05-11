@@ -91,12 +91,12 @@ def test_validate_and_spawn_called_on_request(
 ):
     manager, conn = actor_manager_and_conn
     with (
-        patch.object(manager, "_validate_request", side_effect=lambda x: x["request"]),
+        patch.object(manager, "_validate_request", side_effect=lambda x: x),
         patch.object(manager, "spawn"),
     ):
-        conn.xadd(
+        conn.send(
             MessageEndpoints.actor_start_request(),
-            {"request": ActorStartRequestMessage(actor_module="test", actor_class_name="Test")},
+            ActorStartRequestMessage(actor_module="test", actor_class_name="Test"),
         )
         wait_until(lambda: manager._validate_request.call_count == 1)
         wait_until(lambda: manager.spawn.call_count == 1)
@@ -115,7 +115,10 @@ def test_polling_actor(actor_manager_and_conn: tuple[ActorManager, RedisConnecto
     actor_cls = "PollingTestActor"
     conn.register(ep, cb=action_callback)
     manager._process_queue_request(
-        msg=ActorStartRequestMessage(actor_module=actor_mod, actor_class_name=actor_cls)
+        MessageObject(
+            topic="",
+            value=ActorStartRequestMessage(actor_module=actor_mod, actor_class_name=actor_cls),
+        )
     )
     wait_until(lambda: manager._active_workers != {})
     wait_until(
@@ -138,7 +141,10 @@ def test_subscription_actor(actor_manager_and_conn: tuple[ActorManager, RedisCon
     actor_cls = "SubscriptionTestActor"
     conn.register(ep, cb=action_callback)
     manager._process_queue_request(
-        msg=ActorStartRequestMessage(actor_module=actor_mod, actor_class_name=actor_cls)
+        MessageObject(
+            topic="",
+            value=ActorStartRequestMessage(actor_module=actor_mod, actor_class_name=actor_cls),
+        )
     )
     wait_until(lambda: manager._active_workers != {})
     wait_until(

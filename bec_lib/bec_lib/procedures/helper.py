@@ -187,32 +187,32 @@ class _Request(_HelperBase):
     def _procedure(self, msg):
         st = ProcedureStatus(self._conn, msg.execution_id, msg.identifier)
         self._set_callbacks(msg.execution_id, st)
-        self._xadd(ME.procedure_request(), msg)
+        self._conn.send(ME.procedure_request(), msg)
         return st
 
     def abort_execution(self, execution_id: str):
         """Send a message requesting an abort of execution_id"""
-        return self._xadd(ME.procedure_abort(), AbrtMsg(execution_id=execution_id))
+        return self._conn.send(ME.procedure_abort(), AbrtMsg(execution_id=execution_id))
 
     def abort_queue(self, queue: str):
         """Send a message requesting an abort of execution_id"""
-        return self._xadd(ME.procedure_abort(), AbrtMsg(queue=queue))
+        return self._conn.send(ME.procedure_abort(), AbrtMsg(queue=queue))
 
     def abort_all(self):
         """Send a message requesting an abort of execution_id"""
-        return self._xadd(ME.procedure_abort(), AbrtMsg(abort_all=True))
+        return self._conn.send(ME.procedure_abort(), AbrtMsg(abort_all=True))
 
     def clear_unhandled_execution(self, execution_id: str):
         """Send a message requesting an abort of execution_id"""
-        return self._xadd(ME.procedure_clear_unhandled(), ClrMsg(execution_id=execution_id))
+        return self._conn.send(ME.procedure_clear_unhandled(), ClrMsg(execution_id=execution_id))
 
     def clear_unhandled_queue(self, queue: str):
         """Send a message requesting an abort of execution_id"""
-        return self._xadd(ME.procedure_clear_unhandled(), ClrMsg(queue=queue))
+        return self._conn.send(ME.procedure_clear_unhandled(), ClrMsg(queue=queue))
 
     def clear_all_unhandled(self):
         """Send a message requesting an abort of execution_id"""
-        return self._xadd(ME.procedure_clear_unhandled(), ClrMsg(abort_all=True))
+        return self._conn.send(ME.procedure_clear_unhandled(), ClrMsg(abort_all=True))
 
 
 class _Get(_HelperBase):
