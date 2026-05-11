@@ -67,6 +67,37 @@ def test_reload_plugin_modules_reloads_plugin_tree():
     importlib_mock.reload.assert_any_call(plugin_scan_submodule)
 
 
+def test_reload_plugin_modules_skips_stale_modules():
+    plugin_module = mock.MagicMock()
+    plugin_module.__name__ = "bec_plugin"
+    stale_module = mock.MagicMock()
+    stale_module.__name__ = "bec_plugin.scans.deleted_scan"
+    importlib_mock = mock.MagicMock()
+    importlib_mock.import_module.return_value = plugin_module
+    missing_spec_error = ModuleNotFoundError(
+        "spec not found for the module 'bec_plugin.scans.deleted_scan'"
+    )
+    missing_spec_error.name = stale_module.__name__
+    importlib_mock.reload.side_effect = [missing_spec_error, None]
+
+    with (
+        mock.patch("bec_lib.plugin_helper.plugin_package_name", return_value="bec_plugin"),
+        mock.patch.object(plugin_helper, "importlib", importlib_mock),
+        mock.patch("bec_lib.plugin_helper.logger.warning") as logger_warning,
+        mock.patch.dict(
+            sys.modules,
+            {plugin_module.__name__: plugin_module, stale_module.__name__: stale_module},
+            clear=False,
+        ),
+    ):
+        plugin_helper.reload_plugin_modules()
+        assert stale_module.__name__ not in sys.modules
+
+    logger_warning.assert_called_once()
+    importlib_mock.reload.assert_any_call(plugin_module)
+    importlib_mock.reload.assert_any_call(stale_module)
+
+
 def test_get_scan_component_plugins(monkeypatch):
     from bec_server.scan_server.scans.scan_components import ScanComponents
 

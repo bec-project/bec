@@ -233,7 +233,18 @@ def reload_plugin_modules() -> None:
         if name == plugin_module.__name__ or name.startswith(f"{plugin_module.__name__}.")
     ]
     for module_name in sorted(module_names, key=lambda name: name.count("."), reverse=True):
-        importlib.reload(sys.modules[module_name])
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        try:
+            importlib.reload(module)
+        except ModuleNotFoundError as exc:
+            if exc.name != module_name:
+                raise
+            logger.warning(
+                f"Skipping reload for stale plugin module {module_name!r}; module spec is no longer available."
+            )
+            sys.modules.pop(module_name, None)
 
 
 def _filter_plugins(module) -> bool:
