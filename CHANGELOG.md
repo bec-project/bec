@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.119.3 (2026-05-11)
+
+### Bug Fixes
+
+- **device serializer**: Fix support for signal alias
+  ([`871042e`](https://github.com/bec-project/bec/commit/871042e1a9d1806b1f8e5ce433ef4627ecf53783))
+
+
 ## v3.119.2 (2026-05-10)
 
 ### Bug Fixes
