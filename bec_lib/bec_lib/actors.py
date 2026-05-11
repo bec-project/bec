@@ -21,6 +21,18 @@ class ActorCondition(Protocol):
 
 @dataclass
 class ActorConditionSet:
+    """
+    An actor condition combines a set of conditions to act as one. The combination mode defines
+    how they are combined. For example:
+        ```
+        ActorConditionSet(
+            conditions = {lambda client: True, lambda client: False},
+            combination_mode = ConditionCombination.Any
+        )
+        ```
+    would evaluate to `True` when called, while with `ConditionCombination.All` it would be `False`.
+    """
+
     conditions: set[ActorCondition]
     combination_mode: ConditionCombination
 
@@ -38,3 +50,7 @@ class ActorAction(Protocol):
 ActorActionTable = TypeAliasType(
     "ActorActionTable", dict[ActorConditionSet | ActorCondition, ActorAction]
 )
+"""Mapping of action conditions to their actions. Keys are condition callables
+which evaluate to booleans, or combinations of such callables. Values are
+Actions, callables which accept a BECClient as their only argument, and specify
+what to do if a condition returns `True`."""
