@@ -701,10 +701,21 @@ def test_set_device(device_server_mock, instr):
     with mock.patch.object(
         device_server.device_manager.devices.samx.obj, "set", side_effect=Exception("Set failed")
     ):
-        with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
+        with mock.patch.object(
+            device_server.requests_handler, "send_device_instruction_response"
+        ) as mock_send_response:
             device_server._set_device(instr)
-            set_finished_mock.assert_called_with(
-                instr.metadata["device_instr_id"], success=False, error_info=ANY
+            # Call arg list should not contain any duplicate calls, error response should only be sent once
+            assert (
+                mock_send_response.call_count == 3
+            )  # Make sure that there are no duplicate calls for error response.
+            mock_send_response.assert_called_with(
+                instr.metadata["device_instr_id"],
+                False,
+                done=True,
+                error_info=ANY,
+                result=None,
+                is_status_obj=True,
             )
 
 

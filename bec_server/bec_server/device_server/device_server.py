@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import ophyd
-from ophyd import Kind, OphydObject, Staged, StatusBase
+from ophyd import DeviceStatus, Kind, OphydObject, Staged, StatusBase
 from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
@@ -701,7 +701,7 @@ class DeviceServer(BECService):
         try:
             status = obj.set(val)
         except Exception as exc:  # pylint: disable=broad-except
-            status = StatusBase()
+            status = DeviceStatus(device=obj)
             status.set_exception(exc)
         self._add_status_object_info(status, instr, obj)
         status.__dict__["sub_id"] = sub_id
