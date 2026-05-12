@@ -114,8 +114,9 @@ def _resolve_timeout(timeout_s: str) -> float:
         return PROCEDURE.WORKER.QUEUE_TIMEOUT_S
 
 
-def _create_client(client_type: BecClientType, redis: dict[str, str]):
+def _create_client(client_type: BecClientType, redis: dict[str, str], name=None):
     config = ServiceConfig(redis=redis, config={"procedures": {"enable_procedures": False}})
+
     if client_type == BecClientType.BECIPythonClient:
         return BECIPythonClient(config=config, wait_for_server=False, mode=OperationMode.Procedure)
     elif client_type == BecClientType.BECClient:
@@ -141,7 +142,9 @@ def setup(env: OopWorkerEnv):
     host, port = env["redis_server"].split(":")
     redis = {"host": host, "port": port}
 
-    client = _create_client(env["client_class"], redis=redis)
+    client = _create_client(
+        env["client_class"], redis=redis, name=f"[OOP worker client: {env['queue']}]"
+    )
 
     logger.debug("starting client")
     client.start()

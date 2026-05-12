@@ -218,6 +218,9 @@ class PodmanCliUtils(_PodmanUtilsBase):
         _environment = _multi_args_from_dict("-e", environment)  # type: ignore # this is actually a dict[str, str]
         _pod_arg = ["--pod", pod_name] if pod_name else []
         _name_arg = ["--replace", "--name", container_name] if container_name else []
+        if container_name:
+            # in case of incomplete cleanup previously, even with --replace it is possible to get an error
+            _run_and_capture_error("podman", "rm", "-f", container_name)
         return (
             _run_and_capture_error(
                 "podman",

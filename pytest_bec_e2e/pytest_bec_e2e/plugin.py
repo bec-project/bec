@@ -69,8 +69,8 @@ def pytest_addoption(parser):
 redis_server_fixture = None
 bec_redis_fixture = None
 _start_servers = False
-bec_servers_scope = (
-    lambda fixture_name, config: config.getoption("--flush-redis") and "function" or "session"
+bec_servers_scope = lambda fixture_name, config: (
+    config.getoption("--flush-redis") and "function" or "session"
 )
 
 

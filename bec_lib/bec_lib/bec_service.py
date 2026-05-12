@@ -168,7 +168,9 @@ class BECService:
         # Log the server address
         logger.info(f"Connecting to Redis server at {self.bootstrap_server}")
         self.connector: RedisConnector = (
-            connector_cls(self.bootstrap_server) if connector is None else connector
+            connector_cls(self.bootstrap_server, name=f"{self._name} RedisConnector")
+            if connector is None
+            else connector
         )
         self.acl = BECAccess(self.connector)
         self.acl._bec_service_login(prompt_for_acl, self._service_config.config.get("acl"))

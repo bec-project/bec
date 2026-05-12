@@ -47,7 +47,7 @@ class ProcedureWorker(ABC):
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
         self.status = ProcedureWorkerStatus.IDLE
         self._redis_server = server
-        self._conn = RedisConnector([server])
+        self._conn = RedisConnector([server], name=f"ProcedureWorker-{queue} RedisConnector")
         self._helper = BackendProcedureHelper(self._conn)
         self.client_id = self._conn.client_id()
         self._current_execution_id: str | None = None
@@ -86,6 +86,7 @@ class ProcedureWorker(ABC):
     def abort(self):
         """Abort the entire worker"""
         self._aborted.set()
+        self._conn.shutdown()
         self._kill_process()
 
     @abstractmethod
