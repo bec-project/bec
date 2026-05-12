@@ -430,8 +430,10 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
         return messages.DeviceInfoMessage(
             device="rt_controller", info=positioner_info_mock_with_user_access(device_name)
         )
-    elif device_name == "samx":
-        return messages.DeviceInfoMessage(device="samx", info=positioner_info_mock(device_name))
+    elif device_name in ["samx", "samy"]:
+        return messages.DeviceInfoMessage(
+            device=device_name, info=positioner_info_mock(device_name)
+        )
     elif device_name == "dyn_signals":
         return DYN_SIGNALS_MSG
     elif device_name == "eiger":

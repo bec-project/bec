@@ -508,6 +508,190 @@ class TestConcreteStates:
 
         assert state._requirement_matches(requirement) is matches
 
+    def test_device_config_requires_at_least_one_target(self):
+        with pytest.raises(ValueError, match="At least one of value"):
+            bl_states.DeviceConfig()
+
+    def test_aggregated_state_endpoint_rejects_unknown_source(self):
+        with pytest.raises(ValueError, match="Invalid signal source"):
+            bl_states.AggregatedState._endpoint("samx", "unknown")
+
+    def test_aggregated_state_get_device_manager_falls_back_to_client(self):
+        state = bl_states.AggregatedState(
+            name="alignment", states={"label": {"devices": {"samx": {"value": 0}}}}
+        )
+        client = mock.MagicMock()
+
+        with mock.patch("bec_lib.client.BECClient", return_value=client):
+            assert state._get_device_manager() is client.device_manager
+
+    def test_aggregated_state_get_signal_source_rejects_unsupported_kind(self):
+        with pytest.raises(ValueError, match="Unsupported kind"):
+            bl_states.AggregatedState._get_signal_source(
+                {"kind_str": "omitted", "obj_name": "samx_unused"}, "test"
+            )
+
+    def test_aggregated_state_resolve_signal_edge_cases(self, dm_with_devices):
+        assert bl_states.AggregatedState._resolve_signal(
+            "samx", "low_limit_travel", dm_with_devices, "test"
+        ) == ("low", "limits")
+        assert bl_states.AggregatedState._resolve_signal(
+            "samx", "high_limit_travel", dm_with_devices, "test"
+        ) == ("high", "limits")
+        assert bl_states.AggregatedState._resolve_signal(
+            "samx", "samx_velocity", dm_with_devices, "test"
+        ) == ("samx_velocity", "configuration")
+
+        with pytest.raises(ValueError, match="Device 'missing' not found"):
+            bl_states.AggregatedState._resolve_signal(
+                "missing", "missing", dm_with_devices, "test"
+            )
+        with pytest.raises(ValueError, match="Device name must be a string"):
+            bl_states.AggregatedState._resolve_signal(1, "samx", dm_with_devices, "test")
+        with pytest.raises(ValueError, match="Signal 'missing_signal' not found"):
+            bl_states.AggregatedState._resolve_signal(
+                "samx", "missing_signal", dm_with_devices, "test"
+            )
+        with pytest.raises(ValueError, match="Unsupported kind"):
+            bl_states.AggregatedState._resolve_signal("samx", "unused", dm_with_devices, "test")
+
+    def test_aggregated_state_resolve_dotted_signal_edge_cases(self, dm_with_devices):
+        assert bl_states.AggregatedState._resolve_signal(
+            "samx", "samx.velocity", dm_with_devices, "test"
+        ) == ("samx_velocity", "configuration")
+
+        with pytest.raises(ValueError, match="does not belong"):
+            bl_states.AggregatedState._resolve_signal(
+                "samx", "samy.velocity", dm_with_devices, "test"
+            )
+
+        devices = mock.MagicMock()
+        devices.__getitem__.side_effect = [dm_with_devices.devices["samx"], AttributeError]
+        manager = mock.MagicMock(devices=devices)
+        with pytest.raises(ValueError, match="Signal 'samx.missing' not found"):
+            bl_states.AggregatedState._resolve_signal("samx", "samx.missing", manager, "test")
+
+    def test_aggregated_state_start_edge_cases(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.started = True
+        with mock.patch.object(state, "_build_rules") as build_rules:
+            state.start()
+        build_rules.assert_not_called()
+
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=None,
+            device_manager=dm_with_devices,
+        )
+        with pytest.raises(RuntimeError, match="Redis connector is not set"):
+            state.start()
+
+    def test_aggregated_state_start_handles_rule_build_error(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+
+        with (
+            mock.patch.object(state, "_build_rules", side_effect=RuntimeError("bad rules")),
+            mock.patch.object(state, "_handle_state_exception") as handle_exception,
+        ):
+            state.start()
+
+        handle_exception.assert_called_once()
+        assert state.started is True
+
+    def test_aggregated_state_fill_cache_uses_existing_messages(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state._build_rules()
+        connected_connector.set_and_publish(
+            MessageEndpoints.device_readback("samx"),
+            messages.DeviceMessage(signals={"samx": {"value": 0, "timestamp": 1.0}}),
+        )
+
+        affected_labels = state._fill_cache()
+
+        assert affected_labels == {"alignment", "measurement"}
+        assert state._signal_value_cache[("samx", "readback", "samx")] == 0
+
+    def test_aggregated_state_cache_ignores_irrelevant_signals(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state._build_rules()
+
+        affected_labels = state._cache_message(
+            "samx",
+            "readback",
+            messages.DeviceMessage(
+                signals={"samx_unused": {"value": 1, "timestamp": 1.0}},
+                metadata={"stream": "primary"},
+            ),
+        )
+
+        assert affected_labels == set()
+        assert ("samx", "readback", "samx_unused") not in state._signal_value_cache
+
+    def test_aggregated_state_stop_unregisters_subscriptions(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.start()
+
+        with mock.patch.object(connected_connector, "unregister") as unregister:
+            state.stop()
+
+        assert unregister.call_count == len(state._subscriptions)
+        assert state.started is False
+
+    def test_aggregated_state_stop_is_noop_before_start(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+
+        with mock.patch.object(connected_connector, "unregister") as unregister:
+            state.stop()
+
+        unregister.assert_not_called()
+
+    def test_aggregated_state_evaluate_without_affected_labels(
+        self, connected_connector, dm_with_devices, aggregated_state_config
+    ):
+        state = bl_states.AggregatedState(
+            config=aggregated_state_config,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+
+        assert state.evaluate() is None
+
 
 class TestBeamlineStateManager:
     def test_manager_registers_for_state_updates(self, connected_connector):

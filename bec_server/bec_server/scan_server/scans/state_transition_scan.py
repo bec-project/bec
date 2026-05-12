@@ -24,8 +24,8 @@ from bec_lib.device import DeviceBase, Positioner, Signal
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AlarmMessage, ErrorInfo
-from bec_server.scan_server.scans.scan_modifier import scan_hook
 from bec_server.scan_server.scans.scan_base import ScanBase
+from bec_server.scan_server.scans.scan_modifier import scan_hook
 
 if TYPE_CHECKING:
     from bec_lib.bl_states import AggregatedStateConfig, ResolvedStateSignal
@@ -114,20 +114,20 @@ class StateTransitionScan(ScanBase):
                 if req.signal_name == req.device_name:
                     self._devices_to_set.append((dev_obj, req.expected_value))
                     continue
-                if req.signal_name in ["low", "high"]:
+                if req.source == "limits":
                     if req.device_name not in self._limits_to_set:
                         self._limits_to_set[req.device_name] = (
                             dev_obj,
                             dev_obj.low_limit,
                             dev_obj.high_limit,
                         )
-                    if req.signal_name == "low_limit":
+                    if req.signal_name == "low":
                         self._limits_to_set[req.device_name] = (
                             dev_obj,
                             req.expected_value,
                             self._limits_to_set[req.device_name][2],
                         )
-                    else:
+                    elif req.signal_name == "high":
                         self._limits_to_set[req.device_name] = (
                             dev_obj,
                             self._limits_to_set[req.device_name][1],
@@ -245,6 +245,10 @@ class StateTransitionScan(ScanBase):
         available_states_msg: AvailableBeamlineStatesMessage = self.redis_connector.get_last(
             MessageEndpoints.available_beamline_states()
         )
+        if available_states_msg is None:
+            raise ValueError(
+                "No available beamline states found in Redis. Cannot fetch configuration for state transition scan."
+            )
         configs = [
             state for state in available_states_msg["data"].states if state.name == state_name
         ]

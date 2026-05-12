@@ -3,31 +3,45 @@ Module for managing aggregated beamline states based on configuration files.
 
 Example of the YAML configuration file:
 ``` yaml
-alignment:
-    devices:
-        samx:
-        readback:
-            value: 0
-            abs_tol: 0.1
-    measurement:
-    devices:
-        samx:
-        readback:
-            value: 19
-            abs_tol: 0.1
+alignment: # AggregatedStateConfig -> can have different labels and for each label, different devices
+  transition_metadata: # optional field for metadata for each label
+    field: value
+  devices:
+    samx:
+      value: 0
+      abs_tol: 0.1
+      low_limit:
+        value: -20
+        abs_tol: 0.1
+      high_limit:
+        value: 20
+        abs_tol: 0.1
+      signals:
         velocity:
-            value: 5
-            abs_tol: 0.1
-        samy:
-        readback:
-            value: 0
-            abs_tol: 0.1
-    test:
-    devices:
-        samy:
-        readback:
-            value: 0
-            abs_tol: 0.1
+          value: 5
+          abs_tol: 0.1
+    bpm4i:
+      value: 100
+      abs_tol: 10
+measurement:
+  devices:
+    samx:
+      value: 19
+      abs_tol: 0.1
+      signals:
+        velocity:
+          value: 20
+    samy:
+      value: 0
+      abs_tol: 0.1
+test:
+  devices:
+    samy:
+      value: 0
+      abs_tol: 0.1
+    bpm4i:
+      value: 100
+      abs_tol: 10
 ```
 
 """
