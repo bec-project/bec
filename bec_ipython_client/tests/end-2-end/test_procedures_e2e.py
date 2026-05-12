@@ -46,8 +46,10 @@ def client_logtool_and_manager(
     manager = ProcedureManager(
         f"{client.connector.host}:{client.connector.port}", ContainerProcedureWorker
     )
-    yield client, logtool, manager
-    manager.shutdown()
+    try:
+        yield client, logtool, manager
+    finally:
+        manager.shutdown()
 
 
 def _wait_while(cond: Callable[[], bool], timeout_s):

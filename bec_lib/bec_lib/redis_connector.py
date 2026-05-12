@@ -17,7 +17,6 @@ import threading
 import time
 import traceback
 import warnings
-from collections import defaultdict
 from collections.abc import MutableMapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -406,15 +405,23 @@ class RedisConnector:
 
     RETRY_ON_TIMEOUT: int = 20
 
-    def __init__(self, bootstrap: list[str] | str, redis_cls: type[Redis] = Redis, **kwargs):
+    def __init__(
+        self,
+        bootstrap: list[str] | str,
+        redis_cls: type[Redis] = Redis,
+        name: str = "RedisConnector",
+        **kwargs,
+    ):
         """
         Initialize the connector
 
         Args:
             bootstrap (list): list of strings in the form "host:port"
             redis_cls (redis.client, optional): redis client class. Defaults to the standard client redis.Redis. Must not be an async client.
+            name (str): Name to identify this instance
             **kwargs: additional keyword arguments to pass to the redis client.
         """
+        self.name = name
         self.host, self.port = (
             bootstrap[0].split(":") if isinstance(bootstrap, list) else bootstrap.split(":")
         )
@@ -457,6 +464,10 @@ class RedisConnector:
         self.stream_keys: dict[str, str] = {}  # for explicit reads, not subscriptions
 
         self._generator_executor = ThreadPoolExecutor()
+
+    @property
+    def connection_error_str(self):
+        return f"{self.name} failed to connect to redis ({self.host}:{self.port}). Is the server running?"
 
     def authenticate(self, *, username: str = "default", password: str | None = "null"):
         """
@@ -513,6 +524,7 @@ class RedisConnector:
         self._stop_events_listener_thread.clear()
         if self._events_listener_thread is None:
             self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
+            self._events_listener_thread.name += f" ({self.name})"
             self._events_listener_thread.start()
 
     def _get_retry_policy(self) -> Retry:
@@ -552,6 +564,7 @@ class RedisConnector:
         Shutdown the connector
         """
         self.set_retry_enabled(False)
+
         if self._events_listener_thread:
             self._stop_events_listener_thread.set()
             self._events_listener_thread.join(timeout=per_thread_timeout_s)
@@ -567,7 +580,6 @@ class RedisConnector:
 
         # this will take care of shutting down direct listening threads
         self._unregister_stream(self._stream_subs.all_topics)
-
         # release all connections
         self._pubsub_conn.close()
         self._redis_conn.close()
@@ -703,6 +715,7 @@ class RedisConnector:
             self._events_dispatcher_thread = threading.Thread(
                 target=self._dispatch_events, args=(started_event,)
             )
+            self._events_dispatcher_thread.name += f" ({self.name})"
             self._events_dispatcher_thread.start()
             started_event.wait()  # synchronization of thread start
 
@@ -801,6 +814,7 @@ class RedisConnector:
         if self._events_listener_thread is None:
             # create the thread that will get all messages for this connector;
             self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
+            self._events_listener_thread.name += f" ({self.name})"
             self._events_listener_thread.start()
 
         if patterns is not None:
@@ -846,6 +860,7 @@ class RedisConnector:
         thread = threading.Thread(
             target=self._direct_stream_listener, args=(topic, stop_event, cb_ref, kwargs)
         )
+        thread.name += f" ({self.name})"
         return DirectReadStreamSubInfo(cb_ref, kwargs, stop_event, thread)
 
     def _direct_stream_listener(self, topic: str, stop_event: threading.Event, cb_ref, kwargs):
@@ -856,7 +871,7 @@ class RedisConnector:
                 continue
             redis_id, msg_dict = response[0]  # type: ignore : we are using Redis synchronously
             timestamp, _, ind = redis_id.partition(b"-")
-            read_id = f"{timestamp.decode()}-{int(ind.decode())+1}"
+            read_id = f"{timestamp.decode()}-{int(ind.decode()) + 1}"
             stream_msg = StreamMessage(
                 {key.decode(): MsgpackSerialization.loads(val) for key, val in msg_dict.items()},
                 ((cb_ref, kwargs),),
@@ -886,7 +901,7 @@ class RedisConnector:
             else:
                 return self._redis_conn.xread(topics_ids, block=200) or []  # type: ignore strs are fine key and id types
         except redis.exceptions.ConnectionError:
-            logger.error("Failed to connect to redis. Is the server running?")
+            logger.error(self.connection_error_str)
         except redis.exceptions.NoPermissionError:
             logger.error(f"Permission denied for stream topics: {set(topics_ids.keys())}")
         # pylint: disable=broad-except
@@ -984,6 +999,7 @@ class RedisConnector:
             self._stream_events_listener_thread = threading.Thread(
                 target=self._get_stream_messages_loop
             )
+            self._stream_events_listener_thread.name += f" ({self.name})"
             self._stream_events_listener_thread.start()
 
     def _filter_topics_cb(self, topics: list, cb: Callable | None):
@@ -1060,7 +1076,7 @@ class RedisConnector:
             except redis.exceptions.ConnectionError:
                 if not error:
                     error = True
-                    bec_logger.logger.error("Failed to connect to redis. Is the server running?")
+                    bec_logger.logger.error(self.connection_error_str)
                 self._stop_events_listener_thread.wait(timeout=1)
             # pylint: disable=broad-except
             except Exception:
@@ -1501,7 +1517,9 @@ class RedisConnector:
     @validate_endpoint("topic")
     def get_set_members(self, topic: str, pipe: Pipeline | None = None) -> set:
         """fetch the items in the set as a set'"""
-        return set(MsgpackSerialization.loads(msg) for msg in (pipe or self._redis_conn).smembers(topic))  # type: ignore
+        return set(
+            MsgpackSerialization.loads(msg) for msg in (pipe or self._redis_conn).smembers(topic)
+        )  # type: ignore
 
     def blocking_list_pop_to_set_add(
         self,

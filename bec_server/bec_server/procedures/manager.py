@@ -81,7 +81,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         )
 
         self._logs = deque([], maxlen=1000)
-        self._conn = RedisConnector([redis])
+        self._conn = RedisConnector([redis], name="ProcedureManager RedisConnector")
 
         self._active_workers: dict[str, ProcedureWorkerEntry] = {}
         self.executor = ThreadPoolExecutor(
