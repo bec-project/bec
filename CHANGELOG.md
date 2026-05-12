@@ -1,6 +1,51 @@
 # CHANGELOG
 
 
+## v3.121.0 (2026-05-12)
+
+### Bug Fixes
+
+- Override fakeredis server
+  ([`03519f2`](https://github.com/bec-project/bec/commit/03519f2bcef341ee75b01a30e60d5651ad827511))
+
+- Subscription actor and tests
+  ([`92a4c16`](https://github.com/bec-project/bec/commit/92a4c164ff4b5d230bc397d6deb944b485a74fbb))
+
+### Chores
+
+- Add parallel/subprocess coverage
+  ([`380544b`](https://github.com/bec-project/bec/commit/380544bef0020c6e5178735f5e3f9c205161eddc))
+
+- Fix ruff isort config
+  ([`8f0b846`](https://github.com/bec-project/bec/commit/8f0b846cf84ce2468d31a193990dc0613da0b09e))
+
+### Documentation
+
+- Add docstrings for actor base components
+  ([`d9c1e47`](https://github.com/bec-project/bec/commit/d9c1e4787a4d3a55186b73cebd68d946ad1c7e92))
+
+### Features
+
+- Add beamline actor manager and worker
+  ([`cbd35bd`](https://github.com/bec-project/bec/commit/cbd35bd9d3416b2be1f39bd53270eca89d33c203))
+
+- Add option to have plain becclient in procs
+  ([`9372bf5`](https://github.com/bec-project/bec/commit/9372bf5053d8b2c61675b6114da427d59663a666))
+
+### Refactoring
+
+- Extract procedure manager and worker base
+  ([`fb0d40a`](https://github.com/bec-project/bec/commit/fb0d40a31eae2758340d0b754b362d87dea7545b))
+
+- Use send rather than stream for proc requests
+  ([`0fc7fc7`](https://github.com/bec-project/bec/commit/0fc7fc755066fe577720c6aa80a1ce2057f1ac62))
+
+### Testing
+
+- Add more unit tests for cov
+  ([`26b2414`](https://github.com/bec-project/bec/commit/26b24145d29ab17e7eec7c93111f64c53dc8e5a0))
+
+
 ## v3.120.1 (2026-05-12)
 
 ### Bug Fixes
