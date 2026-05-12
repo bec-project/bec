@@ -698,8 +698,11 @@ class DeviceServer(BECService):
                 sub_id = obj.subscribe(self.device_manager._obj_callback_readback, run=True)
         else:
             obj = device_obj.obj
-
-        status = obj.set(val)
+        try:
+            status = obj.set(val)
+        except Exception as exc:  # pylint: disable=broad-except
+            status = StatusBase()
+            status.set_exception(exc)
         self._add_status_object_info(status, instr, obj)
         status.__dict__["sub_id"] = sub_id
         self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)

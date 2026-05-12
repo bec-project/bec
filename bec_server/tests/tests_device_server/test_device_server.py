@@ -697,6 +697,16 @@ def test_set_device(device_server_mock, instr):
     msg = res[0]["msg"]
     assert msg.metadata["RID"] == "test"
 
+    # Test that if _set raises an exception, the status is set as failed
+    with mock.patch.object(
+        device_server.device_manager.devices.samx.obj, "set", side_effect=Exception("Set failed")
+    ):
+        with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
+            device_server._set_device(instr)
+            set_finished_mock.assert_called_with(
+                instr.metadata["device_instr_id"], success=False, error_info=ANY
+            )
+
 
 @pytest.mark.parametrize(
     "instr",
