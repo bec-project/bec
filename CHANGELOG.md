@@ -1,6 +1,82 @@
 # CHANGELOG
 
 
+## v3.120.1 (2026-05-12)
+
+### Bug Fixes
+
+- Use DeviceStatus instead of StatusBase, fix test
+  ([`79c35c3`](https://github.com/bec-project/bec/commit/79c35c3cd73994e4819d3b397d1fb3fe84c3f152))
+
+- **device-server**: Fix bug on the device server that did not capture raising .set commands in 'mv'
+  ([`b04dbf4`](https://github.com/bec-project/bec/commit/b04dbf4d0b1fed078282f281eeb9f98a57005e9d))
+
+### Chores
+
+- **deps**: Bump psutil in /bec_lib
+  ([`9f38f91`](https://github.com/bec-project/bec/commit/9f38f91576687fa373eb614c55fd275787c999db))
+
+Updates the requirements on [psutil](https://github.com/giampaolo/psutil) to permit the latest
+  version.
+
+Updates `psutil` to 7.2.2 -
+  [Changelog](https://github.com/giampaolo/psutil/blob/master/docs/changelog.rst) -
+  [Commits](https://github.com/giampaolo/psutil/compare/v5.9.0...v7.2.2)
+
+--- updated-dependencies: - dependency-name: psutil dependency-version: 7.2.2
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps**: Bump pylint in /bec_ipython_client
+  ([`19bf062`](https://github.com/bec-project/bec/commit/19bf062099c73654bea601bdfe2e41a3ed707607))
+
+Updates the requirements on and [pylint](https://github.com/pylint-dev/pylint) to permit the latest
+  version.
+
+Updates `pylint` to 4.0.5 - [Release notes](https://github.com/pylint-dev/pylint/releases) -
+  [Commits](https://github.com/pylint-dev/pylint/compare/v3.0.0...v4.0.5)
+
+--- updated-dependencies: - dependency-name: pylint dependency-version: 4.0.5
+
+dependency-type: direct:development
+
+dependency-group: pip
+
+- dependency-name: pylint dependency-version: 4.0.5
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps-dev**: Bump pytest-redis in /bec_ipython_client
+  ([`b8f5c5f`](https://github.com/bec-project/bec/commit/b8f5c5ffb25eb1d3782e3d53a08ddfff43e178a6))
+
+Updates the requirements on and [pytest-redis](https://github.com/dbfixtures/pytest-redis) to permit
+  the latest version.
+
+Updates `pytest-redis` to 4.0.0 -
+  [Changelog](https://github.com/dbfixtures/pytest-redis/blob/main/CHANGES.rst) -
+  [Commits](https://github.com/dbfixtures/pytest-redis/compare/v3.1.0...v4.0.0)
+
+--- updated-dependencies: - dependency-name: pytest-redis dependency-version: 4.0.0
+
+dependency-type: direct:development
+
+dependency-group: pip
+
+- dependency-name: pytest-redis dependency-version: 4.0.0
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+
 ## v3.120.0 (2026-05-11)
 
 ### Features
