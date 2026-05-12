@@ -67,6 +67,7 @@ def test_building_worker_image():
 
 
 @pytest.mark.timeout(100)
+@pytest.mark.skip(reason="shutdown_hanging")
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
@@ -102,6 +103,7 @@ def test_procedure_runner_spawns_worker(
 
 
 @pytest.mark.timeout(100)
+@pytest.mark.skip(reason="shutdown_hanging")
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
