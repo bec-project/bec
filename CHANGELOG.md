@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.121.1 (2026-05-13)
+
+### Bug Fixes
+
+- Add names to threads and clean container before restart
+  ([`c13f725`](https://github.com/bec-project/bec/commit/c13f72515688e23e9f3c1f057a7a74c9c62a29d0))
+
+
 ## v3.121.0 (2026-05-12)
 
 ### Bug Fixes
