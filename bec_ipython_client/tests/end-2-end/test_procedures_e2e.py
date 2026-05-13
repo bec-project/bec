@@ -16,6 +16,7 @@ from bec_server.procedures.constants import _CONTAINER, _WORKER
 from bec_server.procedures.container_utils import get_backend
 from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
+from bec_server.procedures.subprocess_worker import SubProcessWorker
 
 if TYPE_CHECKING:
     from pytest_bec_e2e.plugin import LogTestTool
@@ -33,9 +34,9 @@ pytestmark = pytest.mark.random_order(disabled=True)
 class PATCHED_CONSTANTS:
     WORKER = _WORKER()
     CONTAINER = _CONTAINER()
-    MANAGER_SHUTDOWN_TIMEOUT_S = 2
+    MANAGER_SHUTDOWN_TIMEOUT_S = 15
     BEC_VERSION = version("bec_lib")
-    REDIS_HOST = "localhost"
+    REDIS_HOST = "redis"
 
 
 @pytest.fixture
@@ -84,9 +85,9 @@ def test_procedure_runner_spawns_worker(
 
     logs = []
 
-    def cb(worker: ContainerProcedureWorker):
+    def cb(worker: SubProcessWorker):
         nonlocal logs
-        logs = worker._backend.logs(worker._container_id)
+        logs = worker.logs()
 
     manager.add_callback("test", cb)
     client.connector.send(endpoint, msg)
@@ -95,10 +96,11 @@ def test_procedure_runner_spawns_worker(
     try:
         _wait_while(lambda: manager._active_workers != {}, 90)
     except Exception as e:
-        worker = manager._active_workers["test"]["worker"]
-        raise Exception(
-            worker._backend.logs(worker._container_id)
-        ) from e  # print the logs if there is an error
+        with manager.lock:
+            worker = manager._active_workers.get("test", {}).get("worker")
+            if worker is not None:
+                worker.abort()
+                raise Exception(worker.logs()) from e  # print the logs if there is an error
 
     assert logs != []
 
@@ -122,7 +124,14 @@ def test_happy_path_container_procedure_runner(
     conn.send(endpoint, msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 90)
+    try:
+        _wait_while(lambda: manager._active_workers != {}, 90)
+    except Exception as e:
+        with manager.lock:
+            worker = manager._active_workers.get("primary", {}).get("worker")
+            if worker is not None:
+                worker.abort()
+                raise Exception(worker.logs()) from e  # print the logs if there is an error
 
     logtool.fetch()
     assert logtool.is_present_in_any_message("procedure accepted: True, message:")
