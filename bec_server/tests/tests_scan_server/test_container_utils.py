@@ -1,3 +1,4 @@
+from tempfile import NamedTemporaryFile
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -215,3 +216,17 @@ def test_cli_get_state(cli_utils_with_fake_container_json: PodmanCliUtils):
     assert cli_utils_with_fake_container_json.state(
         "13826d25a737b733a5d87975b50a9c1efb5d087365d956cb7db2ccbe6aca07c4"
     ) == PodmanContainerStates("running")
+
+
+@patch(
+    "bec_server.procedures.container_utils.plugin_package_name",
+    MagicMock(return_value="test_plugin_dir"),
+)
+def test_write_temp_cf(cli_utils: tuple[PodmanCliUtils, MagicMock]):
+    utils, _ = cli_utils
+    with NamedTemporaryFile(mode="w+") as nf:
+        utils._create_temp_worker_containerfile(nf.file)
+        nf.seek(0)
+        out = nf.read()
+
+    assert "test_plugin_dir" in out

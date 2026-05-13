@@ -61,7 +61,7 @@ class _CONTAINER:
     )
     REQUIREMENTS_CONTAINERFILE_NAME = "Containerfile.requirements"
     REQUIREMENTS_IMAGE_NAME = "bec_requirements"
-    WORKER_CONTAINERFILE_NAME = "Containerfile.worker"
+    WORKER_CONTAINERFILE_NAME = "Containerfile.worker.jinja"
     COMMAND = "bec-procedure-worker"
     POD_NAME = "local_bec"
     CONTAINERFILE_WORKER_TARGET = "procedure_worker"

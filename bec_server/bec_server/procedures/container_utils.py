@@ -6,13 +6,16 @@ import traceback
 from http import HTTPStatus
 from itertools import chain
 from pathlib import Path
-from typing import Iterator, Literal, cast
+from tempfile import NamedTemporaryFile
+from typing import IO, Iterator, Literal, cast
 
+from jinja2 import Environment, FileSystemLoader
 from podman import PodmanClient
 from podman.domain.containers import Container
 from podman.errors import APIError
 
 from bec_lib.logger import bec_logger
+from bec_lib.plugin_helper import plugin_package_name
 from bec_server.procedures.constants import (
     PROCEDURE,
     NoPodman,
@@ -61,6 +64,16 @@ class _PodmanUtilsBase(ContainerCommandBackend):
         if not podman_available():
             raise NoPodman()
 
+    def _create_temp_worker_containerfile(self, file: IO[str]):
+        env = Environment(loader=FileSystemLoader(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION))
+        template = env.get_template(PROCEDURE.CONTAINER.WORKER_CONTAINERFILE_NAME)
+        try:
+            plugin_cmd = f"RUN uv pip install --system -e ./{plugin_package_name()}[dev]"
+        except ValueError:
+            plugin_cmd = ""
+        file.write(template.render(plugin_installation_command=plugin_cmd))
+        file.flush()
+
     def build_requirements_image(self):  # pragma: no cover
         """Build the procedure worker requirements image"""
         return self._build_image(
@@ -73,13 +86,16 @@ class _PodmanUtilsBase(ContainerCommandBackend):
 
     def build_worker_image(self):  # pragma: no cover
         """Build the procedure worker image"""
-        return self._build_image(
-            buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
-            path=str(PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION),
-            file=PROCEDURE.CONTAINER.WORKER_CONTAINERFILE_NAME,
-            volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro:z",
-            tag=f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
-        )
+        with NamedTemporaryFile(mode="w+") as nf:
+            self._create_temp_worker_containerfile(nf.file)
+            p = Path(nf.name)
+            return self._build_image(
+                buildargs={"BEC_VERSION": PROCEDURE.BEC_VERSION},
+                path=str(p.parent),
+                file=p.name,
+                volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro:z",
+                tag=f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
+            )
 
 
 class PodmanApiOutput(ContainerCommandOutput):
@@ -149,7 +165,7 @@ class PodmanApiUtils(_PodmanUtilsBase):
             return client.images.exists(image_tag)
 
     def interrupt(self, id: str):
-        raise NotImplemented
+        raise NotImplementedError
 
     def kill(self, id: str):
         with PodmanClient(base_url=self.uri) as client:
