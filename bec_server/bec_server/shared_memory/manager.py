@@ -1,10 +1,13 @@
-from typing import Literal, TypeVar
+from typing import Literal
 
 from bec_lib.messages import BECMessage
 
 SUPPORTED_DATATYPES = Literal["str", "float", "byte", "np.array", "list", "dict"]
 
 
+#################
+## Messages
+#################
 class SharedMemRequestAllocation(BECMessage):
     """Message to send to the shared memory manager to create a new shared memory object."""
 
@@ -16,6 +19,7 @@ class SharedMemDescriptor(BECMessage):
     """Message with metadata about the shared memory created in the shared memory manager."""
 
     id: str
+    lock_id: str
     max_index: int
     owner: Literal["device", "client"]
     device: str | None = None
@@ -29,18 +33,30 @@ class AvailableDataAnalysisMethods(BECMessage):
     methods: list[str]
 
 
+# TODO maybe not needed to warm up, could automatically start a DAP worker once a shared memory object is created,
+# Then DataAnalysisRegisterRequest is designed to register analysis methods for the shared memory object, and
+# DataAnalysisTrigger is designed to trigger the analysis of the shared memory object.
+# DataAnalysisResponse is designed to send the results back to the client.
 class DataAnalysisRequestWarmup(BECMessage):
     """Message to request a data analysis"""
 
     shared_mem: SharedMemDescriptor
 
 
-class DataAnalysisRequest(BECMessage):
+class DataAnalysisRegisterRequest(BECMessage):
+    """Message to request processing of a shared memory object."""
+
+    shared_mem: SharedMemDescriptor
+    methods: list[str]
+    client_id: str
+    device: str | None = None
+
+
+class DataAnalysisTrigger(BECMessage):
     """Message to request processing of a shared memory object."""
 
     shared_mem: SharedMemDescriptor
     index: int
-    methods: list[str]
 
 
 class DataAnalysisResponse(BECMessage):
@@ -48,8 +64,9 @@ class DataAnalysisResponse(BECMessage):
 
     shared_mem: SharedMemDescriptor
     index: int
-    methods: list[str]
     results: dict
+    client_id: str
+    device: str | None = None
 
 
 class SharedMemoryManager:
