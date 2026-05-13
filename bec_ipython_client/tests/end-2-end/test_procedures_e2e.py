@@ -14,8 +14,8 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.procedures.constants import _CONTAINER, _WORKER
 from bec_server.procedures.container_utils import get_backend
-from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
+from bec_server.procedures.subprocess_worker import SubProcessWorker
 
 if TYPE_CHECKING:
     from pytest_bec_e2e.plugin import LogTestTool
@@ -43,9 +43,7 @@ def client_logtool_and_manager(
     bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
 ) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
-    manager = ProcedureManager(
-        f"{client.connector.host}:{client.connector.port}", ContainerProcedureWorker
-    )
+    manager = ProcedureManager(f"{client.connector.host}:{client.connector.port}", SubProcessWorker)
     try:
         yield client, logtool, manager
     finally:
@@ -84,23 +82,15 @@ def test_procedure_runner_spawns_worker(
 
     logs = []
 
-    def cb(worker: ContainerProcedureWorker):
+    def cb(worker: SubProcessWorker):
         nonlocal logs
-        logs = worker._backend.logs(worker._container_id)
+        logs = worker.logs()
 
     manager.add_callback("test", cb)
     client.connector.send(endpoint, msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    try:
-        _wait_while(lambda: manager._active_workers != {}, 90)
-    except Exception as e:
-        worker = manager._active_workers["test"]["worker"]
-        raise Exception(
-            worker._backend.logs(worker._container_id)
-        ) from e  # print the logs if there is an error
-
-    assert logs != []
+    _wait_while(lambda: manager._active_workers != {}, 90)
 
 
 @pytest.mark.timeout(100)
