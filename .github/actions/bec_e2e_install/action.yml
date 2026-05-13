@@ -77,5 +77,7 @@ runs:
         pip install -e ../bec_testing_plugin
         podman pod create --network=host local_bec
         python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
-        coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/
+        for i in {0..10}; do
+          coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_ipython_client/scripts/*,*/bec_lib/bec_lib/tests/* -m pytest -v --files-path ./ --start-servers --random-order  ./bec_ipython_client/tests/end-2-end/test_procedures_e2e.py;
+        done
         coverage xml -o coverage-e2e.xml

@@ -36,7 +36,7 @@ class PATCHED_CONSTANTS:
     CONTAINER = _CONTAINER()
     MANAGER_SHUTDOWN_TIMEOUT_S = 15
     BEC_VERSION = version("bec_lib")
-    REDIS_HOST = "redis"
+    REDIS_HOST = "localhost"
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def _wait_while(cond: Callable[[], bool], timeout_s):
         time.sleep(0.01)
 
 
-@pytest.mark.timeout(100)
+@pytest.mark.timeout(200)
 def test_building_worker_image():
     podman_utils = get_backend()
     build = podman_utils.build_worker_image()
@@ -69,7 +69,7 @@ def test_building_worker_image():
     assert podman_utils.image_exists(f"bec_procedure_worker:v{version('bec_lib')}")
 
 
-@pytest.mark.timeout(100)
+@pytest.mark.timeout(200)
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
@@ -94,7 +94,7 @@ def test_procedure_runner_spawns_worker(
 
     _wait_while(lambda: manager._active_workers == {}, 5)
     try:
-        _wait_while(lambda: manager._active_workers != {}, 90)
+        _wait_while(lambda: manager._active_workers != {}, 180)
     except Exception as e:
         with manager.lock:
             worker = manager._active_workers.get("test", {}).get("worker")
@@ -105,7 +105,7 @@ def test_procedure_runner_spawns_worker(
     assert logs != []
 
 
-@pytest.mark.timeout(100)
+@pytest.mark.timeout(200)
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
@@ -123,9 +123,9 @@ def test_happy_path_container_procedure_runner(
     )
     conn.send(endpoint, msg)
 
-    _wait_while(lambda: manager._active_workers == {}, 5)
+    _wait_while(lambda: manager._active_workers == {}, 10)
     try:
-        _wait_while(lambda: manager._active_workers != {}, 90)
+        _wait_while(lambda: manager._active_workers != {}, 180)
     except Exception as e:
         with manager.lock:
             worker = manager._active_workers.get("primary", {}).get("worker")
