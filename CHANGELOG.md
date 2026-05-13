@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.122.0 (2026-05-13)
+
+### Bug Fixes
+
+- Skip stale plugin modules during reload
+  ([`476e7ab`](https://github.com/bec-project/bec/commit/476e7abbef629282cce07c619fcc9458a1c97ac3))
+
+### Features
+
+- Add support for creating scans through the bec plugin manager
+  ([`1586d7f`](https://github.com/bec-project/bec/commit/1586d7ff6716900033c66e4a085056b5f3cc45d1))
+
+
 ## v3.121.1 (2026-05-13)
 
 ### Bug Fixes
