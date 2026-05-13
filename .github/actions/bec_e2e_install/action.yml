@@ -75,6 +75,7 @@ runs:
         source ./bin/install_bec_dev.sh -t
         pip install -e ../ophyd_devices
         pip install -e ../bec_testing_plugin
+        podman system prune -f
         podman pod create --network=host local_bec
         python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
         for i in {0..10}; do

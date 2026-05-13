@@ -49,18 +49,28 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
             PodmanContainerStates.STOPPING,
         ]
 
+    def _ended(self):
+        return self._backend.state(self._container_id) in [
+            PodmanContainerStates.STOPPED,
+            PodmanContainerStates.STOPPING,
+        ]
+
     def _kill_process(self):
-        if not self._ending_or_ended():
+        if not self._ended():
             self._backend.interrupt(self.container_name)
             start = time.monotonic()
             while time.monotonic() < start + PROCESS_TIMEOUT:
-                if self._ending_or_ended():
+                if self._ended():
                     return
                 time.sleep(0.2)
             logger.warning(
                 f"Procedure worker {self._container_id} for queue {self._queue} failed to shut down, killing."
             )
             self._backend.kill(self.container_name)
+            while time.monotonic() < start + PROCESS_TIMEOUT:
+                if self._ended():
+                    return
+                time.sleep(0.2)
 
     def abort_execution(self, execution_id: str):
         """Abort the execution with the given id. Has no effect if the given ID is not the current job"""

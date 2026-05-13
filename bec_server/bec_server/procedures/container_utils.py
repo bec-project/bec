@@ -149,7 +149,7 @@ class PodmanApiUtils(_PodmanUtilsBase):
             return client.images.exists(image_tag)
 
     def interrupt(self, id: str):
-        raise NotImplemented
+        raise NotImplementedError
 
     def kill(self, id: str):
         with PodmanClient(base_url=self.uri) as client:

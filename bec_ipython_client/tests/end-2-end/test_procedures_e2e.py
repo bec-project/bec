@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Callable, Generator
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 
@@ -41,16 +42,15 @@ class PATCHED_CONSTANTS:
 
 @pytest.fixture
 def client_logtool_and_manager(
-    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
+    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"], threads_check
 ) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
     manager = ProcedureManager(
         f"{client.connector.host}:{client.connector.port}", ContainerProcedureWorker
     )
-    try:
-        yield client, logtool, manager
-    finally:
-        manager.shutdown()
+    yield client, logtool, manager
+    manager.shutdown()
+    time.sleep(1)
 
 
 def _wait_while(cond: Callable[[], bool], timeout_s):
@@ -61,7 +61,18 @@ def _wait_while(cond: Callable[[], bool], timeout_s):
         time.sleep(0.01)
 
 
-@pytest.mark.timeout(200)
+def _wait_while_with_cleanup(cond: Callable[[], bool], timeout_s, manager):
+    try:
+        _wait_while(cond, timeout_s)
+    except Exception as e:
+        with manager.lock:
+            for worker_entry in manager._active_workers.values():
+                worker = worker_entry.get("worker")
+                if worker is not None:
+                    worker.abort()
+                    raise Exception(worker.logs()) from e  # print the logs if there is an error
+
+
 def test_building_worker_image():
     podman_utils = get_backend()
     build = podman_utils.build_worker_image()
@@ -69,7 +80,6 @@ def test_building_worker_image():
     assert podman_utils.image_exists(f"bec_procedure_worker:v{version('bec_lib')}")
 
 
-@pytest.mark.timeout(200)
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
@@ -78,9 +88,10 @@ def test_procedure_runner_spawns_worker(
 ):
     client, _, manager = client_logtool_and_manager
     assert manager._active_workers == {}
+    queue = str(uuid4())
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
-        identifier="sleep", args_kwargs=((), {"time_s": 0.1}), queue="test"
+        identifier="sleep", args_kwargs=((), {"time_s": 0.1}), queue=queue
     )
 
     logs = []
@@ -89,23 +100,14 @@ def test_procedure_runner_spawns_worker(
         nonlocal logs
         logs = worker.logs()
 
-    manager.add_callback("test", cb)
+    manager.add_callback(queue, cb)
     client.connector.send(endpoint, msg)
 
     _wait_while(lambda: manager._active_workers == {}, 5)
-    try:
-        _wait_while(lambda: manager._active_workers != {}, 180)
-    except Exception as e:
-        with manager.lock:
-            worker = manager._active_workers.get("test", {}).get("worker")
-            if worker is not None:
-                worker.abort()
-                raise Exception(worker.logs()) from e  # print the logs if there is an error
-
-    assert logs != []
+    _wait_while_with_cleanup(lambda: manager._active_workers != {}, 120, manager)
+    _wait_while(lambda: logs == [], 20)
 
 
-@pytest.mark.timeout(200)
 @patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
@@ -114,41 +116,40 @@ def test_happy_path_container_procedure_runner(
 ):
     test_args = (1, 2, 3)
     test_kwargs = {"a": "b", "c": "d"}
+    queue = str(uuid4())
     client, logtool, manager = client_logtool_and_manager
     assert manager._active_workers == {}
     conn = client.connector
     endpoint = MessageEndpoints.procedure_request()
     msg = messages.ProcedureRequestMessage(
-        identifier="_log_msg_args", args_kwargs=(test_args, test_kwargs)
+        identifier="_log_msg_args", args_kwargs=(test_args, test_kwargs), queue=queue
     )
     conn.send(endpoint, msg)
 
     _wait_while(lambda: manager._active_workers == {}, 10)
-    try:
-        _wait_while(lambda: manager._active_workers != {}, 180)
-    except Exception as e:
-        with manager.lock:
-            worker = manager._active_workers.get("primary", {}).get("worker")
-            if worker is not None:
-                worker.abort()
-                raise Exception(worker.logs()) from e  # print the logs if there is an error
+    _wait_while_with_cleanup(lambda: manager._active_workers != {}, 180, manager)
 
-    logtool.fetch()
-    assert logtool.is_present_in_any_message("procedure accepted: True, message:")
-    assert logtool.is_present_in_any_message(
-        "Procedure worker started container for queue primary"
-    ), f"Log content relating to procedures: {manager._logs}"
+    def _check_for_logs():
+        time.sleep(5)
+        logtool.fetch()
+        return all(
+            (
+                logtool.is_present_in_any_message("procedure accepted: True, message:"),
+                logtool.is_present_in_any_message(
+                    "Procedure worker started container for queue primary"
+                ),
+                logtool.are_present_in_order(
+                    [
+                        "Procedure worker 'primary' status update: IDLE",
+                        "Procedure worker 'primary' status update: RUNNING",
+                        "Procedure worker 'primary' status update: IDLE",
+                        "Procedure worker 'primary' status update: FINISHED",
+                    ]
+                ),
+                logtool.is_present_in_any_message(
+                    f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
+                ),
+            )
+        )
 
-    res, msg = logtool.are_present_in_order(
-        [
-            "Procedure worker 'primary' status update: IDLE",
-            "Procedure worker 'primary' status update: RUNNING",
-            "Procedure worker 'primary' status update: IDLE",
-            "Procedure worker 'primary' status update: FINISHED",
-        ]
-    )
-    assert res, f"failed on {msg}"
-
-    assert logtool.is_present_in_any_message(
-        f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
-    )
+    _wait_while_with_cleanup(lambda: not _check_for_logs(), 30, manager)

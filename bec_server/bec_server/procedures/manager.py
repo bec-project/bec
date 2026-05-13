@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import threading
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent import futures
@@ -185,7 +186,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
                         # redis unblock executor.client_id
                         worker.abort()
         self._wait_for_all_futures()
-        self.executor.shutdown()
+        self.executor.shutdown(cancel_futures=True)
 
     @abstractmethod
     def _define_endpoints(self):
