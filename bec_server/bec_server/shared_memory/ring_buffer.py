@@ -7,6 +7,7 @@ from multiprocessing import shared_memory
 from typing import Iterator, Literal, Tuple
 
 import numpy as np
+import posix_ipc
 from pydantic import BaseModel
 
 
@@ -26,6 +27,7 @@ class DTypeDescriptor(BaseModel):
 
     @classmethod
     def from_numpy(cls, dtype: np.dtype) -> "DTypeDescriptor":
+        """Class method to create DTypeDescriptor from numpy dtype."""
         dtype = np.dtype(dtype)
         kind_map = {"u": "uint", "i": "int", "f": "float", "b": "bool"}
         if dtype.kind not in kind_map:
@@ -43,8 +45,18 @@ class DTypeDescriptor(BaseModel):
 
         return cls(kind=kind_map[dtype.kind], itemsize=dtype.itemsize, byte_order=byte_order)
 
+    @property
+    def numpy_dtype(self) -> np.dtype:
+        """Return the corresponding numpy dtype for this DTypeDescriptor."""
+        byte_order_char = {"little": "<", "big": ">"}[self.byte_order]
+        kind_char = {"uint": "u", "int": "i", "float": "f", "bool": "b"}[self.kind]
+        dtype_str = f"{byte_order_char}{kind_char}{self.itemsize}"
+        return np.dtype(dtype_str)
+
 
 class PayloadDescriptor(BaseModel):
+    """Descriptor for the data payload stored in each slot of the ring buffer."""
+
     nbytes: int
     shape: Tuple[int, ...]
     dtype: DTypeDescriptor
@@ -52,7 +64,7 @@ class PayloadDescriptor(BaseModel):
 
     @classmethod
     def from_numpy(cls, array: np.ndarray) -> "PayloadDescriptor":
-
+        """Class method to create PayloadDescriptor from a numpy array."""
         return cls(
             nbytes=array.nbytes,
             shape=array.shape,
@@ -65,16 +77,14 @@ class SharedRingBufferDescriptor(BaseModel):
     """Descriptor for SharedRingBuffer object."""
 
     name: str
+    lock_id: str
     slots: int
     bytes_per_slot: int
-    slot_state_bytes: int
     payload: PayloadDescriptor
 
 
 class SharedRingBuffer:
     """Descriptor for RingBuffer Object to share memory across processes."""
-
-    SLOT_STATE_BYTES = 1
 
     def __init__(
         self,
@@ -83,12 +93,18 @@ class SharedRingBuffer:
         slots: int,
         bytes_per_slot: int,
         owns_memory: bool = False,
+        lock_id: str | None = None,
     ):
         self._shm = shm
         self._slots = slots
         self._bytes_per_slot = bytes_per_slot
         self._owns_memory = owns_memory
         self._payload = payload
+        self._semaphore_lock = (
+            posix_ipc.Semaphore(shm.name + "_lock", flags=posix_ipc.O_CREAT, initial_value=1)
+            if lock_id is None
+            else posix_ipc.Semaphore(lock_id, flags=0)
+        )
 
     @property
     def name(self):
@@ -114,14 +130,12 @@ class SharedRingBuffer:
         """Create a new shared memory location and SharedRingBuffer object."""
         if isinstance(payload, dict):
             payload = PayloadDescriptor.model_validate(payload)
-        bytes_per_slot = payload.nbytes + cls.SLOT_STATE_BYTES
+        bytes_per_slot = payload.nbytes
         total_size = slots * (bytes_per_slot)
         shm = shared_memory.SharedMemory(create=True, size=total_size)
         ring_buffer = cls(
             shm, slots=slots, bytes_per_slot=bytes_per_slot, payload=payload, owns_memory=True
         )
-        for slot in range(slots):
-            ring_buffer.set_state(slot, SlotState.READY_TO_WRITE.value)
         return ring_buffer
 
     @classmethod
@@ -133,6 +147,7 @@ class SharedRingBuffer:
             slots=descriptor.slots,
             bytes_per_slot=descriptor.bytes_per_slot,
             payload=descriptor.payload,
+            lock_id=descriptor.lock_id,
         )
 
     def descriptor(self) -> SharedRingBufferDescriptor:
@@ -142,13 +157,13 @@ class SharedRingBuffer:
             name=self.name,
             slots=self.slots,
             bytes_per_slot=self.bytes_per_slot,
-            slot_state_bytes=self.SLOT_STATE_BYTES,
             payload=self.payload,
+            lock_id=self._semaphore_lock.name,
         )
 
     def _data(self, index: int) -> memoryview:
         """Return payload memory for one slot."""
-        start = self._payload_offset(index)
+        start = self._slot_offset(index)
         stop = start + self.payload.nbytes
         return self._shm.buf[start:stop]
 
@@ -156,59 +171,32 @@ class SharedRingBuffer:
         self._validate_index(index)
         return index * self.bytes_per_slot
 
-    def _slot_state_offset(self, index: int) -> int:
-        return self._slot_offset(index)
-
-    def _payload_offset(self, index: int) -> int:
-        return self._slot_offset(index) + self.SLOT_STATE_BYTES
-
     def _validate_index(self, index: int) -> None:
         if not 0 <= index < self.slots:
             raise IndexError(f"Index {index} outside valid range 0..{self.slots - 1}.")
 
     def state(self, index: int) -> SlotState:
         """Return the current slot state."""
-        offset = self._slot_state_offset(index)
+        offset = self._slot_offset(index)
         return SlotState(self._shm.buf[offset])
 
-    def set_state(self, index: int, state: SlotState) -> None:
-        """Set the current slot state."""
-        offset = self._slot_state_offset(index)
-        self._shm.buf[offset] = int(state)
-
     @contextmanager
-    def read_slot(self, index: int, force: bool = False) -> Iterator[memoryview]:
+    def read_slot(self, index: int, timeout_lock: float = 0) -> Iterator[memoryview]:
         """Read from a slot and mark it writable afterwards."""
-        if force:
-            valid_read_states = [SlotState.READY_TO_READ.value, SlotState.READY_TO_WRITE.value]
-        else:
-            valid_read_states = [SlotState.READY_TO_WRITE.value]
-        while not self.state(index) in valid_read_states:
-            ...
-        self.set_state(index, SlotState.READING)
         try:
+            self._semaphore_lock.acquire(timeout=timeout_lock)
             yield self._data(index)
         finally:
-            self.set_state(index, SlotState.READY_TO_WRITE)
+            self._semaphore_lock.release()
 
     @contextmanager
-    def write_slot(self, index: int, force: bool = False) -> Iterator[memoryview]:
+    def write_slot(self, index: int, timeout_lock: float = 0) -> Iterator[memoryview]:
         """Write to a slot and mark it readable afterwards."""
-        if force:
-            valid_write_states = [SlotState.READY_TO_READ.value, SlotState.READY_TO_WRITE.value]
-        else:
-            valid_write_states = [SlotState.READY_TO_WRITE.value]
-
-        while not self.state(index) in valid_write_states:
-            ...
-        self.set_state(index, SlotState.WRITING)
         try:
+            self._semaphore_lock.acquire(timeout=timeout_lock)
             yield self._data(index)
-        except Exception as exc:
-            self.set_state(index, SlotState.READY_TO_WRITE)
-            raise exc
-        else:
-            self.set_state(index, SlotState.READY_TO_READ)
+        finally:
+            self._semaphore_lock.release()
 
     def close(self):
         """Close the shared memory object."""
@@ -216,7 +204,16 @@ class SharedRingBuffer:
 
     def unlink(self):
         if not self._owns_memory:
-            raise RuntimeError(f"Can't unlike memory {self.name} that is not owned by this process")
+            raise RuntimeError(f"Can't unlink memory {self.name} that is not owned by this process")
+        self.close()
         self._shm.unlink()
+        posix_ipc.unlink_semaphore(self._semaphore_lock.name)
 
-    # TODO shutdown procedure for proper clean up of resources..
+    def shutdown(self):
+        """Close and unlink the shared memory object if owned."""
+        self.close()
+        if self._owns_memory:
+            self.unlink()
+
+
+# TODO to be tested, check if semaphore locking works
