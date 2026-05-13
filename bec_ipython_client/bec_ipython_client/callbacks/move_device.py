@@ -200,7 +200,6 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
         with DeviceProgressBar(
             self.devices, start_values=start_values, target_values=target_values
         ) as progress:
-
             while not progress.finished or not data_source.done():
                 check_alarms(self.bec)
                 if self.scan_queue_request and self.scan_queue_request.queue.status == "STOPPED":
