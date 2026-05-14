@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.122.1 (2026-05-14)
+
+### Bug Fixes
+
+- Run e2e procedure tests with subprocess
+  ([`67b502d`](https://github.com/bec-project/bec/commit/67b502d70a5b629853857337fb7d7aaf78829bb3))
+
+
 ## v3.122.0 (2026-05-13)
 
 ### Bug Fixes
