@@ -70,6 +70,10 @@ class RingBufferView:
         Raises:
             TimeoutError: If the lock cannot be acquired within the specified timeout.
         """
+        if index < 0 or index >= self.slots:
+            raise IndexError(
+                f"Index {index} is out of bounds for ring buffer with {self.slots} slots."
+            )
         with self._lock:
             try:
                 self._semaphore_lock.acquire(timeout=acquire_timeout)
@@ -110,6 +114,10 @@ class RingBufferView:
                         payload descriptor.
             TimeoutError: If the lock cannot be acquired within the specified timeout.
         """
+        if index < 0 or index >= self.slots:
+            raise IndexError(
+                f"Index {index} is out of bounds for ring buffer with {self.slots} slots."
+            )
         descriptor = PayloadDescriptor.from_numpy(data)
         if descriptor != self.payload_descriptor:
             raise ValueError(

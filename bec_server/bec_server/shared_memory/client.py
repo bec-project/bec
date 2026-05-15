@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import SharedMemAllocationInfo
 from bec_server.shared_memory.models import PayloadDescriptor
 from bec_server.shared_memory.ring_buffer import RingBufferView
 
 if TYPE_CHECKING:
     import numpy as np
 
+    from bec_lib.connector import MessageObject
+    from bec_lib.messages import SharedMemAllocationInfo
     from bec_lib.redis_connector import RedisConnector
 
 
@@ -32,10 +33,9 @@ class SharedMemoryClient:
             MessageEndpoints.shared_memory_info(self.name), cb=self._handle_info_update
         )
 
-    def _handle_info_update(self, info: SharedMemAllocationInfo) -> None:
+    def _handle_info_update(self, info: MessageObject) -> None:
         """Handle updates to the shared memory information."""
-        if isinstance(info, dict):
-            info = SharedMemAllocationInfo.model_validate(info)
+        info: SharedMemAllocationInfo = info.value
         # Any info update can potentially contain relevant information for creating or deleting ring buffer views.
         info_updates = []
         for buff_info in info.info:
@@ -44,9 +44,7 @@ class SharedMemoryClient:
                 self._ring_buffer_views[buff_info.buffer_desc.name] = RingBufferView(
                     descriptor=buff_info.buffer_desc
                 )
-                self._signal_to_buffer_mapping[buff_info.buffer_desc.signal_name] = (
-                    buff_info.buffer_desc.name
-                )
+                self._signal_to_buffer_mapping[buff_info.signal] = buff_info.buffer_desc.name
         if len(info.info) < len(self._ring_buffer_views):
             # Some shared memory objects have been deallocated. Remove them from the local dictionary.
             to_be_removed = set(self._ring_buffer_views.keys()) - set(info_updates)

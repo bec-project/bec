@@ -40,6 +40,8 @@ class SharedMemoryManager(BECService):
             logger.error(
                 f"Shared memory object for client {request.client_id} and signal {request.signal} already exists. Overwriting."
             )
+            # TODO should this republish the info?
+            self._publish_allocation_info(client_id=request.client_id)
             return
 
         buff = RingBuffer(
@@ -57,6 +59,8 @@ class SharedMemoryManager(BECService):
             logger.error(
                 f"Shared memory object for client {request.client_id} and signal {request.signal} does not exist. Cannot deallocate."
             )
+            # TODO should this republish the info?
+            self._publish_allocation_info(client_id=request.client_id)
             return
 
         with self.lock:
