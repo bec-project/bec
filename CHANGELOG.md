@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.122.3 (2026-05-15)
+
+### Bug Fixes
+
+- **device**: Fix wait_for_rpc_call argument in stop during _run_rpc_call
+  ([`283bd39`](https://github.com/bec-project/bec/commit/283bd39df9fa25b497743148b7c8787756f7e449))
+
+
 ## v3.122.2 (2026-05-15)
 
 ### Bug Fixes
