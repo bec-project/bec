@@ -1,81 +1,98 @@
-from typing import Literal
+from __future__ import annotations
 
-from bec_lib.messages import BECMessage
+import threading
+from typing import TYPE_CHECKING, Literal
+
+from bec_lib import messages
+from bec_lib.bec_service import BECService
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
+from bec_server.shared_memory.models import SharedMemInfo
+from bec_server.shared_memory.ring_buffer import RingBuffer
 
 SUPPORTED_DATATYPES = Literal["str", "float", "byte", "np.array", "list", "dict"]
 
+if TYPE_CHECKING:
+    from bec_lib.redis_connector import MessageObject, RedisConnector
 
-#################
-## Messages
-#################
-class SharedMemRequestAllocation(BECMessage):
-    """Message to send to the shared memory manager to create a new shared memory object."""
-
-    sender: Literal["device", "client"]
-    device: str | None = None
+logger = bec_logger.logger
 
 
-class SharedMemDescriptor(BECMessage):
-    """Message with metadata about the shared memory created in the shared memory manager."""
+class SharedMemoryManager(BECService):
+    """
+    Service to manage shared memory objects. It keeps track of all allocated shared memory objects and their descriptors.
+    It also handles the creation and destruction of shared memory objects, and publishes the updated list of shared memory objects
+    whenever a new shared memory object is created or destroyed.
+    """
 
-    id: str
-    lock_id: str
-    max_index: int
-    owner: Literal["device", "client"]
-    device: str | None = None
-    shape: tuple[int, ...]
-    dtype: SUPPORTED_DATATYPES
+    def __init__(self, config, connector_cls: type[RedisConnector]) -> None:
+        super().__init__(config, connector_cls, unique_service=True)
+        self._shared_memory_objects: dict[str, RingBuffer] = {}
+        self.lock = threading.RLock()
 
+    def _allocate_memory(self, request: messages.SharedMemAllocationRequest) -> None:
+        """Callback function to handle shared memory allocation requests."""
+        if isinstance(request, dict):
+            request = messages.SharedMemAllocationRequest.model_validate(request)
+        if request.client_id in self._shared_memory_objects:
+            logger.error(
+                f"Shared memory object for client {request.client_id} already exists. Overwriting."
+            )
+            return
 
-class AvailableDataAnalysisMethods(BECMessage):
-    """Message published by the DAP server on which analysis methods are available."""
+        buff = RingBuffer(
+            slots=request.slots, payload=request.payload_desc, name_suffix=request.signal
+        )
+        with self.lock:
+            self._shared_memory_objects[request.client_id] = buff
+            self._publish_allocation_info(client_id=request.client_id)
 
-    methods: list[str]
+    def _deallocate_memory(self, request: messages.SharedMemDeallocationRequest) -> None:
+        """Callback function to handle shared memory deallocation requests."""
+        if isinstance(request, dict):
+            request = messages.SharedMemDeallocationRequest.model_validate(request)
+        if request.client_id not in self._shared_memory_objects:
+            logger.error(
+                f"Shared memory object for client {request.client_id} does not exist. Cannot deallocate."
+            )
+            return
 
+        with self.lock:
+            buff = self._shared_memory_objects.pop(request.client_id)
+            buff.destroy()
+            self._publish_allocation_info(client_id=request.client_id)
 
-# TODO maybe not needed to warm up, could automatically start a DAP worker once a shared memory object is created,
-# Then DataAnalysisRegisterRequest is designed to register analysis methods for the shared memory object, and
-# DataAnalysisTrigger is designed to trigger the analysis of the shared memory object.
-# DataAnalysisResponse is designed to send the results back to the client.
-class DataAnalysisRequestWarmup(BECMessage):
-    """Message to request a data analysis"""
+    def _publish_allocation_info(self, client_id: str = "*") -> None:
+        """Publish the updated list of allocated shared memory objects."""
+        with self.lock:
+            info = [
+                SharedMemInfo(client_id=client_id, buffer_desc=buff.descriptor)
+                for client_id, buff in self._shared_memory_objects.items()
+            ]
+        # Maybe use regex here..
+        if client_id != "*":
+            info = [buff_info for buff_info in info if buff_info.client_id == client_id]
+        self.connector.set_and_publish(
+            MessageEndpoints.shared_memory_info(client_id),
+            messages.SharedMemAllocationInfo(info=info),
+        )
 
-    shared_mem: SharedMemDescriptor
+    def start(self) -> None:
+        """start the shared memory manager server"""
+        self.connector.register(MessageEndpoints.shared_memory_allocate(), cb=self._allocate_memory)
+        self.connector.register(
+            MessageEndpoints.shared_memory_deallocate(), cb=self._deallocate_memory
+        )
 
+    def stop(self) -> None:
+        with self.lock:
+            for buff in self._shared_memory_objects.values():
+                buff.destroy()
+            self._shared_memory_objects.clear()
+            self._publish_allocation_info()
+        # Cleanup bec service related resources
 
-class DataAnalysisRegisterRequest(BECMessage):
-    """Message to request processing of a shared memory object."""
-
-    shared_mem: SharedMemDescriptor
-    methods: list[str]
-    client_id: str
-    device: str | None = None
-
-
-class DataAnalysisTrigger(BECMessage):
-    """Message to request processing of a shared memory object."""
-
-    shared_mem: SharedMemDescriptor
-    index: int
-
-
-class DataAnalysisResponse(BECMessage):
-    """Message to request processing of a shared memory object."""
-
-    shared_mem: SharedMemDescriptor
-    index: int
-    results: dict
-    client_id: str
-    device: str | None = None
-
-
-class SharedMemoryManager:
-
-    def shutdown(self):
-        """Shutdown method, should clean up all shared memory objects."""
-
-    def create_shared_mem(self, msg: SharedMemRequestAllocation) -> str:
-        """Creates a shared memory object under a unique name."""
-
-    def _publish_shared_mem_info(self, msg: SharedMemDescriptor):
-        """Publish information about a shared memory object."""
+    def shutdown(self) -> None:
+        """Shutdown the shared memory manager server and destroy all shared memory objects."""
+        self.stop()
+        super().shutdown()
