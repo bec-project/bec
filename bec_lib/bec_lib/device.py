@@ -1311,7 +1311,7 @@ class Positioner(AdjustableMixin, Device):
     * moving
     """
 
-    def stop(self):
+    def stop(self, wait_for_rpc_response=False):
         msg = messages.VariableMessage(value=[self.root.name])
         self.root.parent.parent.connector.send(MessageEndpoints.stop_devices(), msg)
 
