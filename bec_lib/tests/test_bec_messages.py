@@ -686,10 +686,10 @@ def test_dynamic_metric_message():
     message = messages.DynamicMetricMessage.from_dict(
         {"m1": 5, "m2": 5.5, "m3": "test", "m4": True}
     )
-    assert isinstance(message.metrics["m1"], messages._IntDynamicMetricValue)
-    assert isinstance(message.metrics["m2"], messages._FloatDynamicMetricValue)
-    assert isinstance(message.metrics["m3"], messages._StrDynamicMetricValue)
-    assert isinstance(message.metrics["m4"], messages._BoolDynamicMetricValue)
+    assert isinstance(message.metrics["-m1"], messages._IntDynamicMetricValue)
+    assert isinstance(message.metrics["-m2"], messages._FloatDynamicMetricValue)
+    assert isinstance(message.metrics["-m3"], messages._StrDynamicMetricValue)
+    assert isinstance(message.metrics["-m4"], messages._BoolDynamicMetricValue)
 
 
 def test_feedback_message():

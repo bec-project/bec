@@ -1225,11 +1225,13 @@ class DynamicMetricMessage(BECMessage):
     timestamp: float = Field(default_factory=time.time)
 
     @classmethod
-    def from_dict(cls, metrics: dict[str, str | int | float | bool]):
+    def from_dict(cls, metrics: dict[str, str | int | float | bool], separator: str = "-"):
         return cls.model_validate(
             {
                 "metrics": {
-                    k: {"value": v, "type_name": type(v).__name__} for k, v in metrics.items()
+                    # Metric names are concatenated with the group in the ingestor
+                    separator + k: {"value": v, "type_name": type(v).__name__}
+                    for k, v in metrics.items()
                 }
             }
         )
