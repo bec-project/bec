@@ -24,6 +24,7 @@ class SharedMemoryClient:
         self._signal_to_buffer_mapping: dict[str, str] = (
             {}
         )  # Mapping from signal names to buffer names
+        self.start()
 
     def start(self):
         """Start the client by subscribing to the shared memory object."""
@@ -118,3 +119,23 @@ class SharedMemoryClient:
             view.destroy()
         self._ring_buffer_views.clear()
         self._signal_to_buffer_mapping.clear()
+        self.connector.unregister(
+            MessageEndpoints.shared_memory_info(self.name), cb=self._handle_info_update
+        )
+
+
+if __name__ == "__main__":
+    import time
+
+    import numpy as np
+
+    from bec_lib.redis_connector import RedisConnector
+
+    array = np.random.rand(5, 5)
+    connector = RedisConnector(bootstrap="localhost:6379")
+    client = SharedMemoryClient(name="test_client", connector=connector)
+    client.request_allocation(
+        signal_name="test_signal", slots=10, payload_desc=PayloadDescriptor.from_numpy(array)
+    )
+    time.sleep(1)  # Wait for the allocation to be processed
+    print(client._ring_buffer_views)

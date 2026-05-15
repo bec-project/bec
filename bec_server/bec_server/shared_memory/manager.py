@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Tuple
 
 from bec_lib import messages
 from bec_lib.bec_service import BECService
@@ -27,16 +27,18 @@ class SharedMemoryManager(BECService):
 
     def __init__(self, config, connector_cls: type[RedisConnector]) -> None:
         super().__init__(config, connector_cls, unique_service=True)
-        self._shared_memory_objects: dict[str, RingBuffer] = {}
+        # Shared memory objects are stored in a dictionary with the client_id and signal name tuple as key
+        # and the RingBuffer instance as value
+        self._shared_memory_objects: dict[Tuple[str, str], RingBuffer] = {}
         self.lock = threading.RLock()
 
     def _allocate_memory(self, request: messages.SharedMemAllocationRequest) -> None:
         """Callback function to handle shared memory allocation requests."""
         if isinstance(request, dict):
             request = messages.SharedMemAllocationRequest.model_validate(request)
-        if request.client_id in self._shared_memory_objects:
+        if (request.client_id, request.signal) in self._shared_memory_objects:
             logger.error(
-                f"Shared memory object for client {request.client_id} already exists. Overwriting."
+                f"Shared memory object for client {request.client_id} and signal {request.signal} already exists. Overwriting."
             )
             return
 
@@ -44,21 +46,21 @@ class SharedMemoryManager(BECService):
             slots=request.slots, payload=request.payload_desc, name_suffix=request.signal
         )
         with self.lock:
-            self._shared_memory_objects[request.client_id] = buff
+            self._shared_memory_objects[(request.client_id, request.signal)] = buff
             self._publish_allocation_info(client_id=request.client_id)
 
     def _deallocate_memory(self, request: messages.SharedMemDeallocationRequest) -> None:
         """Callback function to handle shared memory deallocation requests."""
         if isinstance(request, dict):
             request = messages.SharedMemDeallocationRequest.model_validate(request)
-        if request.client_id not in self._shared_memory_objects:
+        if (request.client_id, request.signal) not in self._shared_memory_objects:
             logger.error(
-                f"Shared memory object for client {request.client_id} does not exist. Cannot deallocate."
+                f"Shared memory object for client {request.client_id} and signal {request.signal} does not exist. Cannot deallocate."
             )
             return
 
         with self.lock:
-            buff = self._shared_memory_objects.pop(request.client_id)
+            buff = self._shared_memory_objects.pop((request.client_id, request.signal))
             buff.destroy()
             self._publish_allocation_info(client_id=request.client_id)
 
@@ -66,8 +68,8 @@ class SharedMemoryManager(BECService):
         """Publish the updated list of allocated shared memory objects."""
         with self.lock:
             info = [
-                SharedMemInfo(client_id=client_id, buffer_desc=buff.descriptor)
-                for client_id, buff in self._shared_memory_objects.items()
+                SharedMemInfo(client_id=client_id, buffer_desc=buff.descriptor, signal=signal_name)
+                for (client_id, signal_name), buff in self._shared_memory_objects.items()
             ]
         # Maybe use regex here..
         if client_id != "*":

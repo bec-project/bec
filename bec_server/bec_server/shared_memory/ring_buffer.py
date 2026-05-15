@@ -206,17 +206,9 @@ class RingBuffer(RingBufferView):
 
     def __init__(self, slots: int, payload: PayloadDescriptor, name_suffix: str = ""):
         name = f"bec_psm_{uuid4().hex[:6]}"
-        shm = shared_memory.SharedMemory(
-            create=True,
-            size=slots * payload.nbytes,
-            name=RingBuffer._name_suffix(name, name_suffix),
-        )
+        shm = shared_memory.SharedMemory(create=True, size=slots * payload.nbytes, name=name)
         lock_name = f"{name}_lock"
-        semaphore_lock = posix_ipc.Semaphore(
-            RingBuffer._name_suffix(lock_name, name_suffix),
-            flags=posix_ipc.O_CREAT,
-            initial_value=1,
-        )
+        semaphore_lock = posix_ipc.Semaphore(lock_name, flags=posix_ipc.O_CREAT, initial_value=1)
         self._descriptor = RingBufferDescriptor(
             name=shm.name,
             lock_id=semaphore_lock.name,
