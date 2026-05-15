@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.122.2 (2026-05-15)
+
+### Bug Fixes
+
+- Add optional separator to DynamicMetricMessage
+  ([`decd9cc`](https://github.com/bec-project/bec/commit/decd9ccdc7291778068f7d33d1de7f01d5565121))
+
+
 ## v3.122.1 (2026-05-14)
 
 ### Bug Fixes
