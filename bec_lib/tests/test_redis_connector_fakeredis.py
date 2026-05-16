@@ -180,6 +180,99 @@ def test_redis_connector_unregister_cb_not_topic(connected_connector):
     assert received_event2.call_count == 2
 
 
+def test_redis_connector_unregister_cb_not_topic_with_kwargs(connected_connector):
+    connector = connected_connector
+
+    topic1 = EndpointInfo("topic1", TestMessage, MessageOp.SEND)
+    topic2 = EndpointInfo("topic2", TestMessage, MessageOp.SEND)
+
+    received_event1 = mock.Mock(spec=[])
+    received_event2 = mock.Mock(spec=[])
+
+    connector.register(topics=topic1, cb=received_event1, start_thread=False, a=1)
+    connector.register(topics=topic1, cb=received_event2, start_thread=False, b=2)
+    connector.register(topics=topic2, cb=received_event1, start_thread=False, c=3)
+
+    connector.send(topic1, TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+    received_event1.assert_called_once_with(MessageObject("topic1", TestMessage(msg="topic1")), a=1)
+    received_event2.assert_called_once_with(MessageObject("topic1", TestMessage(msg="topic1")), b=2)
+
+    connector.unregister(topic1, cb=received_event1)
+
+    received_event1.reset_mock()
+    received_event2.reset_mock()
+    connector.send(topic1, TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+    received_event1.assert_not_called()
+    received_event2.assert_called_once_with(MessageObject("topic1", TestMessage(msg="topic1")), b=2)
+
+    connector.send(topic2, TestMessage(msg="topic2"))
+    connector.poll_messages(timeout=1)
+    received_event1.assert_called_once_with(MessageObject("topic2", TestMessage(msg="topic2")), c=3)
+    assert list(connector._topics_cb.keys()) == ["topic1", "topic2"]
+
+
+def test_redis_connector_unregister_only_specified_callback_kwargs(connected_connector):
+    connector = connected_connector
+
+    topic1 = EndpointInfo("topic1", TestMessage, MessageOp.SEND)
+    received_event = mock.Mock(spec=[])
+
+    connector.register(topics=topic1, cb=received_event, start_thread=False, a=1)
+    connector.register(topics=topic1, cb=received_event, start_thread=False, a=2)
+
+    connector.send(topic1, TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+    received_event.assert_has_calls(
+        [
+            mock.call(MessageObject("topic1", TestMessage(msg="topic1")), a=1),
+            mock.call(MessageObject("topic1", TestMessage(msg="topic1")), a=2),
+        ]
+    )
+
+    received_event.reset_mock()
+    connector.unregister(topic1, cb=received_event, a=1)
+
+    connector.send(topic1, TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+    received_event.assert_called_once_with(MessageObject("topic1", TestMessage(msg="topic1")), a=2)
+    assert len(connector._topics_cb["topic1"]) == 1
+
+
+def test_redis_connector_unregister_bound_method_with_kwargs(connected_connector):
+    connector = connected_connector
+
+    topic1 = EndpointInfo("topic1", TestMessage, MessageOp.SEND)
+
+    class Receiver:
+        def __init__(self):
+            self.received = mock.Mock(spec=[])
+
+        def on_message(self, msg_obj, scan_id):
+            self.received(msg_obj, scan_id=scan_id)
+
+    receiver = Receiver()
+
+    connector.register(topics=topic1, cb=receiver.on_message, start_thread=False, scan_id="scan-1")
+
+    connector.send(topic1, TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+    receiver.received.assert_called_once_with(
+        MessageObject("topic1", TestMessage(msg="topic1")), scan_id="scan-1"
+    )
+
+    receiver.received.reset_mock()
+    connector.unregister(topic1, cb=receiver.on_message, scan_id="scan-1")
+
+    connector.send(topic1, TestMessage(msg="topic1"))
+    with pytest.raises(TimeoutError):
+        connector.poll_messages(timeout=1)
+    receiver.received.assert_not_called()
+    assert connector._redis_conn.execute_command("PUBSUB CHANNELS") == []
+    assert len(connector._topics_cb) == 0
+
+
 def test_redis_connector_unregister_topic_keeps_others_alive(connected_connector):
     def send_msgs_and_poll(timeout=None):
         connector.send(topic1, TestMessage())
@@ -221,6 +314,57 @@ def test_redis_connector_unregister_topic_keeps_others_alive(connected_connector
     send_msgs_and_poll()
     assert received_event1.call_count == 2
     assert received_event2.call_count == 2
+
+
+def test_redis_connector_unregister_all_callback_subscriptions_with_kwargs(connected_connector):
+    connector = connected_connector
+
+    received_event1 = mock.Mock(spec=[])
+    received_event2 = mock.Mock(spec=[])
+
+    connector.register(topics="topic1", cb=received_event1, start_thread=False, a=1)
+    connector.register(topics="topic2", cb=received_event1, start_thread=False, b=2)
+    connector.register(topics="topic2", cb=received_event2, start_thread=False, c=3)
+
+    connector.unregister(cb=received_event1)
+
+    connector.send("topic1", TestMessage(msg="topic1"))
+    connector.send("topic2", TestMessage(msg="topic2"))
+    connector.poll_messages(timeout=1)
+
+    received_event1.assert_not_called()
+    received_event2.assert_called_once()
+    assert list(connector._topics_cb.keys()) == ["topic2"]
+
+
+def test_redis_connector_unregister_same_callback_registered_with_multiple_kwargs(
+    connected_connector,
+):
+    connector = connected_connector
+
+    received_event = mock.Mock(spec=[])
+
+    connector.register(topics="topic1", cb=received_event, start_thread=False, a=1)
+    connector.register(topics="topic1", cb=received_event, start_thread=False, a=2)
+
+    connector.send("topic1", TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+
+    received_event.assert_has_calls(
+        [
+            mock.call(MessageObject("topic1", TestMessage(msg="topic1")), a=1),
+            mock.call(MessageObject("topic1", TestMessage(msg="topic1")), a=2),
+        ]
+    )
+    assert received_event.call_count == 2
+
+    received_event.reset_mock()
+    connector.unregister("topic1", cb=received_event)
+    connector.send("topic1", TestMessage(msg="topic1"))
+
+    assert received_event.call_count == 0
+    assert connector._redis_conn.execute_command("PUBSUB CHANNELS") == []
+    assert len(connector._topics_cb) == 0
 
 
 def test_redis_register_poll_messages(connected_connector):
