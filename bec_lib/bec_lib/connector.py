@@ -139,7 +139,7 @@ class PubSubInterface(abc.ABC):
         """Register a callback for a topic or pattern"""
 
     @abc.abstractmethod
-    def unregister(self, topics=None, patterns=None, cb=None):
+    def unregister(self, topics=None, patterns=None, cb=None, **kwargs):
         """Unregister a callback for a topic or pattern"""
 
     @abc.abstractmethod
