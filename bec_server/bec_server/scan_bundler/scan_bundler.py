@@ -6,7 +6,7 @@ import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bec_lib import messages
 from bec_lib.bec_service import BECService
@@ -17,7 +17,7 @@ from bec_lib.logger import bec_logger
 from .bec_emitter import BECEmitter
 
 if TYPE_CHECKING:
-    from bec_lib.redis_connector import RedisConnector
+    from bec_lib.redis_connector import MessageObject, RedisConnector
 
 
 logger = bec_logger.logger
@@ -35,12 +35,13 @@ class ScanBundler(BECService):
             name="device_read_register",
         )
         self.connector.register(MessageEndpoints.scan_status(), cb=self._scan_status_callback)
-
         self.sync_storage = {}
         self.monitored_devices = {}
         self.baseline_devices = {}
         self.device_storage = {}
         self.readout_priority = {}
+        self.scan_queue: messages.ScanQueueStatusMessage | None = None
+        self.scan_report_instructions: dict[str, list] = {}
         self.storage_initialized = set()
         self.executor = ThreadPoolExecutor(max_workers=4)
         self.executor_tasks = collections.deque(maxlen=100)
@@ -48,6 +49,9 @@ class ScanBundler(BECService):
         self._lock = threading.Lock()
         self._emitter = []
         self._initialize_emitters()
+        self.connector.register(
+            MessageEndpoints.scan_queue_status(), cb=self.on_scan_queue_status_update
+        )
         self.status = messages.BECStatus.RUNNING
 
     def _initialize_emitters(self):
@@ -94,6 +98,34 @@ class ScanBundler(BECService):
         if msg.content.get("status") != "open":
             self._scan_status_modification(msg)
         self.run_emitter("on_scan_status_update", msg)
+
+    def on_scan_queue_status_update(self, msg_obj: MessageObject):
+        """
+        Update the scan_report_instructions based on the active request block
+        in the scan queue status message.
+
+        Args:
+            msg_obj (MessageObject): The message object containing the scan queue status update.
+        """
+        status_msg = cast(messages.ScanQueueStatusMessage, msg_obj.value)
+        for scan_queue_status in status_msg.queue.values():
+            if not scan_queue_status.info:
+                continue
+            info = scan_queue_status.info[0]
+            active_request_block = info.active_request_block
+            if not active_request_block:
+                continue
+            scan_id = active_request_block.scan_id
+            if scan_id is None:
+                continue
+            report_instructions = active_request_block.report_instructions
+            if not report_instructions:
+                continue
+
+            self.scan_report_instructions[scan_id] = report_instructions
+            logger.debug(
+                f"Updated report instructions for scan_id {scan_id}: {report_instructions}"
+            )
 
     def _scan_status_modification(self, msg: messages.ScanStatusMessage):
         status = msg.content.get("status")
@@ -358,17 +390,18 @@ class ScanBundler(BECService):
             remove_scan_ids.append(scan_id)
 
         for scan_id in remove_scan_ids:
+            self.run_emitter("on_cleanup", scan_id)
             for storage in [
                 "sync_storage",
                 "monitored_devices",
                 "baseline_devices",
                 "readout_priority",
+                "scan_report_instructions",
             ]:
                 try:
                     getattr(self, storage).pop(scan_id)
                 except KeyError:
                     logger.warning(f"Failed to remove {scan_id} from {storage}.")
-            self.run_emitter("on_cleanup", scan_id)
             self.storage_initialized.remove(scan_id)
 
     def _send_scan_point(self, scan_id, point_id) -> None:
