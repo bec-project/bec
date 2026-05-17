@@ -162,6 +162,7 @@ def test_send_rpc_exception(rpc_cls: RPCHandler, instr: messages.DeviceInstructi
             ),
             success=False,
         ),
+        expire=1800,
     )
 
 
