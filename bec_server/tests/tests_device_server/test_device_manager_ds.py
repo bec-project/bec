@@ -175,6 +175,7 @@ def test_obj_callback_progress(dm_with_devices):
             messages.ProgressMessage(
                 value=1, max_value=2, done=False, metadata={"scan_id": "12345"}
             ),
+            expire=3600,
         )
 
 

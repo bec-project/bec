@@ -235,6 +235,7 @@ class AsyncWriter(threading.Thread):
                 },
                 metadata={},
             ),
+            expire=3600,
         )
 
     def stop(self) -> None:

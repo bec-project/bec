@@ -315,7 +315,9 @@ class HDF5FileWriter:
             file_data[key] = val if not isinstance(val, list) else merge_dicts(val)
         msg_data = {"file_path": file_path, "data": file_data, "scan_info": info_storage}
         msg = messages.FileContentMessage(**msg_data)
-        self.file_writer_manager.connector.set_and_publish(MessageEndpoints.file_content(), msg)
+        self.file_writer_manager.connector.set_and_publish(
+            MessageEndpoints.file_content(), msg, expire=3600
+        )
 
         # Write to temporary file first
         tmp_file_path = file_path.replace(".h5", ".tmp")
