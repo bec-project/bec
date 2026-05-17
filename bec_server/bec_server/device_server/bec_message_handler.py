@@ -71,9 +71,14 @@ class BECMessageHandler:
             return
 
         pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.file_event(device_name), message, pipe=pipe)
         self.connector.set_and_publish(
-            MessageEndpoints.public_file(scan_id=scan_id, name=device_name), message, pipe=pipe
+            MessageEndpoints.file_event(device_name), message, pipe=pipe, expire=3600
+        )
+        self.connector.set_and_publish(
+            MessageEndpoints.public_file(scan_id=scan_id, name=device_name),
+            message,
+            pipe=pipe,
+            expire=3600,
         )
         pipe.execute()
 
@@ -94,7 +99,9 @@ class BECMessageHandler:
         message.metadata.update(
             {"scan_id": scan_status_msg.scan_id, "status": scan_status_msg.status}
         )
-        self.connector.set_and_publish(MessageEndpoints.device_progress(device_name), message)
+        self.connector.set_and_publish(
+            MessageEndpoints.device_progress(device_name), message, expire=3600
+        )
 
     def _handle_preview_signal(self, obj: bms.PreviewSignal, message: messages.BECMessage):
         if not isinstance(message, messages.DevicePreviewMessage):

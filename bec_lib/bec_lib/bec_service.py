@@ -341,7 +341,9 @@ class BECService:
             )
             msg = messages.ServiceMetricMessage(name=self._service_name, metrics=data)
             try:
-                self.connector.set_and_publish(MessageEndpoints.metrics(self._service_name), msg)
+                self.connector.set_and_publish(
+                    MessageEndpoints.metrics(self._service_name), msg, expire=30
+                )
             # pylint: disable=broad-except
             except Exception:
                 # exception is not explicitly specified,

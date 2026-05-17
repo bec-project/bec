@@ -81,7 +81,7 @@ class DeviceProgress:
             success=success,
         )
         self.connector.set_and_publish(
-            MessageEndpoints.device_initialization_progress(), progress_msg
+            MessageEndpoints.device_initialization_progress(), progress_msg, expire=3600
         )
 
 
@@ -931,7 +931,9 @@ class DeviceManagerDS(DeviceManagerBase):
         msg = messages.ProgressMessage(
             value=value, max_value=max_value, done=done, metadata=metadata
         )
-        self.connector.set_and_publish(MessageEndpoints.device_progress(obj.root.name), msg)
+        self.connector.set_and_publish(
+            MessageEndpoints.device_progress(obj.root.name), msg, expire=3600
+        )
 
     def _obj_callback_file_event(
         self,
@@ -975,9 +977,14 @@ class DeviceManagerDS(DeviceManagerBase):
             metadata=metadata,
         )
         pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.file_event(device_name), msg, pipe=pipe)
         self.connector.set_and_publish(
-            MessageEndpoints.public_file(scan_id=scan_id, name=device_name), msg, pipe=pipe
+            MessageEndpoints.file_event(device_name), msg, pipe=pipe, expire=3600
+        )
+        self.connector.set_and_publish(
+            MessageEndpoints.public_file(scan_id=scan_id, name=device_name),
+            msg,
+            pipe=pipe,
+            expire=3600,
         )
         pipe.execute()
 
