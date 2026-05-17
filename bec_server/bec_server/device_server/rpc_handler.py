@@ -139,6 +139,7 @@ class RPCHandler:
             messages.DeviceRPCMessage(
                 device=instr.content["device"], return_val=None, out=error_info, success=False
             ),
+            expire=1800,
         )
         diid = instr.metadata.get("device_instr_id", "")
         request = self.requests_handler.get_request(diid)
