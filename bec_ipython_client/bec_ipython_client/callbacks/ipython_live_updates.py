@@ -308,16 +308,18 @@ class IPythonLiveUpdates:
 
         """
 
-        # We have already checked that the relevant queue item exists and has a status and queue position, so
-        assert self.client.queue is not None
-        assert self.client.queue.queue_storage.current_scan_queue is not None
-        assert queue.queue_position is not None
-
+        if self.client.queue is None or self.client.queue.queue_storage.current_scan_queue is None:
+            return
         target_queue = self.client.queue.queue_storage.current_scan_queue.get(
             self.client.queue.get_default_scan_queue()
         )
         if target_queue is None:
             return
+
+        queue_position = queue.queue_position
+        if queue_position is None:
+            return
+
         status = target_queue.status
         if status == "LOCKED":
             lock_info = [f"{lock.identifier}: {lock.reason}\n" for lock in target_queue.locks]
@@ -332,10 +334,11 @@ class IPythonLiveUpdates:
             else:
                 self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
             return
-        if queue.queue_position > 0:
+
+        if queue_position > 0:
             message = (
-                f"Scan is enqueued and is waiting for execution. Current position in queue {self.client.queue.get_default_scan_queue()}:"
-                f" {queue.queue_position + 1}. Queue status: {status}."
+                f"Scan is enqueued and is waiting for execution. Current position in queue {target_queue}:"
+                f" {queue_position + 1}. Queue status: {status}."
             )
             if self._status_live is None:
                 self._status_live = Live(
