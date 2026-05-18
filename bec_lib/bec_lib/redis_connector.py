@@ -1009,7 +1009,7 @@ class RedisConnector:
                 topics_cb = self._topics_cb[topic]
                 # remove callback from list
                 self._topics_cb[topic] = list(
-                    filter(lambda item: cb and item[0]() is not cb, topics_cb)
+                    filter(lambda item: cb and item[0]() != cb, topics_cb)
                 )
                 if not self._topics_cb[topic]:
                     # no callbacks left, unsubscribe
