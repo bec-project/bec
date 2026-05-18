@@ -1009,7 +1009,7 @@ class RedisConnector:
         cb_ref, item_kwargs = item
         if cb is not None and cb_ref() != cb:
             return False
-        return all(item_kwargs.get(key) == value for key, value in kwargs.items())
+        return all(key in item_kwargs and item_kwargs[key] == value for key, value in kwargs.items())
 
     def _filter_topics_cb(self, topics: list, cb: Callable | None, kwargs: dict):
         unsubscribe_list = []
