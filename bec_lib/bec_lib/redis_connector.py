@@ -1002,14 +1002,23 @@ class RedisConnector:
             self._stream_events_listener_thread.name += f" ({self.name})"
             self._stream_events_listener_thread.start()
 
-    def _filter_topics_cb(self, topics: list, cb: Callable | None):
+    @staticmethod
+    def _matches_subscription(
+        item: tuple[louie.saferef.BoundMethodWeakref, dict], cb: Callable | None, kwargs: dict
+    ) -> bool:
+        cb_ref, item_kwargs = item
+        if cb is not None and cb_ref() != cb:
+            return False
+        return all(key in item_kwargs and item_kwargs[key] == value for key, value in kwargs.items())
+
+    def _filter_topics_cb(self, topics: list, cb: Callable | None, kwargs: dict):
         unsubscribe_list = []
         with self._topics_cb_lock:
             for topic in topics:
                 topics_cb = self._topics_cb[topic]
                 # remove callback from list
                 self._topics_cb[topic] = list(
-                    filter(lambda item: cb and item[0]() is not cb, topics_cb)
+                    filter(lambda item: not self._matches_subscription(item, cb, kwargs), topics_cb)
                 )
                 if not self._topics_cb[topic]:
                     # no callbacks left, unsubscribe
@@ -1019,7 +1028,7 @@ class RedisConnector:
                 del self._topics_cb[topic]
         return unsubscribe_list
 
-    def unregister(self, topics=None, patterns=None, cb=None):
+    def unregister(self, topics=None, patterns=None, cb=None, **kwargs):
         if self._events_listener_thread is None:
             return
         if topics and patterns:
@@ -1031,20 +1040,20 @@ class RedisConnector:
             # see if registered streams can be unregistered
             for pattern in patterns:
                 self._unregister_stream(fnmatch.filter(self._stream_subs.all_topics, pattern), cb)
-            pubsub_unsubscribe_list = self._filter_topics_cb(patterns, cb)
+            pubsub_unsubscribe_list = self._filter_topics_cb(patterns, cb, kwargs)
             if pubsub_unsubscribe_list:
                 self._pubsub_conn.punsubscribe(pubsub_unsubscribe_list)
         elif topics is not None:
             topics, _ = self._convert_endpointinfo(topics, check_message_op=False)
             if not self._unregister_stream(topics, cb):
-                unsubscribe_list = self._filter_topics_cb(topics, cb)
+                unsubscribe_list = self._filter_topics_cb(topics, cb, kwargs)
                 if unsubscribe_list:
                     self._pubsub_conn.unsubscribe(unsubscribe_list)
         else:
             with self._topics_cb_lock:
                 topics = list(self._topics_cb.keys())
-            self.unregister(topics, cb)
-            self.unregister(self._stream_subs.all_topics, cb)
+            self.unregister(topics=topics, cb=cb, **kwargs)
+            self.unregister(topics=self._stream_subs.all_topics, cb=cb, **kwargs)
 
     def _unregister_stream(self, topics: list[str], cb: Callable | None = None) -> bool:
         """Unregister callbacks from a list of topics. Returns true if any were removed"""
