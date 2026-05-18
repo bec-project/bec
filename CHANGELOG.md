@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.122.4 (2026-05-18)
+
+### Bug Fixes
+
+- **redis_connector**: Filter_topics_cb `!=` instead of `is not`
+  ([`4935e02`](https://github.com/bec-project/bec/commit/4935e0209e517664195d666a2938a977407755d3))
+
+
 ## v3.122.3 (2026-05-15)
 
 ### Bug Fixes

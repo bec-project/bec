@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pytest-bec-e2e"
-version = "3.122.3"
+version = "3.122.4"
 description = "BEC pytest plugin for end-to-end tests"
 requires-python = ">=3.11"
 classifiers = [
@@ -26,6 +26,7 @@ bec_end2end_fixtures = "pytest_bec_e2e.plugin"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
+
 
 
 
