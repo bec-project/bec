@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.122.5 (2026-05-19)
+
+### Bug Fixes
+
+- **ipython_live_updates**: Accept None as valid states and return early
+  ([`41d3d6b`](https://github.com/bec-project/bec/commit/41d3d6b9ef9d34aa77bb94a7fd0f04f3a8ca054e))
+
+
 ## v3.122.4 (2026-05-18)
 
 ### Bug Fixes
