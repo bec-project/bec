@@ -105,7 +105,8 @@ class SharedMemAllocationInfo(BECMessage):
 
     msg_type: ClassVar[str] = "shared_mem_allocation_info"
 
-    info: list[SharedMemInfo]
+    # Consider structure, nested dict with client_id as key, and dict with signal name and ShareMemInfo as value
+    info: dict[str, dict[str, SharedMemInfo]]
 
 
 class SharedMemAllocationRequest(BECMessage):

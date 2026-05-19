@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from collections import defaultdict
 from typing import TYPE_CHECKING, Literal, Tuple
 
 from bec_lib import messages
@@ -30,6 +31,9 @@ class SharedMemoryManager(BECService):
         # Shared memory objects are stored in a dictionary with the client_id and signal name tuple as key
         # and the RingBuffer instance as value
         self._shared_memory_objects: dict[Tuple[str, str], RingBuffer] = {}
+        self._shared_memory_info: dict[str, dict[str, SharedMemInfo]] = defaultdict(
+            dict
+        )  # Nested dict with client_id as key, and dict with signal name and ShareMemInfo as value
         self.lock = threading.RLock()
 
     def _allocate_memory(self, request: messages.SharedMemAllocationRequest) -> None:
@@ -41,7 +45,7 @@ class SharedMemoryManager(BECService):
                 f"Shared memory object for client {request.client_id} and signal {request.signal} already exists. Overwriting."
             )
             # TODO should this republish the info?
-            self._publish_allocation_info(client_id=request.client_id)
+            self._publish_allocation_info(self._shared_memory_info)
             return
 
         buff = RingBuffer(
@@ -49,7 +53,10 @@ class SharedMemoryManager(BECService):
         )
         with self.lock:
             self._shared_memory_objects[(request.client_id, request.signal)] = buff
-            self._publish_allocation_info(client_id=request.client_id)
+            self._shared_memory_info[request.client_id][request.signal] = SharedMemInfo(
+                client_id=request.client_id, buffer_desc=buff.descriptor, signal=request.signal
+            )
+            self._publish_allocation_info(self._shared_memory_info)
 
     def _deallocate_memory(self, request: messages.SharedMemDeallocationRequest) -> None:
         """Callback function to handle shared memory deallocation requests."""
@@ -60,27 +67,19 @@ class SharedMemoryManager(BECService):
                 f"Shared memory object for client {request.client_id} and signal {request.signal} does not exist. Cannot deallocate."
             )
             # TODO should this republish the info?
-            self._publish_allocation_info(client_id=request.client_id)
+            self._publish_allocation_info(self._shared_memory_info)
             return
 
         with self.lock:
             buff = self._shared_memory_objects.pop((request.client_id, request.signal))
             buff.destroy()
-            self._publish_allocation_info(client_id=request.client_id)
+            self._shared_memory_info[request.client_id].pop(request.signal, None)
+            self._publish_allocation_info(self._shared_memory_info)
 
-    def _publish_allocation_info(self, client_id: str = "*") -> None:
+    def _publish_allocation_info(self, info: dict[str, dict[str, SharedMemInfo]]) -> None:
         """Publish the updated list of allocated shared memory objects."""
-        with self.lock:
-            info = [
-                SharedMemInfo(client_id=client_id, buffer_desc=buff.descriptor, signal=signal_name)
-                for (client_id, signal_name), buff in self._shared_memory_objects.items()
-            ]
-        # Maybe use regex here..
-        if client_id != "*":
-            info = [buff_info for buff_info in info if buff_info.client_id == client_id]
         self.connector.set_and_publish(
-            MessageEndpoints.shared_memory_info(client_id),
-            messages.SharedMemAllocationInfo(info=info),
+            MessageEndpoints.shared_memory_info(), messages.SharedMemAllocationInfo(info=info)
         )
 
     def start(self) -> None:
@@ -95,7 +94,8 @@ class SharedMemoryManager(BECService):
             for buff in self._shared_memory_objects.values():
                 buff.destroy()
             self._shared_memory_objects.clear()
-            self._publish_allocation_info()
+            self._shared_memory_info.clear()
+            self._publish_allocation_info({})
         # Cleanup bec service related resources
 
     def shutdown(self) -> None:

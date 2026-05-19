@@ -84,7 +84,7 @@ class MessageEndpoints:
     """
 
     @staticmethod
-    def shared_memory_info(client_id: str):
+    def shared_memory_info():
         """
         Endpoint for shared memory information. This endpoint is used to publish the shared memory information using
         a messages.SharedMemAllocationInfo message.
@@ -92,7 +92,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for shared memory information.
         """
-        endpoint = f"{EndpointType.INFO.value}/shared_memory/info/{client_id}"
+        endpoint = f"{EndpointType.INFO.value}/shared_memory/info/"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.SharedMemAllocationInfo,
