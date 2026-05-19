@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.122.6 (2026-05-19)
+
+### Bug Fixes
+
+- **dependencies**: Adjust pylint dependency to dev section
+  ([`d9a7a5f`](https://github.com/bec-project/bec/commit/d9a7a5fe30fc59404850410695c5a0f76510faba))
+
+
 ## v3.122.5 (2026-05-19)
 
 ### Bug Fixes
