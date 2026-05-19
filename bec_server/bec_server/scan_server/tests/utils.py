@@ -34,6 +34,10 @@ class ScanServerMock(ScanServer):
         self.scan_worker = WorkerMock()
         self.proc_manager = ProcManagerMock()
 
+    def _start_actor_managers(self):
+        self.actor_manager = ProcManagerMock()
+        self.builtin_actor_manager = ProcManagerMock()
+
     def _start_metrics_emitter(self):
         pass
 

@@ -1980,6 +1980,9 @@ class GameLeaderboardMessage(BECMessage):
     leaderboard: list[GameScoreMessage]
 
 
+BlStateStatus = Literal["valid", "invalid", "warning", "unknown"]
+
+
 class BeamlineStateMessage(BECMessage):
     """
     Message for beamline state updates
@@ -1992,7 +1995,7 @@ class BeamlineStateMessage(BECMessage):
 
     msg_type: ClassVar[str] = "beamline_state_message"
     name: str
-    status: Literal["valid", "invalid", "warning", "unknown"]
+    status: BlStateStatus
     label: str
     timestamp: float = Field(default_factory=time.time)
 
@@ -2024,6 +2027,33 @@ class AvailableBeamlineStatesMessage(BECMessage):
 
     msg_type: ClassVar[str] = "beamline_state_update_message"
     states: list[BeamlineStateConfig]
+
+
+class BuiltinActorStateChangeMessage(BECMessage):
+    msg_type: ClassVar[str] = "actor_start_request"
+    actor_name: str
+
+
+class ScanInterlockModifyStateTableMessage(BECMessage):
+    msg_type: ClassVar[str] = "scan_interlock_modify_state_table"
+    action: Literal["add", "remove", "remove_all"]
+    state_name: str | None = None
+    status: BlStateStatus | None = None
+
+    @model_validator(mode="after")
+    def _validate(self):
+        if self.action == "add" and (self.status is None or self.state_name is None):
+            raise ValueError("Must specify a name and status when adding a state")
+        if self.action in ["remove", "remove_all"] and self.status is not None:
+            raise ValueError("May not specify a status when removing a state")
+        if self.action == "remove_all" and self.state_name is not None:
+            raise ValueError("May not specify a state when removing all states")
+        return self
+
+
+class ScanInterlockStateTableContent(BECMessage):
+    msg_type: ClassVar[str] = "scan_interlock_state_table_content"
+    states_watched: dict[str, BlStateStatus]
 
 
 class ActorStartRequestMessage(BECMessage):

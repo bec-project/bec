@@ -10,6 +10,8 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.scan_number_container import ScanNumberContainer
 from bec_lib.service_config import ServiceConfig
+from bec_server.actors.builtin_actor_manager import BuiltinActorManager
+from bec_server.actors.manager import ActorManager
 from bec_server.procedures.container_utils import podman_available
 from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
@@ -40,6 +42,7 @@ class ScanServer(BECService):
         self._start_procedure_manager(
             use_subprocess_proc_worker=config.model.procedures.use_subprocess_worker
         )
+        self._start_actor_managers()
         self.status = messages.BECStatus.RUNNING
         self.beamline_states = None
         self._start_beamline_state_manager()
@@ -83,6 +86,10 @@ class ScanServer(BECService):
         )
         self.proc_manager = ProcedureManager(self.bootstrap_server, procedure_worker)
 
+    def _start_actor_managers(self):
+        self.actor_manager = ActorManager(self.bootstrap_server)
+        self.builtin_actor_manager = BuiltinActorManager(self.bootstrap_server)
+
     def _alarm_callback(self, msg):
         msg = msg.value
         queue = msg.metadata.get("queue", "primary")
@@ -115,6 +122,8 @@ class ScanServer(BECService):
 
     def shutdown(self, per_thread_timeout_s: float | None = None) -> None:
         """shutdown the scan server"""
+        self.builtin_actor_manager.shutdown()
+        self.actor_manager.shutdown()
         self.proc_manager.shutdown()
         self.device_manager.shutdown()
         self.queue_manager.shutdown()

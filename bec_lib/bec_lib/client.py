@@ -21,6 +21,7 @@ from rich.table import Table
 from bec_lib.alarm_handler import AlarmHandler, Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.bl_state_manager import BeamlineStateManager
+from bec_lib.builtin_actor_hli import BuiltinActorHli
 from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.config_helper import ConfigHelperUser
 from bec_lib.dap_plugins import DAPPlugins
@@ -163,6 +164,7 @@ class BECClient(BECService):
         self._system_user = ""
         self.beamline_states = None
         self.messaging: MessagingContainer = None  # type: ignore
+        self.builtin_actors = BuiltinActorHli(self)
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:

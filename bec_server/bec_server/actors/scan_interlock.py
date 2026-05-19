@@ -1,0 +1,97 @@
+from uuid import uuid4
+
+from bec_lib.client import BECClient
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
+from bec_lib.messages import ScanInterlockModifyStateTableMessage, ScanInterlockStateTableContent
+from bec_server.actors.actor import BlStateActor
+
+logger = bec_logger.logger
+
+
+class ScanInterlockActor(BlStateActor):
+    """Sets a scan lock on the primary queue if any of the the states in the state_table don't match
+    the required value. Removes the lock if all of them match."""
+
+    def __init__(self, client: BECClient, name: str, exec_id: str):
+        states_msg = self.client.connector.get(MessageEndpoints.scan_interlock_states())
+        if states_msg is not None:
+            self.state_table = states_msg.watched_states
+        else:
+            self.state_table = {}
+
+        super().__init__(client, name, exec_id)
+        self.lock_id: str | None = None
+        self.client.connector.register(
+            MessageEndpoints.modify_interlock_table(), cb=self._on_state_modification
+        )
+
+    def _update_watched_states_in_redis(self):
+        self.client.connector.set(
+            MessageEndpoints.scan_interlock_states(),
+            ScanInterlockStateTableContent(states_watched=self.state_table),
+        )
+
+    def _on_state_modification(self, msg_dict: dict):
+        msg: ScanInterlockModifyStateTableMessage = msg_dict["data"]
+        with self.state_table_lock:
+            if msg.action == "add":
+                logger.info(f"Adding {msg.state_name} to the scan interlock actor")
+                if msg.state_name not in self.state_table:
+                    self.client.connector.register(
+                        MessageEndpoints.beamline_state(msg.state_name), cb=self.evaluate
+                    )
+                self.state_table[msg.state_name] = msg.status  # type: ignore # msg is validated
+            elif msg.action == "remove_all":
+                for state in self.state_table:
+                    self.client.connector.unregister(MessageEndpoints.beamline_state(state))
+                self.state_table = {}
+                self.state_cache = {}
+            else:
+                logger.info(f"Removing {msg.state_name} from the scan interlock actor")
+                if msg.state_name in self.state_table:
+                    self.client.connector.unregister(
+                        MessageEndpoints.beamline_state(msg.state_name)
+                    )
+                    del self.state_table[msg.state_name]
+                    del self.state_cache[msg.state_name]
+            self._update_cache()
+            self._update_watched_states_in_redis()
+        super(BlStateActor, self).evaluate()
+
+    @property
+    def mismatched_states(self):
+        """A list of all the states which are out of spec"""
+        with self.state_table_lock:
+            return [
+                state_name
+                for state_name, expected_state in self.state_table
+                if (current_state := self.state_cache.get(state_name)) is not None
+                and current_state != expected_state
+            ]
+
+    def some_mismatch_action(self, client: BECClient):
+        if self.client.queue is None or self.lock_id is not None:
+            return
+        self.lock_id = "ScanInterlockActor-{uuid4()}"
+        self.client.queue.add_queue_lock(
+            queue="primary",
+            reason=f"Interlock for beamline states: {self.mismatched_states}",
+            lock_id=self.lock_id,
+        )
+        self.client.queue.request_scan_restart()
+
+    def all_match_action(self, client: BECClient):
+        self._unlock()
+
+    def _unlock(self):
+        if self.client.queue is None or self.lock_id is None:
+            return
+        try:
+            self.client.queue.remove_queue_lock(queue="primary", lock_id=self.lock_id)
+        finally:
+            self.lock_id = None
+
+    def run(self):
+        super().run()
+        self._unlock()
