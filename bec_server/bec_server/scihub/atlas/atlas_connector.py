@@ -11,6 +11,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.signature_serializer import signature_to_dict
 
+from .atlas_active_client_emitter import AtlasActiveClientEmitter
 from .atlas_forwarder import AtlasForwarder
 from .atlas_metadata_handler import AtlasMetadataHandler
 from .config_handler import ConfigHandler
@@ -39,12 +40,14 @@ class AtlasConnector:
         self._config_request_handler = None
         self.config_handler = None
         self.metadata_handler = None
+        self.active_client_emitter = None
         self.atlas_forwarder = None
 
     def start(self):
         self.connect_to_atlas()
         self.config_handler = ConfigHandler(self, self.connector)
         self._start_config_request_handler()
+        self.active_client_emitter = AtlasActiveClientEmitter(self)
         if self.connected_to_atlas:
             self.metadata_handler = AtlasMetadataHandler(self)
             self.atlas_forwarder = AtlasForwarder(self)
@@ -255,6 +258,8 @@ class AtlasConnector:
             self._config_request_handler.shutdown()
         if self.metadata_handler:
             self.metadata_handler.shutdown()
+        if self.active_client_emitter:
+            self.active_client_emitter.shutdown()
         if self.atlas_forwarder:
             self.atlas_forwarder.shutdown()
         if self.redis_atlas:
