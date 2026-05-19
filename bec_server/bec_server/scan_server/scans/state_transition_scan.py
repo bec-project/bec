@@ -74,8 +74,6 @@ class StateTransitionScan(ScanBase):
         super().__init__(**kwargs)
         self.state_name = state_name
         self.target_label = target_label
-        # Check if the state and the target label exists, if yes, fetch the configuration for the target state
-        self.config_for_label = self._fetch_config_for_label(state_name, target_label)
 
         # We need to sort the devices and signals in the config, and identify which of them are motor setpoint/readback pairs
         # and which of them are just readouts and thereby can not be set within the transition.
@@ -91,65 +89,16 @@ class StateTransitionScan(ScanBase):
         before the scan is opened, such as preparing the positions (if not done already)
         or setting up the devices.
         """
+        # Check if the state and the target label exists, if yes, fetch the configuration for the target state
+        self.config_for_label = self._fetch_config_for_label(self.state_name, self.target_label)
         requirements: list[ResolvedStateSignal] = AggregatedState.get_state_requirements(
             self.target_label, self.config_for_label, self.device_manager, "StateTransitionScan"
         )
-        for req in requirements:
-            dev_obj: DeviceBase = self.device_manager.devices.get(req.device_name)
-            # Device not found
-            if dev_obj is None:
-                raise StateTransitionScanError(
-                    exc_type="DeviceNotFound",
-                    message=f"Device {req.device_name} not found in device manager.",
-                    compact_message=f"Device {req.device_name} not found.",
-                )
-            # First we handle Signals logic
-            if isinstance(dev_obj, Signal):
-                self._signals_to_set.append((dev_obj, req.expected_value))
-                continue
-            # Positioner and Device logic. Devices must implement .set for this to work, otherwise we can not set them and we raise an error
-            if isinstance(dev_obj, DeviceBase):
-                # Handle motor-specific logic here
-                # First we handle logic for motions of the motor. Device_name and signal_name will be equivalent here
-                if req.signal_name == req.device_name:
-                    self._devices_to_set.append((dev_obj, req.expected_value))
-                    continue
-                if req.source == "limits":
-                    if req.device_name not in self._limits_to_set:
-                        self._limits_to_set[req.device_name] = (
-                            dev_obj,
-                            dev_obj.low_limit,
-                            dev_obj.high_limit,
-                        )
-                    if req.signal_name == "low":
-                        self._limits_to_set[req.device_name] = (
-                            dev_obj,
-                            req.expected_value,
-                            self._limits_to_set[req.device_name][2],
-                        )
-                    elif req.signal_name == "high":
-                        self._limits_to_set[req.device_name] = (
-                            dev_obj,
-                            self._limits_to_set[req.device_name][1],
-                            req.expected_value,
-                        )
-                    continue
-                signal_obj = self._get_signal_object(dev_obj, req.signal_name)
-                if signal_obj is None:
-                    raise StateTransitionScanError(
-                        exc_type="SignalNotFound",
-                        message=f"Signal {req.signal_name} for device {req.device_name} not found in device manager.",
-                        compact_message=f"Signal {req.signal_name} for device {req.device_name} not found.",
-                    )
-                self._signals_to_set.append((signal_obj, req.expected_value))
-                continue
+        self._signals_to_set, self._limits_to_set, self._devices_to_set = (
+            self._fetch_devices_signals_and_limits_to_set(requirements)
+        )
 
         self.update_scan_info(scan_report_devices=[dev for dev, _ in self._devices_to_set])
-
-    def _get_signal_object(self, device_obj: DeviceBase, signal_name: str) -> Signal:
-        for component_name, info in device_obj._info["signals"].items():
-            if info["obj_name"] == signal_name:
-                return getattr(device_obj, component_name)
 
     @scan_hook
     def open_scan(self):
@@ -160,6 +109,7 @@ class StateTransitionScan(ScanBase):
         prepare_scan() or in open_scan() itself and call self.update_scan_info(...)
         to update the scan metadata if needed.
         """
+        self.actions.open_scan()
 
     @scan_hook
     def stage(self):
@@ -169,6 +119,7 @@ class StateTransitionScan(ScanBase):
         However, if there are any additional steps that need to be executed before
         staging the devices, they can be implemented here.
         """
+        self.actions.stage_all_devices()
 
     @scan_hook
     def pre_scan(self):
@@ -179,6 +130,7 @@ class StateTransitionScan(ScanBase):
         devices, e.g. devices that have a short timeout.
         The pre-scan logic is typically implemented on the device itself.
         """
+        self.actions.pre_scan_all_devices()
 
     @scan_hook
     def scan_core(self):
@@ -186,23 +138,22 @@ class StateTransitionScan(ScanBase):
         Core scan logic to be executed during the scan.
         This is where the main scan logic should be implemented.
         """
+        # Set the signals first... because otherwise there can be an issue with the live updates if
+        # TODO we set the scan_report_instruction_readback for the motors and one of the signal is also a motor.
+        self._set_signals()
+        # Motors
         motors = [element[0] for element in self._devices_to_set]
         target_positions = [element[1] for element in self._devices_to_set]
         current_positions = self.components.get_start_positions(motors)
-
+        # TODO Check how this can be managed in view of the live updates. If we move the signal section further down,
+        # We get issues with the DeviceProgressBar live updates, and in this ordering, we have an issue that multiple
+        # Live displays seem to be triggered. This has to be investigated with care.
         self.actions.add_scan_report_instruction_readback(
-            devices=motors,
-            start=current_positions,
-            stop=target_positions,
-            request_id=self.scan_info.metadata["RID"],
+            devices=motors, start=current_positions, stop=target_positions
         )
-
         self.components.move_and_wait(motors, target_positions)
-        # After the move is completed, we set the limits and signals.
-        for dev_name, (dev_obj, low_limit, high_limit) in self._limits_to_set.items():
-            dev_obj.limits = [low_limit, high_limit]
-        for signal_obj, target_value in self._signals_to_set:
-            signal_obj.set(target_value).wait()
+        # Limits
+        self._set_limits()
 
     @scan_hook
     def at_each_point(self):
@@ -220,14 +171,20 @@ class StateTransitionScan(ScanBase):
         """
         Post-scan steps to be executed after the main scan logic.
         """
+        self.actions.complete_all_devices()
 
     @scan_hook
     def unstage(self):
         """Unstage the scan by executing post-scan steps."""
+        self.actions.unstage_all_devices()
 
     @scan_hook
     def close_scan(self):
         """Close the scan."""
+        if self._baseline_readout_status is not None:
+            self._baseline_readout_status.wait()
+        self.actions.close_scan()
+        self.actions.check_for_unchecked_statuses()
 
     @scan_hook
     def on_exception(self, exception: Exception):
@@ -240,6 +197,136 @@ class StateTransitionScan(ScanBase):
     #################
     ## Custom Methods
     #################
+
+    def _set_signals(self):
+        """Method to set signals in the transition."""
+        for signal_obj, target_value in self._signals_to_set:
+            # Check if signal is writable before setting it, if not skip.
+            if self._check_if_signal_has_write_access(signal_obj):
+                signal_obj.set(target_value).wait()
+
+    def _set_limits(self):
+        """Method to set limits for devices in the transition."""
+        for dev_name, (dev_obj, low_limit, high_limit) in self._limits_to_set.items():
+            dev_obj.limits = [low_limit, high_limit]
+
+    def _check_if_signal_has_write_access(self, signal_obj: Signal) -> bool:
+        """
+        Check if a signal has write access based on its signal information. The issue here is that signals of a
+        device follow a slightly different pattern. Therefore, we have to first check "_info" for signals
+        and if that is empty, check '_signal_info' for sub-signals of devices.
+
+        Args:
+            signal_obj (Signal): Signal object to check.
+        Returns:
+            bool: True if the signal has write access, False otherwise.
+        """
+        write_access = signal_obj._info.get("write_access", None)
+        if write_access is None:
+            write_access = signal_obj._signal_info.get("write_access", False)
+        return write_access
+
+    def _fetch_devices_signals_and_limits_to_set(
+        self, requirements: list[ResolvedStateSignal]
+    ) -> Tuple[dict, dict, dict]:
+        """
+        This method fetches the device signals, limits and devices to set based on a list of state requirements.
+        It returns a tuple containing three elements:
+            - signals_to_set (list[Tuple[Signal, Any]]): List of signals to set with their target values.
+            - limits_to_set (dict[str, Tuple[Positioner, float, float]]): Dictionary of devices and their limits to set.
+            - devices_to_set (list[Tuple[Positioner, float]]): List of devices to set with their target positions.
+
+        Args:
+            requirements (list[ResolvedStateSignal]): List of state requirements to fetch the device signals and limits for.
+
+        Returns:
+            Tuple containing:
+                - signals_to_set (list[Tuple[Signal, Any]]): List of signals to set with their target values.
+                - limits_to_set (dict[str, Tuple[Positioner, float, float]]): Dictionary of devices and their limits to set.
+                - devices_to_set (list[Tuple[Positioner, float]]): List of devices to set with their target positions.
+        """
+        _signals_to_set: list[Tuple[Signal, Any]] = []
+        _limits_to_set: dict[str, Tuple[Positioner, float, float]] = {}
+        _devices_to_set: list[Tuple[Positioner, float]] = []
+        for req in requirements:
+            dev_obj: DeviceBase = self.device_manager.devices.get(req.device_name)
+            # Device not found
+            if dev_obj is None:
+                raise StateTransitionScanError(
+                    exc_type="DeviceNotFound",
+                    message=f"Device {req.device_name} not found in device manager.",
+                    compact_message=f"Device {req.device_name} not found.",
+                )
+            expected_value = self._get_expected_value(req)
+            # First we handle Signals logic
+            if isinstance(dev_obj, Signal):
+                _signals_to_set.append((dev_obj, expected_value))
+                continue
+            # Positioner and Device logic. Devices must implement .set for this to work, otherwise we can not set them and we raise an error
+            if isinstance(dev_obj, DeviceBase):
+                # Handle motor-specific logic here
+                # First we handle logic for motions of the motor. Device_name and signal_name will be equivalent here
+                if req.signal_name == req.device_name:
+                    _devices_to_set.append((dev_obj, expected_value))
+                    continue
+                if req.source == "limits":
+                    if req.device_name not in _limits_to_set:
+                        _limits_to_set[req.device_name] = (
+                            dev_obj,
+                            dev_obj.low_limit,
+                            dev_obj.high_limit,
+                        )
+                    if req.signal_name == "low":
+                        _limits_to_set[req.device_name] = (
+                            dev_obj,
+                            expected_value,
+                            _limits_to_set[req.device_name][2],
+                        )
+                    elif req.signal_name == "high":
+                        _limits_to_set[req.device_name] = (
+                            dev_obj,
+                            _limits_to_set[req.device_name][1],
+                            expected_value,
+                        )
+                    continue
+                signal_obj = self._get_signal_object(dev_obj, req.signal_name)
+                if signal_obj is None:
+                    raise StateTransitionScanError(
+                        exc_type="SignalNotFound",
+                        message=f"Signal {req.signal_name} for device {req.device_name} not found in device manager.",
+                        compact_message=f"Signal {req.signal_name} for device {req.device_name} not found.",
+                    )
+                _signals_to_set.append((signal_obj, expected_value))
+                continue
+        # Return the collected signals, limits and devices to set
+        return _signals_to_set, _limits_to_set, _devices_to_set
+
+    def _get_expected_value(self, requirement: ResolvedStateSignal) -> Any:
+        expected_value = requirement.expected_value
+        # If expected value is a user parameter, fetch the lates value from the device manager
+        if isinstance(expected_value, str) and expected_value.startswith("user_parameter:"):
+            dev_obj = self.device_manager.devices.get(requirement.device_name, None)
+            if dev_obj is None:
+                raise StateTransitionScanError(
+                    exc_type="DeviceNotFound",
+                    message=f"Device {requirement.device_name} not found in device manager.",
+                    compact_message=f"Device {requirement.device_name} not found.",
+                )
+            expected_value = dev_obj.user_parameter.get(
+                expected_value.split("user_parameter:")[1], None
+            )
+            if expected_value is None:
+                raise StateTransitionScanError(
+                    exc_type="UserParameterNotFound",
+                    message=f"User parameter {expected_value.split('user_parameter:')[1]} for device {requirement.device_name} not found in device manager.",
+                    compact_message=f"User parameter {expected_value.split('user_parameter:')[1]} for device {requirement.device_name} not found.",
+                )
+        return expected_value
+
+    def _get_signal_object(self, device_obj: DeviceBase, signal_name: str) -> Signal:
+        for component_name, info in device_obj._info["signals"].items():
+            if info["obj_name"] == signal_name:
+                return getattr(device_obj, component_name)
 
     def _fetch_config_for_label(self, state_name: str, target_label: str) -> SubDeviceStateConfig:
         available_states_msg: AvailableBeamlineStatesMessage = self.redis_connector.get_last(
