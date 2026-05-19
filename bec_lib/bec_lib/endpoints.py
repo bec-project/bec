@@ -83,6 +83,54 @@ class MessageEndpoints:
     Class for message endpoints.
     """
 
+    @staticmethod
+    def shared_memory_info():
+        """
+        Endpoint for shared memory information. This endpoint is used to publish the shared memory information using
+        a messages.SharedMemAllocationInfo message.
+
+        Returns:
+            EndpointInfo: Endpoint for shared memory information.
+        """
+        endpoint = f"{EndpointType.INFO.value}/shared_memory/info/"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.SharedMemAllocationInfo,
+            message_op=MessageOp.SET_PUBLISH,
+        )
+
+    @staticmethod
+    def shared_memory_allocate():
+        """
+        Endpoint for shared memory allocation. This endpoint is used to request the allocation of a shared memory object using
+        a messages.SharedMemAllocationRequest message.
+
+        Returns:
+            EndpointInfo: Endpoint for shared memory allocation.
+        """
+        endpoint = f"{EndpointType.INFO.value}/shared_memory/allocate"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.SharedMemAllocationRequest,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
+    def shared_memory_deallocate():
+        """
+        Endpoint for shared memory deallocation. This endpoint is used to request the deallocation of a shared memory object using
+        a messages.SharedMemDeallocationRequest message.
+
+        Returns:
+            EndpointInfo: Endpoint for shared memory deallocation.
+        """
+        endpoint = f"{EndpointType.INFO.value}/shared_memory/deallocate"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.SharedMemDeallocationRequest,
+            message_op=MessageOp.STREAM,
+        )
+
     # devices feedback
     @staticmethod
     def device_status(device: str):
