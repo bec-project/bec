@@ -324,7 +324,9 @@ class TestConcreteStates:
                 value=msg_with_2_states, topic=MessageEndpoints.device_readback("samx").endpoint
             )
             state._update_aggregated_state(msg_obj, device="samx", source="readback")
-            evaluate.assert_called_once_with(affected_labels=set(["alignment", "measurement"]))
+            evaluate.assert_called_once_with(
+                affected_labels=set(["state_with_user_param", "alignment", "measurement"])
+            )
             emit_state.assert_not_called()  # As evaluate is mocked to return None, _emit_state should not be called
 
     def test_aggregated_state_evaluate(
@@ -446,7 +448,9 @@ class TestConcreteStates:
         ):
             state._update_aggregated_state(msg_obj, device="samx", source="readback")
 
-        evaluate.assert_called_once_with(affected_labels={"alignment", "measurement"})
+        evaluate.assert_called_once_with(
+            affected_labels={"state_with_user_param", "alignment", "measurement"}
+        )
         raise_alarm.assert_called_once()
         out = connected_connector.xread(
             MessageEndpoints.beamline_state("alignment"), from_start=True
@@ -661,7 +665,7 @@ class TestConcreteStates:
 
         affected_labels = state._fill_cache()
 
-        assert affected_labels == {"alignment", "measurement"}
+        assert affected_labels == {"alignment", "measurement", "state_with_user_param"}
         assert state._signal_value_cache[("samx", "readback", "samx")] == 0
 
     def test_aggregated_state_cache_ignores_irrelevant_signals(
