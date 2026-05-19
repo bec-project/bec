@@ -36,6 +36,9 @@ from bec_server.device_server.devices.device_serializer import (
     disable_lazy_wait_for_connection,
     get_device_info,
 )
+from bec_server.device_server.devices.rate_limited_pipeline_publisher import (
+    RateLimitedPipelinePublisher,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.redis_connector import RedisConnector
@@ -148,6 +151,10 @@ class DeviceManagerDS(DeviceManagerBase):
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
+        self._device_event_rate_limit_s = 0.01
+        self._rate_limited_publisher = RateLimitedPipelinePublisher(
+            connector_getter=lambda: self.connector, rate_limit_s=self._device_event_rate_limit_s
+        )
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -747,25 +754,26 @@ class DeviceManagerDS(DeviceManagerBase):
         if not obj.connected:
             return
         name = obj.root.name
-        limits = {
-            "low": {"value": obj.root.low_limit_travel.get()},
-            "high": {"value": obj.root.high_limit_travel.get()},
-        }
-        dev_msg = messages.DeviceMessage(signals=limits)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=pipe)
-        pipe.execute()
+        self._rate_limited_publisher.publish_set_and_publish(
+            MessageEndpoints.device_limits(name),
+            lambda root=obj.root: messages.DeviceMessage(
+                signals={
+                    "low": {"value": root.low_limit_travel.get()},
+                    "high": {"value": root.high_limit_travel.get()},
+                }
+            ),
+        )
 
     def _obj_callback_readback(self, *_args, obj: OphydObject, **kwargs):
         if not obj.connected:
             return
         name = obj.root.name
-        signals = obj.root.read()
-        metadata = self.devices.get(obj.root.name).metadata
-        dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, pipe)
-        pipe.execute()
+        self._rate_limited_publisher.publish_set_and_publish(
+            MessageEndpoints.device_readback(name),
+            lambda root=obj.root, device_name=name: messages.DeviceMessage(
+                signals=root.read(), metadata=dict(self.devices.get(device_name).metadata)
+            ),
+        )
 
     def _obj_callback_configuration(self, *_args, obj: OphydObject, **kwargs):
         if not obj.connected:
@@ -774,14 +782,13 @@ class DeviceManagerDS(DeviceManagerBase):
             # we don't need to publish the configuration of a signal
             return
         name = obj.root.name
-        signals = obj.root.read_configuration()
-        metadata = self.devices.get(obj.root.name).metadata
-        dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(name), dev_msg, pipe
+        self._rate_limited_publisher.publish_set_and_publish(
+            MessageEndpoints.device_read_configuration(name),
+            lambda root=obj.root, device_name=name: messages.DeviceMessage(
+                signals=root.read_configuration(),
+                metadata=dict(self.devices.get(device_name).metadata),
+            ),
         )
-        pipe.execute()
 
     @typechecked
     def _obj_callback_device_monitor_2d(
@@ -864,11 +871,11 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def _obj_callback_acq_done(self, *_args, **kwargs):
         device = kwargs["obj"].root.name
-        status = 0
-        metadata = self.devices[device].metadata
-        self.connector.set(
+        self._rate_limited_publisher.publish_set(
             MessageEndpoints.device_status(device),
-            messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
+            lambda device_name=device: messages.DeviceStatusMessage(
+                device=device_name, status=0, metadata=dict(self.devices[device_name].metadata)
+            ),
         )
 
     def _obj_callback_done_moving(self, *args, **kwargs):
@@ -877,11 +884,13 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def _obj_callback_is_moving(self, *_args, **kwargs):
         device = kwargs["obj"].root.name
-        status = int(kwargs.get("value"))
-        metadata = self.devices[device].metadata
-        self.connector.set(
+        self._rate_limited_publisher.publish_set(
             MessageEndpoints.device_status(device),
-            messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
+            lambda device_name=device, status=int(
+                kwargs.get("value")
+            ): messages.DeviceStatusMessage(
+                device=device_name, status=status, metadata=dict(self.devices[device_name].metadata)
+            ),
         )
 
     def _obj_flyer_callback(self, *_args, **kwargs):
@@ -928,10 +937,15 @@ class DeviceManagerDS(DeviceManagerBase):
         Callback for progress events. Sends the data to redis.
         """
         metadata = self.devices[obj.root.name].metadata
-        msg = messages.ProgressMessage(
-            value=value, max_value=max_value, done=done, metadata=metadata
+        self._rate_limited_publisher.publish_set_and_publish(
+            MessageEndpoints.device_progress(obj.root.name),
+            lambda device_name=obj.root.name, value=value, max_value=max_value, done=done: messages.ProgressMessage(
+                value=value,
+                max_value=max_value,
+                done=done,
+                metadata=dict(self.devices[device_name].metadata),
+            ),
         )
-        self.connector.set_and_publish(MessageEndpoints.device_progress(obj.root.name), msg)
 
     def _obj_callback_file_event(
         self,
@@ -999,6 +1013,7 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def shutdown(self):
         """Shutdown the device manager and disconnect all devices"""
+        self._rate_limited_publisher.shutdown()
         for device in self.devices.values():
             try:
                 logger.info(f"Disconnecting device {device.name}")

@@ -3,209 +3,209 @@
 ############################################################
 
 eiger:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimCamera
-    deviceConfig:
-        device_access: true
-    deviceTags:
-        - detector
-    enabled: true
-    readOnly: false
-    softwareTrigger: true
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimCamera
+  deviceConfig:
+    device_access: true
+  deviceTags:
+    - detector
+  enabled: true
+  readOnly: false
+  softwareTrigger: true
 
 ############## Cameras and detectors end here ##############
 
 dyn_signals:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.sim.sim.SynDynamicComponents
-    deviceConfig:
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.sim.sim.SynDynamicComponents
+  deviceConfig:
+  enabled: true
+  readOnly: false
 
 pseudo_signal1:
-    deviceClass: ophyd_devices.ComputedSignal
-    deviceConfig:
-        compute_method: "def compute_signals(signal1, signal2):
+  deviceClass: ophyd_devices.ComputedSignal
+  deviceConfig:
+    compute_method: "def compute_signals(signal1, signal2):
 
-            \    return signal1.get()*signal2.get()\n"
-        input_signals:
-            - "bpm4i"
-            - "bpm5i"
-    enabled: true
-    readOnly: false
-    readoutPriority: baseline
+      \    return signal1.get()*signal2.get()\n"
+    input_signals:
+      - "bpm4i"
+      - "bpm5i"
+  enabled: true
+  readOnly: false
+  readoutPriority: baseline
 
 failure_device:
-    deviceClass: ophyd_devices.sim.SimPositionerWithCommFailure
-    deviceConfig:
-        delay: 1
-        update_frequency: 400
-    enabled: true
-    readOnly: false
-    readoutPriority: baseline
+  deviceClass: ophyd_devices.sim.SimPositionerWithCommFailure
+  deviceConfig:
+    delay: 1
+    update_frequency: 50
+  enabled: true
+  readOnly: false
+  readoutPriority: baseline
 
 bec_signals_device:
-    deviceClass: ophyd_devices.sim.sim_test_devices.SimCameraWithPSIComponents
-    deviceConfig:
-    enabled: true
-    readOnly: false
-    readoutPriority: baseline
+  deviceClass: ophyd_devices.sim.sim_test_devices.SimCameraWithPSIComponents
+  deviceConfig:
+  enabled: true
+  readOnly: false
+  readoutPriority: baseline
 
 ############################################################
 ####################### User motors ########################
 ############################################################
 
 eyefoc:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 eyex:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 eyey:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 flyer_sim:
-    readoutPriority: on_request
-    deviceClass: ophyd_devices.SynFlyer
-    deviceConfig:
-        delay: 1
-        device_access: true
-        update_frequency: 400
-    deviceTags:
-        - flyer
-    enabled: true
-    readOnly: false
+  readoutPriority: on_request
+  deviceClass: ophyd_devices.SynFlyer
+  deviceConfig:
+    delay: 1
+    device_access: true
+    update_frequency: 50
+  deviceTags:
+    - flyer
+  enabled: true
+  readOnly: false
 hrox:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 hroy:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 hroz:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 pinz:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 samx:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 samy:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 samz:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: false
 
 ################### User motors end here ###################
 
@@ -214,101 +214,101 @@ samz:
 ############################################################
 
 bpm3a:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm3b:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm3c:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm3d:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm3i:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm4i:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm5i:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 bpm6i:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 temp:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 transd:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimMonitor
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimMonitor
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 
 monitor_async:
-    readoutPriority: async
-    deviceClass: ophyd_devices.sim.sim_monitor.SimMonitorAsync
-    deviceConfig:
-        sim_init:
-            model: GaussianModel
-            params:
-                amplitude: 500
-                center: 0
-                sigma: 1
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
-    softwareTrigger: true
+  readoutPriority: async
+  deviceClass: ophyd_devices.sim.sim_monitor.SimMonitorAsync
+  deviceConfig:
+    sim_init:
+      model: GaussianModel
+      params:
+        amplitude: 500
+        center: 0
+        sigma: 1
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
+  softwareTrigger: true
 
 ################ Beamline monitors end here ################
 
@@ -317,13 +317,13 @@ monitor_async:
 ############################################################
 
 ring_current_sim:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.ReadOnlySignal
-    deviceConfig:
-    deviceTags:
-        - beamline
-    enabled: true
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.ReadOnlySignal
+  deviceConfig:
+  deviceTags:
+    - beamline
+  enabled: true
+  readOnly: false
 ################ Read-only signals end here ################
 
 ############################################################
@@ -331,114 +331,114 @@ ring_current_sim:
 ############################################################
 
 motor1_disabled:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        labels: motor1_disabled
-        limits:
-            - -50
-            - 50
-        name: motor1_disabled
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: false
-    readOnly: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    labels: motor1_disabled
+    limits:
+      - -50
+      - 50
+    name: motor1_disabled
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: false
+  readOnly: false
 motor1_disabled_set:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        labels: motor1_disabled_set
-        limits:
-            - -50
-            - 50
-        name: motor1_disabled_set
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: true
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    labels: motor1_disabled_set
+    limits:
+      - -50
+      - 50
+    name: motor1_disabled_set
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: true
 motor2_disabled:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        labels: motor2_disabled
-        limits:
-            - -50
-            - 50
-        name: motor2_disabled
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: false
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    labels: motor2_disabled
+    limits:
+      - -50
+      - 50
+    name: motor2_disabled
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: false
+  readOnly: false
 motor2_disabled_set:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.SimPositioner
-    deviceConfig:
-        delay: 1
-        labels: motor2_disabled_set
-        limits:
-            - -50
-            - 50
-        name: motor2_disabled_set
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-    enabled: true
-    readOnly: true
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.SimPositioner
+  deviceConfig:
+    delay: 1
+    labels: motor2_disabled_set
+    limits:
+      - -50
+      - 50
+    name: motor2_disabled_set
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+  enabled: true
+  readOnly: true
 ######### DeviceProxy and SimCamera for delayed init tests ##########
 proxy_cam_test:
-    readoutPriority: monitored
-    deviceClass: ophyd_devices.SimCamera
-    deviceConfig:
-        device_access: true
-    deviceTags:
-        - detector
-    enabled: true
-    readOnly: false
-    softwareTrigger: false
+  readoutPriority: monitored
+  deviceClass: ophyd_devices.SimCamera
+  deviceConfig:
+    device_access: true
+  deviceTags:
+    - detector
+  enabled: true
+  readOnly: false
+  softwareTrigger: false
 sim_proxy_test:
-    readoutPriority: on_request
-    deviceClass: ophyd_devices.SlitProxy
-    deviceConfig:
-        proxy_cam_test:
-            signal_name: image
-            center_offset: [0, 0] # [x,y]
-            covariance: [[1000, 500], [200, 1000]] # [[x,x],[y,y]]
-            pixel_size: 0.01
-            ref_motors: [samx, samy]
-            slit_width: [1, 1]
-            motor_dir: [0, 1] # x:0 , y:1, z:2 coordinates
-    enabled: true
-    readOnly: false
+  readoutPriority: on_request
+  deviceClass: ophyd_devices.SlitProxy
+  deviceConfig:
+    proxy_cam_test:
+      signal_name: image
+      center_offset: [0, 0] # [x,y]
+      covariance: [[1000, 500], [200, 1000]] # [[x,x],[y,y]]
+      pixel_size: 0.01
+      ref_motors: [samx, samy]
+      slit_width: [1, 1]
+      motor_dir: [0, 1] # x:0 , y:1, z:2 coordinates
+  enabled: true
+  readOnly: false
 rt_controller:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.sim.SimPositionerWithController
-    deviceConfig:
-        delay: 1
-        limits:
-            - -50
-            - 50
-        tolerance: 0.01
-        update_frequency: 400
-    deviceTags:
-        - user motors
-        - test device
-    enabled: true
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.sim.SimPositionerWithController
+  deviceConfig:
+    delay: 1
+    limits:
+      - -50
+      - 50
+    tolerance: 0.01
+    update_frequency: 50
+  deviceTags:
+    - user motors
+    - test device
+  enabled: true
+  readOnly: false
 device_with_not_resolving_status:
-    readoutPriority: baseline
-    deviceClass: ophyd_devices.sim.sim_test_devices.SimDeviceWithStatusStageUnstage
-    deviceConfig:
-    deviceTags:
-        - test device
-    enabled: false
-    readOnly: false
+  readoutPriority: baseline
+  deviceClass: ophyd_devices.sim.sim_test_devices.SimDeviceWithStatusStageUnstage
+  deviceConfig:
+  deviceTags:
+    - test device
+  enabled: false
+  readOnly: false
