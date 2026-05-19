@@ -788,16 +788,29 @@ class AggregatedState(BeamlineState[AggregatedStateConfig]):
         if cached_value is None:
             return False
 
+        expected_value = requirement.expected_value
+        # If expected value is a user parameter, fetch the lates value from the device manager
+        if isinstance(expected_value, str) and expected_value.startswith("user_parameter:"):
+            # In this case, we fetch the latest user_parameter value from the device manager
+            dev_obj = self._get_device_manager().devices.get(requirement.device_name, None)
+            if dev_obj is None:
+                return False
+            expected_value = dev_obj.user_parameter.get(
+                expected_value.split("user_parameter:")[1], None
+            )
+            if expected_value is None:
+                return False
+
         try:
             # Cast to float to make sure comparison with abs works as expected.
             value = float(cached_value)
-            expected_value = float(requirement.expected_value)
-            return abs(value - expected_value) <= requirement.abs_tolerance
+            comparison_value = float(expected_value)
+            return abs(value - comparison_value) <= requirement.abs_tolerance
         # Catch TypeError and ValueError in case the value is not a number or cannot be cast to float,
         # in that case we fall back to exact equality.
         except (TypeError, ValueError):
             try:
-                result = cached_value == requirement.expected_value
+                result = cached_value == expected_value
             except (TypeError, ValueError):
                 return False
             # In case this comparison runs on comparing two arrays.
