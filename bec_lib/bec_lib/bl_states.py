@@ -7,7 +7,7 @@ import keyword
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Annotated, Any, Callable, ClassVar, Generic, Literal, Type, TypeVar, cast
+from typing import Annotated, Any, Callable, Generic, Literal, Type, TypeVar, cast
 
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
@@ -59,7 +59,7 @@ class BeamlineStateConfig(BaseModel):
     Base Configuration for a beamline state.
     """
 
-    state_type: ClassVar[str] = "BeamlineState"
+    state_type: str | None = "BeamlineState"
 
     name: Annotated[
         str,
@@ -92,7 +92,7 @@ class DeviceStateConfig(BeamlineStateConfig):
     Configuration for a device-based beamline state.
     """
 
-    state_type: ClassVar[str] = "DeviceBeamlineState"
+    state_type: str | None = "DeviceBeamlineState"
 
     device: Annotated[
         DeviceBase | str,
@@ -157,7 +157,7 @@ class DeviceWithinLimitsStateConfig(DeviceStateConfig):
     Configuration for a device within limits beamline state.
     """
 
-    state_type: ClassVar[str] = "DeviceWithinLimitsState"
+    state_type: str | None = "DeviceWithinLimitsState"
 
     low_limit: Annotated[
         float | None,
@@ -256,7 +256,7 @@ class AggregatedStateConfig(BeamlineStateConfig):
     Keys of the states dictionary are the labels of the different states.
     """
 
-    state_type: ClassVar[str] = "AggregatedState"
+    state_type: str | None = "AggregatedState"
 
     states: dict[str, SubDeviceStateConfig]
 
