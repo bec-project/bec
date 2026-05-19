@@ -148,9 +148,9 @@ class StateTransitionScan(ScanBase):
         # TODO Check how this can be managed in view of the live updates. If we move the signal section further down,
         # We get issues with the DeviceProgressBar live updates, and in this ordering, we have an issue that multiple
         # Live displays seem to be triggered. This has to be investigated with care.
-        self.actions.add_scan_report_instruction_readback(
-            devices=motors, start=current_positions, stop=target_positions
-        )
+        # self.actions.add_scan_report_instruction_readback(
+        #     devices=motors, start=current_positions, stop=target_positions
+        # )
         self.components.move_and_wait(motors, target_positions)
         # Limits
         self._set_limits()
