@@ -14,10 +14,16 @@ class ScanInterlockActor(BlStateActor):
     the required value. Removes the lock if all of them match."""
 
     def __init__(self, client: BECClient, name: str, exec_id: str):
-        self.state_table = {}
+        self._LOCK_ID = "ScanInterlockActor"
+        states_msg: ScanInterlockStateTableContent | None = client.connector.get(
+            MessageEndpoints.scan_interlock_states()
+        )
+        if states_msg is not None:
+            self.state_table = states_msg.states_watched
+        else:
+            self.state_table = {}
+
         super().__init__(client, name, exec_id)
-        self.lock_id: str | None = None
-        self._update_watched_states_in_redis()
         self.client.connector.register(
             MessageEndpoints.modify_interlock_table(), cb=self._on_state_modification
         )
@@ -55,24 +61,34 @@ class ScanInterlockActor(BlStateActor):
             self._update_watched_states_in_redis()
         super(BlStateActor, self).evaluate()
 
+    @property
+    def mismatched_states(self):
+        """A list of all the states which are out of spec"""
+        with self.state_table_lock:
+            return [
+                state_name
+                for state_name, expected_state in self.state_table.items()
+                if (current_state := self.state_cache.get(state_name)) is not None
+                and current_state != expected_state
+            ]
+
     def some_mismatch_action(self, client: BECClient):
-        if self.client.queue is None or self.lock_id is not None:
+        if self.client.queue is None:
             return
-        self.lock_id = str(uuid4())
         self.client.queue.add_queue_lock(
-            queue="primary", reason="ScanInterlockActor", lock_id=self.lock_id
+            queue="primary",
+            reason=f"Interlock for beamline states: {self.mismatched_states}",
+            lock_id=self._LOCK_ID,
         )
+        self.client.queue.request_scan_restart()
 
     def all_match_action(self, client: BECClient):
         self._unlock()
 
     def _unlock(self):
-        if self.client.queue is None or self.lock_id is None:
+        if self.client.queue is None:
             return
-        try:
-            self.client.queue.remove_queue_lock(queue="primary", lock_id=self.lock_id)
-        finally:
-            self.lock_id = None
+        self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
 
     def run(self):
         super().run()

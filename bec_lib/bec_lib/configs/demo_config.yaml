@@ -2160,3 +2160,11 @@ waveform:
   enabled: true
   readOnly: false
   softwareTrigger: true
+ramp_up:
+  deviceClass: ophyd_devices.sim.sim_test_devices.SimDeviceWithSignalDelay
+  readoutPriority: "baseline"
+  deviceTags:
+    - signal delay
+    - ramp up
+  enabled: true
+  readOnly: false
