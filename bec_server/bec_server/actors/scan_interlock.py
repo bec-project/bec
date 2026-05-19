@@ -15,12 +15,18 @@ class ScanInterlockActor(BlStateActor):
 
     def __init__(self, client: BECClient, name: str, exec_id: str):
         self.state_table = {}
+        self._set_watched_states_from_redis()
         super().__init__(client, name, exec_id)
         self.lock_id: str | None = None
-        self._update_watched_states_in_redis()
         self.client.connector.register(
             MessageEndpoints.modify_interlock_table(), cb=self._on_state_modification
         )
+
+    def _set_watched_states_from_redis(self):
+        states_msg = self.client.connector.get(MessageEndpoints.scan_interlock_states())
+        if states_msg is not None:
+            with self.state_table_lock:
+                self.state_table = states_msg.watched_states
 
     def _update_watched_states_in_redis(self):
         self.client.connector.set(
