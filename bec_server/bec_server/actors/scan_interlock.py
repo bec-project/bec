@@ -55,12 +55,25 @@ class ScanInterlockActor(BlStateActor):
             self._update_watched_states_in_redis()
         super(BlStateActor, self).evaluate()
 
+    @property
+    def mismatched_states(self):
+        """A list of all the states which are out of spec"""
+        with self.state_table_lock:
+            return [
+                state_name
+                for state_name, expected_state in self.state_table
+                if (current_state := self.state_cache.get(state_name)) is not None
+                and current_state != expected_state
+            ]
+
     def some_mismatch_action(self, client: BECClient):
         if self.client.queue is None or self.lock_id is not None:
             return
-        self.lock_id = str(uuid4())
+        self.lock_id = "ScanInterlockActor-{uuid4()}"
         self.client.queue.add_queue_lock(
-            queue="primary", reason="ScanInterlockActor", lock_id=self.lock_id
+            queue="primary",
+            reason=f"Interlock for beamline states: {self.mismatched_states}",
+            lock_id=self.lock_id,
         )
 
     def all_match_action(self, client: BECClient):
