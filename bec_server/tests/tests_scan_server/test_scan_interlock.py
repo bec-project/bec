@@ -10,6 +10,7 @@ from bec_server.actors.scan_interlock import ScanInterlockActor
 def mock_client():
     client = MagicMock()
     client.connector = MagicMock()
+    client.connector.get.return_value = None
     client.queue = MagicMock()
     return client
 
