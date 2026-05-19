@@ -12,14 +12,11 @@ from rich.table import Table
 
 from bec_lib.logger import bec_logger
 from bec_lib.macro_update_handler import MacroUpdateHandler
-from bec_lib.utils.import_utils import lazy_import, lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.client import BECClient
 
 logger = bec_logger.logger
-pylint = lazy_import("pylint")
-CollectingReporter = lazy_import_from("pylint.reporters", ("CollectingReporter",))
 
 
 class UserMacros:
