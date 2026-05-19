@@ -81,6 +81,7 @@ class ScanInterlockActor(BlStateActor):
             reason=f"Interlock for beamline states: {self.mismatched_states}",
             lock_id=self.lock_id,
         )
+        self.client.queue.request_scan_restart()
 
     def all_match_action(self, client: BECClient):
         self._unlock()
