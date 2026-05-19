@@ -14,19 +14,17 @@ class ScanInterlockActor(BlStateActor):
     the required value. Removes the lock if all of them match."""
 
     def __init__(self, client: BECClient, name: str, exec_id: str):
-        self.state_table = {}
-        self._set_watched_states_from_redis()
+        states_msg = self.client.connector.get(MessageEndpoints.scan_interlock_states())
+        if states_msg is not None:
+            self.state_table = states_msg.watched_states
+        else:
+            self.state_table = {}
+
         super().__init__(client, name, exec_id)
         self.lock_id: str | None = None
         self.client.connector.register(
             MessageEndpoints.modify_interlock_table(), cb=self._on_state_modification
         )
-
-    def _set_watched_states_from_redis(self):
-        states_msg = self.client.connector.get(MessageEndpoints.scan_interlock_states())
-        if states_msg is not None:
-            with self.state_table_lock:
-                self.state_table = states_msg.watched_states
 
     def _update_watched_states_in_redis(self):
         self.client.connector.set(
