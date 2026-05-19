@@ -194,6 +194,7 @@ class TestConcreteStates:
                 },
                 "test": {"devices": {"bpm4i": {"value": 0, "abs_tol": 0.1}}},
                 "string_state": {"devices": {"bpm3i": {"value": "ok"}}},
+                "state_with_user_param": {"devices": {"samx": {"value": "user_parameter:test"}}},
             },
         )
 
@@ -383,6 +384,11 @@ class TestConcreteStates:
         # The order of the labels is not guaranteed
         assert msg.label in ["alignment|test", "test|alignment"]
         assert set(state._current_labels) == set(["alignment", "test"])
+        dm_with_devices.devices["samx"].user_parameter["test"] = 0
+        msg = state.evaluate(affected_labels={"alignment", "state_with_user_param"})
+        assert msg.status == "valid"
+        assert set(msg.label.split("|")) == set(["alignment", "state_with_user_param", "test"])
+        assert set(state._current_labels) == set(["alignment", "state_with_user_param", "test"])
 
         state._cache_message(
             "samx",
@@ -576,9 +582,7 @@ class TestConcreteStates:
         ) == ("samx_velocity", "configuration")
 
         with pytest.raises(ValueError, match="Device 'missing' not found"):
-            bl_states.AggregatedState._resolve_signal(
-                "missing", "missing", dm_with_devices, "test"
-            )
+            bl_states.AggregatedState._resolve_signal("missing", "missing", dm_with_devices, "test")
         with pytest.raises(ValueError, match="Device name must be a string"):
             bl_states.AggregatedState._resolve_signal(1, "samx", dm_with_devices, "test")
         with pytest.raises(ValueError, match="Signal 'missing_signal' not found"):
@@ -618,9 +622,7 @@ class TestConcreteStates:
         build_rules.assert_not_called()
 
         state = bl_states.AggregatedState(
-            config=aggregated_state_config,
-            redis_connector=None,
-            device_manager=dm_with_devices,
+            config=aggregated_state_config, redis_connector=None, device_manager=dm_with_devices
         )
         with pytest.raises(RuntimeError, match="Redis connector is not set"):
             state.start()

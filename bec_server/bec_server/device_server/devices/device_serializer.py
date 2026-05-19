@@ -202,6 +202,8 @@ def get_device_info(
                                 "kind_str": signal_obj.kind.name,
                                 "doc": doc,
                                 "describe": signal_obj.describe().get(signal_obj.name, {}),
+                                "read_access": getattr(signal_obj, "read_access", None),
+                                "write_access": getattr(signal_obj, "write_access", None),
                                 # pylint: disable=protected-access
                                 "metadata": signal_obj._metadata,
                                 "labels": sorted(signal_obj._ophyd_labels_),
