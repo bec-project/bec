@@ -3,6 +3,7 @@ from __future__ import annotations
 import _thread
 import io
 import os
+import re
 import threading
 import time
 from contextlib import redirect_stdout
@@ -100,10 +101,10 @@ def test_mv_scan(capsys, bec_ipython_client_fixture):
     current_pos_samx = dev.samx.read(cached=True)["samx"]["value"]
     current_pos_samy = dev.samy.read(cached=True)["samy"]["value"]
     captured = capsys.readouterr()
-    ref_out_samx = f"━━━━━━━━━━━━━━━ {current_pos_samx:10.2f} /      10.00 / 100 % 0:00:00 0:00:00"
-    ref_out_samy = f"━━━━━━━━━━━━━━━ {current_pos_samy:10.2f} /      20.00 / 100 % 0:00:00 0:00:00"
-    assert ref_out_samx in captured.out
-    assert ref_out_samy in captured.out
+    ref_out_samx = rf"━+\s+{current_pos_samx:.2f}\s+\/\s+10.00 \/ 100 % 0:00:00 0\d.\d\d\d"
+    ref_out_samy = rf"━+\s+{current_pos_samy:.2f}\s+/\s+20.00 \/ 100 % 0:00:00 0\d\.\d\d\d"
+    assert re.search(ref_out_samx, captured.out)
+    assert re.search(ref_out_samy, captured.out)
 
 
 @pytest.mark.flaky  # marked as flaky as the simulation might return a new readback value within the tolerance
@@ -132,15 +133,15 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
     current_pos_hexapod_x = dev.hexapod.x.read(cached=True)["hexapod_x"]["value"]
     current_pos_hexapod_y = dev.hexapod.y.read(cached=True)["hexapod_y"]["value"]
     captured = capsys.readouterr()
+
     ref_out_hexapod_x = (
-        f"━━━━━━━━━━ {current_pos_hexapod_x:10.2f} /      10.00 / 100 % 0:00:00 0:00:00"
+        rf"━+\s+{current_pos_hexapod_x:.2f}\s+\/\s+10.00 \/ 100 % 0:00:00 0\d.\d\d\d"
     )
     ref_out_hexapod_y = (
-        f"━━━━━━━━━━ {current_pos_hexapod_y:10.2f} /      20.00 / 100 % 0:00:00 0:00:00"
+        rf"━+\s+{current_pos_hexapod_y:.2f}\s+/\s+20.00 \/ 100 % 0:00:00 0\d\.\d\d\d"
     )
-
-    assert ref_out_hexapod_x in captured.out
-    assert ref_out_hexapod_y in captured.out
+    assert re.search(ref_out_hexapod_x, captured.out)
+    assert re.search(ref_out_hexapod_y, captured.out)
 
 
 @pytest.mark.timeout(100)

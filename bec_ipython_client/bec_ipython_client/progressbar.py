@@ -11,6 +11,28 @@ from bec_lib.logger import bec_logger
 logger = bec_logger.logger
 
 
+class TimeElapsedAdaptiveColumn(rich.progress.ProgressColumn):
+    """Renders elapsed time with resolution depending on the elapsed time."""
+
+    def render(self, task) -> Text:
+        elapsed = task.finished_time if task.finished else task.elapsed
+        if elapsed is None:
+            return Text("--:--.---", style="progress.elapsed")
+
+        total_ms = int(elapsed * 1000)
+        hours, remainder = divmod(total_ms, 3_600_000)
+        minutes, remainder = divmod(remainder, 60_000)
+        seconds, milliseconds = divmod(remainder, 1_000)
+
+        if total_ms < 10_000:
+            time_str = f"{seconds:02d}.{milliseconds:03d}"
+        elif total_ms < 1_000_000:
+            time_str = f"{minutes:02d}:{seconds:02d}.{milliseconds:01d}"
+        else:
+            time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        return Text(time_str, style="progress.elapsed")
+
+
 class MoveTaskProgressColumn(rich.progress.TaskProgressColumn):
     """Custom progress column for the move device progress bar"""
 
@@ -167,7 +189,7 @@ class ScanProgressBar(ProgressBarBase):
             rich.progress.BarColumn(),
             ScanTaskProgressColumn(),
             rich.progress.TimeRemainingColumn(),
-            rich.progress.TimeElapsedColumn(),
+            TimeElapsedAdaptiveColumn(),
         )
 
     def _init_tasks(self):
@@ -253,7 +275,7 @@ class DeviceProgressBar(ProgressBarBase):
             rich.progress.BarColumn(),
             MoveTaskProgressColumn(),
             rich.progress.TimeRemainingColumn(),
-            rich.progress.TimeElapsedColumn(),
+            TimeElapsedAdaptiveColumn(),
         )
 
     def _init_tasks(self):
@@ -296,33 +318,3 @@ class DeviceProgressBar(ProgressBarBase):
         """
         device_index = self.devices.index(device)
         self._progress.advance(self._tasks[device_index], self.NUM_STEPS)
-
-
-if __name__ == "__main__":
-    pass
-    # devices = ["samx", "samy"]
-    # target_values = [25, 50]
-    # start = [0, 5]
-    # steps_sim = []
-    # for ii, dev in enumerate(devices):
-    #     steps_sim.append(np.linspace(start[ii], target_values[ii], 100 * (ii + 1)))
-    # loop_index = 0
-
-    # def get_device_values(index):
-    #     values = [
-    #         steps_sim[dev_index][min(index, len(steps_sim[dev_index]) - 1)]
-    #         for dev_index, _ in enumerate(devices)
-    #     ]
-    #     return values
-
-    # with DeviceProgressBar(
-    #     devices=devices, start_values=start, target_values=target_values
-    # ) as progress:
-    #     while not progress.finished:
-    #         values = get_device_values(loop_index)
-    #         progress.update(values=values)
-    #         time.sleep(0.001)
-    #         # for ii, dev in enumerate(devices):
-    #         #     if np.isclose(values[ii], target_values[ii], atol=0.05):
-    #         #         progress.set_finished(dev)
-    #         loop_index += 1
