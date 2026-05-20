@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.123.0 (2026-05-20)
+
+### Features
+
+- Display millis in progressbar
+  ([`741d482`](https://github.com/bec-project/bec/commit/741d48211b9d5c6c32c21cfe8d4be6c5731609e7))
+
+
 ## v3.122.6 (2026-05-19)
 
 ### Bug Fixes
