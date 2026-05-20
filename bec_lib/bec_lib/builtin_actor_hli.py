@@ -35,9 +35,11 @@ class ScanInterlockHli:
             self._parent.set_disabled(self._actor_name)
 
     @property
-    def states_watched(self):
+    def states_watched(self) -> dict[str, BlStateStatus]:
         """Return the table of beamline states currently watched by the scan interlock actor"""
-        return self._client.connector.get(MessageEndpoints.scan_interlock_states()).states_watched
+        if msg := self._client.connector.get(MessageEndpoints.scan_interlock_states()):
+            return msg.states_watched
+        return {}
 
     def add_state_to_interlock(self, state_name: str, required_value: BlStateStatus):
         """
