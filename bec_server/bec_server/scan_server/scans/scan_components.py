@@ -10,6 +10,7 @@ from bec_server.scan_server.errors import LimitError
 from bec_server.scan_server.path_optimization import PathOptimizerMixin
 
 if TYPE_CHECKING:
+    from bec_lib.devicemanager import DeviceContainer
     from bec_server.scan_server.scans.scan_base import ScanBase
 
 
@@ -26,7 +27,7 @@ class ScanComponents:
         self._actions = scan.actions
         self._redis_connector = scan.redis_connector
         self._device_manager = scan.device_manager
-        self._dev = self._device_manager.devices if self._device_manager else None
+        self._dev: DeviceContainer = self._device_manager.devices if self._device_manager else None
         self._path_optimizer = PathOptimizerMixin()
 
     def move_and_wait(
@@ -161,7 +162,7 @@ class ScanComponents:
         optimization_type: Literal["corridor", "shell", "nearest"] = "corridor",
         primary_axis: int = 1,
         preferred_directions: list[int] | None = None,
-        corridor_size: int | None = None,
+        corridor_size: float | None = None,
         num_iterations: int = 5,
     ) -> np.ndarray:
         """
@@ -176,7 +177,7 @@ class ScanComponents:
             optimization_type (str, optional): Type of optimization to perform. Defaults to "corridor".
             primary_axis (int, optional): Primary axis for corridor optimization. Defaults to 1.
             preferred_directions (list[int] | None, optional): List of preferred directions for the non-primary axes. Each entry should be -1, 0, or 1, indicating the preferred direction of movement along that axis. The length of the list should be equal to the number of non-primary axes. Defaults to None, which means no preferred directions.
-            corridor_size (int | None, optional): Size of the corridor for corridor optimization. Defaults to None, which means the default corridor size will be used.
+            corridor_size (float | None, optional): Size of the corridor for corridor optimization. Defaults to None, which means the default corridor size will be used.
         Returns:
             np.ndarray: Optimized array of positions, shape (num_points, num_motors).
         """
