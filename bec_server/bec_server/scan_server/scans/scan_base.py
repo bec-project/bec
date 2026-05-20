@@ -204,7 +204,7 @@ class ScanBase:
         self._scan_modifier_hooks = (
             get_scan_hooks_impl(scan_modifier) if scan_modifier is not None else {}
         )
-        self._scan_modifier = scan_modifier(self) if scan_modifier is not None else None
+        self._scan_modifier = scan_modifier(scan=self) if scan_modifier is not None else None
 
     def update_scan_info(
         self,
