@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v3.123.1 (2026-05-20)
+
+### Bug Fixes
+
+- Scan modifier init
+  ([`9d6ec1a`](https://github.com/bec-project/bec/commit/9d6ec1a9901557e10219d91445eaf745b2d22730))
+
+### Chores
+
+- **deps**: Bump pydantic in /bec_lib
+  ([`636a045`](https://github.com/bec-project/bec/commit/636a0451e8e06138d7bd93fc5b63db80557101fb))
+
+Updates the requirements on [pydantic](https://github.com/pydantic/pydantic) to permit the latest
+  version.
+
+Updates `pydantic` to 2.13.4 - [Release notes](https://github.com/pydantic/pydantic/releases) -
+  [Changelog](https://github.com/pydantic/pydantic/blob/v2.13.4/HISTORY.md) -
+  [Commits](https://github.com/pydantic/pydantic/compare/v2.8.0...v2.13.4)
+
+--- updated-dependencies: - dependency-name: pydantic dependency-version: 2.13.4
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+
 ## v3.123.0 (2026-05-20)
 
 ### Features
