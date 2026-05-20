@@ -93,24 +93,18 @@ class TestScanInterlockActor:
         mock_client.connector.unregister.assert_not_called()
 
     def test_some_mismatch_action_adds_lock(self, actor, mock_client):
-        actor.lock_id = None
-
-        with patch("bec_server.actors.scan_interlock.uuid4", return_value="uuid-1234"):
-            actor.some_mismatch_action(mock_client)
-        assert actor.lock_id == "uuid-1234"
+        actor.some_mismatch_action(mock_client)
         mock_client.queue.add_queue_lock.assert_called_once_with(
-            queue="primary", reason="ScanInterlockActor", lock_id="uuid-1234"
+            queue="primary",
+            reason="Interlock for beamline states: []",
+            lock_id="ScanInterlockActor",
         )
 
-    def test_some_mismatch_action_skips_if_lock_exists(self, actor, mock_client):
-        actor.lock_id = "existing-lock"
-        actor.some_mismatch_action(mock_client)
-        mock_client.queue.add_queue_lock.assert_not_called()
-
     def test_some_mismatch_action_skips_if_no_queue(self, actor, mock_client):
+        add_queue_lock = mock_client.queue.add_queue_lock
         actor.client.queue = None
         actor.some_mismatch_action(mock_client)
-        assert actor.lock_id is None
+        add_queue_lock.assert_not_called()
 
     def test_all_match_action_unlocks(self, actor):
         with patch.object(actor, "_unlock") as mock_unlock:
@@ -119,23 +113,7 @@ class TestScanInterlockActor:
         mock_unlock.assert_called_once()
 
     def test_unlock_removes_lock(self, actor, mock_client):
-        actor.lock_id = "lock-123"
         actor._unlock()
         mock_client.queue.remove_queue_lock.assert_called_once_with(
-            queue="primary", lock_id="lock-123"
+            queue="primary", lock_id="ScanInterlockActor"
         )
-        assert actor.lock_id is None
-
-    def test_unlock_skips_without_lock(self, actor, mock_client):
-        actor.lock_id = None
-        actor._unlock()
-        mock_client.queue.remove_queue_lock.assert_not_called()
-
-    def test_unlock_keeps_lock_if_remove_fails(self, actor, mock_client):
-        actor.lock_id = "lock-123"
-        mock_client.queue.remove_queue_lock.side_effect = RuntimeError("boom")
-
-        with pytest.raises(RuntimeError):
-            actor._unlock()
-
-        assert actor.lock_id is None
