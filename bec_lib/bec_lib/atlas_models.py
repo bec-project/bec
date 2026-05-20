@@ -29,6 +29,7 @@ def make_all_fields_optional(model: type[_BM], model_name: str) -> type[_BM]:
                 field.default if field.default is not PydanticUndefined else None
             )
         fields[name] = (field.annotation | None, Field(**field_info))
+        fields[name][1].metadata = field.metadata
     new_model = create_model(model_name, **fields, __config__=model.model_config)
     return new_model
 
@@ -149,7 +150,6 @@ _RawDataCache = tuple[_ModelDumpKeys, _ModelDumpDict, _HashModelShallowItems]
 
 
 class HashableDevice(Device, validate_assignment=True):
-
     hash_model: DeviceHashModel = DeviceHashModel()
 
     names: set[str] = Field(default_factory=set, exclude=True)
