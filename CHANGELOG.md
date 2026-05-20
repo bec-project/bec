@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.123.2 (2026-05-20)
+
+### Bug Fixes
+
+- Propagate field metadata to optional model
+  ([`ec7d47d`](https://github.com/bec-project/bec/commit/ec7d47df09f38225021f1415d55ea0e1e692794e))
+
+
 ## v3.123.1 (2026-05-20)
 
 ### Bug Fixes
