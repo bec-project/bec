@@ -777,6 +777,11 @@ class DeviceServer(BECService):
             # if the user requested a response on a single status object, we need to send it
             # to the device_req_status_container
             request_id = status.instruction.metadata["RID"]
+            metadata["error_info"] = (
+                self.requests_handler.get_error_info(status.exception(), status)
+                if status.exception()
+                else None
+            )
             dev_msg = messages.DeviceReqStatusMessage(
                 device=device_name, success=status.success, request_id=request_id, metadata=metadata
             )

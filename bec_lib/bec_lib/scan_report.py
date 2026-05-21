@@ -10,13 +10,14 @@ import traceback
 from math import inf
 from typing import TYPE_CHECKING
 
+from bec_lib import messages
+from bec_lib.alarm_handler import AlarmBase, Alarms
 from bec_lib.bec_errors import ScanAbortion
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.scan_items import ScanItem
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib import messages
     from bec_lib.client import BECClient
     from bec_lib.queue_items import QueueItem
     from bec_lib.request_items import RequestItem
@@ -111,6 +112,15 @@ class ScanReport:
         )
         if request_status is None:
             return False
+        for status_container in request_status:
+            if "data" not in status_container:
+                return False
+            status = status_container["data"]
+            if not status.success:
+                alarm_message = messages.AlarmMessage(
+                    severity=Alarms.MAJOR, info=status.metadata["error_info"]
+                )
+                raise AlarmBase(alarm=alarm_message, severity=Alarms.MAJOR)
         if len(request_status) == len(motors):
             return True
         return False
