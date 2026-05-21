@@ -1563,7 +1563,7 @@ class RedisConnector:
         return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
 
     def publish_metrics(
-        self, group_name: str, metrics: dict[str, str | int | float | bool], separator="-"
+        self, group_name: str, metrics: dict[str, str | int | float | bool], separator="_"
     ):
         if str in set(map(type, metrics.values())):
             bec_logger.logger.warning(
