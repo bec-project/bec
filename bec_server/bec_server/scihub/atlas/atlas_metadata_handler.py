@@ -147,15 +147,18 @@ class AtlasMetadataHandler:
         if self._account is None:
             return
         info = self._deployment_info
-        if info is None:
-            return
-        if info.active_session is None:
-            return
-        if info.active_session.experiment is None:
-            return
-        if info.active_session.experiment.pgroup == self._account:
-            return
-        self.send_atlas_update({"account": self._account})
+
+        def is_account_same(info: messages.DeploymentInfoMessage | None) -> bool:
+            if info is None:
+                return False
+            if info.active_session is None:
+                return False
+            if info.active_session.experiment is None:
+                return False
+            return info.active_session.experiment.pgroup == self._account
+
+        if not is_account_same(info):
+            self.send_atlas_update({"account": self._account})
 
     def _handle_account_info(self, msg, emit_update=True, **_kwargs) -> None:
         """
