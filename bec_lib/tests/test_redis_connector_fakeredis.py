@@ -607,10 +607,10 @@ def test_connector_publish_metrics(connected_connector):
     res = data[0]
     assert isinstance(res, messages.DynamicMetricMessage)
     assert start <= res.timestamp <= stop
-    assert res.metrics["-m1"].value == 5
-    assert res.metrics["-m2"].value == 5.5
-    assert res.metrics["-m3"].value == "test"
-    assert res.metrics["-m4"].value is True
+    assert res.metrics["_m1"].value == 5
+    assert res.metrics["_m2"].value == 5.5
+    assert res.metrics["_m3"].value == "test"
+    assert res.metrics["_m4"].value is True
 
 
 def test_merging_streams_does_not_skip_messages(connected_connector: RedisConnector):
