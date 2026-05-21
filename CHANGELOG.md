@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.124.0 (2026-05-21)
+
+### Features
+
+- Add atlas connection metric
+  ([`81a64be`](https://github.com/bec-project/bec/commit/81a64be048f6b7b5fcb6950c6c3182e181a20ba9))
+
+- Implement AtlasActiveClientEmitter for tracking active clients and metrics
+  ([`a238b77`](https://github.com/bec-project/bec/commit/a238b776b26102aaeeb3f1537ab2ec76176ff97e))
+
+
 ## v3.123.2 (2026-05-20)
 
 ### Bug Fixes
