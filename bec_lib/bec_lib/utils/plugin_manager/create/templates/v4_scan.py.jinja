@@ -24,6 +24,7 @@ import numpy as np
 from bec_lib.device import DeviceBase
 
 {% endif %}
+from bec_lib.logger import bec_logger
 {% set arguments_needing_default_arg_type = arguments | selectattr("requires_default_arg_type_import") | list %}
 {% set arguments_needing_scan_argument = arguments | selectattr("requires_scan_argument_import") | list %}
 {% set arguments_needing_units = arguments | selectattr("requires_units_import") | list %}
@@ -43,6 +44,8 @@ from {{ plugin_components_import }} import {{ plugin_components_class }}
 from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
+
+logger = bec_logger.logger
 
 
 class {{ name | snake_to_pascal }}(ScanBase):
