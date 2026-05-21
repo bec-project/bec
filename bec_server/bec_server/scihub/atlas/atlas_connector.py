@@ -53,6 +53,9 @@ class AtlasConnector:
             self.atlas_forwarder = AtlasForwarder(self)
         self.update_acls()
         self.update_available_endpoints()
+        self.connector.publish_metrics(
+            "atlas_connection", {"connected": self.connected_to_atlas, "host": self.host or ""}
+        )
 
     @property
     def config(self):
