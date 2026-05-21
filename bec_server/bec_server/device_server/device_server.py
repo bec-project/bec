@@ -793,7 +793,7 @@ class DeviceServer(BECService):
                 MessageEndpoints.device_req_status(request_id),
                 {"data": dev_msg},
                 pipe=pipe,
-                expire=60,
+                expire=3600,
             )
         pipe.execute()
 
