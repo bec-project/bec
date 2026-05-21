@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v3.124.3 (2026-05-21)
+
+### Bug Fixes
+
+- Emit account update if necessary
+  ([`348b60e`](https://github.com/bec-project/bec/commit/348b60ea87e187be86d0015fadaafec0692a816c))
+
+- Forward error info during mv status resolution
+  ([`4d4d298`](https://github.com/bec-project/bec/commit/4d4d2981976892274caa8fac8a586216f084d4c5))
+
+- Update request handler to use provided status objects for exception handling
+  ([`168c0a8`](https://github.com/bec-project/bec/commit/168c0a8fae0ca2dec78ce090f53cae34df879217))
+
+- **device-server**: Increase expire time for device request status from 60s to 3600s
+  ([`21b85e5`](https://github.com/bec-project/bec/commit/21b85e5ee54b545925ae99077358bcde876e93dc))
+
+
 ## v3.124.2 (2026-05-21)
 
 ### Bug Fixes
