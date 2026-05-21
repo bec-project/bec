@@ -216,10 +216,12 @@ class RequestHandler:
         if len(request_info["status_objects"]) != request_info["num_status_objects"]:
             return
 
-        if all(status_obj.done for status_obj in self._storage[instr_id]["status_objects"]):
+        status_objects = request_info["status_objects"]
+
+        if all(status_obj.done for status_obj in status_objects):
             exceptions = [
                 (status_obj.exception(), status_obj)
-                for status_obj in self._storage[instr_id]["status_objects"]
+                for status_obj in status_objects
                 if isinstance(status_obj, StatusBase)
             ]
             if any(val for val, _ in exceptions):
