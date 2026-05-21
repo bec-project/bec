@@ -8,6 +8,7 @@ import numpy as np
 from bec_lib.device import DeviceBase
 from bec_server.scan_server.errors import LimitError
 from bec_server.scan_server.path_optimization import PathOptimizerMixin
+from bec_server.scan_server.scans.position_generators import Direction
 
 if TYPE_CHECKING:
     from bec_server.scan_server.scans.scan_base import ScanBase
@@ -159,49 +160,43 @@ class ScanComponents:
         self,
         positions: np.ndarray,
         optimization_type: Literal["corridor", "shell", "nearest"] = "corridor",
-        primary_axis: int = 1,
-        preferred_directions: list[int] | None = None,
+        fast_axis: Literal[0, 1] = 0,
+        first_direction: Literal[-1, 1] | Direction = Direction.ASCENDING,
+        snaked: bool = True,
         corridor_size: int | None = None,
         num_iterations: int = 5,
     ) -> np.ndarray:
         """
         Optimize the trajectory of the scan by reordering the positions. This can help to minimize the movement time of the motors.
+
+        Important note: The optimization is only done for 2D scans. For higher-dimensional scans, the positions are not reordered and simply
+        returned as they are.
+
         The optimization can be done in different ways, depending on the optimization_type parameter:
-            - "corridor": optimize the trajectory in a corridor-like way, where the scan moves back and forth along the primary axis. This is typically a good choice for grid scans. If preferred_directions are provided, the optimizer will try to optimize the trajectory in a way that minimizes the movement in the non-preferred direction.
+            - "corridor": optimize the trajectory in a corridor-like way, where the scan progresses between corridors along the slow axis and traverses each corridor along the fast axis. This is typically a good choice for grid scans. If first_direction is provided, it sets the traversal direction of the first corridor and snaked controls whether later corridors alternate direction, producing a snaked path along the fast axis.
             - "shell": optimize the trajectory in a shell-like way, where the scan moves in a spiral from the outside to the inside. This is typically a good choice for round scans.
             - "nearest": optimize the trajectory by always moving to the nearest next point. This is typically a good choice for random scans.
 
         Args:
             positions (np.ndarray): Array of positions to optimize, shape (num_points, num_motors).
             optimization_type (str, optional): Type of optimization to perform. Defaults to "corridor".
-            primary_axis (int, optional): Primary axis for corridor optimization. Defaults to 1.
-            preferred_directions (list[int] | None, optional): List of preferred directions for the non-primary axes. Each entry should be -1, 0, or 1, indicating the preferred direction of movement along that axis. The length of the list should be equal to the number of non-primary axes. Defaults to None, which means no preferred directions.
+            fast_axis (int, optional): Fast axis for corridor optimization. Defaults to 0.
+            first_direction (Direction | Literal[-1, 1], optional): Traversal direction for the first corridor along the fast axis. Positive means ascending, negative means descending. Defaults to Direction.ASCENDING.
+            snaked (bool, optional): If True, alternate direction between corridors. Defaults to True.
             corridor_size (int | None, optional): Size of the corridor for corridor optimization. Defaults to None, which means the default corridor size will be used.
         Returns:
             np.ndarray: Optimized array of positions, shape (num_points, num_motors).
         """
 
         if optimization_type == "corridor":
-            if preferred_directions is None or len(preferred_directions) == 0:
-                positions = self._path_optimizer.optimize_corridor(
-                    positions,
-                    num_iterations=num_iterations,
-                    corridor_size=corridor_size,
-                    sort_axis=primary_axis,
-                )
-            else:
-                preferred_direction = (
-                    preferred_directions[primary_axis]
-                    if len(preferred_directions) > primary_axis
-                    else None
-                )
-                positions = self._path_optimizer.optimize_corridor(
-                    positions,
-                    num_iterations=num_iterations,
-                    sort_axis=primary_axis,
-                    preferred_direction=preferred_direction,
-                    corridor_size=corridor_size,
-                )
+            positions = self._path_optimizer.optimize_corridor(
+                positions,
+                num_iterations=num_iterations,
+                corridor_size=corridor_size,
+                fast_axis=fast_axis,
+                first_corridor_direction=first_direction,
+                snaked=snaked,
+            )
 
         elif optimization_type == "shell":
             positions = self._path_optimizer.optimize_shell(

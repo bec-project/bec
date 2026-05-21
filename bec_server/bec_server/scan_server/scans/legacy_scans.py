@@ -19,7 +19,7 @@ from bec_lib.logger import bec_logger
 from bec_server.scan_server.instruction_handler import InstructionHandler
 
 from ..errors import LimitError, ScanAbortion
-from ..path_optimization import PathOptimizerMixin
+from ..path_optimization import Direction, PathOptimizerMixin
 from ..scan_stubs import ScanStubs
 
 logger = bec_logger.logger
@@ -90,7 +90,8 @@ def get_ND_grid_pos(axes: list[np.ndarray], snaked: bool = True) -> np.ndarray:
             positions.extend([[val] + sp for sp in sub_positions])
         return positions
 
-    return np.array(_get_positions_recursively(axes))
+    positions = _get_positions_recursively(axes[::-1])
+    return np.array([position[::-1] for position in positions], dtype=float)
 
 
 # pylint: disable=too-many-arguments
@@ -195,10 +196,8 @@ def get_hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True)
     Generate a 2D hexagonal grid clipped to (start, stop) bounds.
 
     Args:
-        axes: [(x_start, x_stop, x_step),
-               (y_start, y_stop, y_step)]
-              x_step = horizontal spacing between columns
-              y_step = vertical spacing between rows
+        axes: [(axis0_start, axis0_stop, axis0_step),
+               (axis1_start, axis1_stop, axis1_step)]
         snaked: if True, reverse direction on alternate rows to minimize travel distance
 
     Returns:
@@ -207,28 +206,27 @@ def get_hex_grid_2d(axes: list[tuple[float, float, float]], snaked: bool = True)
     if len(axes) != 2:
         raise ValueError("2D hex grid requires exactly 2 dimensions")
 
-    (x0, x1, sx), (y0, y1, sy) = axes
+    (a0_start, a0_stop, a0_step), (a1_start, a1_stop, a1_step) = axes
 
     points = []
 
-    # Number of rows needed
-    n_rows = int(np.ceil((y1 - y0) / sy)) + 2
+    # The second axis selects the rows and the first axis is traversed within each row.
+    n_rows = int(np.ceil((a1_stop - a1_start) / a1_step)) + 2
 
     for row in range(n_rows):
-        y = y0 + row * sy
+        axis1 = a1_start + row * a1_step
 
-        # Alternate row offset - shift by half the x step
-        x_offset = (sx / 2) if (row % 2) else 0.0
+        # Alternate row offset - shift by half the fast-axis step
+        axis0_offset = (a0_step / 2) if (row % 2) else 0.0
 
-        # Number of columns needed
-        n_cols = int(np.ceil((x1 - x0) / sx)) + 2
+        n_cols = int(np.ceil((a0_stop - a0_start) / a0_step)) + 2
 
         row_points = []
         for col in range(n_cols):
-            x = x0 + x_offset + col * sx
+            axis0 = a0_start + axis0_offset + col * a0_step
 
-            if x0 <= x <= x1 and y0 <= y <= y1:
-                row_points.append((x, y))
+            if a0_start <= axis0 <= a0_stop and a1_start <= axis1 <= a1_stop:
+                row_points.append((axis0, axis1))
 
         # Reverse every other row if snaking is enabled
         if snaked and (row % 2 == 1):
@@ -520,26 +518,14 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         if not self.optim_trajectory:
             return
 
-        # Get preferred directions from scan parameters if available
-        preferred_directions = getattr(self, "preferred_directions", None)
-
         if self.optim_trajectory == "corridor":
-            # For corridor optimization, we use the primary axis preferred direction
-            if preferred_directions and len(preferred_directions) > 0:
-                primary_axis = getattr(self, "sort_axis", 1)
-                preferred_direction = (
-                    preferred_directions[primary_axis]
-                    if len(preferred_directions) > primary_axis
-                    else None
-                )
-                self.positions = self.optimize_corridor(
-                    self.positions,
-                    num_iterations=5,
-                    sort_axis=primary_axis,
-                    preferred_direction=preferred_direction,
-                )
-            else:
-                self.positions = self.optimize_corridor(self.positions, num_iterations=5)
+            # Corridor traversal direction follows the first pass along the axis within each corridor.
+            self.positions = self.optimize_corridor(
+                self.positions,
+                num_iterations=5,
+                fast_axis=getattr(self, "fast_axis", 0),
+                first_corridor_direction=getattr(self, "first_direction", 1),
+            )
             return
 
         if self.optim_trajectory == "shell":
@@ -1103,6 +1089,9 @@ class FermatSpiralScan(ScanBase):
         self.stop_motor2 = stop_motor2
         self.step = step
         self.spiral_type = spiral_type
+        self.first_direction = (
+            Direction.ASCENDING if self.stop_motor1 > self.start_motor1 else Direction.DESCENDING
+        )
 
     def update_scan_motors(self):
         self.scan_motors = [self.motor1, self.motor2]
