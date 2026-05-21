@@ -1107,3 +1107,29 @@ def test_request_handler_ignores_response_if_stop_id(device_server_mock, stop_id
             stop_mock.assert_called()
         status.set_exception(RuntimeError("Test exception"))
         send_mock.assert_not_called()
+
+
+def test_request_handler_update_instruction_uses_snapshot_when_request_removed(device_server_mock):
+    device_server = device_server_mock
+    request = messages.DeviceInstructionMessage(
+        device="test_device", action="complete", parameter={}, metadata={"device_instr_id": "diid"}
+    )
+
+    status = StatusBase()
+    status.set_finished()
+    request_info = {
+        "instr": request,
+        "status_objects": [status],
+        "num_status_objects": 1,
+        "done": False,
+        "is_status_obj": True,
+    }
+
+    with mock.patch.object(
+        device_server.requests_handler, "get_request", return_value=request_info
+    ):
+        with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
+            device_server.requests_handler._storage.clear()
+            device_server.requests_handler._update_instruction("diid", is_status_obj=True)
+
+    set_finished_mock.assert_called_once_with("diid", success=True)
