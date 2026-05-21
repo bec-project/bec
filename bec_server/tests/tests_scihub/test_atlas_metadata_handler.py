@@ -298,7 +298,9 @@ def test_update_account_if_needed_different_account_forwards(atlas_connector):
     with mock.patch.object(handler, "send_atlas_update") as mock_send_update:
         handler._update_account_if_needed()
 
-    mock_send_update.assert_called_once_with({"account": "local-account"})
+    mock_send_update.assert_called_once_with(
+        {"account": messages.VariableMessage(value="local-account")}
+    )
 
 
 def test_handle_deployment_info_valid(atlas_connector):
