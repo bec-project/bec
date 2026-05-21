@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.124.4 (2026-05-21)
+
+### Bug Fixes
+
+- Update account message format in send_atlas_update method
+  ([`32b5070`](https://github.com/bec-project/bec/commit/32b5070600fbf1370daaf25a2edd45dba3b03bb4))
+
+
 ## v3.124.3 (2026-05-21)
 
 ### Bug Fixes
