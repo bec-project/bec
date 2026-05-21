@@ -158,7 +158,8 @@ class AtlasMetadataHandler:
             return info.active_session.experiment.pgroup == self._account
 
         if not is_account_same(info):
-            self.send_atlas_update({"account": self._account})
+            msg = messages.VariableMessage(value=self._account)
+            self.send_atlas_update({"account": msg})
 
     def _handle_account_info(self, msg, emit_update=True, **_kwargs) -> None:
         """
