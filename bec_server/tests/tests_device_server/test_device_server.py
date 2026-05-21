@@ -130,6 +130,49 @@ def test_device_server_status_callback(
             logger.remove(sink_id)
 
 
+@pytest.mark.parametrize("status_success", [True, False])
+def test_device_server_status_callback_response_includes_error_info(
+    device_server_mock, ophyd_device_mock, status_success
+):
+    device_server = device_server_mock
+    dev = ophyd_device_mock
+    dev._kind = Kind.normal
+    instr = messages.DeviceInstructionMessage(
+        device=dev.name,
+        action="set",
+        parameter={},
+        metadata={
+            "stream": "primary",
+            "device_instr_id": "diid",
+            "RID": "request-id",
+            "response": True,
+        },
+    )
+
+    status = DeviceStatus(dev)
+    device_server._add_status_object_info(status, instruction=instr, device=dev)
+    if status_success:
+        status.set_finished()
+    else:
+        status.set_exception(RuntimeError("motor failed"))
+
+    with mock.patch.object(device_server, "_read_device") as mock_read_device:
+        with mock.patch.object(device_server.connector, "xadd") as xadd_mock:
+            device_server.status_callback(status)
+
+    mock_read_device.assert_called_once_with(instr)
+    xadd_mock.assert_called_once()
+    dev_msg = xadd_mock.call_args.args[1]["data"]
+    assert isinstance(dev_msg, messages.DeviceReqStatusMessage)
+    assert dev_msg.success is status_success
+    if status_success:
+        assert dev_msg.metadata["error_info"] is None
+    else:
+        assert dev_msg.metadata["error_info"] is not None
+        assert dev_msg.metadata["error_info"].exception_type == "RuntimeError"
+        assert "motor failed" in dev_msg.metadata["error_info"].error_message
+
+
 @pytest.mark.parametrize(
     "instr",
     [

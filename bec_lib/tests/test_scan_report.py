@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
+from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import ScanAbortion
 from bec_lib.scan_report import ScanReport
 
@@ -149,6 +150,34 @@ def test_scan_report_get_mv_status(scan_report, xread_return, expected):
     with mock.patch.object(scan_report._client.device_manager.connector, "xread") as mock_xread:
         mock_xread.return_value = xread_return
         assert scan_report._get_mv_status() == expected
+
+
+def test_scan_report_get_mv_status_raises_alarm_on_failed_move(scan_report):
+    error_info = messages.ErrorInfo(
+        error_message="Motor move failed",
+        compact_error_message="RuntimeError: Motor move failed",
+        exception_type="RuntimeError",
+        device="samx",
+    )
+    scan_report.request.request = messages.ScanQueueMessage(
+        scan_type="mv", parameter={"args": {"samx": [5]}}
+    )
+    with mock.patch.object(scan_report._client.device_manager.connector, "xread") as mock_xread:
+        mock_xread.return_value = [
+            {
+                "data": messages.DeviceReqStatusMessage(
+                    device="samx",
+                    success=False,
+                    request_id="request-id",
+                    metadata={"error_info": error_info},
+                )
+            }
+        ]
+        with pytest.raises(AlarmBase) as exc_info:
+            scan_report._get_mv_status()
+
+    assert exc_info.value.severity.name == "MAJOR"
+    assert exc_info.value.alarm.info == error_info
 
 
 def test_scan_report_file_written(scan_report):
