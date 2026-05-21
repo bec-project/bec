@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.124.2 (2026-05-21)
+
+### Bug Fixes
+
+- **scan components**: Minor type hint fixes for scan components
+  ([`9e56b77`](https://github.com/bec-project/bec/commit/9e56b7719dac1a60286fd0c56562439f05aaacf1))
+
+
 ## v3.124.1 (2026-05-21)
 
 ### Bug Fixes
