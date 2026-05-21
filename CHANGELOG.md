@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.124.1 (2026-05-21)
+
+### Bug Fixes
+
+- Update separator in publish_metrics method from '-' to '_'
+  ([`ca696ac`](https://github.com/bec-project/bec/commit/ca696acd581badc3d461d89ed99917cabf3335cc))
+
+
 ## v3.124.0 (2026-05-21)
 
 ### Features
