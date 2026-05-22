@@ -1005,7 +1005,7 @@ class LogMessage(BECMessage):
     """Log message
 
     Args:
-        log_type (Literal["trace", "debug", "info", "success", "warning", "error", "critical", "console_log"]) : Log type.
+        log_type (Literal["trace", "debug", "info", "success", "warning", "error", "critical", "console_log", "console_log_error"]) : Log type.
         log_msg (dict or str): Log message.
         metadata (dict, optional): Additional metadata.
 
@@ -1013,7 +1013,15 @@ class LogMessage(BECMessage):
 
     msg_type: ClassVar[str] = "log_message"
     log_type: Literal[
-        "trace", "debug", "info", "success", "warning", "error", "critical", "console_log"
+        "trace",
+        "debug",
+        "info",
+        "success",
+        "warning",
+        "error",
+        "critical",
+        "console_log",
+        "console_log_error",
     ]
     log_msg: dict | str
 

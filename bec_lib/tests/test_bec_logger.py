@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 from unittest import mock
@@ -98,3 +99,32 @@ def test_set_log_level(logger, log_level, sink, expected_level):
     logger.set_log_level(log_level, sink)
     for key, value in expected_level.items():
         assert getattr(logger, key) == value
+
+
+def test_console_redis_callback_publishes_to_log_endpoint_with_console_service_name(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+
+    logger._console_redis_logger_callback(
+        json.dumps({"record": {"level": {"name": "CONSOLE_LOG"}}, "text": "hello"})
+    )
+
+    logger.connector.xadd.assert_called_once()
+    kwargs = logger.connector.xadd.call_args.kwargs
+    assert kwargs["topic"].endpoint == "info/log"
+    assert kwargs["msg_dict"]["data"].log_type == "console_log"
+    assert kwargs["msg_dict"]["data"].log_msg["service_name"] == "test_CONSOLE"
+
+
+def test_console_redis_callback_ignores_publish_failures(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger.connector.xadd.side_effect = RuntimeError("redis unavailable")
+
+    logger._console_redis_logger_callback(
+        json.dumps({"record": {"level": {"name": "CONSOLE_LOG_ERROR"}}, "text": "oops"})
+    )
+
+    logger.connector.xadd.assert_called_once()

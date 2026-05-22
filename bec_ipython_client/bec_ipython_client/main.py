@@ -5,6 +5,7 @@ import collections
 import functools
 import os
 import sys
+import traceback
 from typing import Iterable, Literal, Tuple
 
 import IPython
@@ -147,7 +148,7 @@ class BECIPythonClient:
         self._ip.prompts = BECClientPrompt(ip=self._ip, client=self._client, username="unknown")
         self._refresh_ipython_username()
         self._load_magics()
-        self._ip.events.register("post_run_cell", log_console)
+        self._ip.events.register("pre_run_cell", log_console)
         self._ip.set_custom_exc((Exception,), self._create_exception_handler())
         # represent objects using __str__, if overwritten, otherwise use __repr__
         self._ip.display_formatter.formatters["text/plain"].for_type(
@@ -252,25 +253,31 @@ def _ip_exception_handler(
 ):
     if issubclass(etype, AlarmBase):
         parent._alarm_history.append((etype, evalue, tb, tb_offset))
+        log_console_error(etype, evalue, tb)
         print("\x1b[31m BEC alarm:\x1b[0m")
         evalue.pretty_print()
         print("For more details, use 'bec.show_last_alarm()'")
         return
     if issubclass(etype, ValidationError):
+        log_console_error(etype, evalue, tb)
         pretty_print_pydantic_validation_error(evalue)
         return
     if issubclass(etype, (ScanInterruption, DeviceConfigError)):
+        log_console_error(etype, evalue, tb, f"{evalue.__class__.__name__}: {evalue}")
         print(f"\x1b[31m {evalue.__class__.__name__}:\x1b[0m {evalue}")
         return
     if issubclass(etype, redis.exceptions.NoPermissionError):
         # pylint: disable=protected-access
         msg = f"The current user ({bec._client.username}) does not have the required permissions.\n {evalue}"
+        log_console_error(etype, evalue, tb, f"Unauthorized: {msg}")
         logger.info(f"Unauthorized: {msg}")
         print(f"\x1b[31m Unauthorized:\x1b[0m {msg}")
         return
     if issubclass(etype, ExceptionWithErrorInfo):
+        log_console_error(etype, evalue, tb)
         evalue.pretty_print()
         return
+    log_console_error(etype, evalue, tb)
     self.showtraceback((etype, evalue, tb), tb_offset=None)  # standard IPython's printout
 
 
@@ -322,7 +329,17 @@ class BECClientPrompt(Prompts):
 
 def log_console(execution_info):
     """log the console input"""
-    logger.log("CONSOLE_LOG", f"{execution_info.info.raw_cell}")
+    logger.log("CONSOLE_LOG", f"{execution_info.raw_cell}")
+
+
+def log_console_error(etype, evalue, tb=None, message: str | None = None):
+    """Log console errors to the shared log stream."""
+    if message is None:
+        if tb is not None:
+            message = "".join(traceback.format_exception(etype, evalue, tb)).rstrip()
+        else:
+            message = f"{etype.__name__}: {evalue}"
+    logger.log("CONSOLE_LOG_ERROR", message)
 
 
 # pylint: disable=wrong-import-position
