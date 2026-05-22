@@ -7,7 +7,7 @@ import os
 import re
 from getpass import getuser
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -113,20 +113,18 @@ class ServiceConfigModel(BaseModel):
     procedures: ProcedureConfig = Field(default_factory=ProcedureConfig)
 
     @model_validator(mode="before")
-    @classmethod
-    def apply_cmdline_args(cls, data: Any):
+    def apply_cmdline_args(self, data: Any) -> Self:
         if isinstance(data, dict):
             if cmdline_args := data.get("cmdline_args"):
                 for arg in cmdline_args.items():
-                    cls._update_data_for_arg(arg, data)
-        return data
+                    self._update_data_for_arg(arg, data)
+        return self
 
-    @classmethod
-    def _update_data_for_arg(cls, arg: tuple[str, Any], data: dict):
+    def _update_data_for_arg(self, arg: tuple[str, Any], data: dict):
         argname, argval = arg
-        if argname not in cls._CMDLINE_ARGS:
+        if argname not in self._CMDLINE_ARGS:
             return data
-        subconfig, variable = cls._CMDLINE_ARGS[argname]
+        subconfig, variable = self._CMDLINE_ARGS[argname]
         if subconfig not in data:
             data[subconfig] = {}
         data[subconfig][variable] = argval
