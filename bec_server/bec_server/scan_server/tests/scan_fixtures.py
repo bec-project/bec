@@ -386,6 +386,8 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
             if name in devices:
                 continue
             devices[name] = _MockDevice(name)
+        for name, device in custom_devices.items():
+            devices[name] = device
         scan_device_manager = SimpleNamespace(devices=devices, connector=connector)
         resolved_scan_kwargs = {"system_config": {}, **scan_kwargs}
 
