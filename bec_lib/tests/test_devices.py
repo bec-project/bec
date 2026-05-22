@@ -506,6 +506,8 @@ def test_device_wm(device_w_tags):
 @pytest.mark.parametrize(
     ["config", "attr", "value"],
     [
+        ({"description": "test description"}, "description", "test description"),
+        ({}, "description", ""),
         ({"onFailure": "buffer"}, "on_failure", "buffer"),
         ({"readoutPriority": "baseline"}, "readout_priority", "baseline"),
         ({"read_only": False}, "read_only", False),
