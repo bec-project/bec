@@ -249,7 +249,7 @@ class GUIConfig(BaseModel):
         config = scan_cls.gui_config
         signature = signature_to_dict(scan_cls.__init__)
         signature_token = context_signature.set(signature)
-        docstring = scan_cls.__doc__ or scan_cls.__init__.__doc__
+        docstring = scan_cls.__doc__ or scan_cls.__init__.__doc__ or ""
         docstring_token = context_docstring.set(docstring)
         # kwargs from gui config
         for group_name, input_names in config.items():
