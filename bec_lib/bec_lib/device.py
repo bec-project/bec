@@ -753,6 +753,12 @@ class DeviceBaseWithConfig(DeviceBase):
         return self._compile_function_path()
 
     @property
+    def description(self):
+        """Returns the description of the device."""
+        # pylint: disable=protected-access
+        return self.root._config.get("description", "")
+
+    @property
     def enabled(self):
         """Returns True if the device is enabled, otherwise False."""
         # pylint: disable=protected-access
