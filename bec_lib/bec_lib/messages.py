@@ -150,18 +150,17 @@ class ScanQueueMessage(BECMessage):
     )
 
     @model_validator(mode="after")
-    @classmethod
-    def _validate_metadata(cls, data):
+    def _validate_metadata(self) -> Self:
         """Make sure the metadata conforms to the registered schema, but
         leave it as a dict"""
-        schema = get_metadata_schema_for_scan(data.scan_type)
+        schema = get_metadata_schema_for_scan(self.scan_type)
         try:
-            schema.model_validate(data.metadata.get("user_metadata", {}))
+            schema.model_validate(self.metadata.get("user_metadata", {}))
         except ValidationError as e:
             raise ValueError(
-                f"Scan metadata {data.metadata} does not conform to registered schema {schema}. \n Errors: {str(e)}"
+                f"Scan metadata {self.metadata} does not conform to registered schema {schema}. \n Errors: {str(e)}"
             ) from e
-        return data
+        return self
 
 
 class ScanQueueHistoryMessage(BECMessage):
@@ -638,53 +637,52 @@ class DeviceAsyncUpdate(BaseModel):
     index: int | None = None
 
     @model_validator(mode="after")
-    @classmethod
-    def validate_async_update(cls, values):
+    def validate_async_update(self) -> Self:
         """Validate that required fields are present based on update type and constraints"""
-        if values.type in ["add", "add_slice"]:
-            if values.max_shape is None or len(values.max_shape) == 0:
+        if self.type in ["add", "add_slice"]:
+            if self.max_shape is None or len(self.max_shape) == 0:
                 raise ValueError(
-                    f"max_shape is required and cannot be empty for async update type '{values.type}'"
+                    f"max_shape is required and cannot be empty for async update type '{self.type}'"
                 )
 
         # Validate that None values only appear at the beginning of max_shape
         # i.e., once a non-None value is found, no None values can appear after it
-        if values.max_shape is not None:
+        if self.max_shape is not None:
             non_none_found = False
-            for i, dim in enumerate(values.max_shape):
+            for i, dim in enumerate(self.max_shape):
                 if dim is not None:
                     if not isinstance(dim, int) or dim <= 0:
                         raise ValueError(
-                            f"Invalid max_shape {values.max_shape}: all non-None dimensions must be positive integers. "
+                            f"Invalid max_shape {self.max_shape}: all non-None dimensions must be positive integers. "
                             f"Found {dim} at index {i}."
                         )
                     non_none_found = True
                 elif non_none_found:
                     raise ValueError(
-                        f"Invalid max_shape {values.max_shape}: None values must only appear at the beginning. "
+                        f"Invalid max_shape {self.max_shape}: None values must only appear at the beginning. "
                         f"Found None at index {i} after non-None value."
                     )
 
             # If all dimensions are None, maximum is 2 dimensions
-            if all(dim is None for dim in values.max_shape):
-                if len(values.max_shape) > 2:
+            if all(dim is None for dim in self.max_shape):
+                if len(self.max_shape) > 2:
                     raise ValueError(
-                        f"Invalid max_shape {values.max_shape}: when all dimensions are None, "
-                        f"maximum number of dimensions is 2, got {len(values.max_shape)}"
+                        f"Invalid max_shape {self.max_shape}: when all dimensions are None, "
+                        f"maximum number of dimensions is 2, got {len(self.max_shape)}"
                     )
 
-        if values.type == "add_slice":
-            if values.index is None:
+        if self.type == "add_slice":
+            if self.index is None:
                 raise ValueError("index is required for async update type 'add_slice'")
-            if not isinstance(values.index, int) or (values.index < -1):
+            if not isinstance(self.index, int) or (self.index < -1):
                 raise ValueError(
-                    f"index must be an integer >= -1 for async update type 'add_slice', got {values.index}"
+                    f"index must be an integer >= -1 for async update type 'add_slice', got {self.index}"
                 )
-            if values.max_shape is not None and len(values.max_shape) > 2:
+            if self.max_shape is not None and len(self.max_shape) > 2:
                 raise ValueError(
-                    f"max_shape for async update type 'add_slice' cannot exceed two dimensions, got {len(values.max_shape)} dimensions"
+                    f"max_shape for async update type 'add_slice' cannot exceed two dimensions, got {len(self.max_shape)} dimensions"
                 )
-        return values
+        return self
 
 
 class DeviceRPCMessage(BECMessage):
@@ -975,12 +973,11 @@ class DeviceConfigMessage(BECMessage):
     config: dict | None = Field(default=None)
 
     @model_validator(mode="after")
-    @classmethod
-    def check_config(cls, values):
+    def check_config(self) -> Self:
         """Validate the config"""
-        if values.action in ["add", "set", "update"] and not values.config:
-            raise ValueError(f"Invalid config {values.config}. Must be a dictionary")
-        return values
+        if self.action in ["add", "set", "update"] and not self.config:
+            raise ValueError(f"Invalid config {self.config}. Must be a dictionary")
+        return self
 
 
 class DeviceInitializationProgressMessage(BECMessage):
@@ -1808,14 +1805,13 @@ class MacroUpdateMessage(BECMessage):
     metadata: dict | None = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    @classmethod
-    def check_macro(cls, values):
+    def check_macro(self) -> Self:
         """Validate the macro update message"""
-        if values.update_type in ["add", "remove", "reload"] and not values.macro_name:
+        if self.update_type in ["add", "remove", "reload"] and not self.macro_name:
             raise ValueError("macro_name must be provided for add, remove and reload actions")
-        if values.update_type == "add" and not values.file_path:
+        if self.update_type == "add" and not self.file_path:
             raise ValueError("file_path must be provided for add actions")
-        return values
+        return self
 
 
 class MessagingServiceTextContent(BaseModel):
