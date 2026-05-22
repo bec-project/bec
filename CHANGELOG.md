@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.125.1 (2026-05-22)
+
+### Bug Fixes
+
+- **scan-gui-models**: Fix docstring can be None bug
+  ([`18d9b71`](https://github.com/bec-project/bec/commit/18d9b71525b978b33099bebf1030a48bfc97c6c5))
+
+
 ## v3.125.0 (2026-05-22)
 
 ### Features
