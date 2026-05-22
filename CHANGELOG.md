@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.125.0 (2026-05-22)
+
+### Features
+
+- Add description to device
+  ([`7de8ae5`](https://github.com/bec-project/bec/commit/7de8ae5f6fc0553f5e83add72a593ac65dd3b0c1))
+
+
 ## v3.124.4 (2026-05-21)
 
 ### Bug Fixes
