@@ -42,6 +42,7 @@ class LogLevel(int, enum.Enum):
     ERROR = 40
     CRITICAL = 50
     CONSOLE_LOG = 21
+    CONSOLE_LOG_ERROR = 22
 
 
 class BECLogger:
@@ -201,30 +202,6 @@ class BECLogger:
         self._base_path = self.writer_mixin.directory
         self.writer_mixin.create_directory(self._base_path)
 
-    def _logger_callback(self, msg):
-        if not self._configured:
-            return
-        if self.connector is None:
-            return
-        msg = json.loads(msg)
-        msg["service_name"] = self.service_name
-        try:
-            self.connector.xadd(
-                topic=MessageEndpoints.log(),
-                msg_dict={
-                    "data": bec_lib.messages.LogMessage(
-                        log_type=msg["record"]["level"]["name"].lower(), log_msg=msg
-                    )
-                },
-                max_size=10000,
-            )
-        except Exception:
-            # connector disconnected?
-            # just ignore the error here...
-            # Exception is not explicitly specified,
-            # because it depends on the connector
-            pass
-
     def get_format(self, level: LogLevel = None, is_stderr=False, is_container=False) -> str:
         """
         Get the format for a specific log level.
@@ -298,22 +275,37 @@ class BECLogger:
 
         Args:
             is_console (bool, optional): Whether the log is for the console. Defaults to False.
-
         Returns:
             function: Filter function.
         """
 
         def _filter(record):
-            if record["name"] in self._disabled_modules:
+            if self._is_disabled_record(record):
                 return False
-            for module in self._disabled_modules:
-                if record["name"].startswith(module):
-                    return False
-            if not is_console and record["level"].no == LogLevel.CONSOLE_LOG:
+            if not is_console and self._is_console_level(record["level"].no):
                 return False
             return True
 
         return _filter
+
+    def _is_disabled_record(self, record) -> bool:
+        if record["name"] in self._disabled_modules:
+            return True
+        return any(record["name"].startswith(module) for module in self._disabled_modules)
+
+    def _is_console_level(self, level_no: int) -> bool:
+        return level_no in (LogLevel.CONSOLE_LOG, LogLevel.CONSOLE_LOG_ERROR)
+
+    def filter_console_redis_log(self, record) -> bool:
+        """
+        Filter function for console redis log messages, which are used to send log messages to redis.
+
+        Args:
+            record (dict): Log record.
+        Returns:
+            bool: True if the log message should be sent to the console via redis, False otherwise
+        """
+        return not self._is_disabled_record(record) and self._is_console_level(record["level"].no)
 
     def add_sys_stderr(self, level: LogLevel):
         """
@@ -354,7 +346,10 @@ class BECLogger:
         Add a sink to the console log.
         """
         try:
-            self.logger.level("CONSOLE_LOG", no=21, color="<yellow>", icon="📣")
+            self.logger.level("CONSOLE_LOG", no=LogLevel.CONSOLE_LOG, color="<yellow>", icon="📣")
+            self.logger.level(
+                "CONSOLE_LOG_ERROR", no=LogLevel.CONSOLE_LOG_ERROR, color="<red>", icon="📣"
+            )
         except (TypeError, ValueError):
             # level with same severity already exists: already configured
             pass
@@ -379,6 +374,7 @@ class BECLogger:
             opener=self._file_opener,
         )
         self._console_log = True
+        self.add_console_redis_log()
 
     def add_redis_log(self, level: LogLevel):
         """
@@ -388,12 +384,57 @@ class BECLogger:
             level (LogLevel): Log level.
         """
         self.logger.add(
-            self._logger_callback,
+            self._publish_log_message,
             serialize=True,
             level=level,
             format=self.formatting(),
             filter=self.filter(),
         )
+
+    def add_console_redis_log(self):
+        """
+        Add a sink to the console redis log.
+        It deviates from the regular redis log in that it only includes messages with
+        level CONSOLE_LOG and CONSOLE_LOG_ERROR.
+        """
+        self.logger.add(
+            self._console_redis_logger_callback,
+            serialize=True,
+            level=LogLevel.CONSOLE_LOG,
+            format=self.formatting(is_stderr=True),
+            filter=self.filter_console_redis_log,
+        )
+
+    def _console_redis_logger_callback(self, msg):
+        if not self._configured or self.connector is None:
+            return
+        self._publish_log_message(msg, service_name=f"{self.service_name}_CONSOLE")
+
+    def _decode_log_payload(self, msg: str | dict) -> dict:
+        return json.loads(msg) if isinstance(msg, str) else dict(msg)
+
+    def _publish_log_message(self, msg: str | dict, service_name: str | None = None) -> bool:
+        if not self._configured or self.connector is None:
+            return False
+        payload = self._decode_log_payload(msg)
+        payload["service_name"] = self.service_name if service_name is None else service_name
+        try:
+            self.connector.xadd(
+                topic=MessageEndpoints.log(),
+                msg_dict={
+                    "data": bec_lib.messages.LogMessage(
+                        log_type=payload["record"]["level"]["name"].lower(), log_msg=payload
+                    )
+                },
+                max_size=10000,
+            )
+            return True
+        except Exception:
+            # connector disconnected?
+            # just ignore the error here...
+            # Exception is not explicitly specified,
+            # because it depends on the connector
+            return False
 
     @property
     def disabled_modules(self) -> set[str]:

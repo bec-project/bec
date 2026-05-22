@@ -4,10 +4,12 @@ from unittest import mock
 
 import IPython
 import pytest
+import redis.exceptions
 
 from bec_ipython_client import BECIPythonClient, main
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase, AlarmHandler, Alarms
+from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 
@@ -238,3 +240,55 @@ def test_bec_ipython_client_show_last_no_alarm(ipython_client, capsys):
     client.show_last_alarm()
     captured = capsys.readouterr()
     assert "No alarm has been raised in this session." in captured.out
+
+
+def test_ipython_exception_handler_logs_console_error_for_device_config_error():
+    shell = mock.MagicMock()
+    with mock.patch.object(main.logger, "log") as mock_log:
+        main._ip_exception_handler(
+            shell, DeviceConfigError, DeviceConfigError("bad config"), None, parent=mock.MagicMock()
+        )
+
+    mock_log.assert_called_once_with("CONSOLE_LOG_ERROR", "DeviceConfigError: bad config")
+    shell.showtraceback.assert_not_called()
+
+
+def test_ipython_exception_handler_logs_console_error_for_unhandled_exception():
+    shell = mock.MagicMock()
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError as exc:
+        with mock.patch.object(main.logger, "log") as mock_log:
+            main._ip_exception_handler(
+                shell, RuntimeError, exc, exc.__traceback__, parent=mock.MagicMock()
+            )
+
+    mock_log.assert_called_once()
+    assert mock_log.call_args.args[0] == "CONSOLE_LOG_ERROR"
+    assert "RuntimeError: boom" in mock_log.call_args.args[1]
+    shell.showtraceback.assert_called_once()
+
+
+def test_ipython_exception_handler_logs_console_error_for_permission_error():
+    shell = mock.MagicMock()
+    parent = mock.MagicMock()
+    with (
+        mock.patch.object(main.logger, "log") as mock_log,
+        mock.patch.object(main.logger, "info") as mock_info,
+        mock.patch.object(
+            main, "bec", mock.MagicMock(_client=mock.MagicMock(username="alice")), create=True
+        ),
+    ):
+        main._ip_exception_handler(
+            shell,
+            redis.exceptions.NoPermissionError,
+            redis.exceptions.NoPermissionError("denied"),
+            None,
+            parent=parent,
+        )
+
+    mock_log.assert_called_once()
+    assert mock_log.call_args.args[0] == "CONSOLE_LOG_ERROR"
+    assert "Unauthorized:" in mock_log.call_args.args[1]
+    mock_info.assert_called_once()
+    shell.showtraceback.assert_not_called()
