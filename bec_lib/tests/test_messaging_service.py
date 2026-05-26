@@ -524,9 +524,20 @@ def test_scilog_add_text_italic(scilog_message):
     assert scilog_message._content[0].content == "<p><em>hello</em></p>"
 
 
-def test_scilog_add_text_color(scilog_message):
-    scilog_message.add_text("warn", color="yellow")
-    assert scilog_message._content[0].content == '<p><mark class="pen-yellow">warn</mark></p>'
+@pytest.mark.parametrize(
+    ("color", "expected_content"),
+    [
+        ("red", '<p><mark class="pen-red">warn</mark></p>'),
+        ("green", '<p><mark class="pen-green">warn</mark></p>'),
+        ("yellow", '<p><mark class="marker-yellow">warn</mark></p>'),
+        ("pink", '<p><mark class="marker-pink">warn</mark></p>'),
+        ("blue", '<p><mark class="marker-blue">warn</mark></p>'),
+        ("black", "<p>warn</p>"),
+    ],
+)
+def test_scilog_add_text_color(scilog_message, color, expected_content):
+    scilog_message.add_text("warn", color=color)
+    assert scilog_message._content[0].content == expected_content
 
 
 def test_scilog_add_text_bold_and_color(scilog_message, connected_connector):
