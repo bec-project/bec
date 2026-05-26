@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.126.0 (2026-05-26)
+
+### Features
+
+- Add logger import and initialize logger in v4_scan template
+  ([`8ba7386`](https://github.com/bec-project/bec/commit/8ba7386e281e13f14832293cf0c8652f9ba7e5f1))
+
+
 ## v3.125.2 (2026-05-26)
 
 ### Bug Fixes
