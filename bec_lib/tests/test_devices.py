@@ -762,11 +762,11 @@ def test_attribute_access_on_sub_device(positioner_as_subdevice):
 
 @pytest.fixture()
 def adj():
-    (adj := AdjustableMixin()).root = mock.MagicMock()
+    adj = AdjustableMixin()
+    adj.root = adj
+    adj.parent = mock.MagicMock()
     adj._update_config = mock.MagicMock()
-    # attributes that exist on the DeviceBase
     adj.name = "test_mixin"
-    adj.root.name = "test_mixin"
     return adj
 
 
