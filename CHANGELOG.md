@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.127.1 (2026-05-26)
+
+### Bug Fixes
+
+- **scilog**: Use marker instead of pen
+  ([`73297d2`](https://github.com/bec-project/bec/commit/73297d20f9c3b2e04944230820c11a822fe98e70))
+
+
 ## v3.127.0 (2026-05-26)
 
 ### Bug Fixes
