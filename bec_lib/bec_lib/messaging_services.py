@@ -3,7 +3,7 @@ from __future__ import annotations
 import mimetypes
 import os
 from abc import ABC
-from typing import TYPE_CHECKING, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Generic, Literal, Self, TypeVar
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
@@ -277,7 +277,7 @@ class SciLogMessageServiceObject(MessageServiceObject):
         text: str,
         bold: bool = False,
         italic: bool = False,
-        color: str | None = None,
+        color: Literal["red", "green", "black", "yellow", "pink", "blue"] | None = None,
         **kwargs,
     ) -> Self:
         """
@@ -290,8 +290,9 @@ class SciLogMessageServiceObject(MessageServiceObject):
             text: The text content.
             bold: Wrap the text in ``<strong>``.
             italic: Wrap the text in ``<em>``.
-            color: Highlight colour using SciLog's pen marks (e.g. ``"red"``,
-                ``"yellow"``, ``"green"``, ``"blue"``, ``"pink"``).
+            color: Highlight colour using SciLog's pens or markers.
+                Supported values for pens are: "red", "green" and "black".
+                Supported values for markers are: "yellow", "pink", "blue".
 
         Returns:
             SciLogMessageServiceObject: The updated message object.
@@ -305,7 +306,12 @@ class SciLogMessageServiceObject(MessageServiceObject):
             if italic:
                 text = f"<em>{text}</em>"
             if color:
-                text = f'<mark class="pen-{color}">{text}</mark>'
+                if color == "black":
+                    pass  # black is the default
+                elif color in ["red", "green"]:
+                    text = f'<mark class="pen-{color}">{text}</mark>'
+                elif color in ["yellow", "pink", "blue"]:
+                    text = f'<mark class="marker-{color}">{text}</mark>'
             text = f"<p>{text}</p>"
         return super().add_text(text)
 
