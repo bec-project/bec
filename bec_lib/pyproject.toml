@@ -39,6 +39,7 @@ dependencies = [
     "python-dotenv~=1.0",
     "python-slugify~=8.0",
     "questionary~=2.0",
+    "phonenumbers~=9.0",
 ]
 
 

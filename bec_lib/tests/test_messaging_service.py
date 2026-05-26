@@ -338,6 +338,31 @@ def test_signal_messaging_service_send_with_sticker(signal_service, connected_co
     assert sticker_part.sticker_id == "sticker_123"
 
 
+def test_signal_service_can_create_message_without_configured_scopes(connected_connector):
+    """Test that Signal remains enabled even without predefined scopes."""
+    service = SignalMessagingService(connected_connector)
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=True),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=False),
+        ),
+        deployment_services=[],
+        session_services=[],
+    )
+    service._on_new_scope_change_msg(message={"data": available_services})
+
+    message = service.new("Direct Signal message")
+    message.send(scope="+41791234567")
+    out = connected_connector.xread(
+        MessageEndpoints.message_service_queue(), from_start=True, count=1
+    )
+    assert len(out) == 1
+    out = out[0]["data"]
+    assert out.service_name == "signal"
+    assert out.scope == "+41791234567"
+
+
 def test_scilog_add_tags_with_string(scilog_message, connected_connector):
     """Test that add_tags works with a string input."""
     message = scilog_message
@@ -392,6 +417,31 @@ def test_signal_message_service_uses_default_scope(connected_connector):
         ValueError, match="Scope 'invalid_scope' is not available for this messaging service."
     ):
         service.set_default_scope("invalid_scope")
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected_scope"),
+    [
+        ("079 123 45 67", "+41791234567"),
+        ("0041 79 123 45 67", "+41791234567"),
+        ("beamline-ops", "beamline-ops"),
+        (["079 123 45 67", "beamline-ops"], ["+41791234567", "beamline-ops"]),
+        ("+41791234567", "+41791234567"),
+    ],
+)
+def test_signal_message_service_normalizes_scope_inputs(
+    signal_service, connected_connector, scope, expected_scope
+):
+    """Test that Signal normalizes phone numbers while preserving named scopes."""
+    message = signal_service.new("Signal recipient test")
+
+    message.send(scope=scope)
+    out = connected_connector.xread(
+        MessageEndpoints.message_service_queue(), from_start=True, count=1
+    )
+    assert len(out) == 1
+    out = out[0]["data"]
+    assert out.scope == expected_scope
 
 
 def test_scilog_message_add_tags_with_default_tags(scilog_message, connected_connector):
