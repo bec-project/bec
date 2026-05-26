@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.125.2 (2026-05-26)
+
+### Bug Fixes
+
+- Add astroid as strict dependency
+  ([`02cf713`](https://github.com/bec-project/bec/commit/02cf7137333d6a16b33f7d6267f6b393589f6c0a))
+
+
 ## v3.125.1 (2026-05-22)
 
 ### Bug Fixes
