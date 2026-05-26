@@ -13,6 +13,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
+    "astroid~=3.3",
     "fastjsonschema~=2.19",
     "fpdf2~=2.7, >=2.7.7",
     "hiredis~=3.0",
@@ -70,17 +71,6 @@ bec_lib_fixtures = "bec_lib.tests.fixtures"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
-
-
-
-
-
-
-
-
-
-
-
 
 
 [tool.hatch.build.targets.wheel]
