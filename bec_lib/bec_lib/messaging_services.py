@@ -121,6 +121,7 @@ class MessagingService(ABC, Generic[MessageObjectT]):
 
     _SERVICE_NAME = "generic"
     _MESSAGE_OBJECT_CLASS: type[MessageObjectT] = MessageServiceObject  # type: ignore
+    _SUPPORTS_EMPTY_SCOPES = False
 
     def __init__(self, redis_connector: RedisConnector) -> None:
         self._redis_connector = redis_connector
@@ -203,8 +204,9 @@ class MessagingService(ABC, Generic[MessageObjectT]):
                 service.scope if isinstance(service.scope, list) else [service.scope]
             )
 
-        # If there are no scopes available for this service, or all are disabled, mark the service as disabled
-        if not self._scopes:
+        # Some services require configured scopes, while others can address
+        # recipients directly without any pre-registered scope.
+        if not self._scopes and not self._SUPPORTS_EMPTY_SCOPES:
             self._enabled = False
 
     def new(self, text: str | None = None) -> MessageObjectT:
@@ -396,9 +398,56 @@ class SignalMessageServiceObject(MessageServiceObject):
         self._content.append(messages.MessagingServiceStickerContent(sticker_id=sticker))
         return self
 
+    def send(self, scope: str | list[str] | None = None) -> None:
+        """
+        Send the message using the associated messaging service.
+
+        For Signal, the scope can be either a registered scope for a group or one
+        or more phone numbers for direct messages. Valid phone numbers are
+        normalized before sending; unparsable values are left untouched and treated
+        as regular scopes.
+
+        Args:
+            scope (str | list[str] | None): The scope or recipient for the
+                message. If None, uses the default scope set for the service.
+        """
+        if scope is None:
+            return super().send(scope=scope)
+        normalized_scope = self._service._normalize_scope(scope)  # type: ignore[attr-defined]
+        return super().send(scope=normalized_scope)
+
 
 class SignalMessagingService(MessagingService[SignalMessageServiceObject]):
     """Messaging service for Signal platform."""
 
     _SERVICE_NAME = "signal"
     _MESSAGE_OBJECT_CLASS = SignalMessageServiceObject
+    _SUPPORTS_EMPTY_SCOPES = True
+
+    @staticmethod
+    def _normalize_phone_number(value: str) -> str:
+        """
+        Normalize a valid phone number to E.164 format.
+
+        If parsing or validation fails, the original value is returned so it can
+        still be interpreted as a named Signal scope.
+        """
+        import phonenumbers
+
+        candidate = value.strip()
+        region = None if candidate.startswith("+") else "CH"
+        try:
+            parsed_number = phonenumbers.parse(candidate, region)
+        except phonenumbers.NumberParseException:
+            return value
+
+        if not phonenumbers.is_valid_number(parsed_number):
+            return value
+
+        return phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+
+    def _normalize_scope(self, scope: str | list[str]) -> str | list[str]:
+        """Normalize Signal phone numbers while preserving plain scopes."""
+        if isinstance(scope, str):
+            return self._normalize_phone_number(scope)
+        return [self._normalize_phone_number(entry) for entry in scope]
