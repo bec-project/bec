@@ -1565,10 +1565,17 @@ class RedisConnector:
     def publish_metrics(
         self, group_name: str, metrics: dict[str, str | int | float | bool], separator="_"
     ):
-        if str in set(map(type, metrics.values())):
-            bec_logger.logger.warning(
-                f"String type found in dynamic metric: {group_name}. String metrics are currently not supported and will be ignored in the ingestor."
-            )
+        """
+        Publish dynamic metrics, scoped to a group name. These can be consumed by a log ingestor
+        service, such as bec_log_ingestor.
+
+        Args:
+            group_name (str): The group name to scope the metrics under. This can be
+                    used to group related metrics together, for example by deployment or by service.
+            metrics (dict): A dictionary of metric names to their values. The metric
+                    names will be combined with the group name using the specified separator.
+            separator (str): The separator to use when combining the group name and metric names. Defaults to "_".
+        """
         msg = DynamicMetricMessage.from_dict(metrics, separator=separator)
         ep = MessageEndpoints.dynamic_metric(group_name)
         self._redis_conn.publish(ep.endpoint, MsgpackSerialization.dumps(msg))
