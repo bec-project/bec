@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.127.0 (2026-05-26)
+
+### Bug Fixes
+
+- **scan-fixture**: Fix custom device for v4_scan_assembler fixture
+  ([`d918622`](https://github.com/bec-project/bec/commit/d91862272658fafdde8657cf0345c30086b2bdd3))
+
+### Features
+
+- Add console redis log and error log
+  ([`81900fd`](https://github.com/bec-project/bec/commit/81900fdf2236427ec06884e8b8a604e98afded69))
+
+- **signal**: Add support for sending messages directly to phone numbers
+  ([`e49f426`](https://github.com/bec-project/bec/commit/e49f42659efa1a857699c79ea888383edd2bc01d))
+
+### Refactoring
+
+- **pydantic**: Remove deprecated class access for model validation
+  ([`185cca4`](https://github.com/bec-project/bec/commit/185cca45e5aaf068e3c63570ff08c308799ee8d1))
+
+
 ## v3.126.0 (2026-05-26)
 
 ### Features
