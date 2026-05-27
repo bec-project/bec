@@ -9,7 +9,7 @@ from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Annotated, Any, ClassVar, Literal, Self, Union
+from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypedDict, Union
 from uuid import uuid4
 
 import numpy as np
@@ -1192,7 +1192,18 @@ class ServiceMetricMessage(BECMessage):
 
 class _StrDynamicMetricValue(BaseModel):
     value: str
+    possible_values: list[str]
     type_name: Literal["str"] = "str"
+
+    @model_validator(mode="after")
+    def _validate(self) -> Self:
+        if self.value not in self.possible_values:
+            raise ValueError(
+                f"Invalid string metric: value '{self.value}' not in possible values: '{self.possible_values}'. Provide the possible values for string metrics."
+            )
+        if len(set(self.possible_values)) != len(self.possible_values):
+            raise ValueError(f"Duplicates in possible values: {self.possible_values}")
+        return self
 
 
 class _IntDynamicMetricValue(BaseModel):
@@ -1219,6 +1230,14 @@ DynamicMetricValue = Annotated[
 ]
 
 
+class StringMetricDict(TypedDict):
+    value: str
+    possible_values: list[str]
+
+
+DynamicMetricDict = Mapping[str, StringMetricDict | int | float | bool]
+
+
 class DynamicMetricMessage(BECMessage):
     """Message for propagating metrics to the log ingestor.
 
@@ -1230,14 +1249,16 @@ class DynamicMetricMessage(BECMessage):
     timestamp: float = Field(default_factory=time.time)
 
     @classmethod
-    def from_dict(cls, metrics: dict[str, str | int | float | bool], separator: str = "-"):
+    def from_dict(cls, metrics: DynamicMetricDict, separator: str = "-"):
+        def _fmt(value):
+            if isinstance(value, dict):
+                return {"type_name": "str", **value}
+            return {"value": value, "type_name": type(value).__name__}
+
         return cls.model_validate(
             {
-                "metrics": {
-                    # Metric names are concatenated with the group in the ingestor
-                    separator + k: {"value": v, "type_name": type(v).__name__}
-                    for k, v in metrics.items()
-                }
+                # Metric names are concatenated with the group in the ingestor
+                "metrics": {separator + k: _fmt(v) for k, v in metrics.items()}
             }
         )
 

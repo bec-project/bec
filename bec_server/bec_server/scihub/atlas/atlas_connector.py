@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from dotenv import dotenv_values
@@ -22,8 +23,29 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = bec_logger.logger
 
 
-class AtlasConnector:
+class AtlasHost(StrEnum):
+    NotSet = "none"
+    Local = "localhost"
+    Dev = "bec-atlas-dev"
+    Prod = "bec-atlas-prod"
+    Qa = "bec-atlas-qa"
+    Unknown = "unknown"
 
+    @classmethod
+    def translate_host(cls, hostname: str | None):
+        if not hostname:
+            return cls.NotSet
+        for opt in [cls.Local, cls.Dev, cls.Prod, cls.Qa]:
+            if opt in hostname:
+                return opt
+        return cls.Unknown
+
+    @classmethod
+    def fmt_for_metric(cls, hostname: str | None) -> messages.StringMetricDict:
+        return {"value": cls.translate_host(hostname), "possible_values": list(cls)}
+
+
+class AtlasConnector:
     def __init__(
         self, scihub: SciHub, connector: RedisConnector, redis_atlas: RedisConnector | None = None
     ) -> None:
@@ -54,7 +76,8 @@ class AtlasConnector:
         self.update_acls()
         self.update_available_endpoints()
         self.connector.publish_metrics(
-            "atlas_connection", {"connected": self.connected_to_atlas, "host": self.host or ""}
+            "atlas_connection",
+            {"connected": self.connected_to_atlas, "host": AtlasHost.fmt_for_metric(self.host)},
         )
 
     @property

@@ -36,8 +36,10 @@ def test_get_active_client_metrics_filters_internal_services(atlas_connector):
     ) as mock_service_status:
         mock_service_status.return_value = service_status
         assert emitter._get_active_client_metrics() == {
-            "BECIPythonClient/client-1": "client-host-1",
-            "BECClient/client-2": "client-host-2",
+            "bec_clients": 1,
+            "from_consoles": 0,
+            "ipython_clients": 1,
+            "total_connected": 2,
         }
 
 
@@ -45,7 +47,7 @@ def test_handle_service_status_emits_active_client_metric(atlas_connector):
     emitter = atlas_connector.active_client_emitter
     service_status = {
         "BECIPythonClient/client-1": create_status_message(
-            "BECIPythonClient/client-1", hostname="client-host-1"
+            "BECIPythonClient/client-1", hostname="client-cons-01"
         ),
         "ScanServer": create_status_message("ScanServer", hostname="server-host"),
     }
@@ -59,7 +61,8 @@ def test_handle_service_status_emits_active_client_metric(atlas_connector):
         mock_service_status.return_value = service_status
         emitter._handle_service_status(None)
     mock_publish_metrics.assert_called_once_with(
-        "active_clients", {"BECIPythonClient/client-1": "client-host-1"}
+        "active_clients",
+        {"total_connected": 1, "bec_clients": 0, "ipython_clients": 1, "from_consoles": 1},
     )
 
 
