@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.128.0 (2026-05-27)
+
+### Features
+
+- Implement dynamic string metrics
+  ([`d7cf668`](https://github.com/bec-project/bec/commit/d7cf66803c676cbe63f8f93fa51ad8a39f7490e1))
+
+
 ## v3.127.4 (2026-05-27)
 
 ### Bug Fixes
