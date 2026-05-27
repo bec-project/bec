@@ -86,7 +86,7 @@ def test_atlas_metadata_handler(atlas_connector):
 
 
 def test_handle_account_info_valid(atlas_connector):
-    msg = {"data": messages.VariableMessage(value="account2")}
+    msg = {"data": messages.VariableMessage(value="p12345")}
     with (
         mock.patch.object(
             atlas_connector.metadata_handler, "send_atlas_update"
@@ -97,12 +97,12 @@ def test_handle_account_info_valid(atlas_connector):
             msg, parent=atlas_connector.metadata_handler
         )
         mock_send_update.assert_called_once()
-    mock_publish_metrics.assert_called_once_with("active_account", {"active_account": "account2"})
+    mock_publish_metrics.assert_called_once_with("active_account", {"active_account": 12345})
 
 
 def test_handle_account_info_same_account(atlas_connector):
-    atlas_connector.metadata_handler._account = "account1"
-    msg = {"data": messages.VariableMessage(value="account1")}
+    atlas_connector.metadata_handler._account = "p12345"
+    msg = {"data": messages.VariableMessage(value="p12345")}
     with mock.patch.object(
         atlas_connector.metadata_handler, "send_atlas_update"
     ) as mock_send_update:
@@ -198,7 +198,7 @@ def test_update_local_account_new_account(atlas_connector):
     assert stored_account is not None
     assert isinstance(stored_account["data"], messages.VariableMessage)
     assert stored_account["data"].value == "p12345"
-    mock_publish_metrics.assert_called_once_with("active_account", {"active_account": "p12345"})
+    mock_publish_metrics.assert_called_once_with("active_account", {"active_account": 12345})
 
 
 def test_update_local_account_same_account(atlas_connector):

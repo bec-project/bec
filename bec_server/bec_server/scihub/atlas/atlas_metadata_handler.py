@@ -185,8 +185,13 @@ class AtlasMetadataHandler:
         logger.info(f"Updated account to: {self._account}")
 
     def _emit_current_account_metric(self, account: str) -> None:
+        try:
+            account_number = int(account.removeprefix("p"))
+        except ValueError:
+            logger.error(f"Invalid account format: {account}")
+            return
         self.atlas_connector.connector.publish_metrics(
-            "active_account", {"active_account": account}
+            "active_account", {"active_account": account_number}
         )
 
     def _handle_scan_status(self, msg, **_kwargs) -> None:
