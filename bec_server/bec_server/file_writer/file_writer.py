@@ -261,8 +261,14 @@ class HDF5FileWriter:
             ).isoformat()
         if data.end_time is not None:
             info_storage["end_time"] = datetime.datetime.fromtimestamp(data.end_time).isoformat()
-        info_storage.update(info_storage["bec"].get("user_metadata", {}))
-        info_storage["bec"].pop("user_metadata", None)
+
+        if "user_metadata" in data.metadata:
+            # FIXME: Remove once we've migrated everything to v4 scans
+            # ---
+            info_storage.update(data.metadata["user_metadata"])
+            # ---
+        elif "user_metadata" in data.metadata.get("metadata", {}):
+            info_storage.update(data.metadata["metadata"]["user_metadata"])
 
         requested_plugin = self.file_writer_manager.file_writer_config.get("plugin")
         plugins = plugin_helper.get_file_writer_plugins()
