@@ -600,7 +600,15 @@ def test_connector_publish_metrics(connected_connector):
         data.append(msg.value)
 
     connected_connector.register(ep, cb=cb, start_thread=False)
-    connected_connector.publish_metrics("test", {"m1": 5, "m2": 5.5, "m3": "test", "m4": True})
+    connected_connector.publish_metrics(
+        "test",
+        {
+            "m1": 5,
+            "m2": 5.5,
+            "m3": {"value": "test", "possible_values": ["test", "prod"]},
+            "m4": True,
+        },
+    )
     connected_connector.poll_messages(timeout=1)
 
     stop = time.time()
@@ -610,6 +618,7 @@ def test_connector_publish_metrics(connected_connector):
     assert res.metrics["_m1"].value == 5
     assert res.metrics["_m2"].value == 5.5
     assert res.metrics["_m3"].value == "test"
+    assert set(res.metrics["_m3"].possible_values) == set(["prod", "test"])
     assert res.metrics["_m4"].value is True
 
 

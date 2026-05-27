@@ -303,10 +303,6 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
                 for name in self._helper.get.active_and_pending_queue_names()
             },
         )
-        self._conn.publish_metrics(
-            "active_procedures",
-            {msg.queue: msg.identifier for msg in self._helper.get.running_procedures()},
-        )
 
     def _startup(self):
         # If the server is restarted, clear any pending requests, they'll have to be resubmitted

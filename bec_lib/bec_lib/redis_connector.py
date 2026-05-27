@@ -54,6 +54,7 @@ from bec_lib.messages import (
     BECMessage,
     BundleMessage,
     ClientInfoMessage,
+    DynamicMetricDict,
     DynamicMetricMessage,
     ErrorInfo,
 )
@@ -1562,13 +1563,7 @@ class RedisConnector:
             return None
         return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
 
-    def publish_metrics(
-        self, group_name: str, metrics: dict[str, str | int | float | bool], separator="_"
-    ):
-        if str in set(map(type, metrics.values())):
-            bec_logger.logger.warning(
-                f"String type found in dynamic metric: {group_name}. String metrics are currently not supported and will be ignored in the ingestor."
-            )
+    def publish_metrics(self, group_name: str, metrics: DynamicMetricDict, separator="_"):
         msg = DynamicMetricMessage.from_dict(metrics, separator=separator)
         ep = MessageEndpoints.dynamic_metric(group_name)
         self._redis_conn.publish(ep.endpoint, MsgpackSerialization.dumps(msg))

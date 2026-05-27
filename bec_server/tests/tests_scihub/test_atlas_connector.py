@@ -4,7 +4,7 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.scihub.atlas.atlas_connector import AtlasConnector
+from bec_server.scihub.atlas.atlas_connector import AtlasConnector, AtlasHost
 
 
 def test_atlas_connector_load_env(SciHubMock, connected_atlas_connector):
@@ -103,3 +103,20 @@ def test_atlas_connector_retries_without_ssl_if_tls_fails(SciHubMock, connected_
                 mock_auth.side_effect = [Exception("SSL connection failed"), mock.DEFAULT]
                 atlas_connector.connect_to_atlas()
                 assert atlas_connector.use_tls is False
+
+
+def test_host_enum_can_be_used_for_string_metric():
+    poss_strs = ["none", "localhost", "bec-atlas-dev", "bec-atlas-prod", "bec-atlas-qa", "unknown"]
+    formatted = AtlasHost.fmt_for_metric("bec-atlas-dev.psi.ch")
+    assert formatted == {"value": AtlasHost.Dev, "possible_values": poss_strs}
+    msg_value = messages._StrDynamicMetricValue.model_validate(formatted)
+    assert msg_value.possible_values == poss_strs
+
+
+def test_translate_atlas_host():
+    assert AtlasHost.translate_host(None) == "none"
+    assert AtlasHost.translate_host("some_other_host") == "unknown"
+    assert AtlasHost.translate_host("bec-atlas-dev.psi.ch") == "bec-atlas-dev"
+    assert AtlasHost.translate_host("bec-atlas-prod.psi.ch") == "bec-atlas-prod"
+    assert AtlasHost.translate_host("bec-atlas-qa.psi.ch") == "bec-atlas-qa"
+    assert AtlasHost.translate_host("localhost") == "localhost"
