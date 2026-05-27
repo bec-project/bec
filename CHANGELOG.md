@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.127.2 (2026-05-27)
+
+### Bug Fixes
+
+- **account metric**: Convert pgroup to int for easier parsing in grafana
+  ([`651ec02`](https://github.com/bec-project/bec/commit/651ec020da9d041ef97901e313eeb5a3fa59d9c6))
+
+
 ## v3.127.1 (2026-05-26)
 
 ### Bug Fixes
