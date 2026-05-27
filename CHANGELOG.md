@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.128.1 (2026-05-27)
+
+### Bug Fixes
+
+- Update user metadata handling in HDF5FileWriter for v4 scans
+  ([`35eba63`](https://github.com/bec-project/bec/commit/35eba63c34b68e844de0530f6298c2a18e6cba9c))
+
+
 ## v3.128.0 (2026-05-27)
 
 ### Features
