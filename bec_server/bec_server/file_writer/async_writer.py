@@ -432,7 +432,21 @@ class AsyncWriter(threading.Thread):
 
         if len(max_shape) != 2:
             # We currently only support 2D datasets for the 'add_slice' async update type
-            msg = f"Invalid max_shape for async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written."
+            msg = f"Invalid max_shape for signal group {signal_group.name} async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written."
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                info=messages.ErrorInfo(
+                    error_message=msg,
+                    compact_error_message=msg,
+                    exception_type="ValueError",
+                    device=signal_group.name,
+                ),
+                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
+            )
+            return
+
+        if value.ndim != 1:
+            msg = f"Invalid data shape for signal group {signal_group.name} async update type 'add_slice': {value.shape}. Data must be 1D. Data will not be written."
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 info=messages.ErrorInfo(

@@ -1,8 +1,11 @@
+from unittest import mock
+
 import h5py
 import numpy as np
 import pytest
 
 from bec_lib import messages
+from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.file_writer.async_writer import AsyncWriter
 
@@ -205,6 +208,29 @@ def test_async_writer_add_slice_var_size(async_writer, data):
     assert out.shape == (2,)
     assert out[0].shape == (20,)
     assert out[1].shape == (10,)
+
+
+def test_async_writer_add_slice_var_size_2D_data_warns(async_writer):
+    """
+    Test that adding a slice with 2D data when max_shape is [None, None] raises a warning and skips writing the data.
+    """
+    endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
+    data = [
+        messages.DeviceMessage(
+            signals={"monitor_async": {"value": np.random.rand(10, 10), "timestamp": 1}},
+            metadata={"async_update": {"type": "add_slice", "index": 0, "max_shape": [None, None]}},
+        )
+    ]
+    for entry in data:
+        async_writer.connector.xadd(endpoint, msg_dict={"data": entry})
+        with mock.patch.object(async_writer.connector, "raise_alarm") as mock_raise_alarm:
+            async_writer.poll_and_write_data()
+            mock_raise_alarm.assert_called_once()
+            args, kwargs = mock_raise_alarm.call_args
+            assert kwargs["severity"] == Alarms.WARNING
+            assert any(
+                signal_name in kwargs["info"].error_message for signal_name in entry.signals.keys()
+            )
 
 
 @pytest.mark.parametrize(
