@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.127.3 (2026-05-27)
+
+### Bug Fixes
+
+- **async-writer**: Add safeguard for value which are not of dimension 1D.
+  ([`f1bc9c8`](https://github.com/bec-project/bec/commit/f1bc9c8a917171d3b7d2678cb1fa73ddd6d337b3))
+
+
 ## v3.127.2 (2026-05-27)
 
 ### Bug Fixes
