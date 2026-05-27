@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v3.127.4 (2026-05-27)
+
+### Bug Fixes
+
+- Improve Error message for accessing methods on sub-devices
+  ([`9cdc619`](https://github.com/bec-project/bec/commit/9cdc61999c99ceb409ccb142f5d6e8b13c36d213))
+
+- **device**: Add option to provide extra info to error message
+  ([`68e1f8d`](https://github.com/bec-project/bec/commit/68e1f8d34ce562758fb2e7c877f1d10128b6daa3))
+
+- **device**: Get_device_tags should always return a set for consistency.
+  ([`e00ab6f`](https://github.com/bec-project/bec/commit/e00ab6f1854d7debe0fd63cf732177b936d54270))
+
+- **device**: Guard config property access on bec_lib.device for sub-devices
+  ([`e2c39e9`](https://github.com/bec-project/bec/commit/e2c39e9590e8452ae19294b902162ee4bcd84d0c))
+
+- **pylintrc**: Remove suggestion-mode on from pylintrc
+  ([`076e246`](https://github.com/bec-project/bec/commit/076e24648a6c4f07a70f94a375d8411708846c87))
+
+### Testing
+
+- Fix test adjustable mixin.
+  ([`146a426`](https://github.com/bec-project/bec/commit/146a426eac1900803118ccb0e806897cd122d3cc))
+
+
 ## v3.127.3 (2026-05-27)
 
 ### Bug Fixes
