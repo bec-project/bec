@@ -368,7 +368,7 @@ class QueueManager:
                 instruction_queue.exit_info = exit_info
 
             if instruction_queue.worker.current_instruction_queue_item is not instruction_queue:
-                logger.info(
+                logger.warning(
                     f"Worker is not running the expected instruction queue item.\
                           Expected: {instruction_queue}, actual: {instruction_queue.worker.current_instruction_queue_item}. Skipping abort."
                 )
