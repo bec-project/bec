@@ -19,7 +19,7 @@ from bec_server.actors.manager import ActorManager
 from bec_server.actors.worker import actor_procedure
 from bec_server.procedures.constants import BecClientType
 from bec_server.procedures.oop_worker_base import _create_client
-from bec_server.test.actor_test_utils import PollingActor, ep, sub_ep
+from bec_server.test.actor_test_utils import PollingActor, SubscriptionTestActor, ep, sub_ep
 from bec_server.test.helpers import wait_until
 
 
@@ -154,6 +154,14 @@ def test_subscription_actor(actor_manager_and_conn: tuple[ActorManager, RedisCon
     sleep(0.1)
     conn.set_and_publish(sub_ep, RawMessage(data=None))
     wait_until(lambda: action_triggered, timeout_s=1)
+
+
+def test_subscription_actor_unsubs():
+    actor = SubscriptionTestActor(client=MagicMock(), name="test", exec_id="test")
+    actor.client.connector.register.assert_called()
+    actor.client.connector.unregister.assert_not_called()
+    actor.stop()
+    actor.client.connector.unregister.assert_called()
 
 
 def test_polling_actor_inline(fakeredis_config):
