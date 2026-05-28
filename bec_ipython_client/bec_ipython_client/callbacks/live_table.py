@@ -363,6 +363,10 @@ class LiveUpdatesTable(LiveUpdatesBase):
         """close the table and print the footer"""
         if not self.table:
             return
+        if not self.scan_item:
+            return
+        if not self.scan_item.start_time or not self.scan_item.end_time:
+            return
         elapsed_time = self.scan_item.end_time - self.scan_item.start_time
         print(
             self.table.get_footer(
