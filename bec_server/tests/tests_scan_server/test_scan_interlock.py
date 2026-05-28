@@ -114,6 +114,6 @@ class TestScanInterlockActor:
 
     def test_unlock_removes_lock(self, actor, mock_client):
         actor._unlock()
-        mock_client.queue.remove_queue_lock.assert_called_once_with(
+        mock_client.queue.remove_queue_lock.assert_called_with(
             queue="primary", lock_id="ScanInterlockActor"
         )

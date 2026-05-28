@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -93,3 +91,7 @@ class ScanInterlockActor(BlStateActor):
     def run(self):
         super().run()
         self._unlock()
+
+    def stop(self, *_):
+        self._unlock()
+        super().stop()

@@ -61,9 +61,11 @@ class BuiltinActorManager:
         if (entry := self._actors_threads_and_stops.get(actor_name)) is None:
             logger.warning(f"Actor {actor_name} is not active!")
             return
-        _, t, event = entry
+        actor, t, event = entry
         event.set()
         t.join()
+        del self._actors_threads_and_stops[actor_name]
+        del actor
 
     def shutdown(self):
         for actor in self._actors_threads_and_stops:
