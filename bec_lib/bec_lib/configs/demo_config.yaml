@@ -54,7 +54,7 @@ eyefoc:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -68,7 +68,7 @@ eyex:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -82,7 +82,7 @@ eyey:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -93,7 +93,7 @@ flyer_sim:
   deviceConfig:
     delay: 1
     device_access: true
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - flyer
   enabled: true
@@ -107,7 +107,7 @@ hrox:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -121,7 +121,7 @@ hroy:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -135,7 +135,7 @@ hroz:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -149,7 +149,7 @@ hx:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -163,7 +163,7 @@ hy:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -177,7 +177,7 @@ hz:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -191,7 +191,7 @@ mbsx:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -205,7 +205,7 @@ mbsy:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -219,7 +219,7 @@ pinx:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -233,7 +233,7 @@ piny:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -247,7 +247,7 @@ pinz:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -261,7 +261,7 @@ samx:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -275,7 +275,7 @@ samy:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -289,7 +289,7 @@ samz:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
   enabled: true
@@ -681,7 +681,7 @@ aptrx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -691,7 +691,7 @@ aptry:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -701,7 +701,7 @@ bim2x:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -711,7 +711,7 @@ bim2y:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -721,7 +721,7 @@ bm1trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -731,7 +731,7 @@ bm1try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -741,7 +741,7 @@ bm2trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -751,7 +751,7 @@ bm2try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -761,7 +761,7 @@ bm3trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -771,7 +771,7 @@ bm3try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -781,7 +781,7 @@ bm4trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -791,7 +791,7 @@ bm4try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -801,7 +801,7 @@ bm5trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -811,7 +811,7 @@ bm5try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -821,7 +821,7 @@ bm6trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -831,7 +831,7 @@ bm6try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -841,7 +841,7 @@ bpm4r:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -851,7 +851,7 @@ bpm5r:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -861,7 +861,7 @@ bs1x:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -871,7 +871,7 @@ bs1y:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -881,7 +881,7 @@ bs2x:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -891,7 +891,7 @@ bs2y:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -901,7 +901,7 @@ burstn:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -911,7 +911,7 @@ burstr:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -921,7 +921,7 @@ ddg1a:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -931,7 +931,7 @@ ddg1b:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -941,7 +941,7 @@ ddg1c:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -951,7 +951,7 @@ ddg1d:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -961,7 +961,7 @@ ddg1e:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -971,7 +971,7 @@ ddg1f:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -981,7 +981,7 @@ ddg1g:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -991,7 +991,7 @@ ddg1h:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1001,7 +1001,7 @@ dettrx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1011,7 +1011,7 @@ di2trx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1021,7 +1021,7 @@ di2try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1031,7 +1031,7 @@ dtpush:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1041,7 +1041,7 @@ dtth:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1051,7 +1051,7 @@ dttrx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1061,7 +1061,7 @@ dttry:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1071,7 +1071,7 @@ dttrz:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1081,7 +1081,7 @@ ebcsx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1091,7 +1091,7 @@ ebcsy:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1101,7 +1101,7 @@ ebfi1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1111,7 +1111,7 @@ ebfi2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1121,7 +1121,7 @@ ebfi3:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1131,7 +1131,7 @@ ebfi4:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1141,7 +1141,7 @@ ebfzpx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1151,7 +1151,7 @@ ebfzpy:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1161,7 +1161,7 @@ ebtrx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1171,7 +1171,7 @@ ebtry:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1181,7 +1181,7 @@ ebtrz:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1191,7 +1191,7 @@ fi1try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1201,7 +1201,7 @@ fi2try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1211,7 +1211,7 @@ fi3try:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1221,7 +1221,7 @@ fsh1x:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1231,7 +1231,7 @@ fsh2x:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1241,7 +1241,7 @@ ftrans:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1251,7 +1251,7 @@ fttrx1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1261,7 +1261,7 @@ fttrx2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1271,7 +1271,7 @@ fttry1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1281,7 +1281,7 @@ fttry2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1291,7 +1291,7 @@ fttrz:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1301,7 +1301,7 @@ idgap:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1311,7 +1311,7 @@ mibd:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1321,7 +1321,7 @@ mibd1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1331,7 +1331,7 @@ mibd2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1341,7 +1341,7 @@ miroll:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1351,7 +1351,7 @@ mith:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1361,7 +1361,7 @@ mitrx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1371,7 +1371,7 @@ mitry:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1381,7 +1381,7 @@ mitry1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1391,7 +1391,7 @@ mitry2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1401,7 +1401,7 @@ mitry3:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1411,7 +1411,7 @@ mobd:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1421,7 +1421,7 @@ mobdai:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1431,7 +1431,7 @@ mobdbo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1441,7 +1441,7 @@ mobdco:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1451,7 +1451,7 @@ mobddi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1461,7 +1461,7 @@ mokev:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1471,7 +1471,7 @@ mopush1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1481,7 +1481,7 @@ mopush2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1491,7 +1491,7 @@ moroll1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1501,7 +1501,7 @@ moroll2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1511,7 +1511,7 @@ moth1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1521,7 +1521,7 @@ moth1e:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1531,7 +1531,7 @@ moth2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1541,7 +1541,7 @@ moth2e:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1551,7 +1551,7 @@ motrx2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1561,7 +1561,7 @@ motry:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1571,7 +1571,7 @@ motry2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1581,7 +1581,7 @@ motrz1:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1591,7 +1591,7 @@ motrz1e:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1601,7 +1601,7 @@ moyaw2:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1611,7 +1611,7 @@ sl0ch:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1621,7 +1621,7 @@ sl0trxi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1631,7 +1631,7 @@ sl0trxo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1641,7 +1641,7 @@ sl0wh:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1651,7 +1651,7 @@ sl1ch:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1661,7 +1661,7 @@ sl1cv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1671,7 +1671,7 @@ sl1trxi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1681,7 +1681,7 @@ sl1trxo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1691,7 +1691,7 @@ sl1tryb:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1701,7 +1701,7 @@ sl1tryt:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1711,7 +1711,7 @@ sl1wh:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1721,7 +1721,7 @@ sl1wv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1731,7 +1731,7 @@ sl2ch:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1741,7 +1741,7 @@ sl2cv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1751,7 +1751,7 @@ sl2trxi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1761,7 +1761,7 @@ sl2trxo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1771,7 +1771,7 @@ sl2tryb:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1781,7 +1781,7 @@ sl2tryt:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1791,7 +1791,7 @@ sl2wh:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1801,7 +1801,7 @@ sl2wv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1811,7 +1811,7 @@ sl3ch:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1821,7 +1821,7 @@ sl3cv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1831,7 +1831,7 @@ sl3trxi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1841,7 +1841,7 @@ sl3trxo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1851,7 +1851,7 @@ sl3tryb:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1861,7 +1861,7 @@ sl3tryt:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1871,7 +1871,7 @@ sl3wh:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1881,7 +1881,7 @@ sl3wv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1891,7 +1891,7 @@ sl4ch:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1901,7 +1901,7 @@ sl4cv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1911,7 +1911,7 @@ sl4trxi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1921,7 +1921,7 @@ sl4trxo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1931,7 +1931,7 @@ sl4tryb:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1941,7 +1941,7 @@ sl4tryt:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1951,7 +1951,7 @@ sl4wh:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1961,7 +1961,7 @@ sl4wv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1971,7 +1971,7 @@ sl5ch:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1981,7 +1981,7 @@ sl5cv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -1991,7 +1991,7 @@ sl5trxi:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2001,7 +2001,7 @@ sl5trxo:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2011,7 +2011,7 @@ sl5tryb:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2021,7 +2021,7 @@ sl5tryt:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2031,7 +2031,7 @@ sl5wh:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2041,7 +2041,7 @@ sl5wv:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2051,7 +2051,7 @@ strox:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2061,7 +2061,7 @@ stroy:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2071,7 +2071,7 @@ stroz:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2081,7 +2081,7 @@ sttrx:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2091,7 +2091,7 @@ sttry:
   deviceClass: ophyd_devices.SimPositioner
   deviceConfig:
     delay: 1
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - beamline
   enabled: true
@@ -2138,7 +2138,7 @@ rt_controller:
       - -50
       - 50
     tolerance: 0.01
-    update_frequency: 400
+    update_frequency: 50
   deviceTags:
     - user motors
     - test device
