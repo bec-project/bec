@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.128.4 (2026-05-29)
+
+### Bug Fixes
+
+- **alarms**: Add thread locking to raise_alarms method
+  ([`9308010`](https://github.com/bec-project/bec/commit/9308010c708ca6c44f6f32a3422b359ecdb3bac3))
+
+- **alarms**: Mark raised alarms as handled
+  ([`ef7f776`](https://github.com/bec-project/bec/commit/ef7f776d3300af4950083a0b0563fcaa3db27d7e))
+
+
 ## v3.128.3 (2026-05-29)
 
 ### Bug Fixes
