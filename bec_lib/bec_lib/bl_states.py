@@ -327,8 +327,10 @@ class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
     A state that checks if the shutter is open.
 
     Example:
-        shutter_state = ShutterState(name="shutter_open")
-        shutter_state.configure(device="shutter1")
+        shutter_state = DeviceStateConfig(
+            name="shutter_open",
+            device="shutter1",
+        )
         bec.beamline_states.add(shutter_state)
     """
 
@@ -352,8 +354,14 @@ class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]
     A state that checks if a positioner is within limits.
 
     Example:
-        device_state = DeviceWithinLimitsState(name="sample_x_within_limits")
-        device_state.configure(device="sample_x", signal="sample_x_signal_name", low_limit=0.0, high_limit=10.0)
+        device_state = DeviceWithinLimitsStateConfig(
+            name="samx_within_limits",
+            title="samx within 0-10",
+            device="samx",
+            signal="samx",
+            low_limit=0.0,
+            high_limit=10.0,
+        )
         bec.beamline_states.add(device_state)
 
     """
