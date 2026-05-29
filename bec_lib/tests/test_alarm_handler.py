@@ -1,7 +1,7 @@
 import pytest
 
 from bec_lib import messages
-from bec_lib.alarm_handler import AlarmBase, Alarms
+from bec_lib.alarm_handler import AlarmBase, AlarmHandler, Alarms
 
 
 @pytest.mark.parametrize(
@@ -48,3 +48,21 @@ def test_alarm_base_printing(msg):
 
     # Test pretty_print method (just ensure it runs without error)
     alarm_msg.pretty_print()
+
+
+def test_raise_alarms_marks_alarm_handled():
+    error_info = messages.ErrorInfo(
+        error_message="This is a test alarm message for testing purposes.",
+        compact_error_message="Compact alarm content",
+        exception_type="TestAlarmType",
+        device="TestDevice",
+    )
+    alarm_msg = messages.AlarmMessage(severity=Alarms.MAJOR, info=error_info)
+    handler = AlarmHandler(connector=None)
+    handler.add_alarm(alarm_msg)
+
+    with pytest.raises(AlarmBase) as exc_info:
+        handler.raise_alarms()
+
+    assert exc_info.value.handled is True
+    assert handler.get_unhandled_alarms() == []

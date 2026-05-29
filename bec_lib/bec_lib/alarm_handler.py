@@ -166,6 +166,7 @@ class AlarmHandler:
         alarms = self.get_unhandled_alarms(severity=severity)
         if len(alarms) > 0:
             alarm = alarms.pop(0)
+            alarm.handled = True
             self._raised_alarms.append(alarm)
             raise alarm
 
