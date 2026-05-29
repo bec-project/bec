@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.128.3 (2026-05-29)
+
+### Bug Fixes
+
+- Add expiration time to messages published by BEC services
+  ([`49e0906`](https://github.com/bec-project/bec/commit/49e09067b91362b42769d90166709afedb9621ea))
+
+- **rpc**: Set expiration time for RPC messages to 1800 seconds
+  ([`507dfc1`](https://github.com/bec-project/bec/commit/507dfc1d338d58d36fc18f2a0d37c09707a7c504))
+
+
 ## v3.128.2 (2026-05-29)
 
 ### Bug Fixes
