@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.128.5 (2026-05-29)
+
+### Bug Fixes
+
+- **bl_state**: Correct docstring examples
+  ([`75c2eab`](https://github.com/bec-project/bec/commit/75c2eab5054aa56b0e6164dfe9c8ce3d3505e012))
+
+
 ## v3.128.4 (2026-05-29)
 
 ### Bug Fixes

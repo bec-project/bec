@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bec-server"
-version = "3.128.4"
+version = "3.128.5"
 description = "BEC server"
 requires-python = ">=3.11"
 classifiers = [
@@ -54,6 +54,7 @@ bec-procedure-worker = "bec_server.procedures.oop_worker_base:main"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
+
 
 
 
