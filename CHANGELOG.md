@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.128.2 (2026-05-29)
+
+### Bug Fixes
+
+- Add checks for scan item start and end time before calculating elapsed time
+  ([`19ca510`](https://github.com/bec-project/bec/commit/19ca5109aaab0e89350bebdb167a6d55d97443fa))
+
+
 ## v3.128.1 (2026-05-27)
 
 ### Bug Fixes
