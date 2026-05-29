@@ -154,6 +154,7 @@ class AlarmHandler:
         for alarm in alarms:
             yield alarm
 
+    @threadlocked
     def raise_alarms(self, severity=Alarms.MAJOR):
         """Raise unhandled alarms with specified severity.
 
