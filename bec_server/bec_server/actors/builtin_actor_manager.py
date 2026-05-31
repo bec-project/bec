@@ -4,7 +4,10 @@ from bec_lib.client import BECClient, ServiceConfig
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BuiltinActorStateChangeMessage
+from bec_lib.messages import (
+    BuiltinActorStateChangeNotification,
+    BuiltinActorStateUpdatedNotification,
+)
 from bec_server.actors.actor import ActorBase
 from bec_server.actors.scan_interlock import ScanInterlockActor
 
@@ -26,11 +29,17 @@ class BuiltinActorManager:
         self._builtin_actors = {cls.__name__: cls for cls in (ScanInterlockActor,)}
         self._start_all()
         self._client.connector.register(
-            MessageEndpoints.builtin_actor_notification(), cb=self._on_state_changed
+            MessageEndpoints.builtin_actor_update_req_notif(), cb=self._on_state_changed
+        )
+
+    def _ping_clients(self, actor_name: str):
+        self._client.connector.send(
+            MessageEndpoints.builtin_actor_update_notif(actor_name),
+            BuiltinActorStateUpdatedNotification(actor_name=actor_name),
         )
 
     def _on_state_changed(self, msg_obj: MessageObject):
-        msg: BuiltinActorStateChangeMessage = msg_obj.value  # type: ignore
+        msg: BuiltinActorStateChangeNotification = msg_obj.value  # type: ignore
         logger.info(f"Received state change notification {msg.actor_name}")
         if msg.actor_name not in self._builtin_actors:
             logger.error(f"Actor {msg.actor_name} does not exist!")
@@ -39,6 +48,7 @@ class BuiltinActorManager:
             self._start_actor(self._builtin_actors[msg.actor_name])
         else:
             self._stop_actor(msg.actor_name)
+        self._ping_clients(msg.actor_name)
 
     def _start_all(self):
         for actor_class in self._builtin_actors.values():

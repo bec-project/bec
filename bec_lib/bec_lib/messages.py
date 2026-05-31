@@ -2054,8 +2054,17 @@ class AvailableBeamlineStatesMessage(BECMessage):
     states: list[BeamlineStateConfig]
 
 
-class BuiltinActorStateChangeMessage(BECMessage):
-    msg_type: ClassVar[str] = "actor_start_request"
+class BuiltinActorStateChangeNotification(BECMessage):
+    """Notify builtin actors of a pending state change request"""
+
+    msg_type: ClassVar[str] = "builtin_actor_state_change_request"
+    actor_name: str
+
+
+class BuiltinActorStateUpdatedNotification(BECMessage):
+    """Notify clients of completed state changes for builtin actors"""
+
+    msg_type: ClassVar[str] = "builtin_actor_state_updated_notification"
     actor_name: str
 
 

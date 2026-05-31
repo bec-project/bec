@@ -1680,11 +1680,22 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def builtin_actor_notification() -> EndpointInfo:
-        endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/state_change"
+    def builtin_actor_update_req_notif() -> EndpointInfo:
+        """Endpoint to notify a builtin actor of a pending state change request."""
+        endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/state_change_request_notification"
         return EndpointInfo(
             endpoint=endpoint,
-            message_type=messages.BuiltinActorStateChangeMessage,
+            message_type=messages.BuiltinActorStateChangeNotification,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
+    def builtin_actor_update_notif(actor_name: str) -> EndpointInfo:
+        """Endpoint to notify clients of builtin actor state changes."""
+        endpoint = f"{EndpointType.INFO.value}/actor/builtin/{actor_name}/state_change_done"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.BuiltinActorStateUpdatedNotification,
             message_op=MessageOp.SEND,
         )
 
