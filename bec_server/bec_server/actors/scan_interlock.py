@@ -1,7 +1,11 @@
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import ScanInterlockModifyStateTableMessage, ScanInterlockStateTableContent
+from bec_lib.messages import (
+    BuiltinActorStateUpdatedNotification,
+    ScanInterlockModifyStateTableMessage,
+    ScanInterlockStateTableContent,
+)
 from bec_server.actors.actor import BlStateActor
 
 logger = bec_logger.logger
@@ -26,11 +30,18 @@ class ScanInterlockActor(BlStateActor):
             MessageEndpoints.modify_interlock_table(), cb=self._on_state_modification
         )
 
+    def _ping_clients(self):
+        self.client.connector.send(
+            MessageEndpoints.builtin_actor_update_notif(self.name),
+            BuiltinActorStateUpdatedNotification(actor_name=self.name),
+        )
+
     def _update_watched_states_in_redis(self):
         self.client.connector.set(
             MessageEndpoints.scan_interlock_states(),
             ScanInterlockStateTableContent(states_watched=self.state_table),
         )
+        self._ping_clients()
 
     def _on_state_modification(self, msg_dict: dict):
         msg: ScanInterlockModifyStateTableMessage = msg_dict["data"]

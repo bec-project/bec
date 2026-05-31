@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
     BlStateStatus,
-    BuiltinActorStateChangeMessage,
+    BuiltinActorStateChangeNotification,
     ScanInterlockModifyStateTableMessage,
 )
 
@@ -88,8 +88,8 @@ class BuiltinActorHli:
 
     def _notify(self, actor_name):
         self._client.connector.send(
-            MessageEndpoints.builtin_actor_notification(),
-            BuiltinActorStateChangeMessage(actor_name=actor_name),
+            MessageEndpoints.builtin_actor_update_req_notif(),
+            BuiltinActorStateChangeNotification(actor_name=actor_name),
         )
 
     def check_enabled(self, actor_name: str):
