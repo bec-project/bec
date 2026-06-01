@@ -1962,6 +1962,38 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def notification(event_type: str):
+        """
+        Endpoint for transient notification events that SciHub can route to
+        configured messaging services.
+
+        Args:
+            event_type (str): Notification event name such as ``new_scan``.
+
+        Returns:
+            EndpointInfo: Endpoint for notification events.
+        """
+        endpoint = f"{EndpointType.INTERNAL.value}/messaging_services/notification/{event_type}"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.NotificationMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
+    def notification_config():
+        """
+        Endpoint for persisted notification routing configuration.
+
+        Returns:
+            EndpointInfo: Endpoint for notification routing config.
+        """
+        endpoint = f"{EndpointType.USER.value}/messaging_services/notification_config"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.NotificationConfigMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
+
+    @staticmethod
     def message_service_ingest(deployment_name: str):
         """
         Endpoint for ingesting messages for a particular deployment's messaging service.

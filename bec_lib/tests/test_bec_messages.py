@@ -5,6 +5,7 @@ import pydantic
 import pytest
 
 from bec_lib import messages
+from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
 
@@ -132,6 +133,36 @@ def test_ClientInfoMessage_raises():
             RID="1234",
             metadata={"RID": "1234", "wrong": "wrong"},
         )
+
+
+def test_NotificationMessage():
+    notification = (
+        NotificationMessageObject()
+        .add_text("Scan started", bold=True, color="red")
+        .add_tags(["beamline", "scan"])
+    )
+    msg = messages.NotificationMessage(event="new_scan", message=notification._content)
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+    assert res_loaded == msg
+
+
+def test_NotificationConfigMessage():
+    msg = messages.NotificationConfigMessage(
+        routes={
+            "new_scan": [
+                messages.NotificationServiceTarget(service_name="scilog", scope="logbook")
+            ],
+            "alarm": [
+                messages.NotificationServiceTarget(
+                    service_name="signal", scope=["+41791234567", "+41797654321"]
+                )
+            ],
+        }
+    )
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+    assert res_loaded == msg
 
 
 def test_DeviceRPCMessage():

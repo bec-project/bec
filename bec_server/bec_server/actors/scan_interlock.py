@@ -6,6 +6,8 @@ from bec_lib.messages import (
     ScanInterlockModifyStateTableMessage,
     ScanInterlockStateTableContent,
 )
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
 from bec_server.actors.actor import BlStateActor
 
 logger = bec_logger.logger
@@ -81,6 +83,13 @@ class ScanInterlockActor(BlStateActor):
             ]
 
     def some_mismatch_action(self, client: BECClient):
+        notification = NotificationMessageObject()
+        notification.add_text(
+            f"Scan interlock triggered for beamline states: {self.mismatched_states}", color="red"
+        )
+        notification.add_tags("scan_interlock")
+        self.client.connector.notify(MessagingEvent.SCAN_INTERLOCK, notification)
+
         if self.client.queue is None:
             return
         logger.info(
@@ -107,6 +116,10 @@ class ScanInterlockActor(BlStateActor):
                         f"{self.name} removing queue lock if present; "
                         f"queue_locks={primary.locks}; cache={self.state_cache}; table={self.state_table}"
                     )
+                    notification = NotificationMessageObject()
+                    notification.add_text("Scan interlock cleared", color="green")
+                    notification.add_tags("scan_interlock")
+                    self.client.connector.notify(MessagingEvent.SCAN_INTERLOCK, notification)
                     self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
 
     def run(self):

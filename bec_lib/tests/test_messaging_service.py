@@ -1,9 +1,13 @@
+import time
+
 import pytest
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messaging_hooks import MessagingEvent, MessagingManager
 from bec_lib.messaging_services import (
     MessageServiceObject,
+    NotificationMessageObject,
     SciLogMessagingService,
     SignalMessageServiceObject,
     SignalMessagingService,
@@ -338,6 +342,66 @@ def test_signal_messaging_service_send_with_sticker(signal_service, connected_co
     assert sticker_part.sticker_id == "sticker_123"
 
 
+def test_notification_message_object_to_scilog_message(scilog_service):
+    scilog_service.set_default_scope("default")
+    notification = (
+        NotificationMessageObject()
+        .add_text("Beamline checks failed", bold=True, color="red")
+        .add_tags(["alarm"])
+    )
+    manager = MessagingManager(scilog_service._redis_connector)  # pylint: disable=protected-access
+
+    try:
+        scilog_message = manager.to_service_message(
+            scilog_service,
+            messages.NotificationMessage(event="alarm_major", message=notification._content),
+        )
+    finally:
+        manager.shutdown()
+
+    assert scilog_message._service == scilog_service  # pylint: disable=protected-access
+    assert scilog_message._scope == "default"  # pylint: disable=protected-access
+    assert len(scilog_message._content) == 2  # pylint: disable=protected-access
+    assert isinstance(
+        scilog_message._content[0], messages.MessagingServiceTextContent
+    )  # pylint: disable=protected-access
+    assert (
+        scilog_message._content[0].content  # pylint: disable=protected-access
+        == '<p><mark class="pen-red"><strong>Beamline checks failed</strong></mark></p>'
+    )
+    assert isinstance(
+        scilog_message._content[1], messages.MessagingServiceTagsContent
+    )  # pylint: disable=protected-access
+
+
+def test_notification_message_object_to_signal_message(signal_service):
+    signal_service.set_default_scope("default")
+    notification = (
+        NotificationMessageObject()
+        .add_text("Beamline checks failed", bold=True, color="red")
+        .add_tags(["alarm"])
+    )
+    manager = MessagingManager(signal_service._redis_connector)  # pylint: disable=protected-access
+
+    try:
+        signal_message = manager.to_service_message(
+            signal_service,
+            messages.NotificationMessage(event="alarm_major", message=notification._content),
+        )
+    finally:
+        manager.shutdown()
+
+    assert signal_message._service == signal_service  # pylint: disable=protected-access
+    assert signal_message._scope == "default"  # pylint: disable=protected-access
+    assert len(signal_message._content) == 1  # pylint: disable=protected-access
+    assert isinstance(
+        signal_message._content[0], messages.MessagingServiceTextContent
+    )  # pylint: disable=protected-access
+    assert (
+        signal_message._content[0].content == "Beamline checks failed"
+    )  # pylint: disable=protected-access
+
+
 def test_signal_service_can_create_message_without_configured_scopes(connected_connector):
     """Test that Signal remains enabled even without predefined scopes."""
     service = SignalMessagingService(connected_connector)
@@ -552,3 +616,158 @@ def test_scilog_add_text_bold_and_color(scilog_message, connected_connector):
         text_part.content
         == '<p><mark class="pen-red"><strong>Beamline checks failed</strong></mark></p>'
     )
+
+
+def test_set_auto_notifications_persists_notification_config(scilog_service, connected_connector):
+    scilog_service.set_auto_notifications(MessagingEvent.SCAN, enabled=True, scopes="default")
+
+    config_msg = connected_connector.get(MessageEndpoints.notification_config())
+    assert config_msg == messages.NotificationConfigMessage(
+        routes={
+            "new_scan": [messages.NotificationServiceTarget(service_name="scilog", scope="default")]
+        }
+    )
+    assert scilog_service._auto_notifications == {
+        "new_scan": ["default"]
+    }  # pylint: disable=protected-access
+
+
+def test_set_auto_notifications_merges_with_existing_routes(scilog_service, connected_connector):
+    connected_connector.set_and_publish(
+        MessageEndpoints.notification_config(),
+        messages.NotificationConfigMessage(
+            routes={
+                "new_scan": [
+                    messages.NotificationServiceTarget(service_name="signal", scope="beamline-ops")
+                ]
+            }
+        ),
+    )
+
+    scilog_service.set_auto_notifications(MessagingEvent.SCAN, enabled=True, scopes="default")
+
+    config_msg = connected_connector.get(MessageEndpoints.notification_config())
+    assert config_msg == messages.NotificationConfigMessage(
+        routes={
+            "new_scan": [
+                messages.NotificationServiceTarget(service_name="signal", scope="beamline-ops"),
+                messages.NotificationServiceTarget(service_name="scilog", scope="default"),
+            ]
+        }
+    )
+    assert scilog_service._auto_notifications == {
+        "new_scan": ["default"]
+    }  # pylint: disable=protected-access
+
+
+def test_set_auto_notifications_disable_removes_only_matching_service_scope(
+    scilog_service, connected_connector
+):
+    connected_connector.set_and_publish(
+        MessageEndpoints.notification_config(),
+        messages.NotificationConfigMessage(
+            routes={
+                "new_scan": [
+                    messages.NotificationServiceTarget(service_name="signal", scope="beamline-ops"),
+                    messages.NotificationServiceTarget(service_name="scilog", scope="default"),
+                ]
+            }
+        ),
+    )
+
+    scilog_service.set_auto_notifications(MessagingEvent.SCAN, enabled=False, scopes="default")
+
+    config_msg = connected_connector.get(MessageEndpoints.notification_config())
+    assert config_msg == messages.NotificationConfigMessage(
+        routes={
+            "new_scan": [
+                messages.NotificationServiceTarget(service_name="signal", scope="beamline-ops")
+            ]
+        }
+    )
+    assert scilog_service._auto_notifications == {}  # pylint: disable=protected-access
+
+
+def test_set_auto_notifications_uses_default_scope_when_scopes_omitted(
+    scilog_service, connected_connector
+):
+    scilog_service.set_default_scope("default")
+
+    scilog_service.set_auto_notifications(MessagingEvent.SCAN, enabled=True)
+
+    config_msg = connected_connector.get(MessageEndpoints.notification_config())
+    assert config_msg == messages.NotificationConfigMessage(
+        routes={
+            "new_scan": [messages.NotificationServiceTarget(service_name="scilog", scope="default")]
+        }
+    )
+    assert scilog_service._auto_notifications == {
+        "new_scan": ["default"]
+    }  # pylint: disable=protected-access
+
+
+def test_messaging_service_tracks_external_notification_config_updates(
+    scilog_service, connected_connector
+):
+    connected_connector.set_and_publish(
+        MessageEndpoints.notification_config(),
+        messages.NotificationConfigMessage(
+            routes={
+                "new_scan": [
+                    messages.NotificationServiceTarget(service_name="signal", scope="beamline-ops"),
+                    messages.NotificationServiceTarget(service_name="scilog", scope="default"),
+                ],
+                "alarm_major": [
+                    messages.NotificationServiceTarget(
+                        service_name="scilog", scope=["default", "secondary"]
+                    )
+                ],
+            }
+        ),
+    )
+
+    deadline = time.time() + 1
+    while (
+        time.time() < deadline
+        and scilog_service._auto_notifications  # pylint: disable=protected-access
+        != {"new_scan": ["default"], "alarm_major": ["default", "secondary"]}
+    ):
+        time.sleep(0.01)
+
+    assert scilog_service._auto_notifications == {  # pylint: disable=protected-access
+        "new_scan": ["default"],
+        "alarm_major": ["default", "secondary"],
+    }
+
+
+def test_messaging_service_loads_notification_config_on_init(connected_connector):
+    connected_connector.set_and_publish(
+        MessageEndpoints.notification_config(),
+        messages.NotificationConfigMessage(
+            routes={
+                "new_scan": [
+                    messages.NotificationServiceTarget(service_name="scilog", scope="default")
+                ]
+            }
+        ),
+    )
+
+    service = SciLogMessagingService(connected_connector)
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=True),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=True, logbook_id="test_logbook"
+            )
+        ],
+        session_services=[],
+    )
+    service._on_new_scope_change_msg(message={"data": available_services})
+
+    assert service._auto_notifications == {
+        "new_scan": ["default"]
+    }  # pylint: disable=protected-access

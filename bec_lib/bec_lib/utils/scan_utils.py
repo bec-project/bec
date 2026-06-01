@@ -7,7 +7,8 @@ from __future__ import annotations
 import csv
 import datetime
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from typeguard import typechecked
 
@@ -60,6 +61,46 @@ def scan_to_csv(
     data_output.extend(body_out)
 
     _write_csv(output_name=output_name, delimiter=delimiter, dialect=dialect, output=data_output)
+
+
+def compose_cli_input_from_scan_info(scan_info: Mapping[str, Any] | Any) -> str:
+    """Compose a user-facing scan call string from a scan info object."""
+    scan_name = _get_scan_info_value(scan_info, "scan_name")
+    if not scan_name:
+        return "scans.unknown()"
+
+    request_inputs = _get_scan_info_value(scan_info, "request_inputs") or {}
+    arg_bundle = list(request_inputs.get("arg_bundle") or [])
+    inputs = request_inputs.get("inputs") or {}
+    kwargs = request_inputs.get("kwargs") or {}
+
+    call_parts: list[str] = [_render_scan_cli_value(value) for value in arg_bundle]
+    call_parts.extend(f"{name}={_render_scan_cli_value(value)}" for name, value in inputs.items())
+    call_parts.extend(f"{name}={_render_scan_cli_value(value)}" for name, value in kwargs.items())
+    return f"scans.{scan_name}({', '.join(call_parts)})"
+
+
+def _get_scan_info_value(scan_info: Mapping[str, Any] | Any, key: str) -> Any:
+    if isinstance(scan_info, Mapping):
+        return scan_info.get(key)
+    return getattr(scan_info, key, None)
+
+
+def _render_scan_cli_value(value: Any) -> str:
+    if isinstance(value, Mapping):
+        rendered_items = ", ".join(
+            f"{_render_scan_cli_value(key)}: {_render_scan_cli_value(val)}"
+            for key, val in value.items()
+        )
+        return "{" + rendered_items + "}"
+    if isinstance(value, tuple):
+        inner = ", ".join(_render_scan_cli_value(item) for item in value)
+        if len(value) == 1:
+            inner += ","
+        return f"({inner})"
+    if isinstance(value, list):
+        return "[" + ", ".join(_render_scan_cli_value(item) for item in value) + "]"
+    return repr(value)
 
 
 def _write_csv(output_name: str, delimiter: str, output: list, dialect: str = None) -> None:

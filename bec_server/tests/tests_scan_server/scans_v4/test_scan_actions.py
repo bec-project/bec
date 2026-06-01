@@ -8,8 +8,11 @@ import pytest
 from bec_lib import messages
 from bec_lib.device import ReadoutPriority
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.tests.fixtures import dm_with_devices  # noqa: F401
 from bec_lib.tests.utils import ConnectorMock
+from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_stubs import ScanStubStatus
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo
@@ -105,6 +108,40 @@ def test_scan_info_stores_scan_report_device_objects_as_names(dm_with_devices):
     scan_info.scan_report_devices = [dm_with_devices.devices["samz"]]
 
     assert scan_info.scan_report_devices == ["samz"]
+
+
+def test_compose_cli_input_from_scan_info_uses_named_inputs():
+    scan_info = ScanInfo(
+        scan_name="_v4_test_scan",
+        scan_id="scan-id-test",
+        scan_type=None,
+        request_inputs={
+            "arg_bundle": [],
+            "inputs": {"device": "samx", "target": 1},
+            "kwargs": {"relative": True},
+        },
+    )
+
+    assert (
+        compose_cli_input_from_scan_info(scan_info)
+        == "scans._v4_test_scan(device='samx', target=1, relative=True)"
+    )
+
+
+def test_compose_cli_input_from_scan_info_uses_arg_bundle():
+    scan_info = {
+        "scan_name": "line_scan",
+        "request_inputs": {
+            "arg_bundle": ["samx", -5, 5, 3],
+            "inputs": {},
+            "kwargs": {"exp_time": 0.1},
+        },
+    }
+
+    assert (
+        compose_cli_input_from_scan_info(scan_info)
+        == "scans.line_scan('samx', -5, 5, 3, exp_time=0.1)"
+    )
 
 
 def _last_device_instruction(ctx, action):
@@ -528,8 +565,10 @@ def test_send_scan_status_publishes_message(action_context):
     ctx.connector.pipeline = mock.MagicMock(return_value=pipe)
     ctx.connector.set = mock.MagicMock()
     ctx.connector.set_and_publish = mock.MagicMock()
+    ctx.connector.notify = mock.MagicMock()
     status_msg = messages.ScanStatusMessage(scan_id="scan-id-test", status="closed", info={})
     ctx.actions._build_scan_status_message = mock.MagicMock(return_value=status_msg)
+    ctx.scan.scan_info.request_inputs = {"arg_bundle": [], "inputs": {}, "kwargs": {}}
 
     ctx.actions._send_scan_status("closed", reason="alarm")
 
@@ -540,7 +579,48 @@ def test_send_scan_status_publishes_message(action_context):
     ctx.connector.set_and_publish.assert_called_once_with(
         MessageEndpoints.scan_status(), status_msg, pipe=pipe
     )
+    assert ctx.connector.notify.call_count == 1
+    event, notification = ctx.connector.notify.call_args.args
+    assert event == MessagingEvent.SCAN_COMPLETED
+    assert isinstance(notification, NotificationMessageObject)
+    assert notification._content == [  # pylint: disable=protected-access
+        messages.MessagingServiceTextContent(
+            content='<p><mark class="pen-green">Scan completed: scan_number=1 (scans._v4_test_scan(), scan_id=scan-id-test)</mark></p>'
+        ),
+        messages.MessagingServiceTagsContent(tags=["scan_completed"]),
+    ]
+    assert ctx.connector.notify.call_args.kwargs == {"pipe": pipe}
     pipe.execute.assert_called_once_with()
+
+
+def test_send_scan_status_publishes_new_scan_notification(action_context):
+    ctx = action_context()
+    pipe = mock.MagicMock()
+    ctx.connector.pipeline = mock.MagicMock(return_value=pipe)
+    ctx.connector.set = mock.MagicMock()
+    ctx.connector.set_and_publish = mock.MagicMock()
+    ctx.connector.notify = mock.MagicMock()
+    status_msg = messages.ScanStatusMessage(scan_id="scan-id-test", status="open", info={})
+    ctx.actions._build_scan_status_message = mock.MagicMock(return_value=status_msg)
+    ctx.scan.scan_info.request_inputs = {
+        "arg_bundle": [],
+        "inputs": {"device": "samx"},
+        "kwargs": {},
+    }
+
+    ctx.actions._send_scan_status("open")
+
+    assert ctx.connector.notify.call_count == 1
+    event, notification = ctx.connector.notify.call_args.args
+    assert event == MessagingEvent.SCAN
+    assert isinstance(notification, NotificationMessageObject)
+    assert notification._content == [  # pylint: disable=protected-access
+        messages.MessagingServiceTextContent(
+            content="<p><mark class=\"pen-green\">Scan started: scan_number=1 (scans._v4_test_scan(device='samx'), scan_id=scan-id-test)</mark></p>"
+        ),
+        messages.MessagingServiceTagsContent(tags=["scan_start"]),
+    ]
+    assert ctx.connector.notify.call_args.kwargs == {"pipe": pipe}
 
 
 def test_get_file_base_path_uses_account_and_templates(action_context):
