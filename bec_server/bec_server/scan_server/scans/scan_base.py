@@ -9,7 +9,7 @@ import enum
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Annotated, Type
+from typing import Annotated, Callable, Type
 
 import numpy as np
 import pint
@@ -213,6 +213,7 @@ class ScanBase(ABC):
         self._premove_motor_status = None
         self.positions = np.array([])
         self.start_positions = []
+        self._scan_original_hooks = self._collect_original_scan_hooks()
         self._scan_modifier_hooks = (
             get_scan_hooks_impl(scan_modifier) if scan_modifier is not None else {}
         )
@@ -337,3 +338,20 @@ class ScanBase(ABC):
     @abstractmethod
     def on_exception(self, exception: Exception):
         """Handle scan exceptions and perform emergency cleanup."""
+
+    def _collect_original_scan_hooks(self) -> dict[str, Callable]:
+        """
+        Bind the undecorated scan hook implementations to this scan instance.
+
+        Returns:
+            dict[str, Callable]: Mapping from hook name to the original bound method.
+        """
+        original_hooks = {}
+        for attr_name in dir(type(self)):
+            attr = getattr(type(self), attr_name)
+            hook_info = getattr(attr, "_scan_hook_info", None)
+            original_func = getattr(attr, "_scan_hook_original", None)
+            if hook_info is None or original_func is None:
+                continue
+            original_hooks[hook_info["method_name"]] = original_func.__get__(self, type(self))
+        return original_hooks
