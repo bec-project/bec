@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
 from bec_server.actors.scan_interlock import ScanInterlockActor
 
 
@@ -104,6 +106,11 @@ class TestScanInterlockActor:
 
     def test_some_mismatch_action_adds_lock(self, actor, mock_client):
         actor.some_mismatch_action(mock_client)
+        mock_client.connector.notify.assert_called_once()
+        event, notification = mock_client.connector.notify.call_args.args
+        assert event == MessagingEvent.SCAN_INTERLOCK
+        assert isinstance(notification, NotificationMessageObject)
+        assert notification._content[1].tags == ["scan_interlock"]
         mock_client.queue.add_queue_lock.assert_called_once_with(
             queue="primary",
             reason="Interlock for beamline states: []",
@@ -114,6 +121,7 @@ class TestScanInterlockActor:
         add_queue_lock = mock_client.queue.add_queue_lock
         actor.client.queue = None
         actor.some_mismatch_action(mock_client)
+        mock_client.connector.notify.assert_called_once()
         add_queue_lock.assert_not_called()
 
     def test_all_match_action_unlocks(self, actor):
@@ -124,6 +132,23 @@ class TestScanInterlockActor:
 
     def test_unlock_removes_lock(self, actor, mock_client):
         actor._unlock()
+        mock_client.connector.notify.assert_called_once()
+        event, notification = mock_client.connector.notify.call_args.args
+        assert event == MessagingEvent.SCAN_INTERLOCK
+        assert isinstance(notification, NotificationMessageObject)
+        assert (
+            notification._content[0].content
+            == '<p><mark class="pen-green">Scan interlock cleared</mark></p>'
+        )
+        assert notification._content[1].tags == ["scan_interlock"]
         mock_client.queue.remove_queue_lock.assert_called_with(
             queue="primary", lock_id="ScanInterlockActor"
         )
+
+    def test_unlock_skips_notify_without_lock(self, actor, mock_client):
+        mock_client.queue.queue_storage.current_scan_queue = {"primary": MagicMock(locks=[])}
+
+        actor._unlock()
+
+        mock_client.connector.notify.assert_not_called()
+        mock_client.queue.remove_queue_lock.assert_not_called()

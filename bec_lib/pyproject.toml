@@ -40,6 +40,7 @@ dependencies = [
     "python-slugify~=8.0",
     "questionary~=2.0",
     "phonenumbers~=9.0",
+    "beautifulsoup4~=4.14",
 ]
 
 
@@ -72,42 +73,6 @@ bec_lib_fixtures = "bec_lib.tests.fixtures"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 [tool.hatch.build.targets.wheel]
 include = ["*"]

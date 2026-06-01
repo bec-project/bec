@@ -9,7 +9,13 @@ from bec_lib.live_scan_data import LiveScanData
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_report import ScanReport
 from bec_lib.utils.rpc_utils import user_access
-from bec_lib.utils.scan_utils import _extract_scan_data, _write_csv, scan_to_csv, scan_to_dict
+from bec_lib.utils.scan_utils import (
+    _extract_scan_data,
+    _render_scan_cli_value,
+    _write_csv,
+    scan_to_csv,
+    scan_to_dict,
+)
 
 
 class ScanReportMock(ScanReport):
@@ -129,6 +135,20 @@ def test_scan_to_csv():
             header=None,
             write_metadata=True,
         )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("samx", "'samx'"),
+        ({"motor": "samx", "position": 1.5}, "{'motor': 'samx', 'position': 1.5}"),
+        ((1,), "(1,)"),
+        ((1, "samx"), "(1, 'samx')"),
+        ([1, {"nested": [2, 3]}], "[1, {'nested': [2, 3]}]"),
+    ],
+)
+def test_render_scan_cli_value(value, expected):
+    assert _render_scan_cli_value(value) == expected
     with pytest.raises(Exception):
         scan_to_csv(
             scan_report=[scanreport_mock, scanreport_mock, scanreport_mock],

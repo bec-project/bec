@@ -11,6 +11,9 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
+from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 
 from .errors import DeviceInstructionError, ScanAbortion, UserScanInterruption
 from .scan_queue import InstructionQueueItem, InstructionQueueStatus, RequestBlock
@@ -341,6 +344,29 @@ class GeneratorScanWorker:
         self.worker.device_manager.connector.set_and_publish(
             MessageEndpoints.scan_status(), msg, pipe=pipe
         )
+        cli_input = compose_cli_input_from_scan_info(self.current_scan_info)
+        scan_number = self.current_scan_info.get("scan_number")
+        scan_id = self.current_scan_id
+        if status == "open":
+            notification = NotificationMessageObject()
+            notification.add_text(
+                f"Scan started: scan_number={scan_number} ({cli_input}, scan_id={scan_id})",
+                color="green",
+            )
+            notification.add_tags("scan_start")
+            self.worker.device_manager.connector.notify(
+                MessagingEvent.SCAN, notification, pipe=pipe
+            )
+        elif status in {"closed", "user_completed"}:
+            notification = NotificationMessageObject()
+            notification.add_text(
+                f"Scan completed: scan_number={scan_number} ({cli_input}, scan_id={scan_id})",
+                color="green",
+            )
+            notification.add_tags("scan_completed")
+            self.worker.device_manager.connector.notify(
+                MessagingEvent.SCAN_COMPLETED, notification, pipe=pipe
+            )
         pipe.execute()
 
     def update_instr_with_scan_report(self, instr: messages.DeviceInstructionMessage):

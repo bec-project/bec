@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import mimetypes
 import os
 from abc import ABC
@@ -9,10 +10,75 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 
 if TYPE_CHECKING:
+    from bec_lib.connector import MessageObject
     from bec_lib.redis_connector import RedisConnector
 
 # Type variable for the message object class
 MessageObjectT = TypeVar("MessageObjectT", bound="MessageServiceObject")
+
+
+def _normalize_tags(tags: str | list[str]) -> list[str]:
+    """
+    Normalize tag input to a stable duplicate-free list.
+    """
+    if isinstance(tags, str):
+        tags = [tags]
+    return list(dict.fromkeys(tags))
+
+
+def _build_attachment_content(
+    file_path: str, width: int | str | None = None, height: int | str | None = None
+):
+    """
+    Load a file attachment and return a messaging content block.
+    """
+
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"Attachment file not found: {file_path}")
+
+    file_size = os.path.getsize(file_path)
+    max_size = 5 * 1024 * 1024
+    if file_size > max_size:
+        raise ValueError(
+            f"Attachment file size exceeds the maximum limit of 5 MB: {file_size} bytes"
+        )
+
+    with open(file_path, "rb") as f:
+        file_data = f.read()
+
+    filename = os.path.basename(file_path)
+    mime_type, _ = mimetypes.guess_type(filename)
+    if mime_type is None:
+        mime_type = "application/octet-stream"
+
+    return messages.MessagingServiceFileContent(
+        filename=filename, mime_type=mime_type, data=file_data, width=width, height=height
+    )
+
+
+def _format_rich_text(
+    text: str,
+    bold: bool = False,
+    italic: bool = False,
+    color: Literal["red", "green", "black", "yellow", "pink", "blue"] | None = None,
+) -> str:
+    """
+    Build the small subset of HTML used by rich messaging services.
+    """
+    if bold or italic or color:
+        if bold:
+            text = f"<strong>{text}</strong>"
+        if italic:
+            text = f"<em>{text}</em>"
+        if color:
+            if color == "black":
+                pass
+            elif color in ["red", "green"]:
+                text = f'<mark class="pen-{color}">{text}</mark>'
+            elif color in ["yellow", "pink", "blue"]:
+                text = f'<mark class="marker-{color}">{text}</mark>'
+        text = f"<p>{text}</p>"
+    return text
 
 
 class MessagingContainer:
@@ -74,29 +140,7 @@ class MessageServiceObject:
             MessageObject: The updated message object.
         """
 
-        if not os.path.isfile(file_path):
-            raise FileNotFoundError(f"Attachment file not found: {file_path}")
-
-        file_size = os.path.getsize(file_path)
-        max_size = 5 * 1024 * 1024  # 5 MB
-        if file_size > max_size:
-            raise ValueError(
-                f"Attachment file size exceeds the maximum limit of 5 MB: {file_size} bytes"
-            )
-
-        with open(file_path, "rb") as f:
-            file_data = f.read()
-
-        filename = os.path.basename(file_path)
-        mime_type, _ = mimetypes.guess_type(filename)
-        if mime_type is None:
-            mime_type = "application/octet-stream"
-
-        self._content.append(
-            messages.MessagingServiceFileContent(
-                filename=filename, mime_type=mime_type, data=file_data, width=width, height=height
-            )
-        )
+        self._content.append(_build_attachment_content(file_path, width=width, height=height))
 
         return self
 
@@ -126,6 +170,7 @@ class MessagingService(ABC, Generic[MessageObjectT]):
     def __init__(self, redis_connector: RedisConnector) -> None:
         self._redis_connector = redis_connector
         self._scopes: set[str] = set()
+        self._auto_notifications: dict[str, list[str]] = {}
         self._enabled = False
         self._default_scope: str | list[str] | None = None
         self._service_config: messages.AvailableMessagingServicesMessage | None = None
@@ -134,6 +179,12 @@ class MessagingService(ABC, Generic[MessageObjectT]):
             cb=self._on_new_scope_change_msg,
             from_start=True,
         )
+        self._redis_connector.register(
+            MessageEndpoints.notification_config(), cb=self._on_notification_config_change_msg
+        )
+        config_msg = self._redis_connector.get(MessageEndpoints.notification_config())
+        if config_msg is not None:
+            self._update_auto_notifications(config_msg)
 
     def set_default_scope(self, scope: str | list[str] | None) -> None:
         """
@@ -145,6 +196,143 @@ class MessagingService(ABC, Generic[MessageObjectT]):
         if scope is not None and scope not in self._scopes:
             raise ValueError(f"Scope '{scope}' is not available for this messaging service.")
         self._default_scope = scope
+
+    def set_auto_notifications(
+        self,
+        event_type: (
+            Literal[
+                "new_scan",
+                "scan_completed",
+                "alarm_warning",
+                "alarm_minor",
+                "alarm_major",
+                "scan_interlock",
+            ]
+            | str
+        ),
+        enabled: bool,
+        scopes: list[str] | str | None = None,
+    ) -> None:
+        """
+        Set automatic notifications for a specific event type.
+
+        Args:
+            event_type (Literal["new_scan", "scan_completed", "alarm_warning", "alarm_minor", "alarm_major", "scan_interlock"] | str): The type of event to set notifications for.
+            enabled (bool): Whether to enable or disable notifications for the event.
+            scopes (list[str] | str | None): The scopes to apply the notifications to.
+        """
+        event_name = event_type.value if isinstance(event_type, enum.Enum) else event_type
+        scopes_list: list[str] = []
+        if scopes is not None:
+            if isinstance(scopes, str):
+                scopes_list = [scopes]
+            else:
+                scopes_list = scopes
+
+            for scope in scopes_list:
+                if scope not in self._scopes:
+                    raise ValueError(
+                        f"Scope '{scope}' is not available for this messaging service."
+                    )
+        else:
+            if self._default_scope is not None:
+                scopes_list = (
+                    [self._default_scope]
+                    if isinstance(self._default_scope, str)
+                    else self._default_scope
+                )
+            elif not self._SUPPORTS_EMPTY_SCOPES:
+                raise ValueError(
+                    "Scopes must be provided when there is no default scope and empty scopes are not supported."
+                )
+
+        if enabled:
+            # merge with existing scopes if already enabled for this event type
+            existing_scopes = set(self._auto_notifications.get(event_name, []))
+            existing_scopes.update(scopes_list)
+            self._auto_notifications[event_name] = list(existing_scopes)
+        else:
+            # if disabling, remove the scopes for this event type, or the entire event type if no scopes are provided
+            if scopes_list:
+                existing_scopes = set(self._auto_notifications.get(event_name, []))
+                existing_scopes.difference_update(scopes_list)
+                if existing_scopes:
+                    self._auto_notifications[event_name] = list(existing_scopes)
+                else:
+                    self._auto_notifications.pop(event_name, None)
+            else:
+                self._auto_notifications.pop(event_name, None)
+
+        self._sync_auto_notifications_config(event_name, enabled=enabled, scopes=scopes_list)
+
+    def _sync_auto_notifications_config(
+        self, event_name: str, enabled: bool, scopes: list[str]
+    ) -> None:
+        config_msg = self._redis_connector.get(MessageEndpoints.notification_config())
+        if config_msg is None:
+            config_msg = messages.NotificationConfigMessage()
+
+        routes = {name: list(targets) for name, targets in config_msg.routes.items()}
+        event_routes = list(routes.get(event_name, []))
+
+        if enabled:
+            scopes_to_add = scopes or [None]
+            for scope in scopes_to_add:
+                target = messages.NotificationServiceTarget(
+                    service_name=self._SERVICE_NAME, scope=scope
+                )
+                if not any(existing == target for existing in event_routes):
+                    event_routes.append(target)
+        else:
+            if scopes:
+                event_routes = [
+                    target
+                    for target in event_routes
+                    if not (target.service_name == self._SERVICE_NAME and target.scope in scopes)
+                ]
+            else:
+                event_routes = [
+                    target for target in event_routes if target.service_name != self._SERVICE_NAME
+                ]
+
+        if event_routes:
+            routes[event_name] = event_routes
+        else:
+            routes.pop(event_name, None)
+
+        self._redis_connector.set_and_publish(
+            MessageEndpoints.notification_config(),
+            messages.NotificationConfigMessage(routes=routes, metadata=config_msg.metadata),
+        )
+
+    def _on_notification_config_change_msg(
+        self,
+        message: (
+            MessageObject[messages.NotificationConfigMessage]
+            | dict[str, messages.NotificationConfigMessage]
+        ),
+    ) -> None:
+        config_msg = message.value if hasattr(message, "value") else message["data"]
+        self._update_auto_notifications(config_msg)
+
+    def _update_auto_notifications(self, config_msg: messages.NotificationConfigMessage) -> None:
+        auto_notifications: dict[str, list[str]] = {}
+        for event_name, targets in config_msg.routes.items():
+            scopes: list[str] = []
+            has_matching_service = False
+            for target in targets:
+                if target.service_name != self._SERVICE_NAME:
+                    continue
+                has_matching_service = True
+                if isinstance(target.scope, str):
+                    scopes.append(target.scope)
+                elif isinstance(target.scope, list):
+                    scopes.extend(target.scope)
+
+            if has_matching_service:
+                auto_notifications[event_name] = list(dict.fromkeys(scopes))
+
+        self._auto_notifications = auto_notifications
 
     def _on_new_scope_change_msg(
         self, message: dict[str, messages.AvailableMessagingServicesMessage]
@@ -300,20 +488,8 @@ class SciLogMessageServiceObject(MessageServiceObject):
         Examples:
             >>> msg.add_text("Checks failed", bold=True, color="red")
         """
-        if bold or italic or color:
-            if bold:
-                text = f"<strong>{text}</strong>"
-            if italic:
-                text = f"<em>{text}</em>"
-            if color:
-                if color == "black":
-                    pass  # black is the default
-                elif color in ["red", "green"]:
-                    text = f'<mark class="pen-{color}">{text}</mark>'
-                elif color in ["yellow", "pink", "blue"]:
-                    text = f'<mark class="marker-{color}">{text}</mark>'
-            text = f"<p>{text}</p>"
-        return super().add_text(text)
+        super().add_text(_format_rich_text(text, bold=bold, italic=italic, color=color))
+        return self
 
     def add_tags(self, tags: str | list[str]) -> Self:
         """
@@ -325,11 +501,13 @@ class SciLogMessageServiceObject(MessageServiceObject):
         Returns:
             SciLogMessageServiceObject: The updated message object.
         """
-        if isinstance(tags, str):
-            tags = [tags]
-
         # Ensure that there are no duplicates...
-        tags = list(set(self._service.get_default_tags() + tags))  # type: ignore
+        default_tags = (
+            self._service.get_default_tags()  # type: ignore
+            if self._service and hasattr(self._service, "get_default_tags")
+            else []
+        )
+        tags = _normalize_tags(default_tags + _normalize_tags(tags))
         self._content.append(messages.MessagingServiceTagsContent(tags=tags))
         return self
 
@@ -345,7 +523,8 @@ class SciLogMessageServiceObject(MessageServiceObject):
         if not any(
             isinstance(content, messages.MessagingServiceTagsContent) for content in self._content
         ):
-            self.add_tags(self._service.get_default_tags())  # type: ignore
+            if self._service and hasattr(self._service, "get_default_tags"):
+                self.add_tags(self._service.get_default_tags())  # type: ignore
         super().send(scope=scope)
 
 
@@ -457,3 +636,13 @@ class SignalMessagingService(MessagingService[SignalMessageServiceObject]):
         if isinstance(scope, str):
             return self._normalize_phone_number(scope)
         return [self._normalize_phone_number(entry) for entry in scope]
+
+
+class NotificationMessageObject(SciLogMessageServiceObject):
+    """
+    Generic notification payload that can be adapted to concrete messaging
+    services during routing.
+    """
+
+    def __init__(self):
+        super().__init__(service=None)  # type: ignore

@@ -57,7 +57,10 @@ from bec_lib.messages import (
     DynamicMetricDict,
     DynamicMetricMessage,
     ErrorInfo,
+    NotificationMessage,
 )
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
 logger = bec_logger.logger
@@ -655,6 +658,34 @@ class RedisConnector:
         """
         alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
         self.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
+        compact_message = info.compact_error_message or info.error_message or info.exception_type
+        event_by_severity = {
+            0: MessagingEvent.ALARM_WARNING,
+            1: MessagingEvent.ALARM_MINOR,
+            2: MessagingEvent.ALARM_MAJOR,
+        }
+        self.notify(event_by_severity[int(severity)], compact_message)
+
+    def notify(
+        self,
+        event: MessagingEvent | str,
+        message: str | NotificationMessageObject,
+        pipe: Pipeline | None = None,
+    ) -> None:
+        """
+        Publish a notification event for downstream routing by SciHub.
+
+        Args:
+            event(MessagingEvent | str): The type of the event that triggered the notification.
+            message(str | NotificationMessageObject): The notification content to be sent.
+            pipe(Pipeline, optional): Optional pipeline to enqueue the publish operation into.
+        """
+        if isinstance(event, MessagingEvent):
+            event = event.value
+        if isinstance(message, str):
+            message = NotificationMessageObject().add_text(message)
+        outgoing = NotificationMessage(event=event, message=message._content)
+        self.send(MessageEndpoints.notification(event), outgoing, pipe=pipe)
 
     def pipeline(self) -> redis.client.Pipeline:
         """Create a new pipeline"""
