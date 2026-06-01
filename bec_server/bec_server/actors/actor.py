@@ -133,12 +133,17 @@ class BlStateActor(SubscriptionActor):
 
     def _update_cache(self):
         with self.state_table_lock:
+            to_remove = []
             for state in self.state_table:
                 status = self.client.beamline_states.get_status_by_name(state)
                 if status is None:
-                    logger.warning(f"Beamline state actor could not get the status of {state}")
+                    logger.warning(f"Beamline state actor could not get the status of {state}!")
+                    to_remove.append(state)
                     continue
                 self.state_cache[state] = status
+            for state in to_remove:
+                logger.warning(f"Removing {state} from watched states.")
+                del self.state_table[state]
 
     def all_states_match(self, client: BECClient):
         with self.state_table_lock:
