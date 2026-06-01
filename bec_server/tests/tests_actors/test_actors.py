@@ -1,14 +1,9 @@
-import time
-from itertools import count
 from threading import Thread
 from time import sleep
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fakeredis import FakeConnection
-from fakeredis import TcpFakeServer as _TcpFakeServer
-from fakeredis._server import FakeServer
-from fakeredis._tcp_server import TCPFakeRequestHandler as _TCPFakeRequestHandler
+from fakeredis import TcpFakeServer
 
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
@@ -21,46 +16,6 @@ from bec_server.procedures.constants import BecClientType
 from bec_server.procedures.oop_worker_base import _create_client
 from bec_server.test.actor_test_utils import PollingActor, SubscriptionTestActor, ep, sub_ep
 from bec_server.test.helpers import wait_until
-
-
-class TCPFakeRequestHandler(_TCPFakeRequestHandler):
-    server: "TcpFakeServer"  # type: ignore
-
-    def handle(self) -> None:
-        while True:
-            try:
-                if self.server._shutdown_requested:
-                    break
-                if self.current_client.can_read():
-                    response = self.current_client.read_response()
-                    self.writer.dump(response)
-                    continue
-
-                data = self.rfile.readline()
-                if data == b"":
-                    time.sleep(0)
-                else:
-                    self.current_client.get_socket().sendall(data)
-
-            except Exception as e:
-                self.writer.dump(e)
-                break
-
-
-class TcpFakeServer(_TcpFakeServer):
-    def __init__(self, server_address: tuple[str, int]):
-        self.allow_reuse_address = True
-        self._shutdown_requested = False
-        super(_TcpFakeServer, self).__init__(server_address, TCPFakeRequestHandler, True)
-        self.fake_server = FakeServer(server_type="redis", version=(7, 4))
-        self.client_ids = count(0)
-        self.daemon_threads = False
-        self.block_on_close = True
-        self.clients: dict[int, FakeConnection] = {}
-
-    def shutdown(self) -> None:
-        self._shutdown_requested = True
-        return super().shutdown()
 
 
 @pytest.fixture
