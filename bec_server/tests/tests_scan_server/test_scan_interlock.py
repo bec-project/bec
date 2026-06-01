@@ -52,7 +52,7 @@ class TestScanInterlockActor:
         msg.status = None
 
         with patch("bec_server.actors.actor.BlStateActor.evaluate"):
-            actor._on_state_modification({"data": msg})
+            actor._on_state_modification(msg)
 
         assert actor.state_table == {}
         assert actor.state_cache == {}
@@ -63,7 +63,7 @@ class TestScanInterlockActor:
         actor._update_cache = MagicMock()
         mock_client.connector.register.reset_mock()
         msg = MagicMock(action="add", state_name="beam_ok", status="valid")
-        actor._on_state_modification({"data": msg})
+        actor._on_state_modification(msg)
         assert actor.state_table["beam_ok"] == "valid"
         mock_client.connector.register.assert_called_once()
         actor._update_cache.assert_called_once()
@@ -76,7 +76,7 @@ class TestScanInterlockActor:
         msg = MagicMock(action="remove", state_name="beam_ok", status=None)
 
         with patch("bec_server.actors.actor.BlStateActor.evaluate"):
-            actor._on_state_modification({"data": msg})
+            actor._on_state_modification(msg)
 
         assert "beam_ok" not in actor.state_table
         assert "beam_ok" not in actor.state_cache
@@ -88,7 +88,7 @@ class TestScanInterlockActor:
         msg = MagicMock(action="remove", state_name="missing", status=None)
 
         with patch("bec_server.actors.actor.BlStateActor.evaluate"):
-            actor._on_state_modification({"data": msg})
+            actor._on_state_modification(msg)
 
         mock_client.connector.unregister.assert_not_called()
 
