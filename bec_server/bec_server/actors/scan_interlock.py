@@ -31,6 +31,7 @@ class ScanInterlockActor(BlStateActor):
         )
 
     def _ping_clients(self):
+        logger.warning(self.name)
         self.client.connector.send(
             MessageEndpoints.builtin_actor_update_notif(self.name),
             BuiltinActorStateUpdatedNotification(actor_name=self.name),
@@ -48,6 +49,9 @@ class ScanInterlockActor(BlStateActor):
         with self.state_table_lock:
             if msg.action == "add":
                 logger.info(f"Adding {msg.state_name} to the scan interlock actor")
+                if self.client.beamline_states.get_status_by_name(msg.state_name) is None:
+                    logger.warning(f"Beamline state {msg.state_name} doesn't exist - not adding.")
+                    return
                 if msg.state_name not in self.state_table:
                     self.client.connector.register(
                         MessageEndpoints.beamline_state(msg.state_name), cb=self.evaluate
