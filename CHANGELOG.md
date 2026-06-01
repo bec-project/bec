@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.128.6 (2026-06-01)
+
+### Bug Fixes
+
+- Add request registration for early failures in device instructions handling
+  ([`396a2ea`](https://github.com/bec-project/bec/commit/396a2eae2adfeea061f6399e60f7ac20038b1297))
+
+
 ## v3.128.5 (2026-05-29)
 
 ### Bug Fixes
