@@ -45,9 +45,7 @@ class RingBufferView:
     ):
         self._validate_descriptor(descriptor)
         self._descriptor = descriptor
-        self._shm = (
-            shm if shm is not None else shared_memory.SharedMemory(name=descriptor.name)
-        )
+        self._shm = shm if shm is not None else shared_memory.SharedMemory(name=descriptor.name)
         self._reader_count_shm = (
             reader_count_shm
             if reader_count_shm is not None
@@ -58,21 +56,16 @@ class RingBufferView:
             self._unregister_attached_shared_memory(self._shm)
             self._unregister_attached_shared_memory(self._reader_count_shm)
         self._data_locks = [
-            posix_ipc.Semaphore(lock_id, flags=0)
-            for lock_id in descriptor.data_lock_ids
+            posix_ipc.Semaphore(lock_id, flags=0) for lock_id in descriptor.data_lock_ids
         ]
         self._reader_gates = [
-            posix_ipc.Semaphore(lock_id, flags=0)
-            for lock_id in descriptor.reader_gate_ids
+            posix_ipc.Semaphore(lock_id, flags=0) for lock_id in descriptor.reader_gate_ids
         ]
         self._reader_count_locks = [
-            posix_ipc.Semaphore(lock_id, flags=0)
-            for lock_id in descriptor.reader_count_lock_ids
+            posix_ipc.Semaphore(lock_id, flags=0) for lock_id in descriptor.reader_count_lock_ids
         ]
         self._reader_counts = np.ndarray(
-            shape=(descriptor.slots,),
-            dtype=READER_COUNT_DTYPE,
-            buffer=self._reader_count_shm.buf,
+            shape=(descriptor.slots,), dtype=READER_COUNT_DTYPE, buffer=self._reader_count_shm.buf
         )
         self._next_write_position = 0
         self.__destroyed = False
@@ -86,9 +79,7 @@ class RingBufferView:
             "reader_count_lock_ids": len(descriptor.reader_count_lock_ids),
         }
         invalid = {
-            name: length
-            for name, length in lock_lengths.items()
-            if length != descriptor.slots
+            name: length for name, length in lock_lengths.items() if length != descriptor.slots
         }
         if invalid:
             raise ValueError(
@@ -153,9 +144,7 @@ class RingBufferView:
         )
 
     @contextmanager
-    def _read_slot_lock(
-        self, index: int, acquire_timeout: float | None
-    ) -> Iterator[None]:
+    def _read_slot_lock(self, index: int, acquire_timeout: float | None) -> Iterator[None]:
         gate_acquired = False
         count_lock_acquired = False
         try:
@@ -164,15 +153,11 @@ class RingBufferView:
             )
             gate_acquired = True
             self._acquire_lock(
-                self._reader_count_locks[index],
-                acquire_timeout,
-                "updating reader count for",
+                self._reader_count_locks[index], acquire_timeout, "updating reader count for"
             )
             count_lock_acquired = True
             if self._reader_counts[index] == 0:
-                self._acquire_lock(
-                    self._data_locks[index], acquire_timeout, "reading from"
-                )
+                self._acquire_lock(self._data_locks[index], acquire_timeout, "reading from")
             self._reader_counts[index] += 1
         finally:
             if count_lock_acquired:
@@ -184,22 +169,16 @@ class RingBufferView:
             yield
         finally:
             with self._acquire(
-                self._reader_count_locks[index],
-                acquire_timeout,
-                "updating reader count for",
+                self._reader_count_locks[index], acquire_timeout, "updating reader count for"
             ):
                 if self._reader_counts[index] == 0:
-                    raise RuntimeError(
-                        "Reader count underflow while releasing ring buffer slot."
-                    )
+                    raise RuntimeError("Reader count underflow while releasing ring buffer slot.")
                 self._reader_counts[index] -= 1
                 if self._reader_counts[index] == 0:
                     self._data_locks[index].release()
 
     @contextmanager
-    def _write_slot_lock(
-        self, index: int, acquire_timeout: float | None
-    ) -> Iterator[None]:
+    def _write_slot_lock(self, index: int, acquire_timeout: float | None) -> Iterator[None]:
         gate_acquired = False
         data_lock_acquired = False
         try:
@@ -312,22 +291,16 @@ class RingBuffer(RingBufferView):
             raise ValueError("Ring buffer must contain at least one slot.")
         name = f"bec_psm_{uuid4().hex[:6]}"
         reader_count_name = f"{name}_cnt"
-        data_lock_names = tuple(
-            self._semaphore_name(name, f"_d_{index}") for index in range(slots)
-        )
+        data_lock_names = tuple(self._semaphore_name(name, f"_d_{index}") for index in range(slots))
         reader_gate_names = tuple(
             self._semaphore_name(name, f"_g_{index}") for index in range(slots)
         )
         reader_count_lock_names = tuple(
             self._semaphore_name(name, f"_c_{index}") for index in range(slots)
         )
-        shm = shared_memory.SharedMemory(
-            create=True, size=slots * payload.nbytes, name=name
-        )
+        shm = shared_memory.SharedMemory(create=True, size=slots * payload.nbytes, name=name)
         reader_count_shm = shared_memory.SharedMemory(
-            create=True,
-            size=slots * READER_COUNT_DTYPE.itemsize,
-            name=reader_count_name,
+            create=True, size=slots * READER_COUNT_DTYPE.itemsize, name=reader_count_name
         )
         reader_counts = np.ndarray(
             shape=(slots,), dtype=READER_COUNT_DTYPE, buffer=reader_count_shm.buf
@@ -338,9 +311,7 @@ class RingBuffer(RingBufferView):
         try:
             created_locks.extend(
                 posix_ipc.Semaphore(
-                    lock_name,
-                    flags=posix_ipc.O_CREAT | posix_ipc.O_EXCL,
-                    initial_value=1,
+                    lock_name, flags=posix_ipc.O_CREAT | posix_ipc.O_EXCL, initial_value=1
                 )
                 for lock_name in lock_names
             )
@@ -356,10 +327,7 @@ class RingBuffer(RingBufferView):
                 payload=payload,
             )
             super().__init__(
-                descriptor=descriptor,
-                shm=shm,
-                reader_count_shm=reader_count_shm,
-                owns_memory=True,
+                descriptor=descriptor, shm=shm, reader_count_shm=reader_count_shm, owns_memory=True
             )
         except Exception:
             for lock in created_locks:

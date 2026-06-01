@@ -715,9 +715,7 @@ def test_feedback_message():
 
 def test_shared_memory_allocation_messages_round_trip():
     payload = PayloadDescriptor(
-        nbytes=16,
-        shape=(4,),
-        dtype=DTypeDescriptor(kind="float", itemsize=4, byte_order="little"),
+        nbytes=16, shape=(4,), dtype=DTypeDescriptor(kind="float", itemsize=4, byte_order="little")
     )
     descriptor = RingBufferDescriptor(
         name="bec_psm_abcdef",
@@ -733,12 +731,8 @@ def test_shared_memory_allocation_messages_round_trip():
     request = messages.SharedMemAllocationRequest(
         client_id="client", slots=1, payload_desc=payload, signal="detector.data"
     )
-    allocation_info = messages.SharedMemAllocationInfo(
-        info={"client": {"detector.data": info}}
-    )
-    deallocation = messages.SharedMemDeallocationRequest(
-        client_id="client", signal="detector.data"
-    )
+    allocation_info = messages.SharedMemAllocationInfo(info={"client": {"detector.data": info}})
+    deallocation = messages.SharedMemDeallocationRequest(client_id="client", signal="detector.data")
 
     for msg in (request, allocation_info, deallocation):
         assert MsgpackSerialization.loads(MsgpackSerialization.dumps(msg)) == msg
@@ -764,10 +758,7 @@ def test_shared_memory_slot_event_messages_round_trip():
         client_id="client", signal="detector.data", slot_index=1
     )
     processed = messages.SharedMemSlotProcessed(
-        client_id="client",
-        signal="detector.data",
-        slot_index=1,
-        result={"sum": 10.0},
+        client_id="client", signal="detector.data", slot_index=1, result={"sum": 10.0}
     )
 
     for msg in (written, processed):
@@ -776,8 +767,7 @@ def test_shared_memory_slot_event_messages_round_trip():
 
 def test_shared_memory_slot_event_endpoints_match_message_contracts():
     assert (
-        MessageEndpoints.shared_memory_slot_written().message_type
-        is messages.SharedMemSlotWritten
+        MessageEndpoints.shared_memory_slot_written().message_type is messages.SharedMemSlotWritten
     )
     assert MessageEndpoints.shared_memory_slot_written().message_op is MessageOp.STREAM
     assert (
