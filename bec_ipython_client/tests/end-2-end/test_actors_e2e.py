@@ -93,6 +93,8 @@ def test_scan_interlock(
     )
 
     def second_scan_has_run():
+        if len(bec.history) < 2:
+            return False
         return (
             bec.history[-2].metadata["bec"]["status"] == "aborted"
             and bec.history[-1].metadata["bec"]["status"] == "closed"
