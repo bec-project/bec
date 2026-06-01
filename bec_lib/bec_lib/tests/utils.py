@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import builtins
-import copy
 import os
-import threading
 import time
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal
@@ -16,6 +14,8 @@ from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.scan_manager import ScanManager
 from bec_lib.scans import Scans
@@ -560,6 +560,17 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
         if not isinstance(msg, messages.BECMessage):
             raise TypeError("Message must be a BECMessage")
         return self.raw_send(topic, msg, pipe)
+
+    def notify(self, event, message: str | NotificationMessageObject, pipe=None):
+        if isinstance(event, MessagingEvent):
+            event = event.value
+        if isinstance(message, str):
+            message = NotificationMessageObject().add_text(message)
+        return self.send(
+            MessageEndpoints.notification(event),
+            messages.NotificationMessage(event=event, message=message._content),
+            pipe=pipe,
+        )
 
     def set_and_publish(self, topic, msg, pipe=None, expire: int = None):
         if pipe:

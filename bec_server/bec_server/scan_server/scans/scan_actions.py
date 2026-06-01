@@ -14,6 +14,9 @@ from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import compile_file_components
 from bec_lib.logger import bec_logger
+from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messaging_services import NotificationMessageObject
+from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.scan_server.scan_stubs import ScanStubStatus
 
 if TYPE_CHECKING:
@@ -1062,6 +1065,25 @@ class ScanActions:
             MessageEndpoints.public_scan_info(scan.scan_info.scan_id), msg, pipe=pipe, expire=expire
         )
         self._connector.set_and_publish(MessageEndpoints.scan_status(), msg, pipe=pipe)
+        cli_input = compose_cli_input_from_scan_info(scan.scan_info)
+        scan_number = scan.scan_info.scan_number
+        scan_id = scan.scan_info.scan_id
+        if status == "open":
+            msg = NotificationMessageObject()
+            msg.add_text(
+                f"Scan started: scan_number={scan_number} ({cli_input}, scan_id={scan_id})",
+                color="green",
+            )
+            msg.add_tags("scan_start")
+            self._connector.notify(MessagingEvent.SCAN, msg, pipe=pipe)
+        elif status in {"closed", "user_completed"}:
+            msg = NotificationMessageObject()
+            msg.add_text(
+                f"Scan completed: scan_number={scan_number} ({cli_input}, scan_id={scan_id})",
+                color="green",
+            )
+            msg.add_tags("scan_completed")
+            self._connector.notify(MessagingEvent.SCAN_COMPLETED, msg, pipe=pipe)
         pipe.execute()
 
     def _build_scan_status_message(
