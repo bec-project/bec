@@ -1,4 +1,5 @@
 from threading import Event, Thread
+from typing import TypeVar
 
 from bec_lib.client import BECClient, ServiceConfig
 from bec_lib.connector import MessageObject
@@ -7,11 +8,28 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import (
     BuiltinActorStateChangeNotification,
     BuiltinActorStateUpdatedNotification,
+    ScanInterlockModifyStateTableMessage,
+    ScanInterlockStateTableContent,
 )
 from bec_server.actors.actor import ActorBase
 from bec_server.actors.scan_interlock import ScanInterlockActor
 
 logger = bec_logger.logger
+
+ActorType = TypeVar("ActorType", bound=ActorBase)
+
+
+class ActorDict(dict):
+    def __setitem__(self, key: type[ActorType], value: tuple[ActorType, Thread, Event], /) -> None:
+        return super().__setitem__(key, value)
+
+    def __getitem__(self, key: type[ActorType], /) -> tuple[ActorType, Thread, Event]:
+        return super().__getitem__(key)
+
+    def get(  # type: ignore
+        self, key: type[ActorType], default: tuple[ActorType, Thread, Event] | None = None
+    ) -> tuple[ActorType, Thread, Event]:
+        return super().get(key)  # type: ignore
 
 
 class BuiltinActorManager:
@@ -25,11 +43,14 @@ class BuiltinActorManager:
             name="BuiltinActors",
         )
         self._client.start()
-        self._actors_threads_and_stops: dict[str, tuple[ActorBase, Thread, Event]] = {}
+        self._actors_threads_and_stops = ActorDict()
         self._builtin_actors = {cls.__name__: cls for cls in (ScanInterlockActor,)}
         self._start_all()
         self._client.connector.register(
             MessageEndpoints.builtin_actor_update_req_notif(), cb=self._on_state_changed
+        )
+        self._client.connector.register(
+            MessageEndpoints.modify_interlock_table(), cb=self._modify_interlock_table
         )
 
     def _ping_clients(self, actor_name: str):
@@ -51,33 +72,68 @@ class BuiltinActorManager:
         self._ping_clients(msg.actor_name)
 
     def _start_all(self):
-        for actor_class in self._builtin_actors.values():
-            if self._client.builtin_actors.check_enabled(actor_class.__name__):
-                self._start_actor(actor_class)
+        for actor_class_name in self._builtin_actors:
+            if self._client.builtin_actors.check_enabled(actor_class_name):
+                self._start_actor(self._builtin_actors[actor_class_name])
 
     def _start_actor(self, actor_class: type[ActorBase]):
         name = actor_class.__name__
         logger.info(f"Starting {name}")
-        if name in self._actors_threads_and_stops:
+        if actor_class in self._actors_threads_and_stops:
             logger.warning(f"Actor {name} is already active!")
             return
         actor = actor_class(self._client, name=name, exec_id=name)
         t = Thread(target=actor.run)
-        self._actors_threads_and_stops[name] = (actor, t, actor.stop_event)
+        self._actors_threads_and_stops[actor_class] = (actor, t, actor.stop_event)
         t.start()
 
     def _stop_actor(self, actor_name: str):
         logger.info(f"Stopping {actor_name}")
-        if (entry := self._actors_threads_and_stops.get(actor_name)) is None:
+        actor_class = self._builtin_actors.get(actor_name)
+        if (entry := self._actors_threads_and_stops.get(actor_class)) is None:
             logger.warning(f"Actor {actor_name} is not active!")
             return
         actor, t, event = entry
         event.set()
         t.join()
-        del self._actors_threads_and_stops[actor_name]
+        del self._actors_threads_and_stops[actor_class]
         del actor
 
     def shutdown(self):
         for actor in self._actors_threads_and_stops:
             self._stop_actor(actor)
         self._client.shutdown()
+
+    # Actor specific management methods:
+    def _modify_interlock_table(self, msg_dict):
+        """Update the watched states for ScanInterlockActor - handled by the actor itself if it is
+        active, otherwise just the config in redis is updated."""
+        msg: ScanInterlockModifyStateTableMessage = msg_dict["data"]
+        if (ats := self._actors_threads_and_stops.get(ScanInterlockActor)) is not None:
+            actor, _, _ = ats
+            actor._on_state_modification(msg)
+        else:
+            states: ScanInterlockStateTableContent | None = self._client.connector.get(
+                MessageEndpoints.scan_interlock_states()
+            )
+            current_watched = states.states_watched if states is not None else {}
+            if msg.action == "add":
+                logger.info(f"Adding {msg.state_name} to the scan interlock actor")
+                current_watched[msg.state_name] = msg.status
+                self._client.connector.set(
+                    MessageEndpoints.scan_interlock_states(),
+                    ScanInterlockStateTableContent(states_watched=current_watched),
+                )
+            elif msg.action == "remove_all":
+                self._client.connector.set(
+                    MessageEndpoints.scan_interlock_states(),
+                    ScanInterlockStateTableContent(states_watched={}),
+                )
+            else:
+                logger.info(f"Removing {msg.state_name} from the scan interlock actor")
+                current_watched.pop(msg.state_name, None)
+                self._client.connector.set(
+                    MessageEndpoints.scan_interlock_states(),
+                    ScanInterlockStateTableContent(states_watched=current_watched),
+                )
+            self._ping_clients("ScanInterlockActor")

@@ -29,7 +29,8 @@ def mocked_manager():
         mock_client_cls.return_value = mock_client
 
         manager = BuiltinActorManager("localhost:6379")
-        yield manager, mock_client
+        with patch.object(manager, "_builtin_actors", {"DummyActor": DummyActor}):
+            yield manager, mock_client
 
 
 def test_init_registers_callback(mocked_manager):
@@ -37,11 +38,15 @@ def test_init_registers_callback(mocked_manager):
 
     mock_client.start.assert_called_once()
 
-    mock_client.connector.register.assert_called_once()
-    args, kwargs = mock_client.connector.register.call_args
+    assert mock_client.connector.register.call_count == 2
 
+    kwargs = mock_client.connector.register.call_args_list[0].kwargs
     assert "cb" in kwargs
     assert kwargs["cb"] == manager._on_state_changed
+
+    kwargs = mock_client.connector.register.call_args_list[1].kwargs
+    assert "cb" in kwargs
+    assert kwargs["cb"] == manager._modify_interlock_table
 
 
 def test_start_actor_starts_thread(mocked_manager):
@@ -53,9 +58,9 @@ def test_start_actor_starts_thread(mocked_manager):
 
         manager._start_actor(DummyActor)
 
-        assert "DummyActor" in manager._actors_threads_and_stops
+        assert DummyActor in manager._actors_threads_and_stops
 
-        actor, thread, stop_event = manager._actors_threads_and_stops["DummyActor"]
+        actor, thread, stop_event = manager._actors_threads_and_stops[DummyActor]
 
         assert isinstance(actor, DummyActor)
         assert thread == mock_thread
@@ -80,7 +85,7 @@ def test_stop_actor_sets_event_and_joins(mocked_manager):
     actor = DummyActor(None, "DummyActor", "DummyActor")
     mock_thread = MagicMock()
 
-    manager._actors_threads_and_stops["DummyActor"] = (actor, mock_thread, actor.stop_event)
+    manager._actors_threads_and_stops[DummyActor] = (actor, mock_thread, actor.stop_event)
 
     manager._stop_actor("DummyActor")
 

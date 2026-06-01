@@ -26,9 +26,6 @@ class ScanInterlockActor(BlStateActor):
             self.state_table = {}
 
         super().__init__(client, name, exec_id)
-        self.client.connector.register(
-            MessageEndpoints.modify_interlock_table(), cb=self._on_state_modification
-        )
 
     def _ping_clients(self):
         logger.warning(self.name)
@@ -44,8 +41,7 @@ class ScanInterlockActor(BlStateActor):
         )
         self._ping_clients()
 
-    def _on_state_modification(self, msg_dict: dict):
-        msg: ScanInterlockModifyStateTableMessage = msg_dict["data"]
+    def _on_state_modification(self, msg: ScanInterlockModifyStateTableMessage):
         with self.state_table_lock:
             if msg.action == "add":
                 logger.info(f"Adding {msg.state_name} to the scan interlock actor")
