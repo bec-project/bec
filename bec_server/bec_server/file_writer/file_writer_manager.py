@@ -251,7 +251,7 @@ class FileWriterManager(BECService):
         if status == "open" and not scan_storage.start_time:
             scan_storage.start_time = msg.content.get("timestamp")
             scan_storage.async_writer = AsyncWriter(
-                get_full_path(scan_status_msg=msg, name="master"),
+                get_full_path(scan_status_msg=msg, name="master", log_if_dir_does_not_exist=False),
                 scan_id=scan_id,
                 scan_number=msg.scan_number,
                 connector=self.connector,
@@ -391,7 +391,11 @@ class FileWriterManager(BECService):
         start_time = time.time()
 
         try:
-            file_path = get_full_path(scan_status_msg=storage.status_msg, name=file_suffix)
+            file_path = get_full_path(
+                scan_status_msg=storage.status_msg,
+                name=file_suffix,
+                log_if_dir_does_not_exist=False,
+            )
             successful = True
 
             # If we've already written device data, we need to append to the file
