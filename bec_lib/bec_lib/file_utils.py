@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 import warnings
 from typing import TYPE_CHECKING
 
@@ -202,6 +203,27 @@ def get_full_path(
             logger.warning(f"Directory {os.path.dirname(full_path)} does not exist. Creating it.")
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path
+
+
+def wait_for_directory(path: str, timeout: float = 10.0, interval: float = 0.1) -> None:
+    """
+    Wait for a directory to be created.
+
+    Args:
+        path (str): Path to the directory to wait for.
+        timeout (float, optional): Maximum time to wait in seconds. Defaults to 10.
+        interval (float, optional): Time to wait between checks in seconds. Defaults to 0.1.
+
+    Raises:
+        FileWriterError: If the timeout is reached before the directory is created.
+
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if os.path.isdir(path):
+            return
+        time.sleep(interval)
+    raise FileWriterError(f"Timeout reached while waiting for directory {path} to be created.")
 
 
 class FileWriter:

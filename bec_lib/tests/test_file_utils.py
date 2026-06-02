@@ -2,6 +2,8 @@
 
 # pylint: skip-file
 import os
+import threading
+import time
 from unittest import mock
 
 import pytest
@@ -15,6 +17,7 @@ from bec_lib.file_utils import (
     LogWriter,
     compile_file_components,
     get_full_path,
+    wait_for_directory,
 )
 from bec_lib.messages import ScanStatusMessage
 from bec_lib.tests.utils import ConnectorMock
@@ -257,6 +260,30 @@ def test_compile_file_components_valid_paths(kwargs, expected_path, description)
     file_path, extension = compile_file_components(base_path="/tmp", scan_nr=10, **kwargs)
     assert extension == "h5", description
     assert file_path == expected_path, description
+
+
+def test_wait_for_directory_returns_when_directory_appears(tmpdir):
+    """wait_for_directory should stop polling once the directory exists."""
+    dir_path = tmpdir.join("created-later")
+
+    def _create_directory():
+        time.sleep(0.02)
+        dir_path.mkdir()
+
+    creator = threading.Thread(target=_create_directory)
+    creator.start()
+    try:
+        wait_for_directory(str(dir_path), timeout=1.0, interval=0.01)
+    finally:
+        creator.join()
+
+
+def test_wait_for_directory_raises_on_timeout(tmpdir):
+    """wait_for_directory should raise when the directory never appears."""
+    dir_path = tmpdir.join("never-created")
+
+    with pytest.raises(FileWriterError, match="Timeout reached while waiting for directory"):
+        wait_for_directory(str(dir_path), timeout=0.05, interval=0.01)
 
 
 @pytest.mark.parametrize(
