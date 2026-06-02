@@ -1,6 +1,54 @@
 # CHANGELOG
 
 
+## v3.129.0 (2026-06-02)
+
+### Bug Fixes
+
+- Don't add nonexistent state
+  ([`f20abba`](https://github.com/bec-project/bec/commit/f20abbace0f681684fb301195af55c6780d0498f))
+
+- Handle no interlock data in redis
+  ([`4adce43`](https://github.com/bec-project/bec/commit/4adce437f61fa1a59e8e0d386105317d0242f05d))
+
+- Manage config changes even when actor disabled
+  ([`dc9d6a6`](https://github.com/bec-project/bec/commit/dc9d6a6fc507ef31721fa0b9fad53c33895aff01))
+
+- Proper shutdown of SubscriptionActor
+  ([`d0e6000`](https://github.com/bec-project/bec/commit/d0e6000278c84b068f113f7971d9581ad2366bdb))
+
+- Remove deleted states from table
+  ([`10d60b4`](https://github.com/bec-project/bec/commit/10d60b4794303a8cb3a7dd9a55b04735052b334b))
+
+- Remove modified fakeredis server
+  ([`3190c5e`](https://github.com/bec-project/bec/commit/3190c5e0c870f598a2d72e9b0a00b8afda32df0b))
+
+### Features
+
+- Add and remove states from interlock
+  ([`66ec478`](https://github.com/bec-project/bec/commit/66ec478dbebe3d4adb62e9f6cdf8b65b2ed0c165))
+
+- Bidirectional notifications
+  ([`68bc8e7`](https://github.com/bec-project/bec/commit/68bc8e7094c66ea0747a0b5a33064c35c049bddd))
+
+- separate pubsub channels for notifying the actor that a change is requested and notifying clients
+  that a change has happened
+
+- Interlock restarts scans
+  ([`6d30c3b`](https://github.com/bec-project/bec/commit/6d30c3b46ce5bd5e10125b5f15ee4ae549ead018))
+
+- Scan interlock actor
+  ([`a58b346`](https://github.com/bec-project/bec/commit/a58b346f50e5828a46b2b40b7d554ef4a28a19af))
+
+### Testing
+
+- Simplify scan interlock unit tests
+  ([`095aff7`](https://github.com/bec-project/bec/commit/095aff7c9105a908de8fdbb8be9b7a025f630123))
+
+- Test that scan is restarted
+  ([`12287b2`](https://github.com/bec-project/bec/commit/12287b2ba8b0442fb3234e19e73b005f5beef7a7))
+
+
 ## v3.128.6 (2026-06-01)
 
 ### Bug Fixes
