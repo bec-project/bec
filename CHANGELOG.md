@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.130.0 (2026-06-02)
+
+### Features
+
+- **bec_emitter, scan_bundler**: Forward device progress as scan progress
+  ([`9f1d72b`](https://github.com/bec-project/bec/commit/9f1d72bfde44797c06a3e721187d001ee30dd1f2))
+
+
 ## v3.129.0 (2026-06-02)
 
 ### Bug Fixes
