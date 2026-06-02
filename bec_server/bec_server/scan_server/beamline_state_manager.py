@@ -72,7 +72,7 @@ class BeamlineStateManager:
         for state_name, state in added_states.items():
             state_class = getattr(bl_states, state.state_type)
             if not issubclass(state_class, bl_states.BeamlineState):
-                raise ValueError(f"State type {state.state_type} not found in beamline states.")
+                raise TypeError(f"{state.state_type} is not a valid BeamlineState type.")
             model_cls = state_class.CONFIG_CLASS
             model_instance = model_cls(**state.parameters)
             state_instance = state_class(

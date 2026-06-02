@@ -8,7 +8,7 @@ from typing import Callable, ClassVar, Generic, Type, TypeVar, cast
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from bec_lib import messages
+from bec_lib import logger, messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.device import DeviceBase, Signal
 from bec_lib.devicemanager import DeviceManagerBase
@@ -275,19 +275,37 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
                     f"[BL State {self.config.name}] No signal specified for device '{self.config.device}' and no hints available."
                 )
 
+    def _on_device_config_updated(self, msg: MessageObject) -> None:
+        """Re-evaluate when the device config changes."""
+        logger.bec_logger.logger.warning(msg)
+        logger.bec_logger.logger.warning(msg.value)
+        if msg.value.config is not None:
+            logger.bec_logger.logger.warning(msg.value.config)
+            if self.config.device in msg.value.config:
+                self._setup_device()
+                self.update_device_signal_info()
+
     def start(self) -> None:
         if self.started:
             return
+        self._device_setup_done = False
         super().start()
 
         if self.connector is None:
             raise RuntimeError("Redis connector is not set.")
+        self.connector.register(
+            MessageEndpoints.device_config_update(), cb=self._on_device_config_updated
+        )
         try:
             self.update_device_signal_info()
         except Exception as exc:
             self._handle_state_exception(exc)
             return
+        self._setup_device()
 
+    def _setup_device(self):
+        if self._device_setup_done:
+            return
         msg = self.connector.get(MessageEndpoints.device_readback(self.device_obj.root.name))
         if msg is not None:
             self._update_device_state(
@@ -300,6 +318,7 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
             MessageEndpoints.device_readback(self.device_obj.root.name),
             cb=self._update_device_state,
         )
+        self._device_setup_done = True
 
     def stop(self) -> None:
         if not self.started:
