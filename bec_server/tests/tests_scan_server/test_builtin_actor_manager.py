@@ -38,7 +38,7 @@ def test_init_registers_callback(mocked_manager):
 
     mock_client.start.assert_called_once()
 
-    assert mock_client.connector.register.call_count == 2
+    assert mock_client.connector.register.call_count == 3
 
     kwargs = mock_client.connector.register.call_args_list[0].kwargs
     assert "cb" in kwargs
