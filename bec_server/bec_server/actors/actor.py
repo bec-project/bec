@@ -86,7 +86,7 @@ class SubscriptionActor(ActorBase):
             return
         if (now := time.monotonic()) < self.last_evaluated + self.min_delay_s:
             return
-        logger.info(f"{self.__class__.__name__} triggered")
+        logger.debug(f"{self.__class__.__name__} evaluated")
         self.last_evaluated = now
         return super().evaluate(*_, **__)
 
