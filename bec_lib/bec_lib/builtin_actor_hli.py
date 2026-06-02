@@ -41,13 +41,13 @@ class ScanInterlockHli:
             return msg.states_watched
         return {}
 
-    def add_state_to_interlock(self, state_name: str, required_value: BlStateStatus):
+    def add_state_to_interlock(self, state_name: str, required_value: BlStateStatus = "valid"):
         """
         Add a beamline state and its status to watch to the ScanInterlockActor. If the state no
         longer has this status, an interlock will be placed on the primary scan queue.
         Args:
             state_name (str): the state to watch
-            status (Literal["valid","invalid","warning","unknown"]): the status to watch for.
+            status (Literal["valid","invalid","warning","unknown"]): the status to watch for. Defaults to "valid".
         """
         self._client.connector.xadd(
             MessageEndpoints.modify_interlock_table(),
