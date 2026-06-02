@@ -163,13 +163,19 @@ def compile_file_components(
     return (file_path_component, file_extension)
 
 
-def get_full_path(scan_status_msg: ScanStatusMessage, name: str, create_dir: bool = True) -> str:
+def get_full_path(
+    scan_status_msg: ScanStatusMessage,
+    name: str,
+    create_dir: bool = True,
+    log_if_dir_does_not_exist: bool = True,
+) -> str:
     """Get the full file path for a given scan status message and additional name.
 
     Args:
         scan_status_msg (ScanStatusMessage): Scan status message
         name (str): Additional name (i.e. device name) to add to the file path
         create_dir (bool, optional): Create the directory if it does not exist. Defaults to True.
+        log_if_dir_does_not_exist (bool, optional): Log a warning if the directory does not exist. Defaults to True.
     """
 
     if name == "":
@@ -192,6 +198,8 @@ def get_full_path(scan_status_msg: ScanStatusMessage, name: str, create_dir: boo
     # Compile full file path
     full_path = f"{file_base_path}_{name}.{file_extension}"
     if create_dir:
+        if log_if_dir_does_not_exist and not os.path.exists(os.path.dirname(full_path)):
+            logger.warning(f"Directory {os.path.dirname(full_path)} does not exist. Creating it.")
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path
 
