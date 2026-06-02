@@ -6,6 +6,8 @@ from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
+    AvailableBeamlineStatesMessage,
+    BlStateStatus,
     BuiltinActorStateChangeNotification,
     BuiltinActorStateUpdatedNotification,
     ScanInterlockModifyStateTableMessage,
@@ -51,6 +53,9 @@ class BuiltinActorManager:
         )
         self._client.connector.register(
             MessageEndpoints.modify_interlock_table(), cb=self._modify_interlock_table
+        )
+        self._client.connector.register(
+            MessageEndpoints.available_beamline_states(), cb=self._handle_state_update
         )
 
     def _ping_clients(self, actor_name: str):
@@ -105,6 +110,31 @@ class BuiltinActorManager:
         self._client.shutdown()
 
     # Actor specific management methods:
+    def _set_interlock_states_in_redis(self, states: dict[str, BlStateStatus]):
+        self._client.connector.set(
+            MessageEndpoints.scan_interlock_states(),
+            ScanInterlockStateTableContent(states_watched=states),
+        )
+
+    def _current_watched_states(self) -> dict[str, BlStateStatus]:
+        states: ScanInterlockStateTableContent | None = self._client.connector.get(
+            MessageEndpoints.scan_interlock_states()
+        )
+        return states.states_watched if states is not None else {}
+
+    def _handle_state_update(self, msg_dict: dict):
+        msg: AvailableBeamlineStatesMessage = msg_dict["data"]
+        state_names = [state.name for state in msg.states]
+        for watched_state in self._current_watched_states():
+            if watched_state not in state_names:
+                self._modify_interlock_table(
+                    {
+                        "data": ScanInterlockModifyStateTableMessage(
+                            action="remove", state_name=watched_state
+                        )
+                    }
+                )
+
     def _modify_interlock_table(self, msg_dict):
         """Update the watched states for ScanInterlockActor - handled by the actor itself if it is
         active, otherwise just the config in redis is updated."""
@@ -113,27 +143,15 @@ class BuiltinActorManager:
             actor, _, _ = ats
             actor._on_state_modification(msg)
         else:
-            states: ScanInterlockStateTableContent | None = self._client.connector.get(
-                MessageEndpoints.scan_interlock_states()
-            )
-            current_watched = states.states_watched if states is not None else {}
-            if msg.action == "add":
+            current_watched = self._current_watched_states()
+            if msg.action == "add" and msg.state_name not in current_watched:
                 logger.info(f"Adding {msg.state_name} to the scan interlock actor")
                 current_watched[msg.state_name] = msg.status
-                self._client.connector.set(
-                    MessageEndpoints.scan_interlock_states(),
-                    ScanInterlockStateTableContent(states_watched=current_watched),
-                )
+                self._set_interlock_states_in_redis(current_watched)
             elif msg.action == "remove_all":
-                self._client.connector.set(
-                    MessageEndpoints.scan_interlock_states(),
-                    ScanInterlockStateTableContent(states_watched={}),
-                )
+                self._set_interlock_states_in_redis({})
             else:
                 logger.info(f"Removing {msg.state_name} from the scan interlock actor")
                 current_watched.pop(msg.state_name, None)
-                self._client.connector.set(
-                    MessageEndpoints.scan_interlock_states(),
-                    ScanInterlockStateTableContent(states_watched=current_watched),
-                )
+                self._set_interlock_states_in_redis(current_watched)
             self._ping_clients("ScanInterlockActor")
