@@ -28,7 +28,7 @@ class ScanInterlockActor(BlStateActor):
         super().__init__(client, name, exec_id)
 
     def _ping_clients(self):
-        logger.warning(self.name)
+        logger.debug(f"{self.name} pinging clients that it was updated")
         self.client.connector.send(
             MessageEndpoints.builtin_actor_update_notif(self.name),
             BuiltinActorStateUpdatedNotification(actor_name=self.name),
