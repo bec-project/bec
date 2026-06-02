@@ -114,11 +114,18 @@ class BeamlineStateManager:
         self._connector.register(
             MessageEndpoints.available_beamline_states(), cb=self._on_state_update, from_start=True
         )
+        self._ready = False
+
+    @property
+    def ready(self) -> bool:
+        """Returns true after beamline states have been loaded from Redis."""
+        return self._ready
 
     def _on_state_update(self, msg_dict: dict, **_kwargs) -> None:
         # type: ignore ; we know it's an AvailableBeamlineStatesMessage
         msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]
         self._update_states(msg.states)  # pylint: disable=protected-access
+        self._ready = True
 
     def _update_state(self, state: BeamlineStateConfig) -> None:
         if state.name in self._states:

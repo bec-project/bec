@@ -128,8 +128,6 @@ class BlStateActor(SubscriptionActor):
         }
         super().__init__(client, name, exec_id)
         self.state_cache: dict[str, BlStateStatus] = {}
-        self._update_cache()
-        self.evaluate()
 
     def _update_cache(self):
         with self.state_table_lock:
@@ -163,6 +161,14 @@ class BlStateActor(SubscriptionActor):
 
     def some_mismatch_action(self, client: BECClient):
         pass
+
+    def run(self):
+        while not self.client.beamline_states.ready:
+            logger.warning(f"{self.__class__.__name__} waiting for beamline states to become ready")
+            time.sleep(0.1)
+        self._update_cache()
+        self.evaluate()
+        return super().run()
 
     def default_monitor_endpoints(self) -> set[EndpointInfo]:
         return {MessageEndpoints.beamline_state(state) for state in self.state_table}
