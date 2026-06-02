@@ -142,7 +142,9 @@ class BlStateActor(SubscriptionActor):
                     continue
                 self.state_cache[state] = status
             for state in to_remove:
-                logger.warning(f"Removing {state} from watched states.")
+                logger.warning(
+                    f"Removing {state} from watched states because it no longer seems to exist."
+                )
                 del self.state_table[state]
 
     def all_states_match(self, client: BECClient):

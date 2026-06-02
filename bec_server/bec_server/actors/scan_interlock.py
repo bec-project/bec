@@ -97,7 +97,10 @@ class ScanInterlockActor(BlStateActor):
     def _unlock(self):
         if self.client.queue is None:
             return
-        self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
+        if (q := self.client.queue) is not None:
+            if (curr_q := q.queue_storage.current_scan_queue) is not None:
+                if (primary := curr_q.get("primary")) is not None and primary.locks != []:
+                    self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
 
     def run(self):
         super().run()
