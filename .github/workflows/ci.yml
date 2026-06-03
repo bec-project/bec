@@ -24,6 +24,9 @@ concurrency:
 permissions:
   pull-requests: write
 
+env:
+  PYTHONUTF8: 1
+
 jobs:
   check_pr_status:
     uses: ./.github/workflows/check_pr.yml
