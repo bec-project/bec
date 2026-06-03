@@ -99,6 +99,7 @@ class SubscriptionActor(ActorBase):
             self.push_status(ProcedureWorkerStatus.IDLE)
 
     def stop(self, *_):
+        """Stop the actor and cleanup subscriptions."""
         self._stopped = True
         for endpoint in self._endpoints:
             for cb in self.default_monitor_callbacks():
@@ -108,6 +109,7 @@ class SubscriptionActor(ActorBase):
                     logger.error(
                         f"{self.__class__} {self.__qualname__} failed to unregister {cb} from {endpoint}: {e}"
                     )
+        self.stop_event.set()
 
 
 class BlStateActor(SubscriptionActor):
@@ -163,7 +165,7 @@ class BlStateActor(SubscriptionActor):
         pass
 
     def run(self):
-        while not self.client.beamline_states.ready:
+        while not self.client.beamline_states.ready and not self.stop_event.set():
             logger.warning(f"{self.__class__.__name__} waiting for beamline states to become ready")
             time.sleep(0.1)
         self._update_cache()
