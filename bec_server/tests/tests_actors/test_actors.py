@@ -9,7 +9,7 @@ from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import ActorStartRequestMessage, ProcedureWorkerStatus, RawMessage
 from bec_lib.redis_connector import MessageObject, RedisConnector
-from bec_server.actors.actor import ActorBase
+from bec_server.actors.actor import ActorBase, BlStateActor
 from bec_server.actors.manager import ActorManager
 from bec_server.actors.worker import actor_procedure
 from bec_server.procedures.constants import BecClientType
@@ -173,3 +173,42 @@ def test_actor_procedure_logs_error_not_actor():
     with patch("bec_server.actors.worker.logger") as logger:
         actor_procedure("bec_server.test.actor_test_utils", "EndpointInfo", "test", MagicMock())
         assert "is not a valid Actor!" in logger.error.call_args.args[0]
+
+
+class BlStateTestActor(BlStateActor):
+    state_table = {"test_state": "valid", "test_state_2": "valid"}
+
+
+def test_blstateactor_init_table_and_cache():
+    mock_client = MagicMock()
+
+    def get_status_by_name(name: str):
+        if name == "test_state":
+            return "valid"
+
+    mock_client.beamline_states.get_status_by_name.side_effect = get_status_by_name
+    actor = BlStateTestActor(mock_client, "Test", "Test")
+    actor.stop_event.set()
+    actor.run()
+
+    assert actor.state_table == {"test_state": "valid"}
+    assert actor.state_cache == {"test_state": "valid"}
+
+
+def test_bl_state_actor_waits_for_states():
+    mock_client = MagicMock()
+
+    mock_client.beamline_states.ready = False
+    actor = BlStateTestActor(mock_client, "Test", "Test")
+    actor.evaluate = MagicMock()
+    with patch("bec_server.actors.actor.logger") as mock_logger:
+        t = Thread(target=actor.run)
+        t.start()
+        sleep(0.1)
+        mock_logger.warning.assert_called()
+        actor.evaluate.assert_not_called()
+        mock_client.beamline_states.ready = True
+        sleep(0.2)
+        actor.stop_event.set()
+        t.join()
+    actor.evaluate.assert_called()

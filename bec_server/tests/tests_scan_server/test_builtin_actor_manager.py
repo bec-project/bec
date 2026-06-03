@@ -3,6 +3,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bec_lib.messages import (
+    AvailableBeamlineStatesMessage,
+    ScanInterlockModifyStateTableMessage,
+    ScanInterlockStateTableContent,
+)
 from bec_server.actors.builtin_actor_manager import BuiltinActorManager
 
 
@@ -148,3 +153,42 @@ def test_shutdown_stops_all_and_shuts_down_client(mocked_manager):
     assert mock_stop.call_count == 2
 
     mock_client.shutdown.assert_called_once()
+
+
+def _req_msg(action, state_name, status):
+    return {
+        "data": ScanInterlockModifyStateTableMessage(
+            action=action, state_name=state_name, status=status
+        )
+    }
+
+
+INITIAL_STATES = {"initial_state_1": "valid", "initial_state_2": "valid"}
+
+
+@pytest.mark.parametrize(
+    ["modification_request", "new_watched_states"],
+    [
+        (_req_msg("add", "test_state", "valid"), {**INITIAL_STATES, "test_state": "valid"}),
+        (_req_msg("remove", "initial_state_1", None), {"initial_state_2": "valid"}),
+        (_req_msg("remove_all", None, None), {}),
+        (_req_msg("remove", "missing_state", None), INITIAL_STATES),
+    ],
+)
+def test_modify_interlock_table(mocked_manager, modification_request, new_watched_states):
+    manager, mock_client = mocked_manager
+    mock_client.connector.get.return_value = ScanInterlockStateTableContent(
+        states_watched=INITIAL_STATES
+    )
+    manager._modify_interlock_table(modification_request)
+    assert mock_client.connector.set.call_args.args[1].states_watched == new_watched_states
+
+
+def test_handle_state_update(mocked_manager):
+    manager, _ = mocked_manager
+    manager._current_watched_states = lambda: {"test_state": "valid"}
+    manager._modify_interlock_table = MagicMock()
+    manager._handle_state_update({"data": AvailableBeamlineStatesMessage(states=[])})
+    manager._modify_interlock_table.assert_called_with(
+        {"data": ScanInterlockModifyStateTableMessage(action="remove", state_name="test_state")}
+    )
