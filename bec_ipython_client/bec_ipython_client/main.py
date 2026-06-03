@@ -38,7 +38,6 @@ logger = bec_logger.logger
 
 
 class CLIBECClient(BECClient):
-
     def _wait_for_server(self):
         super()._wait_for_server()
 
@@ -54,7 +53,6 @@ class CLIBECClient(BECClient):
 
 
 class BECIPythonClient:
-
     # local_only_types is a container for objects that should not be resolved through
     # the CLIBECClient but directly through the BECIPythonClient. While this is not
     # needed for normal usage, it is required, e.g. for mocks.
@@ -398,6 +396,7 @@ def main():
     main_dict["startup_file"] = args.post_startup_file
 
     app = TerminalIPythonApp()
+    app.display_banner = False
     app.interact = True
     app.initialize(argv=["-i", os.path.join(os.path.dirname(__file__), "bec_startup.py")])
 
