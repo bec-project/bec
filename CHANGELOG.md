@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v3.130.1 (2026-06-03)
+
+### Bug Fixes
+
+- Restart BL states when device config updated
+  ([`1154545`](https://github.com/bec-project/bec/commit/115454590beb75abe6b0b11ca77ca5ed38efb266))
+
+### Chores
+
+- **deps**: Bump ipython in /bec_ipython_client
+  ([`85067be`](https://github.com/bec-project/bec/commit/85067be33c882284f615fd2b41d1931507cf62ea))
+
+Updates the requirements on [ipython](https://github.com/ipython/ipython) to permit the latest
+  version.
+
+Updates `ipython` to 9.13.0 - [Release notes](https://github.com/ipython/ipython/releases) -
+  [Commits](https://github.com/ipython/ipython/compare/8.22.0...9.13.0)
+
+--- updated-dependencies: - dependency-name: ipython dependency-version: 9.13.0
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+
 ## v3.130.0 (2026-06-02)
 
 ### Features
