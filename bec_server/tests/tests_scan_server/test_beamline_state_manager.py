@@ -39,17 +39,22 @@ def fake_bl_states(monkeypatch):
     return FakeState
 
 
-def test_state_manager_fetches_states(dm_with_devices):
+def test_state_manager_fetches_states(dm_with_devices, fake_bl_states):
     """
     Test that the BeamlineStateManager fetches all available beamline states on initialization.
     """
 
     connector = mock.MagicMock()
     state_manager = BeamlineStateManager(connector, device_manager=dm_with_devices)
-    connector.register.assert_called_once_with(
-        MessageEndpoints.available_beamline_states(),
-        cb=state_manager._handle_state_update,
-        from_start=True,
+    connector.register.assert_has_calls(
+        [
+            mock.call(
+                MessageEndpoints.available_beamline_states(),
+                cb=state_manager._handle_state_update,
+                from_start=True,
+            ),
+            mock.call(MessageEndpoints.device_config_update(), cb=state_manager.restart_all),
+        ]
     )
 
 
@@ -125,3 +130,17 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
 
     assert len(state_manager._states) == 1
     assert "State2" in state_manager._states
+
+
+@pytest.mark.timeout(5)
+def test_states_restarted_when_device_config_updated(
+    state_manager, connected_connector, fake_bl_states
+):
+    state_mock = mock.MagicMock()
+    state_manager._states["test"] = state_mock
+    connected_connector.send(
+        MessageEndpoints.device_config_update(), messages.DeviceConfigMessage(action="reload")
+    )
+
+    while state_mock.restart.call_count == 0:
+        time.sleep(0.1)

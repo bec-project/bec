@@ -6,6 +6,7 @@ from bec_lib import bl_states, messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.logger import bec_logger
 from bec_lib.messages import ErrorInfo
 from bec_lib.redis_connector import RedisConnector
 
@@ -22,6 +23,7 @@ class BeamlineStateManager:
             cb=self._handle_state_update,
             from_start=True,
         )
+        self.connector.register(MessageEndpoints.device_config_update(), cb=self.restart_all)
 
     def _handle_state_update(self, msg_dict: dict, **_kwargs) -> None:
 
@@ -30,12 +32,17 @@ class BeamlineStateManager:
             self.update_states(msg)
         except Exception as exc:
             content = traceback.format_exc()
+            bec_logger.logger.error(content)
             info = ErrorInfo(
                 exception_type=type(exc).__name__,
                 error_message=content,
                 compact_error_message="Error updating beamline states.",
             )
             self.connector.raise_alarm(severity=Alarms.WARNING, info=info)
+
+    def restart_all(self, *_):
+        for state in self._states.values():
+            state.restart()
 
     def update_states(self, msg: messages.AvailableBeamlineStatesMessage) -> None:
         """
