@@ -286,6 +286,7 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
             self.update_device_signal_info()
         except Exception as exc:
             self._handle_state_exception(exc)
+            self.started = False
             return
 
         msg = self.connector.get(MessageEndpoints.device_readback(self.device_obj.root.name))
