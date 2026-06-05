@@ -26,8 +26,8 @@ def bec_with_delay_device(bec_ipython_client_fixture):
     dev.ramp_up.min_val.put(0)
     dev.ramp_up.max_val.put(400)
     dev.ramp_up.value.put(400)
-    dev.ramp_up.delay.put(2)
-    dev.ramp_up.rampup_time.put(2)
+    dev.ramp_up.delay.put(3)
+    dev.ramp_up.rampup_time.put(5)
     yield bec, dev.ramp_up
     dev.ramp_up.stop()
 
@@ -44,7 +44,7 @@ def ramp_up_bl_state(bec_with_delay_device):
     bec.builtin_actors.scan_interlock.clear_all()
 
 
-def _wait_for(pred, timeout=10, retries=100):
+def _wait_for(pred, timeout=20, retries=100):
     for i in range(retries):
         if pred():
             return True
