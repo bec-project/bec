@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v3.130.2 (2026-06-05)
+
+### Bug Fixes
+
+- Actor waits for beamline state to become available
+  ([`d5b7828`](https://github.com/bec-project/bec/commit/d5b782873956dde1e68c7cef8583bfa3043375c3))
+
+- Add default watched state for adding to interlock
+  ([`b0e5343`](https://github.com/bec-project/bec/commit/b0e53435fbb850815232fc631f8f5a2ac4902c07))
+
+- Don't unlock if not necessary
+  ([`94106c3`](https://github.com/bec-project/bec/commit/94106c379cd859de858f10b92ec8672a41bf8100))
+
+- React to changes in available states
+  ([`0a9c20f`](https://github.com/bec-project/bec/commit/0a9c20f485dd9620b1ce955cc14d0e8be5e7ad99))
+
+- Reduce log verbosity
+  ([`3ca7c8d`](https://github.com/bec-project/bec/commit/3ca7c8db0f11ead4c1c2bbfd6f21217215ff3db2))
+
+### Testing
+
+- Add more tests for bl state actor
+  ([`816ab20`](https://github.com/bec-project/bec/commit/816ab205cbef56545589f31a884ea486496bc5f7))
+
+
 ## v3.130.1 (2026-06-03)
 
 ### Bug Fixes
