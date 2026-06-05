@@ -92,75 +92,95 @@ class ScanManager:
             messages.ScanQueueModificationMessage(scan_id=scan_id, action=action, parameter={}),
         )
 
-    def request_scan_abortion(self, scan_id=None):
+    def request_scan_abortion(self, scan_id=None, request_id: str | None = None):
         """request a scan abortion
 
         Args:
             scan_id (str, optional): ScanID. Defaults to None.
+            request_id (str, optional): Request ID. Used when no scan ID exists yet.
 
         """
-        if scan_id is None:
+        if scan_id is None and request_id is None:
             scan_id = self.scan_storage.current_scan_id
         logger.info("Requesting scan abortion")
         target_queue = self.get_default_scan_queue()
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=scan_id, action="abort", parameter={}, queue=target_queue
+                scan_id=scan_id,
+                request_id=request_id,
+                action="abort",
+                parameter={},
+                queue=target_queue,
             ),
         )
 
-    def request_scan_halt(self, scan_id=None):
+    def request_scan_halt(self, scan_id=None, request_id: str | None = None):
         """request a scan halt
 
         Args:
             scan_id (str, optional): ScanID. Defaults to None.
+            request_id (str, optional): Request ID. Used when no scan ID exists yet.
 
         """
-        if scan_id is None:
+        if scan_id is None and request_id is None:
             scan_id = self.scan_storage.current_scan_id
         target_queue = self.get_default_scan_queue()
         logger.info("Requesting scan halt")
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=scan_id, action="halt", parameter={}, queue=target_queue
+                scan_id=scan_id,
+                request_id=request_id,
+                action="halt",
+                parameter={},
+                queue=target_queue,
             ),
         )
 
-    def request_set_completed(self, scan_id=None):
+    def request_set_completed(self, scan_id=None, request_id: str | None = None):
         """request to set a scan as completed
 
         Args:
             scan_id (str, optional): ScanID. Defaults to None.
+            request_id (str, optional): Request ID. Used when no scan ID exists yet.
 
         """
-        if scan_id is None:
+        if scan_id is None and request_id is None:
             scan_id = self.scan_storage.current_scan_id
         logger.info("Requesting to set scan as completed")
         target_queue = self.get_default_scan_queue()
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=scan_id, action="user_completed", parameter={}, queue=target_queue
+                scan_id=scan_id,
+                request_id=request_id,
+                action="user_completed",
+                parameter={},
+                queue=target_queue,
             ),
         )
 
-    def request_scan_continuation(self, scan_id=None):
+    def request_scan_continuation(self, scan_id=None, request_id: str | None = None):
         """request a scan continuation
 
         Args:
             scan_id (str, optional): ScanID. Defaults to None.
+            request_id (str, optional): Request ID. Used when no scan ID exists yet.
 
         """
-        if scan_id is None:
+        if scan_id is None and request_id is None:
             scan_id = self.scan_storage.current_scan_id
         logger.info("Requesting scan continuation")
         target_queue = self.get_default_scan_queue()
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=scan_id, action="continue", parameter={}, queue=target_queue
+                scan_id=scan_id,
+                request_id=request_id,
+                action="continue",
+                parameter={},
+                queue=target_queue,
             ),
         )
 

@@ -173,6 +173,155 @@ def test_process_request_repeats_on_ScanRestart_error(
         assert live_updates._stop_status_live.call_count == 5
 
 
+def test_abort_pending_request_requests_abortion_by_scan_ids(bec_client_mock):
+    live_updates = IPythonLiveUpdates(bec_client_mock)
+    live_updates._current_queue = mock.MagicMock(status="PENDING", scan_ids=["scan_id", None])
+
+    with mock.patch.object(live_updates.client.queue, "request_scan_abortion") as request_abort:
+        assert live_updates._abort_pending_request() is True
+        request_abort.assert_called_once_with(scan_id=["scan_id"])
+
+
+def test_abort_pending_request_falls_back_to_request_id(bec_client_mock, sample_request_msg):
+    live_updates = IPythonLiveUpdates(bec_client_mock)
+    live_updates._current_queue = mock.MagicMock(status="PENDING", scan_ids=[None])
+    live_updates._active_request = sample_request_msg
+
+    with mock.patch.object(live_updates.client.queue, "request_scan_abortion") as request_abort:
+        assert live_updates._abort_pending_request() is True
+        request_abort.assert_called_once_with(request_id="something")
+
+
+def test_abort_pending_request_returns_false_when_not_pending(bec_client_mock):
+    live_updates = IPythonLiveUpdates(bec_client_mock)
+    live_updates._current_queue = mock.MagicMock(status="RUNNING", scan_ids=["scan_id"])
+
+    with mock.patch.object(live_updates.client.queue, "request_scan_abortion") as request_abort:
+        assert live_updates._abort_pending_request() is False
+        request_abort.assert_not_called()
+
+
+def test_wait_for_cleanup_returns_immediately_when_queue_item_gone(bec_client_mock):
+    live_updates = IPythonLiveUpdates(bec_client_mock)
+
+    with (
+        mock.patch.object(live_updates, "_stop_status_live") as stop_status_live,
+        mock.patch.object(live_updates, "_element_in_queue", return_value=False) as in_queue,
+    ):
+        live_updates._wait_for_cleanup()
+
+    stop_status_live.assert_called_once()
+    in_queue.assert_called_once()
+
+
+def test_wait_for_cleanup_loops_until_queue_item_removed(bec_client_mock):
+    live_updates = IPythonLiveUpdates(bec_client_mock)
+
+    with (
+        mock.patch.object(
+            live_updates, "_element_in_queue", side_effect=[True, True, False]
+        ) as in_queue,
+        mock.patch("bec_ipython_client.callbacks.ipython_live_updates.time.sleep") as sleep,
+    ):
+        live_updates._wait_for_cleanup()
+
+    assert in_queue.call_count == 3
+    sleep.assert_called_once_with(0.1)
+
+
+def test_wait_for_cleanup_keyboard_interrupt_requests_halt(bec_client_mock):
+    live_updates = IPythonLiveUpdates(bec_client_mock)
+
+    with (
+        mock.patch.object(live_updates, "_element_in_queue", side_effect=KeyboardInterrupt),
+        mock.patch.object(live_updates.client.queue, "request_scan_halt") as request_halt,
+    ):
+        live_updates._wait_for_cleanup()
+
+    request_halt.assert_called_once()
+
+
+@pytest.fixture
+def process_request_keyboard_interrupt_setup(
+    ipython_live_updates_with_mocked_live, sample_request_msg
+):
+    live_updates, _ = ipython_live_updates_with_mocked_live
+    callbacks = mock.MagicMock()
+    live_updates.client._service_config = mock.MagicMock(abort_on_ctrl_c=True)
+
+    queue = mock.MagicMock()
+    queue.scan_ids = ["scan_id"]
+    queue.queue_id = "queue_id"
+
+    request_item = mock.MagicMock()
+    request_item.queue = queue
+    fake_scan_request = mock.MagicMock()
+    fake_scan_request.scan_queue_request = request_item
+    fake_scan_request.wait.return_value = None
+
+    live_updates.client._sighandler = mock.MagicMock()
+    live_updates.client._sighandler.__enter__.return_value = None
+    live_updates.client._sighandler.__exit__.return_value = None
+
+    return live_updates, callbacks, sample_request_msg, queue, fake_scan_request
+
+
+def test_process_request_keyboard_interrupt_pending_request_raises_scan_interruption(
+    process_request_keyboard_interrupt_setup,
+):
+    live_updates, callbacks, sample_request_msg, queue, fake_scan_request = (
+        process_request_keyboard_interrupt_setup
+    )
+    queue.status = "PENDING"
+
+    with (
+        mock.patch(
+            "bec_ipython_client.callbacks.ipython_live_updates.ScanRequestMixin",
+            return_value=fake_scan_request,
+        ),
+        mock.patch.object(live_updates, "_process_queue", side_effect=KeyboardInterrupt()),
+        mock.patch.object(
+            live_updates, "_abort_pending_request", return_value=True
+        ) as abort_pending,
+        mock.patch.object(live_updates, "_wait_for_cleanup") as wait_for_cleanup,
+        mock.patch.object(live_updates, "_reset") as reset,
+    ):
+        with pytest.raises(ScanInterruption, match="User abort."):
+            live_updates.process_request(sample_request_msg, callbacks)
+
+    abort_pending.assert_called_once()
+    wait_for_cleanup.assert_called_once()
+    reset.assert_called_once_with(forced=True)
+
+
+def test_process_request_keyboard_interrupt_non_pending_re_raises(
+    process_request_keyboard_interrupt_setup,
+):
+    live_updates, callbacks, sample_request_msg, queue, fake_scan_request = (
+        process_request_keyboard_interrupt_setup
+    )
+    queue.status = "RUNNING"
+
+    with (
+        mock.patch(
+            "bec_ipython_client.callbacks.ipython_live_updates.ScanRequestMixin",
+            return_value=fake_scan_request,
+        ),
+        mock.patch.object(live_updates, "_process_queue", side_effect=KeyboardInterrupt()),
+        mock.patch.object(
+            live_updates, "_abort_pending_request", return_value=False
+        ) as abort_pending,
+        mock.patch.object(live_updates, "_wait_for_cleanup") as wait_for_cleanup,
+        mock.patch.object(live_updates, "_reset") as reset,
+    ):
+        with pytest.raises(KeyboardInterrupt):
+            live_updates.process_request(sample_request_msg, callbacks)
+
+    abort_pending.assert_called_once()
+    wait_for_cleanup.assert_not_called()
+    reset.assert_called_once_with(forced=True)
+
+
 @pytest.mark.timeout(20)
 def test_live_updates_process_queue_without_status(bec_client_mock, queue_elements):
     client = bec_client_mock
@@ -379,6 +528,39 @@ def test_element_in_queue_queue_id_in_info(bec_client_mock, sample_request_block
     )
     scan_queue_status = messages.ScanQueueStatus(info=[queue_info_entry], status="RUNNING")
     client.queue.queue_storage.current_scan_queue = {"primary": scan_queue_status}
+    assert live_updates._element_in_queue() is True
+
+
+@pytest.mark.timeout(20)
+def test_element_in_queue_queue_id_in_later_position(bec_client_mock, sample_request_block):
+    client = bec_client_mock
+    live_updates = IPythonLiveUpdates(client)
+
+    current_queue = mock.MagicMock()
+    current_queue.queue_id = "my_queue_id"
+    live_updates._current_queue = current_queue
+
+    first_entry = messages.QueueInfoEntry(
+        queue_id="different_queue_id",
+        scan_id=["scan_id_1"],
+        is_scan=[True],
+        request_blocks=[sample_request_block],
+        scan_number=[1],
+        status="RUNNING",
+        active_request_block=None,
+    )
+    second_entry = messages.QueueInfoEntry(
+        queue_id="my_queue_id",
+        scan_id=["scan_id_2"],
+        is_scan=[True],
+        request_blocks=[sample_request_block],
+        scan_number=[2],
+        status="PENDING",
+        active_request_block=None,
+    )
+    scan_queue_status = messages.ScanQueueStatus(info=[first_entry, second_entry], status="LOCKED")
+    client.queue.queue_storage.current_scan_queue = {"primary": scan_queue_status}
+
     assert live_updates._element_in_queue() is True
 
 

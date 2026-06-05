@@ -270,6 +270,7 @@ class ScanQueueModificationMessage(BECMessage):
 
     Args:
         scan_id (str): Unique scan ID
+        request_id (str | None): Request ID to target when no scan ID is available yet
         action (str): One of the actions defined in ACTIONS:
                 "pause",
                 "deferred_pause",
@@ -292,6 +293,7 @@ class ScanQueueModificationMessage(BECMessage):
 
     msg_type: ClassVar[str] = "scan_queue_modification"
     scan_id: str | list[str] | None | list[None]
+    request_id: str | None = None
     action: Literal[
         "pause",
         "deferred_pause",
