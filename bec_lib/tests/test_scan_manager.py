@@ -83,7 +83,9 @@ def test_scan_manager_request_scan_abortion(scan_manager):
     scan_manager.request_scan_abortion("scan_id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id="scan_id", action="abort", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id="scan_id", request_id=None, action="abort", parameter={}
+        ),
     )
 
 
@@ -101,7 +103,19 @@ def test_scan_manager_request_scan_abortion_scan_id(scan_manager, scan_id):
     scan_manager.request_scan_abortion()
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id=scan_id, action="abort", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=scan_id, request_id=None, action="abort", parameter={}
+        ),
+    )
+
+
+def test_scan_manager_request_scan_abortion_request_id(scan_manager):
+    scan_manager.request_scan_abortion(request_id="request-id")
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="abort", parameter={}
+        ),
     )
 
 
@@ -109,7 +123,9 @@ def test_scan_manager_request_scan_halt(scan_manager):
     scan_manager.request_scan_halt("scan_id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id="scan_id", action="halt", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id="scan_id", request_id=None, action="halt", parameter={}
+        ),
     )
 
 
@@ -127,7 +143,9 @@ def test_scan_manager_request_scan_halt_scan_id(scan_manager, scan_id):
     scan_manager.request_scan_halt()
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id=scan_id, action="halt", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=scan_id, request_id=None, action="halt", parameter={}
+        ),
     )
 
 
@@ -135,7 +153,9 @@ def test_scan_manager_request_scan_continuation(scan_manager):
     scan_manager.request_scan_continuation("scan_id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id="scan_id", action="continue", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id="scan_id", request_id=None, action="continue", parameter={}
+        ),
     )
 
 
@@ -153,7 +173,9 @@ def test_scan_manager_request_scan_continuation_scan_id(scan_manager, scan_id):
     scan_manager.request_scan_continuation()
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id=scan_id, action="continue", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=scan_id, request_id=None, action="continue", parameter={}
+        ),
     )
 
 
@@ -258,7 +280,7 @@ def test_scan_manager_request_set_completed(scan_manager):
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
-            scan_id="scan_id", action="user_completed", parameter={}
+            scan_id="scan_id", request_id=None, action="user_completed", parameter={}
         ),
     )
 
@@ -277,7 +299,7 @@ def test_scan_manager_request_set_completed_scan_id(scan_manager):
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
-            scan_id="current_scan_id", action="user_completed", parameter={}
+            scan_id="current_scan_id", request_id=None, action="user_completed", parameter={}
         ),
     )
 
@@ -291,6 +313,7 @@ def test_scan_manager_add_queue_lock(scan_manager):
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
             scan_id=None,
+            request_id=None,
             action="lock",
             parameter={"reason": "Testing lock", "identifier": "test_lock"},
             queue="primary",
@@ -307,6 +330,7 @@ def test_scan_manager_remove_queue_lock(scan_manager):
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
             scan_id=None,
+            request_id=None,
             action="release_lock",
             parameter={"identifier": "test_lock"},
             queue="primary",

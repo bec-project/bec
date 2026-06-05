@@ -209,6 +209,14 @@ class IPythonLiveUpdates:
                 self._wait_for_cleanup()
             self._reset(forced=True)
             raise scan_interr
+        except KeyboardInterrupt as exc:
+            self._stop_status_live()
+            if self.client._service_config.abort_on_ctrl_c and self._abort_pending_request():
+                self._wait_for_cleanup()
+                self._reset(forced=True)
+                raise ScanInterruption("User abort.") from exc
+            self._reset(forced=True)
+            raise
         finally:
             self._stop_status_live()
 
@@ -224,6 +232,24 @@ class IPythonLiveUpdates:
         except KeyboardInterrupt:
             self.client.queue.request_scan_halt()
 
+    def _abort_pending_request(self) -> bool:
+        """Abort the pending queue item currently being tracked by this live update."""
+        if self._current_queue is None or self.client.queue is None:
+            return False
+        if self._current_queue.status != "PENDING":
+            return False
+        scan_ids = [scan_id for scan_id in self._current_queue.scan_ids if scan_id is not None]
+        if scan_ids:
+            self.client.queue.request_scan_abortion(scan_id=scan_ids)
+            return True
+        if self._active_request is None:
+            return False
+        request_id = self._active_request.metadata.get("RID")
+        if request_id is None:
+            return False
+        self.client.queue.request_scan_abortion(request_id=request_id)
+        return True
+
     def _element_in_queue(self) -> bool:
         if self.client.queue is None:
             return False
@@ -237,7 +263,7 @@ class IPythonLiveUpdates:
             return False
         if self._current_queue is None:
             return False
-        return self._current_queue.queue_id == queue_info[0].queue_id
+        return any(queue_item.queue_id == self._current_queue.queue_id for queue_item in queue_info)
 
     def _process_queue(
         self, queue: QueueItem, request: messages.ScanQueueMessage, req_id: str
