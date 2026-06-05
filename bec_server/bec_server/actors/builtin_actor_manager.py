@@ -1,4 +1,5 @@
 from threading import Event, Thread
+from time import sleep
 from typing import TypeVar
 
 from bec_lib.client import BECClient, ServiceConfig
@@ -45,6 +46,7 @@ class BuiltinActorManager:
             name="BuiltinActors",
         )
         self._client.start()
+        sleep(5)
         self._actors_threads_and_stops = ActorDict()
         self._builtin_actors = {cls.__name__: cls for cls in (ScanInterlockActor,)}
         self._start_all()

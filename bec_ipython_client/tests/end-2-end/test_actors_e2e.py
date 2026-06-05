@@ -44,7 +44,7 @@ def ramp_up_bl_state(bec_with_delay_device):
     bec.builtin_actors.scan_interlock.clear_all()
 
 
-def _wait_for(pred, timeout=20, retries=100):
+def _wait_for(pred, timeout=10, retries=100):
     for i in range(retries):
         if pred():
             return True
@@ -59,7 +59,9 @@ def test_scan_interlock(
 ):
     bec, ramp_up = ramp_up_bl_state
     actors: BuiltinActorHli = bec.builtin_actors
-    assert bec.beamline_states.beam_intensity_sufficient.get()["status"] == "valid"
+    assert _wait_for(
+        lambda: bec.beamline_states.beam_intensity_sufficient.get()["status"] == "valid"
+    )
     assert actors.scan_interlock.enabled
     current_q_status_msg: ScanQueueStatus = bec.queue.queue_storage.current_scan_queue["primary"]
     assert current_q_status_msg.status == "RUNNING"

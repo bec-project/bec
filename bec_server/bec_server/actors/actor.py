@@ -168,6 +168,9 @@ class BlStateActor(SubscriptionActor):
         while not self.client.beamline_states.ready and not self.stop_event.set():
             logger.warning(f"{self.__class__.__name__} waiting for beamline states to become ready")
             time.sleep(0.1)
+        logger.info(
+            f"Beamline states available, {self.__class__.__name__} running first evaluation"
+        )
         self._update_cache()
         self.evaluate()
         return super().run()
