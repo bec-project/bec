@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v3.130.3 (2026-06-05)
+
+### Bug Fixes
+
+- Don't show ipython banner
+  ([`ce554cc`](https://github.com/bec-project/bec/commit/ce554cceba570c552fd802f84b6e5a446ff52b8f))
+
+- Set python utf8 in top level env
+  ([`ec102fa`](https://github.com/bec-project/bec/commit/ec102fa4ef7ad8350363be66a03b8a45b144a433))
+
+- Show output on failed assert
+  ([`b42f6e0`](https://github.com/bec-project/bec/commit/b42f6e0ba755ed9e1cb2f7a9fe25bd760a0e2808))
+
+
 ## v3.130.2 (2026-06-05)
 
 ### Bug Fixes
