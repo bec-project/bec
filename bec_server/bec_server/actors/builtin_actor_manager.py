@@ -127,6 +127,10 @@ class BuiltinActorManager:
         state_names = [state.name for state in msg.states]
         for watched_state in self._current_watched_states():
             if watched_state not in state_names:
+                logger.info(
+                    "Removing watched interlock state because it is not in available beamline "
+                    f"states: {watched_state}"
+                )
                 self._modify_interlock_table(
                     {
                         "data": ScanInterlockModifyStateTableMessage(
