@@ -52,6 +52,9 @@ class ScanArgument(BaseModel):
             )
         ),
     ] = None
+    precision: Annotated[int | None, Field(description="Number of decimal places for display")] = (
+        None
+    )
     alternative_group: Annotated[
         str | None,
         Field(
