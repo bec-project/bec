@@ -14,6 +14,7 @@ from bec_lib.device import DeviceBase, Signal
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject, RedisConnector
+from bec_lib.scan_args import ScanArgument
 
 
 def with_state_error_handling(func: Callable) -> Callable:
@@ -57,14 +58,13 @@ class BeamlineStateConfig(BaseModel):
     state_type: ClassVar[str] = "BeamlineState"
 
     name: str = Field(
-        title="Name", description="Unique Python identifier used to register this beamline state."
+        **ScanArgument(
+            display_name="State name",
+            description=(
+                "Unique name for the beamline state. Must be a valid Python identifier and cannot be a reserved keyword. This name is used to identify the state in the system and should be descriptive of the state being monitored."
+            ),
+        ).model_dump()
     )
-    title: str | None = Field(
-        default=None,
-        title="Title",
-        description="Optional display title shown in beamline state widgets.",
-    )
-
     model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
 
     @field_validator("name")
@@ -89,8 +89,24 @@ class DeviceStateConfig(BeamlineStateConfig):
 
     state_type: ClassVar[str] = "DeviceBeamlineState"
 
-    device: DeviceBase | str
-    signal: Signal | str | None = None
+    device: DeviceBase | str = Field(
+        ...,
+        **ScanArgument(
+            display_name="Device",
+            description=(
+                "The device this state depends on. Can be specified as the device's dotted name or as the Device object itself. If the device has hints configured, the state will use the first hinted signal of the device by default. Otherwise, a signal must be specified explicitly for the state to function."
+            ),
+        ).model_dump(),
+    )
+    signal: Signal | str | None = Field(
+        default=None,
+        **ScanArgument(
+            display_name="Signal",
+            description=(
+                "The signal of the device to monitor for this state. Can be specified as the signal's dotted name, the signal object itself, or the obj_name of the signal as defined in the device's read dictionary. If not specified, the state will attempt to use the first hinted signal of the device. If the device has no hints and no signal is specified, the state will raise an error."
+            ),
+        ).model_dump(),
+    )
 
     @model_validator(mode="after")
     def validate_signal(self) -> DeviceStateConfig:
@@ -98,6 +114,12 @@ class DeviceStateConfig(BeamlineStateConfig):
         Validate that the signal is either None, a string, or a Signal instance. If it's a Signal instance, return its name.
         """
         if self.signal is None:
+            return self
+        if isinstance(self.device, Signal):
+            # Signals don't have sub-signals, so if the device
+            # itself is a signal, we ignore the signal field and use
+            # the device name as the signal.
+            self.signal = self.device.name
             return self
         if isinstance(self.device, DeviceBase) and isinstance(self.signal, Signal):
             if self.signal.parent != self.device:
@@ -120,21 +142,27 @@ class DeviceWithinLimitsStateConfig(DeviceStateConfig):
 
     low_limit: float | None = Field(
         default=None,
-        title="Low limit",
-        description="Optional lower allowed value. Leave disabled for no lower limit.",
-        json_schema_extra={"precision": 6},
+        **ScanArgument(
+            display_name="Low limit",
+            description="Optional lower allowed value. Leave disabled for no lower limit.",
+            reference_units="device",
+        ).model_dump(),
     )
     high_limit: float | None = Field(
         default=None,
-        title="High limit",
-        description="Optional upper allowed value. Leave disabled for no upper limit.",
-        json_schema_extra={"precision": 6},
+        **ScanArgument(
+            display_name="High limit",
+            description="Optional upper allowed value. Leave disabled for no upper limit.",
+            reference_units="device",
+        ).model_dump(),
     )
     tolerance: float = Field(
         default=0.1,
-        title="Tolerance",
-        description="Warning margin applied inside the configured limits.",
-        json_schema_extra={"precision": 6},
+        **ScanArgument(
+            display_name="Tolerance",
+            description="Warning margin applied inside the configured limits.",
+            reference_units="device",
+        ).model_dump(),
     )
 
     @model_validator(mode="after")
@@ -380,12 +408,11 @@ class ShutterState(DeviceBeamlineState[DeviceStateConfig]):
 
 class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]):
     """
-    A state that checks if a positioner is within limits.
+    A state that checks if a device signal is within limits.
 
     Example:
         device_state = DeviceWithinLimitsStateConfig(
             name="samx_within_limits",
-            title="samx within 0-10",
             device="samx",
             signal="samx",
             low_limit=0.0,
@@ -401,8 +428,8 @@ class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]
         self, msg: messages.DeviceMessage, *args, **kwargs
     ) -> messages.BeamlineStateMessage:
         """
-        Evaluate if the positioner is within the defined limits. If it is outside the limits,
-        return an invalid state. Otherwise, return a valid state. If it is within 10% of the limits,
+        Evaluate if the device signal is within the defined limits. If it is outside the limits,
+        return an invalid state. Otherwise, return a valid state. If it is close to the limits,
         return a warning state.
         """
 
@@ -416,14 +443,14 @@ class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]
             return messages.BeamlineStateMessage(
                 name=self.config.name,
                 status="invalid",
-                label=f"Positioner {self.device_obj.name}: Value {self.signal_name} not found.",
+                label=f"Device {self.device_obj.name}: Value {self.signal_name} not found.",
             )
 
         if val < self.config.low_limit or val > self.config.high_limit:
             return messages.BeamlineStateMessage(
                 name=self.config.name,
                 status="invalid",
-                label=f"Positioner {self.device_obj.dotted_name} out of limits",
+                label=f"Device {self.device_obj.dotted_name} out of limits",
             )
 
         min_warning_threshold = self.config.low_limit + self.config.tolerance
@@ -433,11 +460,11 @@ class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]
             return messages.BeamlineStateMessage(
                 name=self.config.name,
                 status="warning",
-                label=f"Positioner {self.device_obj.dotted_name} near limits",
+                label=f"Device {self.device_obj.dotted_name} near limits",
             )
 
         return messages.BeamlineStateMessage(
             name=self.config.name,
             status="valid",
-            label=f"Positioner {self.device_obj.dotted_name} within limits",
+            label=f"Device {self.device_obj.dotted_name} within limits",
         )

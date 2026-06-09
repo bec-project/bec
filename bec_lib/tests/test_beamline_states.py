@@ -42,7 +42,7 @@ class TestHelpers:
 
 class TestConfigModels:
     def test_beamline_state_config_valid_name(self):
-        config = bl_states.BeamlineStateConfig(name="shutter_open", title="Shutter")
+        config = bl_states.BeamlineStateConfig(name="shutter_open")
         assert config.name == "shutter_open"
 
     @pytest.mark.parametrize("invalid_name", ["state-name", "class", "add", "remove", "show_all"])
@@ -71,9 +71,6 @@ class TestBeamlineStateBase:
         assert state.config.name == "test_state"
         assert state.connector is None
         assert state._last_state is None
-
-        state.update_parameters(title="Test State")
-        assert state.config.title == "Test State"
 
 
 class TestDeviceBeamlineState:
@@ -240,9 +237,8 @@ class TestBeamlineStateManager:
     def test_on_state_update_creates_client_attribute(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
-            title="Shutter Open",
             state_type="ShutterState",
-            parameters={"name": "shutter_open", "title": "Shutter Open", "device": "samy"},
+            parameters={"name": "shutter_open", "device": "samy"},
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
 
@@ -255,15 +251,8 @@ class TestBeamlineStateManager:
     def test_update_parameters_from_client_updates_state_and_publishes(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="limits",
-            title="Limits",
             state_type="DeviceWithinLimitsState",
-            parameters={
-                "name": "limits",
-                "title": "Limits",
-                "device": "samx",
-                "low_limit": 0.0,
-                "high_limit": 10.0,
-            },
+            parameters={"name": "limits", "device": "samx", "low_limit": 0.0, "high_limit": 10.0},
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
@@ -281,9 +270,8 @@ class TestBeamlineStateManager:
     def test_client_get_returns_unknown_without_status_message(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
-            title="Shutter Open",
             state_type="ShutterState",
-            parameters={"name": "shutter_open", "title": "Shutter Open", "device": "samy"},
+            parameters={"name": "shutter_open", "device": "samy"},
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
@@ -294,9 +282,8 @@ class TestBeamlineStateManager:
     def test_client_get_returns_latest_status_message(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
-            title="Shutter Open",
             state_type="ShutterState",
-            parameters={"name": "shutter_open", "title": "Shutter Open", "device": "samy"},
+            parameters={"name": "shutter_open", "device": "samy"},
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
@@ -315,9 +302,7 @@ class TestBeamlineStateManager:
         assert result == {"status": "valid", "label": "ok"}
 
     def test_add_and_delete_publish_updates(self, state_manager):
-        state = bl_states.DeviceStateConfig(
-            name="shutter_open", title="Shutter Open", device="samy"
-        )
+        state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
 
         state_manager.add(state)
         assert "shutter_open" in state_manager._states
@@ -328,9 +313,8 @@ class TestBeamlineStateManager:
     def test_client_remove_state(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
-            title="Shutter Open",
             state_type="ShutterState",
-            parameters={"name": "shutter_open", "title": "Shutter Open", "device": "samy"},
+            parameters={"name": "shutter_open", "device": "samy"},
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
@@ -340,9 +324,7 @@ class TestBeamlineStateManager:
         assert "shutter_open" not in state_manager._states
 
     def test_show_all_prints_table(self, state_manager, capsys):
-        state = bl_states.DeviceStateConfig(
-            name="shutter_open", title="Shutter Open", device="samy"
-        )
+        state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
         state_manager.add(state)
 
         state_manager.show_all()

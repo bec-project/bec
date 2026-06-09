@@ -317,9 +317,8 @@ def test_file_writer_manager_update_available_beamline_states(file_writer_manage
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                title="Shutter",
                 state_type="ShutterState",
-                parameters={"name": "State1", "title": "Shutter", "device": "shutter1"},
+                parameters={"name": "State1", "device": "shutter1"},
             )
         ]
     )
@@ -331,9 +330,8 @@ def test_file_writer_manager_update_available_beamline_states(file_writer_manage
         states=[
             messages.BeamlineStateConfig(
                 name="State2",
-                title="Shutter",
                 state_type="ShutterState",
-                parameters={"name": "State2", "title": "Shutter", "device": "shutter1"},
+                parameters={"name": "State2", "device": "shutter1"},
             )
         ]
     )
@@ -377,9 +375,8 @@ def test_file_writer_manager_removes_beamline_state_subscription(file_writer_man
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                title="Shutter",
                 state_type="ShutterState",
-                parameters={"name": "State1", "title": "Shutter", "device": "shutter1"},
+                parameters={"name": "State1", "device": "shutter1"},
             )
         ]
     )
