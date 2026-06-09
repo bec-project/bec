@@ -111,10 +111,15 @@ class BeamlineStateManager:
         self._client = client
         self._connector = client.connector
         self._states: dict[str, BeamlineStateConfig] = {}
-        self._connector.register(
-            MessageEndpoints.available_beamline_states(), cb=self._on_state_update, from_start=True
-        )
         self._ready = False
+        if msg := self._connector.get_last(MessageEndpoints.available_beamline_states()):
+            self._on_state_update(msg)
+        else:
+            # No beamline-state stream exists yet: treat that as "ready with zero states".
+            self._ready = True
+        self._connector.register(
+            MessageEndpoints.available_beamline_states(), cb=self._on_state_update
+        )
 
     @property
     def ready(self) -> bool:

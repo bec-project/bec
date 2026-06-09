@@ -205,9 +205,37 @@ class TestBeamlineStateManager:
         with mock.patch.object(connected_connector, "register") as register:
             BeamlineStateManager(client)
 
-        register.assert_called_once_with(
-            MessageEndpoints.available_beamline_states(), cb=mock.ANY, from_start=True
+        register.assert_called_once_with(MessageEndpoints.available_beamline_states(), cb=mock.ANY)
+
+    def test_manager_is_ready_when_no_state_update_exists(self, connected_connector):
+        client = mock.MagicMock()
+        client.connector = connected_connector
+
+        manager = BeamlineStateManager(client)
+
+        assert manager.ready is True
+        assert manager._states == {}
+
+    def test_manager_loads_existing_state_update_on_init(self, connected_connector):
+        config = messages.BeamlineStateConfig(
+            name="shutter_open",
+            title="Shutter Open",
+            state_type="ShutterState",
+            parameters={"name": "shutter_open", "title": "Shutter Open", "device": "samy"},
         )
+        connected_connector.xadd(
+            MessageEndpoints.available_beamline_states(),
+            {"data": messages.AvailableBeamlineStatesMessage(states=[config])},
+            max_size=1,
+        )
+        client = mock.MagicMock()
+        client.connector = connected_connector
+
+        manager = BeamlineStateManager(client)
+
+        assert manager.ready is True
+        assert "shutter_open" in manager._states
+        assert isinstance(getattr(manager, "shutter_open"), BeamlineStateClientBase)
 
     def test_on_state_update_creates_client_attribute(self, state_manager):
         config = messages.BeamlineStateConfig(
