@@ -84,6 +84,10 @@ class ScanInterlockActor(BlStateActor):
     def some_mismatch_action(self, client: BECClient):
         if self.client.queue is None:
             return
+        logger.info(
+            f"{self.name} placing queue lock due to mismatched states: "
+            f"{self.mismatched_states}; cache={self.state_cache}; table={self.state_table}"
+        )
         self.client.queue.add_queue_lock(
             queue="primary",
             reason=f"Interlock for beamline states: {self.mismatched_states}",
@@ -100,6 +104,10 @@ class ScanInterlockActor(BlStateActor):
         if (q := self.client.queue) is not None:
             if (curr_q := q.queue_storage.current_scan_queue) is not None:
                 if (primary := curr_q.get("primary")) is not None and primary.locks != []:
+                    logger.info(
+                        f"{self.name} removing queue lock if present; "
+                        f"queue_locks={primary.locks}; cache={self.state_cache}; table={self.state_table}"
+                    )
                     self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
 
     def run(self):
