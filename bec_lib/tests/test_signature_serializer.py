@@ -70,6 +70,7 @@ def test_signature_serializer_accepts_signature_objects():
                             "lt": None,
                             "le": None,
                             "reference_limits": None,
+                            "precision": None,
                             "alternative_group": None,
                         }
                     },
@@ -189,6 +190,7 @@ def test_signature_serializer_with_scan_argument_annotation():
                             "lt": None,
                             "le": None,
                             "reference_limits": None,
+                            "precision": None,
                         }
                     },
                 }
@@ -295,6 +297,7 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
                                 "lt": None,
                                 "le": None,
                                 "reference_limits": None,
+                                "precision": None,
                             }
                         },
                     }
@@ -345,6 +348,7 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
                             "lt": None,
                             "le": None,
                             "reference_limits": None,
+                            "precision": None,
                         }
                     },
                 }
@@ -371,6 +375,7 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
                             "lt": None,
                             "le": None,
                             "reference_limits": None,
+                            "precision": None,
                         }
                     },
                 }
@@ -417,6 +422,7 @@ def test_serialize_dtype(dtype_in, dtype_out):
                             "lt": None,
                             "le": None,
                             "reference_limits": None,
+                            "precision": None,
                         }
                     },
                 }

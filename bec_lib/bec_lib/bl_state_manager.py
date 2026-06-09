@@ -173,10 +173,7 @@ class BeamlineStateManager:
     def _publish_states(self) -> None:
         bl_states_container = [
             messages.BeamlineStateConfig(
-                name=state.name,
-                title=state.title if state.title else state.name,
-                state_type=state.state_type,
-                parameters=state.model_dump(),
+                name=state.name, state_type=state.state_type, parameters=state.model_dump()
             )
             for state in self._states.values()
         ]
@@ -228,7 +225,7 @@ class BeamlineStateManager:
         """
 
         def _format_parameters(state_config: bl_states.BeamlineStateConfig) -> str:
-            parameter_dict = state_config.model_dump(exclude={"name", "title"}, exclude_none=True)
+            parameter_dict = state_config.model_dump(exclude={"name"}, exclude_none=True)
             if not parameter_dict:
                 return "-"
             return "\n".join(f"{key}={value}" for key, value in parameter_dict.items())

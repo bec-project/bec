@@ -71,9 +71,8 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                title="Shutter",
                 state_type="ShutterState",
-                parameters={"name": "State1", "title": "Shutter", "device": "shutter1"},
+                parameters={"name": "State1", "device": "shutter1"},
             )
         ]
     )
@@ -90,15 +89,13 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                title="Shutter",
                 state_type="ShutterState",
-                parameters={"name": "State1", "title": "Shutter", "device": "shutter1"},
+                parameters={"name": "State1", "device": "shutter1"},
             ),
             messages.BeamlineStateConfig(
                 name="State2",
-                title="Shutter2",
                 state_type="ShutterState",
-                parameters={"name": "State2", "title": "Shutter2", "device": "shutter2"},
+                parameters={"name": "State2", "device": "shutter2"},
             ),
         ]
     )
@@ -115,9 +112,8 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
         states=[
             messages.BeamlineStateConfig(
                 name="State2",
-                title="Shutter2",
                 state_type="ShutterState",
-                parameters={"name": "State2", "title": "Shutter2", "device": "shutter2"},
+                parameters={"name": "State2", "device": "shutter2"},
             )
         ]
     )

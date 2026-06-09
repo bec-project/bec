@@ -2031,13 +2031,11 @@ class BeamlineStateConfig(BaseModel):
 
     Args:
         name (str): Name of the beamline state
-        title (str): Title of the beamline state
         state_type (str): Type of the beamline state
         parameters (dict, optional): Additional parameters for the state
     """
 
     name: str
-    title: str
     state_type: str
     parameters: dict = Field(default_factory=dict)
 
