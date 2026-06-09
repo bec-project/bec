@@ -6,7 +6,7 @@ import traceback
 from abc import ABC, abstractmethod
 from typing import Callable, ClassVar, Generic, Type, TypeVar, cast
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -56,8 +56,14 @@ class BeamlineStateConfig(BaseModel):
 
     state_type: ClassVar[str] = "BeamlineState"
 
-    name: str
-    title: str | None = None
+    name: str = Field(
+        title="Name", description="Unique Python identifier used to register this beamline state."
+    )
+    title: str | None = Field(
+        default=None,
+        title="Title",
+        description="Optional display title shown in beamline state widgets.",
+    )
 
     model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
 
@@ -84,27 +90,23 @@ class DeviceStateConfig(BeamlineStateConfig):
     state_type: ClassVar[str] = "DeviceBeamlineState"
 
     device: DeviceBase | str
-    signal: DeviceBase | str | None = None
+    signal: Signal | str | None = None
 
     @model_validator(mode="after")
     def validate_signal(self) -> DeviceStateConfig:
         """
-        Validate that the signal is either None, a string, or a DeviceBase instance. If it's a DeviceBase instance, return its name.
+        Validate that the signal is either None, a string, or a Signal instance. If it's a Signal instance, return its name.
         """
         if self.signal is None:
             return self
-        if isinstance(self.signal, DeviceBase) and not isinstance(self.signal, Signal):
-            raise ValueError(
-                f"Signal must be a string or a Signal instance, got {type(self.signal)}"
-            )
-        if isinstance(self.device, DeviceBase) and isinstance(self.signal, DeviceBase):
+        if isinstance(self.device, DeviceBase) and isinstance(self.signal, Signal):
             if self.signal.parent != self.device:
                 raise ValueError(
                     f"Signal '{self.signal.dotted_name}' does not belong to device '{self.device.dotted_name}'"
                 )
         if isinstance(self.device, DeviceBase):
             self.device = self.device.dotted_name
-        if isinstance(self.signal, DeviceBase):
+        if isinstance(self.signal, Signal):
             self.signal = self.signal.dotted_name
         return self
 
@@ -116,9 +118,35 @@ class DeviceWithinLimitsStateConfig(DeviceStateConfig):
 
     state_type: ClassVar[str] = "DeviceWithinLimitsState"
 
-    low_limit: float | None = None
-    high_limit: float | None = None
-    tolerance: float = 0.1
+    low_limit: float | None = Field(
+        default=None,
+        title="Low limit",
+        description="Optional lower allowed value. Leave disabled for no lower limit.",
+        json_schema_extra={"precision": 6},
+    )
+    high_limit: float | None = Field(
+        default=None,
+        title="High limit",
+        description="Optional upper allowed value. Leave disabled for no upper limit.",
+        json_schema_extra={"precision": 6},
+    )
+    tolerance: float = Field(
+        default=0.1,
+        title="Tolerance",
+        description="Warning margin applied inside the configured limits.",
+        json_schema_extra={"precision": 6},
+    )
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> DeviceWithinLimitsStateConfig:
+        """Ensure configured limits are logically ordered when both are provided."""
+        if (
+            self.low_limit is not None
+            and self.high_limit is not None
+            and self.low_limit >= self.high_limit
+        ):
+            raise ValueError("low_limit must be smaller than high_limit.")
+        return self
 
 
 C = TypeVar("C", bound=BeamlineStateConfig)
