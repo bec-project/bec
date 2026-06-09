@@ -6,6 +6,7 @@ import pytest
 from typeguard import TypeCheckError
 
 from bec_lib import messages
+from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.client import BECClient
 from bec_lib.config_helper import ConfigHelper
 from bec_lib.device import (
@@ -585,6 +586,16 @@ def test_device_container_wm(dev_container, capsys):
         captured = capsys.readouterr()
         assert "test" in captured.out
         assert "1.0000" in captured.out
+
+
+def test_device_container_wm_raises_for_missing_device(dev_container):
+    with pytest.raises(DeviceConfigError, match="Device missing does not exist\\."):
+        dev_container.wm("missing")
+
+
+def test_device_container_wm_raises_for_unmatched_glob(dev_container):
+    with pytest.raises(DeviceConfigError, match="No devices match pattern miss\\*\\."):
+        dev_container.wm("miss*")
 
 
 def test_device_container_wm_supports_all_wildcard(dev_container, dm_with_override, capsys):
