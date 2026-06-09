@@ -321,6 +321,21 @@ class DeviceContainer(dict):
             return fnmatch.filter(self.keys(), device_name)
         return [device_name]
 
+    def _resolve_device_names(self, device_name: str) -> list[DeviceBase]:
+        devs = self._expand_device_name(device_name)
+        if not devs:
+            if any(char in device_name for char in "*?[]"):
+                raise DeviceConfigError(f"No devices match pattern {device_name}.")
+            raise DeviceConfigError(f"Device {device_name} does not exist.")
+
+        expanded_devices = []
+        for dev in devs:
+            try:
+                expanded_devices.append(self[dev])
+            except KeyError as exc:
+                raise DeviceConfigError(f"Device {dev} does not exist.") from exc
+        return expanded_devices
+
     def wm(self, device_names: list[str | DeviceBase | None] = None, *args):
         """
         Get the current position of one or more devices.
@@ -356,8 +371,7 @@ class DeviceContainer(dict):
                 if isinstance(dev, DeviceBase):
                     expanded_devices.append(dev)
                 else:
-                    devs = self._expand_device_name(dev)
-                    expanded_devices.extend([self.__dict__[dev] for dev in devs])
+                    expanded_devices.extend(self._resolve_device_names(dev))
             device_names = expanded_devices
         console = Console()
         table = Table()
