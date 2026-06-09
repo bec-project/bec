@@ -123,7 +123,7 @@ class _DataBuffer(BaseModel):
 
     device_name: str
     device_entry: str
-    data: list[dict]  # List of data points with value and timestamp
+    data: list[dict]  # List of data points with value, timestamp, and optional metadata
     source_type: Literal["monitored", "async_signal"]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -279,11 +279,25 @@ class BECLiveDataPlugin(DataAPIPlugin):
             return False
 
         readout_priority = scan_item.status_message.readout_priority or {}
-        if device_name in readout_priority.get("monitored", []):
-            return True
+        if device_name not in readout_priority.get("monitored", []):
+            return False
 
-        # FIXME: we should also check that the device_entry is actually part of the monitored device
-        return False
+        device_manager = getattr(self.client, "device_manager", None)
+        devices = getattr(device_manager, "devices", None)
+        device = devices.get(device_name) if hasattr(devices, "get") else None
+        if device is None:
+            # Fall back to the root signal name when device metadata is unavailable.
+            return device_entry == device_name
+
+        device_info = getattr(device, "_info", {})
+        available_signals = device_info.get("signals", {}) if isinstance(device_info, dict) else {}
+        if not isinstance(available_signals, dict) or not available_signals:
+            return device_entry == device_name
+
+        return any(
+            signal_info.get("obj_name") == device_entry
+            for signal_info in available_signals.values()
+        )
 
     def _device_entry_is_async_signal(self, device_name: str, device_entry: str) -> bool:
         """
@@ -722,7 +736,13 @@ class BECLiveDataPlugin(DataAPIPlugin):
             return
 
         signals = msg_obj.signals
-        timestamp = msg_obj.metadata.get("timestamp")
+        signal_data = signals.get(device_entry)
+        if signal_data is None:
+            return
+
+        value = signal_data.get("value")
+        timestamp = signal_data.get("timestamp", msg_obj.metadata.get("timestamp"))
+        metadata = dict(msg_obj.metadata)
 
         # Get all callbacks for this device/entry/scan combination
         key = (scan_id, device_name, device_entry)
@@ -739,7 +759,14 @@ class BECLiveDataPlugin(DataAPIPlugin):
 
             # Add to buffer
             parent._add_to_buffer(
-                callback_ref, scan_id, device_name, device_entry, signals, timestamp, "async_signal"
+                callback_ref,
+                scan_id,
+                device_name,
+                device_entry,
+                value,
+                timestamp,
+                "async_signal",
+                metadata,
             )
 
             # Check if we can emit synchronized data
@@ -754,6 +781,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
         value: Any,
         timestamp: Any,
         source_type: Literal["monitored", "async_signal"],
+        metadata: dict | None = None,
     ) -> None:
         """
         Add data to the buffer for a specific callback and device.
@@ -766,6 +794,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
             value: Data value
             timestamp: Data timestamp
             source_type: Type of data source (monitored or async_signal)
+            metadata: Optional source metadata associated with this data point
         """
         # Initialize callback buffer if not exists
         if callback_ref not in self._callback_buffers:
@@ -783,7 +812,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
             )
 
         # Add data point to buffer
-        data_point = {"value": value, "timestamp": timestamp}
+        data_point = {"value": value, "timestamp": timestamp, "metadata": metadata or {}}
         callback_buffer.buffers[key].data.append(data_point)
 
     def _get_expected_device_count(self, callback_ref: CallbackRef, scan_id: str) -> int:
@@ -852,6 +881,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
         # Emit data from min_length onward up to the new min_length
         for idx in range(callback_buffer.min_length, min_length):
             data = {}
+            metadata = {"scan_id": scan_id}
             for (device_name, device_entry), buffer in callback_buffer.buffers.items():
                 data_point = buffer.data[idx]
                 if device_name not in data:
@@ -860,15 +890,16 @@ class BECLiveDataPlugin(DataAPIPlugin):
                     "value": data_point["value"],
                     "timestamp": data_point["timestamp"],
                 }
+                if buffer.source_type == "async_signal":
+                    point_metadata = data_point.get("metadata", {})
+                    if point_metadata:
+                        for key, value in point_metadata.items():
+                            if key == "scan_id":
+                                continue
+                            metadata.setdefault(key, value)
 
             # Call the callback with synchronized data
-            callback(
-                data,
-                {
-                    "scan_id": scan_id,
-                    "async_update": DeviceAsyncUpdate(type="replace").model_dump(),
-                },
-            )
+            callback(data, metadata)
 
         # Update the min_length to track what we've already emitted
         callback_buffer.min_length = min_length

@@ -120,6 +120,18 @@ class TestDataAPI:
         assert api1 is not api2
         DataAPI.clear_instance()
 
+    def test_clear_instance_disconnects_plugins(self, mock_client):
+        """Test that clear_instance disconnects registered plugins before resetting."""
+        DataAPI.clear_instance()
+        api = DataAPI(mock_client)
+
+        plugin = api.plugins[0]
+        plugin.disconnect = mock.MagicMock()
+
+        DataAPI.clear_instance()
+
+        plugin.disconnect.assert_called_once()
+
     def test_register_plugin(self, data_api):
         """Test plugin registration."""
         mock_plugin = mock.MagicMock()
@@ -294,11 +306,33 @@ class TestBECLiveDataPlugin:
 
     def test_device_entry_is_monitored(self, mock_client, scan_item_with_monitored_devices):
         """Test detection of monitored device entries."""
+        mock_client.device_manager.devices = {
+            "samx": mock.MagicMock(
+                _info={
+                    "signals": {
+                        "readback": {"obj_name": "samx"},
+                        "setpoint": {"obj_name": "samx_setpoint"},
+                    }
+                }
+            )
+        }
         plugin = BECLiveDataPlugin(mock_client)
 
         assert (
             plugin._device_entry_is_monitored("samx", "samx", scan_item_with_monitored_devices)
             is True
+        )
+        assert (
+            plugin._device_entry_is_monitored(
+                "samx", "samx_setpoint", scan_item_with_monitored_devices
+            )
+            is True
+        )
+        assert (
+            plugin._device_entry_is_monitored(
+                "samx", "wrong_entry", scan_item_with_monitored_devices
+            )
+            is False
         )
         assert (
             plugin._device_entry_is_monitored("samz", "samz", scan_item_with_monitored_devices)
@@ -499,7 +533,10 @@ class TestBECLiveDataPlugin:
                 "async_sig1": {"value": 42.0, "timestamp": 123.456},
                 "status": {"value": "ok", "timestamp": 123.456},
             },
-            metadata={"timestamp": 123.456},
+            metadata={
+                "timestamp": 123.456,
+                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+            },
         )
 
         # Call the static callback method
@@ -511,9 +548,10 @@ class TestBECLiveDataPlugin:
         assert len(mock_callback.calls) == 1
         call_data, call_metadata = mock_callback.calls[0]
         assert "detector1" in call_data
-        # The signals dict is stored as the value
-        assert call_data["detector1"]["async_sig1"]["value"] == device_msg.signals
+        assert call_data["detector1"]["async_sig1"]["value"] == 42.0
         assert call_data["detector1"]["async_sig1"]["timestamp"] == 123.456
+        assert call_metadata["async_update"]["type"] == "add"
+        assert call_metadata["async_update"]["max_shape"] == [None]
 
     def test_data_synchronization_mixed_sources(
         self, mock_client, scan_item_with_monitored_devices, mock_callback
@@ -548,7 +586,11 @@ class TestBECLiveDataPlugin:
 
         # Now add async data
         device_msg = messages.DeviceMessage(
-            signals={"async_sig1": {"value": 10.0, "timestamp": 100.0}}
+            signals={"async_sig1": {"value": 10.0, "timestamp": 100.0}},
+            metadata={
+                "timestamp": 100.0,
+                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+            },
         )
 
         BECLiveDataPlugin._async_signal_sync_callback(
@@ -563,6 +605,8 @@ class TestBECLiveDataPlugin:
         call_data, call_metadata = mock_callback.calls[0]
         assert "samx" in call_data
         assert "detector1" in call_data
+        assert call_data["detector1"]["async_sig1"]["value"] == 10.0
+        assert call_metadata["async_update"]["type"] == "add"
 
     def test_unsubscribe_monitored_device(
         self, mock_client, scan_item_with_monitored_devices, mock_callback

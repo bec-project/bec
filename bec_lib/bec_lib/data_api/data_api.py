@@ -18,7 +18,7 @@ class DataSubscription:
     automatically cleaned up when the object is destroyed.
 
     Example:
-        >>> subscription = data_api.subscribe(scan_id="my_scan")
+        >>> subscription = data_api.create_subscription("my_scan")
         >>> subscription.add_device("samx", "samx")
         >>> subscription.add_device("detector1", "async_sig1")
         >>> subscription.set_callback(my_callback_function)
@@ -337,7 +337,24 @@ class DataAPI:
     @classmethod
     def clear_instance(cls) -> None:
         """Clear the singleton instance. Useful for testing."""
+        if cls._instance is not None:
+            cls._instance.close()
         cls._instance = None
+
+    def close(self) -> None:
+        """Disconnect registered plugins and release client resources held by the API."""
+        for plugin in self.plugins:
+            plugin.disconnect()
+        self.plugins.clear()
+        if hasattr(self, "_initialized"):
+            delattr(self, "_initialized")
+
+    def __del__(self):
+        """Best-effort cleanup for plugin connections."""
+        try:
+            self.close()
+        except Exception:  # pragma: no cover - destructor safety
+            pass
 
     def register_plugin(self, plugin: DataAPIPlugin) -> None:
         """Register a new plugin."""
