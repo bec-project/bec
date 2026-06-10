@@ -43,9 +43,9 @@ class ScanServer(BECService):
             use_subprocess_proc_worker=config.model.procedures.use_subprocess_worker
         )
         self._start_actor_managers()
-        self.status = messages.BECStatus.RUNNING
         self.beamline_states = None
         self._start_beamline_state_manager()
+        self.status = messages.BECStatus.RUNNING
 
     def _start_device_manager(self):
         self.wait_for_service("DeviceServer")
