@@ -13,13 +13,11 @@ import traceback
 from collections import deque
 from typing import TYPE_CHECKING, Callable
 
-import numpy as np
 import ophyd
 import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
 from ophyd.signal import EpicsSignalBase
 from ophyd_devices.utils.bec_signals import BECMessageSignal
-from typeguard import typechecked
 
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
@@ -545,7 +543,6 @@ class DeviceManagerDS(DeviceManagerBase):
         # Add subscriptions to device events and signal if supported by the device
         if hasattr(obj, "event_types"):
             self._subscribe_to_device_events(obj, opaas_obj)
-            self._subscribe_to_bec_device_events(obj)
             self._subscribe_to_auto_monitors(obj)
             self._subscribe_to_limit_updates(obj)
             self._subscribe_to_bec_signals(obj)
@@ -576,35 +573,6 @@ class DeviceManagerDS(DeviceManagerBase):
             obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
         if hasattr(obj, "motor_is_moving"):
             obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)  # type: ignore
-
-    def _subscribe_to_bec_device_events(self, obj: OphydObject):
-        """
-        Subscribe to BEC device events, such as device_monitor_2d, device_monitor_1d,
-        file_event, done_moving, flyer, and progress.
-
-        These events are deprecated and will be removed in the future. Use the
-        _subscribe_to_bec_signals method instead.
-
-        Args:
-            obj (OphydObject): Ophyd object to subscribe to BEC device events
-
-        """
-        if "device_monitor_2d" in obj.event_types:
-            obj.subscribe(
-                self._obj_callback_device_monitor_2d, event_type="device_monitor_2d", run=False
-            )
-        if "device_monitor_1d" in obj.event_types:
-            obj.subscribe(
-                self._obj_callback_device_monitor_1d, event_type="device_monitor_1d", run=False
-            )
-        if "file_event" in obj.event_types:
-            obj.subscribe(self._obj_callback_file_event, event_type="file_event", run=False)
-        if "done_moving" in obj.event_types:
-            obj.subscribe(self._obj_callback_done_moving, event_type="done_moving", run=False)
-        if "flyer" in obj.event_types:
-            obj.subscribe(self._obj_flyer_callback, event_type="flyer", run=False)
-        if "progress" in obj.event_types:
-            obj.subscribe(self._obj_callback_progress, event_type="progress", run=False)
 
     def _subscribe_to_auto_monitors(self, obj: OphydObject):
         """
@@ -783,98 +751,6 @@ class DeviceManagerDS(DeviceManagerBase):
         )
         pipe.execute()
 
-    @typechecked
-    def _obj_callback_device_monitor_2d(
-        self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
-    ):
-        """
-        DEPRECATED: Use _obj_callback_preview instead.
-
-        Callback for ophyd monitor events. Sends the data to redis.
-        Introduces a check of the data size, and incorporates a limit which is defined in max_size (in MB)
-
-        Args:
-            obj (OphydObject): ophyd object
-            value (np.ndarray): data from ophyd device
-
-        """
-        # Convert sizes from bytes to MB
-        dsize = len(value.tobytes()) / 1e6
-        max_size = 1000
-        if dsize > max_size:
-            logger.warning(
-                f"Data size of single message is too large to send, current max_size {max_size}."
-            )
-            return
-        if obj.connected:
-            name = obj.root.name
-            metadata = self.devices[name].metadata
-            msg = messages.DeviceMonitor2DMessage(
-                device=name,
-                data=value,
-                metadata=metadata,
-                timestamp=timestamp if timestamp else time.time(),
-            )
-            stream_msg = {"data": msg}
-            self.connector.xadd(
-                MessageEndpoints.device_monitor_2d(name),
-                stream_msg,
-                max_size=min(100, int(max_size // dsize)),
-                expire=3600,
-            )
-
-    def _obj_callback_device_monitor_1d(
-        self, *_args, obj: OphydObject, value: np.ndarray, timestamp: float | None = None, **kwargs
-    ):
-        """
-        DEPRECATED: Use _obj_callback_preview instead.
-
-        Callback for ophyd monitor events. Sends the data to redis.
-        Introduces a check of the data size, and incorporates a limit which is defined in max_size (in MB)
-
-        Args:
-            obj (OphydObject): ophyd object
-            value (np.ndarray): data from ophyd device
-
-        """
-        # Convert sizes from bytes to MB
-        dsize = len(value.tobytes()) / 1e6
-        max_size = 1000
-        if dsize > max_size:
-            logger.warning(
-                f"Data size of single message is too large to send, current max_size {max_size}."
-            )
-            return
-        if obj.connected:
-            name = obj.root.name
-            metadata = self.devices[name].metadata
-            msg = messages.DeviceMonitor1DMessage(
-                device=name,
-                data=value,
-                metadata=metadata,
-                timestamp=timestamp if timestamp else time.time(),
-            )
-            stream_msg = {"data": msg}
-            self.connector.xadd(
-                MessageEndpoints.device_monitor_1d(name),
-                stream_msg,
-                max_size=min(100, int(max_size // dsize)),
-                expire=3600,
-            )
-
-    def _obj_callback_acq_done(self, *_args, **kwargs):
-        device = kwargs["obj"].root.name
-        status = 0
-        metadata = self.devices[device].metadata
-        self.connector.set(
-            MessageEndpoints.device_status(device),
-            messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
-        )
-
-    def _obj_callback_done_moving(self, *args, **kwargs):
-        self._obj_callback_readback(*args, **kwargs)
-        # self._obj_callback_acq_done(*args, **kwargs)
-
     def _obj_callback_is_moving(self, *_args, **kwargs):
         device = kwargs["obj"].root.name
         status = int(kwargs.get("value"))
@@ -883,110 +759,6 @@ class DeviceManagerDS(DeviceManagerBase):
             MessageEndpoints.device_status(device),
             messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
         )
-
-    def _obj_flyer_callback(self, *_args, **kwargs):
-        obj = kwargs["obj"]
-        logger.warning(
-            f"Flyer callback will be deprecated in future, please refactor your device {obj.root.name} in favor of an async devices as soon as possible."
-        )
-        data = kwargs["value"].get("data")
-        ds_obj = self.devices[obj.root.name]
-        metadata = ds_obj.metadata
-        if "scan_id" not in metadata:
-            return
-
-        if not hasattr(ds_obj, "emitted_points"):
-            ds_obj.emitted_points = {}
-
-        emitted_points = ds_obj.emitted_points.get(metadata["scan_id"], 0)
-
-        # make sure all arrays are of equal length
-        max_points = min(len(d) for d in data.values())
-
-        pipe = self.connector.pipeline()
-        for ii in range(emitted_points, max_points):
-            timestamp = time.time()
-            signals = {}
-            for key, val in data.items():
-                signals[key] = {"value": val[ii], "timestamp": timestamp}
-            msg = messages.DeviceMessage(signals=signals, metadata={"point_id": ii, **metadata})
-            self.connector.set_and_publish(
-                MessageEndpoints.device_read(obj.root.name), msg, pipe=pipe
-            )
-
-        ds_obj.emitted_points[metadata["scan_id"]] = max_points
-        msg = messages.DeviceStatusMessage(
-            device=obj.root.name, status=max_points, metadata=metadata
-        )
-        self.connector.set(MessageEndpoints.device_status(obj.root.name), msg, pipe=pipe)
-        pipe.execute()
-
-    def _obj_callback_progress(self, *_args, obj, value, max_value, done, **kwargs):
-        """
-        DEPRECATED: Use _obj_callback_progress_signal instead.
-
-        Callback for progress events. Sends the data to redis.
-        """
-        metadata = self.devices[obj.root.name].metadata
-        msg = messages.ProgressMessage(
-            value=value, max_value=max_value, done=done, metadata=metadata
-        )
-        self.connector.set_and_publish(
-            MessageEndpoints.device_progress(obj.root.name), msg, expire=3600
-        )
-
-    def _obj_callback_file_event(
-        self,
-        *_args,
-        obj,
-        file_path: str,
-        done: bool,
-        successful: bool,
-        file_type: str = "h5",
-        hinted_h5_entries: dict[str, str] | None = None,
-        **kwargs,
-    ):
-        """
-        DEPRECATED: Use _obj_callback_file_event_signal instead.
-
-        Callback for file events on devices. This callback set and publishes
-        a file message to the file_event and public_file endpoints in Redis to inform
-        the file writer and other services about externally created files.
-
-        Args:
-            obj (OphydObject): ophyd object
-            file_path (str): file path to the created file
-            done (bool): if the file is done
-            successful (bool): if the file was created successfully
-            file_type (str): Optional, file type. Default is h5.
-            hinted_h5_entry (dict[str, str] | None): Optional, hinted h5 entry. Please check FileMessage for more details
-        """
-        device_name = obj.root.name
-        metadata = self.devices[device_name].metadata
-        if kwargs.get("metadata") is not None:
-            metadata.update(kwargs.get("metadata"))
-        scan_id = metadata.get("scan_id")
-        msg = messages.FileMessage(
-            file_path=file_path,
-            done=done,
-            successful=successful,
-            file_type=file_type,
-            device_name=device_name,
-            is_master_file=False,
-            hinted_h5_entries=hinted_h5_entries,
-            metadata=metadata,
-        )
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(
-            MessageEndpoints.file_event(device_name), msg, pipe=pipe, expire=3600
-        )
-        self.connector.set_and_publish(
-            MessageEndpoints.public_file(scan_id=scan_id, name=device_name),
-            msg,
-            pipe=pipe,
-            expire=3600,
-        )
-        pipe.execute()
 
     def _obj_callback_bec_message_signal(
         self, *_args, obj: OphydObject, value: messages.BECMessage, **kwargs
