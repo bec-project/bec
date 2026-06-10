@@ -609,24 +609,24 @@ def test_bl_state(bec_client_lib):
     scans.umv(dev.samx, 5, relative=False).wait()
     assert bec.beamline_states.samx_within_limits.get() == {
         "status": "valid",
-        "label": "Positioner samx within limits",
+        "label": "Device samx within limits",
     }
 
     scans.umv(dev.samx, 20, relative=False).wait()
     assert bec.beamline_states.samx_within_limits.get() == {
         "status": "invalid",
-        "label": "Positioner samx out of limits",
+        "label": "Device samx out of limits",
     }
 
     scans.umv(dev.hexapod.x, 5, relative=False).wait()
     assert bec.beamline_states.hexapod_x_within_limits.get() == {
         "status": "valid",
-        "label": "Positioner hexapod.x within limits",
+        "label": "Device hexapod.x within limits",
     }
     scans.umv(dev.hexapod.x, 20, relative=False).wait()
     assert bec.beamline_states.hexapod_x_within_limits.get() == {
         "status": "invalid",
-        "label": "Positioner hexapod.x out of limits",
+        "label": "Device hexapod.x out of limits",
     }
 
     bec.beamline_states.delete("hexapod_x_within_limits")
@@ -639,5 +639,5 @@ def test_bl_state(bec_client_lib):
         time.sleep(0.1)
     assert bec.beamline_states.samx_within_limits.get() == {
         "status": "valid",
-        "label": "Positioner samx within limits",
+        "label": "Device samx within limits",
     }
