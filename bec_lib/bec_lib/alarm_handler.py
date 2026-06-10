@@ -116,7 +116,7 @@ class AlarmHandler:
         """
         severity = Alarms(msg.severity)
         alarm = AlarmBase(alarm=msg, severity=severity, handled=False)
-        if alarm in self.alarms_stack:
+        if alarm in self.alarms_stack or alarm in self._raised_alarms:
             logger.debug(f"Alarm already in stack: {alarm}")
             return
         if severity > Alarms.MINOR:
