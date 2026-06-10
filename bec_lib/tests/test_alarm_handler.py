@@ -66,3 +66,22 @@ def test_raise_alarms_marks_alarm_handled():
 
     assert exc_info.value.handled is True
     assert handler.get_unhandled_alarms() == []
+
+
+def test_add_alarm_ignores_duplicate_raised_alarm():
+    error_info = messages.ErrorInfo(
+        error_message="This is a test alarm message for testing purposes.",
+        compact_error_message="Compact alarm content",
+        exception_type="TestAlarmType",
+        device="TestDevice",
+    )
+    alarm_msg = messages.AlarmMessage(severity=Alarms.MAJOR, info=error_info)
+    handler = AlarmHandler(connector=None)
+    handler.add_alarm(alarm_msg)
+
+    with pytest.raises(AlarmBase):
+        handler.raise_alarms()
+
+    handler.add_alarm(alarm_msg)
+
+    assert handler.get_unhandled_alarms() == []
