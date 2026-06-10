@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v3.131.0 (2026-06-10)
+
+### Bug Fixes
+
+- **bl_states**: Field types for metadata
+  ([`93160e8`](https://github.com/bec-project/bec/commit/93160e8116bb1ab50e76c74c2b2c6a63933b7884))
+
+- **bl_states**: Update terminology for device signal limits
+  ([`b3a8ba1`](https://github.com/bec-project/bec/commit/b3a8ba1b566c7934f359afd9294222d7cd8fbbcc))
+
+- **bl_states**: Validator accepts both device and signal even if device input is just signal
+  ([`5d5da20`](https://github.com/bec-project/bec/commit/5d5da2013db9f98b0debb2f163815476e842fd88))
+
+### Features
+
+- Add precision to scan args
+  ([`c800797`](https://github.com/bec-project/bec/commit/c800797445f84cfa08150493c3df796efcee2e63))
+
+
 ## v3.130.5 (2026-06-10)
 
 ### Bug Fixes
