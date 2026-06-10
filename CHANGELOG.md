@@ -1,6 +1,75 @@
 # CHANGELOG
 
 
+## v3.130.4 (2026-06-10)
+
+### Bug Fixes
+
+- Initialize ready state in BeamlineStateManager and add tests for state updates
+  ([`57cddfd`](https://github.com/bec-project/bec/commit/57cddfdb62b5be518a354701fc1d434b9bfdb067))
+
+- Move status initialization after starting beamline state manager
+  ([`17ec9cf`](https://github.com/bec-project/bec/commit/17ec9cffabe85563cdfa535c2aa23b6efd72df2f))
+
+### Chores
+
+- Add logging for beamline state updates and state table modifications in ScanInterlockActor
+  ([`5b0fa88`](https://github.com/bec-project/bec/commit/5b0fa8899fccbedbdedf0cd4ff064ae0c2facaa9))
+
+- **deps**: Bump astroid in /bec_lib
+  ([`0dacbb9`](https://github.com/bec-project/bec/commit/0dacbb99b6b21d543f80a77a4bf3967b3a2834dc))
+
+Updates the requirements on [astroid](https://github.com/pylint-dev/astroid) to permit the latest
+  version.
+
+Updates `astroid` to 4.1.2 - [Release notes](https://github.com/pylint-dev/astroid/releases) -
+  [Changelog](https://github.com/pylint-dev/astroid/blob/main/ChangeLog) -
+  [Commits](https://github.com/pylint-dev/astroid/compare/v3.3.0...v4.1.2)
+
+--- updated-dependencies: - dependency-name: astroid dependency-version: 4.1.2
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps**: Bump hdf5plugin in /bec_lib
+  ([`c76222f`](https://github.com/bec-project/bec/commit/c76222f1918c370bf8cec6d6cf9f7bd523fb910c))
+
+Updates the requirements on [hdf5plugin](https://github.com/silx-kit/hdf5plugin) to permit the
+  latest version.
+
+Updates `hdf5plugin` to 6.0.0 - [Release notes](https://github.com/silx-kit/hdf5plugin/releases) -
+  [Changelog](https://github.com/silx-kit/hdf5plugin/blob/main/CHANGELOG.rst) -
+  [Commits](https://github.com/silx-kit/hdf5plugin/compare/v4.3.0...v6.0.0)
+
+--- updated-dependencies: - dependency-name: hdf5plugin dependency-version: 6.0.0
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps**: Bump toolz in /bec_lib
+  ([`9dabcc5`](https://github.com/bec-project/bec/commit/9dabcc5ebcab611c709c3d3a927170ba508118c6))
+
+Updates the requirements on [toolz](https://github.com/pytoolz/toolz) to permit the latest version.
+
+Updates `toolz` to 1.1.0 - [Release notes](https://github.com/pytoolz/toolz/releases) -
+  [Changelog](https://github.com/pytoolz/toolz/blob/master/release-notes) -
+  [Commits](https://github.com/pytoolz/toolz/compare/0.12.0...1.1.0)
+
+--- updated-dependencies: - dependency-name: toolz dependency-version: 1.1.0
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+
 ## v3.130.3 (2026-06-05)
 
 ### Bug Fixes
