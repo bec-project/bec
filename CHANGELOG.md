@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.130.5 (2026-06-10)
+
+### Bug Fixes
+
+- Prevent duplicate raised alarms in AlarmHandler
+  ([`bd6840a`](https://github.com/bec-project/bec/commit/bd6840acbd600562a26ee09cdfdd2078c2b23123))
+
+### Testing
+
+- Increase ramp-up time for delay device in test fixture
+  ([`eba1214`](https://github.com/bec-project/bec/commit/eba1214dee8ea4d9af343f2a6f17e47f9f8cc370))
+
+
 ## v3.130.4 (2026-06-10)
 
 ### Bug Fixes
