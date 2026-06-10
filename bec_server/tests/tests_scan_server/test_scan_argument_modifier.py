@@ -15,6 +15,7 @@ from bec_server.scan_server.scans.scan_argument_modifier import (
     scan_signature_with_modifiers,
 )
 from bec_server.scan_server.scans.scan_base import ScanBase
+from bec_server.scan_server.tests.utils import NoopScan
 
 
 def test_convert_annotation_wraps_plain_type_with_scan_argument():
@@ -43,7 +44,7 @@ def test_convert_annotation_returns_none_for_empty_annotation():
     assert _convert_annotation("_empty") is None
 
 
-class DummyScan(ScanBase):
+class DummyScan(NoopScan):
     scan_name = "dummy_scan"
 
     def __init__(self, value: float, relative: bool = True, **kwargs):
@@ -55,7 +56,7 @@ class DummyScan(ScanBase):
         self.relative = relative
 
 
-class GenericClassDocScan(ScanBase):
+class GenericClassDocScan(NoopScan):
     scan_name = "generic_class_doc_scan"
     __doc__ = ScanBase.__init__.__doc__
 

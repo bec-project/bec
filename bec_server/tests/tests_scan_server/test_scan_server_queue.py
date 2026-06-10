@@ -22,9 +22,9 @@ from bec_server.scan_server.scan_queue import (
     ScanQueueStatus,
 )
 from bec_server.scan_server.scan_worker import ScanWorker
-from bec_server.scan_server.scans.scan_base import ScanBase as ScanBaseV4
 from bec_server.scan_server.scans.scan_base import ScanType
 from bec_server.scan_server.tests.fixtures import scan_server_mock
+from bec_server.scan_server.tests.utils import NoopScan
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -72,7 +72,7 @@ class InstructionQueueMock(InstructionQueueItem):
         self.queue.append(msg)
 
 
-class _DummyV4Scan(ScanBaseV4):
+class _DummyV4Scan(NoopScan):
     scan_name = "_v4_dummy_scan"
 
 

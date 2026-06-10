@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import enum
 import threading
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Type
 
@@ -21,7 +22,7 @@ from bec_lib.redis_connector import RedisConnector
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scans.scan_actions import ScanActions
 from bec_server.scan_server.scans.scan_components import ScanComponents
-from bec_server.scan_server.scans.scan_modifier import ScanModifier, get_scan_hooks_impl
+from bec_server.scan_server.scans.scan_modifier import ScanModifier, get_scan_hooks_impl, scan_hook
 
 Units = pint.UnitRegistry()
 
@@ -150,7 +151,7 @@ class ScanInfo(BaseModel):
     model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
 
-class ScanBase:
+class ScanBase(ABC):
     scan_type = ScanType.SOFTWARE_TRIGGERED
     scan_name = "_v4_base_scan"
     arg_input = {}
@@ -263,3 +264,53 @@ class ScanBase:
                 setattr(self.scan_info, key, value)
             else:
                 self.scan_info.additional_scan_parameters[key] = value
+
+    @scan_hook
+    @abstractmethod
+    def prepare_scan(self):
+        """Prepare scan metadata and state before opening the scan."""
+
+    @scan_hook
+    @abstractmethod
+    def open_scan(self):
+        """Open the scan and publish the initial scan state."""
+
+    @scan_hook
+    @abstractmethod
+    def stage(self):
+        """Stage devices before the scan starts."""
+
+    @scan_hook
+    @abstractmethod
+    def pre_scan(self):
+        """Run pre-scan device preparation immediately before scan execution."""
+
+    @scan_hook
+    @abstractmethod
+    def scan_core(self):
+        """Execute the main scan procedure."""
+
+    @scan_hook
+    @abstractmethod
+    def at_each_point(self, *args, **kwargs):
+        """Run per-point scan logic when the scan iterates over points."""
+
+    @scan_hook
+    @abstractmethod
+    def post_scan(self):
+        """Run completion logic after the scan core finishes."""
+
+    @scan_hook
+    @abstractmethod
+    def unstage(self):
+        """Unstage devices after scan completion."""
+
+    @scan_hook
+    @abstractmethod
+    def close_scan(self):
+        """Close the scan and finalize scan bookkeeping."""
+
+    @scan_hook
+    @abstractmethod
+    def on_exception(self, exception: Exception):
+        """Handle scan exceptions and perform emergency cleanup."""
