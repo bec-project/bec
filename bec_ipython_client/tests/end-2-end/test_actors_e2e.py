@@ -27,7 +27,7 @@ def bec_with_delay_device(bec_ipython_client_fixture):
     dev.ramp_up.max_val.put(400)
     dev.ramp_up.value.put(400)
     dev.ramp_up.delay.put(2)
-    dev.ramp_up.rampup_time.put(2)
+    dev.ramp_up.rampup_time.put(8)
     yield bec, dev.ramp_up
     dev.ramp_up.stop()
 
