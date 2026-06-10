@@ -10,7 +10,7 @@ from bec_lib.redis_connector import MessageObject
 from bec_lib.scan_args import ScanArgument
 from bec_server.scan_server.scan_manager import ScanManager
 from bec_server.scan_server.scans import ScanArgType
-from bec_server.scan_server.scans.scan_base import ScanBase
+from bec_server.scan_server.tests.utils import NoopScan
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def test_scan_manager_convert_arg_input_does_not_mutate(scan_manager):
     assert arg_input == {"a": ScanArgType.FLOAT}
 
 
-class _GuiConfigScan(ScanBase):
+class _GuiConfigScan(NoopScan):
     scan_name = "gui_config_scan"
     arg_input = {}
     arg_bundle_size = {"bundle": 0, "min": None, "max": None}

@@ -12,7 +12,7 @@ from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scans import ScanArgType
 from bec_server.scan_server.scans.acquire import Acquire
 from bec_server.scan_server.scans.legacy_scans import FermatSpiralScan, LineScan, RequestBase
-from bec_server.scan_server.scans.scan_base import ScanBase as ScanBaseV4
+from bec_server.scan_server.tests.utils import NoopScan
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ class CustomScan2(RequestBase):
         pass
 
 
-class CustomDirectScan(ScanBaseV4):
+class CustomDirectScan(NoopScan):
     scan_name = "custom_direct_scan"
     arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
@@ -51,7 +51,7 @@ class CustomDirectScan(ScanBaseV4):
         self.received_args = args
 
 
-class CustomFixedDirectScan(ScanBaseV4):
+class CustomFixedDirectScan(NoopScan):
     scan_name = "custom_fixed_direct_scan"
     is_scan = False
 
@@ -61,7 +61,7 @@ class CustomFixedDirectScan(ScanBaseV4):
         self.target = target
 
 
-class CustomBoundedDirectScan(ScanBaseV4):
+class CustomBoundedDirectScan(NoopScan):
     scan_name = "custom_bounded_direct_scan"
     is_scan = False
 
@@ -74,7 +74,7 @@ class CustomBoundedDirectScan(ScanBaseV4):
         self.value = value
 
 
-class CustomBundledBoundedDirectScan(ScanBaseV4):
+class CustomBundledBoundedDirectScan(NoopScan):
     scan_name = "custom_bundled_bounded_direct_scan"
     arg_input = {
         "device": ScanArgType.DEVICE,
@@ -94,7 +94,7 @@ class CustomBundledBoundedDirectScan(ScanBaseV4):
         self.scale = scale
 
 
-class CustomBundledScanWithDeviceKwarg(ScanBaseV4):
+class CustomBundledScanWithDeviceKwarg(NoopScan):
     scan_name = "custom_bundled_scan_with_device_kwarg"
     arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
@@ -106,7 +106,7 @@ class CustomBundledScanWithDeviceKwarg(ScanBaseV4):
         self.monitor = monitor
 
 
-class DefaultOverrideDirectScan(ScanBaseV4):
+class DefaultOverrideDirectScan(NoopScan):
     scan_name = "default_override_direct_scan"
     is_scan = False
 
@@ -124,7 +124,7 @@ class DefaultOverrideModifier:
         return arguments, defaults
 
 
-class RelativeHiddenDirectScan(ScanBaseV4):
+class RelativeHiddenDirectScan(NoopScan):
     scan_name = "relative_hidden_direct_scan"
     is_scan = False
 
@@ -143,7 +143,7 @@ class RelativeHiddenModifier:
         return arguments, defaults
 
 
-class AdditionalParamsDirectScan(ScanBaseV4):
+class AdditionalParamsDirectScan(NoopScan):
     scan_name = "additional_params_direct_scan"
     is_scan = False
 

@@ -1,13 +1,47 @@
 from bec_lib.messages import BECStatus
-from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.scan_server import ScanServer
 from bec_server.scan_server.scan_worker import InstructionQueueStatus
+from bec_server.scan_server.scans.scan_base import ScanBase
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+class NoopScan(ScanBase):
+    __doc__ = None
+
+    def prepare_scan(self):
+        pass
+
+    def open_scan(self):
+        pass
+
+    def stage(self):
+        pass
+
+    def pre_scan(self):
+        pass
+
+    def scan_core(self):
+        pass
+
+    def at_each_point(self, *args, **kwargs):
+        pass
+
+    def post_scan(self):
+        pass
+
+    def unstage(self):
+        pass
+
+    def close_scan(self):
+        pass
+
+    def on_exception(self, exception: Exception):
+        pass
 
 
 class WorkerMock:

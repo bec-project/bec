@@ -13,9 +13,10 @@ from bec_lib.tests.utils import ConnectorMock
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_stubs import ScanStubStatus
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo
+from bec_server.scan_server.tests.utils import NoopScan
 
 
-class _TestScan(ScanBase):
+class _TestScan(NoopScan):
     scan_name = "_v4_test_scan"
     scan_type = None
 
