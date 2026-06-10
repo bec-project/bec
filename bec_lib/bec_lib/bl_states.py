@@ -113,13 +113,26 @@ class DeviceStateConfig(BeamlineStateConfig):
         """
         Validate that the signal is either None, a string, or a Signal instance. If it's a Signal instance, return its name.
         """
-        if self.signal is None:
-            return self
         if isinstance(self.device, Signal):
             # Signals don't have sub-signals, so if the device
             # itself is a signal, we ignore the signal field and use
             # the device name as the signal.
-            self.signal = self.device.name
+            # However, validator has to also count in scenario when gui provides both device/signal field for just signal.
+            signal_name = self.device.dotted_name
+            if isinstance(self.signal, Signal) and self.signal != self.device:
+                raise ValueError(
+                    f"Signal '{self.signal.dotted_name}' does not match signal device '{signal_name}'"
+                )
+            if isinstance(self.signal, str) and self.signal not in {self.device.name, signal_name}:
+                raise ValueError(
+                    f"Signal '{self.signal}' does not match signal device '{signal_name}'"
+                )
+            self.device = signal_name
+            self.signal = signal_name
+            return self
+        if self.signal is None:
+            if isinstance(self.device, DeviceBase):
+                self.device = self.device.dotted_name
             return self
         if isinstance(self.device, DeviceBase) and isinstance(self.signal, Signal):
             if self.signal.parent != self.device:
@@ -285,6 +298,18 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
         except KeyError:
             # pylint: disable=raise-missing-from
             raise ValueError(f"{self._error_prefix} Device '{self.config.device}' not found.")
+
+        if isinstance(self.device_obj, Signal):
+            if self.config.signal is None:
+                self.signal_name = self.device_obj.name
+                return
+            signal = cast(str, self.config.signal)
+            if signal in {self.device_obj.name, self.device_obj.dotted_name}:
+                self.signal_name = self.device_obj.name
+                return
+            raise ValueError(
+                f"{self._error_prefix} Signal '{signal}' does not match signal device '{self.config.device}'."
+            )
 
         if self.config.signal is not None:
             signal = cast(str, self.config.signal)

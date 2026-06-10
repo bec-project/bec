@@ -55,6 +55,20 @@ class TestConfigModels:
         assert config.device == "samx"
         assert config.signal == "samx"
 
+    def test_device_state_config_accepts_matching_signal_device(self, dm_with_devices):
+        config = bl_states.DeviceStateConfig(
+            name="state", device=dm_with_devices.devices.bpm4i, signal=dm_with_devices.devices.bpm4i
+        )
+
+        assert config.device == "bpm4i"
+        assert config.signal == "bpm4i"
+
+    def test_device_state_config_rejects_mismatched_signal_for_signal_device(self, dm_with_devices):
+        with pytest.raises(ValueError, match="does not match signal device"):
+            bl_states.DeviceStateConfig(
+                name="state", device=dm_with_devices.devices.bpm4i, signal="bpm5i"
+            )
+
 
 class TestBeamlineStateBase:
     def test_beamline_state_initialization_and_update(self):
@@ -193,6 +207,28 @@ class TestConcreteStates:
         assert state.evaluate(invalid).status == "invalid"
         assert state.evaluate(missing).status == "invalid"
 
+    def test_device_within_limits_state_accepts_signal_backed_device(
+        self, connected_connector, dm_with_devices
+    ):
+        state = bl_states.DeviceWithinLimitsState(
+            name="bpm4i_within_limits",
+            device="bpm4i",
+            signal="bpm4i",
+            low_limit=-1.0,
+            high_limit=10.0,
+            tolerance=0.1,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        state.start()
+
+        msg = messages.DeviceMessage(
+            signals={"bpm4i": {"value": 5.0, "timestamp": 1.0}}, metadata={"stream": "primary"}
+        )
+
+        assert state.signal_name == "bpm4i"
+        assert state.evaluate(msg).status == "valid"
+
 
 class TestBeamlineStateManager:
     def test_manager_registers_for_state_updates(self, connected_connector):
@@ -216,9 +252,8 @@ class TestBeamlineStateManager:
     def test_manager_loads_existing_state_update_on_init(self, connected_connector):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
-            title="Shutter Open",
             state_type="ShutterState",
-            parameters={"name": "shutter_open", "title": "Shutter Open", "device": "samy"},
+            parameters={"name": "shutter_open", "device": "samy"},
         )
         connected_connector.xadd(
             MessageEndpoints.available_beamline_states(),
