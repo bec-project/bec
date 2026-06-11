@@ -50,6 +50,7 @@ from bec_lib.redis_connector.validation import (
 )
 from bec_lib.serialization import MsgpackSerialization
 
+from .buffered_publisher import RateLimitedPipelinePublisher
 from .constants import (
     IncompatibleMessageForEndpoint,
     IncompatibleRedisOperation,
@@ -145,6 +146,7 @@ class RedisConnector:
         self.stream_keys: dict[str, str] = {}  # for explicit reads, not subscriptions
 
         self._generator_executor = ThreadPoolExecutor()
+        self._buffered_publisher = RateLimitedPipelinePublisher(connector_getter=lambda: self)
 
     @property
     def connection_error_str(self):
@@ -264,7 +266,7 @@ class RedisConnector:
         # release all connections
         self._pubsub_conn.close()
         self._redis_conn.close()
-
+        self._buffered_publisher.shutdown()
         self._generator_executor.shutdown()
 
     def send_client_info(
