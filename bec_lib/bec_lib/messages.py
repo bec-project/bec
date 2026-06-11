@@ -498,6 +498,28 @@ class RequestResponseMessage(BECMessage):
     message: str | dict | None = Field(default=None)
 
 
+DeviceInstructionAction = Literal[
+    "rpc",
+    "set",
+    "read",
+    "kickoff",
+    "complete",
+    "trigger",
+    "stage",
+    "unstage",
+    "pre_scan",
+    "wait",
+    "scan_report_instruction",
+    "open_scan",
+    "baseline_reading",
+    "close_scan",
+    "open_scan_def",
+    "close_scan_def",
+    "publish_data_as_read",
+    "close_scan_group",
+]
+
+
 class DeviceInstructionMessage(BECMessage):
     """Message type for sending device instructions to the device server
 
@@ -531,26 +553,7 @@ class DeviceInstructionMessage(BECMessage):
 
     msg_type: ClassVar[str] = "device_instruction"
     device: str | list[str] | None
-    action: Literal[
-        "rpc",
-        "set",
-        "read",
-        "kickoff",
-        "complete",
-        "trigger",
-        "stage",
-        "unstage",
-        "pre_scan",
-        "wait",
-        "scan_report_instruction",
-        "open_scan",
-        "baseline_reading",
-        "close_scan",
-        "open_scan_def",
-        "close_scan_def",
-        "publish_data_as_read",
-        "close_scan_group",
-    ]
+    action: DeviceInstructionAction
     parameter: dict
 
 
