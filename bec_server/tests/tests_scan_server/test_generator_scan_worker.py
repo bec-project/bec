@@ -403,7 +403,15 @@ def test_send_scan_status(generator_worker_mock, status, expire):
     worker = generator_worker_mock
     worker.worker.device_manager.connector = ConnectorMock()
     worker.current_scan_id = str(uuid.uuid4())
-    worker.current_scan_info = {"scan_number": 5}
+    worker.current_scan_info = {
+        "scan_number": 5,
+        "scan_name": "line_scan",
+        "request_inputs": {
+            "arg_bundle": ["samx", -5, 5, 3],
+            "inputs": {},
+            "kwargs": {"exp_time": 0.1},
+        },
+    }
     worker._send_scan_status(status)
     scan_info_msgs = [
         msg
@@ -413,6 +421,36 @@ def test_send_scan_status(generator_worker_mock, status, expire):
     ]
     assert len(scan_info_msgs) == 1
     assert scan_info_msgs[0]["expire"] == expire
+    notification_msgs = [
+        msg
+        for msg in worker.worker.device_manager.connector.message_sent
+        if msg["queue"]
+        == MessageEndpoints.notification(
+            "new_scan" if status == "open" else "scan_completed"
+        ).endpoint
+    ]
+    if status == "open":
+        assert len(notification_msgs) == 1
+        assert notification_msgs[0]["msg"].event == "new_scan"
+        assert notification_msgs[0]["msg"].message == [
+            messages.MessagingServiceTextContent(
+                content='<p><mark class="pen-green">Scan started: scan_number=5 '
+                f"(scans.line_scan('samx', -5, 5, 3, exp_time=0.1), scan_id={worker.current_scan_id})</mark></p>"
+            ),
+            messages.MessagingServiceTagsContent(tags=["scan_start"]),
+        ]
+    elif status == "closed":
+        assert len(notification_msgs) == 1
+        assert notification_msgs[0]["msg"].event == "scan_completed"
+        assert notification_msgs[0]["msg"].message == [
+            messages.MessagingServiceTextContent(
+                content='<p><mark class="pen-green">Scan completed: scan_number=5 '
+                f"(scans.line_scan('samx', -5, 5, 3, exp_time=0.1), scan_id={worker.current_scan_id})</mark></p>"
+            ),
+            messages.MessagingServiceTagsContent(tags=["scan_completed"]),
+        ]
+    else:
+        assert notification_msgs == []
 
 
 @pytest.mark.parametrize("abortion", [False, True])

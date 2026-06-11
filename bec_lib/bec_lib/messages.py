@@ -1728,6 +1728,49 @@ class MessagingConfig(BaseModel):
     scilog: MessagingServiceScopeConfig
 
 
+class NotificationServiceTarget(BaseModel):
+    service_name: Literal["signal", "teams", "scilog"]
+    scope: str | list[str] | None = None
+
+
+class NotificationConfigMessage(BECMessage):
+    """
+    Routing configuration for notification events.
+
+    Args:
+        routes: Mapping of event name to messaging service targets.
+    """
+
+    msg_type: ClassVar[str] = "notification_config_message"
+    routes: dict[
+        Literal[
+            "new_scan",
+            "scan_completed",
+            "alarm_warning",
+            "alarm_minor",
+            "alarm_major",
+            "scan_interlock",
+        ]
+        | str,
+        list[NotificationServiceTarget],
+    ] = Field(default_factory=dict)
+
+
+class NotificationMessage(BECMessage):
+    """
+    Message for notifications to be sent to messaging services.
+
+    Args:
+        event (str): Event name, e.g. "new_scan", "scan_completed", "alarm_warning", "alarm_minor", "alarm_major", "scan_interlock"
+        content (dict): Content of the notification message, can contain any relevant information about the event
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "notification_message"
+    event: str
+    message: list[MessagingServiceContent]
+
+
 AvailableMessagingServices = Annotated[
     Union[SignalServiceInfo, SciLogServiceInfo, TeamsServiceInfo],
     Field(discriminator="service_type"),

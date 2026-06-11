@@ -105,7 +105,7 @@ jobs:
           path: ./coverage-e2e
 
       - name: Upload combined coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage-unit/coverage-unit.xml,./coverage-e2e/coverage-e2e.xml
