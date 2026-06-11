@@ -19,9 +19,9 @@ from bec_lib.redis_connector import (
     IncompatibleMessageForEndpoint,
     IncompatibleRedisOperation,
     RedisConnector,
-    WrongArguments,
-    validate_endpoint,
 )
+from bec_lib.redis_connector.constants import WrongArguments
+from bec_lib.redis_connector.validation import validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
 
 # pylint: disable=protected-access

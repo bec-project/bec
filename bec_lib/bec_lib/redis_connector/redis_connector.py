@@ -16,32 +16,15 @@ import sys
 import threading
 import time
 import traceback
-import warnings
 from collections.abc import MutableMapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from functools import wraps
 from glob import fnmatch
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Concatenate,
-    DefaultDict,
-    Generator,
-    Iterable,
-    Literal,
-    NamedTuple,
-    ParamSpec,
-    TypedDict,
-    TypeVar,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Generator, Literal, cast
 
 import louie
 import redis.client
 import redis.exceptions
-from astroid.nodes import Unknown
 from redis.backoff import ExponentialBackoff
 from redis.client import Pipeline, Redis
 from redis.retry import Retry
@@ -52,13 +35,33 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import (
     AlarmMessage,
     BECMessage,
-    BundleMessage,
     ClientInfoMessage,
     DynamicMetricDict,
     DynamicMetricMessage,
     ErrorInfo,
 )
+from bec_lib.redis_connector.validation import (
+    check_endpoint_type,
+    error_log_with_context,
+    validate_endpoint,
+)
 from bec_lib.serialization import MsgpackSerialization
+
+from .buffered_publisher import RateLimitedPipelinePublisher
+from .constants import (
+    IncompatibleMessageForEndpoint,
+    IncompatibleRedisOperation,
+    InvalidItemForOperation,
+    PubSubMessage,
+    _BecMsgT,
+)
+from .streams import (
+    DirectReadStreamSubInfo,
+    StreamMessage,
+    StreamResponseList,
+    StreamSubInfo,
+    StreamSubs,
+)
 
 logger = bec_logger.logger
 if TYPE_CHECKING:  # pragma: no cover
@@ -66,336 +69,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from bec_lib.alarm_handler import Alarms
 
-P = ParamSpec("P")
-_BecMsgT = TypeVar("_BecMsgT", bound=BECMessage)
-
-
-class PubSubMessage(TypedDict):
-    channel: bytes
-    data: bytes
-    pattern: bytes | None
-
-
-class IncompatibleMessageForEndpoint(TypeError): ...
-
-
-class IncompatibleRedisOperation(TypeError): ...
-
-
-class InvalidItemForOperation(ValueError): ...
-
-
-class WrongArguments(ValueError): ...
-
-
-def _error_log_with_context(msg: str):
-    context = "".join(traceback.format_stack(limit=5)[:-1])
-    logger.error(msg + f" Context:\n{context}")
-
-
-def _raise_incompatible_message(msg, endpoint):
-    raise IncompatibleMessageForEndpoint(
-        f"Message type {type(msg)} is not compatible with endpoint {endpoint}. Expected {endpoint.message_type}"
-    )
-
-
-def _check_endpoint_type(endpoint: EndpointInfo | str) -> bool:
-    if isinstance(endpoint, str):
-        warnings.warn(
-            "RedisConnector methods with a string topic are deprecated and should not be used anymore. Use RedisConnector methods with an EndpointInfo instead.",
-            DeprecationWarning,
-        )
-        return False
-    if not isinstance(endpoint, EndpointInfo):
-        raise TypeError(f"Endpoint {endpoint} is not EndpointInfo")
-    return True
-
-
-def _validate_sequence(seq: Iterable, endpoint: EndpointInfo):
-    for sub_val in seq:
-        if isinstance(sub_val, BECMessage) and endpoint.message_type == Any:
-            continue
-        if isinstance(sub_val, BECMessage) and not isinstance(sub_val, endpoint.message_type):
-            _raise_incompatible_message(sub_val, endpoint)
-
-
-def _validate_all_bec_messages(values: Iterable, endpoint: EndpointInfo):
-    for val in values:
-        if isinstance(val, BECMessage) and endpoint.message_type == Any:
-            continue
-        if isinstance(val, BundleMessage):
-            for msg in val.messages:
-                if not isinstance(msg, endpoint.message_type):
-                    _raise_incompatible_message(msg, endpoint)
-        elif isinstance(val, BECMessage) and not isinstance(val, endpoint.message_type):
-            _raise_incompatible_message(val, endpoint)
-        if isinstance(val, dict):
-            _validate_sequence(val.values(), endpoint)
-        if isinstance(val, (list, tuple)):
-            _validate_sequence(val, endpoint)
-
-
-def _fix_docstring_for_ipython(func: Callable, arg_name: str):
-    if func.__doc__ is not None:
-        arg_annotation = f"    {arg_name} (str):"
-        if arg_annotation in func.__doc__:
-            func.__doc__ = func.__doc__.replace(arg_annotation, f"    {arg_name} (EndpointInfo):")
-    func.__annotations__[arg_name] = "EndpointInfo"
-
-
-def validate_endpoint(endpoint_arg_name: str):
-    """Decorate an instance method to validate the first argument (named endpoint_arg_name) as
-    an EndpointInfo and pass it as a str to the wrapped method. Further checks if any given BECMessage
-    to the function is appropriate for the endpoint."""
-
-    def decorator(
-        func: Callable[Concatenate[Any, str, P], Any],
-    ) -> Callable[Concatenate[Any, EndpointInfo, P], Any]:
-        argspec = inspect.getfullargspec(func)
-        try:
-            argument_index = argspec.args.index(endpoint_arg_name)
-            if argument_index != 1:
-                raise ValueError
-        except ValueError as e:
-            raise WrongArguments(
-                f"@validate_endpoint should be applied to an instance function which takes the named argument ('{endpoint_arg_name}') as its first non-self argument."
-            ) from e
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                try:
-                    endpoint = args[argument_index]
-                    arg = list(args)
-                except IndexError:
-                    endpoint = kwargs[endpoint_arg_name]
-                    arg = kwargs
-
-                if not _check_endpoint_type(endpoint):
-                    return func(*args, **kwargs)
-                if func.__name__ not in endpoint.message_op:
-                    raise IncompatibleRedisOperation(
-                        f"Endpoint {endpoint} is not compatible with {func.__name__} method"
-                    )
-                _validate_all_bec_messages(list(args) + list(kwargs.values()), endpoint)
-
-                if isinstance(arg, list):
-                    arg[argument_index] = endpoint.endpoint
-                    return func(*tuple(arg), **kwargs)
-                arg[endpoint_arg_name] = endpoint.endpoint
-                return func(*args, **arg)
-            except redis.exceptions.NoPermissionError as exc:
-                # the default NoPermissionError message is not very informative as it does not
-                # contain any information about the endpoint that caused the error
-                endpoint_str = (
-                    endpoint.endpoint if isinstance(endpoint, EndpointInfo) else str(endpoint)
-                )
-                raise redis.exceptions.NoPermissionError(
-                    f"Permission denied for endpoint {endpoint_str}"
-                ) from exc
-
-        _fix_docstring_for_ipython(wrapper, endpoint_arg_name)
-        return wrapper
-
-    return decorator
-
 
 @dataclass
 class GeneratorExecution:
     fut: Future[Any]
     g: Generator
-
-
-@dataclass
-class StreamSubInfo:
-    cb_ref: Callable
-    kwargs: dict[str, Unknown]
-
-    def __eq__(self, other):
-        if not isinstance(other, StreamSubInfo):
-            return False
-        return self.cb_ref == other.cb_ref
-
-    def __hash__(self) -> int:
-        return self.cb_ref.__hash__()
-
-
-@dataclass
-class DirectReadStreamSubInfo(StreamSubInfo):
-    stop_event: threading.Event
-    thread: threading.Thread
-
-    def __hash__(self) -> int:
-        return self.cb_ref.__hash__()
-
-
-@dataclass
-class StreamMessage:
-    msg: dict
-    callbacks: Iterable[tuple[Callable, dict[str, Unknown]]]
-
-
-class StreamSubsEntry(NamedTuple):
-    read_id: str
-    subs: set[StreamSubInfo]
-
-
-StreamResponseList = list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]
-StreamSubsRegistry = dict[str, StreamSubsEntry]
-
-
-class StreamSubs:
-    def __init__(self) -> None:
-        """Manager for stream subscriptions. Since operations often need to be combined,
-        use the lock directly at point of call, it is generally not used in the methods."""
-        self.lock = threading.RLock()
-
-        self._subs: StreamSubsRegistry = {}
-        self._direct_read_subs: dict[
-            str, dict[DirectReadStreamSubInfo, DirectReadStreamSubInfo]
-        ] = {}
-        self.from_start_subs: dict[str, set[StreamSubInfo]] = {}
-
-    @property
-    def normal_subs(self):
-        return {t: s.subs for t, s in self._subs.items()}
-
-    @property
-    def all_topics(self):
-        with self.lock:
-            from_start_keys = [k for k in self.from_start_subs if self.from_start_subs[k] != set()]
-            dr_sub_keys = [k for k in self._direct_read_subs if self._direct_read_subs[k] != set()]
-            return list(set((*self._subs.keys(), *dr_sub_keys, *from_start_keys)))
-
-    def topic_ids(self) -> dict[str, str]:
-        """Get Redis read Ids for active subscriptions"""
-        return {topic: infos.read_id for topic, infos in self._subs.items()}
-
-    def update_normal_ids(self, updated_ids: dict[str, str]):
-        for topic, id in updated_ids.items():
-            if topic in self._subs:
-                self._subs[topic] = StreamSubsEntry(id, self._subs[topic].subs)
-
-    def from_start_topics(self) -> set[str]:
-        """Get topics for new `from_start` subscriptions which haven't been read yet"""
-        return set(self.from_start_subs.keys())
-
-    def end_id(self, topic: str):
-        """Return the last read id for a given topic if given, or "+" """
-        return self._subs[topic].read_id if topic in self._subs else "+"
-
-    def move_from_start_to_normal(self, topics_and_end_ids: dict[str, str]):
-        if topics_and_end_ids.keys() != self.from_start_subs.keys():
-            _error_log_with_context(
-                f"Mismatch of subs to move! {topics_and_end_ids.keys()=}, {self.from_start_subs.keys()=} Was a lock forgotten?"
-            )
-        for topic in topics_and_end_ids:
-            if topic in self._subs:
-                if topics_and_end_ids[topic] != self._subs[topic].read_id:
-                    _error_log_with_context(f"Mismatch of ID! Was a lock forgotten?")
-                for sub in self.from_start_subs.pop(topic):
-                    self._subs[topic].subs.add(sub)  # type: ignore
-            else:
-                self._subs[topic] = StreamSubsEntry(
-                    read_id=topics_and_end_ids[topic], subs=self.from_start_subs.pop(topic)
-                )
-
-    def is_already_registered(self, topic: str, new_sub: StreamSubInfo):
-        return (
-            (topic in self.from_start_subs and new_sub in self.from_start_subs[topic])
-            or (topic in self._direct_read_subs and new_sub in self._direct_read_subs[topic])
-            or (topic in self._subs and new_sub in self._subs[topic].subs)
-        )
-
-    def _check_registered(self, topic: str, new_sub: StreamSubInfo):
-        if self.is_already_registered(topic, new_sub):
-            raise ValueError(f"Received duplicate subscription for {new_sub=}.")
-
-    def add_direct_listener(self, topic: str, new_sub: DirectReadStreamSubInfo):
-        self._check_registered(topic, new_sub)
-        if not topic in self._direct_read_subs:
-            self._direct_read_subs[topic] = {}
-        self._direct_read_subs[topic][new_sub] = new_sub
-        new_sub.thread.start()
-
-    def add(self, from_start: bool, last_id: str, topic: str, new_sub: StreamSubInfo):
-        """last_id is ignored if from_start is True"""
-        self._check_registered(topic, new_sub)
-        if from_start:
-            if topic in self.from_start_subs:
-                subs = self.from_start_subs[topic]
-            else:
-                subs = set()
-                self.from_start_subs[topic] = subs
-        else:
-            if not topic in self._subs:
-                subs = set()
-                self._subs[topic] = StreamSubsEntry(read_id=last_id, subs=subs)
-            else:
-                subs = self._subs[topic].subs
-        subs.add(new_sub)
-
-    @staticmethod
-    def _kill_direct_stream(sub: DirectReadStreamSubInfo, topic: str):
-        sub.stop_event.set()
-        sub.thread.join(timeout=1)
-        if sub.thread.is_alive():
-            _error_log_with_context(
-                f"RedisConnector direct stream callback thread for {topic=}, {sub.cb_ref=} failed to shutdown"
-            )
-
-    def remove(self, topic: str, cb: Callable | None = None) -> bool:
-        removed = False
-        if cb is None:  # Remove all subs for the given topic
-            removed |= bool(self.from_start_subs.pop(topic, False))
-            removed |= bool(self._subs.pop(topic, False))
-            if (subs := self._direct_read_subs.pop(topic, None)) is not None:
-                for sub in subs:
-                    self._kill_direct_stream(sub, topic)
-                    removed = True
-            return removed
-        test_subinfo = StreamSubInfo(louie.saferef.safe_ref(cb), {})
-        if topic in self.from_start_subs and test_subinfo in self.from_start_subs[topic]:
-            self.from_start_subs[topic].remove(test_subinfo)
-            removed = True
-            if len(self.from_start_subs[topic]) == 0:
-                del self.from_start_subs[topic]
-        if topic in self._direct_read_subs and test_subinfo in self._direct_read_subs[topic]:
-            sub = self._direct_read_subs[topic].pop(test_subinfo)  # type: ignore # hash is the same
-            self._kill_direct_stream(sub, topic)
-            removed = True
-            if len(self._direct_read_subs[topic]) == 0:
-                del self._direct_read_subs[topic]
-        if topic in self._subs and test_subinfo in self._subs[topic].subs:
-            self._subs[topic].subs.remove(test_subinfo)
-            removed = True
-            if len(self._subs[topic].subs) == 0:
-                del self._subs[topic]
-        return removed
-
-    def gc_cb_refs(self):
-        for topic, entry in list(self._subs.items()):
-            for info in list(entry.subs):
-                if not info.cb_ref():
-                    entry.subs.remove(info)
-            if len(self._subs[topic].subs) == 0:
-                del self._subs[topic]
-        for topic, entry in list(self._direct_read_subs.items()):
-            for info in list(entry.keys()):
-                if not info.cb_ref():
-                    info.stop_event.set()
-                    info.thread.join(0.05)
-                    if info.thread.is_alive():
-                        _error_log_with_context(f"Failed to garbage collect in 0.05s {info}")
-                    del entry[info]
-            if self._direct_read_subs[topic] == {}:
-                del self._direct_read_subs[topic]
-        for topic, subs in list(self.from_start_subs.items()):
-            for info in list(subs):
-                if not info.cb_ref():
-                    subs.remove(info)
-            if len(self.from_start_subs[topic]) == 0:
-                del self.from_start_subs[topic]
 
 
 class RedisConnector:
@@ -465,6 +143,7 @@ class RedisConnector:
         self.stream_keys: dict[str, str] = {}  # for explicit reads, not subscriptions
 
         self._generator_executor = ThreadPoolExecutor()
+        self._buffered_publisher = RateLimitedPipelinePublisher(connector_getter=lambda: self)
 
     @property
     def connection_error_str(self):
@@ -584,7 +263,7 @@ class RedisConnector:
         # release all connections
         self._pubsub_conn.close()
         self._redis_conn.close()
-
+        self._buffered_publisher.shutdown()
         self._generator_executor.shutdown()
 
     def send_client_info(
@@ -1024,7 +703,7 @@ class RedisConnector:
         if self._events_listener_thread is None:
             return
         if topics and patterns:
-            _error_log_with_context(
+            error_log_with_context(
                 f"Unsubscribe called with both {topics=} and {patterns=}. Topics will be ignored in favour of patterns."
             )
         if patterns is not None:
@@ -1533,7 +1212,7 @@ class RedisConnector:
         and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
         """
         for ep, ops in [(list_endpoint, MessageOp.LIST), (set_endpoint, MessageOp.SET)]:
-            _check_endpoint_type(ep)
+            check_endpoint_type(ep)
             if ep.message_op != ops:
                 raise IncompatibleRedisOperation(
                     f"{ep} should be compatible with {ops.name} operations!"
