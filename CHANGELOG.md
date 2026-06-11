@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.134.0 (2026-06-11)
+
+### Bug Fixes
+
+- Add logging option for directory creation in get_full_path
+  ([`276c4ba`](https://github.com/bec-project/bec/commit/276c4ba4a8689954cce0c503162b6ae95edac247))
+
+### Features
+
+- Add wait_for_directory function to handle directory creation with timeout
+  ([`8374918`](https://github.com/bec-project/bec/commit/83749187767e176aefe62e8d15b296d2d1d634a3))
+
+
 ## v3.133.0 (2026-06-11)
 
 ### Features
