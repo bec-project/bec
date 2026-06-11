@@ -772,6 +772,39 @@ def test_set_device(device_server_mock, instr):
             )
 
 
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize(
+    "instr",
+    [
+        messages.DeviceInstructionMessage(
+            device="samx",
+            action="set",
+            parameter={"value": 5},
+            metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
+        )
+    ],
+)
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_set_device_error_formatted_nicely(device_server_mock, instr):
+    """Test that if set() raises an exception, and the exception is known,
+    a better-formated response is returned."""
+    with (
+        mock.patch.object(
+            device_server_mock.device_manager.devices.samx.obj,
+            "set",
+            side_effect=TypeError("tuple indices must be integers or slices, not float"),
+        ),
+        mock.patch.object(
+            device_server_mock.requests_handler, "send_device_instruction_response"
+        ) as mock_send_response,
+    ):
+        device_server_mock._set_device(instr)
+        assert (
+            """DeviceInstructionError: An incorrect value was provided to a .set() command. This could be, for example, providing a float rather than an int to an enum PV. Device: samx, value: 5."""
+            in mock_send_response.call_args.kwargs["error_info"].compact_error_message
+        )
+
+
 @pytest.mark.parametrize(
     "instr",
     [

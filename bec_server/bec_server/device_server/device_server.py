@@ -23,6 +23,7 @@ from bec_lib.messages import BECStatus
 from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.friendly_device_exceptions import reformat_known_device_exceptions
 from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
@@ -717,6 +718,9 @@ class DeviceServer(BECService):
         try:
             status = obj.set(val)
         except Exception as exc:  # pylint: disable=broad-except
+            exc = reformat_known_device_exceptions(
+                exc, "set", f"Device: {device_name}, value: {val}."
+            )
             status = DeviceStatus(device=obj)
             status.set_exception(exc)
         self._add_status_object_info(status, instr, obj)
@@ -866,7 +870,7 @@ class DeviceServer(BECService):
             )
         pipe.execute()
         logger.trace(
-            f"Elapsed time for reading and updating status info: {(time.time()-start)*1000} ms"
+            f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
         return signal_container
 
@@ -891,7 +895,7 @@ class DeviceServer(BECService):
             )
         pipe.execute()
         logger.trace(
-            f"Elapsed time for reading and updating status info: {(time.time()-start)*1000} ms"
+            f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
         return signal_container
 
@@ -964,7 +968,7 @@ class DeviceServer(BECService):
                             break
                         except ophyd_errors.WaitTimeoutError:
                             logger.warning(
-                                f"Unstaging device {dev} still running, {timeout_on_unstage*(ii+1)} seconds passed."
+                                f"Unstaging device {dev} still running, {timeout_on_unstage * (ii + 1)} seconds passed."
                             )
                     if status is not None:
                         raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")
