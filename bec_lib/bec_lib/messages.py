@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from typing_extensions import deprecated
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
@@ -269,8 +270,8 @@ class ScanQueueModificationMessage(BECMessage):
     """Message type for sending scan queue modifications
 
     Args:
-        scan_id (str): Unique scan ID
-        request_id (str | None): Request ID to target when no scan ID is available yet
+        scan_id (str): Unique scan ID. Deprecated, use request_id instead.
+        request_id (str | None): Request ID to target for queue modifications
         action (str): One of the actions defined in ACTIONS:
                 "pause",
                 "deferred_pause",
@@ -288,11 +289,13 @@ class ScanQueueModificationMessage(BECMessage):
         metadata (dict, optional): Additional metadata to describe and identify the scan.
 
     Examples:
-        >>> ScanQueueModificationMessage(scan_id=scan_id, action="abort", parameter={})
+        >>> ScanQueueModificationMessage(request_id=request_id, action="abort", parameter={})
     """
 
     msg_type: ClassVar[str] = "scan_queue_modification"
-    scan_id: str | list[str] | None | list[None]
+    scan_id: str | list[str] | None | list[None] = Field(
+        None, deprecated=deprecated("scan_id is deprecated, use request_id instead")
+    )
     request_id: str | None = None
     action: Literal[
         "pause",

@@ -73,7 +73,7 @@ def test_bundled_message():
 
 def test_ScanQueueModificationMessage():
     msg = messages.ScanQueueModificationMessage(
-        scan_id="1234", action="halt", parameter={"RID": "1234"}
+        request_id="1234", action="halt", parameter={"RID": "1234"}
     )
     res = MsgpackSerialization.dumps(msg)
     res_loaded = MsgpackSerialization.loads(res)
@@ -83,7 +83,7 @@ def test_ScanQueueModificationMessage():
 def test_ScanQueueModificationMessage_with_wrong_action_returns_None():
     with pytest.raises(pydantic.ValidationError):
         messages.ScanQueueModificationMessage(
-            scan_id="1234", action="wrong_action", parameter={"RID": "1234"}
+            request_id="1234", action="wrong_action", parameter={"RID": "1234"}
         )
 
 
