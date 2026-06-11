@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bec_ipython_client"
-version = "3.131.0"
+version = "3.132.0"
 description = "BEC IPython client"
 requires-python = ">=3.11"
 classifiers = [
@@ -41,6 +41,7 @@ bec = "bec_ipython_client.main:main"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
+
 
 
 

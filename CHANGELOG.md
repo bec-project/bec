@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.132.0 (2026-06-11)
+
+### Features
+
+- **scans**: Add scan hooks as abstractmethods
+  ([`9a851c7`](https://github.com/bec-project/bec/commit/9a851c7d13aadbe21742cc084d1d0c530dd7eb4b))
+
+
 ## v3.131.0 (2026-06-10)
 
 ### Bug Fixes
