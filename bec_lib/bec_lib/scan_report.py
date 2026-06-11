@@ -165,6 +165,8 @@ class ScanReport:
         """
         if self.request is None:
             raise ValueError("Request is not set. Cannot cancel the scan.")
+        if self._client is None:
+            raise ValueError("Client is not set. Cannot cancel the scan.")
         scan_type = self.request.request.content["scan_type"]
         if scan_type == "mv":
             motors = list(self.request.request.parameter["args"].keys())
@@ -179,11 +181,8 @@ class ScanReport:
                         f"Stopping error details: {''.join(traceback.format_exception(e, limit=5)[:-1])}"
                     )
         else:
-            if self.request.scan and self.request.scan.scan_id:
-                scan_id = self.request.scan.scan_id
-            else:
-                scan_id = None
-            self._client.queue.request_scan_abortion(scan_id)
+            request_id = self.request.requestID
+            self._client.queue.request_scan_abortion(request_id=request_id)
         return self
 
     def _check_timeout(self, timeout: float | None = None, elapsed_time: float = 0) -> None:

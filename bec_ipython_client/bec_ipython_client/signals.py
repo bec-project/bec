@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import ScanInterruption
+from bec_lib.request_context import active_request_context
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.client import BECClient
@@ -100,14 +101,28 @@ class SigintHandler(SignalHandler):
         else:
             raise ValueError(f"Mode {self._operation_mode} not handled by SigintHandler")
 
+    @staticmethod
+    def _get_active_request_id() -> str | None:
+        request_context = active_request_context.get()
+        if request_context is None:
+            return None
+        return request_context.request_id
+
     def _procedure_mode(self):
         # Catch it here to only kill scans which were started here
         print("SIGINT received in procedure mode. Sending scan abort request and exiting.")
-        self.bec.queue.request_scan_abortion()
+        self.bec.queue.request_scan_abortion(request_id=self._get_active_request_id())
         # Let the procedure worker shut itself down
         raise KeyboardInterrupt
 
     def _normal_mode(self):
+        request_context = active_request_context.get()
+        request_id = request_context.request_id if request_context is not None else None
+        if request_context is not None and request_context.queue_status == "PENDING":
+            # A locally tracked request is still queued behind someone else.
+            # Let IPythonLiveUpdates handle Ctrl-C so we only target that request.
+            raise KeyboardInterrupt
+
         current_scan = self.bec.queue.scan_storage.current_scan_info
         if not current_scan:
             raise KeyboardInterrupt
@@ -126,7 +141,9 @@ class SigintHandler(SignalHandler):
                 print("It has been 10 seconds since the last SIGINT. Resetting SIGINT handler.")
 
             threading.Thread(
-                target=self.bec.queue.request_scan_interruption, args=(True,), daemon=True
+                target=self.bec.queue.request_scan_interruption,
+                kwargs={"deferred_pause": True, "request_id": request_id},
+                daemon=True,
             ).start()
             print(
                 "A 'deferred pause' has been requested. The "
@@ -141,10 +158,16 @@ class SigintHandler(SignalHandler):
         # - Ctrl-C twice within 10 seconds or a direct command (e.g. mv) -> hard pause
         if self.bec._service_config.abort_on_ctrl_c:
             print("The scan will be aborted.")
-            threading.Thread(target=self.bec.queue.request_scan_abortion, daemon=True).start()
+            threading.Thread(
+                target=self.bec.queue.request_scan_abortion,
+                kwargs={"request_id": request_id},
+                daemon=True,
+            ).start()
             raise ScanInterruption("User abort.")
         print("A hard pause will be requested.")
         threading.Thread(
-            target=self.bec.queue.request_scan_interruption, args=(False,), daemon=True
+            target=self.bec.queue.request_scan_interruption,
+            kwargs={"deferred_pause": False, "request_id": request_id},
+            daemon=True,
         ).start()
         raise ScanInterruption(PAUSE_MSG)

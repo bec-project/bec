@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import collections
 import time
+from contextvars import Token
 from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
@@ -11,6 +12,7 @@ from rich.panel import Panel
 from bec_ipython_client.callbacks.device_progress import LiveUpdatesDeviceProgress
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
+from bec_lib.request_context import ActiveRequestContext, active_request_context
 
 from .live_table import LiveUpdatesTable
 from .move_device import LiveUpdatesReadbackProgressbar
@@ -164,11 +166,15 @@ class IPythonLiveUpdates:
     def process_request(self, request: messages.ScanQueueMessage, callbacks: Any) -> None:
         """Process the request and report instructions."""
         # pylint: disable=protected-access
+        context_token: Token | None = None
         try:
             with self.client._sighandler:
                 # pylint: disable=protected-access
                 self._active_request = request
                 self._user_callback = callbacks
+                request_id = request.metadata["RID"]
+                request_context = ActiveRequestContext(request_id=request_id)
+                context_token = active_request_context.set(request_context)
                 scan_request = ScanRequestMixin(self.client, request.metadata["RID"])
                 scan_request.wait()
 
@@ -180,9 +186,11 @@ class IPythonLiveUpdates:
                     time.sleep(0.01)
 
                 self._current_queue = queue = scan_request.scan_queue_request.queue
+                request_context.queue_status = queue.status
                 self._request_block_id = req_id = self._active_request.metadata.get("RID")
 
                 while queue.status not in ["COMPLETED", "ABORTED", "HALTED"]:
+                    request_context.queue_status = queue.status
                     if self._process_queue(queue, request, req_id):
                         break
 
@@ -218,6 +226,8 @@ class IPythonLiveUpdates:
             self._reset(forced=True)
             raise
         finally:
+            if context_token is not None:
+                active_request_context.reset(context_token)
             self._stop_status_live()
 
     def _wait_for_cleanup(self):
@@ -230,7 +240,20 @@ class IPythonLiveUpdates:
             while self._element_in_queue():
                 time.sleep(0.1)
         except KeyboardInterrupt:
-            self.client.queue.request_scan_halt()
+            request_id = self._get_tracked_request_id()
+            if request_id is None:
+                self.client.queue.request_scan_halt()
+                return
+            self.client.queue.request_scan_halt(request_id=request_id)
+
+    def _get_tracked_request_id(self) -> str | None:
+        """Return the request id associated with the active live-updates request."""
+        request_context = active_request_context.get()
+        if request_context is not None:
+            return request_context.request_id
+        if self._active_request is None:
+            return None
+        return self._active_request.metadata.get("RID")
 
     def _abort_pending_request(self) -> bool:
         """Abort the pending queue item currently being tracked by this live update."""
@@ -238,13 +261,7 @@ class IPythonLiveUpdates:
             return False
         if self._current_queue.status != "PENDING":
             return False
-        scan_ids = [scan_id for scan_id in self._current_queue.scan_ids if scan_id is not None]
-        if scan_ids:
-            self.client.queue.request_scan_abortion(scan_id=scan_ids)
-            return True
-        if self._active_request is None:
-            return False
-        request_id = self._active_request.metadata.get("RID")
+        request_id = self._get_tracked_request_id()
         if request_id is None:
             return False
         self.client.queue.request_scan_abortion(request_id=request_id)
@@ -336,19 +353,20 @@ class IPythonLiveUpdates:
 
         if self.client.queue is None or self.client.queue.queue_storage.current_scan_queue is None:
             return
-        target_queue = self.client.queue.queue_storage.current_scan_queue.get(
-            self.client.queue.get_default_scan_queue()
-        )
-        if target_queue is None:
+        target_queue = self.client.queue.get_default_scan_queue()
+        target_queue_status = self.client.queue.queue_storage.current_scan_queue.get(target_queue)
+        if target_queue_status is None:
             return
 
         queue_position = queue.queue_position
         if queue_position is None:
             return
 
-        status = target_queue.status
+        status = target_queue_status.status
         if status == "LOCKED":
-            lock_info = [f"{lock.identifier}: {lock.reason}\n" for lock in target_queue.locks]
+            lock_info = [
+                f"{lock.identifier}: {lock.reason}\n" for lock in target_queue_status.locks
+            ]
             message = (
                 f"Scan is waiting for the lock to be released. Active locks: \n{''.join(lock_info)}"
             )
