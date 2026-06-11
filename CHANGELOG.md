@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.133.0 (2026-06-11)
+
+### Features
+
+- Add friendly errors to device server
+  ([`e3db70a`](https://github.com/bec-project/bec/commit/e3db70adcb6cf655cfcf3216fb76b74a9b8573c8))
+
+
 ## v3.132.1 (2026-06-11)
 
 ### Bug Fixes
