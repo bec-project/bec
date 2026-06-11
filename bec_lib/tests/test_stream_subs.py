@@ -1,19 +1,13 @@
 import time
-from collections import deque
 from functools import partial
 from queue import Queue
-from threading import Event, Thread
 from unittest.mock import MagicMock
 
 import pytest
 from louie.saferef import safe_ref
 
-from bec_lib.redis_connector import (
-    DirectReadStreamSubInfo,
-    RedisConnector,
-    StreamSubInfo,
-    StreamSubs,
-)
+from bec_lib.redis_connector import RedisConnector
+from bec_lib.redis_connector.streams import StreamSubInfo, StreamSubs
 
 
 @pytest.fixture
