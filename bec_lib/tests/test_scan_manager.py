@@ -9,6 +9,7 @@ from typeguard import TypeCheckError
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
+from bec_lib.request_context import ActiveRequestContext, active_request_context
 from bec_lib.scan_manager import ScanManager
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -80,80 +81,198 @@ def test_scan_manager_next_dataset_number_setter(scan_manager):
 
 
 def test_scan_manager_request_scan_abortion(scan_manager):
-    scan_manager.request_scan_abortion("scan_id")
+    scan_manager.request_scan_abortion("request-id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id="scan_id", action="abort", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="abort", parameter={}
+        ),
     )
 
 
 @pytest.mark.parametrize("scan_id", [None, "scan_id", ["scan_id"], [None]])
 def test_scan_manager_request_scan_abortion_scan_id(scan_manager, scan_id):
-
     class ScanStorage:
-        current_scan_info = {"scan_id": scan_id}
-
-        @property
-        def current_scan_id(self):
-            return self.current_scan_info["scan_id"]
+        current_scan_info = messages.QueueInfoEntry(
+            queue_id="queue-id",
+            scan_id=["scan_id"],
+            is_scan=[True],
+            request_blocks=[
+                messages.RequestBlock(
+                    msg=messages.ScanQueueMessage(scan_type="mv", parameter={}),
+                    RID="request-id",
+                    readout_priority={},
+                    is_scan=True,
+                    scan_number=1,
+                    scan_id="scan_id",
+                )
+            ],
+            scan_number=[1],
+            status="RUNNING",
+        )
 
     scan_manager.scan_storage = ScanStorage()
-    scan_manager.request_scan_abortion()
+    scan_manager.request_scan_abortion(scan_id=scan_id)
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id=scan_id, action="abort", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="abort", parameter={}
+        ),
+    )
+
+
+def test_scan_manager_request_scan_abortion_request_id(scan_manager):
+    scan_manager.request_scan_abortion(request_id="request-id")
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="abort", parameter={}
+        ),
     )
 
 
 def test_scan_manager_request_scan_halt(scan_manager):
-    scan_manager.request_scan_halt("scan_id")
+    scan_manager.request_scan_halt("request-id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id="scan_id", action="halt", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="halt", parameter={}
+        ),
     )
 
 
 @pytest.mark.parametrize("scan_id", [None, "scan_id", ["scan_id"], [None]])
 def test_scan_manager_request_scan_halt_scan_id(scan_manager, scan_id):
-
     class ScanStorage:
-        current_scan_info = {"scan_id": scan_id}
-
-        @property
-        def current_scan_id(self):
-            return self.current_scan_info["scan_id"]
+        current_scan_info = messages.QueueInfoEntry(
+            queue_id="queue-id",
+            scan_id=["scan_id"],
+            is_scan=[True],
+            request_blocks=[
+                messages.RequestBlock(
+                    msg=messages.ScanQueueMessage(scan_type="mv", parameter={}),
+                    RID="request-id",
+                    readout_priority={},
+                    is_scan=True,
+                    scan_number=1,
+                    scan_id="scan_id",
+                )
+            ],
+            scan_number=[1],
+            status="RUNNING",
+        )
 
     scan_manager.scan_storage = ScanStorage()
     scan_manager.request_scan_halt()
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id=scan_id, action="halt", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="halt", parameter={}
+        ),
     )
 
 
 def test_scan_manager_request_scan_continuation(scan_manager):
-    scan_manager.request_scan_continuation("scan_id")
+    scan_manager.request_scan_continuation("request-id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id="scan_id", action="continue", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="continue", parameter={}
+        ),
+    )
+
+
+def test_scan_manager_request_scan_interruption_uses_request_id(scan_manager):
+    class ScanStorage:
+        current_scan_info = messages.QueueInfoEntry(
+            queue_id="queue-id",
+            scan_id=["scan_id"],
+            is_scan=[True],
+            request_blocks=[
+                messages.RequestBlock(
+                    msg=messages.ScanQueueMessage(scan_type="mv", parameter={}),
+                    RID="request-id",
+                    readout_priority={},
+                    is_scan=True,
+                    scan_number=1,
+                    scan_id="scan_id",
+                )
+            ],
+            scan_number=[1],
+            status="RUNNING",
+        )
+
+        @property
+        def current_scan_id(self):
+            return self.current_scan_info.scan_id
+
+    scan_manager.scan_storage = ScanStorage()
+    scan_manager.request_scan_interruption(deferred_pause=False)
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="pause", parameter={}
+        ),
+    )
+
+
+def test_scan_manager_request_scan_restart_uses_request_id(scan_manager):
+    scan_manager.request_scan_restart(request_id="request-id", new_request_id="new-request-id")
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None,
+            request_id="request-id",
+            action="restart",
+            parameter={"position": "replace", "RID": "new-request-id"},
+            queue="primary",
+        ),
+    )
+
+
+def test_scan_manager_request_scan_abortion_uses_context_request_id(scan_manager):
+    token = active_request_context.set(ActiveRequestContext(request_id="request-id"))
+    try:
+        scan_manager.request_scan_abortion()
+    finally:
+        active_request_context.reset(token)
+
+    scan_manager.connector.send.assert_called_once_with(
+        MessageEndpoints.scan_queue_modification_request(),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="abort", parameter={}, queue="primary"
+        ),
     )
 
 
 @pytest.mark.parametrize("scan_id", [None, "scan_id", ["scan_id"], [None]])
 def test_scan_manager_request_scan_continuation_scan_id(scan_manager, scan_id):
-
     class ScanStorage:
-        current_scan_info = {"scan_id": scan_id}
-
-        @property
-        def current_scan_id(self):
-            return self.current_scan_info["scan_id"]
+        current_scan_info = messages.QueueInfoEntry(
+            queue_id="queue-id",
+            scan_id=["scan_id"],
+            is_scan=[True],
+            request_blocks=[
+                messages.RequestBlock(
+                    msg=messages.ScanQueueMessage(scan_type="mv", parameter={}),
+                    RID="request-id",
+                    readout_priority={},
+                    is_scan=True,
+                    scan_number=1,
+                    scan_id="scan_id",
+                )
+            ],
+            scan_number=[1],
+            status="RUNNING",
+        )
 
     scan_manager.scan_storage = ScanStorage()
-    scan_manager.request_scan_continuation()
+    scan_manager.request_scan_continuation(scan_id=scan_id)
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
-        messages.ScanQueueModificationMessage(scan_id=scan_id, action="continue", parameter={}),
+        messages.ScanQueueModificationMessage(
+            scan_id=None, request_id="request-id", action="continue", parameter={}
+        ),
     )
 
 
@@ -254,30 +373,41 @@ def test_scan_manager_add_scan_to_queue_schedule(scan_manager_with_fakeredis):
 
 
 def test_scan_manager_request_set_completed(scan_manager):
-    scan_manager.request_set_completed("scan_id")
+    scan_manager.request_set_completed("request-id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
-            scan_id="scan_id", action="user_completed", parameter={}
+            scan_id=None, request_id="request-id", action="user_completed", parameter={}
         ),
     )
 
 
 def test_scan_manager_request_set_completed_scan_id(scan_manager):
-
     class ScanStorage:
-        current_scan_info = {"scan_id": "current_scan_id"}
-
-        @property
-        def current_scan_id(self):
-            return self.current_scan_info["scan_id"]
+        current_scan_info = messages.QueueInfoEntry(
+            queue_id="queue-id",
+            scan_id=["current_scan_id"],
+            is_scan=[True],
+            request_blocks=[
+                messages.RequestBlock(
+                    msg=messages.ScanQueueMessage(scan_type="mv", parameter={}),
+                    RID="request-id",
+                    readout_priority={},
+                    is_scan=True,
+                    scan_number=1,
+                    scan_id="current_scan_id",
+                )
+            ],
+            scan_number=[1],
+            status="RUNNING",
+        )
 
     scan_manager.scan_storage = ScanStorage()
     scan_manager.request_set_completed()
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
-            scan_id="current_scan_id", action="user_completed", parameter={}
+            scan_id=None, request_id="request-id", action="user_completed", parameter={}
         ),
     )
 
@@ -291,6 +421,7 @@ def test_scan_manager_add_queue_lock(scan_manager):
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
             scan_id=None,
+            request_id=None,
             action="lock",
             parameter={"reason": "Testing lock", "identifier": "test_lock"},
             queue="primary",
@@ -307,6 +438,7 @@ def test_scan_manager_remove_queue_lock(scan_manager):
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
             scan_id=None,
+            request_id=None,
             action="release_lock",
             parameter={"identifier": "test_lock"},
             queue="primary",

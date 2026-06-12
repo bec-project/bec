@@ -209,7 +209,9 @@ def test_scan_interception_halt(queuemanager_mock):
     )
     with mock.patch.object(queue_manager, "set_halt") as set_halt:
         queue_manager.scan_interception(msg)
-        set_halt.assert_called_once_with(scan_id="dummy", queue="secondary", parameter={})
+        set_halt.assert_called_once_with(
+            scan_id="dummy", request_id=None, queue="secondary", parameter={}
+        )
 
 
 def test_set_halt(queuemanager_mock):
@@ -217,7 +219,7 @@ def test_set_halt(queuemanager_mock):
     with mock.patch.object(queue_manager, "set_abort") as set_abort:
         queue_manager.set_halt(scan_id="dummy", parameter={})
         set_abort.assert_called_once_with(
-            scan_id="dummy", queue="primary", exit_info=("halted", "user")
+            scan_id="dummy", request_id=None, queue="primary", exit_info=("halted", "user")
         )
 
 
@@ -231,7 +233,7 @@ def test_set_halt_disables_return_to_start(queuemanager_mock):
         queue = queue_manager.queues["primary"].active_instruction_queue
         queue_manager.set_halt(scan_id="dummy", parameter={})
         set_abort.assert_called_once_with(
-            scan_id="dummy", queue="primary", exit_info=("halted", "user")
+            scan_id="dummy", request_id=None, queue="primary", exit_info=("halted", "user")
         )
         assert queue.return_to_start is False
 
@@ -246,7 +248,7 @@ def test_set_halt_disables_return_to_start_for_direct_instruction_queue(queueman
         queue = queue_manager.queues["primary"].active_instruction_queue
         queue_manager.set_halt(scan_id="dummy", parameter={})
         set_abort.assert_called_once_with(
-            scan_id="dummy", queue="primary", exit_info=("halted", "user")
+            scan_id="dummy", request_id=None, queue="primary", exit_info=("halted", "user")
         )
         assert queue.run_on_exception_hook is False
 
@@ -624,6 +626,48 @@ def test_set_abort_with_scan_id_not_active(queuemanager_mock):
 
 
 @pytest.mark.timeout(5)
+def test_set_abort_with_request_id_not_active(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+    msg1 = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    msg2 = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (2,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-2"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg1)
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg2)
+    scan_queue = queue_manager.queues["primary"]
+    while scan_queue.scan_worker.current_instruction_queue_item is None:
+        time.sleep(0.1)
+
+    queue_manager.set_abort(request_id="rid-2", queue="primary")
+
+    assert queue_manager.queues["primary"].status == ScanQueueStatus.RUNNING
+    assert len(scan_queue.queue) == 1
+    remaining = scan_queue.queue[0].describe().request_blocks[0]
+    assert remaining.RID == "rid-1"
+    cancelled_snapshots = [
+        sent["msg"]
+        for sent in queue_manager.connector.message_sent
+        if sent.get("queue") == MessageEndpoints.scan_queue_status()
+    ]
+    assert any(
+        any(
+            queue_item.request_blocks[0].RID == "rid-2" and queue_item.status == "CANCELLED"
+            for queue_item in snapshot.queue["primary"].info
+        )
+        for snapshot in cancelled_snapshots
+    )
+
+
+@pytest.mark.timeout(5)
 def test_set_abort_with_wrong_scan_id(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
@@ -864,6 +908,30 @@ def test_remove_queue_item(queuemanager_mock):
     queue_manager.queues["primary"].queue[0].queue.request_blocks[0].scan_id = "random"
     queue_manager.queues["primary"].remove_queue_item(scan_id=["random"])
     assert len(queue_manager.queues["primary"].queue) == 0
+
+
+def test_remove_queue_item_by_request_id(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    msg1 = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    msg2 = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (2,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-2"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg1)
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg2)
+
+    queue_manager.queues["primary"].remove_queue_item_by_request_id("rid-2")
+
+    assert len(queue_manager.queues["primary"].queue) == 1
+    remaining = queue_manager.queues["primary"].queue[0].describe().request_blocks[0]
+    assert remaining.RID == "rid-1"
 
 
 def test_invalid_scan_specified_in_message(queuemanager_mock):
