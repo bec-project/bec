@@ -81,13 +81,14 @@ else:
             base = os.path.dirname(plugin["module"].__file__)
             with open(os.path.join(base, "post_startup.py"), "r", encoding="utf-8") as file:
                 # pylint: disable=exec-used
-                exec(file.read())
+                try:
+                    exec(file.read())
+                except Exception as exc:
+                    logger.error(f"Error running `post startup` for plugin {name}: {exc}")
 
     else:
         bec._ip.prompts.status = 1
 
-    if not bec._hli_funcs:
-        bec.load_high_level_interface("bec_hli")
 
 if _main_dict["startup_file"]:
     with open(_main_dict["startup_file"], "r", encoding="utf-8") as file:

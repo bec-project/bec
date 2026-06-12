@@ -217,6 +217,7 @@ class BECClient(BECService):
             )
             builtins.bec = self._parent
             self.macros = UserMacros(self)
+            self.load_high_level_interface("bec_hli")
             self._start_services()
             self.proc = ProcedureHli(self.connector) if self._init_procedure_hli else None
             default_namespace = {"dev": self.device_manager.devices, "scans": self.scans_namespace}
@@ -227,6 +228,8 @@ class BECClient(BECService):
             logger.info("Starting new client")
             self.status = BECStatus.RUNNING
         except redis.exceptions.ConnectionError:
+            # We still want to load the HLI even if Redis is not available
+            self.load_high_level_interface("bec_hli")
             logger.error("Failed to start the client: Could not connect to Redis server.")
             self.shutdown()
 
