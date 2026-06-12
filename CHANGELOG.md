@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.135.0 (2026-06-12)
+
+### Features
+
+- Implement _wait_for_initial_state method and update add method to wait for state message
+  ([`ded7f7e`](https://github.com/bec-project/bec/commit/ded7f7e15fe216fa9ca46ccf9ca2d6dc3d12c232))
+
+
 ## v3.134.0 (2026-06-11)
 
 ### Bug Fixes
