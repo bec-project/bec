@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import time
 from inspect import Parameter, Signature
 from typing import TYPE_CHECKING, Type, TypedDict
 
@@ -185,6 +186,18 @@ class BeamlineStateManager:
             approximate=False,
         )
 
+    def _wait_for_initial_state(self, state_name: str, timeout_s: float = 5.0) -> None:
+        deadline = time.monotonic() + timeout_s
+        endpoint = MessageEndpoints.beamline_state(state_name)
+
+        while time.monotonic() < deadline:
+            state_msg = self._connector.get_last(endpoint)
+            if state_msg and state_msg["data"].status != "unknown":
+                return
+            time.sleep(0.05)
+
+        raise TimeoutError(f"Beamline state {state_name} did not publish an initial status.")
+
     ##########################
     ##### Public API #########
     ##########################
@@ -198,6 +211,7 @@ class BeamlineStateManager:
 
         self._add_state(state)
         self._publish_states()
+        self._wait_for_initial_state(state.name)
 
     def delete(self, state_name: str) -> None:
         """
