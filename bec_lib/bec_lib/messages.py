@@ -17,6 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
+# TODO remove bec_server depencency..
+from bec_server.shared_memory.models import PayloadDescriptor, SharedMemInfo
+
 
 class ProcedureWorkerStatus(Enum):
     RUNNING = auto()
@@ -92,6 +95,60 @@ class BECMessage(BaseModel):
 
     def __hash__(self) -> int:
         return self.model_dump_json().__hash__()
+
+
+class SharedMemAllocationInfo(BECMessage):
+    """
+    This message is published by the shared memory manager and contains a list of all currently allocated shared memory objects.
+    Once shared memory objects are created or destroyed, this message will publish the updated list of shared memory objects.
+    """
+
+    msg_type: ClassVar[str] = "shared_mem_allocation_info"
+
+    # Consider structure with dict[str, SharedMemInfo]. signal dotted name as key, which allows to identify this directly
+    # Alternatively, dict[str, dict[str, SharedMemInfo]] with device name as key, and then signal name as nested key
+    info: dict[str, dict[str, SharedMemInfo]]
+
+
+class SharedMemAllocationRequest(BECMessage):
+    """Message to request information about a shared memory object."""
+
+    msg_type: ClassVar[str] = "shared_mem_allocation_request"
+
+    client_id: str
+    slots: int
+    payload_desc: PayloadDescriptor
+    signal: str | None = None
+
+
+class SharedMemDeallocationRequest(BECMessage):
+    """Message to request deallocation of a shared memory object."""
+
+    msg_type: ClassVar[str] = "shared_mem_deallocation_request"
+
+    client_id: str
+    signal: str | None = None
+
+
+class SharedMemSlotWritten(BECMessage):
+    """Event emitted after a writer finished writing one shared-memory slot."""
+
+    msg_type: ClassVar[str] = "shared_mem_slot_written"
+
+    client_id: str
+    signal: str
+    slot_index: int
+
+
+class SharedMemSlotProcessed(BECMessage):
+    """Event emitted after a reader finished processing one shared-memory slot."""
+
+    msg_type: ClassVar[str] = "shared_mem_slot_processed"
+
+    client_id: str
+    signal: str
+    slot_index: int
+    result: dict[str, Any]
 
 
 class BundleMessage(BECMessage):

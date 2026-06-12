@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml~=6.0",
     "python-dotenv~=1.0",
     "rich>=13.7,<16.0",
+    "posix_ipc~=1.0",
 ]
 
 [project.optional-dependencies]

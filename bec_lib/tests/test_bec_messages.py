@@ -5,7 +5,14 @@ import pydantic
 import pytest
 
 from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.serialization import MsgpackSerialization
+from bec_server.shared_memory.models import (
+    DTypeDescriptor,
+    PayloadDescriptor,
+    RingBufferDescriptor,
+    SharedMemInfo,
+)
 
 
 @pytest.mark.parametrize("version", [1.0, 1.1, 1.2, None])
@@ -709,3 +716,67 @@ def test_feedback_message():
     assert res_loaded == msg
     assert res_loaded.username == getpass.getuser()
     assert res_loaded.versions == messages.ServiceVersions._get_version_numbers()
+
+
+def test_shared_memory_allocation_messages_round_trip():
+    payload = PayloadDescriptor(
+        nbytes=16, shape=(4,), dtype=DTypeDescriptor(kind="float", itemsize=4, byte_order="little")
+    )
+    descriptor = RingBufferDescriptor(
+        name="bec_psm_abcdef",
+        reader_count_name="bec_psm_abcdef_cnt",
+        data_lock_ids=("bec_psm_abcdef_d_0",),
+        reader_gate_ids=("bec_psm_abcdef_g_0",),
+        reader_count_lock_ids=("bec_psm_abcdef_c_0",),
+        slots=1,
+        payload=payload,
+    )
+    info = SharedMemInfo(client_id="client", buffer_desc=descriptor, signal="detector.data")
+
+    request = messages.SharedMemAllocationRequest(
+        client_id="client", slots=1, payload_desc=payload, signal="detector.data"
+    )
+    allocation_info = messages.SharedMemAllocationInfo(info={"client": {"detector.data": info}})
+    deallocation = messages.SharedMemDeallocationRequest(client_id="client", signal="detector.data")
+
+    for msg in (request, allocation_info, deallocation):
+        assert MsgpackSerialization.loads(MsgpackSerialization.dumps(msg)) == msg
+
+
+def test_shared_memory_endpoints_match_message_contracts():
+    assert MessageEndpoints.shared_memory_info().message_type is messages.SharedMemAllocationInfo
+    assert MessageEndpoints.shared_memory_info().message_op is MessageOp.SET_PUBLISH
+    assert (
+        MessageEndpoints.shared_memory_allocate().message_type
+        is messages.SharedMemAllocationRequest
+    )
+    assert MessageEndpoints.shared_memory_allocate().message_op is MessageOp.STREAM
+    assert (
+        MessageEndpoints.shared_memory_deallocate().message_type
+        is messages.SharedMemDeallocationRequest
+    )
+    assert MessageEndpoints.shared_memory_deallocate().message_op is MessageOp.STREAM
+
+
+def test_shared_memory_slot_event_messages_round_trip():
+    written = messages.SharedMemSlotWritten(
+        client_id="client", signal="detector.data", slot_index=1
+    )
+    processed = messages.SharedMemSlotProcessed(
+        client_id="client", signal="detector.data", slot_index=1, result={"sum": 10.0}
+    )
+
+    for msg in (written, processed):
+        assert MsgpackSerialization.loads(MsgpackSerialization.dumps(msg)) == msg
+
+
+def test_shared_memory_slot_event_endpoints_match_message_contracts():
+    assert (
+        MessageEndpoints.shared_memory_slot_written().message_type is messages.SharedMemSlotWritten
+    )
+    assert MessageEndpoints.shared_memory_slot_written().message_op is MessageOp.STREAM
+    assert (
+        MessageEndpoints.shared_memory_slot_processed().message_type
+        is messages.SharedMemSlotProcessed
+    )
+    assert MessageEndpoints.shared_memory_slot_processed().message_op is MessageOp.STREAM
