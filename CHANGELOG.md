@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.135.1 (2026-06-12)
+
+### Bug Fixes
+
+- Skip ScanArgs in schema generation
+  ([`aa79857`](https://github.com/bec-project/bec/commit/aa79857c903b5e31bcd06f8f0dcc667d82d0efd0))
+
+
 ## v3.135.0 (2026-06-12)
 
 ### Features
