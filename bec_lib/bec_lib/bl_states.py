@@ -4,9 +4,9 @@ import functools
 import keyword
 import traceback
 from abc import ABC, abstractmethod
-from typing import Callable, ClassVar, Generic, Type, TypeVar, cast
+from typing import Annotated, Callable, ClassVar, Generic, Type, TypeVar, cast
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -57,14 +57,15 @@ class BeamlineStateConfig(BaseModel):
 
     state_type: ClassVar[str] = "BeamlineState"
 
-    name: str = Field(
-        **ScanArgument(
+    name: Annotated[
+        str,
+        ScanArgument(
             display_name="State name",
             description=(
                 "Unique name for the beamline state. Must be a valid Python identifier and cannot be a reserved keyword. This name is used to identify the state in the system and should be descriptive of the state being monitored."
             ),
-        ).model_dump()
-    )
+        ),
+    ]
     model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
 
     @field_validator("name")
@@ -89,24 +90,25 @@ class DeviceStateConfig(BeamlineStateConfig):
 
     state_type: ClassVar[str] = "DeviceBeamlineState"
 
-    device: DeviceBase | str = Field(
-        ...,
-        **ScanArgument(
+    device: Annotated[
+        DeviceBase | str,
+        ScanArgument(
             display_name="Device",
             description=(
                 "The device this state depends on. Can be specified as the device's dotted name or as the Device object itself. If the device has hints configured, the state will use the first hinted signal of the device by default. Otherwise, a signal must be specified explicitly for the state to function."
             ),
-        ).model_dump(),
-    )
-    signal: Signal | str | None = Field(
-        default=None,
-        **ScanArgument(
+        ),
+    ]
+
+    signal: Annotated[
+        Signal | str | None,
+        ScanArgument(
             display_name="Signal",
             description=(
                 "The signal of the device to monitor for this state. Can be specified as the signal's dotted name, the signal object itself, or the obj_name of the signal as defined in the device's read dictionary. If not specified, the state will attempt to use the first hinted signal of the device. If the device has no hints and no signal is specified, the state will raise an error."
             ),
-        ).model_dump(),
-    )
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def validate_signal(self) -> DeviceStateConfig:
@@ -153,30 +155,32 @@ class DeviceWithinLimitsStateConfig(DeviceStateConfig):
 
     state_type: ClassVar[str] = "DeviceWithinLimitsState"
 
-    low_limit: float | None = Field(
-        default=None,
-        **ScanArgument(
+    low_limit: Annotated[
+        float | None,
+        ScanArgument(
             display_name="Low limit",
             description="Optional lower allowed value. Leave disabled for no lower limit.",
             reference_units="device",
-        ).model_dump(),
-    )
-    high_limit: float | None = Field(
-        default=None,
-        **ScanArgument(
+        ),
+    ] = None
+
+    high_limit: Annotated[
+        float | None,
+        ScanArgument(
             display_name="High limit",
             description="Optional upper allowed value. Leave disabled for no upper limit.",
             reference_units="device",
-        ).model_dump(),
-    )
-    tolerance: float = Field(
-        default=0.1,
-        **ScanArgument(
+        ),
+    ] = None
+
+    tolerance: Annotated[
+        float,
+        ScanArgument(
             display_name="Tolerance",
             description="Warning margin applied inside the configured limits.",
             reference_units="device",
-        ).model_dump(),
-    )
+        ),
+    ] = 0.1
 
     @model_validator(mode="after")
     def validate_limits(self) -> DeviceWithinLimitsStateConfig:
