@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import dataclasses
 from typing import Annotated, Any, Literal, TypeAlias
 
 import pint
 from pint.facets.plain import PlainQuantity
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, TypeAdapter, field_validator, model_validator
 from pydantic.dataclasses import dataclass
 
 Units = pint.UnitRegistry()
@@ -86,29 +85,36 @@ class ScanArgument:
         """
         Return the scan argument metadata as a plain dictionary.
 
+        Delegates to a pydantic ``TypeAdapter`` so serialization semantics match those of
+        a ``BaseModel`` (field serializers, nested types).
+
         Args:
             exclude_none (bool): Whether to omit entries whose value is None.
 
         Returns:
             dict: The scan argument metadata.
         """
-        data = dataclasses.asdict(self)
+        data = _SCAN_ARGUMENT_ADAPTER.dump_python(self)
         if exclude_none:
             return {key: value for key, value in data.items() if value is not None}
         return data
 
     @classmethod
-    def model_validate(cls, data: dict[str, Any]) -> ScanArgument:
+    def model_validate(cls, data: dict[str, Any] | ScanArgument) -> ScanArgument:
         """
-        Construct a validated ScanArgument from a dictionary.
+        Construct a validated ScanArgument from a dictionary or instance.
+
+        Delegates to a pydantic ``TypeAdapter`` so validation semantics match those of a
+        ``BaseModel``: unknown keys are ignored (forward compatibility across versions)
+        and all field/model validators run.
 
         Args:
-            data (dict): Scan argument metadata, e.g. from :meth:`model_dump`.
+            data (dict | ScanArgument): Scan argument metadata, e.g. from :meth:`model_dump`.
 
         Returns:
             ScanArgument: The validated scan argument.
         """
-        return cls(**data)
+        return _SCAN_ARGUMENT_ADAPTER.validate_python(data)
 
     @field_validator("units", mode="before")
     @classmethod
@@ -139,6 +145,10 @@ class ScanArgument:
         if self.units is not None and self.reference_units is not None:
             raise ValueError("units and reference_units are mutually exclusive")
         return self
+
+
+# Reusable adapter providing BaseModel-equivalent (de)serialization for the dataclass.
+_SCAN_ARGUMENT_ADAPTER = TypeAdapter(ScanArgument)
 
 
 ################################################
