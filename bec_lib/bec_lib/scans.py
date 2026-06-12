@@ -244,13 +244,25 @@ class Scans:
             for scan_name, scan_run in updated_scans.items():
                 setattr(scans_namespace, scan_name, scan_run)
 
-        if notify and removed_scans:
+        hli_func_names = set(getattr(self.parent, "_hli_funcs", {}))
+        removed_scans_for_namespace = {
+            scan_name: scan_run
+            for scan_name, scan_run in removed_scans.items()
+            if scan_name not in hli_func_names
+        }
+        updated_scans_for_namespace = {
+            scan_name: scan_run
+            for scan_name, scan_run in updated_scans.items()
+            if scan_name not in hli_func_names
+        }
+
+        if notify and removed_scans_for_namespace:
             self.parent.callbacks.run(
-                EventType.NAMESPACE_UPDATE, action="remove", ns_objects=removed_scans
+                EventType.NAMESPACE_UPDATE, action="remove", ns_objects=removed_scans_for_namespace
             )
-        if notify and updated_scans:
+        if notify and updated_scans_for_namespace:
             self.parent.callbacks.run(
-                EventType.NAMESPACE_UPDATE, action="add", ns_objects=updated_scans
+                EventType.NAMESPACE_UPDATE, action="add", ns_objects=updated_scans_for_namespace
             )
 
     @staticmethod
