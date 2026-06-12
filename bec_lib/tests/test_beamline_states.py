@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+import threading
+import time
 from unittest import mock
 
 import pytest
@@ -336,10 +338,35 @@ class TestBeamlineStateManager:
         result = state_manager.shutter_open.get()
         assert result == {"status": "valid", "label": "ok"}
 
+    def test_add_waits_for_initial_state_message(self, state_manager):
+        state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
+
+        def publish_initial_state():
+            time.sleep(0.05)
+            state_manager._connector.xadd(
+                MessageEndpoints.beamline_state("shutter_open"),
+                {
+                    "data": messages.BeamlineStateMessage(
+                        name="shutter_open", status="valid", label="ok"
+                    )
+                },
+                max_size=1,
+            )
+
+        publisher = threading.Thread(target=publish_initial_state)
+        publisher.start()
+        try:
+            state_manager.add(state)
+        finally:
+            publisher.join()
+
+        assert state_manager.shutter_open.get() == {"status": "valid", "label": "ok"}
+
     def test_add_and_delete_publish_updates(self, state_manager):
         state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
 
-        state_manager.add(state)
+        with mock.patch.object(state_manager, "_wait_for_initial_state"):
+            state_manager.add(state)
         assert "shutter_open" in state_manager._states
 
         state_manager.delete("shutter_open")
@@ -360,7 +387,8 @@ class TestBeamlineStateManager:
 
     def test_show_all_prints_table(self, state_manager, capsys):
         state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
-        state_manager.add(state)
+        with mock.patch.object(state_manager, "_wait_for_initial_state"):
+            state_manager.add(state)
 
         state_manager.show_all()
 
