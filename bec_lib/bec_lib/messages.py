@@ -2009,6 +2009,7 @@ class GameLeaderboardMessage(BECMessage):
 
 
 BlStateStatus = Literal["valid", "invalid", "warning", "unknown"]
+InterlockTargetState = list[BlStateStatus]
 
 
 class BeamlineStateMessage(BECMessage):
@@ -2073,12 +2074,14 @@ class ScanInterlockModifyStateTableMessage(BECMessage):
     msg_type: ClassVar[str] = "scan_interlock_modify_state_table"
     action: Literal["add", "remove", "remove_all"]
     state_name: str | None = None
-    status: BlStateStatus | None = None
+    status: InterlockTargetState | None = None
 
     @model_validator(mode="after")
     def _validate(self):
         if self.action == "add" and (self.status is None or self.state_name is None):
             raise ValueError("Must specify a name and status when adding a state")
+        if self.status == []:
+            raise ValueError("Must specify at least one status when adding a state")
         if self.action in ["remove", "remove_all"] and self.status is not None:
             raise ValueError("May not specify a status when removing a state")
         if self.action == "remove_all" and self.state_name is not None:
@@ -2088,7 +2091,7 @@ class ScanInterlockModifyStateTableMessage(BECMessage):
 
 class ScanInterlockStateTableContent(BECMessage):
     msg_type: ClassVar[str] = "scan_interlock_state_table_content"
-    states_watched: dict[str, BlStateStatus]
+    states_watched: dict[str, InterlockTargetState]
 
 
 class ActorStartRequestMessage(BECMessage):

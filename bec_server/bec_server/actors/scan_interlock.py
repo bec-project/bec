@@ -77,8 +77,7 @@ class ScanInterlockActor(BlStateActor):
             return [
                 state_name
                 for state_name, expected_state in self.state_table.items()
-                if (current_state := self.state_cache.get(state_name)) is not None
-                and current_state != expected_state
+                if self.state_cache.get(state_name) not in expected_state
             ]
 
     def some_mismatch_action(self, client: BECClient):
