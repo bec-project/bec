@@ -653,6 +653,18 @@ def test_set_abort_with_request_id_not_active(queuemanager_mock):
     assert len(scan_queue.queue) == 1
     remaining = scan_queue.queue[0].describe().request_blocks[0]
     assert remaining.RID == "rid-1"
+    cancelled_snapshots = [
+        sent["msg"]
+        for sent in queue_manager.connector.message_sent
+        if sent.get("queue") == MessageEndpoints.scan_queue_status()
+    ]
+    assert any(
+        any(
+            queue_item.request_blocks[0].RID == "rid-2" and queue_item.status == "CANCELLED"
+            for queue_item in snapshot.queue["primary"].info
+        )
+        for snapshot in cancelled_snapshots
+    )
 
 
 @pytest.mark.timeout(5)

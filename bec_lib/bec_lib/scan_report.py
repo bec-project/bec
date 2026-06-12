@@ -249,7 +249,7 @@ class ScanReport:
         while True:
             if conditions_are_met():
                 break
-            if self.status == "STOPPED":
+            if self.status in ["STOPPED", "CANCELLED"]:
                 raise ScanAbortion
             self._client.callbacks.poll()
             time.sleep(sleep_time)

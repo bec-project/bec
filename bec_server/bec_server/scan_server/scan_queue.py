@@ -55,6 +55,7 @@ class InstructionQueueStatus(Enum):
     DEFERRED_PAUSE = 3
     RUNNING = 4
     COMPLETED = 5
+    CANCELLED = 6
 
 
 class ScanQueueStatus(Enum):
@@ -373,6 +374,7 @@ class QueueManager:
                 logger.warning(f"Request {request_id} not found in queue {queue}")
                 return
             if target_queue_item is not que.active_instruction_queue:
+                self._cancel_queue_item(target_queue_item, queue=queue)
                 que.remove_queue_item_by_request_id(request_id)
                 return
             scan_id = target_queue_item.scan_id
@@ -384,6 +386,16 @@ class QueueManager:
                 current_scan_id = [current_scan_id]
             if len(set(scan_id) & set(current_scan_id)) == 0:
                 # The scan to abort is not the currently running scan, so we just remove it from the queue
+                target_queue_item = next(
+                    (
+                        instruction_queue
+                        for instruction_queue in self.queues[queue].queue
+                        if len(set(scan_id) & set(instruction_queue.scan_id)) > 0
+                    ),
+                    None,
+                )
+                if target_queue_item is not None:
+                    self._cancel_queue_item(target_queue_item, queue=queue)
                 self.queues[queue].remove_queue_item(scan_id)
                 return
 
@@ -408,6 +420,22 @@ class QueueManager:
             else:
                 stop_id = instruction_queue.scan_id
             self.stop_all_devices(stop_id=stop_id)
+
+    def _cancel_queue_item(
+        self, target_queue_item: InstructionQueueItem | DirectInstructionQueueItem, queue: str
+    ) -> None:
+        """
+        Mark a pending queue item as cancelled before removing it from the queue.
+        This is to allow clients to recognize that the scan was cancelled and did not just
+        disappear from the queue.
+
+        Args:
+            target_queue_item (InstructionQueueItem | DirectInstructionQueueItem): The queue item to cancel.
+            queue (str): The name of the queue the item is in, e.g. "primary".
+        """
+        del queue  # queue kept for signature symmetry with callers
+        target_queue_item._status = InstructionQueueStatus.CANCELLED
+        self.send_queue_status()
 
     @requires_queue
     def set_halt(
