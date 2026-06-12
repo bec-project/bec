@@ -1,15 +1,32 @@
 from __future__ import annotations
 
+import dataclasses
 from typing import Annotated, Any, Literal, TypeAlias
 
 import pint
 from pint.facets.plain import PlainQuantity
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic.dataclasses import dataclass
 
 Units = pint.UnitRegistry()
 
 
-class ScanArgument(BaseModel):
+@dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
+class ScanArgument:
+    """
+    UI and validation metadata for a scan or configuration argument.
+
+    ScanArgument is attached as ``Annotated`` metadata, both in plain function signatures
+    (scan definitions) and in Pydantic model fields (e.g. beamline state configs)::
+
+        exp_time: Annotated[float, ScanArgument(display_name="Exposure Time", units=Units.s)]
+
+    It is a frozen Pydantic dataclass rather than a ``BaseModel`` on purpose: ``BaseModel``
+    instances used as ``Annotated`` metadata of model fields participate in Pydantic's schema
+    generation through ``__get_pydantic_core_schema__``, which is deprecated since Pydantic
+    2.11 and removed in V3. A dataclass is inert metadata (like ``annotated_types``) and is
+    preserved as-is in ``FieldInfo.metadata``.
+    """
 
     display_name: Annotated[str | None, Field(description="Display name for the argument")] = None
     description: Annotated[str | None, Field(description="Description of the argument")] = None
@@ -65,7 +82,33 @@ class ScanArgument(BaseModel):
         ),
     ] = None
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    def model_dump(self, *, exclude_none: bool = False) -> dict[str, Any]:
+        """
+        Return the scan argument metadata as a plain dictionary.
+
+        Args:
+            exclude_none (bool): Whether to omit entries whose value is None.
+
+        Returns:
+            dict: The scan argument metadata.
+        """
+        data = dataclasses.asdict(self)
+        if exclude_none:
+            return {key: value for key, value in data.items() if value is not None}
+        return data
+
+    @classmethod
+    def model_validate(cls, data: dict[str, Any]) -> ScanArgument:
+        """
+        Construct a validated ScanArgument from a dictionary.
+
+        Args:
+            data (dict): Scan argument metadata, e.g. from :meth:`model_dump`.
+
+        Returns:
+            ScanArgument: The validated scan argument.
+        """
+        return cls(**data)
 
     @field_validator("units", mode="before")
     @classmethod
