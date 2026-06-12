@@ -4,7 +4,17 @@ from typing import Annotated, Any, Literal, TypeAlias
 
 import pint
 from pint.facets.plain import PlainQuantity
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    GetCoreSchemaHandler,
+    field_validator,
+    model_validator,
+)
+from pydantic.annotated_handlers import GetJsonSchemaHandler
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 Units = pint.UnitRegistry()
 
@@ -96,6 +106,18 @@ class ScanArgument(BaseModel):
         if self.units is not None and self.reference_units is not None:
             raise ValueError("units and reference_units are mutually exclusive")
         return self
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        return handler(source_type)
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        return handler(core_schema)
 
 
 ################################################
