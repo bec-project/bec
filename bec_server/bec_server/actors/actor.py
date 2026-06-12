@@ -9,7 +9,12 @@ from bec_lib.actors import ActorActionTable
 from bec_lib.client import BECClient
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import BeamlineStateMessage, BlStateStatus, ProcedureWorkerStatus
+from bec_lib.messages import (
+    BeamlineStateMessage,
+    BlStateStatus,
+    InterlockTargetState,
+    ProcedureWorkerStatus,
+)
 from bec_server.procedures.oop_worker_base import push_status
 
 logger = bec_logger.logger
@@ -120,7 +125,7 @@ class BlStateActor(SubscriptionActor):
     self.all_match_action() is called. If not, self.some_mismatch_action() is called.
     """
 
-    state_table: dict[str, BlStateStatus]
+    state_table: dict[str, InterlockTargetState]
 
     def __init__(self, client: BECClient, name: str, exec_id: str):
         self.state_table_lock = RLock()
@@ -149,9 +154,11 @@ class BlStateActor(SubscriptionActor):
 
     def all_states_match(self, client: BECClient):
         with self.state_table_lock:
-            for state, status in self.state_table.items():
-                if self.state_cache.get(state) != status:
-                    logger.info(f"Beamline state {state} out of bounds: expected={status}")
+            for state, allowed_statuses in self.state_table.items():
+                if self.state_cache.get(state) not in allowed_statuses:
+                    logger.info(
+                        f"Beamline state {state} out of bounds: expected one of {allowed_statuses}"
+                    )
                     return False
             return True
 

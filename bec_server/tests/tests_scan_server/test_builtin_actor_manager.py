@@ -5,6 +5,7 @@ import pytest
 
 from bec_lib.messages import (
     AvailableBeamlineStatesMessage,
+    InterlockTargetState,
     ScanInterlockModifyStateTableMessage,
     ScanInterlockStateTableContent,
 )
@@ -155,7 +156,7 @@ def test_shutdown_stops_all_and_shuts_down_client(mocked_manager):
     mock_client.shutdown.assert_called_once()
 
 
-def _req_msg(action, state_name, status):
+def _req_msg(action, state_name, status: InterlockTargetState | None):
     return {
         "data": ScanInterlockModifyStateTableMessage(
             action=action, state_name=state_name, status=status
@@ -163,14 +164,18 @@ def _req_msg(action, state_name, status):
     }
 
 
-INITIAL_STATES = {"initial_state_1": "valid", "initial_state_2": "valid"}
+INITIAL_STATES = {"initial_state_1": ["valid"], "initial_state_2": ["valid"]}
 
 
 @pytest.mark.parametrize(
     ["modification_request", "new_watched_states"],
     [
-        (_req_msg("add", "test_state", "valid"), {**INITIAL_STATES, "test_state": "valid"}),
-        (_req_msg("remove", "initial_state_1", None), {"initial_state_2": "valid"}),
+        (_req_msg("add", "test_state", ["valid"]), {**INITIAL_STATES, "test_state": ["valid"]}),
+        (
+            _req_msg("add", "test_state", ["valid", "warning"]),
+            {**INITIAL_STATES, "test_state": ["valid", "warning"]},
+        ),
+        (_req_msg("remove", "initial_state_1", None), {"initial_state_2": ["valid"]}),
         (_req_msg("remove_all", None, None), {}),
         (_req_msg("remove", "missing_state", None), INITIAL_STATES),
     ],

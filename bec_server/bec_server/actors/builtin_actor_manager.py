@@ -7,9 +7,9 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
     AvailableBeamlineStatesMessage,
-    BlStateStatus,
     BuiltinActorStateChangeNotification,
     BuiltinActorStateUpdatedNotification,
+    InterlockTargetState,
     ScanInterlockModifyStateTableMessage,
     ScanInterlockStateTableContent,
 )
@@ -110,13 +110,13 @@ class BuiltinActorManager:
         self._client.shutdown()
 
     # Actor specific management methods:
-    def _set_interlock_states_in_redis(self, states: dict[str, BlStateStatus]):
+    def _set_interlock_states_in_redis(self, states: dict[str, InterlockTargetState]):
         self._client.connector.set(
             MessageEndpoints.scan_interlock_states(),
             ScanInterlockStateTableContent(states_watched=states),
         )
 
-    def _current_watched_states(self) -> dict[str, BlStateStatus]:
+    def _current_watched_states(self) -> dict[str, InterlockTargetState]:
         states: ScanInterlockStateTableContent | None = self._client.connector.get(
             MessageEndpoints.scan_interlock_states()
         )
