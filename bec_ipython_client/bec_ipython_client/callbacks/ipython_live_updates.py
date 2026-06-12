@@ -189,7 +189,7 @@ class IPythonLiveUpdates:
                 request_context.queue_status = queue.status
                 self._request_block_id = req_id = self._active_request.metadata.get("RID")
 
-                while queue.status not in ["COMPLETED", "ABORTED", "HALTED"]:
+                while queue.status not in ["COMPLETED", "ABORTED", "HALTED", "CANCELLED"]:
                     request_context.queue_status = queue.status
                     if self._process_queue(queue, request, req_id):
                         break
@@ -302,7 +302,7 @@ class IPythonLiveUpdates:
         if queue.scans:
             if queue.scans[-1] is not None and queue.scans[-1].status == "user_completed":
                 return True
-            if queue.scans[-1] is None and queue.status == "STOPPED":
+            if queue.scans[-1] is None and queue.status in ["STOPPED", "CANCELLED"]:
                 raise ScanInterruption("Scan was stopped by the user.")
 
         if queue.queue_position is None:

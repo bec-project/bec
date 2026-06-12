@@ -147,6 +147,41 @@ def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_liv
                     assert res is True
 
 
+def test_live_updates_process_queue_cancelled_pending_request_raises_interruption(bec_client_mock):
+    client = bec_client_mock
+    live_updates = IPythonLiveUpdates(client)
+    request_msg = messages.ScanQueueMessage(
+        scan_type="grid_scan",
+        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    request_block = messages.RequestBlock(
+        msg=request_msg,
+        RID="something",
+        report_instructions=[],
+        readout_priority={"monitored": ["samx"]},
+        is_scan=True,
+        scan_number=1,
+        scan_id=None,
+    )
+    queue = QueueItem(
+        scan_manager=client.queue,
+        queue_id="queue_id",
+        request_blocks=[request_block],
+        status="CANCELLED",
+        active_request_block=None,
+        scan_id=[None],
+    )
+
+    with (
+        mock.patch.object(queue, "_update_with_buffer"),
+        mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
+        pytest.raises(ScanInterruption, match="stopped by the user"),
+    ):
+        live_updates._process_queue(queue, request_msg, "something")
+
+
 def test_process_request_repeats_on_ScanRestart_error(
     ipython_live_updates_with_mocked_live, queue_elements
 ):

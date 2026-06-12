@@ -101,6 +101,13 @@ def test_scan_report_wait_for_scan_raises(scan_report):
             scan_report._wait_scan(None, 0.1)
 
 
+def test_scan_report_wait_for_scan_raises_when_request_is_cancelled(scan_report):
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
+    scan_report.queue_item.status = "CANCELLED"
+    with pytest.raises(ScanAbortion):
+        scan_report._wait_scan(None, 0.1)
+
+
 def test_scan_report_aborts_on_ctrl_c(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(
         scan_type="mv", parameter={"args": {"samx": [5]}}
