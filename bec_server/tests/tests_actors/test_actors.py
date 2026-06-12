@@ -176,7 +176,7 @@ def test_actor_procedure_logs_error_not_actor():
 
 
 class BlStateTestActor(BlStateActor):
-    state_table = {"test_state": "valid", "test_state_2": "valid"}
+    state_table = {"test_state": ["valid"], "test_state_2": ["valid"]}
 
 
 def test_blstateactor_init_table_and_cache():
@@ -191,7 +191,7 @@ def test_blstateactor_init_table_and_cache():
     actor.stop_event.set()
     actor.run()
 
-    assert actor.state_table == {"test_state": "valid"}
+    assert actor.state_table == {"test_state": ["valid"]}
     assert actor.state_cache == {"test_state": "valid"}
 
 

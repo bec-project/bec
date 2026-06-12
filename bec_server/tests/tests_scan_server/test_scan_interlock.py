@@ -62,9 +62,9 @@ class TestScanInterlockActor:
     def test_on_state_modification_add(self, actor, mock_client):
         actor._update_cache = MagicMock()
         mock_client.connector.register.reset_mock()
-        msg = MagicMock(action="add", state_name="beam_ok", status="valid")
+        msg = MagicMock(action="add", state_name="beam_ok", status=["valid"])
         actor._on_state_modification(msg)
-        assert actor.state_table["beam_ok"] == "valid"
+        assert actor.state_table["beam_ok"] == ["valid"]
         mock_client.connector.register.assert_called_once()
         actor._update_cache.assert_called_once()
 
@@ -91,6 +91,16 @@ class TestScanInterlockActor:
             actor._on_state_modification(msg)
 
         mock_client.connector.unregister.assert_not_called()
+
+    def test_all_states_match_accepts_list_of_statuses(self, actor):
+        actor.state_table["beam_ok"] = ["valid", "warning"]
+        actor.state_cache["beam_ok"] = "warning"
+        assert actor.all_states_match(actor.client) is True
+
+    def test_mismatched_states_handles_list_of_statuses(self, actor):
+        actor.state_table["beam_ok"] = ["valid", "warning"]
+        actor.state_cache["beam_ok"] = "invalid"
+        assert actor.mismatched_states == ["beam_ok"]
 
     def test_some_mismatch_action_adds_lock(self, actor, mock_client):
         actor.some_mismatch_action(mock_client)
