@@ -231,7 +231,6 @@ class BECClient(BECService):
             self.shutdown()
 
     def _start_services(self):
-        # self.logbook = LogbookConnector(self.connector)
         self._start_device_manager()
         self._load_scans()
         self._start_scan_queue()

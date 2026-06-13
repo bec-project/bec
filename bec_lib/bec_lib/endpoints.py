@@ -1216,40 +1216,6 @@ class MessageEndpoints:
             message_op=MessageOp.SET_PUBLISH,
         )
 
-    # logbook
-    @staticmethod
-    def logbook():
-        """
-        Endpoint for logbook. This endpoint is used to publish logbook info such as
-        url, user and token using a direct msgpack dump of a dictionary.
-
-        Returns:
-            EndpointInfo: Endpoint for logbook.
-        """
-        endpoint = f"{EndpointType.INFO.value}/logbook"
-        return EndpointInfo(
-            endpoint=endpoint,
-            message_type=messages.CredentialsMessage,
-            message_op=MessageOp.KEY_VALUE,
-        )
-
-    # scibec
-    @staticmethod
-    def scibec():
-        """
-        Endpoint for scibec. This endpoint is used to publish scibec info such as
-        url, user and token using a CredentialsMessage.
-
-        Returns:
-            EndpointInfo: Endpoint for scibec.
-        """
-        endpoint = f"{EndpointType.INFO.value}/scibec"
-        return EndpointInfo(
-            endpoint=endpoint,
-            message_type=messages.CredentialsMessage,
-            message_op=MessageOp.KEY_VALUE,
-        )
-
     # experiment
     @staticmethod
     def account():
