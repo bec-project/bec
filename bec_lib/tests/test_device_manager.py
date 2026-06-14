@@ -446,6 +446,22 @@ def test_get_device_config_returns_empty_dict_on_none(dm_with_devices):
     assert config == {}
 
 
+def test_get_device_config_skips_missing_loaded_device(dm_with_devices, session_from_test_config):
+    device_manager = dm_with_devices
+    config_with_missing_device = copy.deepcopy(session_from_test_config.get("devices"))
+    missing_device = next(dev for dev in config_with_missing_device if dev["name"] == "samx")
+    missing_device["deviceConfig"] = {"velocity": 0.0}
+    device_manager.devices.pop("samx")
+
+    with mock.patch.object(device_manager.connector, "get") as mock_get:
+        mock_get.return_value = messages.AvailableResourceMessage(
+            resource=config_with_missing_device
+        )
+        config = device_manager.get_device_config(update_signals=True)
+
+    assert "samx" not in config
+
+
 def test_get_device_config_with_signal_update(dm_with_devices, session_from_test_config):
     device_manager = dm_with_devices
     # Mock a device signal that can be read
