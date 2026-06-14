@@ -865,14 +865,17 @@ class DeviceManagerBase:
                 continue
             if update_signals:
                 # If the device config specifies start values for signals, update them
-                available_signal = self.devices[dev_name]._info.get("signals", {})
+                device_obj = self.devices.get(dev_name)
+                if not device_obj:
+                    continue
+                available_signal = device_obj._info.get("signals", {})
                 device_config = dev_conf.get("deviceConfig", {})
                 if not device_config:
                     continue
                 for signal_name in device_config:
                     if signal_name in available_signal:
                         signal_obj_name = available_signal[signal_name].get("obj_name")
-                        signal_obj = getattr(self.devices[dev_name], signal_name, None)
+                        signal_obj = getattr(device_obj, signal_name, None)
                         if not signal_obj or not signal_obj_name:
                             continue
                         sig_read = signal_obj.read(cached=True)
