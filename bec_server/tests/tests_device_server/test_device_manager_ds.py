@@ -418,7 +418,8 @@ def test_device_manager_ds_obj_callback_progress_signal_disabled_device(dm_with_
     [
         None,
         messages.DeviceMessage(
-            signals={"async_signal": {"value": np.random.rand(10), "timestamp": time.time()}}
+            signals={"async_signal": {"value": np.random.rand(10), "timestamp": time.time()}},
+            metadata={"async_update": {"type": "add", "max_shape": [None]}},
         ),
         "some string",
     ],
@@ -443,7 +444,8 @@ def test_device_manager_ds_obj_callback_async_signal_incomplete_info(dm_with_dev
     dm_with_devices.devices.bec_signals_device.metadata = metadata
 
     msg = messages.DeviceMessage(
-        signals={"async_signal": {"value": np.random.rand(10), "timestamp": time.time()}}
+        signals={"async_signal": {"value": np.random.rand(10), "timestamp": time.time()}},
+        metadata={"async_update": {"type": "add", "max_shape": [None]}},
     )
     with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
         device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=msg)

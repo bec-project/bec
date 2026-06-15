@@ -425,6 +425,31 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def device_async_signal_index(scan_id: str, device: str, signal: str):
+        """
+        Endpoint for async device signal index updates.
+        This endpoint is used by the device server to publish per-message index
+        information for async signals using a messages.DeviceAsyncSignalIndexMessage
+        message. Index data is scoped to the async signal stream.
+
+        Args:
+            scan_id (str): unique scan identifier
+            device (str): Device name, e.g. "mcs".
+            signal (str): Signal name, e.g. "image".
+
+        Returns:
+            EndpointInfo: Endpoint for device async signal index updates.
+        """
+        endpoint = (
+            f"{EndpointType.INFO.value}/devices/async_signal_index/{scan_id}/{device}/{signal}"
+        )
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.DeviceAsyncSignalIndexMessage,
+            message_op=MessageOp.LIST,
+        )
+
+    @staticmethod
     def device_monitor_2d(device: str):
         """
         Endpoint for device monitoring of 2D detectors.

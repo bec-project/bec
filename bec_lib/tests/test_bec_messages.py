@@ -62,6 +62,21 @@ def test_device_message_with_invalid_async_update():
         )
 
 
+def test_device_async_signal_index_message():
+    msg = messages.DeviceAsyncSignalIndexMessage(
+        scan_id="scan-1",
+        device="waveform",
+        signal="waveform_data",
+        shapes={"waveform_a": [2], "waveform_b": []},
+        indices={"waveform_a": 0, "waveform_b": 3},
+        async_update=messages.DeviceAsyncUpdate(type="add", max_shape=[None]),
+    )
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+
+    assert res_loaded == msg
+
+
 def test_bundled_message():
     sub_msg = messages.DeviceMessage(signals={"samx": {"value": 5.2}}, metadata={"RID": "1234"})
     msg = messages.BundleMessage()

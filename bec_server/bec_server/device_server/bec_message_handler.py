@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable, TypedDict
 
+import numpy as np
 from ophyd import OphydObject
 from ophyd_devices.utils import bec_signals as bms
 
@@ -14,6 +15,11 @@ logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+
+
+class _AsyncSignalIndexState(TypedDict):
+    scan_id: str
+    indices: dict[str, int]
 
 
 class BECMessageHandler:
@@ -32,6 +38,7 @@ class BECMessageHandler:
         self.device_manager = device_manager
         self.connector: RedisConnector = device_manager.connector
         self.devices = device_manager.devices
+        self._async_signal_index_state: dict[tuple[str, str], _AsyncSignalIndexState] = {}
 
     def emit(self, obj: OphydObject, message: messages.BECMessage):
         """
@@ -156,14 +163,70 @@ class BECMessageHandler:
                 f"Signal metadata is None for device {device_name} and signal {signal_name}."
             )
             return
+
+        indices = self._get_async_signal_indices(
+            obj=obj, scan_id=scan_id, signal_names=message.signals.keys()
+        )
+
+        # we augment the message metadata with the async signal indices so that
+        # downstream consumers can know which message corresponds to which async signal update
+        message.metadata["async_indices"] = indices
+
+        pipe = self.connector.pipeline()
         self.connector.xadd(
             MessageEndpoints.device_async_signal(
                 scan_id=scan_id, device=device_name, signal=signal_name
             ),
             {"data": message},
             max_size=obj.signal_metadata.get("max_size", 1000),
+            pipe=pipe,
             expire=obj.signal_metadata.get("expire", 600),  # default to 10 minutes (600 seconds)
         )
+
+        # NOTE: We are storing the shape information. This means that
+        # - a single value update will have shape [] (scalar)
+        # - an empty array will have shape [0]
+        # - a 1D array of length N will have shape [N]
+        # - a 2D array of shape (M, N) will have shape [M, N]
+        index_message = messages.DeviceAsyncSignalIndexMessage(
+            scan_id=scan_id,
+            device=device_name,
+            signal=signal_name,
+            shapes={
+                current_signal_name: list(np.shape(signal_data["value"]))
+                for current_signal_name, signal_data in message.signals.items()
+            },
+            indices=indices,
+            async_update=messages.DeviceAsyncUpdate.model_validate(
+                message.metadata["async_update"]
+            ),
+        )
+        self.connector.rpush(
+            MessageEndpoints.device_async_signal_index(
+                scan_id=scan_id, device=device_name, signal=signal_name
+            ),
+            index_message,
+            pipe=pipe,
+            expire=3600,  # expire after 1 hour; note that this is longer than the async signal message itself
+        )
+        pipe.execute()
+
+    def _get_async_signal_indices(
+        self, obj: bms.DynamicSignal, scan_id: str, signal_names: Iterable[str]
+    ) -> dict[str, int]:
+        state_key = (obj.root.name, obj.name)
+        state = self._async_signal_index_state.get(state_key)
+        if state is None or state["scan_id"] != scan_id:
+            state = _AsyncSignalIndexState(scan_id=scan_id, indices={})
+            self._async_signal_index_state[state_key] = state
+
+        out = {}
+        indices = state["indices"]
+        for signal_name in signal_names:
+            current_index = indices.get(signal_name, -1) + 1
+            indices[signal_name] = current_index
+            out[signal_name] = current_index
+        return out
 
     def _get_scan_status_message(self) -> messages.ScanStatusMessage | None:
         """
