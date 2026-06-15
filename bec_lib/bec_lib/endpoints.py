@@ -1693,6 +1693,18 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def scan_interlock_restart_scan():
+        """Whether to restart the scan when the interlock is triggered."""
+        endpoint = (
+            f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/config/restart_scan_on_lock"
+        )
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.BoolConfigDefaultFalse,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def gui_registry_state(gui_id: str):
         """
         Endpoint for GUI registry state. This endpoint is used to publish the GUI registry state

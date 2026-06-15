@@ -34,8 +34,11 @@ class RedisConfigValue(property, Generic[ValueT]):
     def __del__(self):
         self.unregister_all()
 
+    def __bool__(self):
+        raise ValueError(f"Maybe you meant to check {self}.value?")
+
     def _fetch(self) -> ManagedConfigMessage[ValueT]:
-        existing = self._connector.xread(self._ep, from_start=True)
+        existing = self._connector.xread(self._ep, id="+", count=1)
         if existing is None:
             config = self._ep.message_type()  # type: ignore # concrete classes must have a default
             self._write(config)

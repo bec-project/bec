@@ -1,4 +1,5 @@
 from bec_lib.client import BECClient
+from bec_lib.config_values import RedisConfigValue
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
@@ -28,6 +29,10 @@ class ScanInterlockActor(BlStateActor):
             self.state_table = {}
 
         super().__init__(client, name, exec_id)
+
+        self._restart_scan_on_lock = RedisConfigValue(
+            connector=self.client.connector, endpoint=MessageEndpoints.scan_interlock_restart_scan()
+        )
 
     def _ping_clients(self):
         logger.debug(f"{self.name} pinging clients that it was updated")
@@ -101,7 +106,9 @@ class ScanInterlockActor(BlStateActor):
             reason=f"Interlock for beamline states: {self.mismatched_states}",
             lock_id=self._LOCK_ID,
         )
-        self.client.queue.request_scan_restart()
+        if self._restart_scan_on_lock.value:
+            logger.info("Scan interlock requesting scan restart.")
+            self.client.queue.request_scan_restart()
 
     def all_match_action(self, client: BECClient):
         self._unlock()
