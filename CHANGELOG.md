@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.136.0 (2026-06-15)
+
+### Features
+
+- **interlock**: Support multiple statuses
+  ([`374e6ee`](https://github.com/bec-project/bec/commit/374e6ee3585460ee4aec138be4799cd536e6ad90))
+
+
 ## v3.135.2 (2026-06-15)
 
 ### Bug Fixes
