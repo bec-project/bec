@@ -689,6 +689,36 @@ class DeviceMessage(BECMessage):
         return v
 
 
+class DeviceAsyncSignalIndexMessage(BECMessage):
+    """Message type for sending device async signal index information from the device server
+
+    This message is used to send index information for async signals emitted by the device server. It is published to a
+    separate Redis list and is meant as a companion message to the DeviceMessage that contains the async signal data.
+    The DeviceAsyncSignalIndexMessage contains information about the shapes of the async signals
+    that are being emitted and can be used to keep track of offsets, even after the raw data stream has already been
+    evicted from Redis. The indices are managed on the device server side and are incremented for each new async signal emitted.
+
+    Args:
+        scan_id (str): Unique scan ID
+        device (str): Name of the device emitting the async signals
+        signal (str): Name of the async signal being emitted
+        shapes (dict[str, list[int]]): Dictionary containing the shapes of the async signals being emitted, keyed by signal name
+        indices (dict[str, int]): Dictionary containing the current indices of the async signals being emitted, keyed by signal name.
+                                    The index starts at 0 and is incremented for each new async signal emitted and can be used to
+                                    keep track of offsets in the raw data stream.
+        async_update (DeviceAsyncUpdate): Metadata controlling how data is aggregated into datasets during a scan. See DeviceAsyncUpdate for details.
+    """
+
+    msg_type: ClassVar[str] = "device_async_signal_index"
+
+    scan_id: str
+    device: str
+    signal: str
+    shapes: dict[str, list[int]]
+    indices: dict[str, int]
+    async_update: DeviceAsyncUpdate
+
+
 class DeviceAsyncUpdate(BaseModel):
     """Model for validating async update metadata sent with device data.
 
