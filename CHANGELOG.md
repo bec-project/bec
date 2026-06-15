@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.136.1 (2026-06-15)
+
+### Bug Fixes
+
+- **config**: Get_device_config skips uninitialized devices
+  ([`a892e14`](https://github.com/bec-project/bec/commit/a892e1467b6e5913f3bf51e330ca2116869add9d))
+
+
 ## v3.136.0 (2026-06-15)
 
 ### Features
