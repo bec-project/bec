@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.135.2 (2026-06-15)
+
+### Bug Fixes
+
+- Update namespace handling to exclude HLI function names from scan updates
+  ([`562b4b4`](https://github.com/bec-project/bec/commit/562b4b4eae2c2b60aeb900b4d0c350bf6289debf))
+
+
 ## v3.135.1 (2026-06-12)
 
 ### Bug Fixes
