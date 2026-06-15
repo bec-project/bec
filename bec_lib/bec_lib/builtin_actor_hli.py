@@ -26,6 +26,10 @@ class ScanInterlockHli:
         self._enabled = RedisConfigValue(
             connector=self._client.connector, endpoint=MessageEndpoints.scan_interlock_enabled()
         )
+        self._restart_scan_on_lock = RedisConfigValue(
+            connector=self._client.connector,
+            endpoint=MessageEndpoints.scan_interlock_restart_scan(),
+        )
 
     @property
     def enabled(self):
@@ -34,6 +38,14 @@ class ScanInterlockHli:
     @enabled.setter
     def enabled(self, enabled: bool):
         self._enabled.value = enabled
+
+    @property
+    def restart_scan_on_lock(self):
+        return self._restart_scan_on_lock.value
+
+    @restart_scan_on_lock.setter
+    def restart_scan_on_lock(self, restart_scan_on_lock: bool):
+        self._restart_scan_on_lock.value = restart_scan_on_lock
 
     @property
     def states_watched(self) -> dict[str, InterlockTargetState]:

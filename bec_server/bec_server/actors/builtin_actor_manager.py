@@ -58,7 +58,7 @@ class BuiltinActorManager:
             MessageEndpoints.modify_interlock_table(), cb=self._modify_interlock_table
         )
         self._client.connector.register(
-            MessageEndpoints.available_beamline_states(), cb=self._handle_state_update
+            MessageEndpoints.available_beamline_states(), cb=self._handle_beamline_state_update
         )
 
     def _ping_clients(self, actor_name: str):
@@ -97,7 +97,7 @@ class BuiltinActorManager:
         del actor
 
     def shutdown(self):
-        for actor in self._actors_threads_and_stops:
+        for actor in list(self._actors_threads_and_stops):
             self._stop_actor(actor)
         self._client.shutdown()
 
@@ -114,7 +114,7 @@ class BuiltinActorManager:
         )
         return states.states_watched if states is not None else {}
 
-    def _handle_state_update(self, msg_dict: dict):
+    def _handle_beamline_state_update(self, msg_dict: dict):
         msg: AvailableBeamlineStatesMessage = msg_dict["data"]
         state_names = [state.name for state in msg.states]
         for watched_state in self._current_watched_states():

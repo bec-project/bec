@@ -2170,25 +2170,6 @@ class ScanInterlockStateTableContent(BECMessage):
     states_watched: dict[str, InterlockTargetState]
 
 
-class BuiltinActorManagerConfig(BECMessage):
-    """Config for the builtin actor manager"""
-
-    model_config = ConfigDict(validate_assignment=True)
-    interlock_enabled: bool = Field(
-        True,
-        description="Enable the scan interlock to lock the queue when watched beamline states become invalid.",
-    )
-
-
-class ScanInterlockConfig(BECMessage):
-    """Config for the scan interlock actor. All fields should have defaults."""
-
-    model_config = ConfigDict(validate_assignment=True)
-    restart_scan_on_lock: bool = Field(
-        False, description="Abort and re-queue the running scan when the interlock triggers."
-    )
-
-
 class ActorStartRequestMessage(BECMessage):
     """Specify an actor class by module and name, to be instantiated and started by the actor
     manager."""

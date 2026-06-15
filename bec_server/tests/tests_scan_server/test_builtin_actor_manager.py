@@ -9,6 +9,7 @@ from bec_lib.messages import (
     ScanInterlockModifyStateTableMessage,
     ScanInterlockStateTableContent,
 )
+from bec_lib.tests.utils import BECClient
 from bec_server.actors.builtin_actor_manager import BuiltinActorManager
 
 
@@ -27,6 +28,7 @@ class DummyActor:
 def mocked_manager():
     with (
         patch("bec_server.actors.builtin_actor_manager.BECClient") as mock_client_cls,
+        patch("bec_server.actors.builtin_actor_manager.ScanInterlockActor", DummyActor),
         patch.object(BuiltinActorManager, "_start_all"),
     ):
         mock_client = MagicMock()
@@ -35,8 +37,8 @@ def mocked_manager():
         mock_client_cls.return_value = mock_client
 
         manager = BuiltinActorManager("localhost:6379")
-        with patch.object(manager, "_builtin_actors", {"DummyActor": DummyActor}):
-            yield manager, mock_client
+        # with patch.object(manager, "_builtin_actors", {"DummyActor": DummyActor}):
+        yield manager, mock_client
 
 
 def test_init_registers_callback(mocked_manager):
@@ -48,7 +50,7 @@ def test_init_registers_callback(mocked_manager):
 
     kwargs = mock_client.connector.register.call_args_list[0].kwargs
     assert "cb" in kwargs
-    assert kwargs["cb"] == manager._on_state_changed
+    assert kwargs["cb"] == manager._scan_interlock_enabled._update_cb
 
     kwargs = mock_client.connector.register.call_args_list[1].kwargs
     assert "cb" in kwargs
@@ -93,7 +95,7 @@ def test_stop_actor_sets_event_and_joins(mocked_manager):
 
     manager._actors_threads_and_stops[DummyActor] = (actor, mock_thread, actor.stop_event)
 
-    manager._stop_actor("DummyActor")
+    manager._stop_actor(DummyActor)
 
     assert actor.stop_event.is_set()
     mock_thread.join.assert_called_once()
@@ -102,40 +104,21 @@ def test_stop_actor_sets_event_and_joins(mocked_manager):
 def test_stop_actor_missing_is_noop(mocked_manager):
     manager, _ = mocked_manager
 
+    class MissingActor(DummyActor): ...
+
     # Should not raise
-    manager._stop_actor("MissingActor")
+    manager._stop_actor(MissingActor)
 
 
-def test_on_state_changed_starts_enabled_actor(mocked_manager):
-    manager, mock_client = mocked_manager
-
-    manager._builtin_actors = {"DummyActor": DummyActor}
-
-    msg = MagicMock()
-    msg.value.actor_name = "DummyActor"
-
-    mock_client.builtin_actors.check_enabled.return_value = True
-
-    with patch.object(manager, "_start_actor") as mock_start:
-        manager._on_state_changed(msg)
-
-    mock_start.assert_called_once_with(DummyActor)
-
-
-def test_on_state_changed_unknown_actor(mocked_manager):
+def test_on_state_changed_starts_enabled_actor(
+    mocked_manager: tuple[BuiltinActorManager, BECClient],
+):
     manager, _ = mocked_manager
 
-    msg = MagicMock()
-    msg.value.actor_name = "UnknownActor"
+    with patch.object(manager, "_start_actor") as mock_start:
+        manager._interlock_enabled_changed(True)
 
-    with (
-        patch.object(manager, "_start_actor") as mock_start,
-        patch.object(manager, "_stop_actor") as mock_stop,
-    ):
-        manager._on_state_changed(msg)
-
-    mock_start.assert_not_called()
-    mock_stop.assert_not_called()
+    mock_start.assert_called_once_with(DummyActor)
 
 
 def test_shutdown_stops_all_and_shuts_down_client(mocked_manager):
@@ -193,7 +176,7 @@ def test_handle_state_update(mocked_manager):
     manager, _ = mocked_manager
     manager._current_watched_states = lambda: {"test_state": "valid"}
     manager._modify_interlock_table = MagicMock()
-    manager._handle_state_update({"data": AvailableBeamlineStatesMessage(states=[])})
+    manager._handle_beamline_state_update({"data": AvailableBeamlineStatesMessage(states=[])})
     manager._modify_interlock_table.assert_called_with(
         {"data": ScanInterlockModifyStateTableMessage(action="remove", state_name="test_state")}
     )
