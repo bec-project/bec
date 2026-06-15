@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.138.0 (2026-06-15)
+
+### Features
+
+- **scan**: Add file_components attribute to ScanInfo
+  ([`2a1a01e`](https://github.com/bec-project/bec/commit/2a1a01ed5a67cb803947e4c9b46ef54942929d31))
+
+
 ## v3.137.0 (2026-06-15)
 
 ### Chores
