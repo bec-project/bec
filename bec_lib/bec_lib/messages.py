@@ -9,7 +9,18 @@ from copy import deepcopy
 from enum import Enum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import Annotated, Any, ClassVar, Literal, Mapping, Self, TypedDict, Union
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Generic,
+    Literal,
+    Mapping,
+    Self,
+    TypedDict,
+    TypeVar,
+    Union,
+)
 from uuid import uuid4
 
 import numpy as np
@@ -93,6 +104,23 @@ class BECMessage(BaseModel):
 
     def __hash__(self) -> int:
         return self.model_dump_json().__hash__()
+
+
+T = TypeVar("T")
+
+
+class ManagedConfigMessage(BECMessage, Generic[T]):
+    """Type to hold managed config values for the RedisConfigManager. Subclasses should have only one
+    field, `value`, which must have a default. This type can in turn contain multiple values if they
+    must be updated together."""
+
+    model_config = ConfigDict(validate_assignment=True)
+    value: T
+
+
+class BoolConfigDefaultFalse(ManagedConfigMessage[bool]):
+    msg_type: ClassVar[str] = "bool_config_default_false"
+    value: bool = False
 
 
 class BundleMessage(BECMessage):
@@ -2140,6 +2168,25 @@ class ScanInterlockModifyStateTableMessage(BECMessage):
 class ScanInterlockStateTableContent(BECMessage):
     msg_type: ClassVar[str] = "scan_interlock_state_table_content"
     states_watched: dict[str, InterlockTargetState]
+
+
+class BuiltinActorManagerConfig(BECMessage):
+    """Config for the builtin actor manager"""
+
+    model_config = ConfigDict(validate_assignment=True)
+    interlock_enabled: bool = Field(
+        True,
+        description="Enable the scan interlock to lock the queue when watched beamline states become invalid.",
+    )
+
+
+class ScanInterlockConfig(BECMessage):
+    """Config for the scan interlock actor. All fields should have defaults."""
+
+    model_config = ConfigDict(validate_assignment=True)
+    restart_scan_on_lock: bool = Field(
+        False, description="Abort and re-queue the running scan when the interlock triggers."
+    )
 
 
 class ActorStartRequestMessage(BECMessage):

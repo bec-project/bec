@@ -164,7 +164,6 @@ class BECClient(BECService):
         self._system_user = ""
         self.beamline_states = None
         self.messaging: MessagingContainer = None  # type: ignore
-        self.builtin_actors = BuiltinActorHli(self)
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
@@ -217,6 +216,7 @@ class BECClient(BECService):
             )
             builtins.bec = self._parent
             self.macros = UserMacros(self)
+            self.builtin_actors = BuiltinActorHli(self)
             self._start_services()
             self.proc = ProcedureHli(self.connector) if self._init_procedure_hli else None
             default_namespace = {"dev": self.device_manager.devices, "scans": self.scans_namespace}

@@ -2,6 +2,7 @@ from threading import Event, Thread
 from typing import TypeVar
 
 from bec_lib.client import BECClient, ServiceConfig
+from bec_lib.config_values import RedisConfigValue
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -46,11 +47,13 @@ class BuiltinActorManager:
         )
         self._client.start()
         self._actors_threads_and_stops = ActorDict()
-        self._builtin_actors = {cls.__name__: cls for cls in (ScanInterlockActor,)}
-        self._start_all()
-        self._client.connector.register(
-            MessageEndpoints.builtin_actor_update_req_notif(), cb=self._on_state_changed
+
+        self._scan_interlock_enabled = RedisConfigValue(
+            connector=self._client.connector, endpoint=MessageEndpoints.scan_interlock_enabled()
         )
+        self._scan_interlock_enabled.subscribe(self._interlock_enabled_changed)
+
+        self._start_all()
         self._client.connector.register(
             MessageEndpoints.modify_interlock_table(), cb=self._modify_interlock_table
         )
@@ -64,22 +67,12 @@ class BuiltinActorManager:
             BuiltinActorStateUpdatedNotification(actor_name=actor_name),
         )
 
-    def _on_state_changed(self, msg_obj: MessageObject):
-        msg: BuiltinActorStateChangeNotification = msg_obj.value  # type: ignore
-        logger.info(f"Received state change notification {msg.actor_name}")
-        if msg.actor_name not in self._builtin_actors:
-            logger.error(f"Actor {msg.actor_name} does not exist!")
-            return
-        if self._client.builtin_actors.check_enabled(msg.actor_name):
-            self._start_actor(self._builtin_actors[msg.actor_name])
-        else:
-            self._stop_actor(msg.actor_name)
-        self._ping_clients(msg.actor_name)
+    def _interlock_enabled_changed(self, enabled: bool):
+        self._start_actor(ScanInterlockActor) if enabled else self._stop_actor(ScanInterlockActor)
 
     def _start_all(self):
-        for actor_class_name in self._builtin_actors:
-            if self._client.builtin_actors.check_enabled(actor_class_name):
-                self._start_actor(self._builtin_actors[actor_class_name])
+        if self._scan_interlock_enabled.value:
+            self._start_actor(ScanInterlockActor)
 
     def _start_actor(self, actor_class: type[ActorBase]):
         name = actor_class.__name__
@@ -92,11 +85,10 @@ class BuiltinActorManager:
         self._actors_threads_and_stops[actor_class] = (actor, t, actor.stop_event)
         t.start()
 
-    def _stop_actor(self, actor_name: str):
-        logger.info(f"Stopping {actor_name}")
-        actor_class = self._builtin_actors.get(actor_name)
+    def _stop_actor(self, actor_class: type[ActorBase]):
+        logger.info(f"Stopping {actor_class.__name__}")
         if (entry := self._actors_threads_and_stops.get(actor_class)) is None:
-            logger.warning(f"Actor {actor_name} is not active!")
+            logger.warning(f"Actor {actor_class.__name__} is not active!")
             return
         actor, t, event = entry
         event.set()
