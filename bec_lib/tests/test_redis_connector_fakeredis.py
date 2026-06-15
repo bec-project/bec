@@ -286,6 +286,21 @@ def test_redis_connector_lpush(connected_connector):
     assert connector._redis_conn.lrange("test", 0, -1) == [b"test_msg"]
 
 
+def test_redis_connector_rpush(connected_connector):
+    connector = connected_connector
+    connector.rpush("test", "test_msg")
+    assert connector._redis_conn.lrange("test", 0, -1) == [b"test_msg"]
+
+
+def test_redis_connector_rpush_with_max_size_and_expire(connected_connector):
+    connector = connected_connector
+    connector.rpush("test", "test_msg1", max_size=2, expire=100)
+    connector.rpush("test", "test_msg2", max_size=2, expire=100)
+    connector.rpush("test", "test_msg3", max_size=2, expire=100)
+    assert connector._redis_conn.lrange("test", 0, -1) == [b"test_msg2", b"test_msg3"]
+    assert 0 < connector._redis_conn.ttl("test") <= 100
+
+
 def test_redis_connector_lset(connected_connector):
     connector = connected_connector
     connector.lpush("test", "test_msg")

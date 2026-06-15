@@ -117,7 +117,7 @@ def test_redis_connector_lpush(connector, topic, msgs, max_size, expire):
     connector._redis_conn.pipeline().lpush.assert_called_once_with(topic, msgs)
 
     if max_size:
-        connector._redis_conn.pipeline().ltrim.assert_called_once_with(topic, 0, max_size)
+        connector._redis_conn.pipeline().ltrim.assert_called_once_with(topic, 0, max_size - 1)
     if expire:
         connector._redis_conn.pipeline().expire.assert_called_once_with(topic, expire)
     if not pipe:
@@ -141,7 +141,7 @@ def test_redis_connector_lpush_BECMessage(connector, topic, msgs, max_size, expi
     )
 
     if max_size:
-        connector._redis_conn.pipeline().ltrim.assert_called_once_with(topic, 0, max_size)
+        connector._redis_conn.pipeline().ltrim.assert_called_once_with(topic, 0, max_size - 1)
     if expire:
         connector._redis_conn.pipeline().expire.assert_called_once_with(topic, expire)
     if not pipe:
@@ -186,38 +186,50 @@ def test_redis_connector_lset_BECMessage(connector, topic, index, msgs, use_pipe
 
 
 @pytest.mark.parametrize(
-    "topic, msgs, use_pipe", [["topic1", "msg1", True], ["topic2", "msg2", False]]
+    "topic, msgs, use_pipe, max_size, expire",
+    [["topic1", "msg1", True, None, None], ["topic2", "msg2", False, 10, 100]],
 )
-def test_redis_connector_rpush(connector, topic, msgs, use_pipe):
+def test_redis_connector_rpush(connector, topic, msgs, use_pipe, max_size, expire):
     pipe = use_pipe_fcn(connector, use_pipe)
 
-    ret = connector.rpush(topic, msgs, pipe)
+    ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire)
 
+    connector._redis_conn.pipeline().rpush.assert_called_once_with(topic, msgs)
+    if max_size:
+        connector._redis_conn.pipeline().ltrim.assert_called_once_with(topic, -max_size, -1)
+    if expire:
+        connector._redis_conn.pipeline().expire.assert_called_once_with(topic, expire)
     if pipe:
-        connector._redis_conn.pipeline().rpush.assert_called_once_with(topic, msgs)
-        assert ret == connector._redis_conn.pipeline().rpush()
+        connector._redis_conn.pipeline().execute.assert_not_called()
     else:
-        connector._redis_conn.rpush.assert_called_once_with(topic, msgs)
-        assert ret == connector._redis_conn.rpush()
+        connector._redis_conn.pipeline().execute.assert_called_once()
+    assert ret is None
 
 
 @pytest.mark.parametrize(
-    "topic, msgs, use_pipe",
-    [["topic1", TestMessage(msg="msg1"), True], ["topic2", TestMessage(msg="msg2"), False]],
+    "topic, msgs, use_pipe, max_size, expire",
+    [
+        ["topic1", TestMessage(msg="msg1"), True, None, None],
+        ["topic2", TestMessage(msg="msg2"), False, 10, 100],
+    ],
 )
-def test_redis_connector_rpush_BECMessage(connector, topic, msgs, use_pipe):
+def test_redis_connector_rpush_BECMessage(connector, topic, msgs, use_pipe, max_size, expire):
     pipe = use_pipe_fcn(connector, use_pipe)
 
-    ret = connector.rpush(topic, msgs, pipe)
+    ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire)
 
+    connector._redis_conn.pipeline().rpush.assert_called_once_with(
+        topic, MsgpackSerialization.dumps(msgs)
+    )
+    if max_size:
+        connector._redis_conn.pipeline().ltrim.assert_called_once_with(topic, -max_size, -1)
+    if expire:
+        connector._redis_conn.pipeline().expire.assert_called_once_with(topic, expire)
     if pipe:
-        connector._redis_conn.pipeline().rpush.assert_called_once_with(
-            topic, MsgpackSerialization.dumps(msgs)
-        )
-        assert ret == connector._redis_conn.pipeline().rpush()
+        connector._redis_conn.pipeline().execute.assert_not_called()
     else:
-        connector._redis_conn.rpush.assert_called_once_with(topic, MsgpackSerialization.dumps(msgs))
-        assert ret == connector._redis_conn.rpush()
+        connector._redis_conn.pipeline().execute.assert_called_once()
+    assert ret is None
 
 
 @pytest.mark.parametrize(

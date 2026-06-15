@@ -1202,30 +1202,45 @@ class RedisConnector:
             msg = MsgpackSerialization.dumps(msg)
         client.lpush(topic, msg)
         if max_size:
-            client.ltrim(topic, 0, max_size)
+            client.ltrim(topic, 0, max_size - 1)
         if expire:
             client.expire(topic, expire)
         if not pipe:
             client.execute()
 
     @validate_endpoint("topic")
-    def lset(self, topic: str, index: int, msg: str, pipe: Pipeline | None = None) -> str:
+    def lset(
+        self, topic: str, index: int, msg: str | BECMessage, pipe: Pipeline | None = None
+    ) -> str | Pipeline:
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
         return client.lset(topic, index, msg)  # type: ignore # using sync client
 
     @validate_endpoint("topic")
-    def rpush(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> int:
+    def rpush(
+        self,
+        topic: str,
+        msg: str | BECMessage,
+        pipe: Pipeline | None = None,
+        max_size: int | None = None,
+        expire: int | None = None,
+    ) -> None:
         """O(1) for each element added, so O(N) to add N elements when the
         command is called with multiple arguments. Insert all the specified
         values at the tail of the list stored at key. If key does not exist,
         it is created as empty list before performing the push operation. When
         key holds a value that is not a list, an error is returned."""
-        client = pipe if pipe is not None else self._redis_conn
+        client = pipe if pipe is not None else self.pipeline()
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
-        return client.rpush(topic, msg)  # type: ignore # using sync client
+        client.rpush(topic, msg)
+        if max_size:
+            client.ltrim(topic, -max_size, -1)
+        if expire:
+            client.expire(topic, expire)
+        if not pipe:
+            client.execute()
 
     @validate_endpoint("topic")
     def lrange(self, topic: str, start: int, end: int, pipe: Pipeline | None = None):
