@@ -24,13 +24,10 @@ def dm_with_devices_and_status(dm_with_devices):
     Fixture that adds the scan_info message to the device manager
     """
     device_manager = dm_with_devices
-    with mock.patch.object(
-        device_manager.scan_info, "msg", new_callable=mock.PropertyMock
-    ) as mock_scan_info_msg:
-        mock_scan_info_msg.return_value = messages.ScanStatusMessage(
-            scan_id="12345", status="open", info={"num_points": 10, "RID": "RID123"}
-        )
-        yield device_manager
+    device_manager.scan_info.msg = messages.ScanStatusMessage(
+        scan_id="12345", status="open", info={"num_points": 10, "RID": "RID123"}
+    )
+    yield device_manager
 
 
 class ControllerMock:
