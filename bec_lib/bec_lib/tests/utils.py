@@ -583,9 +583,9 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             pipe._pipe_buffer.append(("lpush", (topic, msg), {}))
             return
 
-    def rpush(self, topic, msg, pipe=None):
+    def rpush(self, topic, msg, pipe=None, expire: int = None):
         if pipe:
-            pipe._pipe_buffer.append(("rpush", (topic, msg), {}))
+            pipe._pipe_buffer.append(("rpush", (topic, msg), {"expire": expire}))
             return
         pass
 
