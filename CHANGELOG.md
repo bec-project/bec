@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.137.0 (2026-06-15)
+
+### Chores
+
+- Cleanup deprecated scilog connector
+  ([`b6dab60`](https://github.com/bec-project/bec/commit/b6dab60d8d86f33f483e3b95dab6bc6ed55e1e20))
+
+### Features
+
+- **redis**: Support expire and trim on rpush
+  ([`e3bd790`](https://github.com/bec-project/bec/commit/e3bd790df040ce8c309c60e088a688fc70db782b))
+
+
 ## v3.136.1 (2026-06-15)
 
 ### Bug Fixes
