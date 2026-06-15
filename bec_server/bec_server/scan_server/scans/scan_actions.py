@@ -1073,6 +1073,8 @@ class ScanActions:
         legacy_scan_parameters = self._get_legacy_scan_parameters(self._scan.scan_info)
         resolved_readout_priority = self._get_resolved_readout_priority()
         file_components = self._get_file_components(self._scan.scan_info)
+        if file_components is not None:
+            self._scan.scan_info.file_components = file_components
         info = self._build_scan_status_info(
             legacy_scan_parameters=legacy_scan_parameters,
             resolved_readout_priority=resolved_readout_priority,

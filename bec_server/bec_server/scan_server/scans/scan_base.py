@@ -123,6 +123,13 @@ class ScanInfo(BaseModel):
         ),
     ] = 0
 
+    file_components: Annotated[
+        tuple[str, str],
+        Field(
+            description="File components for the scan containing the full path and the file suffix."
+        ),
+    ] = ("", "")
+
     def __str__(self) -> str:
         data = self.model_dump(mode="python")
         positions = self.positions
