@@ -56,7 +56,7 @@ class MessageOp(list[str], enum.Enum):
     SET = ["remove_from_set", "get_set_members", "delete"]
 
 
-MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]")
+MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]", covariant=True)
 
 
 @dataclass
@@ -1417,7 +1417,7 @@ class MessageEndpoints:
     # Procedures
 
     @staticmethod
-    def available_procedures() -> EndpointInfo:
+    def available_procedures():
         """
         Endpoint for available procedures. This endpoint is used to publish the available procedures
         using an AvailableResourceMessage.
@@ -1433,7 +1433,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def procedure_request() -> EndpointInfo:
+    def procedure_request():
         """
         Endpoint for requesting new procedures.
         The request is sent using a messages.ProcedureRequestMessage message.
@@ -1449,7 +1449,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def procedure_request_response() -> EndpointInfo:
+    def procedure_request_response():
         """
         Endpoint for procedure request responses. This endpoint is used to publish the
         information on whether the procedure request was accepted or rejected. The response
@@ -1561,7 +1561,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def procedure_status_update() -> EndpointInfo:
+    def procedure_status_update():
         """
         Endpoint for individual procedure status updates. Mainly for use in updating procedure statuses in the helper.
         For general queue monitoring, use the procedure_queue_notif endpoint and read the queues instead.
@@ -1637,7 +1637,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def actor_request_response() -> EndpointInfo:
+    def actor_request_response():
         endpoint = f"{EndpointType.INFO.value}/actor/request_response"
         return EndpointInfo(
             endpoint=endpoint,
@@ -1646,7 +1646,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def builtin_actor_update_req_notif() -> EndpointInfo:
+    def builtin_actor_update_req_notif():
         """Endpoint to notify a builtin actor of a pending state change request."""
         endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/state_change_request_notification"
         return EndpointInfo(
@@ -1656,7 +1656,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def builtin_actor_update_notif(actor_name: str) -> EndpointInfo:
+    def builtin_actor_update_notif(actor_name: str):
         """Endpoint to notify clients of builtin actor state changes."""
         endpoint = f"{EndpointType.INFO.value}/actor/builtin/{actor_name}/state_change_done"
         return EndpointInfo(
@@ -1666,7 +1666,7 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def modify_interlock_table() -> EndpointInfo:
+    def modify_interlock_table():
         endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/scan_interlock/table_mod"
         return EndpointInfo(
             endpoint=endpoint,
@@ -1675,12 +1675,21 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_interlock_states() -> EndpointInfo:
+    def scan_interlock_states():
         endpoint = f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/current_states_watched"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ScanInterlockStateTableContent,
             message_op=MessageOp.KEY_VALUE,
+        )
+
+    @staticmethod
+    def scan_interlock_enabled():
+        endpoint = f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/config/enabled"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.BoolConfigDefaultFalse,
+            message_op=MessageOp.STREAM,
         )
 
     @staticmethod

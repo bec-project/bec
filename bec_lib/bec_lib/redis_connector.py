@@ -316,7 +316,7 @@ class StreamSubs:
 
     def add_direct_listener(self, topic: str, new_sub: DirectReadStreamSubInfo):
         self._check_registered(topic, new_sub)
-        if not topic in self._direct_read_subs:
+        if topic not in self._direct_read_subs:
             self._direct_read_subs[topic] = {}
         self._direct_read_subs[topic][new_sub] = new_sub
         new_sub.thread.start()

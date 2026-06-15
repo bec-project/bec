@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
+from bec_lib.config_values import RedisConfigValue
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
     BlStateStatus,
-    BuiltinActorStateChangeNotification,
     InterlockTargetState,
     ScanInterlockModifyStateTableMessage,
 )
@@ -23,17 +23,17 @@ class ScanInterlockHli:
         self._client = client
         self._parent = parent
         self._actor_name = "ScanInterlockActor"
+        self._enabled = RedisConfigValue(
+            connector=self._client.connector, endpoint=MessageEndpoints.scan_interlock_enabled()
+        )
 
     @property
     def enabled(self):
-        return self._parent.check_enabled(self._actor_name)
+        return self._enabled.value
 
     @enabled.setter
     def enabled(self, enabled: bool):
-        if enabled:
-            self._parent.set_enabled(self._actor_name)
-        else:
-            self._parent.set_disabled(self._actor_name)
+        self._enabled.value = enabled
 
     @property
     def states_watched(self) -> dict[str, InterlockTargetState]:
@@ -95,20 +95,3 @@ class BuiltinActorHli:
     def __init__(self, client: "BECClient") -> None:
         self._client = client
         self.scan_interlock = ScanInterlockHli(self._client, self)
-
-    def _notify(self, actor_name):
-        self._client.connector.send(
-            MessageEndpoints.builtin_actor_update_req_notif(),
-            BuiltinActorStateChangeNotification(actor_name=actor_name),
-        )
-
-    def check_enabled(self, actor_name: str):
-        return bool(self._client.get_global_var(builtin_actor_enabled_var(actor_name)))
-
-    def set_enabled(self, actor_name: str):
-        self._client.set_global_var(builtin_actor_enabled_var(actor_name), True)
-        self._notify(actor_name)
-
-    def set_disabled(self, actor_name: str):
-        self._client.set_global_var(builtin_actor_enabled_var(actor_name), False)
-        self._notify(actor_name)
