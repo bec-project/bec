@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -15,16 +15,17 @@ def endpoint():
     )
 
 
-def test_fetch_existing_value(endpoint):
+@pytest.fixture
+def connector():
     connector = Mock()
-
     existing = BoolConfigDefaultFalse(value=True)
     connector.xread.return_value = [{"config": existing}]
+    return connector
 
+
+def test_fetch_existing_value(connector, endpoint):
     cfg = RedisConfigValue(connector, endpoint)
-
     assert cfg.value is True
-
     connector.register.assert_called_once_with(endpoint, cb=cfg._update_cb)
 
 
@@ -66,3 +67,17 @@ def test_config_value_redis_roundtrip(connected_connector, endpoint):
     managed_var.value = True
     wait_until(lambda: managed_var.value is True)
     recorder.assert_called_once_with(True)
+
+
+def test_wait_not_used_if_disabled(connector, endpoint):
+    with patch("bec_lib.config_values.Event") as event_mock:
+        cfg = RedisConfigValue(connector, endpoint, wait_for_writes=False)
+        cfg.value = False
+        event_mock().clear.assert_not_called()
+
+
+def test_wait_used_if_not_specified(connector, endpoint):
+    with patch("bec_lib.config_values.Event") as event_mock:
+        cfg = RedisConfigValue(connector, endpoint)
+        cfg.value = False
+        event_mock().clear.assert_called()
