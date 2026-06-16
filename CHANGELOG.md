@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.139.0 (2026-06-16)
+
+### Bug Fixes
+
+- Implement request ID handling for scan abortion
+  ([`2848ae5`](https://github.com/bec-project/bec/commit/2848ae5d5748413d3d0369aaf07877ac8d1e5af9))
+
+- Move to request id handling
+  ([`6929c77`](https://github.com/bec-project/bec/commit/6929c77cac896f570d1d82f156656e8061f13b8b))
+
+### Features
+
+- Mark aborted pending requests as cancelled
+  ([`5aeab1c`](https://github.com/bec-project/bec/commit/5aeab1c896743f4b32cc08cf3b34fe7262be45c9))
+
+
 ## v3.138.0 (2026-06-15)
 
 ### Features
