@@ -74,20 +74,26 @@ class LiveUpdatesBase(abc.ABC):
         # pylint: disable=protected-access
         if self.scan_queue_request is None:
             return
-        msgs = self.scan_queue_request.queue.get_client_messages(only_asap=True)
+        queue = self.scan_queue_request.queue
+        if queue is None:
+            return
+        msgs = queue.get_client_messages(only_asap=True)
         if not msgs:
             return
         if self.bec.live_updates_config.print_client_messages is False:
             return
         for msg in msgs:
-            print(self.scan_queue_request.queue.format_client_msg(msg))
+            print(queue.format_client_msg(msg))
 
     def _print_client_msgs_all(self):
         """Print summary of client messages"""
         # pylint: disable=protected-access
         if self.scan_queue_request is None:
             return
-        msgs = self.scan_queue_request.queue.get_client_messages()
+        queue = self.scan_queue_request.queue
+        if queue is None:
+            return
+        msgs = queue.get_client_messages()
         if self.bec.live_updates_config.print_client_messages is False:
             return
         if not msgs:
@@ -97,7 +103,7 @@ class LiveUpdatesBase(abc.ABC):
         print("------------------------")
         # pylint: disable=protected-access
         for msg in msgs:
-            print(self.scan_queue_request.queue.format_client_msg(msg))
+            print(queue.format_client_msg(msg))
         print("------------------------")
 
 
