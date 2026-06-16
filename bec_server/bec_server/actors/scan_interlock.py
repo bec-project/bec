@@ -6,6 +6,7 @@ from bec_lib.messages import (
     BuiltinActorStateUpdatedNotification,
     ScanInterlockModifyStateTableMessage,
     ScanInterlockStateTableContent,
+    ScanInterlockTriggerSetting,
 )
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
@@ -106,9 +107,12 @@ class ScanInterlockActor(BlStateActor):
             reason=f"Interlock for beamline states: {self.mismatched_states}",
             lock_id=self._LOCK_ID,
         )
-        if self._restart_scan_on_lock.value:
+        if self._restart_scan_on_lock.value == ScanInterlockTriggerSetting.RESTART_SCAN:
             logger.info("Scan interlock requesting scan restart.")
             self.client.queue.request_scan_restart()
+        elif self._restart_scan_on_lock.value == ScanInterlockTriggerSetting.PAUSE_SCAN:
+            # TODO: update when pause implemented
+            logger.warning("Pausing scans not yet implemented")
 
     def all_match_action(self, client: BECClient):
         self._unlock()

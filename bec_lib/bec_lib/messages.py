@@ -6,7 +6,7 @@ import time
 import uuid
 import warnings
 from copy import deepcopy
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
 from typing import (
@@ -2168,6 +2168,17 @@ class ScanInterlockModifyStateTableMessage(BECMessage):
 class ScanInterlockStateTableContent(BECMessage):
     msg_type: ClassVar[str] = "scan_interlock_state_table_content"
     states_watched: dict[str, InterlockTargetState]
+
+
+class ScanInterlockTriggerSetting(StrEnum):
+    DO_NOTHING = auto()
+    RESTART_SCAN = auto()
+    PAUSE_SCAN = auto()
+
+
+class ScanInterlockTriggerSettingMessage(ManagedConfigMessage[ScanInterlockTriggerSetting]):
+    msg_type: ClassVar[str] = "scan_interlock_trigger_setting"
+    value: ScanInterlockTriggerSetting = ScanInterlockTriggerSetting.DO_NOTHING
 
 
 class ActorStartRequestMessage(BECMessage):
