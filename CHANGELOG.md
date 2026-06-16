@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.140.0 (2026-06-16)
+
+### Bug Fixes
+
+- Update Codecov action to version 7
+  ([`aee891f`](https://github.com/bec-project/bec/commit/aee891fa69d4170c4b6a33497a9e97a4b2fe3620))
+
+### Features
+
+- **notifications**: Add support for notifications and notification hooks
+  ([`8e0336c`](https://github.com/bec-project/bec/commit/8e0336c0f302d5bbb487609e156ade253b507f3f))
+
+
 ## v3.139.1 (2026-06-16)
 
 ### Bug Fixes
