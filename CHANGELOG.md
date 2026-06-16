@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.139.1 (2026-06-16)
+
+### Bug Fixes
+
+- Improve client message printing in LiveUpdatesBase
+  ([`b0554ec`](https://github.com/bec-project/bec/commit/b0554ec3eacde0a7f4ffe2cffab9af5e6300d970))
+
+
 ## v3.139.0 (2026-06-16)
 
 ### Bug Fixes
