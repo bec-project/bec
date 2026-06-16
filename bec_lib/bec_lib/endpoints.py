@@ -1646,16 +1646,6 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def builtin_actor_update_req_notif():
-        """Endpoint to notify a builtin actor of a pending state change request."""
-        endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/state_change_request_notification"
-        return EndpointInfo(
-            endpoint=endpoint,
-            message_type=messages.BuiltinActorStateChangeNotification,
-            message_op=MessageOp.SEND,
-        )
-
-    @staticmethod
     def builtin_actor_update_notif(actor_name: str):
         """Endpoint to notify clients of builtin actor state changes."""
         endpoint = f"{EndpointType.INFO.value}/actor/builtin/{actor_name}/state_change_done"
@@ -1693,11 +1683,9 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def scan_interlock_restart_scan():
+    def scan_interlock_trigger_setting():
         """Whether to restart the scan when the interlock is triggered."""
-        endpoint = (
-            f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/config/restart_scan_on_lock"
-        )
+        endpoint = f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/config/trigger_setting"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ScanInterlockTriggerSettingMessage,

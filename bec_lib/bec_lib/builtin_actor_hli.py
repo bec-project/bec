@@ -15,10 +15,6 @@ if TYPE_CHECKING:
 VAR_PREFIX = "_BuiltinActors"
 
 
-def builtin_actor_enabled_var(actor_name: str):
-    return f"{VAR_PREFIX}/enabled/{actor_name}"
-
-
 class ScanInterlockHli:
     def __init__(self, client: "BECClient", parent: "BuiltinActorHli") -> None:
         self._client = client
@@ -29,7 +25,7 @@ class ScanInterlockHli:
         )
         self._trigger_setting = RedisConfigValue(
             connector=self._client.connector,
-            endpoint=MessageEndpoints.scan_interlock_restart_scan(),
+            endpoint=MessageEndpoints.scan_interlock_trigger_setting(),
         )
 
     @property

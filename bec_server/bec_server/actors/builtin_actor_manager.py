@@ -3,12 +3,10 @@ from typing import TypeVar
 
 from bec_lib.client import BECClient, ServiceConfig
 from bec_lib.config_values import RedisConfigValue
-from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
     AvailableBeamlineStatesMessage,
-    BuiltinActorStateChangeNotification,
     BuiltinActorStateUpdatedNotification,
     InterlockTargetState,
     ScanInterlockModifyStateTableMessage,
