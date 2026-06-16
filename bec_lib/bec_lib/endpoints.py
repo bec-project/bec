@@ -1700,7 +1700,7 @@ class MessageEndpoints:
         )
         return EndpointInfo(
             endpoint=endpoint,
-            message_type=messages.BoolConfigDefaultFalse,
+            message_type=messages.ScanInterlockTriggerSettingMessage,
             message_op=MessageOp.STREAM,
         )
 

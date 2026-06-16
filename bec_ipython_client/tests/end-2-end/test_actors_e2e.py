@@ -22,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover
 def bec_with_delay_device(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.builtin_actors.scan_interlock.enabled = True
+    bec.builtin_actors.scan_interlock.trigger_setting = "restart_scan"
     dev = bec.device_manager.devices
     dev.ramp_up.min_val.put(0)
     dev.ramp_up.max_val.put(400)
@@ -61,6 +62,7 @@ def test_scan_interlock(
     actors: BuiltinActorHli = bec.builtin_actors
     assert bec.beamline_states.beam_intensity_sufficient.get()["status"] == "valid"
     assert actors.scan_interlock.enabled
+    assert actors.scan_interlock.trigger_setting == "restart_scan"
     current_q_status_msg: ScanQueueStatus = bec.queue.queue_storage.current_scan_queue["primary"]
     assert current_q_status_msg.status == "RUNNING"
     actors.scan_interlock.add_state_to_interlock("beam_intensity_sufficient", "valid")

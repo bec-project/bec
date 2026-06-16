@@ -6,6 +6,7 @@ from bec_lib.messages import (
     BlStateStatus,
     InterlockTargetState,
     ScanInterlockModifyStateTableMessage,
+    ScanInterlockTriggerSetting,
 )
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ class ScanInterlockHli:
         self._enabled = RedisConfigValue(
             connector=self._client.connector, endpoint=MessageEndpoints.scan_interlock_enabled()
         )
-        self._restart_scan_on_lock = RedisConfigValue(
+        self._trigger_setting = RedisConfigValue(
             connector=self._client.connector,
             endpoint=MessageEndpoints.scan_interlock_restart_scan(),
         )
@@ -40,12 +41,15 @@ class ScanInterlockHli:
         self._enabled.value = enabled
 
     @property
-    def restart_scan_on_lock(self):
-        return self._restart_scan_on_lock.value
+    def trigger_setting(self):
+        return self._trigger_setting.value
 
-    @restart_scan_on_lock.setter
-    def restart_scan_on_lock(self, restart_scan_on_lock: bool):
-        self._restart_scan_on_lock.value = restart_scan_on_lock
+    @trigger_setting.setter
+    def trigger_setting(self, trigger_setting: str | ScanInterlockTriggerSetting):
+        accepted_values = [str(v) for v in ScanInterlockTriggerSetting]
+        if isinstance(trigger_setting, str) and trigger_setting not in accepted_values:
+            raise ValueError(f"Scan interlock trigger setting must be one of {accepted_values}!")
+        self._trigger_setting.value = ScanInterlockTriggerSetting(trigger_setting)
 
     @property
     def states_watched(self) -> dict[str, InterlockTargetState]:
