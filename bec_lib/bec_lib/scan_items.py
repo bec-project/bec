@@ -258,11 +258,11 @@ class ScanStorage:
 
     Args:
         scan_manager: The scan manager that will use this storage.
-        maxlen: Maximum number of scan items to store (default: 100).
+        maxlen: Maximum number of scan items to store (default: 10).
         init_scan_number: Initial scan number to start from (default: 0).
     """
 
-    def __init__(self, scan_manager: ScanManager, maxlen=100, init_scan_number=0) -> None:
+    def __init__(self, scan_manager: ScanManager, maxlen=10, init_scan_number=0) -> None:
         self.scan_manager = scan_manager
         self.storage = deque(maxlen=maxlen)
         self.last_scan_number = init_scan_number
@@ -504,7 +504,7 @@ class ScanStorage:
 
         This method is thread-safe and processes queue status messages to create ScanItem
         instances for any scans that don't already exist in storage. It limits processing
-        to the most recent 20 queue items to avoid excessive memory usage.
+        to the most recent 5 queue items to avoid excessive memory usage.
 
         Args:
             queue_msg(messages.ScanQueueStatusMessage): The queue status message containing scan info.
@@ -526,7 +526,7 @@ class ScanStorage:
                         scan_id=queue_item.scan_id[scan_idx],  # type: ignore[index]
                         status=queue_item.status,  # type: ignore[attr-defined]
                     )
-                if ii > 20:
-                    # only keep the last 20 queue items in storage to avoid
+                if ii > 5:
+                    # only keep the last 5 queue items in storage to avoid
                     # evicting too many items just because of a large queue
                     break
