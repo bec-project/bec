@@ -4,7 +4,7 @@ import builtins
 import os
 import time
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Callable, Literal
 from unittest.mock import MagicMock
 
 import bec_lib
@@ -659,3 +659,14 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
     ):
         if not isinstance(group_name, str) or not isinstance(metrics, dict):
             raise TypeError("invalid arguments to publish_metrics")
+
+
+def wait_until(predicate: Callable[[], bool], timeout_s: float = 0.1):
+    # Yes I know this is actually more like retries than a timeout,
+    # it's just to make sure the threads have plenty of chances to switch in the test
+    elapsed, step = 0.0, timeout_s / 10
+    while not predicate():
+        time.sleep(step)
+        elapsed += step
+        if elapsed > timeout_s:
+            raise TimeoutError()
