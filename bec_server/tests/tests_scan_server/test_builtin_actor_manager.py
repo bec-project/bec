@@ -37,7 +37,6 @@ def mocked_manager():
         mock_client_cls.return_value = mock_client
 
         manager = BuiltinActorManager("localhost:6379")
-        # with patch.object(manager, "_builtin_actors", {"DummyActor": DummyActor}):
         yield manager, mock_client
 
 

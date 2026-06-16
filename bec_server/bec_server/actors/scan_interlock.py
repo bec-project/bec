@@ -32,7 +32,8 @@ class ScanInterlockActor(BlStateActor):
         super().__init__(client, name, exec_id)
 
         self._restart_scan_on_lock = RedisConfigValue(
-            connector=self.client.connector, endpoint=MessageEndpoints.scan_interlock_restart_scan()
+            connector=self.client.connector,
+            endpoint=MessageEndpoints.scan_interlock_trigger_setting(),
         )
 
     def _ping_clients(self):

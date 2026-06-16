@@ -29,14 +29,18 @@ class RedisConfigValue(property, Generic[ValueT]):
             raise TypeError(
                 "RedisConfigManager needs a STREAM endpoint with a message type which is a subclass of ManagedConfigMessage"
             )
+
         self._ep = endpoint
         self._connector = connector
-        self._cbs: set[ReferenceType[Callable[[ValueT]]] | BoundMethodWeakref] = set()
-        self._config = self._fetch()
-        self._connector.register(self._ep, cb=self._update_cb)
+
         self._writing_wait_event = Event()
         self._writing_wait_event.set()
         self._wait_for_writes = wait_for_writes
+
+        self._cbs: set[ReferenceType[Callable[[ValueT]]] | BoundMethodWeakref] = set()
+
+        self._config = self._fetch()
+        self._connector.register(self._ep, cb=self._update_cb)
 
     def __del__(self):
         if hasattr(self, "_connector"):
@@ -52,11 +56,11 @@ class RedisConfigValue(property, Generic[ValueT]):
                 f"No value found in redis for managed config var {self._ep.endpoint}, resetting to default."
             )
             config = self._ep.message_type()  # type: ignore # concrete classes must have a default
-            self._write(config)
+            self._write(config, False)
             return config
         return existing[-1]["config"]
 
-    def _write(self, updated: ManagedConfigMessage[ValueT], wait: bool = True):
+    def _write(self, updated: ManagedConfigMessage[ValueT], wait):
         if wait:
             self._writing_wait_event.clear()
         self._connector.xadd(self._ep, {"config": updated}, max_size=1)
