@@ -12,6 +12,14 @@ logger = bec_logger.logger
 ValueT = TypeVar("ValueT")
 
 
+class UninitializedSentinel:
+    def __eq__(self, value: object, /) -> bool:
+        return False
+
+
+_UNINITIALIZED = UninitializedSentinel()
+
+
 class RedisConfigValue(property, Generic[ValueT]):
     def __init__(
         self, connector: RedisConnector, endpoint: EndpointInfo[type[ManagedConfigMessage[ValueT]]]
@@ -39,19 +47,22 @@ class RedisConfigValue(property, Generic[ValueT]):
         raise ValueError(f"Maybe you meant to check {self}.value?")
 
     def _fetch(self) -> ManagedConfigMessage[ValueT]:
-        existing = self._connector.xread(self._ep, id="+", count=1)
-        if existing is None:
+        existing = self._connector.xread(self._ep, from_start=True)
+        if existing is None or existing == []:
+            logger.warning(
+                f"No value found in redis for managed config var {self._ep.endpoint}, resetting to default."
+            )
             config = self._ep.message_type()  # type: ignore # concrete classes must have a default
             self._write(config)
             return config
-        return existing[0]["config"]
+        return existing[-1]["config"]
 
     def _write(self, updated: ManagedConfigMessage[ValueT]):
         self._connector.xadd(self._ep, {"config": updated}, max_size=1)
 
     def _update_cb(self, msg_dict: dict):
         self._config = msg_dict["config"]
-        for cb_ref in self._cbs:
+        for cb_ref in list(self._cbs):
             if cb := cb_ref():
                 try:
                     cb(self._config.value)
