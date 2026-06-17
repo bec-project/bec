@@ -9,11 +9,10 @@ import numpy as np
 
 from bec_ipython_client.progressbar import DeviceProgressBar
 from bec_lib import messages
-from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 
-from .utils import LiveUpdatesBase, check_alarms
+from .utils import LiveUpdatesBase, ScanState, check_alarms, evaluate_scan_state
 
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
@@ -201,9 +200,14 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
         with DeviceProgressBar(
             self.devices, start_values=start_values, target_values=target_values
         ) as progress:
-            while not progress.finished or not data_source.done():
+            while True:
                 check_alarms(self.bec)
-                self._check_scan_state()
+                scan_state = self._check_scan_state()
+                if scan_state == ScanState.WAIT:
+                    time.sleep(0.05)
+                    continue
+                if progress.finished and data_source.done():
+                    break
 
                 values = data_source.get_device_values()
                 progress.update(values=values)
@@ -222,39 +226,8 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
         """run the progressbar."""
         self.core()
 
-    def _check_scan_state(self) -> None:
+    def _check_scan_state(self) -> ScanState:
         """Check whether the tracked queue item has entered a terminal stop state."""
         if self.scan_queue_request is None or self.scan_queue_request.queue is None:
-            return
-        queue = self.scan_queue_request.queue
-        if queue.status not in ["STOPPED", "CANCELLED"]:
-            return
-
-        restart_msg = self._restart_signal(queue)
-        if restart_msg is not None:
-            raise ScanRestart(new_scan_msg=restart_msg)
-        if queue.status == "STOPPED" and queue.reason == "restart":
-            return
-        raise ScanInterruption(
-            self._interruption_message(queue.status, queue.scans[-1] if queue.scans else None)
-        )
-
-    def _restart_signal(self, queue) -> messages.ScanQueueMessage | None:
-        """Return the restart message if it has already reached the client."""
-        latest_scan = queue.scans[-1] if queue.scans else None
-        if latest_scan is not None and latest_scan.restarted_msg is not None:
-            return latest_scan.restarted_msg
-        return None
-
-    @staticmethod
-    def _interruption_message(queue_status: str, latest_scan) -> str:
-        """Build a user-facing interruption message for stopped readback updates."""
-        if queue_status == "CANCELLED":
-            return "Scan was cancelled."
-        status_message = getattr(latest_scan, "status_message", None)
-        if status_message is not None and getattr(status_message, "reason", None) == "user":
-            return "Scan was stopped by the user."
-        scan_number = getattr(latest_scan, "scan_number", None)
-        if scan_number is None:
-            return "Scan was interrupted."
-        return f"Scan {scan_number} was interrupted."
+            return ScanState.CONTINUE
+        return evaluate_scan_state(queue=self.scan_queue_request.queue)

@@ -215,11 +215,14 @@ def test_live_updates_process_queue_stopped_started_request_raises_interruption(
             client.queue.scan_storage,
             "find_scan_by_ID",
             return_value=mock.MagicMock(
-                status="aborted", restarted_msg=None, status_message=mock.MagicMock(reason="user")
+                status="aborted",
+                scan_number=1,
+                restarted_msg=None,
+                status_message=mock.MagicMock(reason="user"),
             ),
         ),
         mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
-        pytest.raises(ScanInterruption, match="stopped by the user"),
+        pytest.raises(ScanInterruption, match="Scan 1 was aborted by user."),
     ):
         live_updates._process_queue(queue, request_msg, "something")
 
