@@ -166,7 +166,7 @@ def test_helper_log_streams(procedure_manager):
 
 @pytest.mark.parametrize(["accepted", "msg"], zip([True, False], ["test true", "test false"]))
 def test_ack(procedure_manager: ProcedureManager, accepted: bool, msg: str):
-    ps = procedure_manager._conn._redis_conn.pubsub()
+    ps = procedure_manager._conn._buffered_connection._redis_conn.pubsub()
     ps.subscribe(procedure_manager._reply_ep.endpoint)
     ps.get_message()
     procedure_manager._ack(accepted, msg, "1234")
@@ -440,7 +440,7 @@ _ManagerWithMsgs = tuple[ProcedureManager, list[ProcedureExecutionMessage]]
 @pytest.fixture
 def manager_with_test_msgs(procedure_manager: ProcedureManager):
     procedure_manager._worker_cls = MagicMock
-    procedure_manager._conn._redis_conn.flushdb()
+    procedure_manager._conn._buffered_connection.flushall()
     contents = [
         ("test_identifier_1", "queue1", ((), {})),
         ("test_identifier_2", "queue1", ((), {})),

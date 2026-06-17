@@ -116,7 +116,7 @@ class AtlasConnector:
                 self._connect_to_atlas_with_ssl(self.host, ssl=self.use_tls)
 
             # pylint: disable=protected-access
-            self.redis_atlas._redis_conn.ping()
+            self.redis_atlas.ping()
             logger.success("Connected to Atlas")
         # pylint: disable=broad-except
         except Exception as exc:
@@ -198,13 +198,13 @@ class AtlasConnector:
         Populate default ACLs
         """
         # get the list of all ACLs
-        acls = self.connector._redis_conn.acl_list()
+        acls = self.connector.acl_list()
         if not acls:
             return
         user_accounts = {}
         for acl in acls:
             acl_name = acl.split(" ")[1]
-            user_info: dict = self.connector._redis_conn.acl_getuser(acl_name)
+            user_info: dict = self.connector.acl_getuser(acl_name)
             if not user_info["enabled"] or acl_name in ["default", "bec"]:
                 continue
             user_accounts[acl_name] = {

@@ -27,10 +27,10 @@ class BECAccessDemo:  # pragma: no cover
         raise RuntimeError("No admin account found. Please restart the Redis server.")
 
     def add_user(self):
-        available_user = self.connector._redis_conn.acl_list()
+        available_user = self.connector._buffered_connection._redis_conn.acl_list()
         if f"user {self.username}" in " ".join(available_user):
-            self.connector._redis_conn.acl_deluser(self.username)
-        self.connector._redis_conn.acl_setuser(
+            self.connector._buffered_connection._redis_conn.acl_deluser(self.username)
+        self.connector._buffered_connection._redis_conn.acl_setuser(
             self.username,
             enabled=True,
             nopass=True,
@@ -55,9 +55,9 @@ class BECAccessDemo:  # pragma: no cover
         )
 
     def add_account(self, name: str, password: str | None, level: Literal["admin", "user"]):
-        available_user = self.connector._redis_conn.acl_list()
+        available_user = self.connector._buffered_connection._redis_conn.acl_list()
         if f"user {name}" in " ".join(available_user):
-            self.connector._redis_conn.acl_deluser(name)
+            self.connector._buffered_connection._redis_conn.acl_deluser(name)
         if level == "admin":
             config = {
                 "enabled": True,
@@ -95,13 +95,13 @@ class BECAccessDemo:  # pragma: no cover
         else:
             config["nopass"] = True
 
-        self.connector._redis_conn.acl_setuser(name, **config)
+        self.connector._buffered_connection._redis_conn.acl_setuser(name, **config)
 
     def add_admin(self):
-        available_user = self.connector._redis_conn.acl_list()
+        available_user = self.connector._buffered_connection._redis_conn.acl_list()
         if f"user {self.admin_username}" in " ".join(available_user):
-            self.connector._redis_conn.acl_deluser(self.admin_username)
-        self.connector._redis_conn.acl_setuser(
+            self.connector._buffered_connection._redis_conn.acl_deluser(self.admin_username)
+        self.connector._buffered_connection._redis_conn.acl_setuser(
             self.admin_username,
             enabled=True,
             passwords=["+admin"],
@@ -120,15 +120,15 @@ class BECAccessDemo:  # pragma: no cover
             pass
 
         self.set_default_limited(False)
-        self.connector._redis_conn.reset()
-        available_user = self.connector._redis_conn.acl_list()
+        self.connector._buffered_connection._redis_conn.reset()
+        available_user = self.connector._buffered_connection._redis_conn.acl_list()
         for user in ["user", "admin", "bec"]:
             if f"user {user}" in " ".join(available_user):
-                self.connector._redis_conn.acl_deluser(user)
+                self.connector._buffered_connection._redis_conn.acl_deluser(user)
 
     def set_default_limited(self, limited: bool):
         if limited:
-            self.connector._redis_conn.acl_setuser(
+            self.connector._buffered_connection._redis_conn.acl_setuser(
                 "default",
                 enabled=True,
                 nopass=True,
@@ -138,7 +138,7 @@ class BECAccessDemo:  # pragma: no cover
                 reset_keys=True,
             )
         else:
-            self.connector._redis_conn.acl_setuser(
+            self.connector._buffered_connection._redis_conn.acl_setuser(
                 "default",
                 enabled=True,
                 nopass=True,

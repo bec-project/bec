@@ -138,7 +138,7 @@ class AsyncWriter(threading.Thread):
                 it waits indefinitely. If set to None, it returns immediately.
         """
         # pylint: disable=protected-access
-        out = self.connector._redis_conn.xread(self.stream_keys, block=poll_timeout)
+        out = self.connector.raw_xread(self.stream_keys, block=poll_timeout)
         return self._decode_stream_messages_xread(out)
 
     def _decode_stream_messages_xread(self, msg) -> dict | None:
@@ -287,7 +287,6 @@ class AsyncWriter(threading.Thread):
                         signal_group = device_group[signal_name]
 
                     for key, value in signal_data.items():
-
                         if key == "value":
                             self.write_value_data(signal_group, value, async_update)
                         elif key == "timestamp":

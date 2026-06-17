@@ -78,7 +78,7 @@ class GeneratorExecution:
     g: Generator
 
 
-class RedisConnector:
+class BufferedRedisConnector:
     """
     Redis connector class. This class is a wrapper around the redis library providing
     a simple interface to send and receive messages from a redis server.
@@ -1126,6 +1126,9 @@ class RedisConnector:
         else:
             return ret[0]
 
+    def raw_xread(self, stream_keys: dict[str, str], block: int | None = None):
+        return self._redis_conn.xread(stream_keys, block)
+
     @validate_endpoint("topic")
     def xread(
         self,
@@ -1312,3 +1315,16 @@ class RedisConnector:
         finally:
             self._redis_conn.set_retry(retry)
         return True
+
+    def flushall(self):
+        """Flush all entries in Redis. Dangerous!"""
+        self._redis_conn.flushall()
+
+    def ping(self):
+        return self._redis_conn.ping()
+
+    def acl_list(self):
+        return self._redis_conn.acl_list()
+
+    def acl_getuser(self, username: str):
+        return self._redis_conn.acl_getuser(username)

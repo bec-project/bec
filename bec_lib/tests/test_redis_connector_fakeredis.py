@@ -1,15 +1,24 @@
 import gc
 import threading
 import time
+from typing import Generator
 from unittest import mock
 
+import fakeredis
 import pytest
 import redis
 from redis.client import Pipeline
 
+import bec_lib.messages as bec_messages
 from bec_lib import messages
-from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
-from bec_lib.redis_connector import MessageObject, RedisConnector
+from bec_lib.endpoints import EndpointInfo, EndpointType, MessageEndpoints, MessageOp
+from bec_lib.messages import ProcedureExecutionMessage
+from bec_lib.redis_connector import (
+    IncompatibleMessageForEndpoint,
+    IncompatibleRedisOperation,
+    MessageObject,
+)
+from bec_lib.redis_connector.buffered_redis_connector import BufferedRedisConnector
 from bec_lib.serialization import MsgpackSerialization
 
 from .test_redis_connector import TestMessage
@@ -23,6 +32,22 @@ from .test_redis_connector import TestMessage
 
 TestStreamEndpoint = EndpointInfo("test", TestMessage, MessageOp.STREAM)
 TestStreamEndpoint2 = EndpointInfo("test2", TestMessage, MessageOp.STREAM)
+
+
+def fake_redis_server(host, port, **kwargs):
+    redis = fakeredis.FakeRedis()
+    return redis
+
+
+@pytest.fixture
+def connected_connector():
+    BufferedRedisConnector.RETRY_ON_TIMEOUT = 0
+    connector = BufferedRedisConnector("localhost:1", redis_cls=fake_redis_server)
+    connector.flushall()
+    try:
+        yield connector
+    finally:
+        connector.shutdown()
 
 
 @pytest.mark.parametrize(
@@ -588,7 +613,7 @@ def test_redis_connector_message_alternated_pass(connected_connector):
     assert msg_received == [data_original]
 
 
-def test_lrem(connected_connector: RedisConnector):
+def test_lrem(connected_connector: BufferedRedisConnector):
     conn, ep = connected_connector, MessageEndpoints.procedure_execution
     msgs = [
         messages.ProcedureExecutionMessage(
@@ -637,7 +662,7 @@ def test_connector_publish_metrics(connected_connector):
     assert res.metrics["_m4"].value is True
 
 
-def test_merging_streams_does_not_skip_messages(connected_connector: RedisConnector):
+def test_merging_streams_does_not_skip_messages(connected_connector: BufferedRedisConnector):
     connector = connected_connector
     cb_normal = mock.Mock(spec=[])  # spec is here to remove all attributes
     cb_from_start = mock.Mock(spec=[])  # spec is here to remove all attributes
@@ -761,3 +786,97 @@ def test_stream_subs_garbage_collection(connected_connector):
         assert "test" not in connected_connector._stream_subs._subs
         assert "test" not in connected_connector._stream_subs.from_start_subs
         assert "test" not in connected_connector._stream_subs._direct_read_subs
+
+
+@pytest.fixture
+def test_set_connector(
+    connected_connector,
+) -> Generator[
+    tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]], None, None
+]:
+
+    test_set_endpoint = EndpointInfo(
+        f"{EndpointType.INFO}/procedures/active_procedures",
+        ProcedureExecutionMessage,
+        MessageOp.SET,
+    )
+    test_set_messages = {
+        ProcedureExecutionMessage(identifier="test1", queue="queue1", execution_id="1"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test2", queue="queue2", execution_id="2"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test3", queue="queue3", execution_id="3"),  # type: ignore
+        ProcedureExecutionMessage(identifier="test4", queue="queue4", execution_id="4"),  # type: ignore
+    }
+    for msg in test_set_messages:
+        connected_connector._redis_conn.sadd(
+            test_set_endpoint.endpoint, MsgpackSerialization.dumps(msg)
+        )
+    yield connected_connector, test_set_endpoint, test_set_messages
+
+
+def test_get_set_members(
+    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
+):
+    connected_connector, test_set_endpoint, test_set_messages = test_set_connector
+    result = connected_connector.get_set_members(test_set_endpoint)
+    assert result == test_set_messages
+
+
+def test_remove_from_set(
+    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
+):
+    connected_connector, test_set_endpoint, test_set_messages = test_set_connector
+    connected_connector.remove_from_set(test_set_endpoint, test_set_messages.pop())
+    assert len(test_set_messages) == 3
+    result = connected_connector.get_set_members(test_set_endpoint)
+    assert result == test_set_messages
+
+
+def test_list_pop_to_sadd_adds_to_set(
+    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
+):
+    connected_connector, test_set_endpoint, test_set_messages = test_set_connector
+    test_list_endpoint = EndpointInfo(
+        f"{EndpointType.INTERNAL}/procedures/procedure_execution/queue5",
+        ProcedureExecutionMessage,
+        MessageOp.LIST,
+    )
+    test_message = ProcedureExecutionMessage(
+        identifier="test5", queue="queue5", execution_id="1234"
+    )
+    connected_connector.lpush(test_list_endpoint, test_message)
+    connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
+    test_set_messages.add(test_message)
+    result = connected_connector.get_set_members(test_set_endpoint)
+    assert result == test_set_messages
+
+
+def test_list_pop_to_sadd_rejects_wrong_messageop(
+    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
+):
+    connected_connector, test_set_endpoint, _ = test_set_connector
+    test_list_endpoint = MessageEndpoints.device_progress("samx")
+    test_message = ProcedureExecutionMessage(
+        identifier="test5", queue="queue5", execution_id="1234"
+    )
+    connected_connector._redis_conn.lpush(
+        test_list_endpoint.endpoint, MsgpackSerialization.dumps(test_message)
+    )
+    with pytest.raises(IncompatibleRedisOperation):
+        connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
+
+
+def test_list_pop_to_sadd_rejects_wrong_message_for_set(
+    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
+):
+    connected_connector, test_set_endpoint, _ = test_set_connector
+    test_list_endpoint = EndpointInfo(
+        f"{EndpointType.INTERNAL}/procedures/procedure_execution/queue5",
+        ProcedureExecutionMessage,
+        MessageOp.LIST,
+    )
+    test_message = bec_messages.ServiceMetricMessage(name="test service", metrics={})
+    connected_connector._redis_conn.lpush(
+        test_list_endpoint.endpoint, MsgpackSerialization.dumps(test_message)
+    )
+    with pytest.raises(IncompatibleMessageForEndpoint):
+        connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
