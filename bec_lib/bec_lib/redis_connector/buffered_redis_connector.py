@@ -32,17 +32,7 @@ from redis.retry import Retry
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
-from bec_lib.messages import (
-    AlarmMessage,
-    BECMessage,
-    ClientInfoMessage,
-    DynamicMetricDict,
-    DynamicMetricMessage,
-    ErrorInfo,
-    NotificationMessage,
-)
-from bec_lib.messaging_hooks import MessagingEvent
-from bec_lib.messaging_services import NotificationMessageObject
+from bec_lib.messages import BECMessage, ClientInfoMessage
 from bec_lib.redis_connector.validation import (
     check_endpoint_type,
     error_log_with_context,
@@ -69,8 +59,6 @@ logger = bec_logger.logger
 if TYPE_CHECKING:  # pragma: no cover
     from concurrent.futures import Future
 
-    from bec_lib.alarm_handler import Alarms
-
 
 @dataclass
 class GeneratorExecution:
@@ -79,11 +67,6 @@ class GeneratorExecution:
 
 
 class BufferedRedisConnector:
-    """
-    Redis connector class. This class is a wrapper around the redis library providing
-    a simple interface to send and receive messages from a redis server.
-    """
-
     RETRY_ON_TIMEOUT: int = 20
 
     def __init__(
@@ -151,15 +134,6 @@ class BufferedRedisConnector:
         return f"{self.name} failed to connect to redis ({self.host}:{self.port}). Is the server running?"
 
     def authenticate(self, *, username: str = "default", password: str | None = "null"):
-        """
-        Authenticate to the redis server.
-        Please note that the arguments are keyword-only. This is to avoid confusion as the
-        underlying redis library accepts the password as the first argument.
-
-        Args:
-            username (str, optional): username. Defaults to "default".
-            password (str, optional): password. Defaults to "null".
-        """
         if password is None:
             password = "null"
         conn_kwargs = self._redis_conn.connection_pool.connection_kwargs.copy()
@@ -230,20 +204,11 @@ class BufferedRedisConnector:
         )
 
     def set_retry_enabled(self, enabled: bool):
-        """
-        Enable or disable retry on timeout
-
-        Args:
-            enabled (bool): enable or disable retry
-        """
         retry_policy = self._redis_conn.get_retry() or self._get_retry_policy()
         retry_policy.update_retries(self.RETRY_ON_TIMEOUT if enabled else 0)
         self._redis_conn.set_retry(retry_policy)
 
     def shutdown(self, per_thread_timeout_s: float | None = None):
-        """
-        Shutdown the connector
-        """
         self.set_retry_enabled(False)
 
         if self._events_listener_thread:
@@ -311,58 +276,6 @@ class BufferedRedisConnector:
             metadata=metadata or {},
         )
         self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
-
-    def raise_alarm(self, severity: Alarms, info: ErrorInfo, metadata: dict | None = None):
-        """
-        Raise an alarm
-
-        Args:
-            severity (Alarms): alarm severity
-            info (ErrorInfo): error information
-            metadata (dict, optional): additional metadata. Defaults to None.
-
-        Examples:
-            >>> connector.raise_alarm(
-                severity=Alarms.WARNING,
-                info=ErrorInfo(
-                    id=str(uuid.uuid4()),_stream_topic_subscriptions
-                    error_message="ValueError",
-                    compact_error_message="test alarm",
-                    exception_type="ValueError",
-                    device="samx",
-                )
-            )
-        """
-        alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
-        self.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
-        compact_message = info.compact_error_message or info.error_message or info.exception_type
-        event_by_severity = {
-            0: MessagingEvent.ALARM_WARNING,
-            1: MessagingEvent.ALARM_MINOR,
-            2: MessagingEvent.ALARM_MAJOR,
-        }
-        self.notify(event_by_severity[int(severity)], compact_message)
-
-    def notify(
-        self,
-        event: MessagingEvent | str,
-        message: str | NotificationMessageObject,
-        pipe: Pipeline | None = None,
-    ) -> None:
-        """
-        Publish a notification event for downstream routing by SciHub.
-
-        Args:
-            event(MessagingEvent | str): The type of the event that triggered the notification.
-            message(str | NotificationMessageObject): The notification content to be sent.
-            pipe(Pipeline, optional): Optional pipeline to enqueue the publish operation into.
-        """
-        if isinstance(event, MessagingEvent):
-            event = event.value
-        if isinstance(message, str):
-            message = NotificationMessageObject().add_text(message)
-        outgoing = NotificationMessage(event=event, message=message._content)
-        self.send(MessageEndpoints.notification(event), outgoing, pipe=pipe)
 
     def pipeline(self) -> redis.client.Pipeline:
         """Create a new pipeline"""
@@ -485,28 +398,6 @@ class BufferedRedisConnector:
         newest_only: bool = False,
         **kwargs,
     ):
-        """
-        Register a callback for a topic or a pattern
-
-        Args:
-            topics (str, list, EndpointInfo, list[EndpointInfo], optional): topic or list of topics. Defaults to None. The topic should be a valid message endpoint in BEC and can be a string or an EndpointInfo object.
-            patterns (str, list, EndpointInfo, list[EndpointInfo], optional): pattern or list of patterns. Defaults to None. In contrast to topics, patterns may contain "*" wildcards. The evaluated patterns should be a valid pub/sub message endpoint in BEC
-            cb (callable, optional): callback. Defaults to None.
-            start_thread (bool, optional): start the dispatcher thread. Defaults to True.
-            from_start (bool, optional): for streams only: return data from start on first reading. Defaults to False.
-            newest_only (bool, optional): for streams only: return newest data only. Defaults to False.
-            **kwargs: additional keyword arguments to be transmitted to the callback
-
-        Examples:
-            >>> def my_callback(msg, **kwargs):
-            ...     print(msg)
-            ...
-            >>> connector.register("test", my_callback)
-            >>> connector.register(topics="test", cb=my_callback)
-            >>> connector.register(patterns="test:*", cb=my_callback)
-            >>> connector.register(patterns="test:*", cb=my_callback, start_thread=False)
-            >>> connector.register(patterns="test:*", cb=my_callback, start_thread=False, my_arg="test")
-        """
         if cb is None:
             raise ValueError("Callback cb cannot be None")
 
@@ -1238,7 +1129,7 @@ class BufferedRedisConnector:
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
         if msg is None:
-            raise InvalidItemForOperation(f"Cannot remove None from set.")
+            raise InvalidItemForOperation("Cannot remove None from set.")
         client.srem(topic, msg)
 
     @validate_endpoint("topic")
@@ -1288,11 +1179,6 @@ class BufferedRedisConnector:
         if raw_msg is None:
             return None
         return MsgpackSerialization.loads(raw_msg[1])  # type: ignore # list pop returns one item
-
-    def publish_metrics(self, group_name: str, metrics: DynamicMetricDict, separator="_"):
-        msg = DynamicMetricMessage.from_dict(metrics, separator=separator)
-        ep = MessageEndpoints.dynamic_metric(group_name)
-        self._redis_conn.publish(ep.endpoint, MsgpackSerialization.dumps(msg))
 
     def can_connect(self) -> bool:
         """Check if the connector needs authentication"""
