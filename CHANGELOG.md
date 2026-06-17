@@ -1,6 +1,42 @@
 # CHANGELOG
 
 
+## v3.141.0 (2026-06-17)
+
+### Bug Fixes
+
+- Improve naming, remove dead code
+  ([`111f7af`](https://github.com/bec-project/bec/commit/111f7af8567dcf1d243593cea862a8f58c47ce8d))
+
+- Remove minimum time from scan interlock
+  ([`17bf8e8`](https://github.com/bec-project/bec/commit/17bf8e8c8b769083ebe1fbc02660765de43de315))
+
+- Tidy up
+  ([`21158a8`](https://github.com/bec-project/bec/commit/21158a84e7911359cb3f1997162e11d4a8725812))
+
+- **actor_hli**: Cleanup of the redis connections on shutdown
+  ([`88b2c70`](https://github.com/bec-project/bec/commit/88b2c708ee0e30a98cbd0754b6dab13525a07c78))
+
+### Features
+
+- Add managed redis config value tool
+  ([`9993c4e`](https://github.com/bec-project/bec/commit/9993c4ea0885381306f6fef35d52ebe261523692))
+
+- Add option to wait for set in redis to complete, use by default
+  ([`b959be0`](https://github.com/bec-project/bec/commit/b959be0eee8e6fbd81c551f833d10b5c35124794))
+
+- Use config value for scan restart
+  ([`c76b182`](https://github.com/bec-project/bec/commit/c76b18263e7d6ffc4ab045558a9759d2046aedd2))
+
+- Use enum for trigger setting
+  ([`2378b5b`](https://github.com/bec-project/bec/commit/2378b5b08b72265f0a91efeebefb118d7555bd4d))
+
+### Testing
+
+- Add tests for managed config value
+  ([`e99b1d2`](https://github.com/bec-project/bec/commit/e99b1d2fe9afd2ff0dc5ac006db164578d9bfe5a))
+
+
 ## v3.140.1 (2026-06-17)
 
 ### Bug Fixes
