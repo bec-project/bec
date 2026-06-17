@@ -1740,7 +1740,9 @@ def test_queue_waits_when_locked_and_resumes_after_release(queuemanager_mock):
     assert len(queue.queue) == 2
 
     # Set the queue locked
-    lock = messages.ScanQueueLock(identifier="hold_test", reason="Testing hold behavior")
+    lock = messages.ScanQueueLock(
+        identifier="hold_test", reason="Testing hold behavior", allow_device_instructions=False
+    )
     queue.add_lock(lock)
     assert queue.status == ScanQueueStatus.LOCKED
     assert len(queue.locks) == 1

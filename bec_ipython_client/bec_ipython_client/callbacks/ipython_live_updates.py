@@ -363,7 +363,7 @@ class IPythonLiveUpdates:
             return
 
         status = target_queue_status.status
-        if status == "LOCKED":
+        if status == "LOCKED" and any(queue.scan_ids):
             lock_info = [
                 f"{lock.identifier}: {lock.reason}\n" for lock in target_queue_status.locks
             ]

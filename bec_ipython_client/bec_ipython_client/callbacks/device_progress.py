@@ -34,9 +34,12 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
 
         status_message = getattr(self.scan_item, "status_message", None)
         if status_message and getattr(status_message, "reason", None) == "user":
-            raise ScanInterruption(
-                f"Scan {getattr(self.scan_item, 'scan_number', None)} was aborted by user."
-            )
+            scan_number = getattr(self.scan_item, "scan_number", None)
+            if scan_number is None:
+                msg = "Scan was aborted by user."
+            else:
+                msg = f"Scan {scan_number} was aborted by user."
+            raise ScanInterruption(msg)
 
         return False
 
@@ -49,7 +52,7 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
         """Run the update loop for the progress bar.
 
         Args:
-            device_names (list[str]): The name of the device to monitor.
+            device_names (list[str]): The names of the devices to monitor.
         """
         with ScanProgressBar(
             scan_number=self.scan_item.scan_number, clear_on_exit=False
@@ -65,7 +68,7 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
 
         Args:
             progressbar (ScanProgressBar): The progressbar to update.
-            device_names (str): The name of the device to monitor.
+            device_names (list[str]): The names of the devices to monitor.
         Returns:
             bool: True if the scan is finished.
         """

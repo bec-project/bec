@@ -556,7 +556,11 @@ class QueueManager:
         parameter: dict | None = None,
     ) -> None:
         """
-        Add a lock to the queue. The queue will not proceed until the lock is removed.
+        Add a lock to the queue. Whether the queue will proceed depends on the
+        allow_device_instructions flag in the lock parameter. If
+        allow_device_instructions is False, the queue will not proceed until
+        the lock is released. If allow_device_instructions is True, the
+        queue will proceed if the next queue item is not a scan.
         """
         if not parameter:
             raise ValueError("Missing parameter for lock action")
@@ -566,8 +570,14 @@ class QueueManager:
         identifier = parameter.get("identifier")
         if not identifier:
             raise ValueError("Missing lock identifier in lock parameter")
+        allow_device_instructions = parameter.get("allow_device_instructions", True)
         self.add_queue_lock(
-            queue_name=queue, lock=messages.ScanQueueLock(reason=lock_reason, identifier=identifier)
+            queue_name=queue,
+            lock=messages.ScanQueueLock(
+                reason=lock_reason,
+                identifier=identifier,
+                allow_device_instructions=allow_device_instructions,
+            ),
         )
 
     @requires_queue
@@ -882,6 +892,19 @@ class ScanQueue:
                     self._auto_shutdown_timer.join()
                 self._auto_shutdown_timer = None
 
+    def _queue_should_continue(self) -> bool:
+        """check if the queue should continue to the next instruction queue"""
+        if self.status not in [ScanQueueStatus.PAUSED, ScanQueueStatus.LOCKED]:
+            return True
+        if self.status == ScanQueueStatus.LOCKED:
+            if any(not lock.allow_device_instructions for lock in self.locks.values()):
+                # if any of the locks forbid device instructions, we should not continue
+                return False
+            # We allow the queue to continue if the next queue item is not a scan
+            if len(self.queue) > 0 and not any(self.queue[0].is_scan):
+                return True
+        return False
+
     def _next_instruction_queue(self) -> bool:
         """get the next instruction queue from the queue. If no update is available, it will return False."""
         with self._lock:
@@ -896,7 +919,7 @@ class ScanQueue:
                     self.queue.popleft()
                     self.queue_manager.send_queue_status()
 
-                if self.status not in [ScanQueueStatus.PAUSED, ScanQueueStatus.LOCKED]:
+                if self._queue_should_continue():
                     if len(self.queue) == 0:
                         if aiq is None:
                             self.signal_event.wait(0.1)
@@ -911,6 +934,8 @@ class ScanQueue:
 
                 while self.status == ScanQueueStatus.LOCKED and not self.signal_event.is_set():
                     self.signal_event.wait(0.1)
+                    if self._queue_should_continue():
+                        break
 
                 while self.status == ScanQueueStatus.PAUSED and not self.signal_event.is_set():
                     if len(self.queue) == 0 and self.auto_reset_enabled:
