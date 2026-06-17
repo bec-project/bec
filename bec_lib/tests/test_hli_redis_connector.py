@@ -82,6 +82,47 @@ def test_redis_connector_raise_alarm(
         hli_connector.raise_alarm(severity, info, metadata)
 
         hli_connector._buffered_connection.set_and_publish.assert_called_once_with(
-            MessageEndpoints.alarm(), AlarmMessage(severity=severity, info=info, metadata=metadata)
+            MessageEndpoints.alarm().endpoint,
+            AlarmMessage(severity=severity, info=info, metadata=metadata),
         )
         hli_connector.notify.assert_called_once_with(expected_event, compact_msg)
+
+
+def test_redis_connector_send_converts_ep(hli_connector: RedisConnector):
+    topic = MessageEndpoints.scan_segment()
+    msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={})
+    hli_connector.send(topic, msg)
+    hli_connector._redis_conn.publish.assert_called_once_with(
+        topic.endpoint, MsgpackSerialization.dumps(msg)
+    )
+
+    hli_connector.send(topic, msg, pipe=hli_connector.pipeline())
+    hli_connector._redis_conn.pipeline().publish.assert_called_once_with(
+        topic.endpoint, MsgpackSerialization.dumps(msg)
+    )
+
+
+@pytest.mark.parametrize("pattern", ["samx", "samy", MessageEndpoints.device_read("sam*")])
+def test_redis_connector_keys(hli_connector, pattern):
+    endpoint = pattern if isinstance(pattern, str) else pattern.endpoint
+    ret = hli_connector.keys(pattern)
+    hli_connector._buffered_connection._redis_conn.keys.assert_called_once_with(endpoint)
+    assert ret == hli_connector._redis_conn.keys()
+
+
+def test_send_raises_on_invalid_message_type(hli_connector):
+    correct_msg = bec_messages.DeviceMessage(
+        signals={"samx": {"value": 1, "timestamp": 1}}, metadata={}
+    )
+    hli_connector.set_and_publish(MessageEndpoints.device_read("samx"), correct_msg)
+    with pytest.raises(TypeError) as excinfo:
+        msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={}, metadata={})
+        hli_connector.set_and_publish(MessageEndpoints.device_read("samx"), msg)
+    assert "Message type <class 'bec_lib.messages.ScanMessage'> is not compatible " in str(
+        excinfo.value
+    )
+
+
+def test_send_raises_on_invalid_topic(hli_connector):
+    with pytest.raises(IncompatibleRedisOperation):
+        hli_connector.send(MessageEndpoints.device_status("samx"), "msg")

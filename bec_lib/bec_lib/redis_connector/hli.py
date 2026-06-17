@@ -5,21 +5,28 @@ This module provides a high level interface for interacting with the BEC Redis i
 from __future__ import annotations
 
 import traceback
+from typing import Literal
 
 from redis.client import Pipeline, Redis
 
-from bec_lib.endpoints import MessageEndpoints
+from bec_lib.alarm_handler import Alarms
+from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
 from bec_lib.messages import (
     AlarmMessage,
+    BECMessage,
     ClientInfoMessage,
     DynamicMetricMessage,
+    ErrorInfo,
     NotificationMessage,
 )
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
+from bec_lib.serialization import MsgpackSerialization
 
 from .buffered_redis_connector import BufferedRedisConnector
+from .constants import IncompatibleMessageForEndpoint, IncompatibleRedisOperation, _BecMsgT
+from .validation import check_endpoint_type, validate_endpoint
 
 logger = bec_logger.logger
 
@@ -135,6 +142,7 @@ class RedisConnector:
     ############################
     #    HIGH LEVEL METHODS    #
     ############################
+
     def raise_alarm(self, severity: Alarms, info: ErrorInfo, metadata: dict | None = None):
         """
         Raise an alarm
@@ -157,7 +165,7 @@ class RedisConnector:
             )
         """
         alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
-        self._buffered_connection.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
+        self._buffered_connection.set_and_publish(MessageEndpoints.alarm().endpoint, alarm_msg)
         compact_message = info.compact_error_message or info.error_message or info.exception_type
         event_by_severity = {
             0: MessagingEvent.ALARM_WARNING,
@@ -185,7 +193,9 @@ class RedisConnector:
         if isinstance(message, str):
             message = NotificationMessageObject().add_text(message)
         outgoing = NotificationMessage(event=event, message=message._content)
-        self._buffered_connection.send(MessageEndpoints.notification(event), outgoing, pipe=pipe)
+        self._buffered_connection.send(
+            MessageEndpoints.notification(event).endpoint, outgoing, pipe=pipe
+        )
 
     def send_client_info(
         self,
@@ -222,17 +232,19 @@ class RedisConnector:
             metadata=metadata or {},
         )
         self._buffered_connection.xadd(
-            MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100
+            MessageEndpoints.client_info().endpoint, msg_dict={"data": client_msg}, max_size=100
         )
 
     def publish_metrics(self, group_name, metrics, separator="_"):
         msg = DynamicMetricMessage.from_dict(metrics, separator=separator)
-        ep = MessageEndpoints.dynamic_metric(group_name)
+        ep = MessageEndpoints.dynamic_metric(group_name).endpoint
         self._buffered_connection.set_and_publish(ep, msg)
 
+    @validate_endpoint("topic")
     def get_last(self, topic, key=None, count=1):
         return self._buffered_connection.get_last(topic, key, count)
 
+    @validate_endpoint("topic")
     def set_and_publish(self, topic, msg, pipe=None, expire=None):
         return self._buffered_connection.set_and_publish(topic, msg, pipe, expire)
 
@@ -243,68 +255,108 @@ class RedisConnector:
     def raw_send(self, topic: str, msg, pipe=None):
         return self._buffered_connection.raw_send(topic, msg, pipe)
 
-    def send(self, topic, msg, pipe=None):
+    @validate_endpoint("topic")
+    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
         return self._buffered_connection.send(topic, msg, pipe)
 
+    @validate_endpoint("topic")
     def lpush(self, topic, msg, pipe=None, max_size=None, expire=None):
         return self._buffered_connection.lpush(topic, msg, pipe, max_size, expire)
 
+    @validate_endpoint("topic")
     def lset(self, topic, index, msg, pipe=None):
         return self._buffered_connection.lset(topic, index, msg, pipe)
 
+    @validate_endpoint("topic")
     def rpush(self, topic, msg, pipe=None, max_size=None, expire=None):
         return self._buffered_connection.rpush(topic, msg, pipe, max_size, expire)
 
+    @validate_endpoint("topic")
     def lrange(self, topic, start, end, pipe=None):
         return self._buffered_connection.lrange(topic, start, end, pipe)
 
+    @validate_endpoint("topic")
     def llen(self, topic, pipe=None):
         return self._buffered_connection.llen(topic, pipe)
 
+    @validate_endpoint("topic")
     def lrem(self, topic, count, msg, pipe=None):
         return self._buffered_connection.lrem(topic, count, msg, pipe)
 
+    @validate_endpoint("topic")
     def set(self, topic, msg, pipe=None, expire=None):
         return self._buffered_connection.set(topic, msg, pipe, expire)
 
+    @validate_endpoint("pattern")
     def keys(self, pattern):
         return self._buffered_connection.keys(pattern)
 
+    @validate_endpoint("topic")
     def delete(self, topic, pipe=None):
         return self._buffered_connection.delete(topic, pipe)
 
+    @validate_endpoint("topic")
     def get(self, topic, pipe=None):
         return self._buffered_connection.get(topic, pipe)
 
-    def mget(self, topics, pipe=None):
+    def mget(self, topics: list[str], pipe=None):
         return self._buffered_connection.mget(topics, pipe)
 
+    @validate_endpoint("topic")
     def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire=None, approximate=True):
         return self._buffered_connection.xadd(
             topic, msg_dict, max_size=max_size, pipe=pipe, expire=expire, approximate=approximate
         )
 
+    @validate_endpoint("topic")
     def xread(self, topic, id=None, count=None, block=None, from_start=False, user_id=None):
         return self._buffered_connection.xread(
             topic, id=id, count=count, block=block, from_start=from_start, user_id=user_id
         )
 
+    @validate_endpoint("topic")
     def xrange(self, topic, min, max, count=None):
         return self._buffered_connection.xrange(topic, min, max, count)
 
+    @validate_endpoint("topic")
     def remove_from_set(self, topic, msg, pipe=None):
         return self._buffered_connection.remove_from_set(topic, msg, pipe)
 
+    @validate_endpoint("topic")
     def get_set_members(self, topic, pipe=None):
         return self._buffered_connection.get_set_members(topic, pipe)
 
     def blocking_list_pop_to_set_add(
-        self, list_endpoint, set_endpoint, side="LEFT", timeout_s=None
-    ):
-        return self._buffered_connection.blocking_list_pop_to_set_add(
-            list_endpoint, set_endpoint, side=side, timeout_s=timeout_s
+        self,
+        list_endpoint: EndpointInfo[type[_BecMsgT]],
+        set_endpoint: EndpointInfo,
+        side: Literal["LEFT", "RIGHT"] = "LEFT",
+        timeout_s: float | None = None,
+    ) -> _BecMsgT | None:
+        """Block for up to timeout seconds to pop an item from 'list_endpoint' on side `side`,
+        and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
+        """
+        for ep, ops in [(list_endpoint, MessageOp.LIST), (set_endpoint, MessageOp.SET)]:
+            check_endpoint_type(ep)
+            if ep.message_op != ops:
+                raise IncompatibleRedisOperation(
+                    f"{ep} should be compatible with {ops.name} operations!"
+                )
+        bpop = (
+            self._buffered_connection.blpop if side == "LEFT" else self._buffered_connection.brpop
         )
+        raw_msg = bpop([list_endpoint.endpoint], timeout_s=timeout_s)
+        if raw_msg is None:
+            return None
+        decoded_msg = MsgpackSerialization.loads(raw_msg[1])  # type: ignore # using sync client
+        if not isinstance(decoded_msg, set_endpoint.message_type):
+            raise IncompatibleMessageForEndpoint(
+                f"Message {decoded_msg} is not suitable for the set endpoint {set_endpoint}"
+            )
+        self._buffered_connection.add_to_set(set_endpoint.endpoint, raw_msg[1])
+        return decoded_msg  # type: ignore # list pop returns one item
 
+    @validate_endpoint("endpoint")
     def blocking_list_pop(self, endpoint, side="LEFT", timeout_s=None):
         return self._buffered_connection.blocking_list_pop(endpoint, side=side, timeout_s=timeout_s)
 
