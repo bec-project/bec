@@ -79,11 +79,8 @@ class GeneratorExecution:
     g: Generator
 
 
-class RedisConnector:
-    """
-    Redis connector class. This class is a wrapper around the redis library providing
-    a simple interface to send and receive messages from a redis server.
-    """
+class BufferedRedisConnector:
+    """Manages a connection to Redis, buffering and batching publishing to streams, pubsub channels, and so on."""
 
     RETRY_ON_TIMEOUT: int = 20
 
@@ -152,16 +149,7 @@ class RedisConnector:
     def connection_error_str(self):
         return f"{self.name} failed to connect to redis ({self.host}:{self.port}). Is the server running?"
 
-    def authenticate(self, *, username: str = "default", password: str | None = "null"):
-        """
-        Authenticate to the redis server.
-        Please note that the arguments are keyword-only. This is to avoid confusion as the
-        underlying redis library accepts the password as the first argument.
-
-        Args:
-            username (str, optional): username. Defaults to "default".
-            password (str, optional): password. Defaults to "null".
-        """
+    def authenticate(self, username: str = "default", password: str | None = "null"):
         if password is None:
             password = "null"
         conn_kwargs = self._redis_conn.connection_pool.connection_kwargs.copy()
@@ -269,81 +257,55 @@ class RedisConnector:
         self._buffered_publisher.shutdown()
         self._generator_executor.shutdown()
 
-    def send_client_info(
+    ########################
+    #     PUSH METHODS     #
+    #  (should use buffer) #
+    ########################
+
+    def raw_send(self, topic: str, msg: str | bytes, pipe: Pipeline | None = None):
+        """
+        Send a message to a topic. This is the raw version of send, it does not
+        check the message type. Use this method if you want to send a message
+        that is not a BECMessage.
+
+        Args:
+            topic (str): topic
+            msg (bytes): message
+            pipe (Pipeline, optional): redis pipe. Defaults to None.
+        """
+        client = pipe if pipe is not None else self._redis_conn
+        client.publish(topic, msg)
+
+    def xadd(
         self,
-        message: str,
-        show_asap: bool = False,
-        source: Literal[
-            "bec_ipython_client",
-            "scan_server",
-            "device_server",
-            "scan_bundler",
-            "file_writer",
-            "scihub",
-            "dap",
-            None,
-        ] = None,
-        severity: int = 0,
-        expire: float = 60,
-        scope: str | None = None,
-        rid: str | None = None,
-        metadata: dict | None = None,
+        topic: str,
+        msg_dict: dict,
+        max_size=None,
+        pipe: Pipeline | None = None,
+        expire: int | None = None,
+        approximate=True,
     ):
-        """
-        Send a message to the client
+        if pipe:
+            client = pipe
+        elif expire:
+            client = self.pipeline()
+        else:
+            client = self._redis_conn
 
-        Args:
-            msg (str): message
-            show_asap (bool, optional): show asap. Defaults to False.
-            source (Literal[str], optional): Any of the services: "bec_ipython_client", "scan_server", "device_server", "scan_bundler", "file_writer", "scihub", "dap". Defaults to None.
-            severity (int, optional): severity. Defaults to 0.
-            expire (float, optional): expire. Defaults to 60.
-            rid (str, optional): request ID. Defaults to None.
-            scope (str, optional): scope. Defaults to None.
-            metadata (dict, optional): metadata. Defaults to None.
-        """
-        client_msg = ClientInfoMessage(
-            message=message,
-            source=source,
-            severity=severity,
-            show_asap=show_asap,
-            expire=expire,
-            scope=scope,
-            RID=rid,
-            metadata=metadata or {},
-        )
-        self.xadd(MessageEndpoints.client_info(), msg_dict={"data": client_msg}, max_size=100)
+        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
 
-    def raise_alarm(self, severity: Alarms, info: ErrorInfo, metadata: dict | None = None):
-        """
-        Raise an alarm
+        if max_size:
+            client.xadd(topic, msg_dict, maxlen=max_size, approximate=approximate)
+        else:
+            client.xadd(topic, msg_dict)
+        if expire:
+            client.expire(topic, expire)
+        if not pipe and expire:
+            client.execute()
 
-        Args:
-            severity (Alarms): alarm severity
-            info (ErrorInfo): error information
-            metadata (dict, optional): additional metadata. Defaults to None.
-
-        Examples:
-            >>> connector.raise_alarm(
-                severity=Alarms.WARNING,
-                info=ErrorInfo(
-                    id=str(uuid.uuid4()),_stream_topic_subscriptions
-                    error_message="ValueError",
-                    compact_error_message="test alarm",
-                    exception_type="ValueError",
-                    device="samx",
-                )
-            )
-        """
-        alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
-        self.set_and_publish(MessageEndpoints.alarm(), alarm_msg)
-        compact_message = info.compact_error_message or info.error_message or info.exception_type
-        event_by_severity = {
-            0: MessagingEvent.ALARM_WARNING,
-            1: MessagingEvent.ALARM_MINOR,
-            2: MessagingEvent.ALARM_MAJOR,
-        }
-        self.notify(event_by_severity[int(severity)], compact_message)
+    ########################
+    #     PULL METHODS     #
+    ########################
 
     def notify(
         self,
@@ -390,34 +352,6 @@ class RedisConnector:
             except RuntimeError:
                 ret.append(res)
         return ret
-
-    def raw_send(self, topic: str, msg: str | bytes, pipe: Pipeline | None = None):
-        """
-        Send a message to a topic. This is the raw version of send, it does not
-        check the message type. Use this method if you want to send a message
-        that is not a BECMessage.
-
-        Args:
-            topic (str): topic
-            msg (bytes): message
-            pipe (Pipeline, optional): redis pipe. Defaults to None.
-        """
-        client = pipe if pipe is not None else self._redis_conn
-        client.publish(topic, msg)
-
-    @validate_endpoint("topic")
-    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
-        """
-        Send a message to a topic
-
-        Args:
-            topic (str): topic
-            msg (BECMessage): message
-            pipe (Pipeline, optional): redis pipe. Defaults to None.
-        """
-        if isinstance(msg, BECMessage):
-            msg = MsgpackSerialization.dumps(msg)
-        self.raw_send(topic, msg, pipe)  # type: ignore # using sync client
 
     def _start_events_dispatcher_thread(self, start_thread):
         if start_thread and self._events_dispatcher_thread is None:
@@ -1050,50 +984,6 @@ class RedisConnector:
         if pipe:
             return data
         return [MsgpackSerialization.loads(d) if d else None for d in data]  # type: ignore # using sync client
-
-    @validate_endpoint("topic")
-    def xadd(
-        self,
-        topic: str,
-        msg_dict: dict,
-        max_size=None,
-        pipe: Pipeline | None = None,
-        expire: int | None = None,
-        approximate=True,
-    ):
-        """
-        add to stream
-
-        Args:
-            topic (str): redis topic
-            msg_dict (dict | BECMessage): message to add
-            max_size (int, optional): max size of stream. Defaults to None.
-            pipe (Pipeline, optional): redis pipe. Defaults to None.
-            expire (int, optional): expire time. Defaults to None.
-            approximate (bool, optional): Set to False to enforce exact max size trimming. If True,
-                redis may trim the stream approximately. Only used if max_size is set. Defaults to True.
-
-        Examples:
-            >>> redis.xadd("test", {"test": "test"})
-            >>> redis.xadd("test", {"test": "test"}, max_size=10)
-        """
-        if pipe:
-            client = pipe
-        elif expire:
-            client = self.pipeline()
-        else:
-            client = self._redis_conn
-
-        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
-
-        if max_size:
-            client.xadd(topic, msg_dict, maxlen=max_size, approximate=approximate)
-        else:
-            client.xadd(topic, msg_dict)
-        if expire:
-            client.expire(topic, expire)
-        if not pipe and expire:
-            client.execute()
 
     @validate_endpoint("topic")
     def get_last(self, topic: str, key=None, count=1):
