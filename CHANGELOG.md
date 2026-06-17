@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.142.0 (2026-06-17)
+
+### Bug Fixes
+
+- Locks during device progress scans
+  ([`61c3d60`](https://github.com/bec-project/bec/commit/61c3d608c1cac941174b312588d62a77e9f188e6))
+
+### Features
+
+- Allow non scans to pass through the scan interlock
+  ([`2c43980`](https://github.com/bec-project/bec/commit/2c439802f9caeaa4463501a53cb823c29ba8f2b6))
+
+
 ## v3.141.0 (2026-06-17)
 
 ### Bug Fixes
