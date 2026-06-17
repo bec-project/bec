@@ -775,6 +775,6 @@ def test_send_config_request_reply_expiry_with_redis(connected_atlas_connector):
 
     # Verify TTL is set (fakeredis should support this)
     key = MessageEndpoints.device_config_request_response(request_id).endpoint
-    ttl = connected_atlas_connector._redis_conn.ttl(key)
+    ttl = connected_atlas_connector._buffered_connection._redis_conn.ttl(key)
     assert ttl > 0
     assert ttl <= 60  # Should be 60 seconds or less

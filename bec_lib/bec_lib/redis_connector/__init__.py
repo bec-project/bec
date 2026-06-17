@@ -1,5 +1,7 @@
+from bec_lib.connector import MessageObject
+
 from .constants import IncompatibleMessageForEndpoint, IncompatibleRedisOperation
-from .redis_connector import MessageObject, RedisConnector
+from .hli import RedisConnector
 
 __all__ = [
     "IncompatibleMessageForEndpoint",

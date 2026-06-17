@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from louie.saferef import safe_ref
 
-from bec_lib.redis_connector import RedisConnector
+from bec_lib.redis_connector.buffered_redis_connector import BufferedRedisConnector
 from bec_lib.redis_connector.streams import StreamSubInfo, StreamSubs
 
 
@@ -50,9 +50,9 @@ def test_add_and_remove_direct_read(stream_subs: StreamSubs):
     connector_self._message_callbacks_queue = Queue()
     connector_self._redis_conn.xrevrange.return_value = None
     connector_self._direct_stream_listener = partial(
-        RedisConnector._direct_stream_listener, connector_self
+        BufferedRedisConnector._direct_stream_listener, connector_self
     )
-    info = RedisConnector._create_direct_stream_listener(
+    info = BufferedRedisConnector._create_direct_stream_listener(
         connector_self, "test", safe_ref(_test_cb1), {}
     )
     stream_subs.add_direct_listener("test", info)
