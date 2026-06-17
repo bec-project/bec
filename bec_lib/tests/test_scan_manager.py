@@ -423,7 +423,11 @@ def test_scan_manager_add_queue_lock(scan_manager):
             scan_id=None,
             request_id=None,
             action="lock",
-            parameter={"reason": "Testing lock", "identifier": "test_lock"},
+            parameter={
+                "reason": "Testing lock",
+                "identifier": "test_lock",
+                "allow_device_instructions": True,
+            },
             queue="primary",
         ),
     )

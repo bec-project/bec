@@ -422,6 +422,7 @@ class ScanQueueLock(BaseModel):
 
     reason: str
     identifier: str
+    allow_device_instructions: bool = True
 
 
 class ScanQueueStatus(BaseModel):

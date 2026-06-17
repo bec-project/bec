@@ -219,7 +219,9 @@ class ScanManager:
         )
         return new_request_id
 
-    def add_queue_lock(self, queue: str, reason: str, lock_id: str) -> None:
+    def add_queue_lock(
+        self, queue: str, reason: str, lock_id: str, allow_device_instructions: bool = True
+    ) -> None:
         """
         Add a lock to the specified scan queue.
 
@@ -227,6 +229,7 @@ class ScanManager:
             queue (str): The name of the scan queue to lock.
             reason (str): The reason for locking the queue.
             lock_id (str): The unique identifier for the lock.
+            allow_device_instructions (bool, optional): Whether to allow device instructions while the lock is active. Defaults to True.
         """
         logger.info(f"Adding lock to queue '{queue}' with reason: {reason}")
         self.connector.send(
@@ -234,7 +237,11 @@ class ScanManager:
             messages.ScanQueueModificationMessage(
                 scan_id=None,
                 action="lock",
-                parameter={"reason": reason, "identifier": lock_id},
+                parameter={
+                    "reason": reason,
+                    "identifier": lock_id,
+                    "allow_device_instructions": allow_device_instructions,
+                },
                 queue=queue,
             ),
         )
