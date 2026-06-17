@@ -47,6 +47,23 @@ class BECStatus(Enum):
     ERROR = -1
 
 
+class ROIConfig(BaseModel):
+    """Configuration for the ROI processing signal."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class ROIAnalysisConfig(BaseModel):
+    """Configuration for the ROI analysis operation."""
+
+    available_operations: list[str]
+    waveform_results: list[str]
+    scalar_results: list[str]
+
+
 class BECMessage(BaseModel):
     """Base Model class for BEC Messages
 
@@ -121,6 +138,30 @@ class ManagedConfigMessage(BECMessage, Generic[T]):
 class BoolConfigDefaultFalse(ManagedConfigMessage[bool]):
     msg_type: ClassVar[str] = "bool_config_default_false"
     value: bool = False
+
+
+class ROIConfigurationMessage(BECMessage):
+    """Message for configuring the ROI processing signal."""
+
+    msg_type: ClassVar[str] = "roi_configuration_message"
+
+    device: str
+    signal: str
+    name: str
+    active: bool
+    roi_config: ROIConfig
+    selected_operations: list[str]
+    block_while_scanning: bool = True
+
+
+class ROIAvailableAnalysisMessage(BECMessage):
+    """Message for providing the available ROI analysis operations."""
+
+    msg_type: ClassVar[str] = "roi_available_analysis_message"
+
+    device: str
+    signal: str
+    config: ROIAnalysisConfig
 
 
 class BundleMessage(BECMessage):
