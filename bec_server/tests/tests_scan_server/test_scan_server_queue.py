@@ -746,11 +746,23 @@ def test_set_restart(queuemanager_mock):
             with mock.patch.object(
                 queue_manager, "_wait_for_queue_to_appear_in_history"
             ) as scan_msg_wait:
-                scan_msg_wait.return_value = iq
-                with queue_manager._lock:
-                    queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
-                scan_msg_wait.assert_called_once_with(iq.scan_id[0], "primary")
-                add_new_scan_to_queue.assert_called_once()
+                with mock.patch.object(queue_manager.connector, "send") as connector_send:
+                    scan_msg_wait.return_value = iq
+                    with queue_manager._lock:
+                        queue_manager.set_restart(
+                            queue="primary", parameter={"RID": "something_new"}
+                        )
+                    scan_msg_wait.assert_called_once_with(iq.scan_id[0], "primary")
+                    add_new_scan_to_queue.assert_called_once()
+                    restart_msg = connector_send.call_args_list[0].args[1]
+                    assert restart_msg.original_scan_id == iq.scan_id[0]
+                    assert restart_msg.scan_msg.metadata["RID"] == "something_new"
+                    assert iq.scan_msgs[0].metadata["RID"] == "something"
+                    assert iq.reason == "restart"
+                    assert iq.describe().reason == "restart"
+                    assert (
+                        add_new_scan_to_queue.call_args.args[1].metadata["RID"] == "something_new"
+                    )
 
 
 @pytest.mark.timeout(5)

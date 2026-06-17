@@ -43,6 +43,7 @@ class QueueItem:
         status: str,
         active_request_block: messages.RequestBlock | None,
         scan_id: list[str | None],
+        reason: str | None = None,
         client_messages: list | None = None,
         **_kwargs,
     ) -> None:
@@ -52,6 +53,7 @@ class QueueItem:
         self._status = status
         self.active_request_block = active_request_block
         self.scan_ids = scan_id
+        self.reason = reason
         if client_messages is None:
             client_messages = []
         self.client_messages = client_messages
@@ -107,6 +109,7 @@ class QueueItem:
         self._status = queue_item.status
         self.active_request_block = queue_item.active_request_block
         self.scan_ids = queue_item.scan_id
+        self.reason = queue_item.reason
 
     def update_with_client_message(self, message: messages.ClientInfoMessage):
         """append a client message to the queue item"""

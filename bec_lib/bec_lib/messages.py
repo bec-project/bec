@@ -401,6 +401,8 @@ class QueueInfoEntry(BaseModel):
         scan_number (list[int | None]): List of scan numbers for each request block
         status (str): Current status of the queue entry
         active_request_block (RequestBlock | None): The currently active request block, if any
+        reason (Literal["user", "alarm", "restart"] | None): Reason for the queue item's
+            terminal transition, if known.
     """
 
     queue_id: str
@@ -410,6 +412,7 @@ class QueueInfoEntry(BaseModel):
     scan_number: list[int | None]
     status: str
     active_request_block: RequestBlock | None = None
+    reason: Literal["user", "alarm", "restart"] | None = None
 
 
 class ScanQueueLock(BaseModel):
