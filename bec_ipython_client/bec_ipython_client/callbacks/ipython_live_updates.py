@@ -299,11 +299,16 @@ class IPythonLiveUpdates:
         check_alarms(self.client)
         if not queue.request_blocks or not queue.status:
             return False
-        if queue.scans:
-            if queue.scans[-1] is not None and queue.scans[-1].status == "user_completed":
-                return True
-            if queue.scans[-1] is None and queue.status in ["STOPPED", "CANCELLED"]:
-                raise ScanInterruption("Scan was stopped by the user.")
+        latest_scan = queue.scans[-1] if queue.scans else None
+        if latest_scan is not None and latest_scan.status == "user_completed":
+            return True
+        if queue.status in ["STOPPED", "CANCELLED"]:
+            restart_msg = self._restart_signal(queue)
+            if restart_msg is not None:
+                raise ScanRestart(new_scan_msg=restart_msg)
+            if queue.status == "STOPPED" and queue.reason == "restart":
+                return False
+            raise ScanInterruption(self._interruption_message(queue.status, latest_scan))
 
         if queue.queue_position is None:
             return False
@@ -341,6 +346,26 @@ class IPythonLiveUpdates:
             return True
 
         return False
+
+    def _restart_signal(self, queue: QueueItem) -> messages.ScanQueueMessage | None:
+        """Return the restart message if it has already reached the client."""
+        latest_scan = queue.scans[-1] if queue.scans else None
+        if latest_scan is not None and latest_scan.restarted_msg is not None:
+            return latest_scan.restarted_msg
+        return None
+
+    @staticmethod
+    def _interruption_message(queue_status: str, latest_scan) -> str:
+        """Build a user-facing interruption message for a stopped queue item."""
+        if queue_status == "CANCELLED":
+            return "Scan was cancelled."
+        status_message = getattr(latest_scan, "status_message", None)
+        if status_message is not None and getattr(status_message, "reason", None) == "user":
+            return "Scan was stopped by the user."
+        scan_number = getattr(latest_scan, "scan_number", None)
+        if scan_number is None:
+            return "Scan was interrupted."
+        return f"Scan {scan_number} was interrupted."
 
     def _process_pending_queue_element(self, queue: QueueItem) -> None:
         """

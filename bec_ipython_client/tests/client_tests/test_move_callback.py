@@ -9,6 +9,7 @@ from bec_ipython_client.callbacks.move_device import (
     ReadbackDataHandler,
 )
 from bec_lib import messages
+from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.endpoints import MessageEndpoints
 
 
@@ -101,6 +102,119 @@ def test_move_callback_with_report_instruction(bec_client_mock):
                                     report_instruction=report_instruction,
                                     request=request,
                                 ).run()
+
+
+def test_move_callback_check_scan_state_raises_user_interruption(bec_client_mock):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    live_update.scan_queue_request = mock.MagicMock(
+        queue=mock.MagicMock(
+            status="STOPPED",
+            scans=[
+                mock.MagicMock(
+                    scan_number=5, restarted_msg=None, status_message=mock.MagicMock(reason="user")
+                )
+            ],
+        )
+    )
+
+    with pytest.raises(ScanInterruption, match="stopped by the user"):
+        live_update._check_scan_state()
+
+
+def test_move_callback_check_scan_state_raises_scan_restart(bec_client_mock):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    restart_msg = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "restart"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    live_update.scan_queue_request = mock.MagicMock(
+        queue=mock.MagicMock(
+            status="STOPPED",
+            scans=[
+                mock.MagicMock(
+                    scan_number=5,
+                    restarted_msg=restart_msg,
+                    status_message=mock.MagicMock(reason="alarm"),
+                )
+            ],
+        )
+    )
+
+    with pytest.raises(ScanRestart) as exc_info:
+        live_update._check_scan_state()
+
+    assert exc_info.value.new_scan_msg == restart_msg
+
+
+def test_move_callback_check_scan_state_raises_alarm_interruption(bec_client_mock):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+        allow_restart=False,
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    live_update.scan_queue_request = mock.MagicMock(
+        queue=mock.MagicMock(
+            status="STOPPED",
+            scans=[
+                mock.MagicMock(
+                    scan_number=7, restarted_msg=None, status_message=mock.MagicMock(reason="alarm")
+                )
+            ],
+        )
+    )
+
+    with pytest.raises(ScanInterruption, match="Scan 7 was interrupted."):
+        live_update._check_scan_state()
+
+
+def test_move_callback_check_scan_state_raises_cancelled_interruption(bec_client_mock):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    live_update.scan_queue_request = mock.MagicMock(
+        queue=mock.MagicMock(status="CANCELLED", scans=[None])
+    )
+
+    with pytest.raises(ScanInterruption, match="Scan was cancelled."):
+        live_update._check_scan_state()
+
+
+def test_move_callback_check_scan_state_restart_without_restart_message_is_nonblocking(
+    bec_client_mock,
+):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    live_update.scan_queue_request = mock.MagicMock(
+        queue=mock.MagicMock(
+            status="STOPPED",
+            reason="restart",
+            scans=[
+                mock.MagicMock(restarted_msg=None, status_message=mock.MagicMock(reason="alarm"))
+            ],
+        )
+    )
+
+    assert live_update._check_scan_state() is None
 
 
 def test_readback_data_handler(readback_data_handler):

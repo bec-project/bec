@@ -520,6 +520,12 @@ class QueueManager:
             # If the scan is not running, we don't need to restart it
             return
 
+        restart_scan_msg = instruction_queue.scan_msgs[0].model_copy(deep=True)
+        request_id = parameter.get("RID") if parameter else None
+        if request_id:
+            restart_scan_msg.metadata["RID"] = request_id
+        instruction_queue.reason = "restart"
+
         # Abort the current scan first and wait for it to appear in history
         with AutoResetCM(que):
             original_queue_status = que.status
@@ -531,18 +537,16 @@ class QueueManager:
             ]:
                 que.worker_status = InstructionQueueStatus.STOPPED
         self._lock.release()
-        instruction_queue = self._wait_for_queue_to_appear_in_history(scan_id, queue)
+        self._wait_for_queue_to_appear_in_history(scan_id, queue)
         self._lock.acquire()
 
-        scan_msg = instruction_queue.scan_msgs[0]
-        request_id = parameter.get("RID")
-        if request_id:
-            scan_msg.metadata["RID"] = request_id
-        scan_restart_msg = messages.ScanRestartMessage(original_scan_id=scan_id, scan_msg=scan_msg)
+        scan_restart_msg = messages.ScanRestartMessage(
+            original_scan_id=scan_id, scan_msg=restart_scan_msg
+        )
         self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
-        if scan_msg.allow_restart:
+        if restart_scan_msg.allow_restart:
             logger.info(f"Restarting scan {scan_id} in queue {queue}")
-            self.add_to_queue(queue, scan_msg, 0)
+            self.add_to_queue(queue, restart_scan_msg, 0)
         else:
             logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
         self.queues[queue].status = original_queue_status
@@ -1324,6 +1328,7 @@ class InstructionQueueItem:
         self.stopped = False
         self._status = InstructionQueueStatus.PENDING
         self._return_to_start = None
+        self.reason: Literal["user", "alarm", "restart"] | None = None
 
     @property
     def scan_number(self) -> list[int]:
@@ -1409,6 +1414,7 @@ class InstructionQueueItem:
             active_request_block=(
                 self.active_request_block.describe() if self.active_request_block else None
             ),
+            reason=self.reason or (self.exit_info[1] if self.exit_info else None),
         )
         return content
 
@@ -1513,6 +1519,7 @@ class DirectInstructionQueueItem:
         self.active_scan: ScanBase_v4 | None = None
         self.scans: list[ScanBase_v4] = []
         self.scan_msgs: list[messages.ScanQueueMessage] = []
+        self.reason: Literal["user", "alarm", "restart"] | None = None
 
     @property
     def status(self) -> InstructionQueueStatus:
@@ -1588,6 +1595,7 @@ class DirectInstructionQueueItem:
             scan_number=self.scan_number,
             status=self.status.name,
             active_request_block=self.describe_active_scan(),
+            reason=self.reason or (self.exit_info[1] if self.exit_info else None),
         )
         return content
 

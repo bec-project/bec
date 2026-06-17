@@ -177,9 +177,92 @@ def test_live_updates_process_queue_cancelled_pending_request_raises_interruptio
     with (
         mock.patch.object(queue, "_update_with_buffer"),
         mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
+        pytest.raises(ScanInterruption, match="Scan was cancelled."),
+    ):
+        live_updates._process_queue(queue, request_msg, "something")
+
+
+def test_live_updates_process_queue_stopped_started_request_raises_interruption(bec_client_mock):
+    client = bec_client_mock
+    live_updates = IPythonLiveUpdates(client)
+    request_msg = messages.ScanQueueMessage(
+        scan_type="grid_scan",
+        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    request_block = messages.RequestBlock(
+        msg=request_msg,
+        RID="something",
+        report_instructions=[],
+        readout_priority={"monitored": ["samx"]},
+        is_scan=True,
+        scan_number=1,
+        scan_id="scan_id",
+    )
+    queue = QueueItem(
+        scan_manager=client.queue,
+        queue_id="queue_id",
+        request_blocks=[request_block],
+        status="STOPPED",
+        active_request_block=None,
+        scan_id=["scan_id"],
+    )
+
+    with (
+        mock.patch.object(queue, "_update_with_buffer"),
+        mock.patch.object(
+            client.queue.scan_storage,
+            "find_scan_by_ID",
+            return_value=mock.MagicMock(
+                status="aborted", restarted_msg=None, status_message=mock.MagicMock(reason="user")
+            ),
+        ),
+        mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
         pytest.raises(ScanInterruption, match="stopped by the user"),
     ):
         live_updates._process_queue(queue, request_msg, "something")
+
+
+def test_live_updates_process_queue_stopped_restart_without_restart_message_waits_nonblocking(
+    bec_client_mock,
+):
+    client = bec_client_mock
+    live_updates = IPythonLiveUpdates(client)
+    request_msg = messages.ScanQueueMessage(
+        scan_type="grid_scan",
+        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    request_block = messages.RequestBlock(
+        msg=request_msg,
+        RID="something",
+        report_instructions=[],
+        readout_priority={"monitored": ["samx"]},
+        is_scan=True,
+        scan_number=1,
+        scan_id="scan_id",
+    )
+    queue = QueueItem(
+        scan_manager=client.queue,
+        queue_id="queue_id",
+        request_blocks=[request_block],
+        status="STOPPED",
+        active_request_block=None,
+        scan_id=["scan_id"],
+        reason="restart",
+    )
+
+    with (
+        mock.patch.object(queue, "_update_with_buffer"),
+        mock.patch.object(
+            client.queue.scan_storage,
+            "find_scan_by_ID",
+            return_value=mock.MagicMock(status="aborted", restarted_msg=None),
+        ),
+    ):
+        assert live_updates._process_queue(queue, request_msg, "something") is False
 
 
 def test_process_request_repeats_on_ScanRestart_error(
