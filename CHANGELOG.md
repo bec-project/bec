@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.140.1 (2026-06-17)
+
+### Bug Fixes
+
+- Update default maxlen for ScanStorage to 10
+  ([`00ff425`](https://github.com/bec-project/bec/commit/00ff42558a6a68c4b9b0f9a4c918ce67826e03d9))
+
+
 ## v3.140.0 (2026-06-16)
 
 ### Bug Fixes
