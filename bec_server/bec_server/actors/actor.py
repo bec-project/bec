@@ -66,13 +66,10 @@ class SubscriptionActor(ActorBase):
     """An actor which subscribes to a list of redis endpoints, and evaluates on any message to any
     of those endpoints."""
 
-    min_delay_s: float = 0.01
-
     def __init__(self, client: BECClient, name: str, exec_id: str):
         super().__init__(client, name, exec_id)
         self._endpoints = self.default_monitor_endpoints()
         self._stopped = False
-        self.last_evaluated = 0
 
         logger.info(f"Setting up {self.__class__.__name__}: {self._endpoints}.")
         for endpoint in self._endpoints:
@@ -89,10 +86,7 @@ class SubscriptionActor(ActorBase):
     def evaluate(self, *_, **__):
         if self._stopped:
             return
-        if (now := time.monotonic()) < self.last_evaluated + self.min_delay_s:
-            return
-        logger.debug(f"{self.__class__.__name__} evaluated")
-        self.last_evaluated = now
+        logger.debug(f"{self.__class__.__name__} evaluating")
         return super().evaluate(*_, **__)
 
     def run(self):
