@@ -135,8 +135,8 @@ class BECClient(BECService):
         if self._initialized:
             return
         self.__init_params: _InitParams = {
-            "config": config if config is not None else ServiceConfig(config_name="client"),
-            "connector_cls": connector_cls if connector_cls is not None else RedisConnector,
+            "config": (config if config is not None else ServiceConfig(config_name="client")),
+            "connector_cls": (connector_cls if connector_cls is not None else RedisConnector),
             "wait_for_server": wait_for_server,
             "prompt_for_acl": prompt_for_acl,
         }
@@ -164,6 +164,7 @@ class BECClient(BECService):
         self._system_user = ""
         self.beamline_states = None
         self.messaging: MessagingContainer = None  # type: ignore
+        self.builtin_actors: BuiltinActorHli = None  # type: ignore
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
@@ -336,6 +337,9 @@ class BECClient(BECService):
         if self.history is not None:
             # pylint: disable=protected-access
             self.history._shutdown()
+        if self.builtin_actors is not None:
+            self.builtin_actors.shutdown()
+            self.builtin_actors = None  # type: ignore
         bec_logger.logger.remove()
         self.started = False
 

@@ -139,5 +139,6 @@ class ScanInterlockActor(BlStateActor):
         self._unlock()
 
     def stop(self, *_):
+        self._restart_scan_on_lock.unregister_all()
         self._unlock()
         super().stop()
