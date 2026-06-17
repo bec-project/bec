@@ -30,23 +30,13 @@ from redis.client import Pipeline, Redis
 from redis.retry import Retry
 
 from bec_lib.connector import MessageObject
-from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
+from bec_lib.endpoints import EndpointInfo, MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECMessage, ClientInfoMessage
-from bec_lib.redis_connector.validation import (
-    check_endpoint_type,
-    error_log_with_context,
-    validate_endpoint,
-)
+from bec_lib.redis_connector.validation import error_log_with_context
 from bec_lib.serialization import MsgpackSerialization
 
-from .constants import (
-    IncompatibleMessageForEndpoint,
-    IncompatibleRedisOperation,
-    InvalidItemForOperation,
-    PubSubMessage,
-    _BecMsgT,
-)
+from .constants import InvalidItemForOperation, PubSubMessage
 from .streams import (
     DirectReadStreamSubInfo,
     StreamMessage,
@@ -316,7 +306,6 @@ class BufferedRedisConnector:
         client = pipe if pipe is not None else self._redis_conn
         client.publish(topic, msg)
 
-    @validate_endpoint("topic")
     def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
         """
         Send a message to a topic
@@ -781,7 +770,6 @@ class BufferedRedisConnector:
         while self.poll_messages():
             ...
 
-    @validate_endpoint("topic")
     def lpush(
         self,
         topic: str,
@@ -807,7 +795,6 @@ class BufferedRedisConnector:
         if not pipe:
             client.execute()
 
-    @validate_endpoint("topic")
     def lset(
         self, topic: str, index: int, msg: str | BECMessage, pipe: Pipeline | None = None
     ) -> str | Pipeline:
@@ -816,7 +803,6 @@ class BufferedRedisConnector:
             msg = MsgpackSerialization.dumps(msg)
         return client.lset(topic, index, msg)  # type: ignore # using sync client
 
-    @validate_endpoint("topic")
     def rpush(
         self,
         topic: str,
@@ -841,7 +827,6 @@ class BufferedRedisConnector:
         if not pipe:
             client.execute()
 
-    @validate_endpoint("topic")
     def lrange(self, topic: str, start: int, end: int, pipe: Pipeline | None = None):
         """O(S+N) where S is the distance of start offset from HEAD for small
         lists, from nearest end (HEAD or TAIL) for large lists; and N is the
@@ -863,14 +848,26 @@ class BufferedRedisConnector:
                 ret.append(msg)
         return ret
 
-    @validate_endpoint("topic")
     def llen(self, topic: str, pipe: Pipeline | None = None):
         """Get the length of a list. If key does not exist, it is interpreted as an empty list and 0
         is returned. An error is returned when the value stored at key is not a list."""
         client = pipe if pipe is not None else self._redis_conn
         return client.llen(topic)
 
-    @validate_endpoint("topic")
+    def blpop(
+        self, topics: list[str], pipe: Pipeline | None = None, timeout_s: float | None = None
+    ):
+        """Blocking pop from the left of a list"""
+        client = pipe if pipe is not None else self._redis_conn
+        return client.blpop(topics, timeout_s)
+
+    def brpop(
+        self, topics: list[str], pipe: Pipeline | None = None, timeout_s: float | None = None
+    ):
+        """Blocking pop from the right of a list"""
+        client = pipe if pipe is not None else self._redis_conn
+        return client.brpop(topics, timeout_s)
+
     def lrem(self, topic: str, count: int, msg, pipe: Pipeline | None = None):
         """Removes the first count occurrences of elements equal to element from the list stored at key.
         The count argument influences the operation in the following ways:
@@ -887,7 +884,6 @@ class BufferedRedisConnector:
             msg = MsgpackSerialization.dumps(msg)
         return client.lrem(topic, count, msg)
 
-    @validate_endpoint("topic")
     def set_and_publish(
         self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None
     ) -> None:
@@ -900,7 +896,6 @@ class BufferedRedisConnector:
         if not pipe:
             client.execute()
 
-    @validate_endpoint("topic")
     def set(self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None) -> None:
         """set redis value"""
         client = pipe if pipe is not None else self._redis_conn
@@ -908,18 +903,15 @@ class BufferedRedisConnector:
             msg = MsgpackSerialization.dumps(msg)
         client.set(topic, msg, ex=expire)
 
-    @validate_endpoint("pattern")
     def keys(self, pattern: str) -> list:
         """returns all keys matching a pattern"""
         return self._redis_conn.keys(pattern)  # type: ignore # using sync client
 
-    @validate_endpoint("topic")
     def delete(self, topic: str, pipe: Pipeline | None = None):
         """delete topic"""
         client = pipe if pipe is not None else self._redis_conn
         client.delete(topic)
 
-    @validate_endpoint("topic")
     def get(self, topic: str, pipe: Pipeline | None = None):
         """retrieve entry, either via hgetall or get"""
         client = pipe if pipe is not None else self._redis_conn
@@ -940,7 +932,6 @@ class BufferedRedisConnector:
             return data
         return [MsgpackSerialization.loads(d) if d else None for d in data]  # type: ignore # using sync client
 
-    @validate_endpoint("topic")
     def xadd(
         self,
         topic: str,
@@ -984,7 +975,6 @@ class BufferedRedisConnector:
         if not pipe and expire:
             client.execute()
 
-    @validate_endpoint("topic")
     def get_last(self, topic: str, key=None, count=1):
         """
         Get last message from stream. Repeated calls will return
@@ -1020,7 +1010,6 @@ class BufferedRedisConnector:
     def raw_xread(self, stream_keys: dict[str, str], block: int | None = None):
         return self._redis_conn.xread(stream_keys, block)
 
-    @validate_endpoint("topic")
     def xread(
         self,
         topic: str,
@@ -1091,7 +1080,6 @@ class BufferedRedisConnector:
                 self.stream_keys[stream_key] = index
         return out if out else None
 
-    @validate_endpoint("topic")
     def xrange(self, topic: str, min: str, max: str, count: int | None = None):
         """
         read a range from stream
@@ -1122,7 +1110,11 @@ class BufferedRedisConnector:
         """Unblock the client with the given ID."""
         return self._redis_conn.client_unblock(id)  # type: ignore
 
-    @validate_endpoint("topic")
+    def add_to_set(self, topic: str, msg, pipe: Pipeline | None = None):
+        """Add the item 'msg' to the set 'topic'"""
+        client = pipe or self._redis_conn
+        client.sadd(topic, msg)
+
     def remove_from_set(self, topic: str, msg, pipe: Pipeline | None = None):
         """remove the item 'msg' from the set 'topic'"""
         client = pipe or self._redis_conn
@@ -1132,42 +1124,12 @@ class BufferedRedisConnector:
             raise InvalidItemForOperation("Cannot remove None from set.")
         client.srem(topic, msg)
 
-    @validate_endpoint("topic")
     def get_set_members(self, topic: str, pipe: Pipeline | None = None) -> set:
         """fetch the items in the set as a set'"""
         return set(
             MsgpackSerialization.loads(msg) for msg in (pipe or self._redis_conn).smembers(topic)
         )  # type: ignore
 
-    def blocking_list_pop_to_set_add(
-        self,
-        list_endpoint: EndpointInfo[type[_BecMsgT]],
-        set_endpoint: EndpointInfo,
-        side: Literal["LEFT", "RIGHT"] = "LEFT",
-        timeout_s: float | None = None,
-    ) -> _BecMsgT | None:
-        """Block for up to timeout seconds to pop an item from 'list_endpoint' on side `side`,
-        and add it to 'set_endpoint'. Returns the popped item, or None if waiting timed out.
-        """
-        for ep, ops in [(list_endpoint, MessageOp.LIST), (set_endpoint, MessageOp.SET)]:
-            check_endpoint_type(ep)
-            if ep.message_op != ops:
-                raise IncompatibleRedisOperation(
-                    f"{ep} should be compatible with {ops.name} operations!"
-                )
-        bpop = self._redis_conn.blpop if side == "LEFT" else self._redis_conn.brpop
-        raw_msg = bpop([list_endpoint.endpoint], timeout=timeout_s)
-        if raw_msg is None:
-            return None
-        decoded_msg = MsgpackSerialization.loads(raw_msg[1])
-        if not isinstance(decoded_msg, set_endpoint.message_type):
-            raise IncompatibleMessageForEndpoint(
-                f"Message {decoded_msg} is not suitable for the set endpoint {set_endpoint}"
-            )
-        self._redis_conn.sadd(set_endpoint.endpoint, raw_msg[1])
-        return decoded_msg  # type: ignore # list pop returns one item
-
-    @validate_endpoint("endpoint")
     def blocking_list_pop(
         self, endpoint: str, side: Literal["LEFT", "RIGHT"] = "LEFT", timeout_s: float | None = None
     ) -> BECMessage | None:

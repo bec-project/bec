@@ -182,21 +182,21 @@ def test_redis_connector_unregister_cb_not_topic(connected_connector):
     connector.register(topics=topic2, cb=received_event1, start_thread=False)
 
     # normal behavior with two callbacks for the same topic
-    connector.send(topic1, TestMessage())
+    connector.send(topic1.endpoint, TestMessage())
     connector.poll_messages(timeout=1)
     assert received_event1.call_count == 1
     assert received_event2.call_count == 1
 
     # unregistering one callback for a topic should not remove the topic from the list
     connector.unregister(topic1, cb=received_event1)
-    connector.send(topic1, TestMessage())
+    connector.send(topic1.endpoint, TestMessage())
     connector.poll_messages(timeout=1)
     assert received_event1.call_count == 1
     assert received_event2.call_count == 2
 
     # unregistering the last callback for a topic should remove the topic from the list
     connector.unregister(topic1, cb=received_event2)
-    connector.send(topic1, TestMessage())
+    connector.send(topic1.endpoint, TestMessage())
     try:
         connector.poll_messages(timeout=1)
     except TimeoutError:
@@ -207,8 +207,8 @@ def test_redis_connector_unregister_cb_not_topic(connected_connector):
 
 def test_redis_connector_unregister_topic_keeps_others_alive(connected_connector):
     def send_msgs_and_poll(timeout=None):
-        connector.send(topic1, TestMessage())
-        connector.send(topic2, TestMessage())
+        connector.send(topic1.endpoint, TestMessage())
+        connector.send(topic2.endpoint, TestMessage())
         time.sleep(0.1)  # give some time for messages to be received
         connector.poll_messages(timeout=timeout)
 
@@ -375,23 +375,6 @@ def test_redis_connector_xrange(connected_connector):
     assert connector.xrange("test2", "-", "+") is None
 
 
-@pytest.mark.parametrize("endpoint", ["test", MessageEndpoints.processed_data("test")])
-def test_redis_connector_get_last(connected_connector, endpoint):
-    connector = connected_connector
-    connector.xadd(endpoint, {"data": 1})
-    connector.xadd(endpoint, {"data": 2})
-    connector.xadd(endpoint, {"data": 3})
-    assert connector.get_last(endpoint) == {"data": 3}
-    assert connector.get_last(endpoint) == {"data": 3}
-    assert connector.get_last("test2") is None
-    with pytest.raises(TypeError):
-        assert connector.get_last(5)
-    assert list(connector.get_last(endpoint, "data", count=3)) == [1, 2, 3]
-    assert list(connector.get_last(endpoint, count=4)) == [{"data": 1}, {"data": 2}, {"data": 3}]
-    assert connector.get_last(endpoint, count=0) is None
-    assert connector.get_last(endpoint, count=-1) is None
-
-
 @pytest.mark.timeout(5)
 def test_redis_connector_register_stream(connected_connector):
     connector = connected_connector
@@ -458,12 +441,12 @@ def test_redis_connector_register_stream_list(connected_connector, endpoint):
     cb_mock = mock.Mock(spec=[])  # spec is here to remove all attributes
     connector.register(endpoint, cb=cb_mock, start_thread=False, a=1)
     for ep in endpoint:
-        connector.xadd(ep, {"data": 1})
+        connector.xadd(ep.endpoint, {"data": 1})
         connector.poll_messages()
     assert mock.call({"data": 1}, a=1) in cb_mock.mock_calls
 
     for ep in endpoint:
-        connector.xadd(ep, {"data": 2})
+        connector.xadd(ep.endpoint, {"data": 2})
         connector.poll_messages()
     assert mock.call({"data": 2}, a=1) in cb_mock.mock_calls
     connector.unregister(endpoint)
@@ -511,7 +494,7 @@ def test_redis_connector_register_stream_newest_only(connected_connector):
     cb_mock = mock.Mock(spec=[], side_effect=lambda _: time.sleep(1))
 
     connector.register(endpoint, cb=cb_mock, newest_only=True)
-    connector.xadd(endpoint, {"data": 0})
+    connector.xadd(endpoint.endpoint, {"data": 0})
     # from here: cb_mock will be called from another thread when new stream item is pushed
     # cb_mock.call_count will be increased before sleep time (when call has just been done)
     while cb_mock.call_count == 0:
@@ -520,9 +503,9 @@ def test_redis_connector_register_stream_newest_only(connected_connector):
     cb_mock.reset_mock()
     # cb_mock is now sleeping...
     # Meanwhile data is published:
-    connector.xadd(endpoint, {"data": 1})
-    connector.xadd(endpoint, {"data": 2})
-    connector.xadd(endpoint, {"data": 3})
+    connector.xadd(endpoint.endpoint, {"data": 1})
+    connector.xadd(endpoint.endpoint, {"data": 2})
+    connector.xadd(endpoint.endpoint, {"data": 3})
     while cb_mock.call_count == 0:
         time.sleep(0.01)
     # cb_mock has been called for the second time ;
@@ -544,14 +527,14 @@ def test_redis_connector_register_stream_newest_only_multiple_endpoints_same_cb(
     connector.register(endpoint, cb=cb_mock, newest_only=True, a=1)
     time.sleep(0.1)
     for ep in endpoint:
-        connector.xadd(ep, {"data": 1})
+        connector.xadd(ep.endpoint, {"data": 1})
     while cb_mock.call_count < 2:
         time.sleep(0.1)
     assert mock.call({"data": 1}, a=1) in cb_mock.mock_calls
     cb_mock.reset_mock()
 
     for ep in endpoint:
-        connector.xadd(ep, {"data": 2})
+        connector.xadd(ep.endpoint, {"data": 2})
     while cb_mock.call_count < 2:
         time.sleep(0.1)
     assert mock.call({"data": 2}, a=1) in cb_mock.mock_calls
@@ -622,10 +605,10 @@ def test_lrem(connected_connector: BufferedRedisConnector):
         for i, _id in enumerate(("a", "b", "c"))
     ]
     for msg in msgs:
-        conn.rpush(ep(msg.queue), msg)
-    assert len(conn.lrange(ep("primary"), 0, -1)) == 3
-    conn.lrem(ep(msgs[1].queue), 0, msgs[1])
-    list_contents = conn.lrange(ep("primary"), 0, -1)
+        conn.rpush(ep(msg.queue).endpoint, msg)
+    assert len(conn.lrange(ep("primary").endpoint, 0, -1)) == 3
+    conn.lrem(ep(msgs[1].queue).endpoint, 0, msgs[1])
+    list_contents = conn.lrange(ep("primary").endpoint, 0, -1)
     assert list_contents == [msgs[0], msgs[2]]
 
 
@@ -753,97 +736,3 @@ def test_stream_subs_garbage_collection(connected_connector):
         assert "test" not in connected_connector._stream_subs._subs
         assert "test" not in connected_connector._stream_subs.from_start_subs
         assert "test" not in connected_connector._stream_subs._direct_read_subs
-
-
-@pytest.fixture
-def test_set_connector(
-    connected_connector,
-) -> Generator[
-    tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]], None, None
-]:
-
-    test_set_endpoint = EndpointInfo(
-        f"{EndpointType.INFO}/procedures/active_procedures",
-        ProcedureExecutionMessage,
-        MessageOp.SET,
-    )
-    test_set_messages = {
-        ProcedureExecutionMessage(identifier="test1", queue="queue1", execution_id="1"),  # type: ignore
-        ProcedureExecutionMessage(identifier="test2", queue="queue2", execution_id="2"),  # type: ignore
-        ProcedureExecutionMessage(identifier="test3", queue="queue3", execution_id="3"),  # type: ignore
-        ProcedureExecutionMessage(identifier="test4", queue="queue4", execution_id="4"),  # type: ignore
-    }
-    for msg in test_set_messages:
-        connected_connector._redis_conn.sadd(
-            test_set_endpoint.endpoint, MsgpackSerialization.dumps(msg)
-        )
-    yield connected_connector, test_set_endpoint, test_set_messages
-
-
-def test_get_set_members(
-    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
-):
-    connected_connector, test_set_endpoint, test_set_messages = test_set_connector
-    result = connected_connector.get_set_members(test_set_endpoint)
-    assert result == test_set_messages
-
-
-def test_remove_from_set(
-    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
-):
-    connected_connector, test_set_endpoint, test_set_messages = test_set_connector
-    connected_connector.remove_from_set(test_set_endpoint, test_set_messages.pop())
-    assert len(test_set_messages) == 3
-    result = connected_connector.get_set_members(test_set_endpoint)
-    assert result == test_set_messages
-
-
-def test_list_pop_to_sadd_adds_to_set(
-    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
-):
-    connected_connector, test_set_endpoint, test_set_messages = test_set_connector
-    test_list_endpoint = EndpointInfo(
-        f"{EndpointType.INTERNAL}/procedures/procedure_execution/queue5",
-        ProcedureExecutionMessage,
-        MessageOp.LIST,
-    )
-    test_message = ProcedureExecutionMessage(
-        identifier="test5", queue="queue5", execution_id="1234"
-    )
-    connected_connector.lpush(test_list_endpoint, test_message)
-    connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
-    test_set_messages.add(test_message)
-    result = connected_connector.get_set_members(test_set_endpoint)
-    assert result == test_set_messages
-
-
-def test_list_pop_to_sadd_rejects_wrong_messageop(
-    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
-):
-    connected_connector, test_set_endpoint, _ = test_set_connector
-    test_list_endpoint = MessageEndpoints.device_progress("samx")
-    test_message = ProcedureExecutionMessage(
-        identifier="test5", queue="queue5", execution_id="1234"
-    )
-    connected_connector._redis_conn.lpush(
-        test_list_endpoint.endpoint, MsgpackSerialization.dumps(test_message)
-    )
-    with pytest.raises(IncompatibleRedisOperation):
-        connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)
-
-
-def test_list_pop_to_sadd_rejects_wrong_message_for_set(
-    test_set_connector: tuple[BufferedRedisConnector, EndpointInfo, set[ProcedureExecutionMessage]],
-):
-    connected_connector, test_set_endpoint, _ = test_set_connector
-    test_list_endpoint = EndpointInfo(
-        f"{EndpointType.INTERNAL}/procedures/procedure_execution/queue5",
-        ProcedureExecutionMessage,
-        MessageOp.LIST,
-    )
-    test_message = bec_messages.ServiceMetricMessage(name="test service", metrics={})
-    connected_connector._redis_conn.lpush(
-        test_list_endpoint.endpoint, MsgpackSerialization.dumps(test_message)
-    )
-    with pytest.raises(IncompatibleMessageForEndpoint):
-        connected_connector.blocking_list_pop_to_set_add(test_list_endpoint, test_set_endpoint)

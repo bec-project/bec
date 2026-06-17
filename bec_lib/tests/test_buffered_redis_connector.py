@@ -5,10 +5,8 @@ import pytest
 
 import bec_lib.messages as bec_messages
 from bec_lib import messages
-from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
-from bec_lib.messages import AlarmMessage, BECMessage, BECStatus, BundleMessage, ClientInfoMessage
-from bec_lib.messaging_hooks import MessagingEvent
+from bec_lib.messages import BECMessage, BECStatus, BundleMessage, ClientInfoMessage
 from bec_lib.redis_connector import IncompatibleRedisOperation
 from bec_lib.redis_connector.buffered_redis_connector import BufferedRedisConnector
 from bec_lib.redis_connector.constants import WrongArguments
@@ -41,7 +39,7 @@ def connector():
         _connector.shutdown()
 
 
-def test_redis_connector_send_client_info(connector):
+def test_redis_connector_send_client_info(connector: BufferedRedisConnector):
     with mock.patch.object(connector, "xadd", return_value=None):
         connector.send_client_info(message="msg", show_asap=True, source="scan_server")
         connector.xadd.assert_called_once_with(
@@ -54,26 +52,15 @@ def test_redis_connector_send_client_info(connector):
 
 
 @pytest.mark.parametrize(
-    "topic , msg",
-    [
-        ["topic1", TestMessage(msg="msg1")],
-        ["topic2", TestMessage(msg="msg2")],
-        [
-            MessageEndpoints.scan_segment(),
-            bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={}),
-        ],
-    ],
+    "topic , msg", [["topic1", TestMessage(msg="msg1")], ["topic2", TestMessage(msg="msg2")]]
 )
-def test_redis_connector_send(connector, topic, msg):
+def test_redis_connector_send(connector: BufferedRedisConnector, topic, msg):
     connector.send(topic, msg)
-    topic_str = topic if isinstance(topic, str) else topic.endpoint
-    connector._redis_conn.publish.assert_called_once_with(
-        topic_str, MsgpackSerialization.dumps(msg)
-    )
+    connector._redis_conn.publish.assert_called_once_with(topic, MsgpackSerialization.dumps(msg))
 
     connector.send(topic, msg, pipe=connector.pipeline())
     connector._redis_conn.pipeline().publish.assert_called_once_with(
-        topic_str, MsgpackSerialization.dumps(msg)
+        topic, MsgpackSerialization.dumps(msg)
     )
 
 
@@ -81,7 +68,7 @@ def test_redis_connector_send(connector, topic, msg):
     "topic, msgs, max_size, expire",
     [["topic1", "msgs", None, None], ["topic1", "msgs", 10, None], ["topic1", "msgs", None, 100]],
 )
-def test_redis_connector_lpush(connector, topic, msgs, max_size, expire):
+def test_redis_connector_lpush(connector: BufferedRedisConnector, topic, msgs, max_size, expire):
     pipe = None
     connector.lpush(topic, msgs, pipe, max_size, expire)
 
@@ -103,7 +90,9 @@ def test_redis_connector_lpush(connector, topic, msgs, max_size, expire):
         ["topic1", TestMessage(msg="msgs"), None, 100],
     ],
 )
-def test_redis_connector_lpush_BECMessage(connector, topic, msgs, max_size, expire):
+def test_redis_connector_lpush_BECMessage(
+    connector: BufferedRedisConnector, topic, msgs, max_size, expire
+):
     pipe = None
     connector.lpush(topic, msgs, pipe, max_size, expire)
 
@@ -122,7 +111,7 @@ def test_redis_connector_lpush_BECMessage(connector, topic, msgs, max_size, expi
 @pytest.mark.parametrize(
     "topic , index , msgs, use_pipe", [["topic1", 1, "msg1", True], ["topic2", 4, "msg2", False]]
 )
-def test_redis_connector_lset(connector, topic, index, msgs, use_pipe):
+def test_redis_connector_lset(connector: BufferedRedisConnector, topic, index, msgs, use_pipe):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     ret = connector.lset(topic, index, msgs, pipe)
@@ -139,7 +128,9 @@ def test_redis_connector_lset(connector, topic, index, msgs, use_pipe):
     "topic , index , msgs, use_pipe",
     [["topic1", 1, TestMessage(msg="msg1"), True], ["topic2", 4, TestMessage(msg="msg2"), False]],
 )
-def test_redis_connector_lset_BECMessage(connector, topic, index, msgs, use_pipe):
+def test_redis_connector_lset_BECMessage(
+    connector: BufferedRedisConnector, topic, index, msgs, use_pipe
+):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     ret = connector.lset(topic, index, msgs, pipe)
@@ -160,7 +151,9 @@ def test_redis_connector_lset_BECMessage(connector, topic, index, msgs, use_pipe
     "topic, msgs, use_pipe, max_size, expire",
     [["topic1", "msg1", True, None, None], ["topic2", "msg2", False, 10, 100]],
 )
-def test_redis_connector_rpush(connector, topic, msgs, use_pipe, max_size, expire):
+def test_redis_connector_rpush(
+    connector: BufferedRedisConnector, topic, msgs, use_pipe, max_size, expire
+):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire)
@@ -184,7 +177,9 @@ def test_redis_connector_rpush(connector, topic, msgs, use_pipe, max_size, expir
         ["topic2", TestMessage(msg="msg2"), False, 10, 100],
     ],
 )
-def test_redis_connector_rpush_BECMessage(connector, topic, msgs, use_pipe, max_size, expire):
+def test_redis_connector_rpush_BECMessage(
+    connector: BufferedRedisConnector, topic, msgs, use_pipe, max_size, expire
+):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire)
@@ -206,7 +201,7 @@ def test_redis_connector_rpush_BECMessage(connector, topic, msgs, use_pipe, max_
 @pytest.mark.parametrize(
     "topic, start, end, use_pipe", [["topic1", 0, 4, True], ["topic2", 3, 7, False]]
 )
-def test_redis_connector_lrange(connector, topic, start, end, use_pipe):
+def test_redis_connector_lrange(connector: BufferedRedisConnector, topic, start, end, use_pipe):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     ret = connector.lrange(topic, start, end, pipe)
@@ -227,7 +222,9 @@ def test_redis_connector_lrange(connector, topic, start, end, use_pipe):
         ["topic3", "msg3", None, None],
     ],
 )
-def test_redis_connector_set_and_publish(connector, topic, msg, pipe, expire):
+def test_redis_connector_set_and_publish(
+    connector: BufferedRedisConnector, topic, msg, pipe, expire
+):
     if not isinstance(msg, BECMessage):
         msg_sent = msg
     else:
@@ -242,7 +239,7 @@ def test_redis_connector_set_and_publish(connector, topic, msg, pipe, expire):
 
 
 @pytest.mark.parametrize("topic, msg, expire", [["topic1", "msg1", None], ["topic2", "msg2", 400]])
-def test_redis_connector_set(connector, topic, msg, expire):
+def test_redis_connector_set(connector: BufferedRedisConnector, topic, msg, expire):
     pipe = None
 
     connector.set(topic, msg, pipe, expire)
@@ -253,28 +250,20 @@ def test_redis_connector_set(connector, topic, msg, expire):
         connector._redis_conn.set.assert_called_once_with(topic, msg, ex=expire)
 
 
-@pytest.mark.parametrize("pattern", ["samx", "samy", MessageEndpoints.device_read("sam*")])
-def test_redis_connector_keys(connector, pattern):
-    ret = connector.keys(pattern)
-    endpoint = pattern if isinstance(pattern, str) else pattern.endpoint
-    connector._redis_conn.keys.assert_called_once_with(endpoint)
-    assert ret == connector._redis_conn.keys()
-
-
-def test_redis_connector_pipeline(connector):
+def test_redis_connector_pipeline(connector: BufferedRedisConnector):
     ret = connector.pipeline()
     connector._redis_conn.pipeline.assert_called_once()
     assert ret == connector._redis_conn.pipeline()
 
 
-def use_pipe_fcn(connector, use_pipe):
+def use_pipe_fcn(connector: BufferedRedisConnector, use_pipe):
     if use_pipe:
         return connector.pipeline()
     return None
 
 
 @pytest.mark.parametrize("topic,use_pipe", [["topic1", True], ["topic2", False]])
-def test_redis_connector_delete(connector, topic, use_pipe):
+def test_redis_connector_delete(connector: BufferedRedisConnector, topic, use_pipe):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     connector.delete(topic, pipe)
@@ -286,7 +275,7 @@ def test_redis_connector_delete(connector, topic, use_pipe):
 
 
 @pytest.mark.parametrize("topic, use_pipe", [["topic1", True], ["topic2", False]])
-def test_redis_connector_get(connector, topic, use_pipe):
+def test_redis_connector_get(connector: BufferedRedisConnector, topic, use_pipe):
     pipe = use_pipe_fcn(connector, use_pipe)
 
     ret = connector.get(topic, pipe)
@@ -298,26 +287,26 @@ def test_redis_connector_get(connector, topic, use_pipe):
         assert ret == connector._redis_conn.get()
 
 
-def test_redis_connector_xread(connector):
+def test_redis_connector_xread(connector: BufferedRedisConnector):
     connector.xread("topic1", "id")
     connector._redis_conn.xread.assert_called_once_with({"topic1": "id"}, count=None, block=None)
 
 
-def test_redis_connector_xadd_with_maxlen(connector):
+def test_redis_connector_xadd_with_maxlen(connector: BufferedRedisConnector):
     connector.xadd("topic1", {"key": "value"}, max_size=100)
     connector._redis_conn.xadd.assert_called_once_with(
         "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100, approximate=True
     )
 
 
-def test_redis_connector_xadd_with_maxlen_and_approximate(connector):
+def test_redis_connector_xadd_with_maxlen_and_approximate(connector: BufferedRedisConnector):
     connector.xadd("topic1", {"key": "value"}, max_size=100, approximate=False)
     connector._redis_conn.xadd.assert_called_once_with(
         "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100, approximate=False
     )
 
 
-def test_redis_connector_xadd_with_expire(connector):
+def test_redis_connector_xadd_with_expire(connector: BufferedRedisConnector):
     connector.xadd("topic1", {"key": "value"}, expire=100)
     connector._redis_conn.pipeline().xadd.assert_called_once_with(
         "topic1", {"key": MsgpackSerialization.dumps("value")}
@@ -326,12 +315,12 @@ def test_redis_connector_xadd_with_expire(connector):
     connector._redis_conn.pipeline().execute.assert_called_once()
 
 
-def test_redis_connector_xread_from_end(connector):
+def test_redis_connector_xread_from_end(connector: BufferedRedisConnector):
     connector.xread("topic1", from_start=False)
     connector._redis_conn.xrevrange.assert_called_once_with("topic1", "+", "-", count=1)
 
 
-def test_redis_connector_xread_without_id(connector):
+def test_redis_connector_xread_without_id(connector: BufferedRedisConnector):
     connector.xread("topic1", from_start=True)
     connector._redis_conn.xread.assert_called_once_with({"topic1": "0-0"}, count=None, block=None)
     connector._redis_conn.xread.reset_mock()
@@ -341,35 +330,17 @@ def test_redis_connector_xread_without_id(connector):
     connector._redis_conn.xread.assert_called_once_with({"topic1": "id"}, count=None, block=None)
 
 
-def test_redis_xrange(connector):
+def test_redis_xrange(connector: BufferedRedisConnector):
     connector.xrange("topic1", "start", "end")
     connector._redis_conn.xrange.assert_called_once_with("topic1", "start", "end", count=None)
 
 
-def test_redis_xrange_topic_with_suffix(connector):
+def test_redis_xrange_topic_with_suffix(connector: BufferedRedisConnector):
     connector.xrange("topic1", "start", "end")
     connector._redis_conn.xrange.assert_called_once_with("topic1", "start", "end", count=None)
 
 
-def test_send_raises_on_invalid_message_type(connector):
-    correct_msg = bec_messages.DeviceMessage(
-        signals={"samx": {"value": 1, "timestamp": 1}}, metadata={}
-    )
-    connector.set_and_publish(MessageEndpoints.device_read("samx"), correct_msg)
-    with pytest.raises(TypeError) as excinfo:
-        msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={}, metadata={})
-        connector.set_and_publish(MessageEndpoints.device_read("samx"), msg)
-    assert "Message type <class 'bec_lib.messages.ScanMessage'> is not compatible " in str(
-        excinfo.value
-    )
-
-
-def test_send_raises_on_invalid_topic(connector):
-    with pytest.raises(IncompatibleRedisOperation):
-        connector.send(MessageEndpoints.device_status("samx"), "msg")
-
-
-def test_mget(connector):
+def test_mget(connector: BufferedRedisConnector):
     connector.mget(["topic1", "topic2"])
     connector._redis_conn.mget.assert_called_once_with(["topic1", "topic2"])
 
@@ -419,7 +390,7 @@ def test_bundle_message_handled():
     send(None, endpoint, messages)
 
 
-def test_blocking_list_pop(connector):
+def test_blocking_list_pop(connector: BufferedRedisConnector):
     msg = messages.StatusMessage(name="test", status=BECStatus.BUSY, info={})
     connector._redis_conn.blpop.return_value = [None, MsgpackSerialization.dumps(msg)]
     result = connector.blocking_list_pop("topic")
