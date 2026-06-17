@@ -21,6 +21,7 @@ ActorType = TypeVar("ActorType", bound=ActorBase)
 
 
 class ActorDict(dict):
+
     def __setitem__(self, key: type[ActorType], value: tuple[ActorType, Thread, Event], /) -> None:
         return super().__setitem__(key, value)
 
@@ -66,7 +67,7 @@ class BuiltinActorManager:
         )
 
     def _interlock_enabled_changed(self, enabled: bool):
-        self._start_actor(ScanInterlockActor) if enabled else self._stop_actor(ScanInterlockActor)
+        (self._start_actor(ScanInterlockActor) if enabled else self._stop_actor(ScanInterlockActor))
 
     def _start_all(self):
         if self._scan_interlock_enabled.value:
@@ -95,6 +96,7 @@ class BuiltinActorManager:
         del actor
 
     def shutdown(self):
+        self._scan_interlock_enabled.unregister_all()
         for actor in list(self._actors_threads_and_stops):
             self._stop_actor(actor)
         self._client.shutdown()

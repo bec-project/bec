@@ -12,14 +12,10 @@ from bec_lib.messages import (
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
 
-VAR_PREFIX = "_BuiltinActors"
-
 
 class ScanInterlockHli:
     def __init__(self, client: "BECClient", parent: "BuiltinActorHli") -> None:
         self._client = client
-        self._parent = parent
-        self._actor_name = "ScanInterlockActor"
         self._enabled = RedisConfigValue(
             connector=self._client.connector, endpoint=MessageEndpoints.scan_interlock_enabled()
         )
@@ -102,8 +98,17 @@ class ScanInterlockHli:
             {"data": ScanInterlockModifyStateTableMessage(action="remove_all")},
         )
 
+    def shutdown(self):
+        """Unregister the config-value stream subscriptions from the connector."""
+        self._enabled.unregister_all()
+        self._trigger_setting.unregister_all()
+
 
 class BuiltinActorHli:
     def __init__(self, client: "BECClient") -> None:
         self._client = client
         self.scan_interlock = ScanInterlockHli(self._client, self)
+
+    def shutdown(self):
+        """Tear down builtin-actor client subscriptions (called on client shutdown)."""
+        self.scan_interlock.shutdown()
