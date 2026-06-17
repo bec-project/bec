@@ -1,11 +1,11 @@
 import time
 
 from bec_ipython_client.progressbar import ScanProgressBar
-from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
 from .live_table import LiveUpdatesTable
+from .utils import ScanState, evaluate_scan_state
 
 logger = bec_logger.logger
 
@@ -15,33 +15,14 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
 
     REPORT_TYPE = "device_progress"
 
-    def _check_scan_state(self) -> bool:
+    def _check_scan_state(self) -> ScanState:
         """Check whether the scan has reached a terminal or exceptional state.
 
         Returns:
-            bool: True if the scan should stop without error.
+            The current scan state outcome for the callback loop.
         """
-        if not self.scan_item:
-            return False
-
-        restarted_msg = getattr(self.scan_item, "restarted_msg", None)
-        if restarted_msg:
-            raise ScanRestart(new_scan_msg=restarted_msg)
-
-        if getattr(self.scan_item, "status", None) == "user_completed":
-            print("Scan was set to 'completed' by user.")
-            return True
-
-        status_message = getattr(self.scan_item, "status_message", None)
-        if status_message and getattr(status_message, "reason", None) == "user":
-            scan_number = getattr(self.scan_item, "scan_number", None)
-            if scan_number is None:
-                msg = "Scan was aborted by user."
-            else:
-                msg = f"Scan {scan_number} was aborted by user."
-            raise ScanInterruption(msg)
-
-        return False
+        queue = self.scan_item.queue if self.scan_item else None
+        return evaluate_scan_state(scan_item=self.scan_item, queue=queue)
 
     def core(self):
         """core function to run the live updates for the table"""
@@ -73,8 +54,13 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
             bool: True if the scan is finished.
         """
         self.check_alarms()
-        if self._check_scan_state():
+        scan_state = self._check_scan_state()
+        if scan_state == ScanState.DONE:
+            print("Scan was set to 'completed' by user.")
             return True
+        if scan_state == ScanState.WAIT:
+            time.sleep(0.05)
+            return False
         status = self.bec.connector.get(MessageEndpoints.device_progress(device_names[0]))
         if not status:
             logger.trace("waiting for new data point")
@@ -99,8 +85,12 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
         # process sync callbacks
         self.bec.callbacks.poll()
         self.scan_item.poll_callbacks()
-        if self._check_scan_state():
+        scan_state = self._check_scan_state()
+        if scan_state == ScanState.DONE:
+            print("Scan was set to 'completed' by user.")
             return True
+        if scan_state == ScanState.WAIT:
+            return False
 
         done = status.content.get("done")
         if point_id == max_value or done:

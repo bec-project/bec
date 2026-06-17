@@ -8,6 +8,7 @@ from bec_ipython_client.callbacks.move_device import (
     LiveUpdatesReadbackProgressbar,
     ReadbackDataHandler,
 )
+from bec_ipython_client.callbacks.utils import ScanState
 from bec_lib import messages
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.endpoints import MessageEndpoints
@@ -122,7 +123,7 @@ def test_move_callback_check_scan_state_raises_user_interruption(bec_client_mock
         )
     )
 
-    with pytest.raises(ScanInterruption, match="stopped by the user"):
+    with pytest.raises(ScanInterruption, match="Scan 5 was aborted by user."):
         live_update._check_scan_state()
 
 
@@ -214,7 +215,56 @@ def test_move_callback_check_scan_state_restart_without_restart_message_is_nonbl
         )
     )
 
-    assert live_update._check_scan_state() is None
+    assert live_update._check_scan_state() == ScanState.WAIT
+
+
+def test_move_callback_run_waits_for_restart_message_before_exiting(bec_client_mock):
+    client = bec_client_mock
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    report_instruction = {
+        "readback": {"RID": "something", "devices": ["samx"], "start": [0], "end": [10]}
+    }
+    restart_msg = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "restart"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(
+        bec=client, report_instruction=report_instruction, request=request
+    )
+    queue = mock.MagicMock(
+        status="STOPPED",
+        reason="restart",
+        scans=[mock.MagicMock(restarted_msg=None, status_message=mock.MagicMock(reason="alarm"))],
+    )
+    live_update.scan_queue_request = mock.MagicMock(queue=queue)
+
+    with (
+        mock.patch("bec_ipython_client.callbacks.move_device.check_alarms"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "wait_for_request_acceptance"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "_print_client_msgs_asap"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "_print_client_msgs_all"),
+        mock.patch.object(ReadbackDataHandler, "get_device_values", side_effect=[[0], [10]]),
+        mock.patch.object(
+            ReadbackDataHandler, "device_states", return_value={"samx": (True, True)}
+        ),
+        mock.patch.object(ReadbackDataHandler, "done", return_value=True),
+        mock.patch("bec_ipython_client.callbacks.move_device.time.sleep") as sleep,
+    ):
+
+        def trigger_restart(*_args, **_kwargs):
+            queue.scans[-1].restarted_msg = restart_msg
+
+        sleep.side_effect = trigger_restart
+
+        with pytest.raises(ScanRestart) as exc_info:
+            live_update.core()
+
+    assert exc_info.value.new_scan_msg == restart_msg
 
 
 def test_readback_data_handler(readback_data_handler):
