@@ -1,6 +1,7 @@
 import time
 
 from bec_ipython_client.progressbar import ScanProgressBar
+from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 
@@ -13,6 +14,31 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
     """Live updates for scans using a progress bar based on the progress of one or more devices"""
 
     REPORT_TYPE = "device_progress"
+
+    def _check_scan_state(self) -> bool:
+        """Check whether the scan has reached a terminal or exceptional state.
+
+        Returns:
+            bool: True if the scan should stop without error.
+        """
+        if not self.scan_item:
+            return False
+
+        restarted_msg = getattr(self.scan_item, "restarted_msg", None)
+        if restarted_msg:
+            raise ScanRestart(new_scan_msg=restarted_msg)
+
+        if getattr(self.scan_item, "status", None) == "user_completed":
+            print("Scan was set to 'completed' by user.")
+            return True
+
+        status_message = getattr(self.scan_item, "status_message", None)
+        if status_message and getattr(status_message, "reason", None) == "user":
+            raise ScanInterruption(
+                f"Scan {getattr(self.scan_item, 'scan_number', None)} was aborted by user."
+            )
+
+        return False
 
     def core(self):
         """core function to run the live updates for the table"""
@@ -44,6 +70,8 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
             bool: True if the scan is finished.
         """
         self.check_alarms()
+        if self._check_scan_state():
+            return True
         status = self.bec.connector.get(MessageEndpoints.device_progress(device_names[0]))
         if not status:
             logger.trace("waiting for new data point")
@@ -68,6 +96,8 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
         # process sync callbacks
         self.bec.callbacks.poll()
         self.scan_item.poll_callbacks()
+        if self._check_scan_state():
+            return True
 
         done = status.content.get("done")
         if point_id == max_value or done:
