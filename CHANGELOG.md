@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v3.142.1 (2026-06-18)
+
+### Bug Fixes
+
+- Add a reason to scan queue messages to ensure that restarts are handled properly
+  ([`0ec923a`](https://github.com/bec-project/bec/commit/0ec923ad5121b01a4d3dbb87f0a35706553009e4))
+
+- Avoid busy loop on device progress
+  ([`8078c5a`](https://github.com/bec-project/bec/commit/8078c5a066b993726a03787d6a3d85c8df02b062))
+
+- Scan restart must reset the live update
+  ([`c35f509`](https://github.com/bec-project/bec/commit/c35f509ee39f61f3e7c97f3153d59a0e4e8a6390))
+
+
 ## v3.142.0 (2026-06-17)
 
 ### Bug Fixes
