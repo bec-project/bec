@@ -23,7 +23,7 @@ def _login_info(accounts: list[str] | None = None):
 @pytest.fixture
 def access_control(bec_access):
     # patch for fakeredis; remove once v2.28 is released
-    bec_access.connector._buffered_connection._redis_conn.acl_setuser(
+    bec_access.connector._managed_connection._redis_conn.acl_setuser(
         "default",
         enabled=True,
         nopass=True,
@@ -33,7 +33,7 @@ def access_control(bec_access):
         reset_channels=True,
         reset_keys=True,
     )
-    bec_access.connector._buffered_connection._redis_conn.acl_setuser(
+    bec_access.connector._managed_connection._redis_conn.acl_setuser(
         "admin",
         enabled=True,
         passwords=["+admin"],
@@ -55,7 +55,7 @@ def test_login(bec_access, access_control):
     with mock.patch.object(bec_access, "_local_login", return_value="admin"):
         bec_access.login("admin")
         conn = (
-            bec_access.connector._buffered_connection._redis_conn.connection_pool.connection_kwargs
+            bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
         )
         assert conn["username"] == "admin"
         assert conn["password"] == "admin"
@@ -74,7 +74,7 @@ def test_login_prompts_user_for_account(bec_access, access_control):
         with mock.patch.object(bec_access, "_local_login", return_value="admin"):
             bec_access.login()
             conn = (
-                bec_access.connector._buffered_connection._redis_conn.connection_pool.connection_kwargs
+                bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
             )
             assert conn["username"] == "admin"
             assert conn["password"] == "admin"
@@ -89,7 +89,7 @@ def test_login_psi_login(bec_access, access_control):
         with mock.patch.object(bec_access, "_psi_login", return_value="admin") as psi_login:
             bec_access.login("admin")
             conn = (
-                bec_access.connector._buffered_connection._redis_conn.connection_pool.connection_kwargs
+                bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
             )
             assert conn["username"] == "admin"
             assert conn["password"] == "admin"
@@ -101,7 +101,7 @@ def test_bec_service_login_default(bec_access):
     bec_access._info = _login_info()
 
     bec_access._bec_service_login()
-    conn = bec_access.connector._buffered_connection._redis_conn.connection_pool.connection_kwargs
+    conn = bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
     assert conn["username"] is None
     assert conn["password"] is None
 

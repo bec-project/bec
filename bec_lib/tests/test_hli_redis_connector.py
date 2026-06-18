@@ -73,7 +73,7 @@ def test_redis_connector_raise_alarm(
     hli_connector, severity, expected_event, alarm_type, msg, compact_msg, metadata
 ):
     with (
-        mock.patch.object(hli_connector._buffered_connection, "set_and_publish", return_value=None),
+        mock.patch.object(hli_connector._managed_connection, "set_and_publish", return_value=None),
         mock.patch.object(hli_connector, "notify", return_value=None),
     ):
         info = messages.ErrorInfo(
@@ -81,7 +81,7 @@ def test_redis_connector_raise_alarm(
         )
         hli_connector.raise_alarm(severity, info, metadata)
 
-        hli_connector._buffered_connection.set_and_publish.assert_called_once_with(
+        hli_connector._managed_connection.set_and_publish.assert_called_once_with(
             MessageEndpoints.alarm().endpoint,
             AlarmMessage(severity=severity, info=info, metadata=metadata),
         )
@@ -106,7 +106,7 @@ def test_redis_connector_send_converts_ep(hli_connector: RedisConnector):
 def test_redis_connector_keys(hli_connector, pattern):
     endpoint = pattern if isinstance(pattern, str) else pattern.endpoint
     ret = hli_connector.keys(pattern)
-    hli_connector._buffered_connection._redis_conn.keys.assert_called_once_with(endpoint)
+    hli_connector._managed_connection._redis_conn.keys.assert_called_once_with(endpoint)
     assert ret == hli_connector._redis_conn.keys()
 
 
