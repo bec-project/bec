@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import time
 from inspect import Parameter, Signature
-from typing import TYPE_CHECKING, Type, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from pydantic import BaseModel
 from rich.console import Console
@@ -141,15 +141,13 @@ class BeamlineStateManager:
         raise ValueError(f"State with name {state.name} not found")
 
     def _update_states(self, states: list[messages.BeamlineStateConfig]) -> None:
-        remove_state_names = set(self._states) - set(state.name for state in states)
-
-        added_state_names = set(state.name for state in states) - set(self._states)
-        added_states = {state.name: state for state in states if state.name in added_state_names}
+        incoming_states = {state.name: state for state in states}
+        remove_state_names = self._states.keys() - incoming_states.keys()
 
         for state_name in remove_state_names:
             self._delete_state(state_name)
 
-        for state_name, state in added_states.items():
+        for state_name, state in incoming_states.items():
             self._add_state(state)
 
     def _add_state(
