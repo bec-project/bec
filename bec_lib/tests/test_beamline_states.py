@@ -304,6 +304,38 @@ class TestBeamlineStateManager:
         assert out
         assert isinstance(out[-1]["data"], messages.AvailableBeamlineStatesMessage)
 
+    def test_external_parameter_update_refreshes_existing_client_state(self, state_manager):
+        initial = messages.BeamlineStateConfig(
+            name="limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={"name": "limits", "device": "samx", "low_limit": 0.0, "high_limit": 10.0},
+        )
+        state_manager._on_state_update(
+            {"data": messages.AvailableBeamlineStatesMessage(states=[initial])},
+            parent=state_manager,
+        )
+
+        updated = messages.BeamlineStateConfig(
+            name="limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={
+                "name": "limits",
+                "device": "samx",
+                "low_limit": 1.0,
+                "high_limit": 9.0,
+                "tolerance": 0.25,
+            },
+        )
+        state_manager._on_state_update(
+            {"data": messages.AvailableBeamlineStatesMessage(states=[updated])},
+            parent=state_manager,
+        )
+
+        assert state_manager._states["limits"].low_limit == 1.0
+        assert state_manager._states["limits"].high_limit == 9.0
+        assert state_manager._states["limits"].tolerance == 0.25
+        assert state_manager.limits._state.model_dump(exclude_none=True) == updated.parameters
+
     def test_client_get_returns_unknown_without_status_message(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
