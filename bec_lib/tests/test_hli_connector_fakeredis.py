@@ -8,14 +8,14 @@ from bec_lib import messages
 from bec_lib.endpoints import EndpointInfo, EndpointType, MessageEndpoints, MessageOp
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_lib.redis_connector import RedisConnector
-from bec_lib.redis_connector.buffered_redis_connector import BufferedRedisConnector
 from bec_lib.redis_connector.constants import (
     IncompatibleMessageForEndpoint,
     IncompatibleRedisOperation,
 )
+from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnection
 from bec_lib.serialization import MsgpackSerialization
 
-from .test_buffered_redis_connector import TestMessage
+from .test_managed_redis_connection import TestMessage
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -35,9 +35,9 @@ def fake_redis_server(host, port, **kwargs):
 
 @pytest.fixture
 def connected_connector():
-    BufferedRedisConnector.RETRY_ON_TIMEOUT = 0
+    ManagedRedisConnection.RETRY_ON_TIMEOUT = 0
     connector = RedisConnector("localhost:1", redis_cls=fake_redis_server)
-    connector._buffered_connection.flushall()
+    connector._managed_connection.flushall()
     try:
         yield connector
     finally:

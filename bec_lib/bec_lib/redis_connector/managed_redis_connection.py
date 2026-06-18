@@ -56,7 +56,7 @@ class GeneratorExecution:
     g: Generator
 
 
-class BufferedRedisConnector:
+class ManagedRedisConnection:
     RETRY_ON_TIMEOUT: int = 20
 
     def __init__(

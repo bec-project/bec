@@ -18,10 +18,10 @@ from bec_lib.redis_connector import (
     IncompatibleRedisOperation,
     MessageObject,
 )
-from bec_lib.redis_connector.buffered_redis_connector import BufferedRedisConnector
+from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnection
 from bec_lib.serialization import MsgpackSerialization
 
-from .test_buffered_redis_connector import TestMessage
+from .test_managed_redis_connection import TestMessage
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -41,8 +41,8 @@ def fake_redis_server(host, port, **kwargs):
 
 @pytest.fixture
 def connected_connector():
-    BufferedRedisConnector.RETRY_ON_TIMEOUT = 0
-    connector = BufferedRedisConnector("localhost:1", redis_cls=fake_redis_server)
+    ManagedRedisConnection.RETRY_ON_TIMEOUT = 0
+    connector = ManagedRedisConnection("localhost:1", redis_cls=fake_redis_server)
     connector.flushall()
     try:
         yield connector
@@ -596,7 +596,7 @@ def test_redis_connector_message_alternated_pass(connected_connector):
     assert msg_received == [data_original]
 
 
-def test_lrem(connected_connector: BufferedRedisConnector):
+def test_lrem(connected_connector: ManagedRedisConnection):
     conn, ep = connected_connector, MessageEndpoints.procedure_execution
     msgs = [
         messages.ProcedureExecutionMessage(
@@ -612,7 +612,7 @@ def test_lrem(connected_connector: BufferedRedisConnector):
     assert list_contents == [msgs[0], msgs[2]]
 
 
-def test_merging_streams_does_not_skip_messages(connected_connector: BufferedRedisConnector):
+def test_merging_streams_does_not_skip_messages(connected_connector: ManagedRedisConnection):
     connector = connected_connector
     cb_normal = mock.Mock(spec=[])  # spec is here to remove all attributes
     cb_from_start = mock.Mock(spec=[])  # spec is here to remove all attributes

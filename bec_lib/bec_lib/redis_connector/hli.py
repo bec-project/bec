@@ -24,8 +24,8 @@ from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
-from .buffered_redis_connector import BufferedRedisConnector
 from .constants import IncompatibleMessageForEndpoint, IncompatibleRedisOperation, _BecMsgT
+from .managed_redis_connection import ManagedRedisConnection
 from .validation import check_endpoint_type, validate_endpoint
 
 logger = bec_logger.logger
@@ -37,7 +37,7 @@ class RedisConnector:
     a simple interface to send and receive messages from a redis server.
     """
 
-    connector_cls = BufferedRedisConnector
+    connector_cls = ManagedRedisConnection
 
     def __init__(
         self,
@@ -55,7 +55,7 @@ class RedisConnector:
             name (str): Name to identify this instance
             **kwargs: additional keyword arguments to pass to the redis client.
         """
-        self._buffered_connection = self.connector_cls(bootstrap, redis_cls, name, **kwargs)
+        self._managed_connection = self.connector_cls(bootstrap, redis_cls, name, **kwargs)
 
     ##################################
     #    SETUP AND CONFIG METHODS    #
@@ -71,7 +71,7 @@ class RedisConnector:
             username (str, optional): username. Defaults to "default".
             password (str, optional): password. Defaults to "null".
         """
-        return self._buffered_connection.authenticate(username=username, password=password)
+        return self._managed_connection.authenticate(username=username, password=password)
 
     def set_retry_enabled(self, enabled: bool):
         """
@@ -80,13 +80,13 @@ class RedisConnector:
         Args:
             enabled (bool): enable or disable retry
         """
-        return self._buffered_connection.set_retry_enabled(enabled)
+        return self._managed_connection.set_retry_enabled(enabled)
 
     def shutdown(self, per_thread_timeout_s: float | None = None):
         """
         Shutdown the connector
         """
-        return self._buffered_connection.shutdown(per_thread_timeout_s)
+        return self._managed_connection.shutdown(per_thread_timeout_s)
 
     def register(
         self,
@@ -120,7 +120,7 @@ class RedisConnector:
             >>> connector.register(patterns="test:*", cb=my_callback, start_thread=False)
             >>> connector.register(patterns="test:*", cb=my_callback, start_thread=False, my_arg="test")
         """
-        return self._buffered_connection.register(
+        return self._managed_connection.register(
             topics=topics,
             patterns=patterns,
             cb=cb,
@@ -131,13 +131,13 @@ class RedisConnector:
         )
 
     def unregister(self, topics=None, patterns=None, cb=None):
-        return self._buffered_connection.unregister(topics, patterns, cb)
+        return self._managed_connection.unregister(topics, patterns, cb)
 
     def pipeline(self):
-        return self._buffered_connection.pipeline()
+        return self._managed_connection.pipeline()
 
     def execute_pipeline(self, pipeline):
-        return self._buffered_connection.execute_pipeline(pipeline)
+        return self._managed_connection.execute_pipeline(pipeline)
 
     ############################
     #    HIGH LEVEL METHODS    #
@@ -165,7 +165,7 @@ class RedisConnector:
             )
         """
         alarm_msg = AlarmMessage(severity=severity, info=info, metadata=metadata or {})
-        self._buffered_connection.set_and_publish(MessageEndpoints.alarm().endpoint, alarm_msg)
+        self._managed_connection.set_and_publish(MessageEndpoints.alarm().endpoint, alarm_msg)
         compact_message = info.compact_error_message or info.error_message or info.exception_type
         event_by_severity = {
             0: MessagingEvent.ALARM_WARNING,
@@ -193,7 +193,7 @@ class RedisConnector:
         if isinstance(message, str):
             message = NotificationMessageObject().add_text(message)
         outgoing = NotificationMessage(event=event, message=message._content)
-        self._buffered_connection.send(
+        self._managed_connection.send(
             MessageEndpoints.notification(event).endpoint, outgoing, pipe=pipe
         )
 
@@ -231,100 +231,100 @@ class RedisConnector:
             RID=rid,
             metadata=metadata or {},
         )
-        self._buffered_connection.xadd(
+        self._managed_connection.xadd(
             MessageEndpoints.client_info().endpoint, msg_dict={"data": client_msg}, max_size=100
         )
 
     def publish_metrics(self, group_name, metrics, separator="_"):
         msg = DynamicMetricMessage.from_dict(metrics, separator=separator)
         ep = MessageEndpoints.dynamic_metric(group_name).endpoint
-        self._buffered_connection.set_and_publish(ep, msg)
+        self._managed_connection.set_and_publish(ep, msg)
 
     @validate_endpoint("topic")
     def get_last(self, topic, key=None, count=1):
-        return self._buffered_connection.get_last(topic, key, count)
+        return self._managed_connection.get_last(topic, key, count)
 
     @validate_endpoint("topic")
     def set_and_publish(self, topic, msg, pipe=None, expire=None):
-        return self._buffered_connection.set_and_publish(topic, msg, pipe, expire)
+        return self._managed_connection.set_and_publish(topic, msg, pipe, expire)
 
     ##############################
     #    DIRECT REDIS METHODS    #
     ##############################
 
     def raw_send(self, topic: str, msg, pipe=None):
-        return self._buffered_connection.raw_send(topic, msg, pipe)
+        return self._managed_connection.raw_send(topic, msg, pipe)
 
     @validate_endpoint("topic")
     def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
-        return self._buffered_connection.send(topic, msg, pipe)
+        return self._managed_connection.send(topic, msg, pipe)
 
     @validate_endpoint("topic")
     def lpush(self, topic, msg, pipe=None, max_size=None, expire=None):
-        return self._buffered_connection.lpush(topic, msg, pipe, max_size, expire)
+        return self._managed_connection.lpush(topic, msg, pipe, max_size, expire)
 
     @validate_endpoint("topic")
     def lset(self, topic, index, msg, pipe=None):
-        return self._buffered_connection.lset(topic, index, msg, pipe)
+        return self._managed_connection.lset(topic, index, msg, pipe)
 
     @validate_endpoint("topic")
     def rpush(self, topic, msg, pipe=None, max_size=None, expire=None):
-        return self._buffered_connection.rpush(topic, msg, pipe, max_size, expire)
+        return self._managed_connection.rpush(topic, msg, pipe, max_size, expire)
 
     @validate_endpoint("topic")
     def lrange(self, topic, start, end, pipe=None):
-        return self._buffered_connection.lrange(topic, start, end, pipe)
+        return self._managed_connection.lrange(topic, start, end, pipe)
 
     @validate_endpoint("topic")
     def llen(self, topic, pipe=None):
-        return self._buffered_connection.llen(topic, pipe)
+        return self._managed_connection.llen(topic, pipe)
 
     @validate_endpoint("topic")
     def lrem(self, topic, count, msg, pipe=None):
-        return self._buffered_connection.lrem(topic, count, msg, pipe)
+        return self._managed_connection.lrem(topic, count, msg, pipe)
 
     @validate_endpoint("topic")
     def set(self, topic, msg, pipe=None, expire=None):
-        return self._buffered_connection.set(topic, msg, pipe, expire)
+        return self._managed_connection.set(topic, msg, pipe, expire)
 
     @validate_endpoint("pattern")
     def keys(self, pattern):
-        return self._buffered_connection.keys(pattern)
+        return self._managed_connection.keys(pattern)
 
     @validate_endpoint("topic")
     def delete(self, topic, pipe=None):
-        return self._buffered_connection.delete(topic, pipe)
+        return self._managed_connection.delete(topic, pipe)
 
     @validate_endpoint("topic")
     def get(self, topic, pipe=None):
-        return self._buffered_connection.get(topic, pipe)
+        return self._managed_connection.get(topic, pipe)
 
     def mget(self, topics: list[str], pipe=None):
-        return self._buffered_connection.mget(topics, pipe)
+        return self._managed_connection.mget(topics, pipe)
 
     @validate_endpoint("topic")
     def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire=None, approximate=True):
-        return self._buffered_connection.xadd(
+        return self._managed_connection.xadd(
             topic, msg_dict, max_size=max_size, pipe=pipe, expire=expire, approximate=approximate
         )
 
     @validate_endpoint("topic")
     def xread(self, topic, id=None, count=None, block=None, from_start=False, user_id=None):
-        return self._buffered_connection.xread(
+        return self._managed_connection.xread(
             topic, id=id, count=count, block=block, from_start=from_start, user_id=user_id
         )
 
     @validate_endpoint("topic")
     def xrange(self, topic, min, max, count=None):
-        return self._buffered_connection.xrange(topic, min, max, count)
+        return self._managed_connection.xrange(topic, min, max, count)
 
     @validate_endpoint("topic")
     def remove_from_set(self, topic, msg, pipe=None):
-        return self._buffered_connection.remove_from_set(topic, msg, pipe)
+        return self._managed_connection.remove_from_set(topic, msg, pipe)
 
     @validate_endpoint("topic")
     def get_set_members(self, topic, pipe=None):
-        return self._buffered_connection.get_set_members(topic, pipe)
+        return self._managed_connection.get_set_members(topic, pipe)
 
     def blocking_list_pop_to_set_add(
         self,
@@ -342,9 +342,7 @@ class RedisConnector:
                 raise IncompatibleRedisOperation(
                     f"{ep} should be compatible with {ops.name} operations!"
                 )
-        bpop = (
-            self._buffered_connection.blpop if side == "LEFT" else self._buffered_connection.brpop
-        )
+        bpop = self._managed_connection.blpop if side == "LEFT" else self._managed_connection.brpop
         raw_msg = bpop([list_endpoint.endpoint], timeout_s=timeout_s)
         if raw_msg is None:
             return None
@@ -353,62 +351,62 @@ class RedisConnector:
             raise IncompatibleMessageForEndpoint(
                 f"Message {decoded_msg} is not suitable for the set endpoint {set_endpoint}"
             )
-        self._buffered_connection.add_to_set(set_endpoint.endpoint, raw_msg[1])
+        self._managed_connection.add_to_set(set_endpoint.endpoint, raw_msg[1])
         return decoded_msg  # type: ignore # list pop returns one item
 
     @validate_endpoint("endpoint")
     def blocking_list_pop(self, endpoint, side="LEFT", timeout_s=None):
-        return self._buffered_connection.blocking_list_pop(endpoint, side=side, timeout_s=timeout_s)
+        return self._managed_connection.blocking_list_pop(endpoint, side=side, timeout_s=timeout_s)
 
     #########################
     #    UTILITY METHODS    #
     #########################
     #
     def client_id(self):
-        return self._buffered_connection.client_id()
+        return self._managed_connection.client_id()
 
     def unblock_client(self, id):
-        return self._buffered_connection.unblock_client(id)
+        return self._managed_connection.unblock_client(id)
 
     def poll_messages(self, timeout=None):
-        return self._buffered_connection.poll_messages(timeout)
+        return self._managed_connection.poll_messages(timeout)
 
     def any_stream_is_registered(self, topics, cb):
-        return self._buffered_connection.any_stream_is_registered(topics, cb)
+        return self._managed_connection.any_stream_is_registered(topics, cb)
 
     def can_connect(self):
-        return self._buffered_connection.can_connect()
+        return self._managed_connection.can_connect()
 
     def redis_server_is_running(self):
-        return self._buffered_connection.redis_server_is_running()
+        return self._managed_connection.redis_server_is_running()
 
     def raw_xread(self, stream_keys: dict[str, str], block: int | None = None):
-        return self._buffered_connection.raw_xread(stream_keys, block)
+        return self._managed_connection.raw_xread(stream_keys, block)
 
     def ping(self):
-        return self._buffered_connection.ping()
+        return self._managed_connection.ping()
 
     def acl_list(self):
-        return self._buffered_connection.acl_list()
+        return self._managed_connection.acl_list()
 
     def acl_getuser(self, username: str):
-        return self._buffered_connection.acl_getuser(username)
+        return self._managed_connection.acl_getuser(username)
 
     @property
     def host(self):
-        return self._buffered_connection.host
+        return self._managed_connection.host
 
     @property
     def port(self):
-        return self._buffered_connection.port
+        return self._managed_connection.port
 
     @property
     def connection_error_str(self):
-        return self._buffered_connection.connection_error_str
+        return self._managed_connection.connection_error_str
 
     @property
     def username(self):
-        return self._buffered_connection.username
+        return self._managed_connection.username
 
     ############################
     #    DEPRECATED METHODS    #
@@ -419,17 +417,17 @@ class RedisConnector:
         logger.warning(
             f"Deprecated use of _redis_conn at:\n{' '.join(traceback.format_stack(limit=3))}\n Please migrate tests to access the buffered connector directly, and implement high level methods for use outside tests."
         )
-        return self._buffered_connection._redis_conn
+        return self._managed_connection._redis_conn
 
     def _convert_endpointinfo(self, endpoint, check_message_op=True):
         logger.warning(
             f"Deprecated use of _convert_endpointinfo at:\n{' '.join(traceback.format_stack(limit=3))}\n Please migrate tests to access the buffered connector directly, and implement high level methods for use outside tests."
         )
-        return self._buffered_connection._convert_endpointinfo(endpoint, check_message_op)
+        return self._managed_connection._convert_endpointinfo(endpoint, check_message_op)
 
     @property
     def _topics_cb(self):
         logger.warning(
             f"Deprecated use of _topics_cb at:\n{' '.join(traceback.format_stack(limit=3))}\n Please migrate tests to access the buffered connector directly, and implement high level methods for use outside tests."
         )
-        return self._buffered_connection._topics_cb
+        return self._managed_connection._topics_cb
