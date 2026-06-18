@@ -95,4 +95,5 @@ class LiveUpdatesDeviceProgress(LiveUpdatesTable):
         done = status.content.get("done")
         if point_id == max_value or done:
             return True
+        time.sleep(0.05)  # small sleep to avoid busy waiting
         return False
