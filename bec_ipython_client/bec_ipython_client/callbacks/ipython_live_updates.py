@@ -418,6 +418,9 @@ class IPythonLiveUpdates:
 
         if scan_closed:
             self._active_callback = None
+            # Drop the per-request block-index entry (keyed by a per-request uuid)
+            # so it cannot accumulate one entry per scan for the whole session.
+            self._request_block_index.pop(self._request_block_id, None)
 
     def continue_request(self):
         """Continue the interrupted request."""

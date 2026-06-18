@@ -268,6 +268,29 @@ class ScanStorage:
         self.last_scan_number = init_scan_number
         self._lock = threading.RLock()
         self._pending_inserts = defaultdict(list[dict[Literal["func", "func_args"], Any]])
+        # Bound the number of distinct scan_ids whose operations are queued before
+        # their ScanItem exists. Late messages (e.g. public_file) can arrive for a
+        # scan_id already evicted from ``storage`` and never re-created, which would
+        # otherwise pin the queued messages (incl. numpy payloads) for the whole
+        # session. See ``_queue_pending_insert``.
+        self._pending_inserts_maxlen = max(2 * maxlen, 20)
+
+    def _queue_pending_insert(
+        self, scan_id: str, insert: dict[Literal["func", "func_args"], Any]
+    ) -> None:
+        """Queue an operation for a scan whose ScanItem does not exist yet.
+
+        Bounds the number of distinct scan_ids retained so orphaned scans (status/
+        segment/file messages that arrive after the scan was evicted from
+        ``storage`` and is no longer in the live queue, so ``add_scan_item`` never
+        pops them) cannot accumulate for the lifetime of the session.
+        """
+        self._pending_inserts[scan_id].append(insert)
+        while len(self._pending_inserts) > self._pending_inserts_maxlen:
+            oldest = next(iter(self._pending_inserts))
+            if oldest == scan_id:
+                break
+            self._pending_inserts.pop(oldest, None)
 
     @property
     def current_scan_info(self) -> messages.QueueInfoEntry | None:
@@ -353,8 +376,8 @@ class ScanStorage:
 
         scan_item = self.find_scan_by_ID(scan_id=scan_id)
         if not scan_item:
-            self._pending_inserts[scan_id].append(
-                {"func": "update_with_scan_status", "func_args": (scan_status,)}
+            self._queue_pending_insert(
+                scan_id, {"func": "update_with_scan_status", "func_args": (scan_status,)}
             )
             return
 
@@ -414,8 +437,8 @@ class ScanStorage:
         scan_id = scan_msg.scan_id
         scan_item = self.find_scan_by_ID(scan_id)
         if scan_item is None:
-            self._pending_inserts[scan_id].append(
-                {"func": "add_scan_segment", "func_args": (scan_msg,)}
+            self._queue_pending_insert(
+                scan_id, {"func": "add_scan_segment", "func_args": (scan_msg,)}
             )
             return
 
@@ -436,8 +459,8 @@ class ScanStorage:
         """
         scan_item = self.find_scan_by_ID(scan_id)
         if scan_item is None:
-            self._pending_inserts[scan_id].append(
-                {"func": "add_public_file", "func_args": (scan_id, msg)}
+            self._queue_pending_insert(
+                scan_id, {"func": "add_public_file", "func_args": (scan_id, msg)}
             )
             return
 

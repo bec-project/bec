@@ -32,6 +32,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.procedures.hli import ProcedureHli
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
+from bec_lib.utils.process_memory import limit_malloc_arenas
 from bec_lib.utils.pydantic_pretty_print import pretty_print_pydantic_validation_error
 
 logger = bec_logger.logger
@@ -356,6 +357,12 @@ def main():
     """
     Main function to start the BEC IPython client.
     """
+
+    # Cap glibc malloc arenas *before* the client spins up its background threads.
+    # This bounds the resident memory of this long-lived, multi-threaded console on
+    # Linux (no-op on macOS/non-glibc). Override with BEC_MALLOC_ARENA_MAX or
+    # disable with BEC_DISABLE_MALLOC_TUNING=1.
+    limit_malloc_arenas()
 
     available_plugins = plugin_helper.get_ipython_client_startup_plugins(state="pre")
 

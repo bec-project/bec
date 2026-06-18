@@ -200,6 +200,25 @@ def test_update_with_scan_status_aborted():
     )
 
 
+def test_pending_inserts_is_bounded_for_orphaned_scans():
+    """Late messages for scans that are never created must not accumulate forever.
+
+    Regression test for unbounded ScanStorage._pending_inserts growth: status/
+    segment/file messages arriving for a scan_id that is never added (e.g. a late
+    public_file for a scan already evicted from the maxlen storage deque) used to be
+    pinned for the whole session, retaining their payloads (incl. numpy data).
+    """
+    scan_manager = ScanManager(ConnectorMock(""))
+    storage = scan_manager.scan_storage
+    bound = storage._pending_inserts_maxlen
+    # feed far more distinct, never-created scan_ids than the bound allows
+    for i in range(bound * 5):
+        storage.update_with_scan_status(
+            messages.ScanStatusMessage(scan_id=f"orphan-{i}", status="open", info={})
+        )
+    assert len(storage._pending_inserts) <= bound
+
+
 def test_update_with_scan_status_last_scan_number():
     scan_manager = ScanManager(ConnectorMock(""))
     scan_manager.scan_storage.last_scan_number = 0

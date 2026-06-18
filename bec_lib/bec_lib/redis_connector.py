@@ -589,6 +589,10 @@ class RedisConnector:
         self._redis_conn.close()
 
         self._generator_executor.shutdown()
+        # per-request stream cursors (e.g. mv-status) are never re-read once the
+        # request completes; drop them so a long-lived connector does not retain
+        # one entry per request for the whole session.
+        self.stream_keys.clear()
 
     def send_client_info(
         self,
@@ -1485,6 +1489,13 @@ class RedisConnector:
         """
         client = self._redis_conn
         stream_key = topic if user_id is None else f"{topic}:{user_id}"
+        # Bound the per-request stream cursors so one-shot request streams (e.g.
+        # mv-status, keyed by a per-request uuid) cannot accumulate for the lifetime
+        # of the connector. dict preserves insertion order -> drop the oldest.
+        if len(self.stream_keys) > 2000:
+            for old_key in list(self.stream_keys)[:-2000]:
+                if old_key != stream_key:
+                    self.stream_keys.pop(old_key, None)
         if from_start:
             self.stream_keys[stream_key] = "0-0"
         if stream_key not in self.stream_keys:
