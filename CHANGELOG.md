@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.2 (2026-06-18)
+
+### Bug Fixes
+
+- Remove del for manual cleanup
+  ([`74a137d`](https://github.com/bec-project/bec/commit/74a137d4c214b00eb23133af178e01cf77492214))
+
+
 ## v3.142.1 (2026-06-18)
 
 ### Bug Fixes
