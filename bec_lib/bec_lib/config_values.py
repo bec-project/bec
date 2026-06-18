@@ -42,10 +42,6 @@ class RedisConfigValue(property, Generic[ValueT]):
         self._config = self._fetch()
         self._connector.register(self._ep, cb=self._update_cb)
 
-    def __del__(self):
-        if hasattr(self, "_connector"):
-            self.unregister_all()
-
     def __bool__(self):
         raise ValueError(f"Maybe you meant to check {self}.value?")
 
