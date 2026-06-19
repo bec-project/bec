@@ -1,7 +1,6 @@
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from functools import partial
-from time import monotonic, monotonic_ns
+from time import monotonic_ns
 from typing import Callable
 
 from bec_lib.messages import BECMessage
@@ -9,6 +8,11 @@ from bec_lib.messages import BECMessage
 MessageFactory = Callable[[], BECMessage]
 WriteCommand = Callable[[str, BECMessage], None]
 BufferEntry = tuple[str, WriteCommand]
+
+# Notes:
+#  - Should it just be message creation and kwargs, then generic over MessageT ?
+#  - or kwargs | callable[[], kwargs]
+#
 
 
 @dataclass
