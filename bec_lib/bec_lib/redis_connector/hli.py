@@ -5,7 +5,7 @@ This module provides a high level interface for interacting with the BEC Redis i
 from __future__ import annotations
 
 import traceback
-from typing import Literal
+from typing import Literal, Sequence
 
 from redis.client import Pipeline, Redis
 
@@ -424,6 +424,11 @@ class RedisConnector:
             f"Deprecated use of _convert_endpointinfo at:\n{' '.join(traceback.format_stack(limit=3))}\n Please migrate tests to access the buffered connector directly, and implement high level methods for use outside tests."
         )
         return self._managed_connection._convert_endpointinfo(endpoint, check_message_op)
+
+    def extract_raw_endpoints_from_info(
+        self, endpoint_info: EndpointInfo | str | Sequence[EndpointInfo | str]
+    ):
+        return self._managed_connection._convert_endpointinfo(endpoint_info)
 
     @property
     def _topics_cb(self):
