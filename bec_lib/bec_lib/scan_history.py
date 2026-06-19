@@ -39,7 +39,7 @@ class ScanHistory:
         self._scan_history_loaded_event = threading.Event()
         self._loaded = False
         self._loading_thread = None
-        self._max_scans = 10000
+        self._max_scans = 50
         self._start_retrieval()
 
     def _start_retrieval(self) -> None:
