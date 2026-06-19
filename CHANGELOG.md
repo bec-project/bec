@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.4 (2026-06-19)
+
+### Bug Fixes
+
+- Trim the history to 50
+  ([`3827a40`](https://github.com/bec-project/bec/commit/3827a403713efab0aca0c43e26d7e0e54810792f))
+
+
 ## v3.142.3 (2026-06-19)
 
 ### Bug Fixes
