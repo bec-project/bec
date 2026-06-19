@@ -1,6 +1,33 @@
 # CHANGELOG
 
 
+## v3.142.3 (2026-06-19)
+
+### Bug Fixes
+
+- **bl states**: Apply external state updates
+  ([`06469ce`](https://github.com/bec-project/bec/commit/06469ce753a7cafa3dd49ffef00bb9e8a7e1e767))
+
+### Chores
+
+- Rename buffered to managed
+  ([`66789cd`](https://github.com/bec-project/bec/commit/66789cd93358a9e4e8dade35486038c14b19aef3))
+
+### Refactoring
+
+- Add hli passthrough for redisconnector
+  ([`16e509d`](https://github.com/bec-project/bec/commit/16e509d30120239ceafa76612cab7b5040b72cc4))
+
+- Move higher redisconnector logic to hli
+  ([`23678d0`](https://github.com/bec-project/bec/commit/23678d037d85751b478020ce8794b7a0cd18c39c))
+
+- Move validation to redisconnector hli
+  ([`f7ae3e7`](https://github.com/bec-project/bec/commit/f7ae3e7aac9f20ce30ba1afee92d1f33b631d05a))
+
+- Split redisconnector into modules
+  ([`48371d5`](https://github.com/bec-project/bec/commit/48371d511a3c37b97905b82e116b37d014676655))
+
+
 ## v3.142.2 (2026-06-18)
 
 ### Bug Fixes
