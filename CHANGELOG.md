@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.5 (2026-06-21)
+
+### Bug Fixes
+
+- Provide public method for endpointinfo conversion
+  ([`e0cd1cb`](https://github.com/bec-project/bec/commit/e0cd1cb8564e5ada52b547c6897b88ad1a36e40c))
+
+
 ## v3.142.4 (2026-06-19)
 
 ### Bug Fixes
