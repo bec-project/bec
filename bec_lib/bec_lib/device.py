@@ -1417,9 +1417,11 @@ class Positioner(AdjustableMixin, Device):
         return self.root.parent.parent.scans.mv(self, val, relative=relative)
 
     @property
-    @rpc
     def position(self):
-        pass
+        pos_signal = getattr(self, "readback", None) or getattr(self, "user_readback", None)
+        if pos_signal:
+            return pos_signal.get()
+        return self._run(fcn="position")
 
     @rpc
     def moving(self):
