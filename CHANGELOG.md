@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.7 (2026-06-22)
+
+### Bug Fixes
+
+- Run .get for position instead of full rpc
+  ([`0097f48`](https://github.com/bec-project/bec/commit/0097f48978c35d9358373cfa266d0cdfe702d02a))
+
+
 ## v3.142.6 (2026-06-22)
 
 ### Bug Fixes
