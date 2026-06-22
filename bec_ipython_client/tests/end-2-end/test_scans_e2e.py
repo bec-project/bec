@@ -334,7 +334,8 @@ def test_fly_scan(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_restart(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_restart(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_restart"})
     scans = bec.scans
@@ -356,10 +357,12 @@ def test_scan_restart(bec_ipython_client_fixture):
 
     # We start two scans to ensure that the scan restart logic works correctly in a queued scenario
     # The first scan is started without printout to allow us to submit the second scan immediately after
-    scans.line_scan(dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True)
+    getattr(scans, scan_name)(
+        dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
+    )
 
     # The second scan is using the live table printout. It should properly continue after the restart
-    scan2 = scans.line_scan(dev.samx, -5, 5, steps=50, exp_time=0.1, relative=True)
+    scan2 = getattr(scans, scan_name)(dev.samx, -5, 5, steps=50, exp_time=0.1, relative=True)
 
     scan2.wait()
 
@@ -372,7 +375,8 @@ def test_scan_restart(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClient):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClient, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_observer_repeat_queued"})
     scans = bec.scans
@@ -394,10 +398,10 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
     # start repeat thread
     threading.Thread(target=send_repeat, args=(bec,), daemon=True).start()
     # start scan
-    scan1 = scans.line_scan(
+    scan1 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=100, exp_time=0.1, hide_report=True, relative=True
     )
-    scan2 = scans.line_scan(
+    scan2 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=100, exp_time=0.1, hide_report=True, relative=True
     )
 
@@ -412,7 +416,8 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
 
 
 @pytest.mark.timeout(100)
-def test_scan_observer_repeat(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_observer_repeat(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_observer_repeat"})
     scans = bec.scans
@@ -435,7 +440,7 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
     threading.Thread(target=send_repeat, args=(bec,), daemon=True).start()
     # start scan
     with pytest.raises(ScanAbortion):
-        scan1 = scans.line_scan(
+        scan1 = getattr(scans, scan_name)(
             dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
         )
         scan1.wait()
@@ -450,7 +455,8 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_file_writer(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["grid_scan", "_v4_grid_scan"])
+def test_file_writer(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_file_writer"})
     scans = bec.scans
@@ -460,7 +466,7 @@ def test_file_writer(bec_ipython_client_fixture):
     dev.samx.velocity.set(98).wait()
     dev.samy.velocity.set(101).wait()
 
-    scan = scans.grid_scan(
+    scan = getattr(scans, scan_name)(
         dev.samx,
         -5,
         5,
