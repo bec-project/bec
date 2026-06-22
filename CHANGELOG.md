@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.6 (2026-06-22)
+
+### Bug Fixes
+
+- Update Ubuntu version in Read the Docs configuration
+  ([`6905c53`](https://github.com/bec-project/bec/commit/6905c534d589e73ddc2be22acf127f3a42536dfb))
+
+
 ## v3.142.5 (2026-06-21)
 
 ### Bug Fixes
