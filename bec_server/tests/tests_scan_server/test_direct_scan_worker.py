@@ -417,6 +417,25 @@ def test_run_uses_on_exception_cleanup_before_handling_error(direct_worker_conte
     direct_worker_context.direct_worker._handle_exception.assert_called_once()
 
 
+def test_run_uses_on_exception_cleanup_for_scan_abortion(direct_worker_context, make_scan):
+    scan = make_scan()
+    scan.on_exception = mock.MagicMock()
+    scan.scan_core = mock.MagicMock(side_effect=ScanAbortion())
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+    direct_worker_context.direct_worker._handle_exception = mock.MagicMock()
+
+    with pytest.raises(ScanAbortion):
+        direct_worker_context.direct_worker.run(scan)
+
+    assert direct_worker_context.queue.stopped is True
+    assert direct_worker_context.scan_worker.status == InstructionQueueStatus.RUNNING
+    assert scan.actions._metadata_suffix == "__on-exception"
+    scan.on_exception.assert_called_once()
+    direct_worker_context.direct_worker._handle_exception.assert_not_called()
+
+
 def test_run_handles_cleanup_exception_before_original_error(direct_worker_context, make_scan):
     scan = make_scan(fail_step="scan_core")
     cleanup_exc = UserScanInterruption(exit_info=("halted", "user"))
