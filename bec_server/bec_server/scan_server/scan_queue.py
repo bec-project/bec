@@ -931,15 +931,20 @@ class ScanQueue:
                     self._flush_deferred_inserts()
                     if len(self.queue) == 0:
                         if aiq is None:
-                            self.signal_event.wait(0.1)
-                            return False
-                        self.active_instruction_queue = None
-                        self.signal_event.wait(0.01)
-                        return False
+                            wait_time = 0.1
+                        else:
+                            self.active_instruction_queue = None
+                            wait_time = 0.01
+                    else:
+                        self.active_instruction_queue = self.queue[0]
+                        self.history_queue.append(self.active_instruction_queue)
+                        return True
+                else:
+                    wait_time = None
 
-                    self.active_instruction_queue = self.queue[0]
-                    self.history_queue.append(self.active_instruction_queue)
-                    return True
+            if wait_time is not None:
+                self.signal_event.wait(wait_time)
+                return False
 
             while not self.signal_event.is_set():
                 with self._lock:

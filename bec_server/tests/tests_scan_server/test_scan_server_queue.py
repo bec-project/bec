@@ -752,8 +752,8 @@ def test_set_restart(queuemanager_mock):
                         queue_manager.set_restart(
                             queue="primary", parameter={"RID": "something_new"}
                         )
-                    scan_msg_wait.assert_called_once_with(iq.scan_id[0], "primary")
-                    add_new_scan_to_queue.assert_called_once()
+                    scan_msg_wait.assert_not_called()
+                    add_new_scan_to_queue.assert_called_once_with("primary", mock.ANY, 1)
                     restart_msg = connector_send.call_args_list[0].args[1]
                     assert restart_msg.original_scan_id == iq.scan_id[0]
                     assert restart_msg.scan_msg.metadata["RID"] == "something_new"

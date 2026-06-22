@@ -97,6 +97,7 @@ class ScanWorker(threading.Thread):
 
     def shutdown(self):
         """shutdown the scan worker"""
+        self.status = InstructionQueueStatus.STOPPED
         self.signal_event.set()
         if self._started.is_set():  # type: ignore ; _started is defined in threading.Thread
             self.join()
