@@ -194,6 +194,11 @@ class FermatSpiralScan(ScanBase):
             num_monitored_readouts=len(self.positions) * self.burst_at_each_point,
         )
 
+        self.actions.add_scan_report_instruction_readback(
+            devices=["samx"], start=[0], stop=[20], request_id=self.scan_info.metadata["RID"]
+        )
+        self.components.move_and_wait(["samx"], [20])
+
         self.actions.add_scan_report_instruction_scan_progress(
             points=self.scan_info.num_monitored_readouts, show_table=False
         )

@@ -1018,6 +1018,96 @@ def test_scan_queue_next_instruction_queue_pops_stopped_elements(queuemanager_mo
     assert len(queue.queue) == 0
 
 
+def test_scan_queue_insert_defers_while_head_is_stopped(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    stopped_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
+    stopped_item.status = InstructionQueueStatus.STOPPED
+    queue.queue.append(stopped_item)
+
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-stopped"},
+    )
+
+    start = time.monotonic()
+    queue.insert(msg)
+
+    assert time.monotonic() - start < 0.2
+    assert len(queue.queue) == 1
+    assert len(queue._deferred_inserts) == 1
+
+
+def test_scan_queue_flushes_deferred_inserts_once_stopped_head_is_removed(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    stopped_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
+    stopped_item.status = InstructionQueueStatus.STOPPED
+    queued_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
+    queue.queue.extend([stopped_item, queued_item])
+    queue.active_instruction_queue = stopped_item
+
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-flush"},
+    )
+    queue._deferred_inserts.append((msg, -1))
+
+    assert queue._next_instruction_queue() is True
+    assert len(queue._deferred_inserts) == 0
+    assert len(queue.queue) == 2
+    assert queue.queue[-1].scan_msgs[0] == msg
+
+
+def test_scan_queue_insert_does_not_block_while_worker_waits_on_lock(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    pending_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
+    pending_item.status = InstructionQueueStatus.PENDING
+    queue.queue.append(pending_item)
+
+    lock = messages.ScanQueueLock(
+        identifier="insert_during_lock",
+        reason="Testing insert while locked",
+        allow_device_instructions=False,
+    )
+    queue.add_lock(lock)
+
+    worker_waiting = threading.Event()
+    worker_finished = threading.Event()
+
+    def try_next():
+        worker_waiting.set()
+        queue._next_instruction_queue()
+        worker_finished.set()
+
+    thread = threading.Thread(target=try_next)
+    thread.start()
+    worker_waiting.wait(timeout=1)
+    time.sleep(0.2)
+
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-locked-insert"},
+    )
+
+    start = time.monotonic()
+    queue.insert(msg)
+    assert time.monotonic() - start < 0.2
+    assert len(queue.queue) == 2
+    assert queue.queue[-1].scan_msgs[0] == msg
+
+    queue.remove_lock(lock)
+    thread.join(timeout=2)
+    assert worker_finished.is_set()
+
+
 def test_queue_manager_wait_for_queue_to_appear_in_history_raises_timeout(queuemanager_mock):
     queue_manager = queuemanager_mock()
     with pytest.raises(TimeoutError):
