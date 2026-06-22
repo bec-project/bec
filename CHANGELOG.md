@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.142.8 (2026-06-22)
+
+### Bug Fixes
+
+- Move hli startup to bec lib client
+  ([`c0e82e7`](https://github.com/bec-project/bec/commit/c0e82e734838154aa242d34c2e54a8afd650f1ea))
+
+- Move post startup run in to try-except
+  ([`ce9c1cc`](https://github.com/bec-project/bec/commit/ce9c1cc5c3c1bf2f874c9a008a9640a3580949b9))
+
+
 ## v3.142.7 (2026-06-22)
 
 ### Bug Fixes
