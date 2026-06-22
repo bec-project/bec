@@ -526,6 +526,21 @@ class QueueManager:
             restart_scan_msg.metadata["RID"] = request_id
         instruction_queue.reason = "restart"
 
+        scan_restart_msg = messages.ScanRestartMessage(
+            original_scan_id=scan_id, scan_msg=restart_scan_msg
+        )
+        self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
+        if restart_scan_msg.allow_restart:
+            logger.info(f"Restarting scan {scan_id} in queue {queue}")
+            # We add the restarted scan to the queue on position 1 before stopping the original
+            # scan. This ensures that the restarted scan will be the next scan to run after the
+            # original scan is stopped. It also removes the need to wait for the original scan
+            # to appear in the history before adding the restarted scan to the queue,
+            # which simplifies the logic and reduces potential race conditions.
+            self.add_to_queue(queue, restart_scan_msg, 1)
+        else:
+            logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
+
         # Abort the current scan first and wait for it to appear in history
         with AutoResetCM(que):
             original_queue_status = que.status
@@ -536,19 +551,7 @@ class QueueManager:
                 InstructionQueueStatus.DEFERRED_PAUSE,
             ]:
                 que.worker_status = InstructionQueueStatus.STOPPED
-        self._lock.release()
-        self._wait_for_queue_to_appear_in_history(scan_id, queue)
-        self._lock.acquire()
 
-        scan_restart_msg = messages.ScanRestartMessage(
-            original_scan_id=scan_id, scan_msg=restart_scan_msg
-        )
-        self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
-        if restart_scan_msg.allow_restart:
-            logger.info(f"Restarting scan {scan_id} in queue {queue}")
-            self.add_to_queue(queue, restart_scan_msg, 0)
-        else:
-            logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
         self.queues[queue].status = original_queue_status
 
     @requires_queue

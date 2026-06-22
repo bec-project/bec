@@ -87,6 +87,24 @@ class DirectScanWorker:
                         raise ScanAbortion(f"Scan is missing required method: {step}")
                     self.check_for_interruption()
                     method()
+        except ScanAbortion as exc:
+            if self.worker.signal_event.is_set():
+                return
+            if queue is None:
+                return
+            if queue.stopped or not queue.active_request_block:
+                raise exc
+            queue.stopped = True
+            try:
+                # We reset the worker to RUNNING to allow for cleanup tasks
+                # during the on_exception hook.
+                self.worker.status = InstructionQueueStatus.RUNNING
+                self.scan.actions._metadata_suffix = "__on-exception"
+                self._run_on_exception_hook(exc)
+            except Exception as exc_cleanup:
+                self.worker.connector.send_client_info("")
+                self._handle_exception(exc_cleanup)
+            raise exc
         except Exception as exc:
             if self.worker.signal_event.is_set():
                 # If the signal event is set, it means that the scan worker is shutting down, so we don't need to handle the abortion
