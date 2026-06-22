@@ -950,7 +950,7 @@ class ScanQueue:
                 with self._lock:
                     if self.status != ScanQueueStatus.LOCKED or self._queue_should_continue():
                         break
-                self._flush_deferred_inserts()
+                    self._flush_deferred_inserts()
                 self.signal_event.wait(0.1)
 
             while not self.signal_event.is_set():
@@ -983,12 +983,9 @@ class ScanQueue:
         """Move buffered inserts into the live queue once the stopped head no longer blocks them."""
         if not self._deferred_inserts or self.worker_status == InstructionQueueStatus.STOPPED:
             return
-        has_pending_inserts = len(self._deferred_inserts) > 0
         while self._deferred_inserts:
             msg, position = self._deferred_inserts.popleft()
             self._insert_now(msg, position=position)
-        if has_pending_inserts:
-            self.queue_manager.send_queue_status()
 
     def _insert_now(self, msg: messages.ScanQueueMessage, position=-1) -> None:
         """Insert a new message into the live queue without waiting."""

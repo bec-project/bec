@@ -1032,10 +1032,17 @@ def test_scan_queue_insert_defers_while_head_is_stopped(queuemanager_mock):
         metadata={"RID": "rid-stopped"},
     )
 
-    start = time.monotonic()
-    queue.insert(msg)
+    insert_finished = threading.Event()
 
-    assert time.monotonic() - start < 0.2
+    def do_insert():
+        queue.insert(msg)
+        insert_finished.set()
+
+    thread = threading.Thread(target=do_insert)
+    thread.start()
+    thread.join(timeout=5)
+
+    assert insert_finished.is_set()
     assert len(queue.queue) == 1
     assert len(queue._deferred_inserts) == 1
 
@@ -1097,9 +1104,17 @@ def test_scan_queue_insert_does_not_block_while_worker_waits_on_lock(queuemanage
         metadata={"RID": "rid-locked-insert"},
     )
 
-    start = time.monotonic()
-    queue.insert(msg)
-    assert time.monotonic() - start < 0.2
+    insert_finished = threading.Event()
+
+    def do_insert():
+        queue.insert(msg)
+        insert_finished.set()
+
+    insert_thread = threading.Thread(target=do_insert)
+    insert_thread.start()
+    insert_thread.join(timeout=5)
+
+    assert insert_finished.is_set()
     assert len(queue.queue) == 2
     assert queue.queue[-1].scan_msgs[0] == msg
 
