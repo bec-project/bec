@@ -1,8 +1,14 @@
+from time import perf_counter
 from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel
 from scipy.spatial import cKDTree  # type: ignore
+
+from bec_lib.logger import bec_logger
+from bec_server.scan_server.scans.position_generators import Direction
+
+logger = bec_logger.logger
 
 
 class PathQualityStats(BaseModel):
@@ -15,6 +21,19 @@ class PathQualityStats(BaseModel):
 
 
 class PathOptimizerMixin:
+    def _log_optimization_result(
+        self, method: str, original_path: np.ndarray, optimized_path: np.ndarray, duration_s: float
+    ) -> None:
+        original_length = self.get_path_length(original_path)
+        optimized_length = self.get_path_length(optimized_path)
+        reduced_by = original_length - optimized_length
+        reduction_pct = (reduced_by / original_length * 100) if original_length > 0 else 0.0
+
+        logger.info(
+            f"Path optimizer ({method}) reduced path length from {original_length:.4f} to {optimized_length:.4f} "
+            f"({reduced_by:.4f} reduction, {reduction_pct:.2f}% decrease) in {duration_s:.4f} seconds."
+        )
+
     def get_radius(self, pos: np.ndarray) -> np.ndarray:
         """
         Calculate the radial distance from the origin for each position
@@ -31,9 +50,10 @@ class PathOptimizerMixin:
         self,
         positions: np.ndarray,
         corridor_size: float | None = None,
-        sort_axis: int = 1,
+        fast_axis: Literal[0, 1] = 0,
         num_iterations: int = 1,
-        preferred_direction: int | None = None,
+        first_corridor_direction: Direction | Literal[-1, 1] = Direction.ASCENDING,
+        snaked: bool = True,
         corridor_estimation: Literal["density", "median_distance"] = "median_distance",
     ):
         """
@@ -45,18 +65,24 @@ class PathOptimizerMixin:
         Args:
             positions (np.ndarray): Array of positions
             corridor_size (float, optional): Width of each corridor. Defaults to None (auto-estimated).
-            sort_axis (int, optional): Axis along which to create corridors (0 or 1). Defaults to 1.
+            fast_axis (Literal[0, 1], optional): Axis traversed within each corridor (0 or 1). Defaults to 0.
             num_iterations (int, optional): Number of corridor sizes to try. Defaults to 1.
-            preferred_direction (int | None, optional): Preferred direction for the primary axis (1 or -1).
-                If None, alternates direction for each corridor.
-            corridor_estimation (str, optional): Method for estimating corridor size if not provided.
-                Options are "density" or "median_distance". Defaults to "density".
+            first_corridor_direction (Direction | Literal[-1, 1], optional): Traversal direction of the first
+                corridor along the fast axis. Positive means ascending, negative means
+                descending. Defaults to Direction.ASCENDING.
+            snaked (bool, optional): If True, alternate the traversal direction between
+                successive corridors. If False, keep the same direction in every corridor.
+            corridor_estimation (Literal["density", "median_distance"], optional): Method for estimating corridor size if not provided.
+                Options are "density" or "median_distance". Defaults to "median_distance".
 
         Returns:
             np.ndarray: Optimized positions
         """
         if positions.ndim != 2 or positions.shape[1] < 2:
             return positions
+
+        start_time = perf_counter()
+        original_path = positions
 
         # Estimate corridor size if needed
         if corridor_size is None:
@@ -70,8 +96,14 @@ class PathOptimizerMixin:
                     'Choose "density" or "median_distance".'
                 )
 
-        axis_vals = positions[:, sort_axis]
-        sec_axis = int(not sort_axis)
+        if not isinstance(first_corridor_direction, Direction):
+            first_corridor_direction = Direction(first_corridor_direction)
+
+        if fast_axis not in (0, 1):
+            raise ValueError("fast_axis must be 0 or 1")
+
+        slow_axis = int(not fast_axis)
+        axis_vals = positions[:, slow_axis]
 
         best_length = np.inf
         best_path = positions
@@ -97,17 +129,15 @@ class PathOptimizerMixin:
                 if block.size == 0:
                     continue
 
-                # Sort within corridor along secondary axis
-                block = block[np.argsort(positions[block, sec_axis])]
+                # Sort within corridor along fast axis
+                block = block[np.argsort(positions[block, fast_axis])]
 
                 # Direction handling
-                if preferred_direction is not None:
-                    if preferred_direction < 0:
-                        block = block[::-1]
-                else:
-                    # Alternate direction between corridors
-                    if step % 2 == 0:
-                        block = block[::-1]
+                direction = first_corridor_direction
+                if snaked and step % 2 == 1:
+                    direction = Direction(-direction)
+                if direction == Direction.DESCENDING:
+                    block = block[::-1]
 
                 index_sorted.append(block)
 
@@ -122,6 +152,9 @@ class PathOptimizerMixin:
                 best_length = path_length
                 best_path = path
 
+        self._log_optimization_result(
+            "corridor", original_path, best_path, perf_counter() - start_time
+        )
         return best_path
 
     def _corridor_estimate_density(self, positions: np.ndarray) -> float:
@@ -182,6 +215,9 @@ class PathOptimizerMixin:
         if pos.ndim != 2 or pos.shape[1] < 2 or len(pos) < 2:
             return pos
 
+        start_time = perf_counter()
+        original_path = pos
+
         # Calculate radii once
         radii = self.get_radius(pos)
         max_rad = np.max(radii)
@@ -227,7 +263,9 @@ class PathOptimizerMixin:
                     best_score = score
                     best_path = optimized_path
 
-        return best_path if best_path is not None else pos
+        result = best_path if best_path is not None else pos
+        self._log_optimization_result("shell", original_path, result, perf_counter() - start_time)
+        return result
 
     def _estimate_shell_width(self, pos: np.ndarray, radii: np.ndarray, max_rad: float) -> float:
         """
@@ -413,6 +451,9 @@ class PathOptimizerMixin:
         if len(positions) <= 1:
             return positions
 
+        start_time = perf_counter()
+        original_path = positions
+
         n_points = len(positions)
 
         # Use a copy to avoid modifying the original
@@ -455,4 +496,8 @@ class PathOptimizerMixin:
             path.append(current_pos)
             remaining_indices.remove(original_idx)
 
-        return np.array(path)
+        result = np.array(path)
+        self._log_optimization_result(
+            "nearest_neighbor", original_path, result, perf_counter() - start_time
+        )
+        return result
