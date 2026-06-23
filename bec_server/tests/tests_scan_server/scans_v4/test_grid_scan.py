@@ -35,3 +35,16 @@ def test_grid_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
     assert scan.scan_info.scan_report_instructions == [
         {"scan_progress": {"points": 15, "show_table": False}}
     ]
+
+
+def test_grid_scan_uses_first_axis_as_fast_axis(v4_scan_assembler):
+    scan = v4_scan_assembler(
+        "_v4_grid_scan", "samx", 0.0, 2.0, 3, "samy", 0.0, 1.0, 2, snaked=True, relative=False
+    )
+
+    scan.prepare_scan()
+
+    expected_positions = np.array(
+        [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 1.0], [1.0, 1.0], [0.0, 1.0]]
+    )
+    assert np.array_equal(scan.positions, expected_positions)
