@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import enum
 from collections.abc import Iterator, Sequence
 
 import numpy as np
+
+
+class Direction(int, enum.Enum):
+    ASCENDING = 1
+    DESCENDING = -1
 
 
 def rotate_points(
