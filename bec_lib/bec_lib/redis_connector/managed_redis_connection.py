@@ -19,6 +19,7 @@ import traceback
 from collections.abc import MutableMapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import wraps
 from glob import fnmatch
 from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Generator, Literal, cast
 
@@ -36,6 +37,7 @@ from bec_lib.messages import BECMessage, ClientInfoMessage
 from bec_lib.redis_connector.validation import error_log_with_context
 from bec_lib.serialization import MsgpackSerialization
 
+from .buffered_publisher import RateLimitedPipelinePublisher
 from .constants import InvalidItemForOperation, PubSubMessage
 from .streams import (
     DirectReadStreamSubInfo,
@@ -54,6 +56,51 @@ if TYPE_CHECKING:  # pragma: no cover
 class GeneratorExecution:
     fut: Future[Any]
     g: Generator
+
+
+def bufferable(payload_arg_name: str = "msg", dispatch_kwarg_names: tuple[str, ...] = ("expire",)):
+    def decorator(func):
+        signature = inspect.signature(func)
+
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            kwargs = kwargs.copy()
+            buffered = kwargs.pop("buffered", None)
+            buffer_latest_only = kwargs.pop("buffer_latest_only", False)
+            bound = signature.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+
+            topic = bound.arguments["topic"]
+            payload = bound.arguments[payload_arg_name]
+            pipe = bound.arguments.get("pipe")
+            if buffered is None:
+                buffered = pipe is None
+            if buffer_latest_only:
+                buffered = True
+            if buffered:
+                if pipe is not None:
+                    raise ValueError(
+                        "buffered publishing is not supported with an explicit pipeline"
+                    )
+                dispatch_kwargs = {
+                    name: bound.arguments.get(name)
+                    for name in dispatch_kwarg_names
+                    if name in bound.arguments
+                }
+                self._buffered_publisher.execute(
+                    method=func.__name__,
+                    topic=topic,
+                    builder=lambda: payload,
+                    dispatch=func,
+                    dispatch_kwargs=dispatch_kwargs,
+                    latest_only=buffer_latest_only,
+                )
+                return None
+            return func(*bound.args, **bound.kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 class ManagedRedisConnection:
@@ -76,6 +123,7 @@ class ManagedRedisConnection:
             **kwargs: additional keyword arguments to pass to the redis client.
         """
         self.name = name
+        rate_limited_publisher_kwargs = kwargs.pop("rate_limited_publisher_kwargs", None) or {}
         self.host, self.port = (
             bootstrap[0].split(":") if isinstance(bootstrap, list) else bootstrap.split(":")
         )
@@ -118,6 +166,9 @@ class ManagedRedisConnection:
         self.stream_keys: dict[str, str] = {}  # for explicit reads, not subscriptions
 
         self._generator_executor = ThreadPoolExecutor()
+        self._buffered_publisher = RateLimitedPipelinePublisher(
+            connector_getter=lambda: self, **rate_limited_publisher_kwargs
+        )
 
     @property
     def connection_error_str(self):
@@ -216,10 +267,10 @@ class ManagedRedisConnection:
 
         # this will take care of shutting down direct listening threads
         self._unregister_stream(self._stream_subs.all_topics)
+        self._buffered_publisher.shutdown()
         # release all connections
         self._pubsub_conn.close()
         self._redis_conn.close()
-
         self._generator_executor.shutdown()
 
     def send_client_info(
@@ -306,6 +357,7 @@ class ManagedRedisConnection:
         client = pipe if pipe is not None else self._redis_conn
         client.publish(topic, msg)
 
+    @bufferable()
     def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
         """
         Send a message to a topic
@@ -770,6 +822,7 @@ class ManagedRedisConnection:
         while self.poll_messages():
             ...
 
+    @bufferable(dispatch_kwarg_names=("max_size", "expire"))
     def lpush(
         self,
         topic: str,
@@ -803,6 +856,7 @@ class ManagedRedisConnection:
             msg = MsgpackSerialization.dumps(msg)
         return client.lset(topic, index, msg)  # type: ignore # using sync client
 
+    @bufferable(dispatch_kwarg_names=("max_size", "expire"))
     def rpush(
         self,
         topic: str,
@@ -884,6 +938,7 @@ class ManagedRedisConnection:
             msg = MsgpackSerialization.dumps(msg)
         return client.lrem(topic, count, msg)
 
+    @bufferable()
     def set_and_publish(
         self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None
     ) -> None:
@@ -896,12 +951,43 @@ class ManagedRedisConnection:
         if not pipe:
             client.execute()
 
+    @bufferable()
     def set(self, topic: str, msg, pipe: Pipeline | None = None, expire: int | None = None) -> None:
         """set redis value"""
         client = pipe if pipe is not None else self._redis_conn
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
         client.set(topic, msg, ex=expire)
+
+    @bufferable(
+        payload_arg_name="msg_dict", dispatch_kwarg_names=("max_size", "expire", "approximate")
+    )
+    def xadd(
+        self,
+        topic: str,
+        msg_dict: dict,
+        max_size=None,
+        pipe: Pipeline | None = None,
+        expire: int | None = None,
+        approximate=True,
+    ):
+        if pipe:
+            client = pipe
+        elif expire:
+            client = self.pipeline()
+        else:
+            client = self._redis_conn
+
+        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
+
+        if max_size:
+            client.xadd(topic, msg_dict, maxlen=max_size, approximate=approximate)
+        else:
+            client.xadd(topic, msg_dict)
+        if expire:
+            client.expire(topic, expire)
+        if not pipe and expire:
+            client.execute()
 
     def keys(self, pattern: str) -> list:
         """returns all keys matching a pattern"""
@@ -931,49 +1017,6 @@ class ManagedRedisConnection:
         if pipe:
             return data
         return [MsgpackSerialization.loads(d) if d else None for d in data]  # type: ignore # using sync client
-
-    def xadd(
-        self,
-        topic: str,
-        msg_dict: dict,
-        max_size=None,
-        pipe: Pipeline | None = None,
-        expire: int | None = None,
-        approximate=True,
-    ):
-        """
-        add to stream
-
-        Args:
-            topic (str): redis topic
-            msg_dict (dict | BECMessage): message to add
-            max_size (int, optional): max size of stream. Defaults to None.
-            pipe (Pipeline, optional): redis pipe. Defaults to None.
-            expire (int, optional): expire time. Defaults to None.
-            approximate (bool, optional): Set to False to enforce exact max size trimming. If True,
-                redis may trim the stream approximately. Only used if max_size is set. Defaults to True.
-
-        Examples:
-            >>> redis.xadd("test", {"test": "test"})
-            >>> redis.xadd("test", {"test": "test"}, max_size=10)
-        """
-        if pipe:
-            client = pipe
-        elif expire:
-            client = self.pipeline()
-        else:
-            client = self._redis_conn
-
-        msg_dict = {key: MsgpackSerialization.dumps(val) for key, val in msg_dict.items()}
-
-        if max_size:
-            client.xadd(topic, msg_dict, maxlen=max_size, approximate=approximate)
-        else:
-            client.xadd(topic, msg_dict)
-        if expire:
-            client.expire(topic, expire)
-        if not pipe and expire:
-            client.execute()
 
     def get_last(self, topic: str, key=None, count=1):
         """

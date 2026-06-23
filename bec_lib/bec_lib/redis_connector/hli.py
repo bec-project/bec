@@ -245,8 +245,17 @@ class RedisConnector:
         return self._managed_connection.get_last(topic, key, count)
 
     @validate_endpoint("topic")
-    def set_and_publish(self, topic, msg, pipe=None, expire=None):
-        return self._managed_connection.set_and_publish(topic, msg, pipe, expire)
+    def set_and_publish(
+        self,
+        topic,
+        msg,
+        pipe=None,
+        expire=None,
+        buffered: bool | None = None,
+        buffer_latest_only: bool = False,
+    ):
+        buffer_kwargs = {"buffered": buffered, "buffer_latest_only": buffer_latest_only}
+        return self._managed_connection.set_and_publish(topic, msg, pipe, expire, **buffer_kwargs)
 
     ##############################
     #    DIRECT REDIS METHODS    #
@@ -256,20 +265,48 @@ class RedisConnector:
         return self._managed_connection.raw_send(topic, msg, pipe)
 
     @validate_endpoint("topic")
-    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
-        return self._managed_connection.send(topic, msg, pipe)
+    def send(
+        self,
+        topic: str,
+        msg: str | BECMessage,
+        pipe: Pipeline | None = None,
+        buffered: bool | None = None,
+        buffer_latest_only: bool = False,
+    ) -> None:
+        buffer_kwargs = {"buffered": buffered, "buffer_latest_only": buffer_latest_only}
+        return self._managed_connection.send(topic, msg, pipe, **buffer_kwargs)
 
     @validate_endpoint("topic")
-    def lpush(self, topic, msg, pipe=None, max_size=None, expire=None):
-        return self._managed_connection.lpush(topic, msg, pipe, max_size, expire)
+    def lpush(
+        self,
+        topic,
+        msg,
+        pipe=None,
+        max_size=None,
+        expire=None,
+        buffered: bool | None = None,
+        buffer_latest_only: bool = False,
+    ):
+        buffer_kwargs = {"buffered": buffered, "buffer_latest_only": buffer_latest_only}
+        return self._managed_connection.lpush(topic, msg, pipe, max_size, expire, **buffer_kwargs)
 
     @validate_endpoint("topic")
     def lset(self, topic, index, msg, pipe=None):
         return self._managed_connection.lset(topic, index, msg, pipe)
 
     @validate_endpoint("topic")
-    def rpush(self, topic, msg, pipe=None, max_size=None, expire=None):
-        return self._managed_connection.rpush(topic, msg, pipe, max_size, expire)
+    def rpush(
+        self,
+        topic,
+        msg,
+        pipe=None,
+        max_size=None,
+        expire=None,
+        buffered: bool | None = None,
+        buffer_latest_only: bool = False,
+    ):
+        buffer_kwargs = {"buffered": buffered, "buffer_latest_only": buffer_latest_only}
+        return self._managed_connection.rpush(topic, msg, pipe, max_size, expire, **buffer_kwargs)
 
     @validate_endpoint("topic")
     def lrange(self, topic, start, end, pipe=None):
@@ -284,8 +321,17 @@ class RedisConnector:
         return self._managed_connection.lrem(topic, count, msg, pipe)
 
     @validate_endpoint("topic")
-    def set(self, topic, msg, pipe=None, expire=None):
-        return self._managed_connection.set(topic, msg, pipe, expire)
+    def set(
+        self,
+        topic,
+        msg,
+        pipe=None,
+        expire=None,
+        buffered: bool | None = None,
+        buffer_latest_only: bool = False,
+    ):
+        buffer_kwargs = {"buffered": buffered, "buffer_latest_only": buffer_latest_only}
+        return self._managed_connection.set(topic, msg, pipe, expire, **buffer_kwargs)
 
     @validate_endpoint("pattern")
     def keys(self, pattern):
@@ -303,9 +349,26 @@ class RedisConnector:
         return self._managed_connection.mget(topics, pipe)
 
     @validate_endpoint("topic")
-    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire=None, approximate=True):
+    def xadd(
+        self,
+        topic,
+        msg_dict,
+        max_size=None,
+        pipe=None,
+        expire=None,
+        approximate=True,
+        buffered: bool | None = None,
+        buffer_latest_only: bool = False,
+    ):
+        buffer_kwargs = {"buffered": buffered, "buffer_latest_only": buffer_latest_only}
         return self._managed_connection.xadd(
-            topic, msg_dict, max_size=max_size, pipe=pipe, expire=expire, approximate=approximate
+            topic,
+            msg_dict,
+            max_size=max_size,
+            pipe=pipe,
+            expire=expire,
+            approximate=approximate,
+            **buffer_kwargs,
         )
 
     @validate_endpoint("topic")

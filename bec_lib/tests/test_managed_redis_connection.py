@@ -55,12 +55,40 @@ def test_redis_connector_send_client_info(connector: ManagedRedisConnection):
     "topic , msg", [["topic1", TestMessage(msg="msg1")], ["topic2", TestMessage(msg="msg2")]]
 )
 def test_redis_connector_send(connector: ManagedRedisConnection, topic, msg):
-    connector.send(topic, msg)
+    connector.send(topic, msg, buffered=False)
     connector._redis_conn.publish.assert_called_once_with(topic, MsgpackSerialization.dumps(msg))
 
     connector.send(topic, msg, pipe=connector.pipeline())
     connector._redis_conn.pipeline().publish.assert_called_once_with(
         topic, MsgpackSerialization.dumps(msg)
+    )
+
+
+def test_redis_connector_send_buffered(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.send("topic1", msg, buffered=True)
+    execute_mock.assert_called_once()
+    _, kwargs = execute_mock.call_args
+    assert kwargs["method"] == "send"
+    assert kwargs["topic"] == "topic1"
+    assert kwargs["dispatch_kwargs"] == {}
+    assert kwargs["latest_only"] is False
+    assert kwargs["builder"]() == msg
+
+
+def test_redis_connector_send_defaults_to_buffered_without_pipe(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.send("topic1", msg)
+    execute_mock.assert_called_once()
+
+
+def test_redis_connector_send_defaults_to_direct_with_pipe(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    connector.send("topic1", msg, pipe=connector.pipeline())
+    connector._redis_conn.pipeline().publish.assert_called_once_with(
+        "topic1", MsgpackSerialization.dumps(msg)
     )
 
 
@@ -70,7 +98,7 @@ def test_redis_connector_send(connector: ManagedRedisConnection, topic, msg):
 )
 def test_redis_connector_lpush(connector: ManagedRedisConnection, topic, msgs, max_size, expire):
     pipe = None
-    connector.lpush(topic, msgs, pipe, max_size, expire)
+    connector.lpush(topic, msgs, pipe, max_size, expire, buffered=False)
 
     connector._redis_conn.pipeline().lpush.assert_called_once_with(topic, msgs)
 
@@ -94,7 +122,7 @@ def test_redis_connector_lpush_BECMessage(
     connector: ManagedRedisConnection, topic, msgs, max_size, expire
 ):
     pipe = None
-    connector.lpush(topic, msgs, pipe, max_size, expire)
+    connector.lpush(topic, msgs, pipe, max_size, expire, buffered=False)
 
     connector._redis_conn.pipeline().lpush.assert_called_once_with(
         topic, MsgpackSerialization.dumps(msgs)
@@ -106,6 +134,19 @@ def test_redis_connector_lpush_BECMessage(
         connector._redis_conn.pipeline().expire.assert_called_once_with(topic, expire)
     if not pipe:
         connector._redis_conn.pipeline().execute.assert_called_once()
+
+
+def test_redis_connector_lpush_buffer_latest_only(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.lpush("topic1", msg, max_size=10, expire=5, buffer_latest_only=True)
+    execute_mock.assert_called_once()
+    _, kwargs = execute_mock.call_args
+    assert kwargs["method"] == "lpush"
+    assert kwargs["topic"] == "topic1"
+    assert kwargs["dispatch_kwargs"] == {"max_size": 10, "expire": 5}
+    assert kwargs["latest_only"] is True
+    assert kwargs["builder"]() == msg
 
 
 @pytest.mark.parametrize(
@@ -156,7 +197,7 @@ def test_redis_connector_rpush(
 ):
     pipe = use_pipe_fcn(connector, use_pipe)
 
-    ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire)
+    ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire, buffered=False)
 
     connector._redis_conn.pipeline().rpush.assert_called_once_with(topic, msgs)
     if max_size:
@@ -182,7 +223,7 @@ def test_redis_connector_rpush_BECMessage(
 ):
     pipe = use_pipe_fcn(connector, use_pipe)
 
-    ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire)
+    ret = connector.rpush(topic, msgs, pipe, max_size=max_size, expire=expire, buffered=False)
 
     connector._redis_conn.pipeline().rpush.assert_called_once_with(
         topic, MsgpackSerialization.dumps(msgs)
@@ -196,6 +237,19 @@ def test_redis_connector_rpush_BECMessage(
     else:
         connector._redis_conn.pipeline().execute.assert_called_once()
     assert ret is None
+
+
+def test_redis_connector_rpush_buffered(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.rpush("topic1", msg, max_size=10, expire=5, buffered=True)
+    execute_mock.assert_called_once()
+    _, kwargs = execute_mock.call_args
+    assert kwargs["method"] == "rpush"
+    assert kwargs["topic"] == "topic1"
+    assert kwargs["dispatch_kwargs"] == {"max_size": 10, "expire": 5}
+    assert kwargs["latest_only"] is False
+    assert kwargs["builder"]() == msg
 
 
 @pytest.mark.parametrize(
@@ -230,7 +284,7 @@ def test_redis_connector_set_and_publish(
     else:
         msg_sent = MsgpackSerialization.dumps(msg)
 
-    connector.set_and_publish(topic, msg, pipe, expire)
+    connector.set_and_publish(topic, msg, pipe, expire, buffered=False)
 
     connector._redis_conn.pipeline().publish.assert_called_once_with(topic, msg_sent)
     connector._redis_conn.pipeline().set.assert_called_once_with(topic, msg_sent, ex=expire)
@@ -238,11 +292,44 @@ def test_redis_connector_set_and_publish(
         connector._redis_conn.pipeline().execute.assert_called_once()
 
 
+def test_redis_connector_set_and_publish_buffered(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.set_and_publish("topic1", msg, buffered=True, expire=5)
+    execute_mock.assert_called_once()
+    _, kwargs = execute_mock.call_args
+    assert kwargs["method"] == "set_and_publish"
+    assert kwargs["topic"] == "topic1"
+    assert kwargs["dispatch_kwargs"] == {"expire": 5}
+    assert kwargs["latest_only"] is False
+    assert kwargs["builder"]() == msg
+
+
+def test_redis_connector_set_and_publish_defaults_to_buffered(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.set_and_publish("topic1", msg, expire=5)
+    execute_mock.assert_called_once()
+
+
+def test_redis_connector_set_buffer_latest_only(connector: ManagedRedisConnection):
+    msg = TestMessage(msg="msg1")
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.set("topic1", msg, buffer_latest_only=True, expire=5)
+    execute_mock.assert_called_once()
+    _, kwargs = execute_mock.call_args
+    assert kwargs["method"] == "set"
+    assert kwargs["topic"] == "topic1"
+    assert kwargs["dispatch_kwargs"] == {"expire": 5}
+    assert kwargs["latest_only"] is True
+    assert kwargs["builder"]() == msg
+
+
 @pytest.mark.parametrize("topic, msg, expire", [["topic1", "msg1", None], ["topic2", "msg2", 400]])
 def test_redis_connector_set(connector: ManagedRedisConnection, topic, msg, expire):
     pipe = None
 
-    connector.set(topic, msg, pipe, expire)
+    connector.set(topic, msg, pipe, expire, buffered=False)
 
     if pipe:
         connector._redis_conn.pipeline().set.assert_called_once_with(topic, msg, ex=expire)
@@ -293,26 +380,39 @@ def test_redis_connector_xread(connector: ManagedRedisConnection):
 
 
 def test_redis_connector_xadd_with_maxlen(connector: ManagedRedisConnection):
-    connector.xadd("topic1", {"key": "value"}, max_size=100)
+    connector.xadd("topic1", {"key": "value"}, max_size=100, buffered=False)
     connector._redis_conn.xadd.assert_called_once_with(
         "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100, approximate=True
     )
 
 
 def test_redis_connector_xadd_with_maxlen_and_approximate(connector: ManagedRedisConnection):
-    connector.xadd("topic1", {"key": "value"}, max_size=100, approximate=False)
+    connector.xadd("topic1", {"key": "value"}, max_size=100, approximate=False, buffered=False)
     connector._redis_conn.xadd.assert_called_once_with(
         "topic1", {"key": MsgpackSerialization.dumps("value")}, maxlen=100, approximate=False
     )
 
 
 def test_redis_connector_xadd_with_expire(connector: ManagedRedisConnection):
-    connector.xadd("topic1", {"key": "value"}, expire=100)
+    connector.xadd("topic1", {"key": "value"}, expire=100, buffered=False)
     connector._redis_conn.pipeline().xadd.assert_called_once_with(
         "topic1", {"key": MsgpackSerialization.dumps("value")}
     )
     connector._redis_conn.pipeline().expire.assert_called_once_with("topic1", 100)
     connector._redis_conn.pipeline().execute.assert_called_once()
+
+
+def test_redis_connector_xadd_buffered(connector: ManagedRedisConnection):
+    msg_dict = {"key": "value"}
+    with mock.patch.object(connector._buffered_publisher, "execute") as execute_mock:
+        connector.xadd("topic1", msg_dict, max_size=100, expire=5, approximate=False, buffered=True)
+    execute_mock.assert_called_once()
+    _, kwargs = execute_mock.call_args
+    assert kwargs["method"] == "xadd"
+    assert kwargs["topic"] == "topic1"
+    assert kwargs["dispatch_kwargs"] == {"max_size": 100, "expire": 5, "approximate": False}
+    assert kwargs["latest_only"] is False
+    assert kwargs["builder"]() == msg_dict
 
 
 def test_redis_connector_xread_from_end(connector: ManagedRedisConnection):

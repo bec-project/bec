@@ -91,7 +91,7 @@ def test_redis_connector_raise_alarm(
 def test_redis_connector_send_converts_ep(hli_connector: RedisConnector):
     topic = MessageEndpoints.scan_segment()
     msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={})
-    hli_connector.send(topic, msg)
+    hli_connector.send(topic, msg, buffered=False)
     hli_connector._redis_conn.publish.assert_called_once_with(
         topic.endpoint, MsgpackSerialization.dumps(msg)
     )
@@ -126,3 +126,86 @@ def test_send_raises_on_invalid_message_type(hli_connector):
 def test_send_raises_on_invalid_topic(hli_connector):
     with pytest.raises(IncompatibleRedisOperation):
         hli_connector.send(MessageEndpoints.device_status("samx"), "msg")
+
+
+def test_set_and_publish_buffered_forwards_to_managed_connection(hli_connector):
+    endpoint = MessageEndpoints.device_read("samx")
+    msg = bec_messages.DeviceMessage(signals={}, metadata={})
+    with mock.patch.object(
+        hli_connector._managed_connection, "set_and_publish", return_value=None
+    ) as send_mock:
+        hli_connector.set_and_publish(endpoint, msg, buffered=True, expire=5)
+
+    send_mock.assert_called_once_with(
+        endpoint.endpoint, msg, None, 5, buffered=True, buffer_latest_only=False
+    )
+
+
+def test_set_buffer_latest_only_forwards_to_managed_connection(hli_connector):
+    endpoint = MessageEndpoints.device_status("samx")
+    msg = bec_messages.DeviceStatusMessage(device="samx", status=BECStatus.IDLE)
+    with mock.patch.object(hli_connector._managed_connection, "set", return_value=None) as set_mock:
+        hli_connector.set(endpoint, msg, buffer_latest_only=True, expire=5)
+
+    set_mock.assert_called_once_with(
+        endpoint.endpoint, msg, None, 5, buffered=None, buffer_latest_only=True
+    )
+
+
+def test_xadd_buffered_forwards_to_managed_connection(hli_connector):
+    endpoint = MessageEndpoints.client_info()
+    msg_dict = {"data": "value"}
+    with mock.patch.object(
+        hli_connector._managed_connection, "xadd", return_value=None
+    ) as xadd_mock:
+        hli_connector.xadd(endpoint, msg_dict, max_size=10, expire=5, buffered=True)
+
+    xadd_mock.assert_called_once_with(
+        endpoint.endpoint,
+        msg_dict,
+        max_size=10,
+        pipe=None,
+        expire=5,
+        approximate=True,
+        buffered=True,
+        buffer_latest_only=False,
+    )
+
+
+def test_send_buffer_latest_only_forwards_to_managed_connection(hli_connector):
+    endpoint = MessageEndpoints.scan_segment()
+    msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={})
+    with mock.patch.object(
+        hli_connector._managed_connection, "send", return_value=None
+    ) as send_mock:
+        hli_connector.send(endpoint, msg, buffer_latest_only=True)
+
+    send_mock.assert_called_once_with(
+        endpoint.endpoint, msg, None, buffered=None, buffer_latest_only=True
+    )
+
+
+def test_lpush_buffered_forwards_to_managed_connection(hli_connector):
+    endpoint = MessageEndpoints.scan_queue_history()
+    msg = "value"
+    with mock.patch.object(
+        hli_connector._managed_connection, "lpush", return_value=None
+    ) as lpush_mock:
+        hli_connector.lpush(endpoint, msg, max_size=10, expire=5, buffered=True)
+
+    lpush_mock.assert_called_once_with(
+        endpoint.endpoint, msg, None, 10, 5, buffered=True, buffer_latest_only=False
+    )
+
+
+def test_rpush_buffer_latest_only_forwards_to_managed_connection(hli_connector):
+    endpoint = MessageEndpoints.scan_queue_history()
+    msg = "value"
+    with mock.patch.object(
+        hli_connector._managed_connection, "rpush", return_value=None
+    ) as rpush_mock:
+        hli_connector.rpush(endpoint, msg, max_size=10, expire=5, buffer_latest_only=True)
+
+    rpush_mock.assert_called_once_with(
+        endpoint.endpoint, msg, None, 10, 5, buffered=None, buffer_latest_only=True
+    )
