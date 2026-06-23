@@ -87,30 +87,50 @@ class DirectScanWorker:
                         raise ScanAbortion(f"Scan is missing required method: {step}")
                     self.check_for_interruption()
                     method()
+        except ScanAbortion as exc:
+            if not self._prepare_exception_cleanup(queue, exc):
+                return
+            raise exc
         except Exception as exc:
-            if self.worker.signal_event.is_set():
-                # If the signal event is set, it means that the scan worker is shutting down, so we don't need to handle the abortion
+            if not self._prepare_exception_cleanup(queue, exc):
                 return
-            if queue is None:
-                return
-            if queue.stopped or not queue.active_request_block:
-                raise exc
-            queue.stopped = True
-            try:
-                # We reset the worker to RUNNING to allow for cleanup tasks
-                # during the on_exception hook.
-                self.worker.status = InstructionQueueStatus.RUNNING
-                self.scan.actions._metadata_suffix = "__on-exception"
-                self._run_on_exception_hook(exc)
-            except Exception as exc_cleanup:
-                self.worker.connector.send_client_info("")
-                self._handle_exception(exc_cleanup)
             self._handle_exception(exc)
         if queue is None:
             return
         queue.status = InstructionQueueStatus.COMPLETED
         self.worker.current_instruction_queue_item = None
         self.reset()
+
+    def _prepare_exception_cleanup(
+        self, queue: DirectInstructionQueueItem | None, exc: Exception
+    ) -> bool:
+        """Prepare exception cleanup for a failed direct scan run.
+
+        Returns True when the caller should continue propagating/handling the
+        original exception, or False when shutdown/no-queue means the run can
+        exit early.
+        """
+        if self.worker.signal_event.is_set():
+            # If the signal event is set, the worker is shutting down and does
+            # not need additional exception handling.
+            return False
+        if queue is None:
+            return False
+        if queue.stopped or not queue.active_request_block:
+            raise exc
+
+        queue.stopped = True
+        try:
+            # We reset the worker to RUNNING to allow for cleanup tasks during
+            # the on_exception hook.
+            self.worker.status = InstructionQueueStatus.RUNNING
+            if self.scan is not None:
+                self.scan.actions._metadata_suffix = "__on-exception"
+            self._run_on_exception_hook(exc)
+        except Exception as exc_cleanup:
+            self.worker.connector.send_client_info("")
+            self._handle_exception(exc_cleanup)
+        return True
 
     def _handle_exception(self, exc: Exception):
         content = traceback.format_exc()
