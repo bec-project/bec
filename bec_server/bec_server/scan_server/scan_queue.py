@@ -184,7 +184,6 @@ class QueueManager:
         # instructions = self.scan_assembler.assemble_device_instructions(scan_msg)
         queue = scan_msg.content.get("queue", "primary")
         self.add_to_queue(queue, scan_msg)
-        self.send_queue_status()
 
     def _scan_queue_modification_callback(self, msg):
         scan_mod_msg = msg.value
@@ -526,7 +525,18 @@ class QueueManager:
             restart_scan_msg.metadata["RID"] = request_id
         instruction_queue.reason = "restart"
 
-        # Abort the current scan first and wait for it to appear in history
+        scan_restart_msg = messages.ScanRestartMessage(
+            original_scan_id=scan_id, scan_msg=restart_scan_msg
+        )
+        self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
+        if restart_scan_msg.allow_restart:
+            logger.info(f"Restarting scan {scan_id} in queue {queue}")
+            # Queue the replacement before stopping the original so the restarted scan is next.
+            self.add_to_queue(queue, restart_scan_msg, 1)
+        else:
+            logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
+
+        # Abort the current scan after queueing its restart replacement.
         with AutoResetCM(que):
             original_queue_status = que.status
             que.status = ScanQueueStatus.PAUSED
@@ -536,19 +546,7 @@ class QueueManager:
                 InstructionQueueStatus.DEFERRED_PAUSE,
             ]:
                 que.worker_status = InstructionQueueStatus.STOPPED
-        self._lock.release()
-        self._wait_for_queue_to_appear_in_history(scan_id, queue)
-        self._lock.acquire()
 
-        scan_restart_msg = messages.ScanRestartMessage(
-            original_scan_id=scan_id, scan_msg=restart_scan_msg
-        )
-        self.connector.send(MessageEndpoints.scan_restart(), scan_restart_msg)
-        if restart_scan_msg.allow_restart:
-            logger.info(f"Restarting scan {scan_id} in queue {queue}")
-            self.add_to_queue(queue, restart_scan_msg, 0)
-        else:
-            logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
         self.queues[queue].status = original_queue_status
 
     @requires_queue
@@ -742,6 +740,7 @@ class ScanQueue:
         ) = None,
     ) -> None:
         self.queue: Deque[InstructionQueueItem | DirectInstructionQueueItem] = collections.deque()
+        self._deferred_inserts: Deque[tuple[messages.ScanQueueMessage, int]] = collections.deque()
         self.queue_name = queue_name
         self.history_queue: collections.deque[InstructionQueueItem | DirectInstructionQueueItem] = (
             collections.deque(maxlen=self.MAX_HISTORY)
@@ -911,8 +910,8 @@ class ScanQueue:
 
     def _next_instruction_queue(self) -> bool:
         """get the next instruction queue from the queue. If no update is available, it will return False."""
-        with self._lock:
-            try:
+        try:
+            with self._lock:
                 aiq = self.active_instruction_queue
                 if (
                     aiq is not None
@@ -924,54 +923,67 @@ class ScanQueue:
                     self.queue_manager.send_queue_status()
 
                 if self._queue_should_continue():
+                    self._flush_deferred_inserts()
                     if len(self.queue) == 0:
                         if aiq is None:
-                            self.signal_event.wait(0.1)
-                            return False
-                        self.active_instruction_queue = None
-                        self.signal_event.wait(0.01)
-                        return False
+                            wait_time = 0.1
+                        else:
+                            self.active_instruction_queue = None
+                            wait_time = 0.01
+                    else:
+                        self.active_instruction_queue = self.queue[0]
+                        self.history_queue.append(self.active_instruction_queue)
+                        return True
+                else:
+                    wait_time = None
 
-                    self.active_instruction_queue = self.queue[0]
-                    self.history_queue.append(self.active_instruction_queue)
-                    return True
+            if wait_time is not None:
+                self.signal_event.wait(wait_time)
+                return False
 
-                while self.status == ScanQueueStatus.LOCKED and not self.signal_event.is_set():
-                    self.signal_event.wait(0.1)
-                    if self._queue_should_continue():
+            while not self.signal_event.is_set():
+                with self._lock:
+                    if self.status != ScanQueueStatus.LOCKED or self._queue_should_continue():
                         break
+                    self._flush_deferred_inserts()
+                self.signal_event.wait(0.1)
 
-                while self.status == ScanQueueStatus.PAUSED and not self.signal_event.is_set():
+            while not self.signal_event.is_set():
+                with self._lock:
+                    if self.status != ScanQueueStatus.PAUSED:
+                        break
                     if len(self.queue) == 0 and self.auto_reset_enabled:
                         # we don't need to pause if there is no scan enqueued
                         self.status = ScanQueueStatus.RUNNING
                         logger.info("resetting queue status to running")
+                        break
                     if (
                         len(self.queue) > 0
                         and self.queue[0].status == InstructionQueueStatus.STOPPED
                     ):
                         # The next instruction queue is stopped, we can remove it
                         break
-                    self.signal_event.wait(0.1)
+                self.signal_event.wait(0.1)
 
+            with self._lock:
+                self._flush_deferred_inserts()
                 self.active_instruction_queue = self.queue[0]
                 self.history_queue.append(self.active_instruction_queue)
                 return True
-            except IndexError:
-                self.signal_event.wait(0.01)
-            return False
+        except IndexError:
+            self.signal_event.wait(0.01)
+        return False
 
-    def insert(self, msg: messages.ScanQueueMessage, position=-1, **_kwargs):
-        """insert a new message to the queue"""
-        while self.worker_status == InstructionQueueStatus.STOPPED:
-            logger.info("Waiting for worker to become active.")
-            if self.signal_event.wait(0.1):
-                break
-        while self.status == ScanQueueStatus.PAUSED and len(self.queue) == 0:
-            logger.info("Waiting for queue to become active.")
-            if self.signal_event.wait(0.1):
-                break
+    def _flush_deferred_inserts(self) -> None:
+        """Move buffered inserts into the live queue once the stopped head no longer blocks them."""
+        if not self._deferred_inserts or self.worker_status == InstructionQueueStatus.STOPPED:
+            return
+        while self._deferred_inserts:
+            msg, position = self._deferred_inserts.popleft()
+            self._insert_now(msg, position=position)
 
+    def _insert_now(self, msg: messages.ScanQueueMessage, position=-1) -> None:
+        """Insert a new message into the live queue without waiting."""
         target_group = msg.metadata.get("queue_group")
         scan_def_id = msg.metadata.get("scan_def_id")
         logger.debug(f"Inserting new queue message {msg}")
@@ -1007,8 +1019,28 @@ class ScanQueue:
             instruction_queue.queue_group = target_group
             if position == -1:
                 self.queue.append(instruction_queue)
+            else:
+                self.queue.insert(position, instruction_queue)
+
+        self.queue_manager.send_queue_status()
+
+    def insert(self, msg: messages.ScanQueueMessage, position=-1, **_kwargs):
+        """Insert a new message into the queue or buffer it until a stopped head item clears."""
+        with self._lock:
+            if self.worker_status == InstructionQueueStatus.STOPPED:
+                logger.info("Deferring queue insert until worker becomes active again.")
+                self._deferred_inserts.append((msg, position))
                 return
-            self.queue.insert(position, instruction_queue)
+
+            self._flush_deferred_inserts()
+
+        while self.status == ScanQueueStatus.PAUSED and len(self.queue) == 0:
+            logger.info("Waiting for queue to become active.")
+            if self.signal_event.wait(0.1):
+                break
+
+        with self._lock:
+            self._insert_now(msg, position=position)
 
     def get_queue_item(self, group=None, scan_def_id=None):
         """get a queue item based on its group or scan_def_id"""
