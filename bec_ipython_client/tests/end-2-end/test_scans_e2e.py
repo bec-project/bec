@@ -424,10 +424,7 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
                 continue
             if len(bec.queue.scan_storage.current_scan.live_data) > 0:
                 time.sleep(2)
-                bec.queue.request_scan_interruption(deferred_pause=False)
-                time.sleep(5)
                 bec.queue.request_scan_restart()
-                bec.queue.request_scan_continuation()
                 break
 
     scan_number_start = bec.queue.next_scan_number
