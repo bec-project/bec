@@ -93,9 +93,7 @@ class RedisConnector:
             **kwargs: additional keyword arguments to pass to the redis client.
         """
         self._managed_connection = self.connector_cls(bootstrap, redis_cls, name, **kwargs)
-        self._buffered_publisher = (
-            BufferedPublisher(self) if buffered_publisher_enabled else None
-        )
+        self._buffered_publisher = BufferedPublisher(self) if buffered_publisher_enabled else None
 
     ##################################
     #    SETUP AND CONFIG METHODS    #
