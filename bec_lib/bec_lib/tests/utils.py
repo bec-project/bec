@@ -518,7 +518,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             bootstrap_server = bootstrap_server[0]
         if ":" not in bootstrap_server:
             bootstrap_server = f"{bootstrap_server}:0000"
-        super().__init__(bootstrap_server)
+        super().__init__(bootstrap_server, buffered_publisher_enabled=False)
         self.message_sent = []
         self._get_buffer = {}
         self.store_data = store_data

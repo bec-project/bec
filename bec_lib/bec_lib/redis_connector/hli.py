@@ -47,14 +47,15 @@ def buffered_operation(func):
         bound_args = signature.bind_partial(*args, **kwargs)
         topic = bound_args.arguments[topic_arg_name]
         pipe = bound_args.arguments.get("pipe")
+        buffered_publisher = getattr(args[0], "_buffered_publisher", None)
 
-        if not buffer or pipe is not None:
+        if not buffer or pipe is not None or buffered_publisher is None:
             return func(*args, **kwargs)
         buffered_kwargs = dict(bound_args.arguments)
         buffered_kwargs.pop("self", None)
         buffered_kwargs.pop(topic_arg_name, None)
         payload = buffered_kwargs.pop(payload_arg_name)
-        args[0]._buffered_publisher.execute(
+        buffered_publisher.execute(
             func.__name__,
             topic,
             lambda: payload,
@@ -79,6 +80,7 @@ class RedisConnector:
         bootstrap: list[str] | str,
         redis_cls: type[Redis] = Redis,
         name: str = "RedisConnector",
+        buffered_publisher_enabled: bool = True,
         **kwargs,
     ):
         """
@@ -91,7 +93,9 @@ class RedisConnector:
             **kwargs: additional keyword arguments to pass to the redis client.
         """
         self._managed_connection = self.connector_cls(bootstrap, redis_cls, name, **kwargs)
-        self._buffered_publisher = BufferedPublisher(self)
+        self._buffered_publisher = (
+            BufferedPublisher(self) if buffered_publisher_enabled else None
+        )
 
     ##################################
     #    SETUP AND CONFIG METHODS    #
@@ -122,7 +126,8 @@ class RedisConnector:
         """
         Shutdown the connector
         """
-        self._buffered_publisher.shutdown()
+        if self._buffered_publisher is not None:
+            self._buffered_publisher.shutdown()
         return self._managed_connection.shutdown(per_thread_timeout_s)
 
     def register(

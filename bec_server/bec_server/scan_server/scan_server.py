@@ -127,3 +127,4 @@ class ScanServer(BECService):
         self.proc_manager.shutdown()
         self.device_manager.shutdown()
         self.queue_manager.shutdown()
+        super().shutdown(per_thread_timeout_s=per_thread_timeout_s)
