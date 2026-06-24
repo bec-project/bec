@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.142.9 (2026-06-24)
+
+### Bug Fixes
+
+- Prevent inserts when worker is busy
+  ([`69501a8`](https://github.com/bec-project/bec/commit/69501a8782bba2ecd7c89f15497b8dce4da9d0c2))
+
+### Testing
+
+- Simplify observer test
+  ([`cb272af`](https://github.com/bec-project/bec/commit/cb272af5baf5be5e81994516e262d927d304d568))
+
+
 ## v3.142.8 (2026-06-22)
 
 ### Bug Fixes
