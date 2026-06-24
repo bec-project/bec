@@ -118,7 +118,7 @@ class ReadbackDataHandler:
         for dev in self.devices:
             val = self.data.get(dev)
             if val is None or force:
-                signal_data = self.device_manager.devices[dev].read(cached=True)
+                signal_data = self.device_manager.devices[dev].read(cached=not force)
             else:
                 signal_data = val.signals
             # pylint: disable=protected-access
