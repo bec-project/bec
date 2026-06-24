@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import enum
+import html
+import inspect
 import mimetypes
 import os
+import textwrap
 from abc import ABC
 from typing import TYPE_CHECKING, Generic, Literal, Self, TypeVar
+
+from rich.console import Console
+from rich.table import Table
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 
 if TYPE_CHECKING:
+    from bec_lib.client import BECClient
     from bec_lib.connector import MessageObject
     from bec_lib.redis_connector import RedisConnector
 
@@ -86,8 +93,8 @@ class MessagingContainer:
     A container for providing easy access to multiple messaging services.
     """
 
-    def __init__(self, connector: RedisConnector) -> None:
-        self.scilog = SciLogMessagingService(connector)
+    def __init__(self, connector: RedisConnector, client: BECClient | None = None) -> None:
+        self.scilog = SciLogMessagingService(connector, client=client)
         self.teams = TeamsMessagingService(connector)
         self.signal = SignalMessagingService(connector)
 
@@ -534,9 +541,10 @@ class SciLogMessagingService(MessagingService[SciLogMessageServiceObject]):
     _SERVICE_NAME = "scilog"
     _MESSAGE_OBJECT_CLASS = SciLogMessageServiceObject
 
-    def __init__(self, redis_connector: RedisConnector) -> None:
+    def __init__(self, redis_connector: RedisConnector, client: BECClient | None = None) -> None:
         super().__init__(redis_connector)
         self._default_tags: list[str] = ["bec"]
+        self._client = client
 
     def set_default_tags(self, tags: str | list[str]):
         """
@@ -557,6 +565,132 @@ class SciLogMessagingService(MessagingService[SciLogMessageServiceObject]):
             list[str]: The current default tags.
         """
         return self._default_tags
+
+    @staticmethod
+    def _table_cell(value: str, bold: bool = False) -> str:
+        content = html.escape(value)
+        if bold:
+            content = f"<strong>{content}</strong>"
+        return f"<td>{content}</td>"
+
+    @classmethod
+    def _position_table_html(cls, rows: list[dict[str, str]]) -> str:
+        table_rows = [
+            "<tr>"
+            f"{cls._table_cell('device', bold=True)}"
+            f"{cls._table_cell('readback', bold=True)}"
+            f"{cls._table_cell('setpoint', bold=True)}"
+            f"{cls._table_cell('limits', bold=True)}"
+            "</tr>"
+        ]
+        table_rows.extend(
+            "<tr>"
+            f"{cls._table_cell(row['name'])}"
+            f"{cls._table_cell(row['readback'])}"
+            f"{cls._table_cell(row['setpoint'])}"
+            f"{cls._table_cell(row['limits'])}"
+            "</tr>"
+            for row in rows
+        )
+        return (
+            f"<figure class=\"table\"><table><tbody>{''.join(table_rows)}</tbody></table></figure>"
+        )
+
+    @staticmethod
+    def _code_block_html(source: str, language: str = "python") -> str:
+        escaped_language = html.escape(language, quote=True)
+        escaped_source = html.escape(textwrap.dedent(source).strip("\n"))
+        return f'<pre><code class="language-{escaped_language}">{escaped_source}</code></pre>'
+
+    def log_positions(
+        self,
+        devices: list[str] | str | None = None,
+        scope: str | list[str] | None = None,
+        title: str | None = None,
+        tags: str | list[str] | None = None,
+    ) -> None:
+        """
+        Send the current device positions to SciLog as an HTML table.
+
+        Args:
+            devices: Device names, glob patterns or device objects accepted by ``dev.wm``.
+            scope: Optional override for the SciLog scope.
+            title: Optional text shown above the table.
+            tags: Optional tags added to the SciLog message.
+        """
+        if self._client is None or getattr(self._client, "device_manager", None) is None:
+            raise RuntimeError(
+                "SciLog position logging requires a client-backed messaging service."
+            )
+        if self._client.device_manager is None or self._client.device_manager.devices is None:
+            raise RuntimeError(
+                "SciLog position logging requires a client-backed messaging service with a device manager."
+            )
+        dev = self._client.device_manager.devices
+        rows = dev._position_rows(devices)
+        message = self.new()
+        content = self._position_table_html(rows)
+        if title:
+            content = f"<p>{html.escape(title)}</p>{content}"
+        message.add_text(content)
+        if tags is not None:
+            message.add_tags(tags)
+        message.send(scope=scope)
+
+        print("The following position table was sent to SciLog:")
+
+        console = Console()
+        table = Table()
+        table.add_column("", justify="center")
+        table.add_column("readback", justify="center")
+        table.add_column("setpoint", justify="center")
+        table.add_column("limits", justify="center")
+        for row in rows:
+            table.add_row(row["name"], row["readback"], row["setpoint"], row["limits"])
+        console.print(table)
+
+    def log_code(
+        self,
+        source: object,
+        scope: str | list[str] | None = None,
+        title: str | None = None,
+        tags: str | list[str] | None = None,
+        language: str = "python",
+    ) -> None:
+        """
+        Send source code to SciLog as a syntax-highlighted code block.
+
+        Args:
+            source: A callable or raw source string to send.
+            scope: Optional override for the SciLog scope.
+            title: Optional text shown above the code block.
+            tags: Optional tags added to the SciLog message.
+            language: Syntax highlighting language class for the code block.
+
+        Examples:
+            >>> # Log a function's source code
+            >>> def my_function():
+            >>>     print("Hello, World!")
+            >>> bec.messaging.scilog.log_code(my_function, title="My Function", tags="code")
+        """
+        if isinstance(source, str):
+            source_code = source
+        else:
+            try:
+                source_code = inspect.getsource(source)
+            except (OSError, TypeError) as exc:
+                raise ValueError(
+                    "Could not extract source code. Pass a function with available source or a source string."
+                ) from exc
+
+        content = self._code_block_html(source_code, language=language)
+        if title:
+            content = f"<p>{html.escape(title)}</p>{content}"
+        message = self.new()
+        message.add_text(content)
+        if tags is not None:
+            message.add_tags(tags)
+        message.send(scope=scope)
 
 
 class TeamsMessagingService(MessagingService[MessageServiceObject]):

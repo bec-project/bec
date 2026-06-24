@@ -635,6 +635,21 @@ def test_device_container_wm_read_contains_None(dev_container, capsys):
         assert "N/A" in captured.out
 
 
+def test_device_container_position_rows(dev_container):
+    with (
+        mock.patch.object(
+            dev_container.test,
+            "read",
+            return_value={"test": {"value": 1}, "test_setpoint": {"value": 2}},
+        ),
+        mock.patch.object(AdjustableMixin, "limits", new_callable=mock.PropertyMock) as limits,
+    ):
+        limits.return_value = []
+        assert dev_container._position_rows("test") == [
+            {"name": "test", "readback": "1.0000", "setpoint": "2.0000", "limits": "[]"}
+        ]
+
+
 @pytest.mark.parametrize(
     "reading",
     [
