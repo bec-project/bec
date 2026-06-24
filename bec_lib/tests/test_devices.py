@@ -593,6 +593,11 @@ def test_device_container_wm_raises_for_missing_device(dev_container):
         dev_container.wm("missing")
 
 
+def test_device_container_getattr_raises_for_missing_single_underscore_device(dev_container):
+    with pytest.raises(DeviceConfigError, match="Device _something does not exist\\."):
+        dev_container._something
+
+
 def test_device_container_wm_raises_for_unmatched_glob(dev_container):
     with pytest.raises(DeviceConfigError, match="No devices match pattern miss\\*\\."):
         dev_container.wm("miss*")

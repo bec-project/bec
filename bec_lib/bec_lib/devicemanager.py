@@ -95,12 +95,10 @@ class DeviceContainer(dict):
         return super().__contains__(key)
 
     def __getattr__(self, attr):
-        if attr.startswith("_"):
-            # if dunder attributes are would not be caught, they
-            # would raise a DeviceConfigError and kill the
-            # IPython completer
-            # pylint: disable=no-member
-            return super().__getattr__(attr)
+        if attr.startswith("__"):
+            # Keep missing dunder lookups as AttributeError so
+            # introspection and IPython completion can probe safely.
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {attr!r}")
         dev = self.get(attr)
         if not dev:
             raise DeviceConfigError(f"Device {attr} does not exist.")
