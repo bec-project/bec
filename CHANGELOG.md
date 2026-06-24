@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.10 (2026-06-24)
+
+### Bug Fixes
+
+- Allow v4 scan abortion to be handled similar to legacy scans
+  ([`596ed09`](https://github.com/bec-project/bec/commit/596ed09606816231c09d2d03924d33350b7beb0c))
+
+
 ## v3.142.9 (2026-06-24)
 
 ### Bug Fixes
