@@ -548,13 +548,15 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
         if pipe:
             pipe._pipe_buffer.append(("set", (topic.endpoint, msg), {"expire": expire}))
             return
-        self.message_sent.append({"queue": topic, "msg": msg, "expire": expire})
+        queue = topic.endpoint if isinstance(topic, EndpointInfo) else topic
+        self.message_sent.append({"queue": queue, "msg": msg, "expire": expire})
 
     def raw_send(self, topic, msg, pipe=None):
         if pipe:
             pipe._pipe_buffer.append(("send", (topic.endpoint, msg), {}))
             return
-        self.message_sent.append({"queue": topic, "msg": msg})
+        queue = topic.endpoint if isinstance(topic, EndpointInfo) else topic
+        self.message_sent.append({"queue": queue, "msg": msg})
 
     def send(self, topic, msg, pipe=None, *, buffer: bool = False, buffer_latest_only: bool = True):
         if not isinstance(msg, messages.BECMessage):
@@ -585,7 +587,8 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
         if pipe:
             pipe._pipe_buffer.append(("set_and_publish", (topic.endpoint, msg), {"expire": expire}))
             return
-        self.message_sent.append({"queue": topic, "msg": msg, "expire": expire})
+        queue = topic.endpoint if isinstance(topic, EndpointInfo) else topic
+        self.message_sent.append({"queue": queue, "msg": msg, "expire": expire})
 
     def lpush(self, topic, msg, pipe=None, max_size=None):
         if pipe:
