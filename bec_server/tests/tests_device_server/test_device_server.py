@@ -872,12 +872,12 @@ def test_read_config_and_update_devices(device_server_mock, devices):
         res = [
             msg
             for msg in device_server.connector.message_sent
-            if msg["queue"] == MessageEndpoints.device_read_configuration(device).endpoint
+            if msg["queue"] == MessageEndpoints.device_read_configuration(device)
         ]
         config = device_server.device_manager.devices[device].obj.read_configuration()
         msg = res[-1]["msg"]
         assert msg.content["signals"].keys() == config.keys()
-        assert res[-1]["queue"] == MessageEndpoints.device_read_configuration(device).endpoint
+        assert res[-1]["queue"] == MessageEndpoints.device_read_configuration(device)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
