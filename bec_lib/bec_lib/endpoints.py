@@ -2098,3 +2098,41 @@ class MessageEndpoints:
             message_type=messages.GameLeaderboardMessage,
             message_op=MessageOp.SET_PUBLISH,
         )
+
+    @staticmethod
+    def roi_config(device: str, signal: str):
+        """
+        Endpoint for ROI configuration. This endpoint is used to publish ROI configuration updates using a ROIConfigurationMessage message.
+
+        Args:
+            device (str): Name of the device.
+            signal (str): Name of the signal.
+
+        Returns:
+            EndpointInfo: Endpoint for ROI configuration.
+        """
+        endpoint = f"{EndpointType.INFO.value}/devices/roi_config/{device}/{signal}"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ROIConfigurationMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
+
+    @staticmethod
+    def available_roi_analysis(device: str, signal: str):
+        """
+        Endpoint for available ROI analysis. This endpoint is used to publish the available ROI analysis operations using a ROIAvailableAnalysisMessage message.
+
+        Args:
+            device (str): Name of the device.
+            signal (str): Name of the signal.
+
+        Returns:
+            EndpointInfo: Endpoint for available ROI analysis.
+        """
+        endpoint = (f"{EndpointType.INFO.value}/devices/roi_available_analysis/{device}/{signal}",)
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ROIAvailableAnalysisMessage,
+            message_op=MessageOp.SET_PUBLISH,
+        )
