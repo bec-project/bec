@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.142.11 (2026-06-24)
+
+### Bug Fixes
+
+- First axis should be the fast axis
+  ([`e3c3e52`](https://github.com/bec-project/bec/commit/e3c3e52e4dbd39516f4a2fa6545025f1b119b08d))
+
+
 ## v3.142.10 (2026-06-24)
 
 ### Bug Fixes
