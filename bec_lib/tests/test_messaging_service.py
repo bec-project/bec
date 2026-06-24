@@ -1,4 +1,6 @@
 import time
+from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
@@ -17,6 +19,48 @@ from bec_lib.messaging_services import (
 @pytest.fixture
 def scilog_service(connected_connector):
     service = SciLogMessagingService(connected_connector)
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=True),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=True, logbook_id="test_logbook"
+            )
+        ],
+        session_services=[],
+    )
+    service._on_new_scope_change_msg(message={"data": available_services})
+    yield service
+
+
+@pytest.fixture
+def scilog_service_with_owner(connected_connector):
+    owner = SimpleNamespace(
+        device_manager=SimpleNamespace(
+            devices=SimpleNamespace(
+                _position_rows=mock.Mock(
+                    return_value=[
+                        {
+                            "name": "samx",
+                            "readback": "1.0000",
+                            "setpoint": "1.5000",
+                            "limits": "[]",
+                        },
+                        {
+                            "name": "samy",
+                            "readback": "2.0000",
+                            "setpoint": "2.5000",
+                            "limits": "[-1, 1]",
+                        },
+                    ]
+                )
+            )
+        )
+    )
+    service = SciLogMessagingService(connected_connector, client=owner)
     available_services = messages.AvailableMessagingServicesMessage(
         config=messages.MessagingConfig(
             signal=messages.MessagingServiceScopeConfig(enabled=False),
@@ -199,6 +243,85 @@ def test_scilog_messaging_service_add_tags(scilog_message, connected_connector):
     assert sorted(tags_part.tags) == sorted(
         ["bec", "tag1", "tag2"]
     )  # default "bec" tag should be included
+
+
+def test_scilog_log_positions(scilog_service_with_owner, connected_connector):
+    scilog_service_with_owner.log_positions(
+        devices="sam*", title="Current positions", tags="snapshot"
+    )
+
+    scilog_service_with_owner._client.device_manager.devices._position_rows.assert_called_once_with(  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        "sam*"
+    )
+
+    out = connected_connector.xread(
+        MessageEndpoints.message_service_queue(), from_start=True, count=1
+    )
+    assert len(out) == 1
+    out = out[0]["data"]
+    assert out.service_name == "scilog"
+    assert len(out.message) == 2
+    assert isinstance(out.message[0], messages.MessagingServiceTextContent)
+    assert "<p>Current positions</p>" in out.message[0].content
+    assert '<figure class="table"><table><tbody>' in out.message[0].content
+    assert "<strong>device</strong>" in out.message[0].content
+    assert "<td>samx</td><td>1.0000</td><td>1.5000</td><td>[]</td>" in out.message[0].content
+    assert "<td>samy</td><td>2.0000</td><td>2.5000</td><td>[-1, 1]</td>" in out.message[0].content
+    assert isinstance(out.message[1], messages.MessagingServiceTagsContent)
+    assert sorted(out.message[1].tags) == ["bec", "snapshot"]
+
+
+def test_scilog_log_positions_requires_owner(scilog_service):
+    with pytest.raises(
+        RuntimeError, match="SciLog position logging requires a client-backed messaging service."
+    ):
+        scilog_service.log_positions()
+
+
+def test_scilog_log_code(connected_connector):
+    def my_func():
+        print()
+
+    service = SciLogMessagingService(connected_connector)
+    available_services = messages.AvailableMessagingServicesMessage(
+        config=messages.MessagingConfig(
+            signal=messages.MessagingServiceScopeConfig(enabled=False),
+            teams=messages.MessagingServiceScopeConfig(enabled=False),
+            scilog=messages.MessagingServiceScopeConfig(enabled=True),
+        ),
+        deployment_services=[
+            messages.SciLogServiceInfo(
+                id="test_scilog", scope="default", enabled=True, logbook_id="test_logbook"
+            )
+        ],
+        session_services=[],
+    )
+    service._on_new_scope_change_msg(message={"data": available_services})
+
+    service.log_code(my_func, title="Function source", tags="code")
+
+    out = connected_connector.xread(
+        MessageEndpoints.message_service_queue(), from_start=True, count=1
+    )
+    assert len(out) == 1
+    out = out[0]["data"]
+    assert out.service_name == "scilog"
+    assert len(out.message) == 2
+    assert isinstance(out.message[0], messages.MessagingServiceTextContent)
+    assert "<p>Function source</p>" in out.message[0].content
+    assert '<pre><code class="language-python">' in out.message[0].content
+    assert "def my_func():" in out.message[0].content
+    assert "    print()" in out.message[0].content
+    assert isinstance(out.message[1], messages.MessagingServiceTagsContent)
+    assert sorted(out.message[1].tags) == ["bec", "code"]
+
+
+def test_scilog_log_code_raises_for_missing_source(scilog_service):
+    with pytest.raises(
+        ValueError,
+        match="Could not extract source code. Pass a function with available source or a source string.",
+    ):
+        scilog_service.log_code(len)
 
 
 def test_signal_messaging_service_new(signal_service):

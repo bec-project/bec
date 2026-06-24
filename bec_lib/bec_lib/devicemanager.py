@@ -78,6 +78,15 @@ def _rgetattr_safe(obj, attr, *args):
 
 
 class DeviceContainer(dict):
+    @staticmethod
+    def _get_value_str(val) -> str:
+        if not isinstance(val, str):
+            try:
+                return f"{val:.4f}"
+            except Exception:
+                return "N/A"
+        return val
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for arg in args:
@@ -334,6 +343,63 @@ class DeviceContainer(dict):
                 raise DeviceConfigError(f"Device {dev} does not exist.") from exc
         return expanded_devices
 
+    def _resolve_wm_devices(
+        self, device_names: list[str | DeviceBase | None] = None
+    ) -> list[DeviceBase]:
+        if not device_names:
+            return list(self.values())
+
+        expanded_devices = []
+        if not isinstance(device_names, list):
+            device_names = [device_names]
+        if len(device_names) == 0:
+            return []
+
+        for dev in device_names:
+            if isinstance(dev, DeviceBase):
+                expanded_devices.append(dev)
+            else:
+                expanded_devices.extend(self._resolve_device_names(dev))
+        return expanded_devices
+
+    def _position_rows(
+        self, device_names: list[str | DeviceBase | None] = None
+    ) -> list[dict[str, str]]:
+        """
+        Return normalized position rows for one or more devices.
+
+        Args:
+            device_names (list): List of device names or Device objects
+
+        Returns:
+            list[dict[str, str]]: Position rows with ``name``, ``readback``,
+                ``setpoint`` and ``limits`` keys.
+        """
+        devices = self._resolve_wm_devices(device_names)
+        dev_read = {dev.name: dev.read(cached=True) for dev in devices}
+        rows = []
+
+        for dev in devices:
+            read = dev_read[dev.name]
+            limits = str(dev.limits) if hasattr(dev, "limits") else "[]"
+
+            if dev.name in read:
+                readback = self._get_value_str(read[dev.name]["value"])
+            else:
+                readback = "N/A"
+
+            if f"{dev.name}_setpoint" in read:
+                setpoint = self._get_value_str(read[f"{dev.name}_setpoint"]["value"])
+            elif f"{dev.name}_user_setpoint" in read:
+                setpoint = self._get_value_str(read[f"{dev.name}_user_setpoint"]["value"])
+            else:
+                setpoint = "N/A"
+
+            rows.append(
+                {"name": dev.name, "readback": readback, "setpoint": setpoint, "limits": limits}
+            )
+        return rows
+
     def wm(self, device_names: list[str | DeviceBase | None] = None, *args):
         """
         Get the current position of one or more devices.
@@ -356,62 +422,15 @@ class DeviceContainer(dict):
             >>> dev.wm(dev.get_devices_with_tags('user motors')) # returns the positions of all devices with the tag 'user motors'
 
         """
-        if not device_names:
-            device_names = self.values()
-        else:
-            expanded_devices = []
-            if not isinstance(device_names, list):
-                device_names = [device_names]
-            if len(device_names) == 0:
-                return
-
-            for dev in device_names:
-                if isinstance(dev, DeviceBase):
-                    expanded_devices.append(dev)
-                else:
-                    expanded_devices.extend(self._resolve_device_names(dev))
-            device_names = expanded_devices
+        rows = self._position_rows(device_names)
         console = Console()
         table = Table()
         table.add_column("", justify="center")
         table.add_column("readback", justify="center")
         table.add_column("setpoint", justify="center")
         table.add_column("limits", justify="center")
-        dev_read = {dev.name: dev.read(cached=True) for dev in device_names}
-        readbacks = {}
-        setpoints = {}
-        limits = {}
-        for dev in device_names:
-            if hasattr(dev, "limits"):
-                limits[dev.name] = str(dev.limits)
-            else:
-                limits[dev.name] = "[]"
-
-        def _get_value_str(val):
-            if not isinstance(val, str):
-                try:
-                    return f"{val:.4f}"
-                except Exception:
-                    return "N/A"
-            return val
-
-        for dev, read in dev_read.items():
-            if dev in read:
-                val = read[dev]["value"]
-                readbacks[dev] = _get_value_str(val)
-            else:
-                readbacks[dev] = "N/A"
-
-            if f"{dev}_setpoint" in read:
-                val = read[f"{dev}_setpoint"]["value"]
-                setpoints[dev] = _get_value_str(val)
-            elif f"{dev}_user_setpoint" in read:
-                val = read[f"{dev}_user_setpoint"]["value"]
-                setpoints[dev] = _get_value_str(val)
-            else:
-                setpoints[dev] = "N/A"
-        for dev in device_names:
-            table.add_row(dev.name, readbacks[dev.name], setpoints[dev.name], limits[dev.name])
+        for row in rows:
+            table.add_row(row["name"], row["readback"], row["setpoint"], row["limits"])
         console.print(table)
 
     def _add_device(self, name, obj) -> None:

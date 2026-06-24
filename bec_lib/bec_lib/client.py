@@ -225,7 +225,7 @@ class BECClient(BECService):
             self.callbacks.run(
                 EventType.NAMESPACE_UPDATE, action="add", ns_objects=default_namespace
             )
-            self.messaging = MessagingContainer(self.connector)
+            self.messaging = MessagingContainer(self.connector, client=self._parent)
             logger.info("Starting new client")
             self.status = BECStatus.RUNNING
         except redis.exceptions.ConnectionError:
