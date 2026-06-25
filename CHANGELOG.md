@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.143.0 (2026-06-25)
+
+### Features
+
+- Add validation for device name to prevent conflicts and enforce naming rules
+  ([`12a5321`](https://github.com/bec-project/bec/commit/12a5321836af645bc1ad174db52c62612faa0f90))
+
+
 ## v3.142.11 (2026-06-24)
 
 ### Bug Fixes
