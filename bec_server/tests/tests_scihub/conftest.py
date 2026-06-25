@@ -25,6 +25,9 @@ class SciHubMocked(SciHub):
     def _start_metrics_emitter(self):
         pass
 
+    def _start_update_service_info(self):
+        pass
+
     def wait_for_service(self, name, status=BECStatus.RUNNING):
         pass
 
@@ -82,7 +85,9 @@ def atlas_connector(connected_connector, connected_atlas_connector):
         },
     )
     scihub_mocked = SciHubMocked(config, ConnectorMock)
+    original_connector = scihub_mocked.connector
     scihub_mocked.connector = connected_connector  # Replace with fakeredis connector
+    original_connector.shutdown()
 
     atlas_connector = AtlasConnector(scihub_mocked, connected_connector, connected_atlas_connector)
     with mock.patch.object(atlas_connector, "_load_environment"):

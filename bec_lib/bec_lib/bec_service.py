@@ -283,6 +283,7 @@ class BECService:
                 info=messages.ServiceInfo(user=self._user, hostname=self._hostname),
             ),
             expire=6,
+            buffer=True,
         )
 
     @property
@@ -342,7 +343,7 @@ class BECService:
             msg = messages.ServiceMetricMessage(name=self._service_name, metrics=data)
             try:
                 self.connector.set_and_publish(
-                    MessageEndpoints.metrics(self._service_name), msg, expire=30
+                    MessageEndpoints.metrics(self._service_name), msg, expire=30, buffer=True
                 )
             # pylint: disable=broad-except
             except Exception:

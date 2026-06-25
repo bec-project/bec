@@ -427,6 +427,8 @@ class BECLogger:
                     )
                 },
                 max_size=10000,
+                buffer=True,
+                buffer_latest_only=False,
             )
             return True
         except Exception:

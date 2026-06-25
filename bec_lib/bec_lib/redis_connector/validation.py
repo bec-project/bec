@@ -80,9 +80,10 @@ def validate_endpoint(endpoint_arg_name: str):
     def decorator(
         func: Callable[Concatenate[Any, str, P], Any],
     ) -> Callable[Concatenate[Any, EndpointInfo, P], Any]:
-        argspec = inspect.getfullargspec(func)
+        signature = inspect.signature(func)
         try:
-            argument_index = argspec.args.index(endpoint_arg_name)
+            parameter_names = list(signature.parameters)
+            argument_index = parameter_names.index(endpoint_arg_name)
             if argument_index != 1:
                 raise ValueError
         except ValueError as e:

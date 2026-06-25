@@ -844,8 +844,8 @@ class DeviceServer(BECService):
 
     def _read_and_update_devices(self, devices: list[str], metadata: dict) -> list:
         start = time.time()
-        pipe = self.connector.pipeline()
         signal_container = []
+        pipe = self.connector.pipeline()
         devices = self.device_manager.get_device_order(devices)
         for dev in devices:
             device_root = dev.split(".")[0]
@@ -861,12 +861,12 @@ class DeviceServer(BECService):
             self.connector.set_and_publish(
                 MessageEndpoints.device_read(device_root),
                 messages.DeviceMessage(signals=signals, metadata=metadata),
-                pipe,
+                pipe=pipe,
             )
             self.connector.set_and_publish(
                 MessageEndpoints.device_readback(device_root),
                 messages.DeviceMessage(signals=signals, metadata=metadata),
-                pipe,
+                pipe=pipe,
             )
         pipe.execute()
         logger.trace(
@@ -876,7 +876,6 @@ class DeviceServer(BECService):
 
     def _read_config_and_update_devices(self, devices: list[str], metadata: dict) -> list:
         start = time.time()
-        pipe = self.connector.pipeline()
         signal_container = []
         devices = self.device_manager.get_device_order(devices)
         for dev in devices:
@@ -891,9 +890,8 @@ class DeviceServer(BECService):
             self.connector.set_and_publish(
                 MessageEndpoints.device_read_configuration(dev),
                 messages.DeviceMessage(signals=signals, metadata=metadata),
-                pipe,
+                buffer=True,
             )
-        pipe.execute()
         logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )

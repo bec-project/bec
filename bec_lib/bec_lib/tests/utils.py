@@ -518,7 +518,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             bootstrap_server = bootstrap_server[0]
         if ":" not in bootstrap_server:
             bootstrap_server = f"{bootstrap_server}:0000"
-        super().__init__(bootstrap_server)
+        super().__init__(bootstrap_server, buffered_publisher_enabled=False)
         self.message_sent = []
         self._get_buffer = {}
         self.store_data = store_data
@@ -530,7 +530,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
         pass
 
     def shutdown(self, per_thread_timeout_s: float | None = None):
-        pass
+        super().shutdown(per_thread_timeout_s=per_thread_timeout_s)
 
     def register(self, *args, **kwargs):
         pass
@@ -556,7 +556,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             return
         self.message_sent.append({"queue": topic, "msg": msg})
 
-    def send(self, topic, msg, pipe=None):
+    def send(self, topic, msg, pipe=None, *, buffer: bool = False, buffer_latest_only: bool = True):
         if not isinstance(msg, messages.BECMessage):
             raise TypeError("Message must be a BECMessage")
         return self.raw_send(topic, msg, pipe)
@@ -572,7 +572,16 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             pipe=pipe,
         )
 
-    def set_and_publish(self, topic, msg, pipe=None, expire: int = None):
+    def set_and_publish(
+        self,
+        topic,
+        msg,
+        pipe=None,
+        expire: int = None,
+        *,
+        buffer: bool = False,
+        buffer_latest_only: bool = True,
+    ):
         if pipe:
             pipe._pipe_buffer.append(("set_and_publish", (topic.endpoint, msg), {"expire": expire}))
             return
@@ -623,7 +632,17 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
     def execute_pipeline(self, pipeline):
         pipeline.execute()
 
-    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire: int = None):
+    def xadd(
+        self,
+        topic,
+        msg_dict,
+        max_size=None,
+        pipe=None,
+        expire: int = None,
+        *,
+        buffer: bool = False,
+        buffer_latest_only: bool = True,
+    ):
         if pipe:
             pipe._pipe_buffer.append(("xadd", (topic, msg_dict), {"expire": expire}))
             return

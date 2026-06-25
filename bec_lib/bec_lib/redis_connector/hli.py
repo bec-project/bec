@@ -4,7 +4,9 @@ This module provides a high level interface for interacting with the BEC Redis i
 
 from __future__ import annotations
 
+import inspect
 import traceback
+from functools import wraps
 from typing import Literal, Sequence
 
 from redis.client import Pipeline, Redis
@@ -22,6 +24,7 @@ from bec_lib.messages import (
 )
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
+from bec_lib.redis_connector.buffered_publisher import BufferedPublisher
 from bec_lib.serialization import MsgpackSerialization
 
 from .constants import IncompatibleMessageForEndpoint, IncompatibleRedisOperation, _BecMsgT
@@ -29,6 +32,39 @@ from .managed_redis_connection import ManagedRedisConnection
 from .validation import check_endpoint_type, validate_endpoint
 
 logger = bec_logger.logger
+
+
+def buffered_operation(func):
+    signature = inspect.signature(func)
+    parameter_names = list(signature.parameters)
+    topic_arg_name = parameter_names[1]
+    payload_arg_name = parameter_names[2]
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        buffer = kwargs.pop("buffer", False)
+        buffer_latest_only = kwargs.pop("buffer_latest_only", True)
+        bound_args = signature.bind_partial(*args, **kwargs)
+        topic = bound_args.arguments[topic_arg_name]
+        pipe = bound_args.arguments.get("pipe")
+        buffered_publisher = getattr(args[0], "_buffered_publisher", None)
+
+        if not buffer or pipe is not None or buffered_publisher is None:
+            return func(*args, **kwargs)
+        buffered_kwargs = dict(bound_args.arguments)
+        buffered_kwargs.pop("self", None)
+        buffered_kwargs.pop(topic_arg_name, None)
+        payload = buffered_kwargs.pop(payload_arg_name)
+        buffered_publisher.execute(
+            func.__name__,
+            topic,
+            lambda: payload,
+            buffer_latest_only=buffer_latest_only,
+            **buffered_kwargs,
+        )
+        return None
+
+    return wrapper
 
 
 class RedisConnector:
@@ -44,6 +80,7 @@ class RedisConnector:
         bootstrap: list[str] | str,
         redis_cls: type[Redis] = Redis,
         name: str = "RedisConnector",
+        buffered_publisher_enabled: bool = True,
         **kwargs,
     ):
         """
@@ -56,6 +93,7 @@ class RedisConnector:
             **kwargs: additional keyword arguments to pass to the redis client.
         """
         self._managed_connection = self.connector_cls(bootstrap, redis_cls, name, **kwargs)
+        self._buffered_publisher = BufferedPublisher(self) if buffered_publisher_enabled else None
 
     ##################################
     #    SETUP AND CONFIG METHODS    #
@@ -86,6 +124,8 @@ class RedisConnector:
         """
         Shutdown the connector
         """
+        if self._buffered_publisher is not None:
+            self._buffered_publisher.shutdown()
         return self._managed_connection.shutdown(per_thread_timeout_s)
 
     def register(
@@ -245,7 +285,17 @@ class RedisConnector:
         return self._managed_connection.get_last(topic, key, count)
 
     @validate_endpoint("topic")
-    def set_and_publish(self, topic, msg, pipe=None, expire=None):
+    @buffered_operation
+    def set_and_publish(
+        self,
+        topic,
+        msg,
+        pipe=None,
+        expire=None,
+        *,
+        buffer: bool = False,
+        buffer_latest_only: bool = True,
+    ):
         return self._managed_connection.set_and_publish(topic, msg, pipe, expire)
 
     ##############################
@@ -256,7 +306,16 @@ class RedisConnector:
         return self._managed_connection.raw_send(topic, msg, pipe)
 
     @validate_endpoint("topic")
-    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
+    @buffered_operation
+    def send(
+        self,
+        topic: str,
+        msg: str | BECMessage,
+        pipe: Pipeline | None = None,
+        *,
+        buffer: bool = False,
+        buffer_latest_only: bool = True,
+    ) -> None:
         return self._managed_connection.send(topic, msg, pipe)
 
     @validate_endpoint("topic")
@@ -303,7 +362,19 @@ class RedisConnector:
         return self._managed_connection.mget(topics, pipe)
 
     @validate_endpoint("topic")
-    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire=None, approximate=True):
+    @buffered_operation
+    def xadd(
+        self,
+        topic,
+        msg_dict,
+        max_size=None,
+        pipe=None,
+        expire=None,
+        approximate=True,
+        *,
+        buffer: bool = False,
+        buffer_latest_only: bool = True,
+    ):
         return self._managed_connection.xadd(
             topic, msg_dict, max_size=max_size, pipe=pipe, expire=expire, approximate=approximate
         )

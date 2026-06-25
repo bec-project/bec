@@ -752,9 +752,7 @@ class DeviceManagerDS(DeviceManagerBase):
             "high": {"value": obj.root.high_limit_travel.get()},
         }
         dev_msg = messages.DeviceMessage(signals=limits)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=pipe)
-        pipe.execute()
+        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, buffer=True)
 
     def _obj_callback_readback(self, *_args, obj: OphydObject, **kwargs):
         if not obj.connected:
@@ -763,9 +761,7 @@ class DeviceManagerDS(DeviceManagerBase):
         signals = obj.root.read()
         metadata = self.devices.get(obj.root.name).metadata
         dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, pipe)
-        pipe.execute()
+        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, buffer=True)
 
     def _obj_callback_configuration(self, *_args, obj: OphydObject, **kwargs):
         if not obj.connected:
@@ -777,11 +773,9 @@ class DeviceManagerDS(DeviceManagerBase):
         signals = obj.root.read_configuration()
         metadata = self.devices.get(obj.root.name).metadata
         dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        pipe = self.connector.pipeline()
         self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(name), dev_msg, pipe
+            MessageEndpoints.device_read_configuration(name), dev_msg, buffer=True
         )
-        pipe.execute()
 
     @typechecked
     def _obj_callback_device_monitor_2d(

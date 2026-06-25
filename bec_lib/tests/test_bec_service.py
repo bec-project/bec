@@ -27,7 +27,9 @@ dir_path = os.path.dirname(bec_lib.__file__)
 
 class MagicMockConnector(RedisConnector):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, redis_cls=mock.MagicMock, **kwargs)
+        super().__init__(
+            *args, redis_cls=mock.MagicMock, buffered_publisher_enabled=False, **kwargs
+        )
 
 
 @contextlib.contextmanager
