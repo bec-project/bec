@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.143.1 (2026-06-25)
+
+### Bug Fixes
+
+- Improve error handling for missing device attributes in DeviceContainer
+  ([`31378ad`](https://github.com/bec-project/bec/commit/31378ad9d036190dfdcce2e8119c67f6591098d8))
+
+
 ## v3.143.0 (2026-06-25)
 
 ### Features
