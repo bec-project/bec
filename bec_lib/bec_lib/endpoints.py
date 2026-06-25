@@ -2102,7 +2102,7 @@ class MessageEndpoints:
     @staticmethod
     def roi_config(device: str, signal: str):
         """
-        Endpoint for ROI configuration. This endpoint is used to publish ROI configuration updates using a ROIConfigurationMessage message.
+        Endpoint for ROI configuration. This endpoint is used to publish ROI configuration updates using a messages.ROIConfigurationMessage message.
 
         Args:
             device (str): Name of the device.
@@ -2121,7 +2121,7 @@ class MessageEndpoints:
     @staticmethod
     def available_roi_analysis(device: str, signal: str):
         """
-        Endpoint for available ROI analysis. This endpoint is used to publish the available ROI analysis operations using a ROIAvailableAnalysisMessage message.
+        Endpoint for available ROI analysis. This endpoint is used to publish the available ROI analysis operations using a messages.ROIAvailableAnalysisMessage message.
 
         Args:
             device (str): Name of the device.
@@ -2130,7 +2130,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for available ROI analysis.
         """
-        endpoint = f"{EndpointType.INFO.value}/devices/roi_available_analysis/{device}/{signal}"
+        endpoint = f"{EndpointType.INFO.value}/devices/available_roi_analysis/{device}/{signal}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ROIAvailableAnalysisMessage,
