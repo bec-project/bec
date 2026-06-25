@@ -1,8 +1,10 @@
 import copy
 import time
+from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
+import ophyd
 import pytest
 from ophyd_devices.devices.psi_motor import EpicsMotor
 from ophyd_devices.tests.utils import patched_device
@@ -177,6 +179,22 @@ def test_obj_callback_progress(dm_with_devices):
             ),
             expire=3600,
         )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_obj_callback_configuration(dm_with_devices, connected_connector):
+    device_manager = dm_with_devices
+    samx = device_manager.devices.samx
+    samx.metadata = {"scan_id": "12345"}
+    device_manager.connector = connected_connector
+
+    device_manager._obj_callback_configuration(obj=samx.obj)
+
+    msg = connected_connector.get(MessageEndpoints.device_read_configuration("samx"))
+    expected = messages.DeviceMessage(
+        signals=samx.obj.read_configuration(), metadata={"scan_id": "12345"}
+    )
+    assert msg == expected
 
 
 @pytest.mark.parametrize(
@@ -490,13 +508,201 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
             mock_connect_device.assert_called_once_with(
                 epics_motor, wait_for_all=True, timeout=timeout
             )
-            # Check that subscriptions to limit updates are made
+            # Limit updates are queued through the auto-monitor thread callback.
             mock_low_subscribe.assert_called_once_with(
-                dm_with_devices._obj_callback_limit_change, run=False
+                dm_with_devices._obj_callback_auto_monitor_limits, run=False
             )
             mock_high_subscribe.assert_called_once_with(
-                dm_with_devices._obj_callback_limit_change, run=False
+                dm_with_devices._obj_callback_auto_monitor_limits, run=False
             )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_obj_callback_auto_monitor_limits_queues_root_device(dm_with_devices):
+    samx = dm_with_devices.devices.samx
+    dm_with_devices._limit_change_updates.clear()
+
+    dm_with_devices._obj_callback_auto_monitor_limits(obj=samx.obj.low_limit_travel)
+
+    assert samx.name in dm_with_devices._limit_change_updates
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_obj_callback_auto_monitor_queueing(dm_with_devices):
+    samx = dm_with_devices.devices.samx
+    dm_with_devices._auto_monitor_readback_updates.clear()
+    dm_with_devices._auto_monitor_configuration_updates.clear()
+
+    dm_with_devices._obj_callback_auto_monitor_readback(obj=samx.obj.readback)
+    dm_with_devices._obj_callback_auto_monitor_configuration(obj=samx.obj.velocity)
+
+    assert samx.name in dm_with_devices._auto_monitor_readback_updates
+    assert samx.name in dm_with_devices._auto_monitor_configuration_updates
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind(dm_with_devices):
+    service = mock.MagicMock()
+    service.connector = mock.MagicMock()
+    service._service_name = "device_server"
+    device_manager = DeviceManagerDS(service)
+
+    normal_component = SimpleNamespace(
+        _auto_monitor=True, kind=ophyd.Kind.normal, subscribe=mock.MagicMock()
+    )
+    hinted_component = SimpleNamespace(
+        _auto_monitor=True, kind=ophyd.Kind.hinted, subscribe=mock.MagicMock()
+    )
+    config_component = SimpleNamespace(
+        _auto_monitor=True, kind=ophyd.Kind.config, subscribe=mock.MagicMock()
+    )
+    ignored_component = SimpleNamespace(
+        _auto_monitor=False, kind=ophyd.Kind.normal, subscribe=mock.MagicMock()
+    )
+
+    nested = SimpleNamespace(component_names=["hinted_component"])
+    nested.hinted_component = hinted_component
+
+    obj = SimpleNamespace(
+        component_names=["normal_component", "config_component", "ignored_component", "nested"],
+        normal_component=normal_component,
+        config_component=config_component,
+        ignored_component=ignored_component,
+        nested=nested,
+    )
+
+    device_manager._auto_monitor_update_thread = mock.MagicMock()
+    device_manager._auto_monitor_update_thread.ident = None
+    thread_state = {"alive": False}
+    device_manager._auto_monitor_update_thread.is_alive.side_effect = lambda: thread_state["alive"]
+    device_manager._auto_monitor_update_thread.start.side_effect = lambda: thread_state.__setitem__(
+        "alive", True
+    )
+
+    device_manager._subscribe_to_auto_monitors(obj)
+
+    device_manager._auto_monitor_update_thread.start.assert_called_once_with()
+    normal_component.subscribe.assert_called_once_with(
+        device_manager._obj_callback_auto_monitor_readback, run=False
+    )
+    hinted_component.subscribe.assert_called_once_with(
+        device_manager._obj_callback_auto_monitor_readback, run=False
+    )
+    config_component.subscribe.assert_called_once_with(
+        device_manager._obj_callback_auto_monitor_configuration, run=False
+    )
+    ignored_component.subscribe.assert_not_called()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_subscribe_to_limit_updates_starts_thread_and_handles_missing_signals(dm_with_devices):
+    service = mock.MagicMock()
+    service.connector = mock.MagicMock()
+    service._service_name = "device_server"
+    device_manager = DeviceManagerDS(service)
+
+    low_limit = mock.MagicMock()
+    high_limit = mock.MagicMock()
+    obj = SimpleNamespace(low_limit_travel=low_limit, high_limit_travel=high_limit)
+
+    device_manager._auto_monitor_update_thread = mock.MagicMock()
+    device_manager._auto_monitor_update_thread.ident = None
+    thread_state = {"alive": False}
+    device_manager._auto_monitor_update_thread.is_alive.side_effect = lambda: thread_state["alive"]
+    device_manager._auto_monitor_update_thread.start.side_effect = lambda: thread_state.__setitem__(
+        "alive", True
+    )
+
+    device_manager._subscribe_to_limit_updates(obj)
+
+    device_manager._auto_monitor_update_thread.start.assert_called_once_with()
+    low_limit.subscribe.assert_called_once_with(
+        device_manager._obj_callback_auto_monitor_limits, run=False
+    )
+    high_limit.subscribe.assert_called_once_with(
+        device_manager._obj_callback_auto_monitor_limits, run=False
+    )
+
+    device_manager._auto_monitor_update_thread.start.reset_mock()
+    device_manager._subscribe_to_limit_updates(SimpleNamespace())
+    device_manager._auto_monitor_update_thread.start.assert_not_called()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_ensure_auto_monitor_update_thread_recreates_dead_thread(dm_with_devices):
+    service = mock.MagicMock()
+    service.connector = mock.MagicMock()
+    service._service_name = "device_server"
+    device_manager = DeviceManagerDS(service)
+
+    dead_thread = mock.MagicMock()
+    dead_thread.is_alive.return_value = False
+    dead_thread.ident = 123
+
+    replacement_thread = mock.MagicMock()
+    replacement_thread.is_alive.side_effect = [False, True]
+
+    device_manager._auto_monitor_update_thread = dead_thread
+    with mock.patch.object(
+        device_manager, "_create_auto_monitor_update_thread", return_value=replacement_thread
+    ) as mock_create_thread:
+        device_manager._ensure_auto_monitor_update_thread()
+
+    mock_create_thread.assert_called_once_with()
+    replacement_thread.start.assert_called_once_with()
+    assert device_manager._auto_monitor_update_thread is replacement_thread
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_auto_monitor_callbacks_ignore_disconnected_objects(dm_with_devices):
+    disconnected_root = SimpleNamespace(name="samx")
+    disconnected_obj = SimpleNamespace(connected=False, root=disconnected_root)
+    dm_with_devices._auto_monitor_readback_updates.clear()
+    dm_with_devices._auto_monitor_configuration_updates.clear()
+    dm_with_devices._limit_change_updates.clear()
+
+    dm_with_devices._obj_callback_auto_monitor_readback(obj=disconnected_obj)
+    dm_with_devices._obj_callback_auto_monitor_configuration(obj=disconnected_obj)
+    dm_with_devices._obj_callback_auto_monitor_limits(obj=disconnected_obj)
+
+    assert not dm_with_devices._auto_monitor_readback_updates
+    assert not dm_with_devices._auto_monitor_configuration_updates
+    assert not dm_with_devices._limit_change_updates
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_auto_monitor_update_loop_batches_updates_and_skips_missing_devices(dm_with_devices):
+    service = mock.MagicMock()
+    service.connector = mock.MagicMock()
+    service._service_name = "device_server"
+    device_manager = DeviceManagerDS(service)
+    samx_obj = mock.MagicMock()
+    samx_obj.connected = False
+    device_manager.devices["samx"] = SimpleNamespace(name="samx", obj=samx_obj)
+    device_manager._auto_monitor_readback_updates = {"samx", "missing"}
+    device_manager._auto_monitor_configuration_updates = {"samx"}
+    device_manager._limit_change_updates = {"samx"}
+    device_manager._shutdown_event = mock.MagicMock()
+    device_manager._shutdown_event.wait.side_effect = [False, True]
+
+    pipe = mock.MagicMock()
+    device_manager.connector = mock.MagicMock()
+    device_manager.connector.pipeline.return_value = pipe
+
+    with (
+        mock.patch.object(device_manager, "_obj_callback_readback") as mock_readback,
+        mock.patch.object(device_manager, "_obj_callback_configuration") as mock_configuration,
+        mock.patch.object(device_manager, "_obj_callback_limit_change") as mock_limit_change,
+    ):
+        device_manager._auto_monitor_update_loop()
+
+        mock_readback.assert_called_once_with(obj=samx_obj, pipe=pipe)
+        mock_configuration.assert_called_once_with(obj=samx_obj, pipe=pipe)
+        mock_limit_change.assert_called_once_with(obj=samx_obj, pipe=pipe)
+        pipe.execute.assert_called_once()
+        assert not device_manager._auto_monitor_readback_updates
+        assert not device_manager._auto_monitor_configuration_updates
+        assert not device_manager._limit_change_updates
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
