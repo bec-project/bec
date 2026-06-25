@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bec_lib"
-version = "3.143.1"
+version = "3.144.0"
 description = "BEC library"
 requires-python = ">=3.11"
 classifiers = [
@@ -73,6 +73,7 @@ bec_lib_fixtures = "bec_lib.tests.fixtures"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
+
 
 
 

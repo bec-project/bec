@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.144.0 (2026-06-25)
+
+### Features
+
+- **SciLog**: Add log positions and log code methods
+  ([`928ffdb`](https://github.com/bec-project/bec/commit/928ffdbdec61083c94576d919aa3a67de29a8f60))
+
+
 ## v3.143.1 (2026-06-25)
 
 ### Bug Fixes
