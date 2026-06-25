@@ -38,7 +38,10 @@ from bec_server.device_server.devices.device_serializer import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
+    from redis.client import Pipeline
+
     from bec_lib.redis_connector import RedisConnector
+
 
 logger = bec_logger.logger
 
@@ -148,6 +151,29 @@ class DeviceManagerDS(DeviceManagerBase):
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
+        self._auto_monitor_readback_updates = set()
+        self._auto_monitor_configuration_updates = set()
+        self._limit_change_updates = set()
+        self._auto_monitor_update_lock = threading.Lock()
+        self._shutdown_event = threading.Event()
+        self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
+
+    def _create_auto_monitor_update_thread(self) -> threading.Thread:
+        return threading.Thread(
+            target=self._auto_monitor_update_loop, daemon=True, name="AutoMonitorUpdateThread"
+        )
+
+    def _ensure_auto_monitor_update_thread(self) -> None:
+        if self._auto_monitor_update_thread is None:
+            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
+        elif (
+            not self._auto_monitor_update_thread.is_alive()
+            and self._auto_monitor_update_thread.ident is not None
+        ):
+            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
+
+        if not self._auto_monitor_update_thread.is_alive():
+            self._auto_monitor_update_thread.start()
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -563,9 +589,11 @@ class DeviceManagerDS(DeviceManagerBase):
             obj (OphydObject): Ophyd object to subscribe to limit updates
         """
         if hasattr(obj, "low_limit_travel") and hasattr(obj.low_limit_travel, "subscribe"):
-            obj.low_limit_travel.subscribe(self._obj_callback_limit_change, run=False)
+            self._ensure_auto_monitor_update_thread()
+            obj.low_limit_travel.subscribe(self._obj_callback_auto_monitor_limits, run=False)
         if hasattr(obj, "high_limit_travel") and hasattr(obj.high_limit_travel, "subscribe"):
-            obj.high_limit_travel.subscribe(self._obj_callback_limit_change, run=False)
+            self._ensure_auto_monitor_update_thread()
+            obj.high_limit_travel.subscribe(self._obj_callback_auto_monitor_limits, run=False)
 
     def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
         """Subscribe to device events"""
@@ -625,10 +653,11 @@ class DeviceManagerDS(DeviceManagerBase):
                 continue
             if not getattr(component, "_auto_monitor", False):
                 continue
+            self._ensure_auto_monitor_update_thread()
             if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
-                component.subscribe(self._obj_callback_readback, run=False)
+                component.subscribe(self._obj_callback_auto_monitor_readback, run=False)
             elif component.kind == ophyd.Kind.config:
-                component.subscribe(self._obj_callback_configuration, run=False)
+                component.subscribe(self._obj_callback_auto_monitor_configuration, run=False)
 
     def _subscribe_to_bec_signals(self, obj: OphydObject):
         """
@@ -742,7 +771,9 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.delete(MessageEndpoints.device_read_configuration(obj.name), pipe)
         self.connector.delete(MessageEndpoints.device_info(obj.name), pipe)
 
-    def _obj_callback_limit_change(self, *_args, obj: OphydObject, **kwargs):
+    def _obj_callback_limit_change(
+        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
+    ):
         """Callback for limit changes"""
         if not obj.connected:
             return
@@ -752,22 +783,28 @@ class DeviceManagerDS(DeviceManagerBase):
             "high": {"value": obj.root.high_limit_travel.get()},
         }
         dev_msg = messages.DeviceMessage(signals=limits)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=pipe)
-        pipe.execute()
+        _pipe = pipe if pipe is not None else self.connector.pipeline()
+        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=_pipe)
+        if pipe is None:
+            _pipe.execute()
 
-    def _obj_callback_readback(self, *_args, obj: OphydObject, **kwargs):
+    def _obj_callback_readback(
+        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
+    ):
         if not obj.connected:
             return
         name = obj.root.name
         signals = obj.root.read()
         metadata = self.devices.get(obj.root.name).metadata
         dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        pipe = self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, pipe)
-        pipe.execute()
+        _pipe = pipe if pipe is not None else self.connector.pipeline()
+        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, pipe=_pipe)
+        if pipe is None:
+            _pipe.execute()
 
-    def _obj_callback_configuration(self, *_args, obj: OphydObject, **kwargs):
+    def _obj_callback_configuration(
+        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
+    ):
         if not obj.connected:
             return
         if isinstance(obj.root, ophyd.Signal):
@@ -777,11 +814,74 @@ class DeviceManagerDS(DeviceManagerBase):
         signals = obj.root.read_configuration()
         metadata = self.devices.get(obj.root.name).metadata
         dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        pipe = self.connector.pipeline()
+        _pipe = pipe if pipe is not None else self.connector.pipeline()
         self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(name), dev_msg, pipe
+            MessageEndpoints.device_read_configuration(name), dev_msg, pipe=_pipe
         )
-        pipe.execute()
+        if pipe is None:
+            _pipe.execute()
+
+    def _obj_callback_auto_monitor_readback(self, *_args, obj: OphydObject, **kwargs):
+        if not obj.connected:
+            return
+        name = obj.root.name
+        with self._auto_monitor_update_lock:
+            self._auto_monitor_readback_updates.add(name)
+
+    def _obj_callback_auto_monitor_configuration(self, *_args, obj: OphydObject, **kwargs):
+        if not obj.connected:
+            return
+        name = obj.root.name
+        with self._auto_monitor_update_lock:
+            self._auto_monitor_configuration_updates.add(name)
+
+    def _obj_callback_auto_monitor_limits(self, *_args, obj: OphydObject, **kwargs):
+        if not obj.connected:
+            return
+        name = obj.root.name
+        with self._auto_monitor_update_lock:
+            self._limit_change_updates.add(name)
+
+    def _auto_monitor_update_loop(self):
+        while not self._shutdown_event.wait(0.01):
+            try:
+                if (
+                    not self._auto_monitor_readback_updates
+                    and not self._auto_monitor_configuration_updates
+                    and not self._limit_change_updates
+                ):
+                    continue
+                with self._auto_monitor_update_lock:
+                    readback_updates = list(self._auto_monitor_readback_updates)
+                    configuration_updates = list(self._auto_monitor_configuration_updates)
+                    limits_updates = list(self._limit_change_updates)
+                    self._auto_monitor_readback_updates.clear()
+                    self._auto_monitor_configuration_updates.clear()
+                    self._limit_change_updates.clear()
+
+                pipe = self.connector.pipeline()
+                for name in readback_updates:
+                    if name not in self.devices:
+                        continue
+                    obj = self.devices[name].obj
+                    self._obj_callback_readback(obj=obj, pipe=pipe)
+
+                for name in configuration_updates:
+                    if name not in self.devices:
+                        continue
+                    obj = self.devices[name].obj
+                    self._obj_callback_configuration(obj=obj, pipe=pipe)
+
+                for name in limits_updates:
+                    if name not in self.devices:
+                        continue
+                    obj = self.devices[name].obj
+                    self._obj_callback_limit_change(obj=obj, pipe=pipe)
+
+                pipe.execute()
+            except Exception as exc:
+                logger.error(f"Error in auto monitor update loop: {exc}")
+                logger.error(traceback.format_exc())
 
     @typechecked
     def _obj_callback_device_monitor_2d(
@@ -1006,6 +1106,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def shutdown(self):
         """Shutdown the device manager and disconnect all devices"""
+        self._shutdown_event.set()
+        if self._auto_monitor_update_thread.is_alive():
+            self._auto_monitor_update_thread.join(timeout=5)
         for device in self.devices.values():
             try:
                 logger.info(f"Disconnecting device {device.name}")
