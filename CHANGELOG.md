@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.145.0 (2026-06-25)
+
+### Bug Fixes
+
+- **endpoints**: Fix available_roi_analysis
+  ([`203726f`](https://github.com/bec-project/bec/commit/203726fff7d77f0ddcdf133401d95bc94f646f11))
+
+### Features
+
+- Add roi related endpoints and messages
+  ([`a2c18e1`](https://github.com/bec-project/bec/commit/a2c18e18ece89399a21d260f2b24fb2f75847b11))
+
+
 ## v3.144.0 (2026-06-25)
 
 ### Features
