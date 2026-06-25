@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import keyword
 from enum import Enum
+from functools import lru_cache
 from typing import AbstractSet, Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, create_model, field_validator, model_validator
@@ -60,6 +62,17 @@ class _DeviceModelCore(BaseModel):
         if v is None:
             return ""
         return v
+
+
+@lru_cache(maxsize=1)
+def _reserved_device_names() -> frozenset[str]:
+    """Names that would shadow attributes on the interactive device namespace."""
+    from bec_lib.devicemanager import DeviceContainer
+
+    reserved = dir(DeviceContainer)
+    return frozenset(
+        name for name in reserved if not (name.startswith("__") and name.endswith("__"))
+    )
 
 
 class HashInclusion(str, Enum):
@@ -140,6 +153,19 @@ class Device(_DeviceModelCore):
     """
 
     name: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        if value.startswith("_"):
+            raise ValueError(f"{value!r} must not start with '_'.")
+        if not value.isidentifier() or keyword.iskeyword(value):
+            raise ValueError(f"{value!r} is not a valid Python identifier.")
+        if value in _reserved_device_names():
+            raise ValueError(
+                f"{value!r} is reserved because it conflicts with an existing device namespace attribute or method."
+            )
+        return value
 
 
 _ModelDumpKeys = list[str]
