@@ -212,19 +212,19 @@ class ConfigUpdateHandler:
                     )
 
             if "enabled" in dev_config:
+                # pylint: disable=protected-access
+                was_enabled = device._config.get("enabled", True)
                 device._config["enabled"] = dev_config["enabled"]
-                if dev_config["enabled"]:
-                    # pylint:disable=protected-access
-                    if device.obj._destroyed:
-                        obj, config = self.device_manager.construct_device_obj(
-                            device._config, device_manager=self.device_manager
-                        )
-                        self.device_manager.initialize_device(device._config, config, obj)
-                    else:
-                        self.device_manager.initialize_enabled_device(device)
-                else:
+                if was_enabled and not dev_config["enabled"]:
+                    # It was enabled and we want to disable it. Disconnect and reset the device.
                     self.device_manager.disconnect_device(device.obj)
                     self.device_manager.reset_device(device)
+                elif not was_enabled and dev_config["enabled"]:
+                    # It was disabled and we want to enable it. Construct and initialize the device.
+                    obj, config = self.device_manager.construct_device_obj(
+                        device._config, device_manager=self.device_manager
+                    )
+                    self.device_manager.initialize_device(device._config, config, obj)
 
     def _flush_config(self) -> None:
         """Flush all devices from the device manager."""
