@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.146.1 (2026-06-26)
+
+### Bug Fixes
+
+- **scan-bundler**: Fix concurrent access to sync storage
+  ([`c00f3d9`](https://github.com/bec-project/bec/commit/c00f3d92b9d6d2828f9ca974dc10f328be2769c7))
+
+
 ## v3.146.0 (2026-06-26)
 
 ### Features
