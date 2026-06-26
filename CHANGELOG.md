@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.146.0 (2026-06-26)
+
+### Features
+
+- Throttle auto-monitor updates through shared pipeline
+  ([`aff5e0c`](https://github.com/bec-project/bec/commit/aff5e0ca510409652533c12df26828b395fb5641))
+
+
 ## v3.145.0 (2026-06-25)
 
 ### Bug Fixes
