@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.146.2 (2026-06-26)
+
+### Bug Fixes
+
+- **config**: Reconstruct device object on enable/disable state change
+  ([`ec4b383`](https://github.com/bec-project/bec/commit/ec4b3835f365a1535b8e84c81f40bd2c1d987049))
+
+### Chores
+
+- Reduce log level for received scan segment messages
+  ([`e56c9aa`](https://github.com/bec-project/bec/commit/e56c9aab628d5b89de9056442adad7b4ed21bb9e))
+
+
 ## v3.146.1 (2026-06-26)
 
 ### Bug Fixes
