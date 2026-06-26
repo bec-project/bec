@@ -145,34 +145,36 @@ class ScanBundler(BECService):
                 self.scan_id_history.append(scan_id)
 
     def _initialize_scan_container(self, scan_msg: messages.ScanStatusMessage):
-        if scan_msg.content.get("status") != "open":
-            return
+        with self._lock:
+            scan_id = scan_msg.content["scan_id"]
+            if self.sync_storage.get(scan_id, {}).get("info"):
+                return
 
-        scan_id = scan_msg.content["scan_id"]
-        scan_info = scan_msg.content["info"]
-        self.readout_priority[scan_id] = scan_info["readout_priority"]
-        if scan_id not in self.storage_initialized:
-            self.sync_storage[scan_id] = {"info": scan_info, "status": "open", "sent": set()}
-            self.monitored_devices[scan_id] = {
-                "devices": self.device_manager.devices.monitored_devices(
-                    readout_priority=self.readout_priority[scan_id]
-                ),
-                "point_id": {},
-            }
-            self.baseline_devices[scan_id] = {
-                "devices": self.device_manager.devices.baseline_devices(
-                    readout_priority=self.readout_priority[scan_id]
-                ),
-                "done": {
-                    dev.name: False
-                    for dev in self.device_manager.devices.baseline_devices(
+            scan_id = scan_msg.content["scan_id"]
+            scan_info = scan_msg.content["info"]
+            self.readout_priority[scan_id] = scan_info["readout_priority"]
+            if scan_id not in self.storage_initialized:
+                self.sync_storage[scan_id] = {"info": scan_info, "status": "open", "sent": set()}
+                self.monitored_devices[scan_id] = {
+                    "devices": self.device_manager.devices.monitored_devices(
                         readout_priority=self.readout_priority[scan_id]
-                    )
-                },
-            }
-            self.storage_initialized.add(scan_id)
-            self.run_emitter("on_init", scan_id)
-            return
+                    ),
+                    "point_id": {},
+                }
+                self.baseline_devices[scan_id] = {
+                    "devices": self.device_manager.devices.baseline_devices(
+                        readout_priority=self.readout_priority[scan_id]
+                    ),
+                    "done": {
+                        dev.name: False
+                        for dev in self.device_manager.devices.baseline_devices(
+                            readout_priority=self.readout_priority[scan_id]
+                        )
+                    },
+                }
+                self.storage_initialized.add(scan_id)
+                self.run_emitter("on_init", scan_id)
+                return
 
     def _step_scan_update(self, scan_id, device, signal, metadata):
         if "point_id" not in metadata:
