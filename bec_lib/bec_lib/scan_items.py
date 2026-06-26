@@ -410,7 +410,7 @@ class ScanStorage:
         Args:
             scan_msg: The scan message containing the data segment to add.
         """
-        logger.info(f"Received scan segment {scan_msg.point_id} for scan {scan_msg.scan_id}: ")
+        logger.debug(f"Received scan segment {scan_msg.point_id} for scan {scan_msg.scan_id}: ")
         scan_id = scan_msg.scan_id
         scan_item = self.find_scan_by_ID(scan_id)
         if scan_item is None:
