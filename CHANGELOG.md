@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.147.0 (2026-06-26)
+
+### Features
+
+- **async**: Add device async signal index endpoint and message type
+  ([`55eb602`](https://github.com/bec-project/bec/commit/55eb6026d549d4dcc6cfa9218f3c15f5c2050bff))
+
+### Testing
+
+- Fix connectormock to support new rpush interface
+  ([`e1b8034`](https://github.com/bec-project/bec/commit/e1b8034c003951cfe1eb9c50e9aa29f98dd465f7))
+
+- Simplify scan status message assignment
+  ([`b491338`](https://github.com/bec-project/bec/commit/b4913382a20b5ead76c6f4df42eef3954cf76e8e))
+
+
 ## v3.146.2 (2026-06-26)
 
 ### Bug Fixes
