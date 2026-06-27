@@ -45,9 +45,7 @@ class DataAPIPlugin(ABC):
         """
 
     @abstractmethod
-    def can_provide(
-        self, device_name: str, device_entry: str, scan_id: str | None
-    ) -> bool:
+    def can_provide(self, device_name: str, device_entry: str, scan_id: str | None) -> bool:
         """
         Check if the plugin can provide data for the given device and entry.
 
@@ -266,7 +264,10 @@ class BECLiveDataPlugin(DataAPIPlugin):
 
         # Unregister all async signal subscriptions from redis connector
         for async_sub in self._async_subscriptions.values():
-            if async_sub.connector_endpoint is not None and async_sub.connector_callback is not None:
+            if (
+                async_sub.connector_endpoint is not None
+                and async_sub.connector_callback is not None
+            ):
                 self.client.connector.unregister(
                     topics=async_sub.connector_endpoint, cb=async_sub.connector_callback
                 )
@@ -299,9 +300,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
             return False
         return True
 
-    def can_provide(
-        self, device_name: str, device_entry: str, scan_id: str | None
-    ) -> bool:
+    def can_provide(self, device_name: str, device_entry: str, scan_id: str | None) -> bool:
         """
         Check if live data is available for the given device and entry.
 
@@ -812,7 +811,10 @@ class BECLiveDataPlugin(DataAPIPlugin):
 
         # If no more callbacks, unregister from redis connector and clean up
         if not async_sub.callback_refs:
-            if async_sub.connector_endpoint is not None and async_sub.connector_callback is not None:
+            if (
+                async_sub.connector_endpoint is not None
+                and async_sub.connector_callback is not None
+            ):
                 self.client.connector.unregister(
                     topics=async_sub.connector_endpoint, cb=async_sub.connector_callback
                 )
@@ -936,11 +938,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
             # Prepare data for this subscription
             for device_name, device_entry in sub.devices:
                 if not self._accept_update_for_callback_bundle(
-                    callback_ref,
-                    scan_id,
-                    device_name,
-                    device_entry,
-                    ("monitored", scan_id),
+                    callback_ref, scan_id, device_name, device_entry, ("monitored", scan_id)
                 ):
                     continue
 
@@ -1039,9 +1037,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
                     f"Cannot subscribe to async signal '{device_name}' entry '{device_entry}': signal not found."
                 )
             endpoint = MessageEndpoints.device_async_signal(
-                scan_id=scan_id,
-                device=device_name,
-                signal=async_signal_info.get("storage_name"),
+                scan_id=scan_id, device=device_name, signal=async_signal_info.get("storage_name")
             )
 
             def connector_callback(
@@ -1058,11 +1054,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
                 """
                 self._handle_async_signal_update(msg, _scan_id, _device_name, _device_entry)
 
-            self.client.connector.register(
-                endpoint,
-                cb=connector_callback,
-                from_start=True,
-            )
+            self.client.connector.register(endpoint, cb=connector_callback, from_start=True)
 
             # Create subscription tracking entry
             async_sub = _AsyncSubscription(
@@ -1220,7 +1212,9 @@ class BECLiveDataPlugin(DataAPIPlugin):
         )
         return current_list + new_list
 
-    def _resolve_add_slice_value(self, current_value: Any, new_value: Any, row_index: int | None) -> Any:
+    def _resolve_add_slice_value(
+        self, current_value: Any, new_value: Any, row_index: int | None
+    ) -> Any:
         """
         Merge one ``add_slice`` payload fragment into the current source state.
 
@@ -1350,7 +1344,11 @@ class BECLiveDataPlugin(DataAPIPlugin):
                     count += 1
 
         # Count async signals
-        for (sub_scan_id, device_name, device_entry), async_sub in self._async_subscriptions.items():
+        for (
+            sub_scan_id,
+            device_name,
+            device_entry,
+        ), async_sub in self._async_subscriptions.items():
             if sub_scan_id == scan_id and callback_ref in async_sub.callback_refs:
                 if (device_name, device_entry) in incompatible_sources:
                     continue

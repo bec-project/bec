@@ -535,11 +535,15 @@ class TestBECLiveDataPlugin:
             },
             metadata={
                 "timestamp": 123.456,
-                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
             },
         )
 
-        plugin._handle_async_signal_update({"data": device_msg}, "test_scan_id", "detector1", "async_sig1")
+        plugin._handle_async_signal_update(
+            {"data": device_msg}, "test_scan_id", "detector1", "async_sig1"
+        )
 
         # Callback should be invoked with the data
         assert len(mock_callback.calls) == 1
@@ -550,16 +554,20 @@ class TestBECLiveDataPlugin:
         assert call_metadata["async_update"]["type"] == "add"
         assert call_metadata["async_update"]["max_shape"] == [None]
 
-    def test_replace_async_source_uses_latest_payload_as_full_state(self, mock_client, mock_callback):
+    def test_replace_async_source_uses_latest_payload_as_full_state(
+        self, mock_client, mock_callback
+    ):
         """Replace updates should expose the latest payload as the full current state."""
         plugin = BECLiveDataPlugin(mock_client)
 
         callback_ref = louie.saferef.safe_ref(mock_callback)
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         first = messages.DeviceMessage(
@@ -579,8 +587,12 @@ class TestBECLiveDataPlugin:
             },
         )
 
-        plugin._handle_async_signal_update({"data": first}, "test_scan_id", "detector1", "async_sig1")
-        plugin._handle_async_signal_update({"data": second}, "test_scan_id", "detector1", "async_sig1")
+        plugin._handle_async_signal_update(
+            {"data": first}, "test_scan_id", "detector1", "async_sig1"
+        )
+        plugin._handle_async_signal_update(
+            {"data": second}, "test_scan_id", "detector1", "async_sig1"
+        )
 
         assert len(mock_callback.calls) == 2
         first_data, _ = mock_callback.calls[0]
@@ -595,11 +607,13 @@ class TestBECLiveDataPlugin:
         plugin = BECLiveDataPlugin(mock_client)
 
         callback_ref = louie.saferef.safe_ref(mock_callback)
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         first = messages.DeviceMessage(
@@ -607,7 +621,9 @@ class TestBECLiveDataPlugin:
             metadata={
                 "timestamp": 1.0,
                 "async_indices": {"async_sig1": 0},
-                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
             },
         )
         second = messages.DeviceMessage(
@@ -615,12 +631,18 @@ class TestBECLiveDataPlugin:
             metadata={
                 "timestamp": 2.0,
                 "async_indices": {"async_sig1": 1},
-                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
             },
         )
 
-        plugin._handle_async_signal_update({"data": first}, "test_scan_id", "detector1", "async_sig1")
-        plugin._handle_async_signal_update({"data": second}, "test_scan_id", "detector1", "async_sig1")
+        plugin._handle_async_signal_update(
+            {"data": first}, "test_scan_id", "detector1", "async_sig1"
+        )
+        plugin._handle_async_signal_update(
+            {"data": second}, "test_scan_id", "detector1", "async_sig1"
+        )
 
         assert len(mock_callback.calls) == 2
         first_data, _ = mock_callback.calls[0]
@@ -635,11 +657,13 @@ class TestBECLiveDataPlugin:
         plugin = BECLiveDataPlugin(mock_client)
 
         callback_ref = louie.saferef.safe_ref(mock_callback)
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         first = messages.DeviceMessage(
@@ -674,7 +698,9 @@ class TestBECLiveDataPlugin:
         )
 
         for msg in (first, second, third):
-            plugin._handle_async_signal_update({"data": msg}, "test_scan_id", "detector1", "async_sig1")
+            plugin._handle_async_signal_update(
+                {"data": msg}, "test_scan_id", "detector1", "async_sig1"
+            )
 
         assert len(mock_callback.calls) == 3
         first_data, _ = mock_callback.calls[0]
@@ -691,11 +717,13 @@ class TestBECLiveDataPlugin:
         plugin = BECLiveDataPlugin(mock_client)
 
         callback_ref = louie.saferef.safe_ref(mock_callback)
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         first = messages.DeviceMessage(
@@ -703,7 +731,9 @@ class TestBECLiveDataPlugin:
             metadata={
                 "timestamp": 1.0,
                 "async_indices": {"async_sig1": 0},
-                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
             },
         )
         second = messages.DeviceMessage(
@@ -711,12 +741,18 @@ class TestBECLiveDataPlugin:
             metadata={
                 "timestamp": 2.0,
                 "async_indices": {"async_sig1": 2},
-                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
             },
         )
 
-        plugin._handle_async_signal_update({"data": first}, "test_scan_id", "detector1", "async_sig1")
-        plugin._handle_async_signal_update({"data": second}, "test_scan_id", "detector1", "async_sig1")
+        plugin._handle_async_signal_update(
+            {"data": first}, "test_scan_id", "detector1", "async_sig1"
+        )
+        plugin._handle_async_signal_update(
+            {"data": second}, "test_scan_id", "detector1", "async_sig1"
+        )
 
         assert len(mock_callback.calls) == 2
         _, first_metadata = mock_callback.calls[0]
@@ -742,11 +778,13 @@ class TestBECLiveDataPlugin:
             "monitored",
             "test_scan_id",
         )
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         async_msg = messages.DeviceMessage(
@@ -785,11 +823,13 @@ class TestBECLiveDataPlugin:
         ]
         plugin = BECLiveDataPlugin(mock_client)
         callback_ref = louie.saferef.safe_ref(mock_callback)
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         first = messages.DeviceMessage(
@@ -866,11 +906,15 @@ class TestBECLiveDataPlugin:
             signals={"async_sig1": {"value": 10.0, "timestamp": 100.0}},
             metadata={
                 "timestamp": 100.0,
-                "async_update": messages.DeviceAsyncUpdate(type="add", max_shape=[None]).model_dump(),
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
             },
         )
 
-        plugin._handle_async_signal_update({"data": device_msg}, "test_scan_id", "detector1", "async_sig1")
+        plugin._handle_async_signal_update(
+            {"data": device_msg}, "test_scan_id", "detector1", "async_sig1"
+        )
 
         # Callback should eventually be called with synchronized data
         # The synchronization requires all sources to have data
@@ -910,11 +954,13 @@ class TestBECLiveDataPlugin:
         plugin.MAX_PENDING_UPDATES = 2
         plugin._subscribe_to_monitored_device("samx", "samx", "test_scan_id", callback)
         callback_ref = louie.saferef.safe_ref(callback)
-        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = _AsyncSubscription(
-            scan_id="test_scan_id",
-            device_name="detector1",
-            device_entry="async_sig1",
-            callback_refs=[callback_ref],
+        plugin._async_subscriptions[("test_scan_id", "detector1", "async_sig1")] = (
+            _AsyncSubscription(
+                scan_id="test_scan_id",
+                device_name="detector1",
+                device_entry="async_sig1",
+                callback_refs=[callback_ref],
+            )
         )
 
         with mock.patch("bec_lib.data_api.plugins.logger.warning") as warning:
@@ -1416,18 +1462,14 @@ class TestDataSubscription:
         self, data_api, mock_callback, mock_client
     ):
         """Unbound subscriptions should follow later scan-status open events."""
-        scan_item1 = ScanItem(
-            queue_id="queue1", scan_number=[1], scan_id=["scan_1"], status="open"
-        )
+        scan_item1 = ScanItem(queue_id="queue1", scan_number=[1], scan_id=["scan_1"], status="open")
         scan_item1.status_message = messages.ScanStatusMessage(
             scan_id="scan_1", status="open", info={}
         )
         scan_item1.status_message.readout_priority = {"monitored": ["samx"]}
         scan_item1.live_data = LiveScanData()
 
-        scan_item2 = ScanItem(
-            queue_id="queue2", scan_number=[2], scan_id=["scan_2"], status="open"
-        )
+        scan_item2 = ScanItem(queue_id="queue2", scan_number=[2], scan_id=["scan_2"], status="open")
         scan_item2.status_message = messages.ScanStatusMessage(
             scan_id="scan_2", status="open", info={}
         )
@@ -1506,10 +1548,7 @@ class TestDataSubscription:
         scan_item.status_message = messages.ScanStatusMessage(
             scan_id="scan_monitored", status="open", info={}
         )
-        scan_item.status_message.readout_priority = {
-            "monitored": ["samx"],
-            "baseline": ["samz"],
-        }
+        scan_item.status_message.readout_priority = {"monitored": ["samx"], "baseline": ["samz"]}
         scan_item.live_data = LiveScanData()
         mock_client.queue.scan_storage.find_scan_by_ID.return_value = scan_item
         mock_client.device_manager.devices = {
@@ -1541,20 +1580,12 @@ class TestDataSubscription:
             (
                 "det1",
                 None,
-                {
-                    "obj_name": "sig_a",
-                    "storage_name": "sig_a",
-                    "acquisition_group": "flyer_a",
-                },
+                {"obj_name": "sig_a", "storage_name": "sig_a", "acquisition_group": "flyer_a"},
             ),
             (
                 "det2",
                 None,
-                {
-                    "obj_name": "sig_b",
-                    "storage_name": "sig_b",
-                    "acquisition_group": "flyer_a",
-                },
+                {"obj_name": "sig_b", "storage_name": "sig_b", "acquisition_group": "flyer_a"},
             ),
         ]
         mock_client.connector.register = mock.MagicMock(
@@ -1585,20 +1616,12 @@ class TestDataSubscription:
             (
                 "det1",
                 None,
-                {
-                    "obj_name": "sig_a",
-                    "storage_name": "sig_a",
-                    "acquisition_group": "flyer_a",
-                },
+                {"obj_name": "sig_a", "storage_name": "sig_a", "acquisition_group": "flyer_a"},
             ),
             (
                 "det2",
                 None,
-                {
-                    "obj_name": "sig_b",
-                    "storage_name": "sig_b",
-                    "acquisition_group": "flyer_b",
-                },
+                {"obj_name": "sig_b", "storage_name": "sig_b", "acquisition_group": "flyer_b"},
             ),
         ]
         mock_client.connector.register = mock.MagicMock(
@@ -1646,7 +1669,9 @@ class TestDataSubscription:
         self, data_api, mock_callback, mock_client
     ):
         """Subscriptions must re-evaluate monitored eligibility when scan status arrives later."""
-        scan_item = ScanItem(queue_id="queue1", scan_number=[1], scan_id=["scan_late"], status="open")
+        scan_item = ScanItem(
+            queue_id="queue1", scan_number=[1], scan_id=["scan_late"], status="open"
+        )
         scan_item.status_message = messages.ScanStatusMessage(
             scan_id="scan_late", status="open", info={}
         )

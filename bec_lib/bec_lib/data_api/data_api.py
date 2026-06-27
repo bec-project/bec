@@ -31,9 +31,7 @@ class DataSubscription:
         >>> subscription.close()
     """
 
-    def __init__(
-        self, data_api: DataAPI, scan_id: str | None = None, buffered: bool = False
-    ):
+    def __init__(self, data_api: DataAPI, scan_id: str | None = None, buffered: bool = False):
         """
         Initialize a data subscription.
 
