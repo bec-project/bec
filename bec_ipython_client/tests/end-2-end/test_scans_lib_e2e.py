@@ -8,6 +8,7 @@ import yaml
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bl_states import DeviceWithinLimitsStateConfig
+from bec_lib.data_api import DataAPI
 from bec_lib.devicemanager import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -114,6 +115,78 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == reference_container["data"][ii]
+
+
+@pytest.mark.timeout(100)
+def test_data_api_bundles_monitored_grid_scan_with_monitored_async_signal_lib(bec_client_lib):
+    bec = bec_client_lib
+    scans = bec.scans
+    dev = bec.device_manager.devices
+    callbacks = []
+
+    def callback(data, metadata):
+        callbacks.append((data, metadata))
+
+    DataAPI.clear_instance()
+    try:
+        bec.metadata.update({"unit_test": "test_data_api_grid_scan_monitored_async_bundle"})
+        scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
+        dev.waveform.sim.select_model("ConstantModel")
+        dev.waveform.async_update.set("add")
+
+        data_api = DataAPI(bec)
+        with data_api.create_subscription() as subscription:
+            subscription.add_device("samx", "samx")
+            subscription.add_device("samy", "samy")
+            subscription.add_device("waveform", "waveform_waveform_0d")
+            subscription.set_callback(callback)
+
+            status = scans.grid_scan(
+                dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.05, relative=True
+            )
+            scan_id = status.queue_item.scan_ids[0]
+
+            deadline = time.time() + 10
+            readout_priority = None
+            while time.time() < deadline:
+                scan_item = bec.queue.scan_storage.find_scan_by_ID(scan_id)
+                status_message = getattr(scan_item, "status_message", None)
+                readout_priority = getattr(status_message, "readout_priority", None)
+                if readout_priority and "samx" in readout_priority.get("monitored", []):
+                    break
+                time.sleep(0.05)
+
+            assert readout_priority is not None
+            assert "samx" in readout_priority.get("monitored", [])
+            assert "samy" in readout_priority.get("monitored", [])
+
+            status.wait(num_points=True, file_written=True)
+            expected_points = status.scan.num_points
+
+            deadline = time.time() + 15
+            while time.time() < deadline and len(callbacks) < expected_points:
+                time.sleep(0.1)
+
+        assert expected_points == 100
+        assert len(callbacks) == expected_points
+
+        for idx, (data, metadata) in enumerate(callbacks, start=1):
+            assert set(data) == {"samx", "samy", "waveform"}
+            assert "samx" in data["samx"]
+            assert "samy" in data["samy"]
+            assert "waveform_waveform_0d" in data["waveform"]
+            assert metadata["scan_id"] == scan_id
+            assert metadata["async_update"]["type"] == "add"
+            waveform_value = data["waveform"]["waveform_waveform_0d"]["value"]
+            if idx == 1:
+                assert isinstance(waveform_value, (int, np.integer))
+            else:
+                assert isinstance(waveform_value, list)
+                assert len(waveform_value) == idx
+            assert not isinstance(data["samx"]["samx"]["value"], list)
+            assert not isinstance(data["samy"]["samy"]["value"], list)
+    finally:
+        DataAPI.clear_instance()
 
 
 @pytest.mark.timeout(100)
