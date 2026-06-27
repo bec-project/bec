@@ -749,29 +749,23 @@ def test_update_config(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_device_monitor(bec_ipython_client_fixture):
+def test_device_preview(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_device_monitor"})
+    bec.metadata.update({"unit_test": "test_device_preview"})
     dev = bec.device_manager.devices
     scans = bec.scans
     dev.eiger.image_shape.set([10, 10])
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
-    data = bec.device_monitor.get_data("eiger", 1)
-    assert data[0].shape == (10, 10)
-    s2 = scans.line_scan(dev.samx, 0, 1, steps=5, relative=False)
-    s2.wait()
-    data = bec.device_monitor.get_data_for_scan("eiger", s1.scan.scan_id)
-    assert len(data) == 10
-    data = bec.device_monitor.get_data_for_scan("samx", s1.scan.scan_id)
-    assert data is None
+    data = bec.connector.get_last(MessageEndpoints.device_preview("eiger", "preview"))
+    assert data["data"].data.shape == (10, 10)
 
 
 @pytest.mark.timeout(100)
 def test_async_data(bec_ipython_client_fixture):
     """Test "extend" and "append" for async data and their expected return values"""
     bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_device_monitor"})
+    bec.metadata.update({"unit_test": "test_async_data"})
     dev = bec.device_manager.devices
     scans = bec.scans
     # Set amplitude to 100
