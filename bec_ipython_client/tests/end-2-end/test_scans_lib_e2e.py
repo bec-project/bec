@@ -135,7 +135,7 @@ def test_data_api_bundles_monitored_grid_scan_with_monitored_async_signal_lib(be
         dev.waveform.async_update.set("add")
 
         data_api = DataAPI(bec)
-        with data_api.create_subscription() as subscription:
+        with data_api.create_subscription(live=True) as subscription:
             subscription.add_device("samx", "samx")
             subscription.add_device("samy", "samy")
             subscription.add_device("waveform", "waveform_waveform_0d")

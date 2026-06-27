@@ -31,23 +31,38 @@ class DataSubscription:
         >>> subscription.close()
     """
 
-    def __init__(self, data_api: DataAPI, scan_id: str | None = None, buffered: bool = False):
+    def __init__(
+        self,
+        data_api: DataAPI,
+        scan_id: str | None = None,
+        *,
+        live: bool = False,
+        buffered: bool = False,
+    ):
         """
         Initialize a data subscription.
 
         Args:
             data_api (DataAPI): DataAPI instance that manages this
                 subscription.
-            scan_id (str | None): Identifier for the scan. When ``None``, the
-                subscription follows the current or next active scan
-                automatically.
+            scan_id (str | None): Identifier for the scan. When omitted or
+                ``None``, the subscription starts unbound until a scan is set
+                explicitly or live-follow mode binds it automatically.
+            live (bool): If ``True``, subscribe to scan-status updates and
+                continuously follow the current or next active scan.
             buffered (bool): If ``True``, re-emit the entire accumulated data
                 buffer on each update. If ``False``, emit only newly aligned
                 synchronized data blocks.
+
+        Raises:
+            ValueError: If both ``scan_id`` and ``live`` are specified.
         """
+        if scan_id is not None and live:
+            raise ValueError("scan_id and live are mutually exclusive")
+
         self._data_api = data_api
         self._scan_id = scan_id
-        self._follow_scan = scan_id is None
+        self._follow_scan = live
         self._devices: dict[tuple[str, str], str | None] = {}  # (device, entry) -> subscription_id
         self._callback: Callable[[dict, dict], Any] | None = None
         self._user_callback: Callable[[dict, dict], Any] | None = None
@@ -69,8 +84,8 @@ class DataSubscription:
         Get the scan ID for this subscription.
 
         Returns:
-            str | None: Current scan identifier, or ``None`` while the
-                subscription is still waiting to bind to a scan.
+            str | None: Current bound scan identifier, or ``None`` when the
+                subscription is currently unbound.
         """
         return self._scan_id
 
@@ -429,7 +444,7 @@ class DataSubscription:
 
     def _bind_to_current_scan_if_available(self) -> None:
         """
-        Bind an unbound follow-scan subscription to the current active scan.
+        Bind an unbound live subscription to the current active scan.
 
         Returns:
             None: This method updates internal subscription state in place.
@@ -460,7 +475,7 @@ class DataSubscription:
 
     def _handle_scan_status_update(self, scan_status: dict, _metadata: dict) -> None:
         """
-        Rebind a follow-scan subscription when a new scan opens.
+        Rebind a live subscription when a new scan opens.
 
         Args:
             scan_status (dict): Scan-status payload emitted by the client
@@ -484,6 +499,8 @@ class DataSubscription:
         """
         Ensure cleanup when the subscription is garbage collected.
         """
+        if not hasattr(self, "_is_closed"):
+            return
         self.close()
 
     def __enter__(self) -> DataSubscription:
@@ -592,7 +609,7 @@ class DataAPI:
         self.plugins.sort(key=lambda p: p.get_info().get("priority", 100))
 
     def create_subscription(
-        self, scan_id: str | None = None, buffered: bool = False
+        self, scan_id: str | None = None, *, live: bool = False, buffered: bool = False
     ) -> DataSubscription:
         """
         Create a new subscription object for synchronized data updates.
@@ -602,14 +619,18 @@ class DataAPI:
 
         Args:
             scan_id (str | None): Identifier for the scan. When omitted or
-                ``None``, the subscription automatically follows the current or
-                next active scan.
+                ``None``, the subscription starts unbound.
+            live (bool): If ``True``, the subscription follows the current or
+                next active scan by listening to scan-status updates.
             buffered (bool): If ``True``, re-emit the entire accumulated data
                 buffer on each update. If ``False``, emit only newly aligned
                 synchronized data blocks.
 
         Returns:
             A DataSubscription object that manages the subscription lifecycle.
+
+        Raises:
+            ValueError: If both ``scan_id`` and ``live`` are specified.
 
         Example:
             >>> # Non-buffered mode (default): receive only new data blocks
@@ -620,10 +641,14 @@ class DataAPI:
             >>> # Buffered mode: receive entire accumulated buffer on each update
             >>> sub = data_api.create_subscription("my_scan", buffered=True)
             >>> sub.add_device("samx", "samx").set_callback(my_callback)
+            >>>
+            >>> # Live mode: follow newly opened scans automatically
+            >>> sub = data_api.create_subscription(live=True)
+            >>> sub.add_device("samx", "samx").set_callback(my_callback)
             >>> # Later:
             >>> sub.close()  # or use context manager: with data_api.create_subscription(...) as sub:
         """
-        return DataSubscription(self, scan_id, buffered=buffered)
+        return DataSubscription(self, scan_id, live=live, buffered=buffered)
 
     def subscribe(
         self,

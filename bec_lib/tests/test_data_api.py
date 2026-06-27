@@ -1156,12 +1156,24 @@ class TestDataSubscription:
         assert sub.devices == []
         sub.close()
 
-    def test_create_follow_scan_subscription(self, data_api):
-        """Test creating a subscription that binds to scans later."""
+    def test_create_unbound_subscription(self, data_api):
+        """Test creating a subscription without a bound scan."""
         sub = data_api.create_subscription()
         assert sub.scan_id is None
         assert sub.devices == []
         sub.close()
+
+    def test_create_live_subscription(self, data_api):
+        """Test creating a subscription that follows open scans."""
+        sub = data_api.create_subscription(live=True)
+        assert sub.scan_id is None
+        assert sub.devices == []
+        sub.close()
+
+    def test_create_subscription_rejects_scan_id_with_live(self, data_api):
+        """scan_id and live mode should be mutually exclusive."""
+        with pytest.raises(ValueError, match="scan_id and live are mutually exclusive"):
+            data_api.create_subscription("test_scan", live=True)
 
     def test_add_device_without_callback(self, data_api):
         """Test adding devices before setting a callback."""
@@ -1450,7 +1462,7 @@ class TestDataSubscription:
         mock_client.queue.scan_storage.current_scan_id = ["scan_current"]
         mock_client.queue.scan_storage.find_scan_by_ID.return_value = scan_item
 
-        sub = data_api.create_subscription()
+        sub = data_api.create_subscription(live=True)
         sub.add_device("samx", "samx")
         sub.set_callback(mock_callback)
 
@@ -1486,7 +1498,7 @@ class TestDataSubscription:
         mock_client.queue.scan_storage.find_scan_by_ID.side_effect = find_scan_side_effect
         mock_client.queue.scan_storage.current_scan_id = []
 
-        sub = data_api.create_subscription()
+        sub = data_api.create_subscription(live=True)
         sub.add_device("samx", "samx")
         sub.set_callback(mock_callback)
 
