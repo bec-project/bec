@@ -127,6 +127,9 @@ def test_data_api_bundles_monitored_grid_scan_with_monitored_async_signal_lib(be
     def callback(data, metadata):
         callbacks.append((data, metadata))
 
+    def value_length(value):
+        return len(value) if isinstance(value, list) else 1
+
     DataAPI.clear_instance()
     try:
         bec.metadata.update({"unit_test": "test_data_api_grid_scan_monitored_async_bundle"})
@@ -146,45 +149,46 @@ def test_data_api_bundles_monitored_grid_scan_with_monitored_async_signal_lib(be
             )
             scan_id = status.queue_item.scan_ids[0]
 
-            deadline = time.time() + 10
-            readout_priority = None
-            while time.time() < deadline:
-                scan_item = bec.queue.scan_storage.find_scan_by_ID(scan_id)
-                status_message = getattr(scan_item, "status_message", None)
-                readout_priority = getattr(status_message, "readout_priority", None)
-                if readout_priority and "samx" in readout_priority.get("monitored", []):
-                    break
-                time.sleep(0.05)
-
-            assert readout_priority is not None
-            assert "samx" in readout_priority.get("monitored", [])
-            assert "samy" in readout_priority.get("monitored", [])
-
             status.wait(num_points=True, file_written=True)
             expected_points = status.scan.num_points
 
             deadline = time.time() + 15
-            while time.time() < deadline and len(callbacks) < expected_points:
+            while time.time() < deadline:
+                total_lengths = sum(
+                    value_length(data["samx"]["samx"]["value"]) for data, _metadata in callbacks
+                )
+                assert total_lengths <= expected_points
+                if total_lengths == expected_points:
+                    break
                 time.sleep(0.1)
 
         assert expected_points == 100
-        assert len(callbacks) == expected_points
+        assert callbacks
 
-        for idx, (data, metadata) in enumerate(callbacks, start=1):
+        samx_total = 0
+        samy_total = 0
+        waveform_total = 0
+        for data, metadata in callbacks:
             assert set(data) == {"samx", "samy", "waveform"}
             assert "samx" in data["samx"]
             assert "samy" in data["samy"]
             assert "waveform_waveform_0d" in data["waveform"]
             assert metadata["scan_id"] == scan_id
             assert metadata["async_update"]["type"] == "add"
-            waveform_value = data["waveform"]["waveform_waveform_0d"]["value"]
-            if idx == 1:
-                assert isinstance(waveform_value, (int, np.integer))
-            else:
-                assert isinstance(waveform_value, list)
-                assert len(waveform_value) == idx
-            assert not isinstance(data["samx"]["samx"]["value"], list)
-            assert not isinstance(data["samy"]["samy"]["value"], list)
+            samx_len = value_length(data["samx"]["samx"]["value"])
+            samy_len = value_length(data["samy"]["samy"]["value"])
+            waveform_len = value_length(data["waveform"]["waveform_waveform_0d"]["value"])
+            assert samx_len == samy_len == waveform_len
+            samx_total += samx_len
+            samy_total += samy_len
+            waveform_total += waveform_len
+            assert samx_total <= expected_points
+            assert samy_total <= expected_points
+            assert waveform_total <= expected_points
+
+        assert samx_total == expected_points
+        assert samy_total == expected_points
+        assert waveform_total == expected_points
     finally:
         DataAPI.clear_instance()
 

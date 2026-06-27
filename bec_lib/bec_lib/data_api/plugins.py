@@ -1109,6 +1109,12 @@ class BECLiveDataPlugin(DataAPIPlugin):
         if not is_valid_domain:
             return
         resolved_value, resolved_metadata = self._resolve_async_signal_value(key, value, metadata)
+        emitted_value = resolved_value
+        if bundle_domain == ("monitored", scan_id):
+            # For monitored bundles, each async update represents one aligned
+            # progression step and should be emitted as that fragment rather
+            # than as the cumulative reconstructed async state.
+            emitted_value = copy.deepcopy(value)
 
         # Add data to buffer for each subscriber
         for callback_ref in async_sub.callback_refs:
@@ -1126,7 +1132,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
                 scan_id,
                 device_name,
                 device_entry,
-                resolved_value,
+                emitted_value,
                 timestamp,
                 "async_signal",
                 resolved_metadata,

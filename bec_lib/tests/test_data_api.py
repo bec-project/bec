@@ -927,6 +927,83 @@ class TestBECLiveDataPlugin:
         assert call_data["detector1"]["async_sig1"]["value"] == 10.0
         assert call_metadata["async_update"]["type"] == "add"
 
+    def test_monitored_bundle_add_async_source_emits_point_fragments_not_cumulative_state(
+        self, mock_client, scan_item_with_monitored_devices, mock_callback
+    ):
+        """Monitored bundles should align async add sources per point, not by cumulative state."""
+        mock_client.device_manager.get_bec_signals.return_value = [
+            (
+                "detector1",
+                None,
+                {
+                    "obj_name": "async_sig1",
+                    "storage_name": "async_sig1",
+                    "acquisition_group": "monitored",
+                },
+            )
+        ]
+        plugin = BECLiveDataPlugin(mock_client)
+
+        plugin._subscribe_to_monitored_device("samx", "samx", "test_scan_id", mock_callback)
+        mock_client.connector.register = mock.MagicMock(return_value="redis_conn_id")
+        plugin._subscribe_to_async_signal("detector1", "async_sig1", "test_scan_id", mock_callback)
+
+        first_scan_msg = messages.ScanMessage(
+            point_id=0,
+            scan_id="test_scan_id",
+            data={"samx": {"samx": {"value": 1.0, "timestamp": 100.0}}},
+            metadata={"scan_id": "test_scan_id"},
+        )
+        scan_item_with_monitored_devices.live_data.set(0, first_scan_msg)
+        plugin._handle_scan_segment_update(first_scan_msg.content, first_scan_msg.metadata)
+
+        first_async_msg = messages.DeviceMessage(
+            signals={"async_sig1": {"value": 10.0, "timestamp": 100.0}},
+            metadata={
+                "timestamp": 100.0,
+                "acquisition_group": "monitored",
+                "async_indices": {"async_sig1": 0},
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
+            },
+        )
+        plugin._handle_async_signal_update(
+            {"data": first_async_msg}, "test_scan_id", "detector1", "async_sig1"
+        )
+
+        second_scan_msg = messages.ScanMessage(
+            point_id=1,
+            scan_id="test_scan_id",
+            data={"samx": {"samx": {"value": 2.0, "timestamp": 101.0}}},
+            metadata={"scan_id": "test_scan_id"},
+        )
+        scan_item_with_monitored_devices.live_data.set(1, second_scan_msg)
+        plugin._handle_scan_segment_update(second_scan_msg.content, second_scan_msg.metadata)
+
+        second_async_msg = messages.DeviceMessage(
+            signals={"async_sig1": {"value": 20.0, "timestamp": 101.0}},
+            metadata={
+                "timestamp": 101.0,
+                "acquisition_group": "monitored",
+                "async_indices": {"async_sig1": 1},
+                "async_update": messages.DeviceAsyncUpdate(
+                    type="add", max_shape=[None]
+                ).model_dump(),
+            },
+        )
+        plugin._handle_async_signal_update(
+            {"data": second_async_msg}, "test_scan_id", "detector1", "async_sig1"
+        )
+
+        assert len(mock_callback.calls) == 2
+        first_data, _ = mock_callback.calls[0]
+        second_data, _ = mock_callback.calls[1]
+        assert first_data["samx"]["samx"]["value"] == 1.0
+        assert first_data["detector1"]["async_sig1"]["value"] == 10.0
+        assert second_data["samx"]["samx"]["value"] == 2.0
+        assert second_data["detector1"]["async_sig1"]["value"] == 20.0
+
     def test_pending_buffer_overflow_drops_oldest_updates(
         self, mock_client, scan_item_with_monitored_devices, caplog
     ):
