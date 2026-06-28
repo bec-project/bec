@@ -75,7 +75,7 @@ class cSAXSFormat(DefaultFormat):
         source.create_dataset(name="name", data="Swiss Light Source")
         source.create_dataset(name="probe", data="x-ray")
         distance = source.create_dataset(
-            name="distance", data=-33800 - np.asarray(self.get_entry("samz", 0))
+            name="distance", data=-33800 - np.asarray(self.get_entry("samz", default=0))
         )
         distance.attrs["units"] = "mm"
         sigma_x = source.create_dataset(name="sigma_x", data=0.202)
@@ -108,7 +108,7 @@ class cSAXSFormat(DefaultFormat):
         x_translation = source.create_dataset(name="x_translation", data=self.get_entry("sl0ch"))
         x_translation.attrs["units"] = "mm"
         distance = source.create_dataset(
-            name="distance", data=-21700 - np.asarray(self.get_entry("samz", 0))
+            name="distance", data=-21700 - np.asarray(self.get_entry("samz", default=0))
         )
         distance.attrs["units"] = "mm"
 
@@ -125,7 +125,7 @@ class cSAXSFormat(DefaultFormat):
         height = source.create_dataset(name="x_translation", data=self.get_entry("sl1ch"))
         height.attrs["units"] = "mm"
         distance = source.create_dataset(
-            name="distance", data=-7800 - np.asarray(self.get_entry("samz", 0))
+            name="distance", data=-7800 - np.asarray(self.get_entry("samz", default=0))
         )
         distance.attrs["units"] = "mm"
 
@@ -143,7 +143,7 @@ class cSAXSFormat(DefaultFormat):
             energy.attrs["units"] = "keV"
         mono.create_dataset(name="type", data="Double crystal fixed exit monochromator.")
         distance = mono.create_dataset(
-            name="distance", data=-5220 - np.asarray(self.get_entry("samz", 0))
+            name="distance", data=-5220 - np.asarray(self.get_entry("samz", default=0))
         )
         distance.attrs["units"] = "mm"
 
@@ -208,7 +208,7 @@ class cSAXSFormat(DefaultFormat):
         bend_y = mirror.create_dataset(name="bend_y", data="mibd")
         bend_y.attrs["units"] = "NX_DIMENSIONLESS"
         distance = mirror.create_dataset(
-            name="distance", data=-4370 - np.asarray(self.get_entry("samz", 0))
+            name="distance", data=-4370 - np.asarray(self.get_entry("samz", default=0))
         )
         distance.attrs["units"] = "mm"
 
@@ -252,7 +252,7 @@ class cSAXSFormat(DefaultFormat):
         height = source.create_dataset(name="x_translation", data=self.get_entry("sl2cv"))
         height.attrs["units"] = "mm"
         distance = source.create_dataset(
-            name="distance", data=-3140 - np.asarray(self.get_entry("samz", 0))
+            name="distance", data=-3140 - np.asarray(self.get_entry("samz", default=0))
         )
         distance.attrs["units"] = "mm"
 
@@ -279,7 +279,7 @@ class cSAXSFormat(DefaultFormat):
             data="The filter set consists of 4 linear stages, each with five filter positions. Additionally, each one allows for an out position to allow 'no filtering'.",
         )
         attenuator_transmission = filter_set.create_dataset(
-            name="attenuator_transmission", data=10 ** self.get_entry("ftrans", 0)
+            name="attenuator_transmission", data=10 ** self.get_entry("ftrans", default=0)
         )
         attenuator_transmission.attrs["units"] = "NX_DIMENSIONLESS"
 
