@@ -10,6 +10,7 @@ from test_file_writer_manager import file_writer_manager_mock
 from bec_lib import messages
 from bec_server import file_writer
 from bec_server.file_writer import HDF5FileWriter
+from bec_server.file_writer.default_writer import DefaultFormat
 from bec_server.file_writer.file_writer import HDF5Storage
 from bec_server.file_writer.file_writer_manager import ScanStorage
 from bec_server.file_writer_plugins.cSAXS import cSAXSFormat
@@ -62,6 +63,19 @@ def scan_storage_mock(tmp_path):
     yield storage
 
 
+@pytest.fixture
+def default_format(file_writer_manager_mock_with_dm):
+    yield DefaultFormat(
+        storage=HDF5Storage(),
+        data={},
+        file_references={},
+        info_storage={"bec": {"readout_priority": {}, "scan_report_devices": []}},
+        configuration={},
+        device_manager=file_writer_manager_mock_with_dm.device_manager,
+        beamline_states={},
+    )
+
+
 def test_csaxs_nexus_format(file_writer_manager_mock_with_dm):
     file_manager = file_writer_manager_mock_with_dm
     writer_storage = cSAXSFormat(
@@ -77,6 +91,71 @@ def test_csaxs_nexus_format(file_writer_manager_mock_with_dm):
     ).get_storage_format()
     assert writer_storage["entry"].attrs["definition"] == "NXsas"
     assert writer_storage["entry"]._storage["sample"]._storage["x_translation"]._data == [0, 1, 2]
+
+
+def test_get_entry_returns_values_for_scalar_and_list_data(default_format):
+    default_format.data = {
+        "samx": [{"samx": {"value": 1}}, {"samx": {"value": 2}}],
+        "temperature": {"readback": {"value": 273.15}},
+    }
+
+    assert default_format.get_entry("samx") == [1, 2]
+    assert default_format.get_entry("temperature", signal="readback") == 273.15
+
+
+def test_get_entry_returns_default_for_missing_signal(default_format):
+    default_format.data = {"samx": {"samx": {"value": 1}}}
+
+    assert default_format.get_entry("samx", signal="missing", default="fallback") == "fallback"
+    assert default_format.get_entry("missing", default="fallback") == "fallback"
+
+
+def test_safe_dataset_skips_missing_device(default_format):
+    group = default_format.storage.create_group("group")
+
+    default_format.safe_dataset(group, name="samx", device="samx")
+
+    assert "samx" not in group._storage
+
+
+def test_safe_dataset_writes_dataset_attrs_and_softlink(default_format):
+    default_format.data = {"samx": {"samx": {"value": [0, 1, 2]}}}
+    group = default_format.storage.create_group("group")
+
+    default_format.safe_dataset(
+        group,
+        name="x_translation",
+        device="samx",
+        units="mm",
+        description="sample x position",
+        attributes={"long_name": "sample_x"},
+        softlink=False,
+    )
+    default_format.safe_dataset(group, name="samx_link", device="samx", softlink=True)
+
+    dataset = group._storage["x_translation"]
+    assert dataset._data == [0, 1, 2]
+    assert dataset.attrs["units"] == "mm"
+    assert dataset.attrs["description"] == "sample x position"
+    assert dataset.attrs["long_name"] == "sample_x"
+    assert group._storage["samx_link"]._storage_type == "softlink"
+    assert group._storage["samx_link"]._data == "/entry/collection/devices/samx/samx/value"
+
+
+def test_scan_report_data_only_includes_shape_compatible_auxiliary_signals(default_format):
+    default_format.data = {
+        "samx": {"samx": {"value": [0, 1, 2]}},
+        "samy": {"samy": {"value": [3, 4, 5]}},
+        "mokev": {"mokev": {"value": 12.456}},
+    }
+    default_format.info_storage["bec"]["scan_report_devices"] = ["samx", "samy", "mokev"]
+
+    writer_storage = default_format.get_storage_format()
+    data_group = writer_storage["entry"]._storage["data"]
+
+    assert data_group.attrs["signal"] == "samx"
+    assert data_group.attrs["auxiliary_signals"] == ["samy"]
+    assert set(data_group._storage) == {"samx", "samy"}
 
 
 def test_nexus_file_writer(hdf5_file_writer, scan_storage_mock, tmp_path):
@@ -97,11 +176,12 @@ def test_nexus_file_writer(hdf5_file_writer, scan_storage_mock, tmp_path):
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert list(test_file) == ["entry"]
-        assert list(test_file["entry"]) == ["collection", "control", "instrument", "sample"]
+        assert list(test_file["entry"]) == ["collection", "control", "data", "instrument", "sample"]
         assert np.allclose(
             test_file["entry/collection/devices/samx/samx/value"][...], [0, 1, 2, 3, 4]
         )
         assert test_file["entry/collection/file_references/eiger"] is not None
+        assert test_file["entry/data"].attrs["NX_class"] == "NXdata"
         # assert list(test_file["entry"]["sample"]) == ["x_translation"]
         # assert test_file["entry"]["sample"].attrs["NX_class"] == "NXsample"
         # assert test_file["entry"]["sample"]["x_translation"].attrs["units"] == "mm"
@@ -168,7 +248,7 @@ def test_create_device_data_storage(hdf5_file_writer, scan_storage_mock):
                 "scan_number": 88,
                 "dataset_number": 88,
                 "exp_time": 0.1,
-                "scan_report_devices": ["samx"],
+                "scan_report_devices": ["samx", "samy"],
                 "scan_msgs": [
                     "ScanQueueMessage(({'scan_type': 'monitor_scan', 'parameter': {'args': {'samx':"
                     " [-100, 100]}, 'kwargs': {'relative': False}}, 'queue': 'primary'}, {'RID':"
@@ -216,6 +296,11 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
             == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
         )
         assert "non_existing_file" not in test_file["entry/collection/file_references"].keys()
+        assert test_file["entry/data"].attrs["NX_class"] == "NXdata"
+        assert test_file["entry/data"].attrs["signal"] == "samx"
+        assert list(test_file["entry/data"].attrs["auxiliary_signals"]) == ["samy"]
+        assert np.allclose(test_file["entry/data/samx"][...], [0.11, 0.21])
+        assert np.allclose(test_file["entry/data/samy"][...], [1.1, 1.2])
 
 
 def test_load_format_from_plugin(tmp_path, hdf5_file_writer):

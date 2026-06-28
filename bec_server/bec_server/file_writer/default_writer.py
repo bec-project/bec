@@ -47,21 +47,23 @@ class DefaultFormat:
         # pylint: disable=protected-access
         return self.storage._storage
 
-    def get_entry(self, name: str, default=None) -> Any:
+    def get_entry(self, name: str, signal: str | None = None, default=None) -> Any:
         """
-        Get an entry from the scan data assuming a <device>.<device>.value structure.
+        Get an entry from the scan data assuming a <device>.<signal>.value structure.
 
         This method is a helper to extract the device data from the scan data, irrespective of the
         data structure (list of entries or single entry).
 
         Args:
             name (str): Entry name
+            signal (str, optional): Signal name. Defaults to None.
             default (Any, optional): Default value. Defaults to None.
         """
+        signal = signal or name
         if isinstance(self.data.get(name), list) and isinstance(self.data[name][0], dict):
-            return [sub_data.get(name, {}).get("value", default) for sub_data in self.data[name]]
+            return [sub_data.get(signal, {}).get("value", default) for sub_data in self.data[name]]
 
-        return self.data.get(name, {}).get(name, {}).get("value", default)
+        return self.data.get(name, {}).get(signal, {}).get("value", default)
 
     def write_bec_entries(self) -> None:
         """
@@ -133,6 +135,90 @@ class DefaultFormat:
             state_group = beamline_states_group.create_dataset(name=state_name, data=state_values)
             state_group.attrs["NX_class"] = "NXcollection"
 
+    def safe_dataset(
+        self,
+        group: HDF5Storage,
+        name: str,
+        device: str,
+        signal: str | None = None,
+        units: str | None = None,
+        description: str | None = None,
+        attributes: dict | None = None,
+        softlink: bool = True,
+    ) -> None:
+        """
+        Write a dataset from the BEC scan data dictionary.
+        Silently skips if the device was not recorded in this scan
+        (e.g. removed from config, readoutPriority=on_request and not triggered,
+        or the scan finished before the device responded).
+
+        Args:
+            group (HDF5Storage): The HDF5 group to write the dataset to.
+            name (str): The name of the dataset.
+            device (str): The device name to retrieve the data from.
+            attributes (dict, optional): Additional attributes to set on the dataset. Defaults to None.
+            units (str, optional): The units of the dataset. Defaults to None.
+            description (str, optional): The description of the dataset. Defaults to None.
+            softlink (bool, optional): Create a soft link into /entry/collection/devices instead of
+                copying the value into a new dataset. Defaults to True.
+        """
+        signal = signal or device
+        value = self.get_entry(device, signal=signal)
+        if value is None:
+            return
+        if softlink:
+            group.create_soft_link(
+                name=name, target=f"/entry/collection/devices/{device}/{signal}/value"
+            )
+            return
+        ds = group.create_dataset(name, data=value)
+        if attributes:
+            for key, val in attributes.items():
+                ds.attrs[key] = val
+        if units:
+            ds.attrs["units"] = units
+        if description:
+            ds.attrs["description"] = description
+
+    def _device_shape_matches(self, reference_device: str, candidate_device: str) -> bool:
+        """
+        Check whether two scan report devices have compatible value shapes for NXdata.
+        """
+        reference_value = self.get_entry(reference_device)
+        candidate_value = self.get_entry(candidate_device)
+        if reference_value is None or candidate_value is None:
+            return False
+        try:
+            return np.asarray(reference_value).shape == np.asarray(candidate_value).shape
+        except Exception:
+            return False
+
+    def _write_scan_report_data(self, entry: HDF5Storage) -> None:
+        """
+        Write an NXdata group containing soft links to the scan report devices.
+        """
+        data_group = entry.create_group("data")
+        data_group.attrs["NX_class"] = "NXdata"
+
+        scan_report_devices = self.info_storage.get("bec", {}).get("scan_report_devices") or []
+        if scan_report_devices:
+            data_group.attrs["signal"] = scan_report_devices[0]
+        if not scan_report_devices:
+            return
+
+        primary_device = scan_report_devices[0]
+        compatible_devices = [primary_device]
+        auxiliary_signals = []
+        for device in scan_report_devices[1:]:
+            if self._device_shape_matches(primary_device, device):
+                compatible_devices.append(device)
+                auxiliary_signals.append(device)
+        if auxiliary_signals:
+            data_group.attrs["auxiliary_signals"] = auxiliary_signals
+
+        for device in compatible_devices:
+            self.safe_dataset(data_group, name=device, device=device, softlink=True)
+
     def format(self) -> None:
         """
         Prepare the NeXus file format.
@@ -156,8 +242,7 @@ class DefaultFormat:
         control.create_dataset(name="mode", data="monitor")
 
         # /entry/data
-        if "eiger_4" in self.device_manager.devices:
-            entry.create_soft_link(name="data", target="/entry/instrument/eiger_4")
+        self._write_scan_report_data(entry)
 
         # /entry/sample
         control = entry.create_group("sample")
