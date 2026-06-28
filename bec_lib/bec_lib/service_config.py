@@ -216,16 +216,39 @@ class ServiceConfig:
 
         return {}
 
+    @staticmethod
+    def _username_to_pgroup(username: str) -> str | None:
+        """Convert PSI eaccounts like ``e12345`` to proposal groups like ``p12345``."""
+        if re.match(r"^e\d{5}$", username):
+            return f"p{username[1:]}"
+        return None
+
+    def _expand_path_variables(self, path: str, username: str) -> str:
+        """Expand supported path variables for service config base paths."""
+        expanded_path = path.replace("$username", username)
+        pgroup = self._username_to_pgroup(username)
+        if pgroup is not None:
+            expanded_path = expanded_path.replace("$p_username", pgroup)
+        return expanded_path
+
     def _parse_config_from_file(self, config: dict) -> dict:
         """
         Parse the configuration loaded from a file, by checking for username-specific
-        base paths and replacing $account with the current username.
+        base paths and expanding supported path variables.
+
+        Possible path variables include:
+        - $username: The current user's username.
+        - $p_username: The proposal group corresponding to the current user's username (if applicable). If
+            the username is not an eaccount, this variable will not be replaced.
+        - $account: The current account set in BEC. It will be replaced in runtime on the server side, so it is not expanded here.
 
         Args:
             config (dict): The raw configuration dictionary.
         Returns:
             dict: The parsed configuration dictionary with user-specific paths.
         """
+        username = getuser()
+
         for _, val in config.items():
             if not isinstance(val, dict):
                 continue
@@ -234,18 +257,16 @@ class ServiceConfig:
             default = val["base_path"].pop("*", None)
             for username_regex, path in val["base_path"].items():
                 regex = re.compile(username_regex)
-                if regex.match(getuser()):
-                    if "$username" in path:
-                        path = path.replace("$username", getuser())
-                    val["base_path"] = path
+                if regex.match(username):
+                    val["base_path"] = self._expand_path_variables(path, username)
 
                     break
             else:
                 if default:
-                    val["base_path"] = default
+                    val["base_path"] = self._expand_path_variables(default, username)
                 else:
                     raise ValueError(
-                        f"No matching base_path for user {getuser()} and no default (*) provided."
+                        f"No matching base_path for user {username} and no default (*) provided."
                     )
         return config
 

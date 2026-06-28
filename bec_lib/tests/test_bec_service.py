@@ -228,6 +228,49 @@ def test_bec_service_loads_deployment_config_with_regex_no_match(tmpdir):
     assert config.model.file_writer.base_path == str(tmpdir)
 
 
+def test_bec_service_loads_deployment_config_with_default_username_expansion(tmpdir):
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "file_writer": {
+                "base_path": {"^e\\d{5}$": "/sls/x12sa/data/$username/raw", "*": "/tmp/$username"},
+                "plugin": "custom_plugin",
+            },
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        with mock.patch("bec_lib.service_config.getuser", return_value="operator"):
+            config = ServiceConfig(config_name="test")
+
+    assert config.model.file_writer.base_path == "/tmp/operator"
+
+
+def test_bec_service_loads_deployment_config_with_default_p_username_expansion(tmpdir):
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "file_writer": {
+                "base_path": {
+                    "^i\\d{5}$": "/sls/x12sa/data/$p_username/raw",
+                    "*": "/tmp/$p_username",
+                },
+                "plugin": "custom_plugin",
+            },
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        with mock.patch("bec_lib.service_config.getuser", return_value="e12345"):
+            config = ServiceConfig(config_name="test")
+
+    assert config.model.file_writer.base_path == "/tmp/p12345"
+
+
 def test_bec_service_loads_deployment_config_with_regex_match(tmpdir):
     """
     Test to ensure that a specified regex matching the username loads the correct config
@@ -251,6 +294,26 @@ def test_bec_service_loads_deployment_config_with_regex_match(tmpdir):
 
     assert config.model.log_writer.base_path == "/sls/x12sa/data/e12345/raw"
     assert config.model.file_writer.base_path == "/sls/x12sa/data/$account/raw"
+
+
+def test_bec_service_loads_deployment_config_with_regex_match_p_username_expansion(tmpdir):
+    with mock.patch("bec_lib.service_config.DEFAULT_BASE_PATH", str(tmpdir)):
+        deployment_config = {
+            "redis": {"host": "localhost", "port": 1234},
+            "log_writer": {
+                "base_path": {"^e\\d{5}$": "/sls/x12sa/data/$p_username/raw", "*": str(tmpdir)},
+                "plugin": "custom_plugin",
+            },
+        }
+        deployment_config_path = tmpdir.join("deployment_configs", "test.yaml")
+        os.makedirs(os.path.dirname(deployment_config_path), exist_ok=True)
+        with open(deployment_config_path, "w") as f:
+            yaml.dump(deployment_config, f)
+
+        with mock.patch("bec_lib.service_config.getuser", return_value="e12345"):
+            config = ServiceConfig(config_name="test")
+
+    assert config.model.log_writer.base_path == "/sls/x12sa/data/p12345/raw"
 
 
 def test_bec_service_loads_parent_deployment_config(tmpdir):
