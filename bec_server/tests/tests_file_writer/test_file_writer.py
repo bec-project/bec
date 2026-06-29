@@ -110,6 +110,20 @@ def test_get_entry_returns_default_for_missing_signal(default_format):
     assert default_format.get_entry("missing", default="fallback") == "fallback"
 
 
+def test_has_async_signal_matches_prefixed_and_unprefixed_object_names(default_format):
+    with mock.patch.object(
+        default_format.device_manager, "get_bec_signals"
+    ) as mock_get_bec_signals:
+        mock_get_bec_signals.return_value = [
+            ("samx", None, {"object_name": "devicenamesamx"}),
+            ("waveform", None, {"object_name": "waveform"}),
+        ]
+
+        assert default_format.has_async_signal("samx", "samx") is True
+        assert default_format.has_async_signal("waveform", "waveform") is True
+        assert default_format.has_async_signal("samx", "other") is False
+
+
 def test_safe_dataset_skips_missing_device(default_format):
     group = default_format.storage.create_group("group")
 
@@ -142,6 +156,31 @@ def test_safe_dataset_writes_dataset_attrs_and_softlink(default_format):
     assert group._storage["samx_link"]._data == "/entry/collection/devices/samx/samx/value"
 
 
+def test_safe_dataset_forces_softlink_for_async_signal(default_format):
+    default_format.data = {"samx": {"samx": {"value": [0, 1, 2]}}}
+    group = default_format.storage.create_group("group")
+
+    with mock.patch.object(default_format, "has_async_signal", return_value=True):
+        default_format.safe_dataset(group, name="samx", device="samx", softlink=False)
+
+    assert group._storage["samx"]._storage_type == "softlink"
+    assert group._storage["samx"]._data == "/entry/collection/devices/samx/samx/value"
+
+
+def test_device_shape_matches_returns_false_for_missing_or_unshapeable_values(default_format):
+    default_format.data = {
+        "samx": {"samx": {"value": [0, 1, 2]}},
+        "broken": {"broken": {"value": mock.Mock(side_effect=TypeError("boom"))}},
+    }
+
+    assert default_format._device_shape_matches("samx", "missing") is False
+
+    with mock.patch(
+        "bec_server.file_writer.default_writer.np.asarray", side_effect=TypeError("boom")
+    ):
+        assert default_format._device_shape_matches("samx", "broken") is False
+
+
 def test_scan_report_data_only_includes_shape_compatible_auxiliary_signals(default_format):
     default_format.data = {
         "samx": {"samx": {"value": [0, 1, 2]}},
@@ -156,6 +195,18 @@ def test_scan_report_data_only_includes_shape_compatible_auxiliary_signals(defau
     assert data_group.attrs["signal"] == "samx"
     assert data_group.attrs["auxiliary_signals"] == ["samy"]
     assert set(data_group._storage) == {"samx", "samy"}
+
+
+def test_write_scan_report_data_skips_attrs_when_no_devices(default_format):
+    entry = default_format.storage.create_group("entry")
+
+    default_format._write_scan_report_data(entry)
+
+    data_group = entry._storage["data"]
+    assert data_group.attrs["NX_class"] == "NXdata"
+    assert "signal" not in data_group.attrs
+    assert "auxiliary_signals" not in data_group.attrs
+    assert data_group._storage == {}
 
 
 def test_nexus_file_writer(hdf5_file_writer, scan_storage_mock, tmp_path):
