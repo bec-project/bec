@@ -323,7 +323,16 @@ def _annotation_metadata(annotation: Annotated[Any, ScanArgument] | None) -> Sca
 
 
 def _example_literal(name: str, annotation: object, bundle_index: int | None = None) -> str:
-    """Build a compact Python literal for a generated example call."""
+    """
+    Build a compact Python literal for a generated example call.
+
+    Args:
+        name (str): Argument name.
+        annotation (object): Normalized argument annotation.
+        bundle_index (int | None): Optional bundle index for repeated scan
+            arguments. When provided, the literal will be adjusted to reflect the
+            bundle index in the argument name.
+    """
     metadata = _annotation_metadata(annotation)
     if metadata is not None and metadata.example is not None:
         return repr(metadata.example)
@@ -334,14 +343,49 @@ def _example_literal(name: str, annotation: object, bundle_index: int | None = N
         annotation = get_args(annotation)[0]
 
     origin = get_origin(annotation)
+
     if origin is list:
-        return "[1.0, 2.0, 3.0]"
+        args = get_args(annotation)
+        if args:
+            return f"[{_example_literal(name, args[0], bundle_index=bundle_index)}]"
+        return "[]"
+
     if origin is tuple:
-        return "(1.0, 2.0)"
+        args = get_args(annotation)
+        if not args:
+            return "()"
+        if len(args) == 2 and args[1] is Ellipsis:
+            return f"({_example_literal(name, args[0], bundle_index=bundle_index)},)"
+        if len(args) == 3 and args[0] is float and args[1] is float and args[2] is int:
+            tuple_names = (f"{name}_start", f"{name}_stop", f"{name}_steps")
+            return (
+                "("
+                + ", ".join(
+                    _example_literal(child_name, arg, bundle_index=bundle_index)
+                    for child_name, arg in zip(tuple_names, args, strict=False)
+                )
+                + ")"
+            )
+        return (
+            "("
+            + ", ".join(_example_literal(name, arg, bundle_index=bundle_index) for arg in args)
+            + ")"
+        )
+
     if origin is dict:
+        args = get_args(annotation)
+        if len(args) >= 2:
+            key_literal = _example_literal(f"{name}_key", args[0], bundle_index=bundle_index)
+            value_literal = _example_literal(f"{name}_value", args[1], bundle_index=bundle_index)
+            return "{" + f"{key_literal}: {value_literal}" + "}"
         return "{'key': 'value'}"
+
     if origin is set:
-        return "{1.0, 2.0}"
+        args = get_args(annotation)
+        if args:
+            return "{" + _example_literal(name, args[0], bundle_index=bundle_index) + "}"
+        return "set()"
+
     if origin is not None:
         args = [arg for arg in get_args(annotation) if arg is not type(None)]
         if args:
