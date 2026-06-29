@@ -47,12 +47,35 @@ class DefaultFormat:
         # pylint: disable=protected-access
         return self.storage._storage
 
+    def has_async_signal(self, device_name: str, signal_name: str) -> bool:
+        """
+        Check if a device has an async signal.
+
+        Args:
+            device_name (str): The name of the device.
+            signal_name (str): The name of the signal.
+
+        Returns:
+            bool: True if the device has an async signal, False otherwise.
+        """
+        signals = self.device_manager.get_bec_signals(
+            ["AsyncMultiSignal", "AsyncSignal", "DynamicSignal"]
+        )
+        for device_name_, _, signal_info in signals:
+            obj_name = signal_info.get("object_name", "")
+            obj_name_without_prefix = obj_name.removeprefix("devicename")
+            if device_name_ == device_name and (signal_name in [obj_name, obj_name_without_prefix]):
+                return True
+        return False
+
     def get_entry(self, name: str, signal: str | None = None, default=None) -> Any:
         """
-        Get an entry from the scan data assuming a <device>.<signal>.value structure.
+        Get an entry from the scan data (monitored or baseline) assuming a <device>.<signal>.value structure.
 
         This method is a helper to extract the device data from the scan data, irrespective of the
         data structure (list of entries or single entry).
+
+        Note: This method does not handle async signals. Use `has_async_signal` to check for async signals.
 
         Args:
             name (str): Entry name
@@ -160,12 +183,15 @@ class DefaultFormat:
             units (str, optional): The units of the dataset. Defaults to None.
             description (str, optional): The description of the dataset. Defaults to None.
             softlink (bool, optional): Create a soft link into /entry/collection/devices instead of
-                copying the value into a new dataset. Defaults to True.
+                copying the value into a new dataset. Defaults to True. For async signals, this is always True.
         """
         signal = signal or device
         value = self.get_entry(device, signal=signal)
-        if value is None:
+        if self.has_async_signal(device, signal):
+            softlink = True
+        elif value is None:
             return
+
         if softlink:
             group.create_soft_link(
                 name=name, target=f"/entry/collection/devices/{device}/{signal}/value"
