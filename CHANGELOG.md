@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.147.1 (2026-06-29)
+
+### Bug Fixes
+
+- **service_config**: Expand default username in base path
+  ([`9f74f6f`](https://github.com/bec-project/bec/commit/9f74f6f77997b4c753d9c8d9b64e4304c7b7ae9d))
+
+
 ## v3.147.0 (2026-06-26)
 
 ### Features
