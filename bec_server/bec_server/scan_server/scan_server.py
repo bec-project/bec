@@ -18,6 +18,7 @@ from bec_server.procedures.manager import ProcedureManager
 from bec_server.procedures.subprocess_worker import SubProcessWorker
 
 from .beamline_state_manager import BeamlineStateManager
+from .device_lock_registry import DeviceLockRegistry
 from .scan_assembler import ScanAssembler
 from .scan_guard import ScanGuard
 from .scan_manager import ScanManager
@@ -32,6 +33,7 @@ logger = bec_logger.logger
 class ScanServer(BECService):
     def __init__(self, config: ServiceConfig, connector_cls: type[RedisConnector]):
         super().__init__(config, connector_cls, unique_service=True)
+        self.device_lock_registry = DeviceLockRegistry()
         self._start_scan_manager()
         self._start_device_manager()
         self._start_queue_manager()

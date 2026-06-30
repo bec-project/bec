@@ -95,11 +95,26 @@ class DirectScanWorker:
             if not self._prepare_exception_cleanup(queue, exc):
                 return
             self._handle_exception(exc)
+        finally:
+            self._release_scan_locks(scan)
+
         if queue is None:
             return
+
         queue.status = InstructionQueueStatus.COMPLETED
         self.worker.current_instruction_queue_item = None
         self.reset()
+
+    def _release_scan_locks(self, scan: ScanBase | None) -> None:
+        if scan is None:
+            return
+        request_id = scan.scan_info.metadata.get("RID")
+        if request_id is None:
+            return
+        registry = getattr(self.worker.parent, "device_lock_registry", None)
+        if registry is None:
+            return
+        registry.release_all(request_id)
 
     def _prepare_exception_cleanup(
         self, queue: DirectInstructionQueueItem | None, exc: Exception
@@ -254,6 +269,7 @@ class DirectScanWorker:
             else:
                 self.scan.actions._send_scan_status("halted", reason=reason)
 
+        self._release_scan_locks(self.scan)
         queue.status = InstructionQueueStatus.STOPPED
         queue.append_to_queue_history()
         self.worker.parent.queue_manager.queues[self.worker.queue_name].abort()

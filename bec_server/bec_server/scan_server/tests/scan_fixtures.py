@@ -392,6 +392,7 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
         resolved_scan_kwargs = {"system_config": {}, **scan_kwargs}
 
         parent = mock.MagicMock()
+        scan_device_manager.parent = parent
         parent.device_manager = scan_device_manager
         parent.connector = connector
         parent.queue_manager.instruction_handler = instruction_handler

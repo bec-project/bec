@@ -1457,6 +1457,92 @@ def test_queue_manager_get_active_scan_id_wo_rbl_returns_None(queuemanager_mock)
     assert queue_manager._get_active_scan_id("primary") == None
 
 
+def test_get_owned_devices_for_instruction_queue_returns_empty_without_registry(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    instruction_queue = InstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+
+    queue_manager.parent.device_lock_registry = None
+
+    assert queue_manager._get_owned_devices_for_instruction_queue(instruction_queue) == []
+
+
+def test_get_owned_devices_for_instruction_queue_uses_request_block_rid(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    instruction_queue = InstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-123"},
+    )
+    assembler = mock.MagicMock()
+    assembler.is_scan_message.return_value = False
+    assembler.assemble_device_instructions.return_value = mock.MagicMock(
+        run=mock.MagicMock(return_value=iter(())), readout_priority={}
+    )
+    instruction_queue.queue.active_rb = RequestBlock(msg, assembler, instruction_queue.queue)
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
+        return_value=["samx", "samy"]
+    )
+
+    owned_devices = queue_manager._get_owned_devices_for_instruction_queue(instruction_queue)
+
+    assert owned_devices == ["samx", "samy"]
+    queue_manager.parent.device_lock_registry.get_owned_devices.assert_called_once_with("rid-123")
+
+
+def test_get_owned_devices_for_instruction_queue_returns_empty_without_request_block(
+    queuemanager_mock,
+):
+    queue_manager = queuemanager_mock()
+    instruction_queue = InstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+    instruction_queue.queue.active_rb = None
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock()
+
+    assert queue_manager._get_owned_devices_for_instruction_queue(instruction_queue) == []
+    queue_manager.parent.device_lock_registry.get_owned_devices.assert_not_called()
+
+
+def test_get_owned_devices_for_instruction_queue_uses_active_scan_rid_for_direct_item(
+    queuemanager_mock,
+):
+    queue_manager = queuemanager_mock()
+    instruction_queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+    instruction_queue.active_scan = _build_dummy_v4_scan("scan-id")
+    instruction_queue.active_scan.scan_info.metadata["RID"] = "rid-456"
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
+        return_value=["samz"]
+    )
+
+    owned_devices = queue_manager._get_owned_devices_for_instruction_queue(instruction_queue)
+
+    assert owned_devices == ["samz"]
+    queue_manager.parent.device_lock_registry.get_owned_devices.assert_called_once_with("rid-456")
+
+
+@pytest.mark.parametrize("active_scan", [None, _build_dummy_v4_scan("scan-id-without-rid")])
+def test_get_owned_devices_for_instruction_queue_returns_empty_for_direct_item_without_rid(
+    queuemanager_mock, active_scan
+):
+    queue_manager = queuemanager_mock()
+    instruction_queue = DirectInstructionQueueItem(
+        queue_manager.queues["primary"], mock.MagicMock(), mock.MagicMock()
+    )
+    instruction_queue.active_scan = active_scan
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock()
+
+    assert queue_manager._get_owned_devices_for_instruction_queue(instruction_queue) == []
+    queue_manager.parent.device_lock_registry.get_owned_devices.assert_not_called()
+
+
 def test_request_block_queue_next():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
