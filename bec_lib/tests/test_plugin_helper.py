@@ -123,3 +123,81 @@ def test_get_scan_component_plugins(monkeypatch):
     result = plugin_helper.get_scan_component_plugins()
 
     assert result == [plugin_components]
+
+
+def test_get_file_writer_storage_copy_plugin(monkeypatch):
+    handler = mock.Mock()
+
+    monkeypatch.setattr(
+        plugin_helper.importlib.metadata,
+        "entry_points",
+        lambda group: [SimpleNamespace(name="plugin_storage_copy", load=lambda: handler)],
+    )
+    plugin_helper.get_file_writer_storage_copy_plugin.cache_clear()
+
+    result = plugin_helper.get_file_writer_storage_copy_plugin()
+
+    assert result is handler
+
+
+def test_get_file_writer_storage_copy_plugin_returns_none_without_match(monkeypatch):
+    monkeypatch.setattr(plugin_helper.importlib.metadata, "entry_points", lambda group: [])
+    plugin_helper.get_file_writer_storage_copy_plugin.cache_clear()
+
+    result = plugin_helper.get_file_writer_storage_copy_plugin()
+
+    assert result is None
+
+
+def test_get_file_writer_storage_copy_plugin_warns_for_multiple_matches(monkeypatch):
+    first_handler = mock.Mock()
+    second_handler = mock.Mock()
+
+    monkeypatch.setattr(
+        plugin_helper.importlib.metadata,
+        "entry_points",
+        lambda group: [
+            SimpleNamespace(name="plugin_storage_copy", load=lambda: first_handler),
+            SimpleNamespace(name="plugin_storage_copy", load=lambda: second_handler),
+        ],
+    )
+    plugin_helper.get_file_writer_storage_copy_plugin.cache_clear()
+
+    with mock.patch("bec_lib.plugin_helper.logger.warning") as mock_warning:
+        result = plugin_helper.get_file_writer_storage_copy_plugin()
+
+    assert result is first_handler
+    mock_warning.assert_called_once()
+
+
+def test_get_file_writer_storage_copy_plugin_returns_none_on_load_error(monkeypatch):
+    def _load():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        plugin_helper.importlib.metadata,
+        "entry_points",
+        lambda group: [SimpleNamespace(name="plugin_storage_copy", load=_load)],
+    )
+    plugin_helper.get_file_writer_storage_copy_plugin.cache_clear()
+
+    with mock.patch("bec_lib.plugin_helper.logger.error") as mock_error:
+        result = plugin_helper.get_file_writer_storage_copy_plugin()
+
+    assert result is None
+    mock_error.assert_called_once()
+
+
+def test_get_file_writer_storage_copy_plugin_returns_none_for_noncallable(monkeypatch):
+    monkeypatch.setattr(
+        plugin_helper.importlib.metadata,
+        "entry_points",
+        lambda group: [SimpleNamespace(name="plugin_storage_copy", load=lambda: "not-callable")],
+    )
+    plugin_helper.get_file_writer_storage_copy_plugin.cache_clear()
+
+    with mock.patch("bec_lib.plugin_helper.logger.error") as mock_error:
+        result = plugin_helper.get_file_writer_storage_copy_plugin()
+
+    assert result is None
+    mock_error.assert_called_once()

@@ -7,7 +7,7 @@ import json
 import pkgutil
 import sys
 from functools import cache, lru_cache
-from typing import TYPE_CHECKING, Any, Literal, Type
+from typing import TYPE_CHECKING, Any, Callable, Literal, Type
 
 from bec_lib.logger import bec_logger
 
@@ -148,6 +148,43 @@ def get_file_writer_plugins() -> dict:
 
 
 @cache
+def get_file_writer_storage_copy_plugin() -> Callable[[str, str, str, str | None], None] | None:
+    """
+    Load the storage-copy hook exposed by the installed plugin repository.
+
+    Returns:
+        Callable[[str, str, str, str | None], None] | None:
+            A callable accepting ``source_file``, ``scope``, ``active_account`` and ``subdir``,
+            or ``None`` if no hook is installed.
+    """
+    group = "bec.file_writer.storage_copy"
+    target = "plugin_storage_copy"
+    entry_points = [entry_point for entry_point in importlib.metadata.entry_points(group=group)]
+    matching_entry_points = [
+        entry_point for entry_point in entry_points if entry_point.name == target
+    ]
+
+    if not matching_entry_points:
+        return None
+
+    if len(matching_entry_points) > 1:
+        logger.warning(
+            f"Multiple storage copy plugins discovered for {group!r}. Using the first {target!r} entry point."
+        )
+
+    try:
+        plugin = matching_entry_points[0].load()
+    except Exception as exc:
+        logger.error(f"Error loading storage copy plugin {target}: {exc}")
+        return None
+
+    if not callable(plugin):
+        logger.error(f"Storage copy plugin {target} is not callable: {plugin!r}")
+        return None
+    return plugin
+
+
+@cache
 def get_metadata_schema_registry() -> tuple[dict, type[BasicScanMetadata]]:
     module = _get_available_plugins("bec.scans.metadata_schema")
     if len(module) == 0:
@@ -221,6 +258,7 @@ def reload_plugin_modules() -> None:
     logger.info("Reloading plugin modules...")
     _get_available_plugins.cache_clear()
     _import_module.cache_clear()
+    get_file_writer_storage_copy_plugin.cache_clear()
     get_metadata_schema_registry.cache_clear()
     try:
         _plugin_package_name = plugin_package_name()

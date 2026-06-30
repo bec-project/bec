@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 import warnings
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import ServiceConfigError
@@ -120,6 +121,44 @@ class DeviceConfigWriter:
 
 class FileWriterError(Exception):
     """Exception for errors in the file writer"""
+
+
+def sanitize_relative_subdir(subdir: str | None) -> str | None:
+    """
+    Normalize an optional relative subdirectory and strip path traversal parts.
+
+    Args:
+        subdir (str | None): User-provided relative subdirectory.
+
+    Returns:
+        str | None: A normalized safe relative path, or ``None`` if nothing remains.
+    """
+    if subdir is None:
+        return None
+
+    normalized = subdir.replace("\\", "/").strip()
+    if not normalized:
+        return None
+
+    safe_parts = []
+    for part in PurePosixPath(normalized).parts:
+        if part in ("", ".", ".."):
+            continue
+        part = part.strip("/")
+        if not part:
+            continue
+        if set(part) == {"."}:
+            continue
+        part = part.lstrip("~")
+        if not part:
+            continue
+        if part.endswith(":"):
+            continue
+        safe_parts.append(part)
+
+    if not safe_parts:
+        return None
+    return "/".join(safe_parts)
 
 
 def compile_file_components(
