@@ -1074,6 +1074,22 @@ class MessageEndpoints:
             message_op=MessageOp.SET_PUBLISH,
         )
 
+    @staticmethod
+    def storage_copy_request():
+        """
+        Endpoint for storage copy request. This endpoint is used to request a copy of a file
+        from one storage location to another using a messages.StorageCopyRequestMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for storage copy request.
+        """
+        endpoint = f"{EndpointType.USER.value}/storage/copy_request"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.StorageCopyRequestMessage,
+            message_op=MessageOp.SEND,
+        )
+
     # log
     @staticmethod
     def log():

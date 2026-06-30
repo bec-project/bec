@@ -98,6 +98,42 @@ def test_scan_status_callback(file_writer_manager_mock):
         assert file_manager.scan_storage["scan_id"].scan_finished is True
 
 
+def test_storage_copy_request_callback_invokes_plugin(file_writer_manager_mock):
+    file_manager = file_writer_manager_mock
+    file_manager._run_storage_copy_plugin = mock.Mock()
+    msg = messages.StorageCopyRequestMessage(
+        source_file="/tmp/source.h5", scope="alignment", subdir="safe/path"
+    )
+    msg_raw = MessageObject(value=msg, topic="storage/copy_request")
+
+    file_manager._storage_copy_request_callback(msg_raw)
+
+    file_manager._run_storage_copy_plugin.assert_called_once_with(msg)
+
+
+def test_load_storage_copy_plugin_uses_active_account(file_writer_manager_mock):
+    file_manager = file_writer_manager_mock
+    plugin = mock.Mock()
+
+    with mock.patch(
+        "bec_server.file_writer.file_writer_manager.plugin_helper.get_file_writer_storage_copy_plugin",
+        return_value=plugin,
+    ):
+        runner = file_manager._load_storage_copy_plugin()
+
+    with mock.patch.object(
+        file_manager.connector, "get_last", return_value=messages.VariableMessage(value="p12345")
+    ) as mock_get_last:
+        runner(
+            messages.StorageCopyRequestMessage(
+                source_file="/tmp/source.h5", scope="alignment", subdir="../unsafe/folder"
+            )
+        )
+
+    mock_get_last.assert_called_once_with(MessageEndpoints.account(), "data")
+    plugin.assert_called_once_with("/tmp/source.h5", "alignment", "p12345", "unsafe/folder")
+
+
 def test_check_storage_status(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
     file_manager.scan_storage["scan_id"] = scan_storage_mock

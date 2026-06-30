@@ -1260,6 +1260,22 @@ class FileContentMessage(BECMessage):
     scan_info: dict
 
 
+class StorageCopyRequestMessage(BECMessage):
+    """Message to request a copy of a file to a storage location
+
+    Args:
+        source_file (str): Path to the source file.
+        scope (str): Scope of the copy request.
+        subdir (str | None): Optional relative destination subdirectory.
+        metadata (dict, optional): Additional metadata. Defaults to None.
+    """
+
+    msg_type: ClassVar[str] = "storage_copy_request_message"
+    source_file: str
+    scope: str
+    subdir: str | None = None
+
+
 class VariableMessage(BECMessage):
     """Message to inform about a global variable
 

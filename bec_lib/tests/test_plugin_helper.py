@@ -123,3 +123,18 @@ def test_get_scan_component_plugins(monkeypatch):
     result = plugin_helper.get_scan_component_plugins()
 
     assert result == [plugin_components]
+
+
+def test_get_file_writer_storage_copy_plugin(monkeypatch):
+    handler = mock.Mock()
+
+    monkeypatch.setattr(
+        plugin_helper.importlib.metadata,
+        "entry_points",
+        lambda group: [SimpleNamespace(name="plugin_storage_copy", load=lambda: handler)],
+    )
+    plugin_helper.get_file_writer_storage_copy_plugin.cache_clear()
+
+    result = plugin_helper.get_file_writer_storage_copy_plugin()
+
+    assert result is handler

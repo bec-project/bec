@@ -28,9 +28,10 @@ from bec_lib.dap_plugins import DAPPlugins
 from bec_lib.device_monitor_plugin import DeviceMonitorPlugin
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.file_utils import sanitize_relative_subdir
 from bec_lib.logger import bec_logger
 from bec_lib.messaging_services import MessagingContainer
-from bec_lib.plugin_helper import _get_available_plugins
+from bec_lib.plugin_helper import _get_available_plugins, get_file_writer_storage_copy_plugin
 from bec_lib.procedures.hli import ProcedureHli
 from bec_lib.scan_history import ScanHistory
 from bec_lib.script_executor import ScriptExecutor
@@ -41,7 +42,12 @@ from bec_lib.utils.import_utils import lazy_import_from
 logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
-    from bec_lib.messages import BECStatus, ServiceRequestMessage, VariableMessage
+    from bec_lib.messages import (
+        BECStatus,
+        ServiceRequestMessage,
+        StorageCopyRequestMessage,
+        VariableMessage,
+    )
     from bec_lib.redis_connector import RedisConnector
     from bec_lib.scan_manager import ScanManager
     from bec_lib.scans import Scans
@@ -53,6 +59,7 @@ else:
     ScanManager = lazy_import_from("bec_lib.scan_manager", ("ScanManager",))
     Scans = lazy_import_from("bec_lib.scans", ("Scans",))
     ServiceRequestMessage = lazy_import_from("bec_lib.messages", ("ServiceRequestMessage",))
+    StorageCopyRequestMessage = lazy_import_from("bec_lib.messages", ("StorageCopyRequestMessage",))
 
 
 class SystemConfig(BaseModel):
@@ -256,6 +263,27 @@ class BECClient(BECService):
     def clear_all_alarms(self):
         """remove all alarms from stack"""
         self.alarm_handler.clear()
+
+    def beamline_storage_copy(self, file: str, scope: str, subdir: str | None = None) -> None:
+        """
+        Request a file transfer via the installed beamline storage-copy plugin.
+
+        Args:
+            file (str): Path to the source file.
+            scope (str): Beamline-defined transfer scope.
+            subdir (str | None): Optional relative destination subdirectory.
+
+        Raises:
+            RuntimeError: If no storage-copy plugin is installed.
+        """
+        if get_file_writer_storage_copy_plugin() is None:
+            raise RuntimeError("No file-writer storage copy plugin is installed.")
+        self.connector.send(
+            MessageEndpoints.storage_copy_request(),
+            StorageCopyRequestMessage(
+                source_file=file, scope=scope, subdir=sanitize_relative_subdir(subdir)
+            ),
+        )
 
     @property
     def pre_scan_macros(self):

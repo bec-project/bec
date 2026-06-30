@@ -230,6 +230,18 @@ def test_ScanBaselineMessage():
     assert res_loaded == msg
 
 
+def test_StorageCopyRequestMessage():
+    msg = messages.StorageCopyRequestMessage(
+        source_file="/tmp/source.h5",
+        scope="flomni_alignment",
+        subdir="results/nested",
+        metadata={"RID": "1234"},
+    )
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+    assert res_loaded == msg
+
+
 @pytest.mark.parametrize(
     "action,valid",
     [("add", True), ("set", True), ("update", True), ("reload", True), ("wrong_action", False)],
