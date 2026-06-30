@@ -264,17 +264,20 @@ class QueueManager:
                 return instruction_queue
         return None
 
-    def stop_all_devices(self, stop_id: str | list[str] | None = None):
+    def stop_all_devices(
+        self, stop_id: str | list[str] | None = None, devices: list[str] | None = None
+    ):
         """
-        Send a message to the device server to stop all devices.
+        Send a message to the device server to stop devices.
         Args:
             stop_id (str | None): An optional identifier for the stop request.
                 If provided, this ID will be added to the list of stopped requests in the device server to
                 prevent any instructions associated with this ID raising alarms after the stop command is issued.
                 The stop_id can be a scan ID, request ID, or queue ID.
+            devices (list[str] | None): Optional list of devices to stop. If None, all devices are stopped.
         """
         # We send an empty list to indicate that all devices should be stopped
-        msg = messages.VariableMessage(value=[], metadata={})
+        msg = messages.VariableMessage(value=devices or [], metadata={})
         if stop_id is not None:
             msg.metadata["stop_id"] = stop_id
         self.connector.send(MessageEndpoints.stop_devices(), msg)
@@ -417,7 +420,10 @@ class QueueManager:
                 stop_id = instruction_queue.queue_id
             else:
                 stop_id = instruction_queue.scan_id
-            self.stop_all_devices(stop_id=stop_id)
+            self.stop_all_devices(
+                stop_id=stop_id,
+                devices=self._get_owned_devices_for_instruction_queue(instruction_queue),
+            )
 
     def _cancel_queue_item(
         self, target_queue_item: InstructionQueueItem | DirectInstructionQueueItem, queue: str
@@ -621,6 +627,24 @@ class QueueManager:
                 return None
             return instr_queue.active_scan.scan_info.scan_id
         return instr_queue.active_request_block.scan_id
+
+    def _get_owned_devices_for_instruction_queue(
+        self, instruction_queue: InstructionQueueItem | DirectInstructionQueueItem
+    ) -> list[str]:
+        registry = getattr(self.parent, "device_lock_registry", None)
+        if registry is None:
+            return []
+        if isinstance(instruction_queue, DirectInstructionQueueItem):
+            if instruction_queue.active_scan is None:
+                return []
+            request_id = instruction_queue.active_scan.scan_info.metadata.get("RID")
+        else:
+            if instruction_queue.active_request_block is None:
+                return []
+            request_id = instruction_queue.active_request_block.RID
+        if request_id is None:
+            return []
+        return registry.get_owned_devices(request_id)
 
     def _wait_for_queue_to_appear_in_history(
         self, scan_id, queue, timeout=60

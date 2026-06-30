@@ -618,6 +618,9 @@ def test_set_continue(queuemanager_mock):
 def test_set_abort(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
+        return_value=["samx"]
+    )
     msg = messages.ScanQueueMessage(
         scan_type="mv",
         parameter={"args": {"samx": (1,)}, "kwargs": {}},
@@ -636,7 +639,7 @@ def test_set_abort(queuemanager_mock):
         time.sleep(0.1)
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=[], metadata={"stop_id": queue_id}),
+        "msg": messages.VariableMessage(value=["samx"], metadata={"stop_id": queue_id}),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
@@ -647,6 +650,9 @@ def test_set_abort(queuemanager_mock):
 def test_set_abort_with_scan_id(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
+        return_value=["samx", "samy"]
+    )
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
         parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
@@ -665,7 +671,9 @@ def test_set_abort_with_scan_id(queuemanager_mock):
         time.sleep(0.1)
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=[], metadata={"stop_id": [scan_id_abort]}),
+        "msg": messages.VariableMessage(
+            value=["samx", "samy"], metadata={"stop_id": [scan_id_abort]}
+        ),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
