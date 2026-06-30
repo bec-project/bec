@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections.abc import Iterable
 from string import Template
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
 
@@ -55,6 +56,7 @@ class ScanActions:
         Open the scan.
         We fetch all relevant metadata from the scan object and emit a new scan status.
         """
+        self._acquire_initial_device_locks()
         self._send_scan_status("open")
 
     def stage_all_devices(
@@ -78,6 +80,7 @@ class ScanActions:
             ScanStubStatus: status object to track the staging process
         """
         status = self._create_status(is_container=True, name="stage_all_devices")
+        owned_device_names = self._get_owned_device_names()
 
         # We separate the staging of async devices and regular devices to optimize the staging process.
         # Async devices are typically slower to stage and should be staged in parallel.
@@ -106,7 +109,10 @@ class ScanActions:
         if async_devices:
             async_devices = sorted(async_devices, key=lambda x: x.name)
             async_devices = [
-                device for device in async_devices if device.name not in user_excluded_device_names
+                device
+                for device in async_devices
+                if device.name not in user_excluded_device_names
+                and device.root.name in owned_device_names
             ]
 
         for det in async_devices:
@@ -118,7 +124,7 @@ class ScanActions:
         stage_device_names_without_async = [
             dev.root.name
             for dev in self._device_manager.devices.enabled_devices
-            if dev.name not in excluded_device_names
+            if dev.name not in excluded_device_names and dev.root.name in owned_device_names
         ]
 
         if stage_device_names_without_async:
@@ -162,6 +168,7 @@ class ScanActions:
         if len(device_names) == 0:
             status.set_done()
             return status
+        self.acquire_device_lock(device_names)
 
         instr = messages.DeviceInstructionMessage(
             device=device_names,
@@ -202,6 +209,7 @@ class ScanActions:
         if len(device_names) == 0:
             status.set_done()
             return status
+        self.acquire_device_lock(device_names)
 
         instr = messages.DeviceInstructionMessage(
             device=device_names,
@@ -234,8 +242,13 @@ class ScanActions:
             ScanStubStatus: status object to track the pre-scan process
         """
         status = self._create_status(name="pre_scan_all_devices")
+        owned_device_names = self._get_owned_device_names()
 
-        devices = [dev.root.name for dev in self._device_manager.devices.enabled_devices]
+        devices = [
+            dev.root.name
+            for dev in self._device_manager.devices.enabled_devices
+            if dev.root.name in owned_device_names
+        ]
         if exclude is not None:
             excluded_device_names = set(self._normalize_device_names(exclude))
             devices = [
@@ -279,6 +292,7 @@ class ScanActions:
 
         if len(devices) != len(values):
             raise ValueError("The number of devices and values must match.")
+        self.acquire_device_lock(devices)
 
         status = self._create_status(is_container=True, name="set")
         for dev, val in zip(devices, values, strict=False):
@@ -313,6 +327,7 @@ class ScanActions:
             ScanStubStatus: status object to track the kickoff process
         """
         device_name = self._normalize_device_name(device)
+        self.acquire_device_lock(device_name)
         status = self._create_status(name=f"kickoff_{device_name}")
 
         instr = messages.DeviceInstructionMessage(
@@ -340,6 +355,7 @@ class ScanActions:
             ScanStubStatus: status object to track the completion process
         """
         device_name = self._normalize_device_name(device)
+        self.acquire_device_lock(device_name)
         status = self._create_status(name=f"complete_{device_name}")
 
         instr = messages.DeviceInstructionMessage(
@@ -371,7 +387,12 @@ class ScanActions:
             ScanStubStatus: status object to track the completion process
         """
         status = self._create_status(name="complete_all_devices")
-        device_names = [dev.root.name for dev in self._device_manager.devices.enabled_devices]
+        owned_device_names = self._get_owned_device_names()
+        device_names = [
+            dev.root.name
+            for dev in self._device_manager.devices.enabled_devices
+            if dev.root.name in owned_device_names
+        ]
         if exclude is not None:
             excluded_device_names = set(self._normalize_device_names(exclude))
             device_names = [
@@ -577,8 +598,11 @@ class ScanActions:
             wait (bool, optional): if True, wait for the trigger to complete. Defaults to True.
         """
         status = self._create_status(name="trigger_all_devices")
+        owned_device_names = self._get_owned_device_names()
         devices = [
-            dev.root.name for dev in self._device_manager.devices.get_software_triggered_devices()
+            dev.root.name
+            for dev in self._device_manager.devices.get_software_triggered_devices()
+            if dev.root.name in owned_device_names
         ]
         if not devices:
             status.set_done()
@@ -639,9 +663,13 @@ class ScanActions:
             exclude (str | DeviceBase | list[str | DeviceBase] | None, optional):
                 device(s) to exclude from unstaging. Defaults to None.
         """
-
         status = self._create_status(name="unstage_all_devices")
-        staged_devices = [dev.root.name for dev in self._device_manager.devices.enabled_devices]
+        owned_device_names = self._get_owned_device_names()
+        staged_devices = [
+            dev.root.name
+            for dev in self._device_manager.devices.enabled_devices
+            if dev.root.name in owned_device_names
+        ]
         if exclude is not None:
             excluded_device_names = set(self._normalize_device_names(exclude))
             staged_devices = [
@@ -683,6 +711,7 @@ class ScanActions:
         scan_report_instruction = {
             "readback": {"RID": request_id, "devices": device_names, "start": start, "end": stop}
         }
+        self.acquire_device_lock(device_names)
         self.add_device_with_required_response(device_names)
         self._scan.scan_info.scan_report_instructions.append(scan_report_instruction)
         if self._update_queue_info_callback is not None:
@@ -698,6 +727,7 @@ class ScanActions:
             device (str | DeviceBase): name of the device or DeviceBase instance to report
         """
         device_name = self._normalize_device_name(device)
+        self.acquire_device_lock(device_name)
         scan_report_instruction = {"device_progress": [device_name]}
         self._scan.scan_info.scan_report_instructions.append(scan_report_instruction)
         if self._update_queue_info_callback is not None:
@@ -749,6 +779,8 @@ class ScanActions:
 
         if not isinstance(devices, list):
             devices = [devices]
+
+        self.acquire_device_lock(devices)
 
         for device in devices:
             device_name = self._normalize_device_name(device)
@@ -852,6 +884,7 @@ class ScanActions:
             Any | ScanStubStatus: The result of the RPC call or a ScanStubStatus object if the result is a status object.
 
         """
+        self.acquire_device_lock(device)
         rpc_id = str(uuid.uuid4())
         status = self.rpc_call_no_wait(device, func_name, rpc_id, *args, **kwargs)
         status.wait(resolve_on_known_type=True)
@@ -895,6 +928,47 @@ class ScanActions:
         )
         self._send(msg)
         return status
+
+    def acquire_device_lock(
+        self, device: str | DeviceBase | Iterable[str | DeviceBase]
+    ) -> list[str]:
+        """
+        Acquire the lock for one or multiple devices for the current request.
+        A device lock is a mechanism to prevent multiple scans from using the same device at the same time.
+        If a device is already locked by another request, the current request will wait until the lock
+        is released.
+
+        Args:
+            device (str | DeviceBase | Iterable[str | DeviceBase]): device(s) to lock
+
+        Returns:
+            list[str]: acquired device names
+        """
+        registry = getattr(self._device_manager.parent, "device_lock_registry", None)
+        request_id = self._scan.scan_info.metadata.get("RID")
+        if registry is None or request_id is None:
+            return []
+        if isinstance(device, Iterable) and not isinstance(device, (str, DeviceBase)):
+            device_names = self._normalize_device_names(list(device))
+        else:
+            device_names = self._normalize_device_names(device)
+        device_names = sorted(set(device_names))
+        return registry.acquire_many(
+            request_id, devices=device_names, interruption_callback=self._interruption_callback
+        )
+
+    def release_device_lock(self) -> list[str]:
+        """
+        Release all device locks held by the current request.
+
+        Returns:
+            list[str]: released device names
+        """
+        registry = getattr(self._device_manager.parent, "device_lock_registry", None)
+        request_id = self._scan.scan_info.metadata.get("RID")
+        if registry is None or request_id is None:
+            return []
+        return registry.release_all(request_id)
 
     def send_client_info(self, message: str):
         """
@@ -1002,6 +1076,42 @@ class ScanActions:
             devices = [devices]
         return [ScanActions._normalize_device_name(dev) for dev in devices]
 
+    def _acquire_initial_device_locks(self) -> None:
+        """
+        Acquire the device locks for all devices that are on readout priority
+        "monitored" or "async" and have ownership mode "claimable", as well as all devices that are
+        have ownership mode "pinned", and all devices that are software triggered.
+        """
+        monitored_claimable = {
+            dev.root.name
+            for dev in self._device_manager.devices.monitored_devices(
+                readout_priority=self.readout_priority
+            )
+            if self._device_ownership_mode(dev) == "claimable"
+        }
+        async_claimable = {
+            dev.root.name
+            for dev in self._device_manager.devices.async_devices(
+                readout_priority=self.readout_priority
+            )
+            if self._device_ownership_mode(dev) == "claimable"
+        }
+        pinned_devices = {
+            dev.root.name
+            for dev in self._device_manager.devices.enabled_devices
+            if self._device_ownership_mode(dev) == "pinned"
+        }
+        software_triggered_devices = {
+            dev.root.name for dev in self._device_manager.devices.get_software_triggered_devices()
+        }
+        self.acquire_device_lock(
+            monitored_claimable | async_claimable | pinned_devices | software_triggered_devices
+        )
+
+    @staticmethod
+    def _device_ownership_mode(device: DeviceBase) -> str:
+        return device.root._info.get("ownership_mode", "claimable")
+
     def _get_monitored_device_names(self) -> list[str]:
         monitored_devices = [
             _dev.root.name
@@ -1010,6 +1120,13 @@ class ScanActions:
             )
         ]
         return sorted(monitored_devices)
+
+    def _get_owned_device_names(self) -> set[str]:
+        registry = getattr(self._device_manager.parent, "device_lock_registry", None)
+        request_id = self._scan.scan_info.metadata.get("RID")
+        if registry is None or request_id is None:
+            return set()
+        return set(registry.get_owned_devices(request_id))
 
     @staticmethod
     def _normalize_manual_readings(
