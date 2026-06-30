@@ -5,11 +5,12 @@ is used to create the device interface for proxy objects on other services.
 
 import functools
 from contextlib import contextmanager
+from enum import Enum
 from typing import Any, Generator
 
 import msgpack
 from ophyd import Device, Kind, PositionerBase, Signal
-from ophyd_devices import BECDeviceBase, ComputedSignal
+from ophyd_devices import BECDeviceBase, ComputedSignal, PSIDeviceBase
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 
 from bec_lib.bec_errors import DeviceConfigError
@@ -19,6 +20,26 @@ from bec_lib.numpy_encoder import numpy_encode
 from bec_lib.signature_serializer import signature_to_dict
 
 logger = bec_logger.logger
+
+
+class OwnershipMode(str, Enum):
+    """
+    Ownership policy used in serialized device info.
+
+    FREE: The device is free to be used by any scan or procedure without acquiring a lock.
+        This is typically used for read-only signals.
+    CLAIMABLE: The device can be locked by a scan or procedure. It can be used without a lock,
+        but if a scan or procedure wants to use it, it should acquire a lock first. Typical
+        examples are motors that are normally on readout priority "baseline". When a scan wants
+        to use the motor, it should acquire a lock first. If the motor is already locked by
+        another scan or procedure, the scan will wait until the lock is released.
+    PINNED: When enabled, the device has to be locked by a scan before it can be used. This is
+        typically used for devices that are stateful during a scan, such as detectors or flyers.
+    """
+
+    FREE = "free"
+    CLAIMABLE = "claimable"
+    PINNED = "pinned"
 
 
 @contextmanager
@@ -115,6 +136,36 @@ def get_device_base_class(obj: Any) -> str:
         return "device"
 
     return "unknown"
+
+
+def get_ownership_mode(
+    obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase,
+) -> OwnershipMode:
+    """
+    Resolve ownership policy for a device or signal.
+    The logic is as follows:
+    1. If the class has an explicit ownership_mode attribute, use that.
+    2. If the object is a PSIDeviceBase, it is pinned.
+    3. If the object is a signal and has write_access set to False, it is free.
+    4. Otherwise, it is claimable.
+
+    Args:
+        obj (PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase): object to get the ownership mode from
+
+    Returns:
+        OwnershipMode: ownership mode of the object
+    """
+    explicit_mode = getattr(obj.__class__, "ownership_mode", None)
+    if explicit_mode is not None:
+        return OwnershipMode(explicit_mode)
+
+    if isinstance(obj, PSIDeviceBase):
+        return OwnershipMode.PINNED
+
+    if get_device_base_class(obj) == "signal" and getattr(obj, "write_access", None) is False:
+        return OwnershipMode.FREE
+
+    return OwnershipMode.CLAIMABLE
 
 
 def get_device_info(
@@ -256,6 +307,7 @@ def get_device_info(
             "device_dotted_name": getattr(obj, "dotted_name", ""),
             "device_base_class": get_device_base_class(obj),
             "device_class": obj.__class__.__name__,
+            "ownership_mode": get_ownership_mode(obj).value,
             "read_access": getattr(obj, "read_access", None),
             "write_access": getattr(obj, "write_access", None),
             "signals": signals,
