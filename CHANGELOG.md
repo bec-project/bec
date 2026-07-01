@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.148.1 (2026-07-01)
+
+### Bug Fixes
+
+- Enhance path optimization with fast axis and direction handling
+  ([`7bd5509`](https://github.com/bec-project/bec/commit/7bd5509a7f8a94a848e8366b81350020e61b4ecd))
+
+
 ## v3.148.0 (2026-07-01)
 
 ### Features
