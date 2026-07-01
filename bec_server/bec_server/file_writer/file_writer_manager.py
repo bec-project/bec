@@ -6,13 +6,13 @@ import time
 import traceback
 from collections import defaultdict
 
-from bec_lib import messages
+from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_service import BECService
 from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.file_utils import get_full_path
+from bec_lib.file_utils import get_full_path, sanitize_relative_subdir
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_lib.service_config import ServiceConfig
@@ -115,6 +115,10 @@ class FileWriterManager(BECService):
             cb=self._update_available_beamline_states,
             from_start=True,
         )
+        self.connector.register(
+            MessageEndpoints.storage_copy_request(), cb=self._storage_copy_request_callback
+        )
+        self._run_storage_copy_plugin = self._load_storage_copy_plugin()
         self.async_writer = None
         self.scan_storage: dict[str, ScanStorage] = {}
         self.file_writer = HDF5FileWriter(self)
@@ -139,6 +143,28 @@ class FileWriterManager(BECService):
         topic, msg = msg.topic, msg.value
         device = topic.split("/")[-1]
         self.update_device_configuration(device, msg)
+
+    def _storage_copy_request_callback(self, msg_obj: MessageObject):
+        msg = msg_obj.value
+        if not isinstance(msg, messages.StorageCopyRequestMessage):
+            logger.error(f"Received invalid storage copy request message: {msg}")
+            return
+        if self._run_storage_copy_plugin is not None:
+            self._run_storage_copy_plugin(msg)
+
+    def _load_storage_copy_plugin(self):
+        plugin = plugin_helper.get_file_writer_storage_copy_plugin()
+        if plugin is None:
+            return None
+
+        def _run_storage_copy_plugin(msg: messages.StorageCopyRequestMessage) -> None:
+            current_account_msg = self.connector.get_last(MessageEndpoints.account(), "data")
+            active_account = ""
+            if current_account_msg is not None and isinstance(current_account_msg.value, str):
+                active_account = current_account_msg.value
+            plugin(msg.source_file, msg.scope, active_account, sanitize_relative_subdir(msg.subdir))
+
+        return _run_storage_copy_plugin
 
     def _update_available_beamline_states(
         self, msg: dict[str, messages.AvailableBeamlineStatesMessage]
