@@ -18,8 +18,8 @@ def state_manager(connected_connector, dm_with_devices):
 
 @pytest.fixture
 def fake_bl_states(monkeypatch):
-    class FakeState(bl_states.BeamlineState[bl_states.DeviceStateConfig]):
-        CONFIG_CLASS = bl_states.DeviceStateConfig
+    class FakeState(bl_states.BeamlineState[bl_states.ShutterStateConfig]):
+        CONFIG_CLASS = bl_states.ShutterStateConfig
 
         def __init__(self, config=None, redis_connector=None, **kwargs):
             super().__init__(config=config, redis_connector=redis_connector, **kwargs)
@@ -126,6 +126,21 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
 
     assert len(state_manager._states) == 1
     assert "State2" in state_manager._states
+
+
+def test_state_manager_rejects_abstract_state_type(state_manager):
+    msg = messages.AvailableBeamlineStatesMessage(
+        states=[
+            messages.BeamlineStateConfig(
+                name="State1",
+                state_type="DeviceBeamlineState",
+                parameters={"name": "State1", "device": "shutter1"},
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="not a concrete beamline state"):
+        state_manager.update_states(msg)
 
 
 @pytest.mark.timeout(5)
