@@ -271,6 +271,23 @@ class TestBeamlineStateManager:
         assert "shutter_open" in manager._states
         assert isinstance(getattr(manager, "shutter_open"), BeamlineStateClientBase)
 
+    def test_manager_rejects_abstract_state_type_on_init(self, connected_connector):
+        config = messages.BeamlineStateConfig(
+            name="shutter_open",
+            state_type="DeviceBeamlineState",
+            parameters={"name": "shutter_open", "device": "samy"},
+        )
+        connected_connector.xadd(
+            MessageEndpoints.available_beamline_states(),
+            {"data": messages.AvailableBeamlineStatesMessage(states=[config])},
+            max_size=1,
+        )
+        client = mock.MagicMock()
+        client.connector = connected_connector
+
+        with pytest.raises(ValueError, match="not a concrete beamline state"):
+            BeamlineStateManager(client)
+
     def test_on_state_update_creates_client_attribute(self, state_manager):
         config = messages.BeamlineStateConfig(
             name="shutter_open",
@@ -282,7 +299,7 @@ class TestBeamlineStateManager:
         state_manager._on_state_update({"data": update}, parent=state_manager)
 
         assert "shutter_open" in state_manager._states
-        assert isinstance(state_manager._states["shutter_open"], bl_states.DeviceStateConfig)
+        assert isinstance(state_manager._states["shutter_open"], bl_states.ShutterStateConfig)
         assert isinstance(getattr(state_manager, "shutter_open"), BeamlineStateClientBase)
 
     def test_update_parameters_from_client_updates_state_and_publishes(self, state_manager):
@@ -371,7 +388,7 @@ class TestBeamlineStateManager:
         assert result == {"status": "valid", "label": "ok"}
 
     def test_add_waits_for_initial_state_message(self, state_manager):
-        state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
+        state = bl_states.ShutterStateConfig(name="shutter_open", device="samy")
 
         def publish_initial_state():
             time.sleep(0.05)
@@ -394,8 +411,14 @@ class TestBeamlineStateManager:
 
         assert state_manager.shutter_open.get() == {"status": "valid", "label": "ok"}
 
-    def test_add_and_delete_publish_updates(self, state_manager):
+    def test_add_rejects_abstract_device_state_config(self, state_manager):
         state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
+
+        with pytest.raises(ValueError, match="not a concrete beamline state"):
+            state_manager.add(state)
+
+    def test_add_and_delete_publish_updates(self, state_manager):
+        state = bl_states.ShutterStateConfig(name="shutter_open", device="samy")
 
         with mock.patch.object(state_manager, "_wait_for_initial_state"):
             state_manager.add(state)
@@ -418,7 +441,7 @@ class TestBeamlineStateManager:
         assert "shutter_open" not in state_manager._states
 
     def test_show_all_prints_table(self, state_manager, capsys):
-        state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
+        state = bl_states.ShutterStateConfig(name="shutter_open", device="samy")
         with mock.patch.object(state_manager, "_wait_for_initial_state"):
             state_manager.add(state)
 
