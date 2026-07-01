@@ -8,6 +8,7 @@ from bec_lib.signature_serializer import serialize_dtype
 from bec_server.scan_server.scans.acquire import Acquire
 from bec_server.scan_server.scans.fermat_scan import FermatSpiralScan
 from bec_server.scan_server.scans.line_scan import LineScan
+from bec_server.scan_server.scans.multi_region_grid_scan import MultiRegionGridScan
 from bec_server.scan_server.scans.scan_argument_modifier import (
     _convert_annotation,
     gui_config_with_modifiers,
@@ -182,3 +183,10 @@ def test_scan_doc_with_modifiers_renders_defaulted_acquire_parameters_as_kwargs_
         ">>> scans._v4_acquire(exp_time=0, frames_per_trigger=1, settling_time=0, "
         "settling_time_after_trigger=0, readout_time=0, burst_at_each_point=1)"
     ) in doc
+
+
+def test_scan_doc_with_modifiers_renders_nested_region_examples():
+    doc = scan_doc_with_modifiers(MultiRegionGridScan)
+
+    assert ("regions=[((-1.0, 1.0, 10), (-1.0, 1.0, 10))], relative=False") in doc
+    assert "regions=[1.0, 2.0, 3.0]" not in doc
