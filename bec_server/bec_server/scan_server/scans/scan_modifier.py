@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
 from functools import wraps
-from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias, get_args
+from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeAlias, TypedDict, get_args
 
 from bec_lib.scan_args import ScanArgument
 
@@ -25,6 +26,69 @@ ScanHookName: TypeAlias = Literal[
 # somehow, pylance doesn't like it when we define scan hooks and create the
 # literals out of it, so we do it the other way around
 VALID_SCAN_HOOKS = set(get_args(ScanHookName))
+HookType: TypeAlias = Literal["before", "after", "replace"]
+
+
+class FilteredHookConfig(TypedDict):
+    method_name: str
+    scan_names: list[str]
+
+
+HookConfig: TypeAlias = str | FilteredHookConfig
+HookLifecycleConfig: TypeAlias = HookConfig | list[HookConfig]
+ScanHookConfigMap: TypeAlias = dict[HookType, HookLifecycleConfig]
+
+
+def _matches_scan_name(scan_name: str | None, patterns: list[str] | None) -> bool:
+    if not patterns:
+        return True
+    if scan_name is None:
+        return False
+    return any(fnmatchcase(scan_name, pattern) for pattern in patterns)
+
+
+def _get_hook_method_name(
+    hook_name: str, hook_info: ScanHookConfigMap, hook_type: HookType, scan_name: str | None
+) -> str | None:
+    """
+    Resolve the scan modifier method name for a hook lifecycle.
+
+    Args:
+        hook_name (str): Name of the scan hook being resolved, such as ``"post_scan"``.
+        hook_info (ScanHookConfigMap):
+            Hook implementation metadata produced by :func:`get_scan_hooks_impl`.
+        hook_type (HookType): Lifecycle stage to resolve within the hook metadata.
+        scan_name (str | None): Scan name used to evaluate optional ``scan_names`` filters.
+
+    Returns:
+        str | None: The matching modifier method name, or ``None`` if no implementation applies.
+
+    Raises:
+        ValueError: If more than one implementation matches the same hook lifecycle for the given
+            ``scan_name``.
+    """
+    hook_config = hook_info.get(hook_type)
+    if hook_config is None:
+        return None
+    if isinstance(hook_config, list):
+        matched_method_names = []
+        for config in hook_config:
+            if isinstance(config, str):
+                matched_method_names.append(config)
+                continue
+            if _matches_scan_name(scan_name, config.get("scan_names")):
+                matched_method_names.append(config["method_name"])
+        if len(matched_method_names) > 1:
+            raise ValueError(
+                f"Multiple scan modifier implementations matched hook '{hook_name}' "
+                f"for lifecycle '{hook_type}' and scan '{scan_name}'"
+            )
+        return matched_method_names[0] if matched_method_names else None
+    if isinstance(hook_config, str):
+        return hook_config
+    if not _matches_scan_name(scan_name, hook_config.get("scan_names")):
+        return None
+    return hook_config["method_name"]
 
 
 def scan_hook(func):
@@ -46,41 +110,62 @@ def scan_hook(func):
             return func(self, *args, **kwargs)
 
         hook_info = self._scan_modifier_hooks[func.__name__]
-        if "before" in hook_info:
-            before_method = getattr(self._scan_modifier, hook_info["before"])
+        scan_name = getattr(self, "scan_name", None)
+
+        before_method_name = _get_hook_method_name(func.__name__, hook_info, "before", scan_name)
+        if before_method_name is not None:
+            before_method = getattr(self._scan_modifier, before_method_name)
             before_method(*args, **kwargs)
 
-        if "replace" in hook_info:
-            replace_method = getattr(self._scan_modifier, hook_info["replace"])
+        replace_method_name = _get_hook_method_name(func.__name__, hook_info, "replace", scan_name)
+        if replace_method_name is not None:
+            replace_method = getattr(self._scan_modifier, replace_method_name)
             replace_method(*args, **kwargs)
         else:
             func(self, *args, **kwargs)
 
-        if "after" in hook_info:
-            after_method = getattr(self._scan_modifier, hook_info["after"])
+        after_method_name = _get_hook_method_name(func.__name__, hook_info, "after", scan_name)
+        if after_method_name is not None:
+            after_method = getattr(self._scan_modifier, after_method_name)
             after_method(*args, **kwargs)
 
         return
 
     # pylint: disable=protected-access
     wrapper._scan_hook_info = {"method_name": func.__name__}  # type: ignore
+    wrapper._scan_hook_original = func  # type: ignore[attr-defined]
 
     return wrapper
 
 
 def scan_hook_impl(
-    hook_name: ScanHookName, hook_type: Literal["before", "after", "replace"] = "before"
+    hook_name: ScanHookName, hook_type: HookType = "before", scan_names: list[str] | None = None
 ):
     """
-    Decorator for scan hook implementations. It registers the decorated method as an implementation of the specified scan hook.
-    The hook_name must refer to an existing scan hook.
-    The hook_type should be one of the following: "before", "after" or "replace".
-    This allows the scan modifier to specify whether the decorated method should be executed before, after or instead of the original scan hook method.
+    Register a scan modifier method as an implementation of a scan hook lifecycle.
+
+    Args:
+        hook_name (ScanHookName): Name of the scan hook to attach to.
+        hook_type (HookType): Lifecycle stage in which the
+            modifier method should run. ``"before"`` runs ahead of the original hook,
+            ``"after"`` runs after it, and ``"replace"`` runs instead of it.
+        scan_names (list[str] | None): Optional list of scan-name patterns that restrict when
+            this implementation applies. Patterns use shell-style wildcards such as
+            ``"*_line_scan"``. If ``None``, the implementation applies to all scan names.
+
+    Returns:
+        Callable: A decorator that annotates the wrapped method with scan hook metadata.
+
+    Raises:
+        ValueError: If ``hook_name`` is not a supported hook, if ``hook_type`` is invalid, or if
+            ``scan_names`` is not a list.
     """
     if hook_name not in VALID_SCAN_HOOKS:
         raise ValueError(f"Invalid scan hook: {hook_name}")
     if hook_type not in {"before", "after", "replace"}:
         raise ValueError(f"Invalid scan hook type: {hook_type}")
+    if scan_names is not None and not isinstance(scan_names, list):
+        raise ValueError("scan_names must be a list of scan name patterns")
 
     def decorator(func):
         @wraps(func)
@@ -88,22 +173,24 @@ def scan_hook_impl(
             return func(self, *args, **kwargs)
 
         # pylint: disable=protected-access
-        wrapper._scan_hook_impl_info = {"hook_name": hook_name, "hook_type": hook_type}  # type: ignore
+        wrapper._scan_hook_impl_info = {
+            "hook_name": hook_name,
+            "hook_type": hook_type,
+            "scan_names": scan_names,
+        }  # type: ignore
 
         return wrapper
 
     return decorator
 
 
-def get_scan_hooks_impl(cls) -> dict[str, dict[str, str]]:
+def get_scan_hooks_impl(cls) -> dict[str, ScanHookConfigMap]:
     """
     Get the scan hooks implemented by the given class. It returns
     a dictionary mapping the original scan hook names to the corresponding method names and hook types in the scan modifier.
 
-    Raises:
-        ValueError: If the class implements multiple hooks for the same hook_type (before, after, replace) for the same scan hook.
     """
-    hooks = {}
+    hooks: dict[str, ScanHookConfigMap] = {}
     for attr_name in dir(cls):
         attr = getattr(cls, attr_name)
         if callable(attr) and hasattr(attr, "_scan_hook_impl_info"):
@@ -112,11 +199,19 @@ def get_scan_hooks_impl(cls) -> dict[str, dict[str, str]]:
             hook_type = info["hook_type"]
             if hook_name not in hooks:
                 hooks[hook_name] = {}
-            if hook_type in hooks[hook_name]:
-                raise ValueError(
-                    f"Multiple implementations for the same hook type '{hook_type}' for the scan hook '{hook_name}' in class '{cls.__name__}'"
-                )
-            hooks[hook_name][hook_type] = attr_name
+            scan_names = info.get("scan_names")
+            hook_config: HookConfig
+            if scan_names is None:
+                hook_config = attr_name
+            else:
+                hook_config = {"method_name": attr_name, "scan_names": scan_names}
+            existing_hook_config = hooks[hook_name].get(hook_type)
+            if existing_hook_config is None:
+                hooks[hook_name][hook_type] = hook_config
+            elif isinstance(existing_hook_config, list):
+                existing_hook_config.append(hook_config)
+            else:
+                hooks[hook_name][hook_type] = [existing_hook_config, hook_config]
     return hooks
 
 
@@ -225,3 +320,27 @@ class ScanModifier:
             if check_enabled and not self.dev[dev_name].enabled:
                 return False
         return True
+
+    def call_original(self, hook_name: ScanHookName, *args, **kwargs):
+        """
+        Call the scan's original hook implementation directly, bypassing scan modifier dispatch.
+
+        Args:
+            hook_name (ScanHookName): Name of the original scan hook to call.
+            *args: Positional arguments forwarded to the original hook.
+            **kwargs: Keyword arguments forwarded to the original hook.
+
+        Returns:
+            Any: The return value of the original hook implementation.
+
+        Raises:
+            AttributeError: If the scan does not expose an original implementation for the hook.
+        """
+        original_hooks = getattr(self.scan, "_scan_original_hooks", {})
+        try:
+            original_hook = original_hooks[hook_name]
+        except KeyError as exc:
+            raise AttributeError(
+                f"Scan {type(self.scan).__name__!r} does not expose an original hook for {hook_name!r}"
+            ) from exc
+        return original_hook(*args, **kwargs)
