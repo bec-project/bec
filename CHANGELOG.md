@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.148.0 (2026-07-01)
+
+### Features
+
+- **async**: Add has_async_signal method and update get_entry for async signal handling
+  ([`6c500d0`](https://github.com/bec-project/bec/commit/6c500d051e4f0dd84a6d86f80e12e2e6b6f0423c))
+
+- **default_format**: Enhance get_entry method and add safe_dataset for robust data handling
+  ([`4015d53`](https://github.com/bec-project/bec/commit/4015d532e9dcf4d703a42b66e1613ed67e66dbf9))
+
+### Refactoring
+
+- **test**: Rename device monitor test to device preview and update assertions
+  ([`8dbbaff`](https://github.com/bec-project/bec/commit/8dbbaff80946a11cff6ac406ede9634b6a901119))
+
+
 ## v3.147.1 (2026-06-29)
 
 ### Bug Fixes
