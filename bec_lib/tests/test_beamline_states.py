@@ -258,7 +258,10 @@ class TestConcreteStates:
             low_limit=-1.0,
             high_limit=10.0,
             tolerance=0.1,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
         )
+        state.start()
 
         msg = messages.DeviceMessage(
             signals={"bpm4i": {"value": 5.0, "timestamp": 1.0}}, metadata={"stream": "primary"}
