@@ -170,6 +170,7 @@ def make_scan(direct_worker_context):
             called_steps=called_steps,
             fail_step=fail_step,
         )
+        scan.scan_info.metadata["RID"] = "rid-1"
         scan.actions._send_scan_status = mock.MagicMock()
         scan.actions.send_client_info = mock.MagicMock()
         scan._shutdown_event = mock.MagicMock()
@@ -342,6 +343,20 @@ def test_run_executes_modifier_hooks_in_order(direct_worker_context, make_scan):
         "close_scan",
         "modifier:after_close_scan",
     ]
+
+
+def test_run_releases_scan_locks_on_success(direct_worker_context, make_scan):
+    scan = make_scan()
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+    direct_worker_context.scan_server.device_lock_registry.release_all = mock.MagicMock()
+
+    direct_worker_context.direct_worker.run(scan)
+
+    direct_worker_context.scan_server.device_lock_registry.release_all.assert_called_once_with(
+        "rid-1"
+    )
 
 
 def test_run_returns_early_when_signal_event_is_set(direct_worker_context, make_scan):
@@ -649,6 +664,7 @@ def test_handle_scan_abortion_sends_abort_status_via_scan_actions(direct_worker_
     direct_worker_context.queue.run_on_exception_hook = True
     direct_worker_context.direct_worker.scan = scan
     direct_worker_context.direct_worker.reset = mock.MagicMock()
+    direct_worker_context.scan_server.device_lock_registry.release_all = mock.MagicMock()
 
     direct_worker_context.direct_worker._handle_scan_abortion(
         direct_worker_context.queue, ScanAbortion()
@@ -658,6 +674,9 @@ def test_handle_scan_abortion_sends_abort_status_via_scan_actions(direct_worker_
     assert direct_worker_context.queue.status == InstructionQueueStatus.STOPPED
     direct_worker_context.queue.append_to_queue_history.assert_called_once_with()
     direct_worker_context.queue_state.abort.assert_called_once_with()
+    direct_worker_context.scan_server.device_lock_registry.release_all.assert_called_once_with(
+        "rid-1"
+    )
     direct_worker_context.direct_worker.reset.assert_called_once_with()
     assert direct_worker_context.scan_worker.status == InstructionQueueStatus.RUNNING
 

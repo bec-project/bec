@@ -315,7 +315,9 @@ class DeviceContainer(dict):
         return list(tags)
 
     def get_software_triggered_devices(self) -> list:
-        """get a list of all devices that should receive a software trigger detectors"""
+        """
+        Get a list of all enabled devices that should receive a software trigger during a scan.
+        """
         # pylint: disable=protected-access
         devices = [
             dev for _, dev in self.items() if dev._config.get("softwareTrigger", False) is True
