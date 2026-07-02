@@ -90,7 +90,7 @@ class TimeScan(ScanBase):
             positions=np.array([]), num_points=self.points, num_monitored_readouts=self.points
         )
 
-        self.actions.add_scan_report_instruction_scan_progress(points=self.points, show_table=False)
+        self.actions.add_scan_report_instruction_scan_progress(points=self.points, show_table=True)
 
         self._baseline_readout_status = self.actions.read_baseline_devices(wait=False)
 

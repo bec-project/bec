@@ -322,9 +322,10 @@ class IPythonLiveUpdates:
         if not available_blocks:
             return False
         req_block = available_blocks[self._request_block_index[req_id]]
-        if (
-            req_block.msg.scan_type == "mv"
-        ):  # TODO: make this more general for scans without report instructions
+        if req_block.msg.scan_type in [
+            "mv",
+            "_v4_mv",
+        ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 
         report_instructions = req_block.report_instructions or []
