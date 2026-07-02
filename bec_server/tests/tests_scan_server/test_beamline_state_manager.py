@@ -18,8 +18,8 @@ def state_manager(connected_connector, dm_with_devices):
 
 @pytest.fixture
 def fake_bl_states(monkeypatch):
-    class FakeState(bl_states.BeamlineState[bl_states.ShutterStateConfig]):
-        CONFIG_CLASS = bl_states.ShutterStateConfig
+    class FakeState(bl_states.BeamlineState[bl_states.DeviceWithinLimitsStateConfig]):
+        CONFIG_CLASS = bl_states.DeviceWithinLimitsStateConfig
 
         def __init__(self, config=None, redis_connector=None, **kwargs):
             super().__init__(config=config, redis_connector=redis_connector, **kwargs)
@@ -35,7 +35,7 @@ def fake_bl_states(monkeypatch):
         def restart(self):
             self.restart_count += 1
 
-    monkeypatch.setattr(beamline_state_manager.bl_states, "ShutterState", FakeState)
+    monkeypatch.setattr(beamline_state_manager.bl_states, "DeviceWithinLimitsState", FakeState)
     return FakeState
 
 
@@ -71,8 +71,13 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                state_type="ShutterState",
-                parameters={"name": "State1", "device": "shutter1"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State1",
+                    "device": "samx",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             )
         ]
     )
@@ -89,13 +94,23 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                state_type="ShutterState",
-                parameters={"name": "State1", "device": "shutter1"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State1",
+                    "device": "samx",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             ),
             messages.BeamlineStateConfig(
                 name="State2",
-                state_type="ShutterState",
-                parameters={"name": "State2", "device": "shutter2"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State2",
+                    "device": "samy",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             ),
         ]
     )
@@ -112,8 +127,13 @@ def test_state_manager_updates_states(state_manager, connected_connector, fake_b
         states=[
             messages.BeamlineStateConfig(
                 name="State2",
-                state_type="ShutterState",
-                parameters={"name": "State2", "device": "shutter2"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State2",
+                    "device": "samy",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             )
         ]
     )
@@ -134,7 +154,7 @@ def test_state_manager_rejects_abstract_state_type(state_manager):
             messages.BeamlineStateConfig(
                 name="State1",
                 state_type="DeviceBeamlineState",
-                parameters={"name": "State1", "device": "shutter1"},
+                parameters={"name": "State1", "device": "samx"},
             )
         ]
     )

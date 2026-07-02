@@ -44,8 +44,8 @@ class TestHelpers:
 
 class TestConfigModels:
     def test_beamline_state_config_valid_name(self):
-        config = bl_states.BeamlineStateConfig(name="shutter_open")
-        assert config.name == "shutter_open"
+        config = bl_states.BeamlineStateConfig(name="sample_x_limits")
+        assert config.name == "sample_x_limits"
 
     @pytest.mark.parametrize("invalid_name", ["state-name", "class", "add", "remove", "show_all"])
     def test_beamline_state_config_invalid_name(self, invalid_name):
@@ -91,18 +91,25 @@ class TestBeamlineStateBase:
 
 class TestDeviceBeamlineState:
     def test_start_requires_connector(self, dm_with_devices):
-        state = bl_states.ShutterState(
-            name="shutter_open", device="samy", signal="samy", device_manager=dm_with_devices
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_y_limits",
+            device="samy",
+            signal="samy",
+            low_limit=0.0,
+            high_limit=10.0,
+            device_manager=dm_with_devices,
         )
 
         with pytest.raises(RuntimeError, match="Redis connector is not set"):
             state.start()
 
     def test_start_registers_device_callback(self, connected_connector, dm_with_devices):
-        state = bl_states.ShutterState(
-            name="shutter_open",
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
             device="samx",
             signal="samx",
+            low_limit=0.0,
+            high_limit=10.0,
             redis_connector=connected_connector,
             device_manager=dm_with_devices,
         )
@@ -115,10 +122,12 @@ class TestDeviceBeamlineState:
         )
 
     def test_stop_unregisters_device_callback(self, connected_connector, dm_with_devices):
-        state = bl_states.ShutterState(
-            name="shutter_open",
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
             device="samx",
             signal="samx",
+            low_limit=0.0,
+            high_limit=10.0,
             redis_connector=connected_connector,
             device_manager=dm_with_devices,
         )
@@ -134,50 +143,55 @@ class TestDeviceBeamlineState:
     def test_update_device_state_publishes_when_state_changes(
         self, connected_connector, dm_with_devices
     ):
-        state = bl_states.ShutterState(
-            name="shutter_open",
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
             device="samx",
             signal="samx",
+            low_limit=0.0,
+            high_limit=10.0,
             redis_connector=connected_connector,
             device_manager=dm_with_devices,
         )
 
         msg = messages.DeviceMessage(
-            signals={"samx": {"value": "open", "timestamp": 1.0}}, metadata={"stream": "primary"}
+            signals={"samx": {"value": 5.0, "timestamp": 1.0}}, metadata={"stream": "primary"}
         )
-        msg_obj = MessageObject(value=msg, topic="test")
 
         state._update_device_state(MessageObject(value=msg, topic="test"))
 
         assert state._last_state is not None
         assert state._last_state.status == "valid"
         out = connected_connector.xread(
-            MessageEndpoints.beamline_state("shutter_open"), from_start=True
+            MessageEndpoints.beamline_state("sample_x_limits"), from_start=True
         )
         assert out is not None
         assert out[0]["data"].status == "valid"
 
 
 class TestConcreteStates:
-    def test_shutter_state_open_and_closed(self, connected_connector, dm_with_devices):
-        state = bl_states.ShutterState(
-            name="shutter_open",
+    def test_device_within_limits_state_valid_and_invalid(
+        self, connected_connector, dm_with_devices
+    ):
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
             device="samx",
             signal="samx",
+            low_limit=0.0,
+            high_limit=10.0,
             redis_connector=connected_connector,
             device_manager=dm_with_devices,
         )
         state.start()
 
-        open_msg = messages.DeviceMessage(
-            signals={"samx": {"value": "OPEN", "timestamp": 1.0}}, metadata={"stream": "primary"}
+        valid_msg = messages.DeviceMessage(
+            signals={"samx": {"value": 5.0, "timestamp": 1.0}}, metadata={"stream": "primary"}
         )
-        closed_msg = messages.DeviceMessage(
-            signals={"samx": {"value": "closed", "timestamp": 2.0}}, metadata={"stream": "primary"}
+        invalid_msg = messages.DeviceMessage(
+            signals={"samx": {"value": 11.0, "timestamp": 2.0}}, metadata={"stream": "primary"}
         )
 
-        assert state.evaluate(open_msg).status == "valid"
-        assert state.evaluate(closed_msg).status == "invalid"
+        assert state.evaluate(valid_msg).status == "valid"
+        assert state.evaluate(invalid_msg).status == "invalid"
 
     def test_device_within_limits_state(self, connected_connector, dm_with_devices):
         state = bl_states.DeviceWithinLimitsState(
@@ -253,9 +267,14 @@ class TestBeamlineStateManager:
 
     def test_manager_loads_existing_state_update_on_init(self, connected_connector):
         config = messages.BeamlineStateConfig(
-            name="shutter_open",
-            state_type="ShutterState",
-            parameters={"name": "shutter_open", "device": "samy"},
+            name="sample_y_limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={
+                "name": "sample_y_limits",
+                "device": "samy",
+                "low_limit": 0.0,
+                "high_limit": 10.0,
+            },
         )
         connected_connector.xadd(
             MessageEndpoints.available_beamline_states(),
@@ -268,14 +287,14 @@ class TestBeamlineStateManager:
         manager = BeamlineStateManager(client)
 
         assert manager.ready is True
-        assert "shutter_open" in manager._states
-        assert isinstance(getattr(manager, "shutter_open"), BeamlineStateClientBase)
+        assert "sample_y_limits" in manager._states
+        assert isinstance(getattr(manager, "sample_y_limits"), BeamlineStateClientBase)
 
     def test_manager_rejects_abstract_state_type_on_init(self, connected_connector):
         config = messages.BeamlineStateConfig(
-            name="shutter_open",
+            name="generic_device_state",
             state_type="DeviceBeamlineState",
-            parameters={"name": "shutter_open", "device": "samy"},
+            parameters={"name": "generic_device_state", "device": "samy"},
         )
         connected_connector.xadd(
             MessageEndpoints.available_beamline_states(),
@@ -290,17 +309,24 @@ class TestBeamlineStateManager:
 
     def test_on_state_update_creates_client_attribute(self, state_manager):
         config = messages.BeamlineStateConfig(
-            name="shutter_open",
-            state_type="ShutterState",
-            parameters={"name": "shutter_open", "device": "samy"},
+            name="sample_y_limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={
+                "name": "sample_y_limits",
+                "device": "samy",
+                "low_limit": 0.0,
+                "high_limit": 10.0,
+            },
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
 
         state_manager._on_state_update({"data": update}, parent=state_manager)
 
-        assert "shutter_open" in state_manager._states
-        assert isinstance(state_manager._states["shutter_open"], bl_states.ShutterStateConfig)
-        assert isinstance(getattr(state_manager, "shutter_open"), BeamlineStateClientBase)
+        assert "sample_y_limits" in state_manager._states
+        assert isinstance(
+            state_manager._states["sample_y_limits"], bl_states.DeviceWithinLimitsStateConfig
+        )
+        assert isinstance(getattr(state_manager, "sample_y_limits"), BeamlineStateClientBase)
 
     def test_update_parameters_from_client_updates_state_and_publishes(self, state_manager):
         config = messages.BeamlineStateConfig(
@@ -355,48 +381,60 @@ class TestBeamlineStateManager:
 
     def test_client_get_returns_unknown_without_status_message(self, state_manager):
         config = messages.BeamlineStateConfig(
-            name="shutter_open",
-            state_type="ShutterState",
-            parameters={"name": "shutter_open", "device": "samy"},
+            name="sample_y_limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={
+                "name": "sample_y_limits",
+                "device": "samy",
+                "low_limit": 0.0,
+                "high_limit": 10.0,
+            },
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
 
-        result = state_manager.shutter_open.get()
+        result = state_manager.sample_y_limits.get()
         assert result == {"status": "unknown", "label": "No state information available."}
 
     def test_client_get_returns_latest_status_message(self, state_manager):
         config = messages.BeamlineStateConfig(
-            name="shutter_open",
-            state_type="ShutterState",
-            parameters={"name": "shutter_open", "device": "samy"},
+            name="sample_y_limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={
+                "name": "sample_y_limits",
+                "device": "samy",
+                "low_limit": 0.0,
+                "high_limit": 10.0,
+            },
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
 
         state_manager._connector.xadd(
-            MessageEndpoints.beamline_state("shutter_open"),
+            MessageEndpoints.beamline_state("sample_y_limits"),
             {
                 "data": messages.BeamlineStateMessage(
-                    name="shutter_open", status="valid", label="ok"
+                    name="sample_y_limits", status="valid", label="ok"
                 )
             },
             max_size=1,
         )
 
-        result = state_manager.shutter_open.get()
+        result = state_manager.sample_y_limits.get()
         assert result == {"status": "valid", "label": "ok"}
 
     def test_add_waits_for_initial_state_message(self, state_manager):
-        state = bl_states.ShutterStateConfig(name="shutter_open", device="samy")
+        state = bl_states.DeviceWithinLimitsStateConfig(
+            name="sample_y_limits", device="samy", low_limit=0.0, high_limit=10.0
+        )
 
         def publish_initial_state():
             time.sleep(0.05)
             state_manager._connector.xadd(
-                MessageEndpoints.beamline_state("shutter_open"),
+                MessageEndpoints.beamline_state("sample_y_limits"),
                 {
                     "data": messages.BeamlineStateMessage(
-                        name="shutter_open", status="valid", label="ok"
+                        name="sample_y_limits", status="valid", label="ok"
                     )
                 },
                 max_size=1,
@@ -409,43 +447,52 @@ class TestBeamlineStateManager:
         finally:
             publisher.join()
 
-        assert state_manager.shutter_open.get() == {"status": "valid", "label": "ok"}
+        assert state_manager.sample_y_limits.get() == {"status": "valid", "label": "ok"}
 
     def test_add_rejects_abstract_device_state_config(self, state_manager):
-        state = bl_states.DeviceStateConfig(name="shutter_open", device="samy")
+        state = bl_states.DeviceStateConfig(name="generic_device_state", device="samy")
 
         with pytest.raises(ValueError, match="not a concrete beamline state"):
             state_manager.add(state)
 
     def test_add_and_delete_publish_updates(self, state_manager):
-        state = bl_states.ShutterStateConfig(name="shutter_open", device="samy")
+        state = bl_states.DeviceWithinLimitsStateConfig(
+            name="sample_y_limits", device="samy", low_limit=0.0, high_limit=10.0
+        )
 
         with mock.patch.object(state_manager, "_wait_for_initial_state"):
             state_manager.add(state)
-        assert "shutter_open" in state_manager._states
+        assert "sample_y_limits" in state_manager._states
 
-        state_manager.delete("shutter_open")
-        assert "shutter_open" not in state_manager._states
+        state_manager.delete("sample_y_limits")
+        assert "sample_y_limits" not in state_manager._states
 
     def test_client_remove_state(self, state_manager):
         config = messages.BeamlineStateConfig(
-            name="shutter_open",
-            state_type="ShutterState",
-            parameters={"name": "shutter_open", "device": "samy"},
+            name="sample_y_limits",
+            state_type="DeviceWithinLimitsState",
+            parameters={
+                "name": "sample_y_limits",
+                "device": "samy",
+                "low_limit": 0.0,
+                "high_limit": 10.0,
+            },
         )
         update = messages.AvailableBeamlineStatesMessage(states=[config])
         state_manager._on_state_update({"data": update}, parent=state_manager)
 
-        state_manager.shutter_open.remove()
+        state_manager.sample_y_limits.remove()
 
-        assert "shutter_open" not in state_manager._states
+        assert "sample_y_limits" not in state_manager._states
 
     def test_show_all_prints_table(self, state_manager, capsys):
-        state = bl_states.ShutterStateConfig(name="shutter_open", device="samy")
+        state = bl_states.DeviceWithinLimitsStateConfig(
+            name="sample_y_limits", device="samy", low_limit=0.0, high_limit=10.0
+        )
         with mock.patch.object(state_manager, "_wait_for_initial_state"):
             state_manager.add(state)
 
         state_manager.show_all()
 
         captured = capsys.readouterr()
-        assert "shutter_open" in (captured.out + captured.err)
+        assert "sample_y_limits" in (captured.out + captured.err)
