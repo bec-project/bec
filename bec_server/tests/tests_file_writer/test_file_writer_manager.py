@@ -317,8 +317,13 @@ def test_file_writer_manager_update_available_beamline_states(file_writer_manage
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                state_type="ShutterState",
-                parameters={"name": "State1", "device": "shutter1"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State1",
+                    "device": "samx",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             )
         ]
     )
@@ -330,8 +335,13 @@ def test_file_writer_manager_update_available_beamline_states(file_writer_manage
         states=[
             messages.BeamlineStateConfig(
                 name="State2",
-                state_type="ShutterState",
-                parameters={"name": "State2", "device": "shutter1"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State2",
+                    "device": "samx",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             )
         ]
     )
@@ -349,7 +359,7 @@ def test_file_writer_manager_updates_scan_storage_with_state(file_writer_manager
     scan_storage.metadata["status"] = "open"
     file_manager.scan_storage["scan_id"] = scan_storage
 
-    state_msg = messages.BeamlineStateMessage(name="State1", status="valid", label="Shutter")
+    state_msg = messages.BeamlineStateMessage(name="State1", status="valid", label="Within limits")
 
     file_manager.update_beamline_state(state_msg)
     assert file_manager.scan_storage["scan_id"].beamline_states["State1"] == [state_msg]
@@ -357,7 +367,7 @@ def test_file_writer_manager_updates_scan_storage_with_state(file_writer_manager
     # verify that the latest state is kept in the file writer manager
     assert file_manager.beamline_states["State1"] == state_msg
 
-    state_msg2 = messages.BeamlineStateMessage(name="State1", status="valid", label="Shutter")
+    state_msg2 = messages.BeamlineStateMessage(name="State1", status="valid", label="Within limits")
     file_manager.update_beamline_state(state_msg2)
     assert file_manager.scan_storage["scan_id"].beamline_states["State1"] == [state_msg, state_msg2]
     assert file_manager.beamline_states["State1"] == state_msg2
@@ -375,15 +385,20 @@ def test_file_writer_manager_removes_beamline_state_subscription(file_writer_man
         states=[
             messages.BeamlineStateConfig(
                 name="State1",
-                state_type="ShutterState",
-                parameters={"name": "State1", "device": "shutter1"},
+                state_type="DeviceWithinLimitsState",
+                parameters={
+                    "name": "State1",
+                    "device": "samx",
+                    "low_limit": 0.0,
+                    "high_limit": 10.0,
+                },
             )
         ]
     )
     file_manager._update_available_beamline_states({"data": msg})
     assert "State1" in file_manager.beamline_state_subscriptions
 
-    state_msg = messages.BeamlineStateMessage(name="State1", status="valid", label="Shutter")
+    state_msg = messages.BeamlineStateMessage(name="State1", status="valid", label="Within limits")
 
     file_manager.update_beamline_state(state_msg)
     assert file_manager.scan_storage["scan_id"].beamline_states["State1"] == [state_msg]

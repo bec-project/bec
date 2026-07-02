@@ -194,14 +194,6 @@ class DeviceWithinLimitsStateConfig(DeviceStateConfig):
         return self
 
 
-class ShutterStateConfig(DeviceStateConfig):
-    """
-    Configuration for a shutter state.
-    """
-
-    state_type: ClassVar[str] = "ShutterState"
-
-
 C = TypeVar("C", bound=BeamlineStateConfig)
 D = TypeVar("D", bound=DeviceStateConfig)
 
@@ -414,33 +406,6 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
         """
         msg: messages.DeviceMessage = msg_obj.value  # type: ignore ; we know it's a DeviceMessage
         return self.evaluate(msg)
-
-
-class ShutterState(DeviceBeamlineState[ShutterStateConfig]):
-    """
-    A state that checks if the shutter is open.
-
-    Example:
-        shutter_state = ShutterStateConfig(
-            name="shutter_open",
-            device="shutter1",
-        )
-        bec.beamline_states.add(shutter_state)
-    """
-
-    CONFIG_CLASS = ShutterStateConfig
-
-    def evaluate(
-        self, msg: messages.DeviceMessage, *args, **kwargs
-    ) -> messages.BeamlineStateMessage:
-        val = msg.signals.get(self.signal_name, {}).get("value", "").lower()
-        if val == "open":
-            return messages.BeamlineStateMessage(
-                name=self.config.name, status="valid", label="Shutter is open."
-            )
-        return messages.BeamlineStateMessage(
-            name=self.config.name, status="invalid", label="Shutter is closed."
-        )
 
 
 class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]):

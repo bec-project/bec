@@ -1,29 +1,14 @@
 from __future__ import annotations
 
-import inspect
 import traceback
 
 from bec_lib import bl_states, messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.bl_state_manager import _state_class_for_state_type
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import ErrorInfo
 from bec_lib.redis_connector import RedisConnector
-
-
-def _state_class_for_state_type(state_type: str) -> type[bl_states.BeamlineState]:
-    """Resolve and validate the concrete runtime class for a beamline state type."""
-    state_class = getattr(bl_states, state_type, None)
-    if (
-        not inspect.isclass(state_class)
-        or not issubclass(state_class, bl_states.BeamlineState)
-        or inspect.isabstract(state_class)
-    ):
-        raise ValueError(f"State type {state_type!r} is not a concrete beamline state.")
-    if getattr(state_class, "CONFIG_CLASS", None) is None:
-        raise ValueError(f"State type {state_type!r} does not define a config class.")
-
-    return state_class
 
 
 class BeamlineStateManager:
