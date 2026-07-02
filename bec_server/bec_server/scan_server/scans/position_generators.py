@@ -367,18 +367,16 @@ def fermat_spiral_pos(
     if step <= 0:
         raise ValueError("step must be positive")
 
-    phi = np.pi * (3 - np.sqrt(5)) + spiral_type * np.pi
+    phi = 2 * np.pi * ((1 + np.sqrt(5)) / 2.0) + spiral_type * np.pi
     start_index = 0 if center else 1
 
     x_center = (m1_start + m1_stop) / 2
     y_center = (m2_start + m2_stop) / 2
     x_range = abs(m1_stop - m1_start)
     y_range = abs(m2_stop - m2_start)
-    half_x = x_range / 2
-    half_y = y_range / 2
 
     radial_scale = step / np.sqrt(np.pi)
-    max_index = max(1, int(np.ceil((max(half_x, half_y) / radial_scale) ** 2)) * 2)
+    max_index = int(np.ceil(x_range * y_range * 3.2 / step**2))
 
     points = []
     for ii in range(start_index, max_index + 1):

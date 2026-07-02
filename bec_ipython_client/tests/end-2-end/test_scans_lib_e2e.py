@@ -16,25 +16,31 @@ logger = bec_logger.logger
 
 
 @pytest.mark.timeout(100)
-def test_grid_scan_lib(bec_client_lib):
+@pytest.mark.parametrize("scan_name", [("umv", "grid_scan"), ("_v4_umv", "_v4_grid_scan")])
+def test_grid_scan_lib(bec_client_lib, scan_name):
     bec = bec_client_lib
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    getattr(scans, scan_name[0])(dev.samx, 0, dev.samy, 0, relative=False)
+    status = getattr(scans, scan_name[1])(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
+    )
     status.wait(num_points=True, file_written=True)
     assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
 
 
 @pytest.mark.timeout(100)
-def test_grid_scan_lib_cancel(bec_client_lib):
+@pytest.mark.parametrize("scan_name", ["grid_scan", "_v4_grid_scan"])
+def test_grid_scan_lib_cancel(bec_client_lib, scan_name):
     bec = bec_client_lib
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False)
+    status = getattr(scans, scan_name)(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False
+    )
     time.sleep(0.5)
     status.cancel()
 

@@ -35,7 +35,7 @@ def test_fermat_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler)
     assert scan.scan_info.num_points == len(scan.positions)
     assert np.array_equal(scan.scan_info.positions, scan.positions)
     assert scan.scan_info.scan_report_instructions == [
-        {"scan_progress": {"points": len(scan.positions), "show_table": False}}
+        {"scan_progress": {"points": len(scan.positions), "show_table": True}}
     ]
 
     read_messages = [

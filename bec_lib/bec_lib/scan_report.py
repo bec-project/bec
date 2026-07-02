@@ -68,7 +68,7 @@ class ScanReport:
         """returns the current status of the request"""
         scan_type = self.request.request.content["scan_type"]
         status = self.queue_item.status
-        if scan_type == "mv" and status == "COMPLETED":
+        if scan_type in ["mv", "_v4_mv"] and status == "COMPLETED":
             return "COMPLETED" if self._get_mv_status() else "RUNNING"
         return self.queue_item.status
 
@@ -147,7 +147,7 @@ class ScanReport:
             return self
         scan_type = self.request.request.content["scan_type"]
         try:
-            if scan_type == "mv":
+            if scan_type in ["mv", "_v4_mv"]:
                 self._wait_move(timeout, sleep_time)
             else:
                 self._wait_scan(
@@ -168,7 +168,7 @@ class ScanReport:
         if self._client is None:
             raise ValueError("Client is not set. Cannot cancel the scan.")
         scan_type = self.request.request.content["scan_type"]
-        if scan_type == "mv":
+        if scan_type in ["mv", "_v4_mv"]:
             motors = list(self.request.request.parameter["args"].keys())
             for motor in motors:
                 try:

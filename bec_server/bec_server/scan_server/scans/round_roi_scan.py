@@ -184,7 +184,7 @@ class RoundROIScan(ScanBase):
         )
 
         self.actions.add_scan_report_instruction_scan_progress(
-            points=self.scan_info.num_monitored_readouts, show_table=False
+            points=self.scan_info.num_monitored_readouts, show_table=True
         )
 
         self._premove_motor_status = self.actions.set(self.motors, self.positions[0], wait=False)
