@@ -153,15 +153,7 @@ class ScanActions:
 
         # We support str and DeviceBase inputs as well as lists of those.
         # We convert them to a list of device names for easier processing.
-        if isinstance(device, list):
-            device_names = []
-            for dev in device:
-                if isinstance(dev, DeviceBase):
-                    device_names.append(dev.name)
-                else:
-                    device_names.append(dev)
-        else:
-            device_names = [device.name if isinstance(device, DeviceBase) else device]
+        device_names = self._normalize_device_names(device)
         if len(device_names) == 1:
             device_names = device_names[0]
         status = self._create_status(name=status_name or f"stage_{device_names}")
@@ -290,7 +282,7 @@ class ScanActions:
 
         status = self._create_status(is_container=True, name="set")
         for dev, val in zip(devices, values, strict=False):
-            device_name = dev.name if isinstance(dev, DeviceBase) else dev
+            device_name = self._normalize_device_name(dev)
             sub_status = self._create_status(name=f"set_{device_name}")
             instr = messages.DeviceInstructionMessage(
                 device=device_name,
@@ -320,7 +312,7 @@ class ScanActions:
         Returns:
             ScanStubStatus: status object to track the kickoff process
         """
-        device_name = device.name if isinstance(device, DeviceBase) else device
+        device_name = self._normalize_device_name(device)
         status = self._create_status(name=f"kickoff_{device_name}")
 
         instr = messages.DeviceInstructionMessage(
@@ -347,7 +339,7 @@ class ScanActions:
         Returns:
             ScanStubStatus: status object to track the completion process
         """
-        device_name = device.name if isinstance(device, DeviceBase) else device
+        device_name = self._normalize_device_name(device)
         status = self._create_status(name=f"complete_{device_name}")
 
         instr = messages.DeviceInstructionMessage(
@@ -620,7 +612,7 @@ class ScanActions:
         Returns:
             ScanStubStatus: status object to track the unstaging process
         """
-        device_name = device.name if isinstance(device, DeviceBase) else device
+        device_name = self._normalize_device_name(device)
         status = self._create_status(name=f"unstage_{device_name}")
 
         instr = messages.DeviceInstructionMessage(
@@ -687,7 +679,7 @@ class ScanActions:
             request_id (str, optional): request ID to associate the readback instruction with. If None, the scan's RID will be used. Defaults to None.
         """
         request_id = request_id or self._scan.scan_info.metadata["RID"]
-        device_names = [dev.name if isinstance(dev, DeviceBase) else dev for dev in devices]
+        device_names = self._normalize_device_names(devices)
         scan_report_instruction = {
             "readback": {"RID": request_id, "devices": device_names, "start": start, "end": stop}
         }
@@ -705,10 +697,7 @@ class ScanActions:
         Args:
             device (str | DeviceBase): name of the device or DeviceBase instance to report
         """
-        if isinstance(device, DeviceBase):
-            device_name = device.name
-        else:
-            device_name = device
+        device_name = self._normalize_device_name(device)
         scan_report_instruction = {"device_progress": [device_name]}
         self._scan.scan_info.scan_report_instructions.append(scan_report_instruction)
         if self._update_queue_info_callback is not None:
@@ -762,10 +751,7 @@ class ScanActions:
             devices = [devices]
 
         for device in devices:
-            if isinstance(device, DeviceBase):
-                device_name = device.name
-            else:
-                device_name = device
+            device_name = self._normalize_device_name(device)
             self._scan.scan_info.readout_priority_modification[priority].append(device_name)
 
     def close_scan(self):
@@ -834,13 +820,15 @@ class ScanActions:
         """
         if isinstance(device, list):
             for dev in device:
-                device_name = dev.name if isinstance(dev, DeviceBase) else dev
+                device_name = self._normalize_device_name(dev)
                 self._devices_with_required_response.add(device_name)
         else:
-            device_name = device.name if isinstance(device, DeviceBase) else device
+            device_name = self._normalize_device_name(device)
             self._devices_with_required_response.add(device_name)
 
-    def rpc_call(self, device: str, func_name: str, *args, **kwargs) -> Any | ScanStubStatus:
+    def rpc_call(
+        self, device: str | DeviceBase, func_name: str, *args, **kwargs
+    ) -> Any | ScanStubStatus:
         """
         Make an RPC call to a device. This will call the given function on the device with the given arguments.
         The device server will execute the function and return the result in the instruction response.
@@ -864,26 +852,49 @@ class ScanActions:
             Any | ScanStubStatus: The result of the RPC call or a ScanStubStatus object if the result is a status object.
 
         """
-        status = self._create_status(name=f"rpc_{device}_{func_name}")
         rpc_id = str(uuid.uuid4())
+        status = self.rpc_call_no_wait(device, func_name, rpc_id, *args, **kwargs)
+        status.wait(resolve_on_known_type=True)
+        if status._result_is_status:
+            return status
+        return status.result
+
+    def rpc_call_no_wait(
+        self, device: str | DeviceBase, func_name: str, rpc_id: str, *args, **kwargs
+    ) -> ScanStubStatus:
+        """
+        Make an RPC call to a device without waiting for the result. This will call the given function on the device with the given arguments.
+        The device server will execute the function and return the result in the instruction response.
+        This method is a low-level interface to call arbitrary functions on the device server and should be used with caution.
+
+        Args:
+            device (str | DeviceBase): name of the device or device instance to call the function on
+            func_name (str): name of the function to call on the device
+            rpc_id (str): unique identifier for the RPC call, used to match the response with the request
+            *args: positional arguments to pass to the function
+            **kwargs: keyword arguments to pass to the function
+
+        Returns:
+            ScanStubStatus: A ScanStubStatus object that can be used to wait for the result of the RPC call.
+        """
+        device_name = self._normalize_device_name(device)
+        status = self._create_status(name=f"rpc_{device_name}_{func_name}")
+
         parameter = {
-            "device": device,
+            "device": device_name,
             "func": func_name,
             "rpc_id": rpc_id,
             "args": args,
             "kwargs": kwargs,
         }
         msg = messages.DeviceInstructionMessage(
-            device=device,
+            device=device_name,
             action="rpc",
             parameter=parameter,
             metadata={"device_instr_id": status._device_instr_id},
         )
         self._send(msg)
-        status.wait(resolve_on_known_type=True)
-        if status._result_is_status:
-            return status
-        return status.result
+        return status
 
     def send_client_info(self, message: str):
         """
@@ -959,12 +970,37 @@ class ScanActions:
                 metadata[key] = value + self._metadata_suffix
         return metadata
 
-    def _normalize_device_names(
-        self, devices: str | DeviceBase | list[str | DeviceBase]
-    ) -> list[str]:
+    @staticmethod
+    def _normalize_device_name(device: str | DeviceBase) -> str:
+        """
+        Normalize the device name to a string. If the device is a DeviceBase instance, return its dotted name.
+        We use the dotted name because it is uniquely identifying a device in the device tree, even for
+        sub-devices.
+
+        Args:
+            device (str | DeviceBase): device name or DeviceBase instance
+
+        Returns:
+            str: normalized device name
+        """
+        if isinstance(device, DeviceBase):
+            return getattr(device, "dotted_name", None) or device.name
+        return device
+
+    @staticmethod
+    def _normalize_device_names(devices: str | DeviceBase | list[str | DeviceBase]) -> list[str]:
+        """
+        Normalize a list of device names to a list of strings. If the devices are DeviceBase instances, return their dotted names.
+
+        Args:
+            devices (str | DeviceBase | list[str | DeviceBase]): device name(s) or DeviceBase instance(s)
+
+        Returns:
+            list[str]: list of normalized device names
+        """
         if not isinstance(devices, list):
             devices = [devices]
-        return [dev.name if isinstance(dev, DeviceBase) else dev for dev in devices]
+        return [ScanActions._normalize_device_name(dev) for dev in devices]
 
     def _get_monitored_device_names(self) -> list[str]:
         monitored_devices = [
