@@ -251,6 +251,31 @@ def test_device_instruction_actions_emit_expected_messages(action_context):
     assert unstage_msg.metadata["device_instr_id"] == unstage_status._device_instr_id
 
 
+def test_device_instruction_actions_use_dotted_name_for_nested_devices(action_context):
+    ctx = action_context()
+    setpoint = ctx.device_manager.devices.samx.setpoint
+    readback = ctx.device_manager.devices.samx.readback
+
+    stage_status = ctx.actions.stage(setpoint, wait=False)
+    kickoff_status = ctx.actions.kickoff(setpoint, parameters={"frames": 3}, wait=False)
+    complete_status = ctx.actions.complete(readback, wait=False)
+    unstage_status = ctx.actions.unstage(readback, wait=False)
+
+    stage_msg = _last_device_instruction(ctx, "stage")
+    kickoff_msg = _last_device_instruction(ctx, "kickoff")
+    complete_msg = _last_device_instruction(ctx, "complete")
+    unstage_msg = _last_device_instruction(ctx, "unstage")
+
+    assert stage_msg.device == "samx.setpoint"
+    assert stage_msg.metadata["device_instr_id"] == stage_status._device_instr_id
+    assert kickoff_msg.device == "samx.setpoint"
+    assert kickoff_msg.metadata["device_instr_id"] == kickoff_status._device_instr_id
+    assert complete_msg.device == "samx.readback"
+    assert complete_msg.metadata["device_instr_id"] == complete_status._device_instr_id
+    assert unstage_msg.device == "samx.readback"
+    assert unstage_msg.metadata["device_instr_id"] == unstage_status._device_instr_id
+
+
 def test_device_instruction_actions_omit_scan_id_when_not_assigned(action_context):
     ctx = action_context()
     ctx.scan.scan_info.scan_id = None
@@ -282,6 +307,28 @@ def test_set_emits_one_instruction_per_device(action_context):
     assert [(msg.device, msg.parameter) for msg in set_messages] == [
         ("samx", {"value": 1.5}),
         ("samy", {"value": 2.5}),
+    ]
+
+
+def test_set_emits_dotted_name_for_nested_devices(action_context):
+    ctx = action_context()
+    setpoint = ctx.device_manager.devices.samx.setpoint
+    readback = ctx.device_manager.devices.samx.readback
+
+    status = ctx.actions.set([setpoint, readback], [1.5, 2.5], wait=False)
+
+    set_messages = _sent_device_instructions(ctx, "set")[-2:]
+    assert (
+        status._sub_status_objects[0]._device_instr_id
+        == set_messages[0].metadata["device_instr_id"]
+    )
+    assert (
+        status._sub_status_objects[1]._device_instr_id
+        == set_messages[1].metadata["device_instr_id"]
+    )
+    assert [(msg.device, msg.parameter) for msg in set_messages] == [
+        ("samx.setpoint", {"value": 1.5}),
+        ("samx.readback", {"value": 2.5}),
     ]
 
 
@@ -535,6 +582,21 @@ def test_report_instructions_update_scan_info_and_queue(action_context):
     assert ctx.actions._update_queue_info_callback.call_count == 3
 
 
+def test_report_instructions_use_dotted_name_for_nested_devices(action_context):
+    ctx = action_context()
+    setpoint = ctx.device_manager.devices.samx.setpoint
+    readback = ctx.device_manager.devices.samx.readback
+
+    ctx.actions.add_scan_report_instruction_readback([setpoint], [0], [1], "rid")
+    ctx.actions.add_scan_report_instruction_device_progress(readback)
+
+    assert ctx.scan.scan_info.scan_report_instructions == [
+        {"readback": {"RID": "rid", "devices": ["samx.setpoint"], "start": [0], "end": [1]}},
+        {"device_progress": ["samx.readback"]},
+    ]
+    assert "samx.setpoint" in ctx.actions._devices_with_required_response
+
+
 def test_rpc_call_returns_result_or_status(action_context):
     ctx = action_context()
     status = ScanStubStatus(
@@ -571,6 +633,56 @@ def test_rpc_call_returns_result_or_status(action_context):
 
     assert result is status
     status.wait.assert_called_once_with(resolve_on_known_type=True)
+
+
+def test_rpc_call_no_wait_returns_status_without_waiting(action_context):
+    ctx = action_context()
+    status = ScanStubStatus(
+        ctx.scan._instruction_handler,
+        device_instr_id="device-instr-id",
+        shutdown_event=threading.Event(),
+        registry={},
+        name="rpc_samx_kickoff",
+    )
+    status.wait = mock.MagicMock()
+    ctx.actions._create_status = mock.MagicMock(return_value=status)
+    ctx.actions._send = mock.MagicMock()
+
+    result = ctx.actions.rpc_call_no_wait("samx", "kickoff", "rpc-id-123", 1, test=True)
+
+    assert result is status
+    sent_msg = ctx.actions._send.call_args.args[0]
+    assert sent_msg.device == "samx"
+    assert sent_msg.action == "rpc"
+    assert sent_msg.parameter["device"] == "samx"
+    assert sent_msg.parameter["func"] == "kickoff"
+    assert sent_msg.parameter["rpc_id"] == "rpc-id-123"
+    assert sent_msg.parameter["args"] == (1,)
+    assert sent_msg.parameter["kwargs"] == {"test": True}
+    assert sent_msg.metadata["device_instr_id"] == "device-instr-id"
+    status.wait.assert_not_called()
+
+
+def test_rpc_call_no_wait_uses_dotted_name_for_nested_devices(action_context):
+    ctx = action_context()
+    status = ScanStubStatus(
+        ctx.scan._instruction_handler,
+        device_instr_id="device-instr-id",
+        shutdown_event=threading.Event(),
+        registry={},
+        name="rpc_hexapod.x_kickoff",
+    )
+    ctx.actions._create_status = mock.MagicMock(return_value=status)
+    ctx.actions._send = mock.MagicMock()
+
+    result = ctx.actions.rpc_call_no_wait(
+        ctx.device_manager.devices.samx.setpoint, "kickoff", "rpc-id-123", 1, test=True
+    )
+
+    assert result is status
+    sent_msg = ctx.actions._send.call_args.args[0]
+    assert sent_msg.device == "samx.setpoint"
+    assert sent_msg.parameter["device"] == "samx.setpoint"
 
 
 def test_send_scan_status_publishes_message(action_context):
