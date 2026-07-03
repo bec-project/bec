@@ -251,6 +251,20 @@ def test_device_instruction_actions_emit_expected_messages(action_context):
     assert unstage_msg.metadata["device_instr_id"] == unstage_status._device_instr_id
 
 
+def test_device_instruction_actions_omit_scan_id_when_not_assigned(action_context):
+    ctx = action_context()
+    ctx.scan.scan_info.scan_id = None
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
+
+    stage_status = ctx.actions.stage("samx", wait=False)
+    stage_msg = _last_device_instruction(ctx, "stage")
+
+    assert stage_msg.device == "samx"
+    assert stage_msg.metadata["device_instr_id"] == stage_status._device_instr_id
+    assert "scan_id" not in stage_msg.metadata
+    assert stage_msg.metadata["RID"] == "rid-123"
+
+
 def test_set_emits_one_instruction_per_device(action_context):
     ctx = action_context()
 

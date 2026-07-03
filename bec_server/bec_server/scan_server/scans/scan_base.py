@@ -54,7 +54,7 @@ class ScanInfo(BaseModel):
 
     # General scan information
     scan_name: Annotated[str, Field(description="Name of the scan type, e.g. 'grid_scan'")]
-    scan_id: Annotated[str, Field(description="Unique identifier for the scan")]
+    scan_id: Annotated[str | None, Field(description="Unique identifier for the scan")] = None
     scan_type: Annotated[
         ScanType | None,
         Field(
@@ -167,7 +167,7 @@ class ScanBase(ABC):
 
     def __init__(
         self,
-        scan_id: str,
+        scan_id: str | None,
         redis_connector: RedisConnector,
         device_manager: DeviceManager,
         instruction_handler: InstructionHandler,
