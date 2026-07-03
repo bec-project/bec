@@ -76,7 +76,9 @@ class _DummyV4Scan(NoopScan):
     scan_name = "_v4_dummy_scan"
 
 
-def _build_dummy_v4_scan(scan_id: str, scan_number: int | None = None) -> _DummyV4Scan:
+def _build_dummy_v4_scan(
+    scan_id: str, scan_number: int | None = None, is_scan: bool = True
+) -> _DummyV4Scan:
     scan = _DummyV4Scan(
         scan_id=scan_id,
         redis_connector=mock.MagicMock(),
@@ -85,7 +87,8 @@ def _build_dummy_v4_scan(scan_id: str, scan_number: int | None = None) -> _Dummy
         request_inputs={},
         system_config={},
     )
-    scan.scan_info.scan_type = ScanType.SOFTWARE_TRIGGERED
+    scan.is_scan = is_scan
+    scan.scan_info.scan_type = ScanType.SOFTWARE_TRIGGERED if is_scan else None
     scan.scan_info.scan_number = scan_number
     return scan
 
@@ -401,6 +404,60 @@ def test_direct_instruction_queue_move_to_next_scan_activates_and_assigns_number
     assert active_scan is second_scan
     assert second_scan.scan_info.scan_number is not None
     assert second_scan.scan_info.dataset_number == first_dataset_number
+
+
+def test_direct_instruction_queue_non_scan_does_not_allocate_scan_number(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    scan_queue = queue_manager.queues["primary"]
+    queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
+    scan_queue.queue.append(queue)
+    scan = _build_dummy_v4_scan("scan-1", is_scan=False)
+    msg = messages.ScanQueueMessage(
+        scan_type="_v4_umv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+    start_scan_number = queue_manager.parent.scan_number
+    start_dataset_number = queue_manager.parent.dataset_number
+    queue.scans = [scan]
+    queue.scan_msgs = [msg]
+
+    active_scan = queue.move_to_next_scan()
+
+    assert active_scan is scan
+    assert scan.scan_info.scan_number is None
+    assert scan.scan_info.dataset_number is None
+    assert queue_manager.parent.scan_number == start_scan_number
+    assert queue_manager.parent.dataset_number == start_dataset_number
+    assert queue.is_scan == [False]
+    assert queue.scan_number == [None]
+
+
+def test_direct_instruction_queue_non_scan_does_not_allocate_scan_id(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    scan_queue = queue_manager.queues["primary"]
+    assembler = mock.MagicMock()
+    assembler.scan_manager.scan_dict = {"_v4_umv": mock.MagicMock(is_scan=False)}
+    scan = _build_dummy_v4_scan("placeholder-scan-id", is_scan=False)
+    scan.scan_info.scan_id = None
+    assembler.assemble_direct_scan.return_value = scan
+    queue = DirectInstructionQueueItem(scan_queue, assembler, scan_queue.scan_worker)
+
+    msg = messages.ScanQueueMessage(
+        scan_type="_v4_umv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
+        queue="primary",
+        metadata={"RID": "rid-1"},
+    )
+
+    queue.append_scan_request(msg)
+
+    assert len(queue.scans) == 1
+    assembler.assemble_direct_scan.assert_called_once_with(msg, scan_id=None)
+    assert queue.scans[0] is scan
+    assert queue.scans[0].scan_info.scan_id is None
+    assert queue.scan_id == [None]
 
 
 def test_direct_instruction_queue_move_to_next_scan_raises_when_empty_or_exhausted(

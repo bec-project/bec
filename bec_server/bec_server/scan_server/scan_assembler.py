@@ -97,13 +97,15 @@ class ScanAssembler:
         )
         return scan_instance
 
-    def assemble_direct_scan(self, msg: messages.ScanQueueMessage, scan_id: str) -> ScanBaseV4:
+    def assemble_direct_scan(
+        self, msg: messages.ScanQueueMessage, scan_id: str | None
+    ) -> ScanBaseV4:
         """Assemble the device instructions for a given ScanQueueMessage.
         This will be achieved by calling the specified class (must be a derived class of ScanBaseV4)
 
         Args:
             msg (messages.ScanQueueMessage): scan queue message for which the instruction should be assembled
-            scan_id (str): scan id of the scan
+            scan_id (str | None): scan id of the scan
 
         Raises:
             ScanAbortion: Raised if the scan initialization fails.

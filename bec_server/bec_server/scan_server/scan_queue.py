@@ -1594,7 +1594,9 @@ class DirectInstructionQueueItem:
         Args:
             msg (ScanQueueMessage): the scan queue message containing the scan information
         """
-        scan = self.assembler.assemble_direct_scan(msg, scan_id=self._scan_id)
+        scan_cls = self.assembler.scan_manager.scan_dict[msg.scan_type]
+        scan_id = self._scan_id if getattr(scan_cls, "is_scan", True) else None
+        scan = self.assembler.assemble_direct_scan(msg, scan_id=scan_id)
         self.scans.append(scan)
         self.scan_msgs.append(msg)
 
@@ -1718,7 +1720,7 @@ class DirectInstructionQueueItem:
     def _set_scan_as_active(self, scan: ScanBase_v4):
         """set a given scan as the active scan"""
         self.active_scan = scan
-        if scan.scan_info.scan_number is None:
+        if scan.scan_info.scan_number is None and scan.is_scan:
             with self.parent.queue_manager._lock:
                 self.parent.queue_manager.parent.scan_number += 1
                 if not self.scan_msgs[self.scans.index(scan)].metadata.get("dataset_id_on_hold"):
