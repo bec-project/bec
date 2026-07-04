@@ -380,7 +380,7 @@ class DeviceServer(BECService):
     def on_stop_devices(self, msg: MessageObject, **_kwargs) -> None:
         """
         Callback for receiving device stop requests.
-        Handles both stopping all devices (empty list) and stopping specific devices (list of device names).
+        Handles stop-all (`None`), stop-none (`[]`), and stopping specific devices (device-name list).
 
         Args:
             msg: MessageObject containing the stop request.
@@ -397,9 +397,12 @@ class DeviceServer(BECService):
                 for stop_id in mvalue.metadata["stop_id"]:
                     if stop_id is not None:
                         self.requests_handler._stopped_requests.append(stop_id)
-        if not mvalue.value:
+        if mvalue.value is None:
             self.stop_devices()
             logger.info("Received request to stop all devices.")
+            return
+        if mvalue.value == []:
+            logger.info("Received request to stop no devices.")
             return
         logger.info(f"Received request to stop devices: {mvalue.value}")
         self.stop_devices(mvalue.value)

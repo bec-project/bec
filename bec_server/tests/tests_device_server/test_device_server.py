@@ -234,12 +234,22 @@ def test_stop_devices(device_server_mock):
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_on_stop_devices(device_server_mock):
-    msg = messages.VariableMessage(value=[], metadata={})
+    msg = messages.VariableMessage(value=None, metadata={})
     msg_obj = MessageObject(topic="internal/queue/stop_devices", value=msg)
     device_server = device_server_mock
     with mock.patch.object(device_server, "stop_devices") as stop:
         device_server.on_stop_devices(msg_obj, parent=device_server)
         stop.assert_called_once_with()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_on_stop_devices_with_empty_list(device_server_mock):
+    msg = messages.VariableMessage(value=[], metadata={})
+    msg_obj = MessageObject(topic="internal/queue/stop_devices", value=msg)
+    device_server = device_server_mock
+    with mock.patch.object(device_server, "stop_devices") as stop:
+        device_server.on_stop_devices(msg_obj, parent=device_server)
+        stop.assert_not_called()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -1144,7 +1154,7 @@ def test_request_handler_ignores_response_if_stop_id(device_server_mock, stop_id
             device_server.on_stop_devices(
                 MessageObject(
                     topic=MessageEndpoints.stop_devices().endpoint,
-                    value=messages.VariableMessage(value=[], metadata={"stop_id": stop_id}),
+                    value=messages.VariableMessage(value=None, metadata={"stop_id": stop_id}),
                 )
             )
             stop_mock.assert_called()
