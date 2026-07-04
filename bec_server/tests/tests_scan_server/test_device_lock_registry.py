@@ -31,3 +31,24 @@ def test_device_lock_registry_logs_when_waiting_for_device():
     log_info.assert_called_once()
     assert "waiting for device lock" in log_info.call_args.args[0]
     assert log_info.call_args.args[2] == "samx"
+
+
+def test_device_lock_registry_runs_interruption_callback_outside_condition():
+    registry = DeviceLockRegistry()
+    registry.acquire("scan-1", "samx")
+    callback_states = []
+
+    def interruption_callback():
+        callback_states.append(registry._condition._is_owned())
+
+    releaser = threading.Thread(
+        target=lambda: (time.sleep(0.05), registry.release_all("scan-1")), daemon=True
+    )
+    releaser.start()
+
+    registry.acquire("request-2", "samx", interruption_callback=interruption_callback)
+
+    releaser.join(timeout=1)
+
+    assert callback_states
+    assert callback_states == [False] * len(callback_states)

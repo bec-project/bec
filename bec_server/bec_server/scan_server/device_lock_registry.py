@@ -61,8 +61,8 @@ class DeviceLockRegistry:
                 callback invoked while waiting for the lock. Defaults to None.
         """
         has_logged_wait = False
-        with self._condition:
-            while True:
+        while True:
+            with self._condition:
                 current_owner = self._device_owners.get(device)
                 if current_owner in (None, request_id):
                     self._device_owners[device] = request_id
@@ -80,8 +80,8 @@ class DeviceLockRegistry:
 
                 self._condition.wait(timeout=self.WAIT_INTERVAL_S)
 
-                if interruption_callback is not None:
-                    interruption_callback()
+            if interruption_callback is not None:
+                interruption_callback()
 
     def release_all(self, request_id: str) -> list[str]:
         """
