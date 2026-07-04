@@ -17,13 +17,17 @@ def test_device_lock_registry_acquire_and_release():
 def test_device_lock_registry_logs_when_waiting_for_device():
     registry = DeviceLockRegistry()
     registry.acquire("scan-1", "samx")
+    wait_logged = threading.Event()
 
-    releaser = threading.Thread(
-        target=lambda: (time.sleep(0.05), registry.release_all("scan-1")), daemon=True
-    )
+    def release_after_wait_logged():
+        assert wait_logged.wait(timeout=1)
+        registry.release_all("scan-1")
+
+    releaser = threading.Thread(target=release_after_wait_logged, daemon=True)
     releaser.start()
 
     with mock.patch("bec_server.scan_server.device_lock_registry.logger.info") as log_info:
+        log_info.side_effect = lambda *args, **kwargs: wait_logged.set()
         registry.acquire("request-2", "samx")
 
     releaser.join(timeout=1)
