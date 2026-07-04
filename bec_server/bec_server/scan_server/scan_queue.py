@@ -274,10 +274,10 @@ class QueueManager:
                 If provided, this ID will be added to the list of stopped requests in the device server to
                 prevent any instructions associated with this ID raising alarms after the stop command is issued.
                 The stop_id can be a scan ID, request ID, or queue ID.
-            devices (list[str] | None): Optional list of devices to stop. If None, all devices are stopped.
+            devices (list[str] | None): Optional list of devices to stop.
+                `None` means stop all devices, while an empty list means stop no devices.
         """
-        # We send an empty list to indicate that all devices should be stopped
-        msg = messages.VariableMessage(value=devices or [], metadata={})
+        msg = messages.VariableMessage(value=devices, metadata={})
         if stop_id is not None:
             msg.metadata["stop_id"] = stop_id
         self.connector.send(MessageEndpoints.stop_devices(), msg)

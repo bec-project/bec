@@ -777,6 +777,60 @@ def test_set_abort_with_empty_queue(queuemanager_mock):
     assert len(queue_manager.connector.message_sent) == 0
 
 
+def test_stop_all_devices_preserves_none_for_stop_all(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+
+    queue_manager.stop_all_devices(stop_id="stop-all")
+
+    assert queue_manager.connector.message_sent == [
+        {
+            "queue": MessageEndpoints.stop_devices(),
+            "msg": messages.VariableMessage(value=None, metadata={"stop_id": "stop-all"}),
+        }
+    ]
+
+
+def test_stop_all_devices_preserves_empty_list_for_stop_none(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+
+    queue_manager.stop_all_devices(stop_id="stop-none", devices=[])
+
+    assert queue_manager.connector.message_sent == [
+        {
+            "queue": MessageEndpoints.stop_devices(),
+            "msg": messages.VariableMessage(value=[], metadata={"stop_id": "stop-none"}),
+        }
+    ]
+
+
+@pytest.mark.timeout(5)
+def test_set_abort_with_no_owned_devices_sends_stop_none(queuemanager_mock):
+    queue_manager = queuemanager_mock()
+    queue_manager.connector.message_sent = []
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(return_value=[])
+    msg = messages.ScanQueueMessage(
+        scan_type="mv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    scan_queue = queue_manager.queues["primary"]
+    while scan_queue.scan_worker.current_instruction_queue_item is None:
+        time.sleep(0.1)
+
+    queue_id = scan_queue.queue[0].queue_id
+    queue_manager.set_abort(queue="primary")
+    wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
+
+    assert {
+        "queue": MessageEndpoints.stop_devices(),
+        "msg": messages.VariableMessage(value=[], metadata={"stop_id": queue_id}),
+    } in queue_manager.connector.message_sent
+
+
 @pytest.mark.timeout(5)
 def test_set_clear_sends_message(queuemanager_mock):
     queue_manager = queuemanager_mock()
