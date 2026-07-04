@@ -157,7 +157,14 @@ def get_ownership_mode(
     """
     explicit_mode = getattr(obj.__class__, "ownership_mode", None)
     if explicit_mode is not None:
-        return OwnershipMode(explicit_mode)
+        try:
+            return OwnershipMode(explicit_mode)
+        except ValueError as exc:
+            raise DeviceConfigError(
+                f"Invalid ownership_mode {explicit_mode!r} configured on "
+                f"{obj.__class__.__name__}. Expected one of: "
+                f"{', '.join(mode.value for mode in OwnershipMode)}."
+            ) from exc
 
     if isinstance(obj, PSIDeviceBase):
         return OwnershipMode.PINNED
