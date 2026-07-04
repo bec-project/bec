@@ -101,6 +101,10 @@ class DummyExplicitOwnershipDevice(Device):
     ownership_mode = "free"
 
 
+class DummyInvalidOwnershipDevice(Device):
+    ownership_mode = "not-a-mode"
+
+
 class DummyPSIDevice(PSIDeviceBase):
     pass
 
@@ -185,3 +189,13 @@ def test_get_device_info_prefers_explicit_class_ownership_mode():
     info = get_device_info(device, connect=False)
 
     assert info["device_info"]["ownership_mode"] == "free"
+
+
+def test_get_device_info_raises_device_config_error_for_invalid_explicit_ownership_mode():
+    device = DummyInvalidOwnershipDevice(name="test")
+
+    with pytest.raises(
+        DeviceConfigError,
+        match="Invalid ownership_mode 'not-a-mode' configured on DummyInvalidOwnershipDevice",
+    ):
+        get_device_info(device, connect=False)
