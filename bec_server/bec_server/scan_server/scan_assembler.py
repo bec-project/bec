@@ -130,13 +130,16 @@ class ScanAssembler:
             scan_cls, scan_info["signature"], resolved_args, resolved_kwargs
         )
 
+        metadata = msg.metadata.copy() if msg.metadata is not None else None
+        user_metadata = metadata.pop("user_metadata", {}) if metadata is not None else {}
         with self.device_manager._rpc_method(partial(self._raise_on_rpc_call, scan_cls)):
             scan_instance = scan_cls(
                 *resolved_args,
                 device_manager=self.device_manager,
                 redis_connector=self.connector,
                 scan_modifier=get_scan_modifier(),
-                metadata=msg.metadata,
+                metadata=metadata,
+                user_metadata=user_metadata,
                 instruction_handler=self.parent.queue_manager.instruction_handler,
                 scan_id=scan_id,
                 request_inputs=request_inputs,
