@@ -357,7 +357,7 @@ class DeviceBase:
             messages.ScanQueueMessage: The RPC message.
         """
         client: BECClient = self.root.parent.parent
-        scan_type = "device_rpc"
+        scan_type = "_v4_device_rpc"
         if scan_type == "_v4_device_rpc":
             parameter = {
                 "args": [],
