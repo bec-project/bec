@@ -761,3 +761,28 @@ def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(dm_wi
         "burst_at_each_point": 3,
         "system_config": {"file_directory": "/tmp/data"},
     }
+
+
+def test_scan_assembler_extracts_user_metadata_for_direct_scans(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+
+    class MockScanManager:
+        scan_dict = {"_v4_acquire": Acquire}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="_v4_acquire",
+        parameter={"args": [], "kwargs": {"exp_time": 0.2, "system_config": {}}},
+        queue="primary",
+        metadata={"RID": "rid-123", "user_metadata": {"sample": "my_sample"}},
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.scan_info.metadata == {"RID": "rid-123"}
+    assert request.scan_info.user_metadata == {"sample": "my_sample"}
+    assert msg.metadata == {"RID": "rid-123", "user_metadata": {"sample": "my_sample"}}
