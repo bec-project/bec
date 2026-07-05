@@ -15,6 +15,7 @@ from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.bec_errors import ExceptionWithErrorInfo
 from bec_lib.bec_service import BECService
 from bec_lib.device import OnFailure
 from bec_lib.endpoints import MessageEndpoints
@@ -244,6 +245,9 @@ class RequestHandler:
         Returns:
             messages.ErrorInfo: A dictionary containing basic error information.
         """
+        if isinstance(error, ExceptionWithErrorInfo):
+            return error.error_info
+
         if hasattr(obj, "device"):
             device_name = obj.device.dotted_name or obj.device.name
         elif hasattr(obj, "obj") and isinstance(obj.obj, OphydObject):
@@ -576,13 +580,18 @@ class DeviceServer(BECService):
             logger.error(content)
         except Exception as exc:  # pylint: disable=broad-except
             content = traceback.format_exc()
-            compact_msg = traceback.format_exc(limit=0)
-            error_info = messages.ErrorInfo(
-                error_message=content,
-                compact_error_message=compact_msg,
-                exception_type=exc.__class__.__name__,
-                device=self.get_device_from_exception(exc),
-            )
+            if isinstance(exc, ExceptionWithErrorInfo):
+                error_info = exc.error_info
+                if not error_info.device:
+                    error_info.device = self.get_device_from_exception(exc)
+            else:
+                compact_msg = traceback.format_exc(limit=0)
+                error_info = messages.ErrorInfo(
+                    error_message=content,
+                    compact_error_message=compact_msg,
+                    exception_type=exc.__class__.__name__,
+                    device=self.get_device_from_exception(exc),
+                )
             self._ensure_request_registered(instructions)
             if action == "rpc":
                 self.rpc_handler.send_rpc_exception(exc, instructions)
