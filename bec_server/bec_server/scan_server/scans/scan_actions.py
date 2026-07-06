@@ -762,7 +762,9 @@ class ScanActions:
         Args:
             device (str | DeviceBase): name of the device or DeviceBase instance to report
         """
-        device_name = self._normalize_device_name(device)
+        # NOTE: the device name does not use the dotted name as in many other scan actions but the root
+        # name. This is because the progress signal is scoped to an entire device.
+        device_name = device if isinstance(device, str) else device.root.name
         self.acquire_device_lock(device_name)
         scan_report_instruction = {"device_progress": [device_name]}
         self._scan.scan_info.scan_report_instructions.append(scan_report_instruction)

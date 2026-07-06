@@ -867,7 +867,7 @@ def test_report_instructions_update_scan_info_and_queue(action_context):
     assert ctx.actions._update_queue_info_callback.call_count == 3
 
 
-def test_report_instructions_use_dotted_name_for_nested_devices(action_context):
+def test_report_instructions_use_root_name_for_nested_device_progress(action_context):
     ctx = action_context()
     setpoint = ctx.device_manager.devices.samx.setpoint
     readback = ctx.device_manager.devices.samx.readback
@@ -877,7 +877,7 @@ def test_report_instructions_use_dotted_name_for_nested_devices(action_context):
 
     assert ctx.scan.scan_info.scan_report_instructions == [
         {"readback": {"RID": "rid", "devices": ["samx.setpoint"], "start": [0], "end": [1]}},
-        {"device_progress": ["samx.readback"]},
+        {"device_progress": ["samx"]},
     ]
     assert "samx.setpoint" in ctx.actions._devices_with_required_response
 
