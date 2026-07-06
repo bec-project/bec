@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.149.0 (2026-07-06)
+
+### Bug Fixes
+
+- **scan**: Normalize device names to use dotted names for nested devices
+  ([`c77b8ff`](https://github.com/bec-project/bec/commit/c77b8ff4affe392a5108530120c904c3268a07a9))
+
+### Features
+
+- **scan**: Update scan_id handling to support None values in scan assembly
+  ([`2ed2472`](https://github.com/bec-project/bec/commit/2ed247266995f268bcc43aa444031f0b0d1c8503))
+
+
 ## v3.148.1 (2026-07-01)
 
 ### Bug Fixes
