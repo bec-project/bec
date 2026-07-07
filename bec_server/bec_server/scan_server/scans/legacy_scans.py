@@ -791,20 +791,6 @@ class ScanStub(RequestBase):
     pass
 
 
-class OpenScanDef(ScanStub):
-    scan_name = "open_scan_def"
-
-    def run(self):
-        yield from self.stubs.open_scan_def()
-
-
-class CloseScanDef(ScanStub):
-    scan_name = "close_scan_def"
-
-    def run(self):
-        yield from self.stubs.close_scan_def()
-
-
 class CloseScanGroup(ScanStub):
     scan_name = "close_scan_group"
 

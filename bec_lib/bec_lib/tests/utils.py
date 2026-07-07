@@ -60,12 +60,6 @@ class ScansMock(Scans):
     def _import_scans(self):
         pass
 
-    def open_scan_def(self, *args, device_manager=None, monitored: list | None = None, **kwargs):
-        pass
-
-    def close_scan_def(self):
-        pass
-
     def close_scan_group(self):
         pass
 
@@ -139,8 +133,6 @@ class ClientMock(BECClient):
             mv=self.scans.mv,
             umv=self.scans.umv,
             fermat_scan=self.scans.fermat_scan,
-            open_scan_def=self.scans.open_scan_def,
-            close_scan_def=self.scans.close_scan_def,
             close_scan_group=self.scans.close_scan_group,
         )
 

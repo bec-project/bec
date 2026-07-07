@@ -275,7 +275,6 @@ class BECClient(BECService):
         else:
             self.scans._refresh_available_scans()
         builtins.__dict__["scans"] = self.scans
-        self.scans_namespace.scan_def = self.scans.scan_def
 
     def load_high_level_interface(self, module_name: str) -> None:
         """Load a high level interface module.

@@ -375,11 +375,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def process_request(self):
         """process the request and start the core loop for live updates"""
-        if self.request.content["scan_type"] == "close_scan_def":
-            self.wait_for_scan_item_to_finish()
-            self.close_table()
-            return
-
         self.wait_for_request_acceptance()
         self.update_scan_item(timeout=15)
         self.wait_for_scan_to_start()
@@ -394,9 +389,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def run(self):
         """run the live updates"""
-        if self.request.content["scan_type"] == "open_scan_def":
-            self.wait_for_request_acceptance()
-            return
         self.process_request()
         self.wait_for_scan_item_to_finish()
         if self._print_table_data:

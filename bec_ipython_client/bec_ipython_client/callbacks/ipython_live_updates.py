@@ -69,9 +69,6 @@ class IPythonLiveUpdates:
         if not self._active_request:
             return
         scan_type = self._active_request.scan_type
-        if scan_type in ["open_scan_def", "close_scan_def"]:
-            self._process_instruction({"scan_progress": {"points": 0, "show_table": True}})
-            return
         if scan_type == "close_scan_group":
             return
 
@@ -325,10 +322,9 @@ class IPythonLiveUpdates:
         if not available_blocks:
             return False
         req_block = available_blocks[self._request_block_index[req_id]]
-        if req_block.msg.scan_type in [
-            "open_scan_def",
-            "mv",
-        ]:  # TODO: make this more general for all scan types that don't have report instructions
+        if (
+            req_block.msg.scan_type == "mv"
+        ):  # TODO: make this more general for scans without report instructions
             return True
 
         report_instructions = req_block.report_instructions or []
@@ -410,11 +406,7 @@ class IPythonLiveUpdates:
         self._current_queue = None
         self._user_callback = None
         self._processed_instructions = 0
-        scan_closed = (
-            forced
-            or self._active_request is None
-            or (self._active_request.scan_type == "close_scan_def")
-        )
+        scan_closed = forced or self._active_request is None
         self._active_request = None
 
         if self.client.scans._scan_def_id and not scan_closed:

@@ -551,57 +551,9 @@ def test_file_writer(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_def_callback(capsys, bec_ipython_client_fixture):
-    bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_scan_def_callback"})
-    scans = bec.scans
-    dev = bec.device_manager.devices
-    scan_number = bec.queue.next_scan_number
-    with scans.scan_def:
-        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
-        scans.umv(dev.samy, 5, relative=False)
-        current_pos_samy = dev.samy.read(cached=True)["samy"]["value"]
-        captured = capsys.readouterr()
-        assert f"Starting scan {scan_number}" in captured.out
-        ref_out_samy = f"━━━━━━━━━━━━━━━ {current_pos_samy:10.2f} /       5.00 / 100 %"
-        assert ref_out_samy in captured.out
-        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
-    captured = capsys.readouterr()
-    assert f"Scan {scan_number} finished." in captured.out
-
-
-@pytest.mark.timeout(100)
-def test_scan_def(bec_ipython_client_fixture):
-    bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_scan_def"})
-    scans = bec.scans
-    dev = bec.device_manager.devices
-    scan_number = bec.queue.next_scan_number
-    with scans.scan_def:
-        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
-        scans.umv(dev.samy, 5, relative=False)
-        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
-        scans.mv(dev.samx, 0, relative=False)
-
-    assert scan_number == bec.queue.next_scan_number - 1
-
-    scan_number = bec.queue.next_scan_number
-
-    @scans.scan_def
-    def scan_def_with_decorator():
-        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
-        scans.umv(dev.samy, 5, relative=False)
-        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=False)
-        scans.mv(dev.samx, 0, relative=False)
-
-    scan_def_with_decorator()
-    assert scan_number == bec.queue.next_scan_number - 1
-
-
-@pytest.mark.timeout(100)
 def test_group_def(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_scan_def"})
+    bec.metadata.update({"unit_test": "test_group_def"})
     scans = bec.scans
     dev = bec.device_manager.devices
     scan_number = bec.queue.next_scan_number

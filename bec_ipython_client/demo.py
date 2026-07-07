@@ -153,13 +153,6 @@ scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 # scans.close_interactive_scan(md={"scan_def_id": scan_def_id})
 
 
-# @scan_def
-# def new_scan():
-#     for ii in range(10):
-#         scans.umv(dev.samx, ii * 10)
-#         scans.fermat_scan(dev.samx, -5, 5, dev.samy, -5, 5, step=1, exp_time=0.02, relative=True)
-
-
 # for ii in range(10):
 #     scans.umv(dev.samx, ii * 10)
 #     # scans.grid_scan(dev.samx, -5, 5, 5, dev.samy, -5, 5, 10, exp_time=0.02, relative=True)
@@ -180,17 +173,9 @@ scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 #     # scans.line_scan(dev.samx, -8, 8, steps=200, exp_time=0.1, relative=True)
 
 
-# with scans.scan_def:
-#     scan_with_decorator()
 # with scans.dataset_id_on_hold:
 #     scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=True)
 #     scans.line_scan(dev.samx, -8, 8, steps=10, exp_time=0.1, relative=True)
-
-# scan_def_id = str(uuid.uuid4())
-# scans.open_scan_def(md={"scan_def_id": scan_def_id})
-# scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, md={"scan_def_id": scan_def_id})
-# scans.line_scan(dev.samx, -8, 8, steps=10, exp_time=0.1, md={"scan_def_id": scan_def_id})
-# scans.close_scan_def(md={"scan_def_id": scan_def_id})
 # for ii in range(10):
 #     scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01)
 
