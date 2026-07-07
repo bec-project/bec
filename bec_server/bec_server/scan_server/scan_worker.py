@@ -80,7 +80,6 @@ class ScanWorker(threading.Thread):
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
-            logger.error(content)
             error_info = messages.ErrorInfo(
                 error_message=content,
                 compact_error_message=traceback.format_exc(limit=0),

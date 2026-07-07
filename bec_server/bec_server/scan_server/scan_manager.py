@@ -115,9 +115,6 @@ class ScanManager:
         for name, scan_cls in members:
 
             if not scan_cls.scan_name.isidentifier():
-                logger.error(
-                    f"Invalid scan_name '{scan_cls.scan_name}' for scan class {name}. scan_name must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number. Skipping."
-                )
                 self.parent.connector.raise_alarm(
                     severity=Alarms.WARNING,
                     info=ErrorInfo(
@@ -130,7 +127,6 @@ class ScanManager:
                 continue
 
             if scan_cls.scan_name in self.available_scans:
-                logger.error(f"{scan_cls.scan_name} already exists. Skipping.")
                 self.parent.connector.raise_alarm(
                     severity=Alarms.WARNING,
                     info=ErrorInfo(

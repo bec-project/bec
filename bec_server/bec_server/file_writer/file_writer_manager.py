@@ -424,7 +424,7 @@ class FileWriterManager(BECService):
         # pylint: disable=unused-variable
         except Exception as exc:
             content = traceback.format_exc()
-            logger.error(f"Failed to write to file {file_path}. Error: {content}")
+            logger.error(f"Failed to write to file {file_path}.")
             error_info = messages.ErrorInfo(
                 error_message=content,
                 compact_error_message=traceback.format_exc(limit=0),
