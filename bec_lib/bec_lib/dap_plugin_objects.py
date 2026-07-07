@@ -330,12 +330,6 @@ class LmfitService1DResult:
         return f"{self._model} fit result: \n Params: {self.params} \n Min: {self.min} \n Max: {self.max}"
 
 
-class ImageAnalysisService(DAPPluginObject):
-    """
-    Plugin for image analysis.
-    """
-
-
 class LmfitService1D(DAPPluginObjectAutoRun):
     """
     Plugin for fitting 1D data using lmfit.

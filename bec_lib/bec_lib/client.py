@@ -25,7 +25,6 @@ from bec_lib.builtin_actor_hli import BuiltinActorHli
 from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.config_helper import ConfigHelperUser
 from bec_lib.dap_plugins import DAPPlugins
-from bec_lib.device_monitor_plugin import DeviceMonitorPlugin
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -243,7 +242,6 @@ class BECClient(BECService):
         self.config = ConfigHelperUser(self.device_manager)
         self.history = ScanHistory(client=self)
         self.dap = DAPPlugins(self)
-        self.device_monitor = DeviceMonitorPlugin(self.connector)
         self._update_username()
         self.beamline_states = BeamlineStateManager(client=self)
 
