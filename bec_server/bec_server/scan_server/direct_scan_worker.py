@@ -187,7 +187,6 @@ class DirectScanWorker:
             exc (Exception): The exception that was raised, which will be included in the alarm information.
         """
 
-        logger.error(content)
         error_info = messages.ErrorInfo(
             error_message=content,
             compact_error_message=traceback.format_exc(limit=0),

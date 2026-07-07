@@ -6,7 +6,6 @@ from bec_lib import bl_states, messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.logger import bec_logger
 from bec_lib.messages import ErrorInfo
 from bec_lib.redis_connector import RedisConnector
 
@@ -32,7 +31,6 @@ class BeamlineStateManager:
             self.update_states(msg)
         except Exception as exc:
             content = traceback.format_exc()
-            bec_logger.logger.error(content)
             info = ErrorInfo(
                 exception_type=type(exc).__name__,
                 error_message=content,

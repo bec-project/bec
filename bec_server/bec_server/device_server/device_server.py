@@ -429,7 +429,6 @@ class DeviceServer(BECService):
                     dev.obj.stop()
                 except Exception as exc:  # pylint: disable=broad-except
                     content = traceback.format_exc()
-                    logger.error(content)
                     error_info = messages.ErrorInfo(
                         error_message=content,
                         compact_error_message=traceback.format_exc(limit=0),

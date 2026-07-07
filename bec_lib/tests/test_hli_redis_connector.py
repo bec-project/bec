@@ -41,11 +41,12 @@ def hli_connector():
 
 
 @pytest.mark.parametrize(
-    "severity, expected_event, alarm_type, msg, compact_msg, metadata",
+    "severity, expected_event, expected_log_level, alarm_type, msg, compact_msg, metadata",
     [
         [
             Alarms.MAJOR,
             MessagingEvent.ALARM_MAJOR,
+            "error",
             "alarm",
             "content1",
             "compact_msg",
@@ -54,6 +55,7 @@ def hli_connector():
         [
             Alarms.MINOR,
             MessagingEvent.ALARM_MINOR,
+            "error",
             "alarm",
             "content1",
             "compact_msg",
@@ -62,6 +64,7 @@ def hli_connector():
         [
             Alarms.WARNING,
             MessagingEvent.ALARM_WARNING,
+            "warning",
             "alarm",
             "content1",
             "compact_msg",
@@ -70,11 +73,19 @@ def hli_connector():
     ],
 )
 def test_redis_connector_raise_alarm(
-    hli_connector, severity, expected_event, alarm_type, msg, compact_msg, metadata
+    hli_connector,
+    severity,
+    expected_event,
+    expected_log_level,
+    alarm_type,
+    msg,
+    compact_msg,
+    metadata,
 ):
     with (
         mock.patch.object(hli_connector._managed_connection, "set_and_publish", return_value=None),
         mock.patch.object(hli_connector, "notify", return_value=None),
+        mock.patch("bec_lib.redis_connector.hli.logger") as mock_logger,
     ):
         info = messages.ErrorInfo(
             error_message=msg, compact_error_message=compact_msg, exception_type=alarm_type
@@ -86,6 +97,15 @@ def test_redis_connector_raise_alarm(
             AlarmMessage(severity=severity, info=info, metadata=metadata),
         )
         hli_connector.notify.assert_called_once_with(expected_event, compact_msg)
+
+        # the alarm is also written to the log of the service that raised it, at a level
+        # matching the alarm severity (warnings -> warning, minor/major -> error)
+        log_call = getattr(mock_logger, expected_log_level)
+        log_call.assert_called_once()
+        logged_message = log_call.call_args.args[0]
+        assert msg in logged_message
+        other_level = "warning" if expected_log_level == "error" else "error"
+        getattr(mock_logger, other_level).assert_not_called()
 
 
 def test_redis_connector_send_converts_ep(hli_connector: RedisConnector):
