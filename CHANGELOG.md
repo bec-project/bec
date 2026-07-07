@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.150.0 (2026-07-07)
+
+### Features
+
+- **errors**: Enhance error handling to include detailed information from ExceptionWithErrorInfo
+  ([`6ec3fc1`](https://github.com/bec-project/bec/commit/6ec3fc1cc1290399cdee08af5c62adf317e908b8))
+
+
 ## v3.149.0 (2026-07-06)
 
 ### Bug Fixes
