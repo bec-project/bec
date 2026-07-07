@@ -168,8 +168,9 @@ class RedisConnector:
         self._managed_connection.set_and_publish(MessageEndpoints.alarm().endpoint, alarm_msg)
         compact_message = info.compact_error_message or info.error_message or info.exception_type
         # Log the alarm so it also surfaces in the log of the service that raised it.
+        device_part = f" for device '{info.device}'" if getattr(info, "device", None) else ""
         log_message = (
-            f"Alarm ({Alarms(severity).name}) raised for device '{info.device}': "
+            f"Alarm ({Alarms(severity).name}) raised{device_part}: "
             f"{info.error_message or compact_message}"
         )
         if int(severity) >= Alarms.MINOR:
