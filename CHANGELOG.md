@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.150.2 (2026-07-07)
+
+### Bug Fixes
+
+- **bec_lib**: Log alarms in raise_alarm and drop redundant caller logs
+  ([`f58032e`](https://github.com/bec-project/bec/commit/f58032e2ad09deb60d422e0bed3a877b7f99184e))
+
+- **bec_lib**: Raise alarm device
+  ([`e0b58dc`](https://github.com/bec-project/bec/commit/e0b58dc3387d373619881bf78bace25181bb8700))
+
+Co-authored-by: Copilot Autofix powered by AI <175728472+Copilot@users.noreply.github.com>
+
+
 ## v3.150.1 (2026-07-07)
 
 ### Bug Fixes
