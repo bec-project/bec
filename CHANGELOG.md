@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.150.1 (2026-07-07)
+
+### Bug Fixes
+
+- Remove DeviceMonitorPlugin and related image analysis service code
+  ([`998047b`](https://github.com/bec-project/bec/commit/998047b790aafb7079441340684d4a9e2d7c5d9b))
+
+### Chores
+
+- Remove old docs
+  ([`df7d881`](https://github.com/bec-project/bec/commit/df7d881e12662e7a3a1a55a903e82196e549ed3e))
+
+
 ## v3.150.0 (2026-07-07)
 
 ### Features
