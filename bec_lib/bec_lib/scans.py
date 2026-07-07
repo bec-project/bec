@@ -181,7 +181,6 @@ class Scans:
         self._scan_def_id = None
         self._interactive_scan = False
         self._scan_group_ctx = ScanGroup(parent=self)
-        self._scan_def_ctx = ScanDef(parent=self)
         self._hide_report = None
         self._hide_report_ctx = HideReport(parent=self)
         self._dataset_id_on_hold = None
@@ -368,11 +367,6 @@ class Scans:
         return self._scan_group_ctx
 
     @property
-    def scan_def(self):
-        """Context manager / decorator for defining new scans"""
-        return self._scan_def_ctx
-
-    @property
     def hide_report(self):
         """Context manager / decorator for hiding the report"""
         return self._hide_report_ctx
@@ -406,27 +400,6 @@ class ScanGroup(ContextDecorator):
     def __exit__(self, *exc):
         self.parent.close_scan_group()
         self.parent._scan_group = None
-
-
-class ScanDef(ContextDecorator):
-    """ScanDef is a ContextDecorator for defining a new scan"""
-
-    def __init__(self, parent: Scans = None) -> None:
-        super().__init__()
-        self.parent = parent
-
-    def __enter__(self):
-        if self.parent._scan_def_id is not None:
-            raise ScanAbortion("Nested scan definitions currently not supported.")
-        scan_def_id = str(uuid.uuid4())
-        self.parent._scan_def_id = scan_def_id
-        self.parent.open_scan_def()
-        return self
-
-    def __exit__(self, *exc):
-        if exc[0] is None:
-            self.parent.close_scan_def()
-        self.parent._scan_def_id = None
 
 
 class HideReport(ContextDecorator):

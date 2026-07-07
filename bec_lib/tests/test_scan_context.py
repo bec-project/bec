@@ -10,7 +10,6 @@ from bec_lib.scans import (
     FileWriter,
     HideReport,
     Metadata,
-    ScanDef,
     ScanExport,
     ScanGroup,
     Scans,
@@ -93,16 +92,6 @@ def test_dataset_id_on_hold_cleanup_on_error(bec_client_mock):
                     assert client.scans._dataset_id_on_hold is True
                     raise AttributeError()
     assert client.scans._dataset_id_on_hold is None
-
-
-def test_scan_def_cm(bec_client_mock):
-    client = bec_client_mock
-    client.scans._scan_def_id = None
-    scan_def_id_cm = ScanDef(client.scans)
-    with scan_def_id_cm:
-        assert isinstance(client.scans._scan_def_id, str)
-
-    assert client.scans._scan_def_id is None
 
 
 def test_scan_group_cm(bec_client_mock):
