@@ -381,6 +381,7 @@ def test_config_reload(
         assert bec.device_manager.devices[dev].enabled is False
 
 
+@pytest.mark.timeout(100)
 def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_config_reload"})
@@ -438,6 +439,7 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
     assert bec.device_manager.devices["hexapod"].precision == 3
 
 
+@pytest.mark.timeout(100)
 def test_config_add_remove_device(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_config_add_device"})
@@ -480,6 +482,7 @@ def test_config_add_remove_device(bec_client_lib):
     assert "samx" in dev
 
 
+@pytest.mark.timeout(100)
 def test_computed_signal(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_computed_signal"})
@@ -500,6 +503,7 @@ def test_computed_signal(bec_client_lib):
     assert dev.pseudo_signal1.read()["pseudo_signal1"]["value"] == 5
 
 
+@pytest.mark.timeout(100)
 def test_cached_device_readout(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_cached_device_readout"})
@@ -538,6 +542,7 @@ def test_cached_device_readout(bec_client_lib):
     assert timestamp_3 == timestamp_2
 
 
+@pytest.mark.timeout(100)
 def test_interactive_scan(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_interactive_scan"})
