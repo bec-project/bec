@@ -68,7 +68,7 @@ class _TestParent:
 
 @pytest.fixture
 def action_context(dm_with_devices):
-    def _build(connector=None):
+    def _build(connector=None, running=True):
         connector = connector or ConnectorMock("")
         instruction_handler = InstructionHandler(connector)
         dm_with_devices.connector = connector
@@ -80,6 +80,7 @@ def action_context(dm_with_devices):
             device_manager=dm_with_devices,
             instruction_handler=instruction_handler,
         )
+        scan.actions._scan_running = running
         return _ActionContext(
             actions=scan.actions, connector=connector, device_manager=dm_with_devices, scan=scan
         )
@@ -199,7 +200,7 @@ def test_open_scan_acquires_initial_device_locks(action_context):
 
 
 def test_acquire_device_lock_queues_normalized_names_before_open(action_context):
-    ctx = action_context()
+    ctx = action_context(running=False)
     ctx.scan.scan_info.metadata["RID"] = "rid-123"
     ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
 
@@ -211,7 +212,7 @@ def test_acquire_device_lock_queues_normalized_names_before_open(action_context)
 
 
 def test_initialize_scan_flushes_pre_open_queued_locks(action_context):
-    ctx = action_context()
+    ctx = action_context(running=False)
     _set_readout_priority(ctx, monitored=["samx", "samy"], **{"async": ["samz"]})
     _set_software_triggered(ctx, "samy")
     ctx.scan.scan_info.metadata["RID"] = "rid-123"
@@ -244,8 +245,6 @@ def test_acquire_device_lock_uses_request_id_and_normalized_names_after_open(act
     ctx = action_context()
     ctx.scan.scan_info.metadata["RID"] = "rid-123"
     ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
-    ctx.actions._scan_running = True
-
     ctx.actions.acquire_device_lock([ctx.device_manager.devices.samx, "samy"])
 
     ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once()
@@ -290,6 +289,36 @@ def test_get_pending_device_locks_includes_runtime_waits(action_context):
 
     assert ctx.actions.get_pending_device_locks() == []
     assert ctx.actions._update_queue_info_callback.call_count == 2
+
+
+@pytest.mark.parametrize(
+    ("method_name", "args", "kwargs"),
+    [
+        ("stage_all_devices", (), {"wait": False}),
+        ("stage", ("samx",), {"wait": False}),
+        ("pre_scan", ("samx",), {"wait": False}),
+        ("pre_scan_all_devices", (), {"wait": False}),
+        ("set", (["samx"], [1.0]), {"wait": False}),
+        ("kickoff", ("samx",), {"wait": False}),
+        ("complete", ("samx",), {"wait": False}),
+        ("complete_all_devices", (), {"wait": False}),
+        ("read_monitored_devices", (), {"wait": False}),
+        ("read_manually", (["samx"],), {"wait": False}),
+        ("publish_manual_read", ([{}],), {"wait": False}),
+        ("read_baseline_devices", (), {"wait": False}),
+        ("trigger_all_devices", (), {"wait": False}),
+        ("unstage", ("samx",), {"wait": False}),
+        ("unstage_all_devices", (), {"wait": False}),
+        ("rpc_call", ("samx", "foo"), {}),
+        ("rpc_call_no_wait", ("samx", "foo", "rpc-id"), {}),
+        ("send_client_info", ("test message",), {}),
+    ],
+)
+def test_requires_scan_is_running_guard(action_context, method_name, args, kwargs):
+    ctx = action_context(running=False)
+
+    with pytest.raises(RuntimeError, match="can only be used once the scan is running"):
+        getattr(ctx.actions, method_name)(*args, **kwargs)
 
 
 def test_device_specific_actions_acquire_device_locks(action_context):
