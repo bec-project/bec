@@ -1200,7 +1200,21 @@ class RequestBlock:
             scan_number=self.scan_number,
             scan_id=self.scan_id,
             report_instructions=self.scan_report_instructions,
+            owned_device_locks=self._get_owned_device_locks(),
+            pending_device_locks=self._get_pending_device_locks(),
         )
+
+    def _get_owned_device_locks(self) -> list[str]:
+        # pylint: disable=protected-access
+        return self.parent.scan_queue.queue_manager._get_owned_devices_for_instruction_queue(
+            self.parent.instruction_queue
+        )
+
+    def _get_pending_device_locks(self) -> list[str]:
+        actions = getattr(self.scan, "actions", None)
+        if actions is None:
+            return []
+        return actions.get_pending_device_locks()
 
 
 class RequestBlockQueue:
@@ -1696,6 +1710,10 @@ class DirectInstructionQueueItem:
             scan_number=self._get_scan_number(scan),
             scan_id=scan.scan_info.scan_id,
             report_instructions=scan.scan_info.scan_report_instructions,
+            owned_device_locks=self.parent.queue_manager._get_owned_devices_for_instruction_queue(
+                self
+            ),
+            pending_device_locks=scan.actions.get_pending_device_locks(),
         )
 
     @property

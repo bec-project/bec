@@ -271,6 +271,7 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
     direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
     rpc_cm = mock.MagicMock()
     direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=rpc_cm)
+    scan.actions._initialize_scan = mock.MagicMock()
 
     direct_worker_context.direct_worker.run(scan)
 
@@ -282,6 +283,7 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
         scan.actions._update_queue_info_callback
         == direct_worker_context.direct_worker.update_queue_info
     )
+    scan.actions._initialize_scan.assert_called_once_with()
     direct_worker_context.device_manager._rpc_method.assert_called_once_with(scan.actions.rpc_call)
     assert called_steps == [
         "prepare_scan",
@@ -297,6 +299,23 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
     assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
     assert direct_worker_context.scan_worker.current_instruction_queue_item is None
     assert direct_worker_context.direct_worker.scan is None
+
+
+def test_run_initializes_scan_before_scan_sequence(direct_worker_context, make_scan):
+    called_steps = []
+    scan = make_scan(called_steps=called_steps)
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+
+    def initialize_scan():
+        called_steps.append("_initialize_scan")
+
+    scan.actions._initialize_scan = mock.MagicMock(side_effect=initialize_scan)
+
+    direct_worker_context.direct_worker.run(scan)
+
+    assert called_steps[:2] == ["_initialize_scan", "prepare_scan"]
 
 
 def test_run_executes_modifier_hooks_in_order(direct_worker_context, make_scan):

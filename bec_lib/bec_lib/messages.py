@@ -415,6 +415,8 @@ class RequestBlock(BaseModel):
         scan_number (int | None): Scan number if applicable
         scan_id (str | None): Scan ID if applicable
         report_instructions (list[dict] | None): List of report instructions for the scan, if any
+        owned_device_locks (list[str]): List of device locks owned by the request
+        pending_device_locks (list[str]): List of device locks pending for the request
 
     """
 
@@ -427,6 +429,8 @@ class RequestBlock(BaseModel):
     scan_number: int | None
     scan_id: str | None
     report_instructions: list[dict] | None = None
+    owned_device_locks: list[str] = Field(default_factory=list)
+    pending_device_locks: list[str] = Field(default_factory=list)
 
 
 class QueueInfoEntry(BaseModel):

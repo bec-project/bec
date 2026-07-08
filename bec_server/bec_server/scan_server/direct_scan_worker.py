@@ -81,6 +81,7 @@ class DirectScanWorker:
         queue = self.worker.current_instruction_queue_item
         try:
             with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
+                scan.actions._initialize_scan()
                 for step in SCAN_SEQUENCE:
                     method = getattr(scan, step, None)
                     if not method:
