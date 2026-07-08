@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from functools import partial
 from typing import TYPE_CHECKING
 
 from bec_lib import messages
@@ -129,18 +130,28 @@ class ScanAssembler:
             scan_cls, scan_info["signature"], resolved_args, resolved_kwargs
         )
 
-        scan_instance = scan_cls(
-            *resolved_args,
-            device_manager=self.device_manager,
-            redis_connector=self.connector,
-            scan_modifier=get_scan_modifier(),
-            metadata=msg.metadata,
-            instruction_handler=self.parent.queue_manager.instruction_handler,
-            scan_id=scan_id,
-            request_inputs=request_inputs,
-            **resolved_kwargs,
+        with self.device_manager._rpc_method(partial(self._raise_on_rpc_call, scan_cls)):
+            scan_instance = scan_cls(
+                *resolved_args,
+                device_manager=self.device_manager,
+                redis_connector=self.connector,
+                scan_modifier=get_scan_modifier(),
+                metadata=msg.metadata,
+                instruction_handler=self.parent.queue_manager.instruction_handler,
+                scan_id=scan_id,
+                request_inputs=request_inputs,
+                **resolved_kwargs,
+            )
+            return scan_instance
+
+    def _raise_on_rpc_call(self, scan_cls, device: str, func_call: str, *args, **kwargs):
+        # This function is used to raise an error if a runtime RPC call is made during scan initialization as it
+        # can lead to unpredictable behavior
+        raise RuntimeError(
+            f"The scan {scan_cls.__name__} attempted to make a runtime RPC call to `{func_call}` on device `{device}`. "
+            f"Please ensure that all runtime RPC calls are made within the scan's scan hooks and not during the scan's initialization."
+            f"If you want to set up a device before the scan starts, move the RPC call to the `prepare_scan` hook of the scan class."
         )
-        return scan_instance
 
     def _assemble_request_inputs(self, scan_cls, args, kwargs) -> dict:
         request_inputs = {}
