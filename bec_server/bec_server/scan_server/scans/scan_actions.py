@@ -1147,6 +1147,10 @@ class ScanActions:
         "monitored" or "async" and have ownership mode "claimable", as well as all devices that are
         have ownership mode "pinned", and all devices that are software triggered.
         """
+        if not self._scan.is_scan:
+            # If this is not a scan, we don't need to acquire any device locks
+            # apart from the devices that are explicitly requested by the scan definition.
+            return
         monitored_claimable = {
             dev.root.name
             for dev in self._device_manager.devices.monitored_devices(
