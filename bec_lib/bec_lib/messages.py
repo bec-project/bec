@@ -2093,7 +2093,7 @@ class FeedbackMessage(BECMessage):
 
     Args:
         feedback (str): User feedback
-        rating (int): User rating (1-5)
+        rating (int): User rating (0-5)
         feedback_type (Literal["bug_report", "feature_request", "general_feedback"]): Type of feedback. Defaults to "general_feedback"
         contact (str | None): User contact information, if they want to be contacted regarding their feedback
         realm_id (str | None): Realm ID, if applicable
@@ -2109,7 +2109,7 @@ class FeedbackMessage(BECMessage):
 
     feedback: str
 
-    rating: int = Field(ge=1, le=5)
+    rating: int = Field(ge=0, le=5)
     feedback_type: Literal["bug_report", "feature_request", "general_feedback"] = "general_feedback"
     contact: str | None = None
     realm_id: str | None = None
