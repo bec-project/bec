@@ -652,7 +652,7 @@ class ScanActions:
         )
         self._send(instr)
         if min_wait is not None:
-            time.sleep(min_wait)
+            self._shutdown_event.wait(min_wait)
         if wait:
             status.wait()
         return status
