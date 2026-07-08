@@ -71,6 +71,8 @@ class MoveScan(ScanBase):
         self.motors = list(self.motor_args_bundles.keys())
         self.relative = relative
 
+        self.actions.acquire_device_lock(self.motors)
+
         # Update the default scan info with provided parameters.
         self.update_scan_info(relative=relative, scan_report_devices=self.motors)
 
