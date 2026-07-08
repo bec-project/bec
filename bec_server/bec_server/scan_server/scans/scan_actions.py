@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import os
 import time
 import uuid
@@ -28,6 +29,25 @@ logger = bec_logger.logger
 ReadoutPriorityMap: TypeAlias = dict[
     Literal["monitored", "baseline", "async", "continuous", "on_request"], list[str]
 ]
+
+
+def requires_scan_is_running(method):
+    """
+    Guard ``ScanActions`` methods that require the scan to be running.
+    This is mainly to avoid runtime changes to devices just by enqueuing
+    a scan message, which could lead to unexpected behavior and difficult-to-debug issues.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: ScanActions, *args, **kwargs):
+        if not self._scan_running:
+            raise RuntimeError(
+                f"{method.__name__} can only be used once the scan is running. "
+                "Any setup or configuration should be done in the scan's prepare_scan method."
+            )
+        return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class ScanActions:
@@ -61,6 +81,7 @@ class ScanActions:
         """
         self._send_scan_status("open")
 
+    @requires_scan_is_running
     def stage_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
     ) -> ScanStubStatus:
@@ -138,6 +159,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def stage(
         self,
         device: str | DeviceBase | list[str | DeviceBase],
@@ -183,6 +205,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def pre_scan(
         self,
         device: str | DeviceBase | list[str | DeviceBase],
@@ -224,6 +247,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def pre_scan_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
     ) -> ScanStubStatus:
@@ -270,6 +294,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def set(
         self,
         device: str | DeviceBase | list[str | DeviceBase] | list[str] | list[DeviceBase],
@@ -313,6 +338,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def kickoff(
         self, device: str | DeviceBase, parameters: dict | None = None, wait=True
     ) -> ScanStubStatus:
@@ -343,6 +369,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def complete(self, device: str | DeviceBase, wait=True) -> ScanStubStatus:
         """
         Complete a device. This will call the "complete" method on the device.
@@ -371,6 +398,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def complete_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
     ) -> ScanStubStatus:
@@ -413,6 +441,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def read_monitored_devices(self, wait=True) -> ScanStubStatus:
         """
         Read from the monitored devices. This will call the "read" method on
@@ -456,6 +485,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def read_manually(
         self, devices: str | DeviceBase | list[str | DeviceBase], wait=True
     ) -> Any | ScanStubStatus:
@@ -500,6 +530,7 @@ class ScanActions:
         status.wait()
         return status.result
 
+    @requires_scan_is_running
     def publish_manual_read(
         self, readings: dict[str, dict] | list[dict], wait=True
     ) -> ScanStubStatus:
@@ -550,6 +581,7 @@ class ScanActions:
         status.set_done_checked()
         return status
 
+    @requires_scan_is_running
     def read_baseline_devices(self, wait=True) -> ScanStubStatus:
         """
         Read from the baseline devices. This will call the "read" method on all devices
@@ -589,6 +621,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def trigger_all_devices(self, min_wait: float | None = None, wait=True) -> ScanStubStatus:
         """
         Trigger all devices for the scan. The list of devices to trigger is determined automatically
@@ -625,6 +658,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def unstage(self, device: str | DeviceBase, wait=True) -> ScanStubStatus:
         """
         Unstage a device for the scan. This will call the "unstage" method on the specified device(s).
@@ -652,6 +686,7 @@ class ScanActions:
             status.wait()
         return status
 
+    @requires_scan_is_running
     def unstage_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
     ) -> ScanStubStatus:
@@ -788,6 +823,7 @@ class ScanActions:
             device_name = self._normalize_device_name(device)
             self._scan.scan_info.readout_priority_modification[priority].append(device_name)
 
+    @requires_scan_is_running
     def close_scan(self):
         """Close the scan."""
         # We set the number of monitored readouts to the actual number of monitored
@@ -799,6 +835,7 @@ class ScanActions:
 
         self._send_scan_status("closed")
 
+    @requires_scan_is_running
     def check_for_unchecked_statuses(self):
         """
         Check if there are any unchecked status objects left.
@@ -860,6 +897,7 @@ class ScanActions:
             device_name = self._normalize_device_name(device)
             self._devices_with_required_response.add(device_name)
 
+    @requires_scan_is_running
     def rpc_call(
         self, device: str | DeviceBase, func_name: str, *args, **kwargs
     ) -> Any | ScanStubStatus:
@@ -894,6 +932,7 @@ class ScanActions:
             return status
         return status.result
 
+    @requires_scan_is_running
     def rpc_call_no_wait(
         self, device: str | DeviceBase, func_name: str, rpc_id: str, *args, **kwargs
     ) -> ScanStubStatus:
@@ -975,6 +1014,7 @@ class ScanActions:
             return []
         return registry.release_all(request_id)
 
+    @requires_scan_is_running
     def send_client_info(self, message: str):
         """
         Emit a new client info message.
