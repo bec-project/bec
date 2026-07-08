@@ -1,6 +1,7 @@
 import copy
 import inspect
 from collections.abc import Iterator
+from contextlib import nullcontext
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
 from unittest import mock
@@ -396,7 +397,9 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
             devices[name] = _MockDevice(name)
         for name, device in custom_devices.items():
             devices[name] = device
-        scan_device_manager = SimpleNamespace(devices=devices, connector=connector)
+        scan_device_manager = SimpleNamespace(
+            devices=devices, connector=connector, _rpc_method=lambda _rpc_call: nullcontext()
+        )
         resolved_scan_kwargs = {"system_config": {}, **scan_kwargs}
 
         parent = mock.MagicMock()
@@ -423,6 +426,7 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
         scan.actions._get_file_base_path = mock.MagicMock(
             return_value=str(tmpdir / "p12345" / "data")
         )
+        scan.actions._scan_running = True
 
         scan._test = SimpleNamespace(
             connector=connector,

@@ -46,6 +46,9 @@ class ScanActions:
         self._devices_with_required_response = set()
         self._readout_groups_read = False
         self._metadata_suffix = ""
+        self._pending_device_locks: set[str] = set()
+        self._waiting_device_locks: set[str] = set()
+        self._scan_running = False
 
     @property
     def readout_priority(self) -> dict:
@@ -56,7 +59,6 @@ class ScanActions:
         Open the scan.
         We fetch all relevant metadata from the scan object and emit a new scan status.
         """
-        self._acquire_initial_device_locks()
         self._send_scan_status("open")
 
     def stage_all_devices(
@@ -159,7 +161,7 @@ class ScanActions:
 
         # We support str and DeviceBase inputs as well as lists of those.
         # We convert them to a list of device names for easier processing.
-        device_names = self._normalize_device_names(device)
+        device_names = self._normalize_to_root_device_names(device)
         if len(device_names) == 1:
             device_names = device_names[0]
         status = self._create_status(name=status_name or f"stage_{device_names}")
@@ -636,7 +638,7 @@ class ScanActions:
         Returns:
             ScanStubStatus: status object to track the unstaging process
         """
-        device_name = self._normalize_device_name(device)
+        device_name = self._normalize_to_root_device_name(device)
         status = self._create_status(name=f"unstage_{device_name}")
 
         instr = messages.DeviceInstructionMessage(
@@ -948,13 +950,16 @@ class ScanActions:
         request_id = self._scan.scan_info.metadata.get("RID")
         if registry is None or request_id is None:
             return []
-        if isinstance(device, Iterable) and not isinstance(device, (str, DeviceBase)):
-            device_names = self._normalize_device_names(list(device))
-        else:
-            device_names = self._normalize_device_names(device)
+        device_names = self._normalize_to_root_device_names(device)
         device_names = sorted(set(device_names))
+        if not self._scan_running:
+            self._pending_device_locks.update(device_names)
+            return device_names
         return registry.acquire_many(
-            request_id, devices=device_names, interruption_callback=self._interruption_callback
+            request_id,
+            devices=device_names,
+            interruption_callback=self._interruption_callback,
+            wait_state_callback=self._set_device_lock_wait_state,
         )
 
     def release_device_lock(self) -> list[str]:
@@ -1076,6 +1081,28 @@ class ScanActions:
             devices = [devices]
         return [ScanActions._normalize_device_name(dev) for dev in devices]
 
+    @staticmethod
+    def _normalize_to_root_device_name(device: str | DeviceBase) -> str:
+        """
+        Normalize a device lock target to the root device name.
+
+        Device locks are tracked at the root-device level so that sub-devices
+        of the same hardware share one lock.
+        """
+        if isinstance(device, DeviceBase):
+            return device.root.name
+        return device
+
+    @staticmethod
+    def _normalize_to_root_device_names(
+        devices: str | DeviceBase | Iterable[str | DeviceBase],
+    ) -> list[str]:
+        if isinstance(devices, Iterable) and not isinstance(devices, (str, DeviceBase)):
+            devices = list(devices)
+        else:
+            devices = [devices]
+        return [ScanActions._normalize_to_root_device_name(dev) for dev in devices]
+
     def _acquire_initial_device_locks(self) -> None:
         """
         Acquire the device locks for all devices that are on readout priority
@@ -1107,6 +1134,62 @@ class ScanActions:
         self.acquire_device_lock(
             monitored_claimable | async_claimable | pinned_devices | software_triggered_devices
         )
+
+    def _initialize_scan(self) -> list[str]:
+        """
+        Initialize worker-managed scan state before the scan lifecycle starts.
+
+        This helper is intentionally private and should not be called manually
+        from scan implementations. The direct scan worker is responsible for
+        invoking it exactly once before running the scan sequence.
+
+        Returns:
+            list[str]: device names acquired from the pending lock set.
+        """
+        self._acquire_initial_device_locks()
+        acquired = self._flush_pending_device_locks()
+        self._scan_running = True
+        return acquired
+
+    def _flush_pending_device_locks(self) -> list[str]:
+        """
+        Acquire all device locks that were buffered before the scan was initialized.
+
+        Returns:
+            list[str]: device names acquired from the pending lock set.
+        """
+        registry = getattr(self._device_manager.parent, "device_lock_registry", None)
+        request_id = self._scan.scan_info.metadata.get("RID")
+        if registry is None or request_id is None or not self._pending_device_locks:
+            return []
+
+        device_names = sorted(self._pending_device_locks)
+        acquired = registry.acquire_many(
+            request_id, devices=device_names, interruption_callback=self._interruption_callback
+        )
+        self._pending_device_locks.difference_update(device_names)
+        return acquired
+
+    def get_pending_device_locks(self) -> list[str]:
+        """Return device locks this scan is actively waiting to acquire."""
+        return sorted(self._waiting_device_locks)
+
+    def get_queued_device_locks(self) -> list[str]:
+        """Return device locks buffered before scan initialization acquires them."""
+        return sorted(self._pending_device_locks)
+
+    def _set_device_lock_wait_state(self, waiting_devices: list[str]) -> None:
+        """
+        Update the set of device locks this scan is actively waiting to acquire.
+
+        Args:
+            waiting_devices (list[str]): The list of device names this scan is waiting for.
+        """
+        new_waiting_devices = set(waiting_devices)
+        updated = new_waiting_devices != self._waiting_device_locks
+        self._waiting_device_locks = new_waiting_devices
+        if updated and self._update_queue_info_callback is not None:
+            self._update_queue_info_callback()
 
     @staticmethod
     def _device_ownership_mode(device: DeviceBase) -> str:

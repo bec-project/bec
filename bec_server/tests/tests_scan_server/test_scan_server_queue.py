@@ -329,6 +329,7 @@ def test_direct_instruction_queue_describe_active_scan_returns_none_when_missing
         mock.MagicMock(),
         queue_manager.queues["primary"].scan_worker,
     )
+    queue_manager.queues["primary"].queue.append(queue)
     scan = _build_dummy_v4_scan("scan-id-test")
 
     assert queue.describe_active_scan() is None
@@ -340,6 +341,9 @@ def test_direct_instruction_queue_describe_active_scan_returns_none_when_missing
 
 def test_direct_instruction_queue_describe_active_scan_returns_request_block(queuemanager_mock):
     queue_manager = queuemanager_mock()
+    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
+        return_value=["samx"]
+    )
     queue = DirectInstructionQueueItem(
         queue_manager.queues["primary"],
         mock.MagicMock(),
@@ -356,7 +360,9 @@ def test_direct_instruction_queue_describe_active_scan_returns_request_block(que
     )
     queue.scans = [scan]
     queue.scan_msgs = [msg]
+    scan.scan_info.metadata["RID"] = "rid-1"
     queue.active_scan = scan
+    scan.actions._pending_device_locks.update({"samx", "samy"})
 
     info = queue.describe_active_scan()
 
@@ -364,6 +370,8 @@ def test_direct_instruction_queue_describe_active_scan_returns_request_block(que
     assert info.RID == "rid-1"
     assert info.report_instructions == [{"device": "samx"}]
     assert info.scan_id == "scan-id-test"
+    assert info.owned_device_locks == ["samx"]
+    assert info.pending_device_locks == []
 
 
 def test_direct_instruction_queue_move_to_next_scan_activates_and_assigns_numbers(

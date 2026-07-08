@@ -191,6 +191,27 @@ def test_open_close_scan_send_scan_status(action_context):
 
 def test_open_scan_acquires_initial_device_locks(action_context):
     ctx = action_context()
+    ctx.actions._send_scan_status = mock.MagicMock()
+
+    ctx.actions.open_scan()
+
+    ctx.actions._send_scan_status.assert_called_once_with("open")
+
+
+def test_acquire_device_lock_queues_normalized_names_before_open(action_context):
+    ctx = action_context()
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
+    ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
+
+    acquired = ctx.actions.acquire_device_lock([ctx.device_manager.devices.samx, "samy"])
+
+    assert acquired == ["samx", "samy"]
+    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_not_called()
+    assert ctx.actions._pending_device_locks == {"samx", "samy"}
+
+
+def test_initialize_scan_flushes_pre_open_queued_locks(action_context):
+    ctx = action_context()
     _set_readout_priority(ctx, monitored=["samx", "samy"], **{"async": ["samz"]})
     _set_software_triggered(ctx, "samy")
     ctx.scan.scan_info.metadata["RID"] = "rid-123"
@@ -199,30 +220,76 @@ def test_open_scan_acquires_initial_device_locks(action_context):
     ctx.device_manager.devices.samz._info["ownership_mode"] = "claimable"
     ctx.device_manager.devices.bpm4i._info["ownership_mode"] = "pinned"
     ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
-    ctx.actions._send_scan_status = mock.MagicMock()
-
-    ctx.actions.open_scan()
-
-    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once_with(
-        "rid-123",
-        devices=["bpm4i", "samx", "samy", "samz"],
-        interruption_callback=ctx.actions._interruption_callback,
+    ctx.device_manager.parent.device_lock_registry.acquire_many.side_effect = (
+        lambda *args, **kwargs: (sorted(ctx.actions.get_queued_device_locks()), kwargs["devices"])[
+            1
+        ]
     )
-    ctx.actions._send_scan_status.assert_called_once_with("open")
+
+    ctx.actions.acquire_device_lock([ctx.device_manager.devices.samx, "samy"])
+    ctx.actions._initialize_scan()
+
+    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once()
+    acquire_args, acquire_kwargs = (
+        ctx.device_manager.parent.device_lock_registry.acquire_many.call_args
+    )
+    assert acquire_args == ("rid-123",)
+    assert acquire_kwargs["interruption_callback"] == ctx.actions._interruption_callback
+    assert {"samx", "samy"}.issubset(set(acquire_kwargs["devices"]))
+    assert ctx.actions._pending_device_locks == set()
+    assert ctx.actions._scan_running is True
 
 
-def test_acquire_device_lock_uses_request_id_and_normalized_names(action_context):
+def test_acquire_device_lock_uses_request_id_and_normalized_names_after_open(action_context):
+    ctx = action_context()
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
+    ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
+    ctx.actions._scan_running = True
+
+    ctx.actions.acquire_device_lock([ctx.device_manager.devices.samx, "samy"])
+
+    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once()
+    acquire_args, acquire_kwargs = (
+        ctx.device_manager.parent.device_lock_registry.acquire_many.call_args
+    )
+    assert acquire_args == ("rid-123",)
+    assert acquire_kwargs["devices"] == ["samx", "samy"]
+    assert acquire_kwargs["interruption_callback"] == ctx.actions._interruption_callback
+    assert acquire_kwargs["wait_state_callback"] == ctx.actions._set_device_lock_wait_state
+
+
+def test_acquire_device_lock_uses_root_device_name_for_nested_devices(action_context):
     ctx = action_context()
     ctx.scan.scan_info.metadata["RID"] = "rid-123"
     ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
 
-    ctx.actions.acquire_device_lock([ctx.device_manager.devices.samx, "samy"])
-
-    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once_with(
-        "rid-123",
-        devices=["samx", "samy"],
-        interruption_callback=ctx.actions._interruption_callback,
+    ctx.actions.acquire_device_lock(
+        [ctx.device_manager.devices.samx.setpoint, ctx.device_manager.devices.samx.readback]
     )
+
+    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once()
+    acquire_args, acquire_kwargs = (
+        ctx.device_manager.parent.device_lock_registry.acquire_many.call_args
+    )
+    assert acquire_args == ("rid-123",)
+    assert acquire_kwargs["devices"] == ["samx"]
+
+
+def test_get_pending_device_locks_includes_runtime_waits(action_context):
+    ctx = action_context()
+    ctx.actions._update_queue_info_callback = mock.MagicMock()
+    ctx.actions._pending_device_locks.update({"samy"})
+
+    ctx.actions._set_device_lock_wait_state(["samx"])
+
+    assert ctx.actions.get_pending_device_locks() == ["samx"]
+    assert ctx.actions.get_queued_device_locks() == ["samy"]
+    ctx.actions._update_queue_info_callback.assert_called_once_with()
+
+    ctx.actions._set_device_lock_wait_state([])
+
+    assert ctx.actions.get_pending_device_locks() == []
+    assert ctx.actions._update_queue_info_callback.call_count == 2
 
 
 def test_device_specific_actions_acquire_device_locks(action_context):
@@ -337,13 +404,13 @@ def test_device_instruction_actions_use_dotted_name_for_nested_devices(action_co
     complete_msg = _last_device_instruction(ctx, "complete")
     unstage_msg = _last_device_instruction(ctx, "unstage")
 
-    assert stage_msg.device == "samx.setpoint"
+    assert stage_msg.device == "samx"
     assert stage_msg.metadata["device_instr_id"] == stage_status._device_instr_id
     assert kickoff_msg.device == "samx.setpoint"
     assert kickoff_msg.metadata["device_instr_id"] == kickoff_status._device_instr_id
     assert complete_msg.device == "samx.readback"
     assert complete_msg.metadata["device_instr_id"] == complete_status._device_instr_id
-    assert unstage_msg.device == "samx.readback"
+    assert unstage_msg.device == "samx"
     assert unstage_msg.metadata["device_instr_id"] == unstage_status._device_instr_id
 
 
