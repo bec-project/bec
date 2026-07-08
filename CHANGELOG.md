@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.151.1 (2026-07-08)
+
+### Bug Fixes
+
+- Allow 0 as valid feedback rating
+  ([`fac3a38`](https://github.com/bec-project/bec/commit/fac3a382d4e6bdb98fdd9c68185b06718b70ab8c))
+
+
 ## v3.151.0 (2026-07-08)
 
 ### Bug Fixes
