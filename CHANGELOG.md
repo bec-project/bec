@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.151.0 (2026-07-08)
+
+### Bug Fixes
+
+- **bl_states**: Fix safeguard again DeviceStateConfig and DeviceBeamlineState init.
+  ([`d33bf00`](https://github.com/bec-project/bec/commit/d33bf0004dd9ecbdb710263f3235135307e70787))
+
+### Features
+
+- Deprecate ShutterState
+  ([`330e8e7`](https://github.com/bec-project/bec/commit/330e8e7fe5eb922ca3a75ed375f3a68cac8e432b))
+
+
 ## v3.150.2 (2026-07-07)
 
 ### Bug Fixes
