@@ -19,15 +19,22 @@ class DeviceLockRegistry:
     def __init__(self) -> None:
         """Initialize the device lock registry."""
         self._condition: threading.Condition = threading.Condition()
+
+        # Maps device names to the request ID that currently owns the lock.
         self._device_owners: dict[str, str] = {}
+
+        # Maps request IDs to the set of device names they currently own.
         self._owner_devices: dict[str, set[str]] = defaultdict(set)
+
+        # Maps request IDs to the set of device names they are currently waiting for.
+        self._pending_device_locks: dict[str, set[str]] = defaultdict(set)
 
     def acquire_many(
         self,
         request_id: str,
         devices: Iterable[str],
         interruption_callback: Callable[[], None] | None = None,
-        wait_state_callback: Callable[[list[str]], None] | None = None,
+        queue_update_callback: Callable[[], None] | None = None,
     ) -> list[str]:
         """
         Acquire locks for multiple devices on behalf of a request.
@@ -38,6 +45,9 @@ class DeviceLockRegistry:
             interruption_callback (Callable[[], None] | None, optional):
                 callback invoked while waiting for a lock, allowing the caller
                 to react to interruptions. Defaults to None.
+            queue_update_callback (Callable[[], None] | None, optional):
+                callback invoked when queue-visible lock state changes, e.g.
+                owned or waiting devices. Defaults to None.
 
         Returns:
             list[str]: sorted device names whose locks were acquired.
@@ -46,13 +56,12 @@ class DeviceLockRegistry:
         if not device_names:
             return []
 
-        waiting_devices: list[str] = []
         next_log_time = 0.0
         while True:
             should_wait = False
-            should_broadcast = False
-            next_waiting_devices: list[str] = []
+            should_queue_update = False
             blocked_owners: dict[str, str] = {}
+            waiting_devices = sorted(self._pending_device_locks.get(request_id, set()))
 
             with self._condition:
                 acquirable_devices: list[str] = []
@@ -76,7 +85,7 @@ class DeviceLockRegistry:
                     self._device_owners[device] = request_id
                     self._owner_devices[request_id].add(device)
 
-                next_waiting_devices = blocked_devices
+                self._pending_device_locks[request_id] = set(blocked_devices)
                 if blocked_devices:
                     should_wait = True
                     next_log_time = self._log_waiting_for_device_lock(
@@ -86,13 +95,13 @@ class DeviceLockRegistry:
                     )
                     self._condition.wait(timeout=self.WAIT_INTERVAL_S)
 
-                should_broadcast = bool(acquirable_devices) or (
+                next_waiting_devices = sorted(self._pending_device_locks[request_id])
+                should_queue_update = bool(acquirable_devices) or (
                     next_waiting_devices != waiting_devices
                 )
 
-            if should_broadcast and wait_state_callback is not None:
-                wait_state_callback(next_waiting_devices.copy())
-            waiting_devices = next_waiting_devices
+            if should_queue_update and queue_update_callback is not None:
+                queue_update_callback()
 
             if not should_wait:
                 return device_names
@@ -105,7 +114,7 @@ class DeviceLockRegistry:
         request_id: str,
         device: str,
         interruption_callback: Callable[[], None] | None = None,
-        wait_state_callback: Callable[[list[str]], None] | None = None,
+        queue_update_callback: Callable[[], None] | None = None,
     ) -> None:
         """
         Acquire the lock for a single device on behalf of a request.
@@ -118,12 +127,14 @@ class DeviceLockRegistry:
             device (str): device name to lock.
             interruption_callback (Callable[[], None] | None, optional):
                 callback invoked while waiting for the lock. Defaults to None.
+            queue_update_callback (Callable[[], None] | None, optional):
+                callback invoked when queue-visible lock state changes. Defaults to None.
         """
         self.acquire_many(
             request_id=request_id,
             devices=[device],
             interruption_callback=interruption_callback,
-            wait_state_callback=wait_state_callback,
+            queue_update_callback=queue_update_callback,
         )
 
     def release_all(self, request_id: str) -> list[str]:
@@ -156,6 +167,16 @@ class DeviceLockRegistry:
         """
         with self._condition:
             return sorted(self._owner_devices.get(request_id, set()))
+
+    def get_pending_devices(self, request_id: str) -> list[str]:
+        """
+        Get the devices that a request is currently waiting to acquire.
+
+        Args:
+            request_id (str): request identifier whose pending devices should be returned.
+        """
+        with self._condition:
+            return sorted(self._pending_device_locks.get(request_id, set()))
 
     def _log_waiting_for_device_lock(
         self, request_id: str, blocked_owners: dict[str, str], next_log_time: float

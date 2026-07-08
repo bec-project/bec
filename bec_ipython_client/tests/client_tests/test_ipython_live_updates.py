@@ -147,6 +147,41 @@ def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_liv
                     assert res is True
 
 
+@pytest.mark.timeout(20)
+def test_live_updates_process_queue_waiting_for_device_locks(
+    ipython_live_updates_with_mocked_live, queue_elements
+):
+    live_updates, _ = ipython_live_updates_with_mocked_live
+    client = live_updates.client
+    queue, request_block, request_msg = queue_elements
+
+    request_block.pending_device_locks = ["samx"]
+    queue = QueueItem(
+        scan_manager=client.queue,
+        queue_id="queue_id",
+        request_blocks=[request_block],
+        status="RUNNING",
+        active_request_block=request_block,
+        scan_id=["scan_id"],
+    )
+    client.queue.queue_storage.current_scan_queue = {
+        "primary": messages.ScanQueueStatus(info=[], status="RUNNING")
+    }
+
+    with (
+        mock.patch.object(queue, "_update_with_buffer"),
+        mock.patch(
+            "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
+        ) as queue_pos,
+        mock.patch.object(live_updates, "_process_pending_queue_element") as process_pending,
+    ):
+        queue_pos.return_value = 0
+
+        assert live_updates._process_queue(queue, request_msg, "req_id") is False
+
+    process_pending.assert_called_once_with(queue)
+
+
 def test_live_updates_process_queue_cancelled_pending_request_raises_interruption(bec_client_mock):
     client = bec_client_mock
     live_updates = IPythonLiveUpdates(client)
@@ -1016,3 +1051,137 @@ def test_process_pending_queue_element_locked_then_position(
         assert "user123" in panel_renderable
         # Should not show position info
         assert "position in queue" not in panel_renderable
+
+
+@pytest.mark.timeout(20)
+def test_process_pending_queue_element_waiting_for_device_locks(
+    ipython_live_updates_with_mocked_live, queue_elements
+):
+    live_updates, mock_live = ipython_live_updates_with_mocked_live
+    client = live_updates.client
+    queue, request_block, _ = queue_elements
+
+    request_block.pending_device_locks = ["bpm4i", "samz"]
+    request_block.owned_device_locks = ["samx"]
+    queue.active_request_block = request_block
+
+    running_scan_queue_status = messages.ScanQueueStatus(info=[], status="RUNNING")
+    client.queue.queue_storage.current_scan_queue = {"primary": running_scan_queue_status}
+
+    with mock.patch(
+        "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
+    ) as queue_pos:
+        queue_pos.return_value = 0
+
+        live_updates._process_pending_queue_element(queue)
+
+        mock_live.assert_called_once()
+        call_args = mock_live.call_args[0][0]
+        panel_renderable = call_args.renderable
+        assert "waiting for device locks" in panel_renderable
+        assert "bpm4i, samz" in panel_renderable
+        assert "Currently owned device locks: samx" in panel_renderable
+
+
+@pytest.mark.timeout(20)
+def test_process_pending_queue_element_waiting_for_device_locks_without_scan_id(
+    ipython_live_updates_with_mocked_live, queue_elements
+):
+    live_updates, mock_live = ipython_live_updates_with_mocked_live
+    client = live_updates.client
+    queue, request_block, _ = queue_elements
+
+    request_block.pending_device_locks = ["bpm4i", "samz"]
+    request_block.owned_device_locks = ["samx"]
+    queue.active_request_block = request_block
+    queue.scan_ids = [None]
+
+    running_scan_queue_status = messages.ScanQueueStatus(info=[], status="RUNNING")
+    client.queue.queue_storage.current_scan_queue = {"primary": running_scan_queue_status}
+
+    with mock.patch(
+        "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
+    ) as queue_pos:
+        queue_pos.return_value = 0
+
+        live_updates._process_pending_queue_element(queue)
+
+        mock_live.assert_called_once()
+        call_args = mock_live.call_args[0][0]
+        panel_renderable = call_args.renderable
+        assert "waiting for device locks" in panel_renderable
+        assert "bpm4i, samz" in panel_renderable
+        assert "Currently owned device locks: samx" in panel_renderable
+
+
+@pytest.mark.timeout(20)
+def test_process_pending_queue_element_waiting_for_device_locks_beats_queue_position(
+    ipython_live_updates_with_mocked_live, queue_elements
+):
+    live_updates, mock_live = ipython_live_updates_with_mocked_live
+    client = live_updates.client
+    queue, request_block, _ = queue_elements
+
+    request_block.pending_device_locks = ["bpm4i"]
+    queue.active_request_block = request_block
+
+    running_scan_queue_status = messages.ScanQueueStatus(info=[], status="RUNNING")
+    client.queue.queue_storage.current_scan_queue = {"primary": running_scan_queue_status}
+
+    with mock.patch(
+        "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
+    ) as queue_pos:
+        queue_pos.return_value = 2
+
+        live_updates._process_pending_queue_element(queue)
+
+        call_args = mock_live.call_args[0][0]
+        panel_renderable = call_args.renderable
+        assert "waiting for device locks" in panel_renderable
+        assert "position in queue" not in panel_renderable
+
+
+@pytest.mark.timeout(20)
+def test_process_pending_queue_element_waiting_for_device_locks_on_secondary_queue(
+    ipython_live_updates_with_mocked_live, queue_elements
+):
+    live_updates, mock_live = ipython_live_updates_with_mocked_live
+    client = live_updates.client
+    queue, request_block, _ = queue_elements
+
+    queue.queue_id = "secondary_queue_id"
+    request_block.pending_device_locks = ["bpm4i"]
+    request_block.owned_device_locks = ["samx"]
+    queue.active_request_block = request_block
+
+    client.queue.queue_storage.current_scan_queue = {
+        "primary": messages.ScanQueueStatus(info=[], status="RUNNING"),
+        "secondary": messages.ScanQueueStatus(
+            info=[
+                messages.QueueInfoEntry(
+                    queue_id="secondary_queue_id",
+                    scan_id=["scan_id"],
+                    is_scan=[True],
+                    request_blocks=[request_block],
+                    scan_number=[1],
+                    status="PENDING",
+                    active_request_block=request_block,
+                )
+            ],
+            status="RUNNING",
+        ),
+    }
+
+    with mock.patch(
+        "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
+    ) as queue_pos:
+        queue_pos.return_value = 0
+
+        live_updates._process_pending_queue_element(queue)
+
+        mock_live.assert_called_once()
+        call_args = mock_live.call_args[0][0]
+        panel_renderable = call_args.renderable
+        assert "waiting for device locks" in panel_renderable
+        assert "bpm4i" in panel_renderable
+        assert "Currently owned device locks: samx" in panel_renderable

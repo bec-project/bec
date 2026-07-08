@@ -54,6 +54,7 @@ class QueueItem:
         self.active_request_block = active_request_block
         self.scan_ids = scan_id
         self.reason = reason
+        self._lock = threading.RLock()
         if client_messages is None:
             client_messages = []
         self.client_messages = client_messages
@@ -85,6 +86,44 @@ class QueueItem:
     def status(self):
         return self._status
 
+    @threadlocked
+    def _get_device_lock_state(self) -> tuple[list[str], list[str]]:
+        """
+        Return a snapshot of owned and pending device locks.
+
+        Returns:
+            tuple[list[str], list[str]]: A tuple containing two lists:
+                - The first list contains the names of devices whose locks are currently owned.
+                - The second list contains the names of devices whose locks are pending.
+        """
+        owned_device_locks = sorted(
+            {
+                device
+                for request_block in self.request_blocks
+                for device in request_block.owned_device_locks
+            }
+        )
+        pending_device_locks = sorted(
+            {
+                device
+                for request_block in self.request_blocks
+                for device in request_block.pending_device_locks
+            }
+        )
+        return owned_device_locks, pending_device_locks
+
+    def get_device_lock_state(self) -> tuple[list[str], list[str]]:
+        """
+        Refresh and return a consistent snapshot of device-lock state.
+
+        Returns:
+            tuple[list[str], list[str]]: A tuple containing two lists:
+                - The first list contains the names of devices whose locks are currently owned.
+                - The second list contains the names of devices whose locks are pending.
+        """
+        self._update_with_buffer()
+        return self._get_device_lock_state()
+
     def _update_with_buffer(self):
         current_queue = self.scan_manager.queue_storage.current_scan_queue
         if not current_queue:
@@ -103,6 +142,7 @@ class QueueItem:
                 self.update_queue_item(queue_item.info)
                 return
 
+    @threadlocked
     def update_queue_item(self, queue_item: messages.QueueInfoEntry):
         """update the queue item"""
         self.request_blocks = queue_item.request_blocks

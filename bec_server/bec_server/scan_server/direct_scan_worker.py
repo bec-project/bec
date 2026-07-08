@@ -192,6 +192,7 @@ class DirectScanWorker:
         Update the queue info for the current instruction queue item.
         This is used to propagate the queue status to the client during the scan execution.
         """
+        logger.info(f"Updating queue info")
         self.worker.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
     def _propagate_error(self, content: str, exc: Exception):

@@ -11,7 +11,7 @@ from bec_ipython_client.progressbar import ScanProgressBar
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
 
-from .utils import LiveUpdatesBase, check_alarms
+from .utils import LiveUpdatesBase, check_alarms, pending_queue_message
 
 if TYPE_CHECKING:
     from bec_lib import messages
@@ -75,20 +75,18 @@ class LiveUpdatesTable(LiveUpdatesBase):
         while True:
             if not self.scan_item or not self.scan_item.queue:
                 raise RuntimeError("No scan item or scan queue available.")
-            queue_pos = self.scan_item.queue.queue_position
+            queue = self.scan_item.queue
+            queue_pos = queue.queue_position
             self.check_alarms()
             if self.scan_item.status == "closed":
                 break
             if queue_pos is None:
                 logger.trace(f"Could not find queue entry for scan_id {self.scan_item.scan_id}")
                 continue
-            if queue_pos == 0:
+            message = pending_queue_message(bec=self.bec, queue=queue, queue_position=queue_pos)
+            if message is None:
                 break
-            print(
-                f"Scan is enqueued and is waiting for execution. Current position in queue: {queue_pos + 1}.",
-                end="\r",
-                flush=True,
-            )
+            print(message, end="\r", flush=True)
             time.sleep(0.1)
         while not self.scan_item.scan_number:
             time.sleep(0.05)

@@ -8,7 +8,7 @@ from bec_ipython_client.callbacks.move_device import (
     LiveUpdatesReadbackProgressbar,
     ReadbackDataHandler,
 )
-from bec_ipython_client.callbacks.utils import ScanState
+from bec_ipython_client.callbacks.utils import ScanState, pending_queue_message
 from bec_lib import messages
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.endpoints import MessageEndpoints
@@ -216,6 +216,133 @@ def test_move_callback_check_scan_state_restart_without_restart_message_is_nonbl
     )
 
     assert live_update._check_scan_state() == ScanState.WAIT
+
+
+def test_move_callback_pending_queue_message_for_device_locks(bec_client_mock):
+    bec_client_mock.queue.queue_storage.current_scan_queue = None
+    request_block = mock.MagicMock(is_scan=True)
+    queue = mock.MagicMock(status="RUNNING", request_blocks=[request_block])
+    queue.get_device_lock_state.return_value = (["samz"], ["samx", "bpm4i"])
+
+    message = pending_queue_message(bec=bec_client_mock, queue=queue, queue_position=0)
+
+    assert (
+        message
+        == "Scan is waiting for device locks to be released. Pending device locks: samx, bpm4i. "
+        "Currently owned device locks: samz."
+    )
+
+
+def test_move_callback_pending_queue_message_for_queue_position(bec_client_mock):
+    bec_client_mock.queue.queue_storage.current_scan_queue = None
+    queue = mock.MagicMock(status="PENDING", request_blocks=[])
+    queue.get_device_lock_state.return_value = ([], [])
+
+    message = pending_queue_message(bec=bec_client_mock, queue=queue, queue_position=2)
+
+    assert message == "Scan is enqueued and is waiting for execution. Current position in queue: 3."
+
+
+def test_move_callback_wait_for_move_to_start_prints_pending_message(bec_client_mock):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    bec_client_mock.queue.queue_storage.current_scan_queue = None
+
+    class QueueStub:
+        def __init__(self):
+            self.status = "PENDING"
+            self.request_blocks = []
+            self._positions = iter([2, 0])
+
+        @property
+        def queue_position(self):
+            return next(self._positions)
+
+        def get_device_lock_state(self):
+            return ([], [])
+
+    queue = QueueStub()
+    live_update.scan_queue_request = mock.MagicMock(queue=queue)
+    data_source = mock.MagicMock()
+    data_source.done.return_value = False
+
+    with (
+        mock.patch("bec_ipython_client.callbacks.move_device.print") as mock_print,
+        mock.patch("bec_ipython_client.callbacks.move_device.time.sleep") as sleep,
+        mock.patch.object(live_update, "_check_scan_state", return_value=ScanState.CONTINUE),
+    ):
+        live_update._wait_for_move_to_start(data_source)
+
+    mock_print.assert_called_once_with(
+        "Scan is enqueued and is waiting for execution. Current position in queue: 3.",
+        end="\r",
+        flush=True,
+    )
+    sleep.assert_called()
+
+
+def test_move_callback_wait_for_move_to_start_returns_when_queue_entry_is_gone(bec_client_mock):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+    queue = mock.MagicMock()
+    queue.queue_position = None
+    live_update.scan_queue_request = mock.MagicMock(queue=queue)
+    data_source = mock.MagicMock()
+    data_source.done.return_value = True
+
+    with (
+        mock.patch("bec_ipython_client.callbacks.move_device.print") as mock_print,
+        mock.patch("bec_ipython_client.callbacks.move_device.time.sleep") as sleep,
+        mock.patch.object(live_update, "_check_scan_state", return_value=ScanState.CONTINUE),
+    ):
+        live_update._wait_for_move_to_start(data_source)
+
+    mock_print.assert_not_called()
+    sleep.assert_not_called()
+
+
+def test_move_callback_wait_for_move_to_start_keeps_waiting_when_not_yet_registered(
+    bec_client_mock,
+):
+    request = messages.ScanQueueMessage(
+        scan_type="umv",
+        parameter={"args": {"samx": [10]}, "kwargs": {"relative": True}},
+        metadata={"RID": "something"},
+    )
+    live_update = LiveUpdatesReadbackProgressbar(bec=bec_client_mock, request=request)
+
+    class QueueStub:
+        def __init__(self):
+            self._positions = iter([None, None, 0])
+
+        @property
+        def queue_position(self):
+            return next(self._positions)
+
+    live_update.scan_queue_request = mock.MagicMock(queue=QueueStub())
+    data_source = mock.MagicMock()
+    data_source.done.return_value = False
+
+    with (
+        mock.patch("bec_ipython_client.callbacks.move_device.print") as mock_print,
+        mock.patch("bec_ipython_client.callbacks.move_device.time.sleep") as sleep,
+        mock.patch.object(live_update, "_check_scan_state", return_value=ScanState.CONTINUE),
+        mock.patch(
+            "bec_ipython_client.callbacks.move_device.pending_queue_message", return_value=None
+        ),
+    ):
+        live_update._wait_for_move_to_start(data_source)
+
+    mock_print.assert_not_called()
+    assert sleep.call_count == 2
 
 
 def test_move_callback_run_waits_for_restart_message_before_exiting(bec_client_mock):

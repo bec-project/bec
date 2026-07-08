@@ -130,6 +130,39 @@ class TestLiveTable:
         with mock.patch.object(client.queue.queue_storage, "find_queue_item_by_requestID"):
             live_update.wait_for_request_acceptance()
 
+    def test_wait_for_scan_to_start_prints_pending_queue_message(self, client_with_grid_scan):
+        client, request_msg = client_with_grid_scan
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
+        client.queue.queue_storage.current_scan_queue = None
+
+        class QueueStub:
+            def __init__(self):
+                self.status = "PENDING"
+                self.request_blocks = []
+                self._positions = iter([2, 0])
+
+            @property
+            def queue_position(self):
+                return next(self._positions)
+
+            def get_device_lock_state(self):
+                return ([], [])
+
+        live_update.scan_item = mock.MagicMock(
+            queue=QueueStub(), status="open", scan_id="scan_id", scan_number=1
+        )
+
+        with mock.patch("bec_ipython_client.callbacks.live_table.print") as mock_print:
+            live_update.wait_for_scan_to_start()
+
+        mock_print.assert_called_once_with(
+            "Scan is enqueued and is waiting for execution. Current position in queue: 3.",
+            end="\r",
+            flush=True,
+        )
+
     @pytest.mark.timeout(20)
     def test_run_update(self, bec_client_mock, scan_item):
         request_msg = messages.ScanQueueMessage(

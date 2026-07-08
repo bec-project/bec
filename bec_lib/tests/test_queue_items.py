@@ -520,6 +520,73 @@ def test_queue_item_status_property(queue_item, scan_queue_status_message):
     assert queue_item._status == "pending"
 
 
+def test_queue_item_device_lock_properties(queue_item):
+    queue_item.request_blocks = [
+        messages.RequestBlock(
+            msg=messages.ScanQueueMessage(
+                queue="primary",
+                scan_type="step",
+                parameter={"args": {}, "kwargs": {}},
+                metadata={"RID": "rid_1"},
+            ),
+            RID="rid_1",
+            readout_priority={"monitored": []},
+            is_scan=True,
+            scan_number=1,
+            scan_id="scan_1",
+            owned_device_locks=["samx", "samy"],
+            pending_device_locks=["bpm4i"],
+        ),
+        messages.RequestBlock(
+            msg=messages.ScanQueueMessage(
+                queue="primary",
+                scan_type="step",
+                parameter={"args": {}, "kwargs": {}},
+                metadata={"RID": "rid_2"},
+            ),
+            RID="rid_2",
+            readout_priority={"monitored": []},
+            is_scan=True,
+            scan_number=2,
+            scan_id="scan_2",
+            owned_device_locks=["samy", "samz"],
+            pending_device_locks=["bpm4i", "bpm5i"],
+        ),
+    ]
+    queue_item.scan_manager.queue_storage.current_scan_queue = None
+
+    owned_device_locks, pending_device_locks = queue_item.get_device_lock_state()
+
+    assert owned_device_locks == ["samx", "samy", "samz"]
+    assert pending_device_locks == ["bpm4i", "bpm5i"]
+
+
+def test_queue_item_get_device_lock_state(queue_item):
+    queue_item.request_blocks = [
+        messages.RequestBlock(
+            msg=messages.ScanQueueMessage(
+                queue="primary",
+                scan_type="step",
+                parameter={"args": {}, "kwargs": {}},
+                metadata={"RID": "rid_1"},
+            ),
+            RID="rid_1",
+            readout_priority={"monitored": []},
+            is_scan=True,
+            scan_number=1,
+            scan_id="scan_1",
+            owned_device_locks=["samx", "samy"],
+            pending_device_locks=["bpm4i"],
+        )
+    ]
+    queue_item.scan_manager.queue_storage.current_scan_queue = None
+
+    owned_device_locks, pending_device_locks = queue_item.get_device_lock_state()
+
+    assert owned_device_locks == ["samx", "samy"]
+    assert pending_device_locks == ["bpm4i"]
+
+
 def test_queue_item_scans_property(queue_item, scan_queue_status_message):
     """Test scans property retrieves scan items."""
     queue_item.scan_ids = ["scan_1", "scan_2"]

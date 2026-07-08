@@ -341,9 +341,6 @@ def test_direct_instruction_queue_describe_active_scan_returns_none_when_missing
 
 def test_direct_instruction_queue_describe_active_scan_returns_request_block(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
-        return_value=["samx"]
-    )
     queue = DirectInstructionQueueItem(
         queue_manager.queues["primary"],
         mock.MagicMock(),
@@ -362,7 +359,9 @@ def test_direct_instruction_queue_describe_active_scan_returns_request_block(que
     queue.scan_msgs = [msg]
     scan.scan_info.metadata["RID"] = "rid-1"
     queue.active_scan = scan
-    scan.actions._pending_device_locks.update({"samx", "samy"})
+    scan.device_manager.parent.device_lock_registry = mock.MagicMock()
+    scan.device_manager.parent.device_lock_registry.get_owned_devices.return_value = ["samx"]
+    scan.actions._queued_device_locks.update({"samx", "samy"})
 
     info = queue.describe_active_scan()
 
