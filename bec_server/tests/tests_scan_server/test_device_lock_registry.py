@@ -102,15 +102,15 @@ def test_device_lock_registry_runs_interruption_callback_outside_condition():
     assert callback_states == [False] * len(callback_states)
 
 
-def test_device_lock_registry_notifies_wait_state_callback_on_wait_transition():
+def test_device_lock_registry_notifies_queue_update_callback_on_wait_transition():
     registry = DeviceLockRegistry()
     registry.acquire("scan-1", "samx")
     wait_logged = threading.Event()
     wait_states = []
 
-    def wait_state_callback(waiting_devices):
-        wait_states.append(waiting_devices)
-        if waiting_devices:
+    def queue_update_callback():
+        wait_states.append(registry.get_pending_devices("request-2"))
+        if wait_states[-1]:
             wait_logged.set()
 
     releaser = threading.Thread(
@@ -118,24 +118,24 @@ def test_device_lock_registry_notifies_wait_state_callback_on_wait_transition():
     )
     releaser.start()
 
-    registry.acquire("request-2", "samx", wait_state_callback=wait_state_callback)
+    registry.acquire("request-2", "samx", queue_update_callback=queue_update_callback)
 
     releaser.join(timeout=1)
 
     assert wait_states == [["samx"], []]
 
 
-def test_device_lock_registry_acquire_many_bundles_wait_state_updates():
+def test_device_lock_registry_acquire_many_bundles_queue_update_callback():
     registry = DeviceLockRegistry()
     registry.acquire("scan-1", "samx")
     registry.acquire("scan-2", "samy")
     wait_logged = threading.Event()
     wait_states = []
 
-    def wait_state_callback(waiting_devices):
-        wait_states.append(waiting_devices)
+    def queue_update_callback():
+        wait_states.append(registry.get_pending_devices("request-3"))
         assert registry._condition._is_owned() is False
-        if waiting_devices:
+        if wait_states[-1]:
             wait_logged.set()
 
     releaser = threading.Thread(
@@ -149,7 +149,7 @@ def test_device_lock_registry_acquire_many_bundles_wait_state_updates():
     releaser.start()
 
     acquired = registry.acquire_many(
-        "request-3", ["samx", "samz", "samy"], wait_state_callback=wait_state_callback
+        "request-3", ["samx", "samz", "samy"], queue_update_callback=queue_update_callback
     )
 
     releaser.join(timeout=1)

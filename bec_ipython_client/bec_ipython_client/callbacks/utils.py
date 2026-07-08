@@ -81,6 +81,69 @@ def evaluate_scan_state(
     return ScanState.CONTINUE
 
 
+def pending_queue_message(
+    *, bec: BECClient, queue: QueueItem, queue_position: int | None = None
+) -> str | None:
+    """Return a user-facing message for queue states that are still waiting to start."""
+    if queue_position is None:
+        queue_position = getattr(queue, "queue_position", None)
+    if not isinstance(queue_position, int):
+        return None
+
+    target_queue = None
+    target_queue_status = None
+    if bec.queue is not None:
+        current_scan_queue = getattr(bec.queue.queue_storage, "current_scan_queue", None)
+        if current_scan_queue is not None:
+            target_queue = bec.queue.get_default_scan_queue()
+            target_queue_status = current_scan_queue.get(target_queue)
+
+    request_blocks = getattr(queue, "request_blocks", None) or []
+    has_scan_request = any(
+        getattr(request_block, "is_scan", False) for request_block in request_blocks
+    )
+    if (
+        target_queue_status is not None
+        and getattr(target_queue_status, "status", None) == "LOCKED"
+        and has_scan_request
+    ):
+        lock_info = [
+            f"{lock.identifier}: {lock.reason}\n"
+            for lock in getattr(target_queue_status, "locks", None) or []
+        ]
+        return f"Scan is waiting for the lock to be released. Active locks: \n{''.join(lock_info)}"
+
+    owned_device_locks: list[str] = []
+    pending_device_locks: list[str] = []
+    get_device_lock_state = getattr(queue, "get_device_lock_state", None)
+    if callable(get_device_lock_state):
+        try:
+            owned_device_locks, pending_device_locks = get_device_lock_state()
+        except Exception:
+            owned_device_locks, pending_device_locks = [], []
+    if pending_device_locks:
+        pending_locks = ", ".join(pending_device_locks)
+        message = f"Scan is waiting for device locks to be released. Pending device locks: {pending_locks}."
+        if owned_device_locks:
+            owned_locks = ", ".join(owned_device_locks)
+            message += f" Currently owned device locks: {owned_locks}."
+        return message
+
+    if getattr(queue, "status", None) == "PENDING" and queue_position > 0:
+        if target_queue is not None:
+            status = getattr(target_queue_status, "status", getattr(queue, "status", None))
+            return (
+                "Scan is enqueued and is waiting for execution. "
+                f"Current position in queue {target_queue}: {queue_position + 1}. Queue status: {status}."
+            )
+        return (
+            "Scan is enqueued and is waiting for execution. "
+            f"Current position in queue: {queue_position + 1}."
+        )
+
+    return None
+
+
 def _restart_signal(
     *, scan_item: ScanItem | None = None, queue: QueueItem | None = None
 ) -> messages.ScanQueueMessage | None:

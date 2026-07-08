@@ -208,7 +208,7 @@ def test_acquire_device_lock_queues_normalized_names_before_open(action_context)
 
     assert acquired == ["samx", "samy"]
     ctx.device_manager.parent.device_lock_registry.acquire_many.assert_not_called()
-    assert ctx.actions._pending_device_locks == {"samx", "samy"}
+    assert ctx.actions._queued_device_locks == {"samx", "samy"}
 
 
 def test_initialize_scan_flushes_pre_open_queued_locks(action_context):
@@ -237,7 +237,7 @@ def test_initialize_scan_flushes_pre_open_queued_locks(action_context):
     assert acquire_args == ("rid-123",)
     assert acquire_kwargs["interruption_callback"] == ctx.actions._interruption_callback
     assert {"samx", "samy"}.issubset(set(acquire_kwargs["devices"]))
-    assert ctx.actions._pending_device_locks == set()
+    assert ctx.actions._queued_device_locks == set()
     assert ctx.actions._scan_running is True
 
 
@@ -254,7 +254,7 @@ def test_acquire_device_lock_uses_request_id_and_normalized_names_after_open(act
     assert acquire_args == ("rid-123",)
     assert acquire_kwargs["devices"] == ["samx", "samy"]
     assert acquire_kwargs["interruption_callback"] == ctx.actions._interruption_callback
-    assert acquire_kwargs["wait_state_callback"] == ctx.actions._set_device_lock_wait_state
+    assert acquire_kwargs["queue_update_callback"] == ctx.actions._update_queue_info_callback
 
 
 def test_acquire_device_lock_uses_root_device_name_for_nested_devices(action_context):
@@ -276,16 +276,23 @@ def test_acquire_device_lock_uses_root_device_name_for_nested_devices(action_con
 
 def test_get_pending_device_locks_includes_runtime_waits(action_context):
     ctx = action_context()
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
     ctx.actions._update_queue_info_callback = mock.MagicMock()
-    ctx.actions._pending_device_locks.update({"samy"})
+    ctx.actions._queued_device_locks.update({"samy"})
+    ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
+    ctx.device_manager.parent.device_lock_registry.get_pending_devices.return_value = ["samx"]
 
-    ctx.actions._set_device_lock_wait_state(["samx"])
+    ctx.actions._update_queue_info_callback()
 
     assert ctx.actions.get_pending_device_locks() == ["samx"]
     assert ctx.actions.get_queued_device_locks() == ["samy"]
     ctx.actions._update_queue_info_callback.assert_called_once_with()
+    ctx.device_manager.parent.device_lock_registry.get_pending_devices.assert_called_once_with(
+        "rid-123"
+    )
 
-    ctx.actions._set_device_lock_wait_state([])
+    ctx.device_manager.parent.device_lock_registry.get_pending_devices.return_value = []
+    ctx.actions._update_queue_info_callback()
 
     assert ctx.actions.get_pending_device_locks() == []
     assert ctx.actions._update_queue_info_callback.call_count == 2
@@ -311,7 +318,6 @@ def test_get_pending_device_locks_includes_runtime_waits(action_context):
         ("unstage_all_devices", (), {"wait": False}),
         ("rpc_call", ("samx", "foo"), {}),
         ("rpc_call_no_wait", ("samx", "foo", "rpc-id"), {}),
-        ("send_client_info", ("test message",), {}),
     ],
 )
 def test_requires_scan_is_running_guard(action_context, method_name, args, kwargs):

@@ -12,7 +12,13 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 
-from .utils import LiveUpdatesBase, ScanState, check_alarms, evaluate_scan_state
+from .utils import (
+    LiveUpdatesBase,
+    ScanState,
+    check_alarms,
+    evaluate_scan_state,
+    pending_queue_message,
+)
 
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
@@ -183,6 +189,7 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
         data_source = ReadbackDataHandler(self.bec.device_manager, self.devices, request_id)
         start_values = data_source.get_device_values()
         self.wait_for_request_acceptance()
+        self._wait_for_move_to_start(data_source)
 
         if self.report_instruction:
             target_values = self.report_instruction["readback"]["end"]
@@ -231,3 +238,36 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
         if self.scan_queue_request is None or self.scan_queue_request.queue is None:
             return ScanState.CONTINUE
         return evaluate_scan_state(queue=self.scan_queue_request.queue)
+
+    def _wait_for_move_to_start(self, data_source: ReadbackDataHandler) -> None:
+        """Wait until the move starts, mirroring the queue wait behavior of live table updates."""
+        if self.scan_queue_request is None or self.scan_queue_request.queue is None:
+            return
+
+        while True:
+            if self.scan_queue_request is None or self.scan_queue_request.queue is None:
+                return
+
+            queue = self.scan_queue_request.queue
+            check_alarms(self.bec)
+            scan_state = self._check_scan_state()
+            if scan_state == ScanState.WAIT:
+                time.sleep(0.05)
+                continue
+
+            queue_position = getattr(queue, "queue_position", None)
+
+            if queue_position is None:
+                if data_source.done():
+                    return
+                time.sleep(0.05)
+                continue
+
+            message = pending_queue_message(
+                bec=self.bec, queue=queue, queue_position=queue_position
+            )
+            if message is None:
+                break
+
+            print(message, end="\r", flush=True)
+            time.sleep(0.1)

@@ -16,7 +16,13 @@ from bec_lib.request_context import ActiveRequestContext, active_request_context
 
 from .live_table import LiveUpdatesTable
 from .move_device import LiveUpdatesReadbackProgressbar
-from .utils import ScanRequestMixin, ScanState, check_alarms, evaluate_scan_state
+from .utils import (
+    ScanRequestMixin,
+    ScanState,
+    check_alarms,
+    evaluate_scan_state,
+    pending_queue_message,
+)
 
 if TYPE_CHECKING:
     from bec_lib import messages
@@ -308,7 +314,7 @@ class IPythonLiveUpdates:
         if queue.queue_position is None:
             return False
 
-        if queue.status == "PENDING":
+        if self._is_pending_queue_state(queue):
             self._process_pending_queue_element(queue)
             return False
 
@@ -342,6 +348,28 @@ class IPythonLiveUpdates:
 
         return False
 
+    def _is_pending_queue_state(self, queue: QueueItem) -> bool:
+        """
+        Check if the queue is in a pending state, which can be due to either the queue
+        being locked or other scans being ahead in the queue.
+
+        Args:
+            queue(QueueItem): The queue item to check.
+
+        Returns:
+            bool: True if the queue is in a pending state, False otherwise.
+        """
+        if queue.status == "PENDING":
+            return True
+
+        active_request_block = queue.active_request_block
+        if active_request_block is not None and getattr(
+            active_request_block, "pending_device_locks", None
+        ):
+            return True
+
+        return False
+
     def _process_pending_queue_element(self, queue: QueueItem) -> None:
         """
         Process a pending queue element.
@@ -353,45 +381,22 @@ class IPythonLiveUpdates:
 
         if self.client.queue is None or self.client.queue.queue_storage.current_scan_queue is None:
             return
-        target_queue = self.client.queue.get_default_scan_queue()
-        target_queue_status = self.client.queue.queue_storage.current_scan_queue.get(target_queue)
-        if target_queue_status is None:
-            return
 
         queue_position = queue.queue_position
         if queue_position is None:
             return
 
-        status = target_queue_status.status
-        if status == "LOCKED" and any(queue.scan_ids):
-            lock_info = [
-                f"{lock.identifier}: {lock.reason}\n" for lock in target_queue_status.locks
-            ]
-            message = (
-                f"Scan is waiting for the lock to be released. Active locks: \n{''.join(lock_info)}"
-            )
-            if self._status_live is None:
-                self._status_live = Live(
-                    Panel(message, title="[yellow]Scan Status[/yellow]"), refresh_per_second=4
-                )
-                self._status_live.start()
-            else:
-                self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
+        message = pending_queue_message(bec=self.client, queue=queue, queue_position=queue_position)
+        if message is None:
             return
-
-        if queue_position > 0:
-            message = (
-                f"Scan is enqueued and is waiting for execution. Current position in queue {target_queue}:"
-                f" {queue_position + 1}. Queue status: {status}."
+        if self._status_live is None:
+            self._status_live = Live(
+                Panel(message, title="[yellow]Scan Status[/yellow]"), refresh_per_second=4
             )
-            if self._status_live is None:
-                self._status_live = Live(
-                    Panel(message, title="[yellow]Scan Status[/yellow]"), refresh_per_second=4
-                )
-                self._status_live.start()
-            else:
-                self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
-            return
+            self._status_live.start()
+        else:
+            self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
+        return
 
     def _reset(self, forced=False):
         """Reset the active request and callback.
