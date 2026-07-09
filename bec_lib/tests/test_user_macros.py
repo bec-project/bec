@@ -457,7 +457,7 @@ def test_macro_update_callback_valid_message(user_macros):
     # Mock the on_macro_update method
     with mock.patch.object(macros._update_handler, "on_macro_update") as mock_on_update:
         # Call the callback
-        macros._update_handler._macro_update_callback(mock_msg, macros._update_handler)
+        macros._update_handler._macro_update_callback(mock_msg)
 
         # Verify on_macro_update was called with the correct message
         mock_on_update.assert_called_once_with(mock_msg.value)
@@ -475,7 +475,7 @@ def test_macro_update_callback_invalid_message_type(user_macros):
         # Mock on_macro_update to ensure it's not called
         with mock.patch.object(macros._update_handler, "on_macro_update") as mock_on_update:
             # Call the callback
-            macros._update_handler._macro_update_callback(mock_msg, macros._update_handler)
+            macros._update_handler._macro_update_callback(mock_msg)
 
             # Verify error was logged and on_macro_update was not called
             mock_logger.assert_called_once_with("Received invalid message type: <class 'str'>")
@@ -489,21 +489,21 @@ def test_macro_update_callback_with_different_message_types(user_macros):
         # Test with None
         mock_msg = mock.MagicMock()
         mock_msg.value = None
-        macros._update_handler._macro_update_callback(mock_msg, macros._update_handler)
+        macros._update_handler._macro_update_callback(mock_msg)
         mock_logger.assert_called_with("Received invalid message type: <class 'NoneType'>")
 
         mock_logger.reset_mock()
 
         # Test with integer
         mock_msg.value = 123
-        macros._update_handler._macro_update_callback(mock_msg, macros._update_handler)
+        macros._update_handler._macro_update_callback(mock_msg)
         mock_logger.assert_called_with("Received invalid message type: <class 'int'>")
 
         mock_logger.reset_mock()
 
         # Test with dict
         mock_msg.value = {"not": "a_message"}
-        macros._update_handler._macro_update_callback(mock_msg, macros._update_handler)
+        macros._update_handler._macro_update_callback(mock_msg)
         mock_logger.assert_called_with("Received invalid message type: <class 'dict'>")
 
 
