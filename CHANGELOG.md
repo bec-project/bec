@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.151.2 (2026-07-09)
+
+### Bug Fixes
+
+- Remove unused parent from macro update
+  ([`9b932cf`](https://github.com/bec-project/bec/commit/9b932cf1ce6ad8b42c11e05d7e84bb984b23c202))
+
+
 ## v3.151.1 (2026-07-08)
 
 ### Bug Fixes
