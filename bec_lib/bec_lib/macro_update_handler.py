@@ -271,12 +271,11 @@ class MacroUpdateHandler:
         self.forget_user_macro(name)
         self.load_user_macro(file, ignore_existing=True)
 
-    def _macro_update_callback(self, msg, parent):
+    def _macro_update_callback(self, msg):
         """Callback to handle macro update messages.
 
         Args:
             msg: The message containing the macro update information.
-            parent: The UserMacros instance.
         """
         msg = msg.value
         if not isinstance(msg, messages.MacroUpdateMessage):
