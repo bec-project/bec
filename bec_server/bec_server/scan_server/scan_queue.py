@@ -630,21 +630,24 @@ class QueueManager:
 
     def _get_owned_devices_for_instruction_queue(
         self, instruction_queue: InstructionQueueItem | DirectInstructionQueueItem
-    ) -> list[str]:
+    ) -> list[str] | None:
         registry = getattr(self.parent, "device_lock_registry", None)
         if registry is None:
-            return []
+            return None if isinstance(instruction_queue, InstructionQueueItem) else []
         if isinstance(instruction_queue, DirectInstructionQueueItem):
             if instruction_queue.active_scan is None:
                 return []
             request_id = instruction_queue.active_scan.scan_info.metadata.get("RID")
         else:
             if instruction_queue.active_request_block is None:
-                return []
+                return None
             request_id = instruction_queue.active_request_block.RID
         if request_id is None:
-            return []
-        return registry.get_owned_devices(request_id)
+            return None if isinstance(instruction_queue, InstructionQueueItem) else []
+        devices = registry.get_owned_devices(request_id)
+        if isinstance(instruction_queue, InstructionQueueItem) and not devices:
+            return None
+        return devices
 
     def _wait_for_queue_to_appear_in_history(
         self, scan_id, queue, timeout=60

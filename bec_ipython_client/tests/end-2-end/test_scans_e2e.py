@@ -261,6 +261,47 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
 
 
 @pytest.mark.timeout(100)
+def test_umv_ctrl_c_stops_motion(bec_ipython_client_fixture: BECIPythonClient):
+    def send_abort_after_delay():
+        time.sleep(1)
+        _thread.interrupt_main()
+
+    bec = bec_ipython_client_fixture
+    bec.metadata.update({"unit_test": "test_umv_ctrl_c_stops_motion"})
+    scans = bec.scans
+    dev = bec.device_manager.devices
+    original_velocity = dev.samx.velocity.get()
+    aborted_scan = False
+
+    try:
+        dev.samx.velocity.set(100).wait()
+        scans.umv(dev.samx, 0, relative=False)
+        dev.samx.velocity.set(1).wait()
+
+        threading.Thread(target=send_abort_after_delay, daemon=True).start()
+        try:
+            scans.umv(dev.samx, 40, relative=False)
+        except ScanInterruption:
+            aborted_scan = True
+
+        assert aborted_scan is True
+
+        timeout = time.time() + 10
+        while dev.samx.motor_is_moving.get() and time.time() < timeout:
+            time.sleep(0.1)
+
+        assert not dev.samx.motor_is_moving.get()
+        assert dev.samx.readback.get() < 40
+    finally:
+        if dev.samx.motor_is_moving.get():
+            dev.samx.stop()
+            timeout = time.time() + 10
+            while dev.samx.motor_is_moving.get() and time.time() < timeout:
+                time.sleep(0.1)
+        dev.samx.velocity.set(original_velocity).wait()
+
+
+@pytest.mark.timeout(100)
 def test_limit_error(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_limit_error"})
