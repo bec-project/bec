@@ -13,7 +13,7 @@ from bec_lib.scan_args import ScanArgument
 from bec_lib.signature_serializer import deserialize_dtype, dict_to_signature
 
 # Internal scan kwargs that are automatically added to the scan request
-INTERNAL_SCAN_KWARGS = {"user_metadata", "system_config", "scan_queue"}
+INTERNAL_SCAN_KWARGS = {"user_metadata", "system_config", "scan_queue", "monitored", "on_request"}
 
 
 class ScanInputValidator:

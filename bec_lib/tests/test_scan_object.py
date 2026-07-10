@@ -115,6 +115,16 @@ def test_scan_object_v4_rejects_additional_kwargs(scan_obj_no_args, dev):
     assert "Unknown keyword argument(s) for scan: 'additional_device'" in str(exc.value)
 
 
+def test_scan_object_v4_accepts_monitored_kwarg(scan_obj_no_args):
+    scan_obj_no_args.scan_info["base_class"] = "ScanBaseV4"
+
+    with mock.patch.object(scan_obj_no_args, "_send_scan_request") as send_scan_request:
+        scan_obj_no_args._run(points=10, interval=1.5, monitored=["samx"])
+
+    sent_msg = send_scan_request.call_args.args[0]
+    assert sent_msg.parameter["kwargs"]["monitored"] == ["samx"]
+
+
 def test_scan_object_raises_signature_kwargs_type_for_arg_input_scan(scan_obj, dev):
     with pytest.raises(ScanInputValidationError, match="step': .*float or int"):
         scan_obj._run(dev.samx, -5, 5, dev.samy, -5, 5, step="bad", exp_time=0.1, relative=False)

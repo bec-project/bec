@@ -58,6 +58,7 @@ class ScanObject:
         hide_report: bool = False,
         metadata: dict | None = None,
         monitored: list[str | DeviceBase] | None = None,
+        on_request: list[str | DeviceBase] | None = None,
         file_suffix: str | None = None,
         file_directory: str | None = None,
         scan_queue: str | None = None,
@@ -72,7 +73,8 @@ class ScanObject:
             async_callback: Asynchronous callback function
             hide_report: Hide the report
             metadata: Metadata dictionary
-            monitored: List of monitored devices
+            monitored: List of devices to be put on the readout priority `monitored`
+            on_request: List of devices to be put on the readout priority `on_request`
             file_suffix: File suffix for the scan data
             file_directory: File directory for the scan data
             scan_queue: Scan queue name. If None, the default queue will be used.
@@ -110,12 +112,24 @@ class ScanObject:
                 monitored = [monitored]
             for mon_device in monitored:
                 if isinstance(mon_device, str):
-                    mon_device = self.client.device_manager.devices.get(mon_device)
-                    if not mon_device:
+                    mon_device_obj = self.client.device_manager.devices.get(mon_device)
+                    if not mon_device_obj:
                         raise RuntimeError(
                             f"Specified monitored device {mon_device} does not exist in the current device configuration."
                         )
             kwargs["monitored"] = monitored
+
+        if on_request is not None:
+            if not isinstance(on_request, list):
+                on_request = [on_request]
+            for or_device in on_request:
+                if isinstance(or_device, str):
+                    or_device_obj = self.client.device_manager.devices.get(or_device)
+                    if not or_device_obj:
+                        raise RuntimeError(
+                            f"Specified on_request device {or_device} does not exist in the current device configuration."
+                        )
+            kwargs["on_request"] = on_request
 
         sys_config = sys_config.model_dump()
         # pylint: disable=protected-access

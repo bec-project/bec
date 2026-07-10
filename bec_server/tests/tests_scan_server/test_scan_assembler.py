@@ -12,6 +12,7 @@ from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scans import ScanArgType
 from bec_server.scan_server.scans.acquire import Acquire
 from bec_server.scan_server.scans.legacy_scans import FermatSpiralScan, LineScan, RequestBase
+from bec_server.scan_server.scans.scan_argument_modifier import scan_signature_with_modifiers
 from bec_server.scan_server.tests.utils import NoopScan
 
 
@@ -326,6 +327,40 @@ def test_scan_assembler_assemble_direct_scan_resolves_device_args(dm_with_device
         2,
     )
     assert request.scan_info.request_inputs["arg_bundle"] == ["samx", 1, "samy", 2]
+
+
+def test_scan_assembler_assemble_direct_scan_propagates_monitored_kwarg(dm_with_devices):
+    parent = mock.MagicMock()
+    parent.device_manager = dm_with_devices
+    parent.connector = mock.MagicMock()
+    parent.queue_manager.instruction_handler = mock.MagicMock()
+    assembler = ScanAssembler(parent=parent)
+    scan_info = {
+        "arg_input": assembler._serialize_arg_input(CustomDirectScan.arg_input),
+        "required_kwargs": [],
+        "arg_bundle_size": CustomDirectScan.arg_bundle_size,
+        "doc": CustomDirectScan.__doc__ or CustomDirectScan.__init__.__doc__,
+        "signature": scan_signature_with_modifiers(CustomDirectScan),
+        "base_class": "ScanBaseV4",
+    }
+
+    class MockScanManager:
+        available_scans = {"custom_direct_scan": scan_info}
+        scan_dict = {"custom_direct_scan": CustomDirectScan}
+
+    msg = messages.ScanQueueMessage(
+        scan_type="custom_direct_scan",
+        parameter={
+            "args": {"samx": (1,)},
+            "kwargs": {"system_config": {"file_directory": "/tmp/data"}, "monitored": ["bpm4i"]},
+        },
+        queue="primary",
+    )
+
+    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
+
+    assert request.scan_info.readout_priority_modification["monitored"] == ["bpm4i"]
 
 
 def test_scan_assembler_assemble_direct_scan_resolves_annotated_device_args(dm_with_devices):
