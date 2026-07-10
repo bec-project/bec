@@ -241,6 +241,22 @@ def test_initialize_scan_flushes_pre_open_queued_locks(action_context):
     assert ctx.actions._scan_running is True
 
 
+def test_initialize_scan_excludes_on_request_devices_from_initial_locks(action_context):
+    ctx = action_context(running=False)
+    _set_readout_priority(ctx, monitored=["samx"], on_request=["bpm4i"])
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
+    ctx.device_manager.devices.samx._info["ownership_mode"] = "claimable"
+    ctx.device_manager.devices.bpm4i._info["ownership_mode"] = "pinned"
+    ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
+
+    ctx.actions._initialize_scan()
+
+    ctx.device_manager.parent.device_lock_registry.acquire_many.assert_called_once()
+    _, acquire_kwargs = ctx.device_manager.parent.device_lock_registry.acquire_many.call_args
+    assert "samx" in acquire_kwargs["devices"]
+    assert "bpm4i" not in acquire_kwargs["devices"]
+
+
 def test_acquire_device_lock_uses_request_id_and_normalized_names_after_open(action_context):
     ctx = action_context()
     ctx.scan.scan_info.metadata["RID"] = "rid-123"

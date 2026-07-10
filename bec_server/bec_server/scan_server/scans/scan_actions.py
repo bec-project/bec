@@ -1173,8 +1173,15 @@ class ScanActions:
         software_triggered_devices = {
             dev.root.name for dev in self._device_manager.devices.get_software_triggered_devices()
         }
+        on_request_devices = {
+            dev.root.name
+            for dev in self._device_manager.devices.on_request_devices(
+                readout_priority=self.readout_priority
+            )
+        }
         self.acquire_device_lock(
-            monitored_claimable | async_claimable | pinned_devices | software_triggered_devices
+            (monitored_claimable | async_claimable | pinned_devices | software_triggered_devices)
+            - on_request_devices
         )
 
     def _initialize_scan(self) -> list[str]:
