@@ -148,6 +148,35 @@ def test_redis_connector_unregister(connected_connector):
     assert len(connector._topics_cb) == 0
 
 
+def test_redis_connector_unregister_all_for_callback(connected_connector):
+    connector = connected_connector
+    cb_mock = mock.Mock(spec=[])
+
+    connector.register(topics=["topic1"], cb=cb_mock, start_thread=False)
+    connector.register(patterns=["topic2:*"], cb=cb_mock, start_thread=False)
+    connector.register(TestStreamEndpoint, cb=cb_mock, start_thread=False)
+
+    connector.send("topic1", TestMessage(msg="topic1"))
+    connector.poll_messages(timeout=1)
+    connector.send("topic2:a", TestMessage(msg="topic2"))
+    connector.poll_messages(timeout=1)
+    connector.xadd("test", {"data": 1})
+    connector.poll_messages(timeout=1)
+    assert cb_mock.call_count == 3
+
+    cb_mock.reset_mock()
+    connector.unregister(cb=cb_mock)
+
+    connector.send("topic1", TestMessage(msg="topic1"))
+    connector.send("topic2:a", TestMessage(msg="topic2"))
+    connector.xadd("test", {"data": 2})
+    with pytest.raises(TimeoutError):
+        connector.poll_messages(timeout=1)
+    assert cb_mock.call_count == 0
+    assert len(connector._topics_cb) == 0
+    assert connector._stream_subs.all_topics == []
+
+
 def test_redis_connector_register_identical(connected_connector):
     connector = connected_connector
 

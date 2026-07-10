@@ -595,7 +595,9 @@ class ManagedRedisConnection:
         unsubscribe_list = []
         with self._topics_cb_lock:
             for topic in topics:
-                topics_cb = self._topics_cb[topic]
+                topics_cb = self._topics_cb.get(topic)
+                if topics_cb is None:
+                    continue
                 # remove callback from list
                 self._topics_cb[topic] = list(
                     filter(lambda item: cb and item[0]() != cb, topics_cb)
@@ -631,9 +633,16 @@ class ManagedRedisConnection:
                     self._pubsub_conn.unsubscribe(unsubscribe_list)
         else:
             with self._topics_cb_lock:
-                topics = list(self._topics_cb.keys())
-            self.unregister(topics, cb)
-            self.unregister(self._stream_subs.all_topics, cb)
+                registered_topics = list(self._topics_cb.keys())
+            direct_topics = [
+                topic for topic in registered_topics if not set("*?[]").intersection(topic)
+            ]
+            pattern_topics = [topic for topic in registered_topics if topic not in direct_topics]
+            if direct_topics:
+                self.unregister(topics=direct_topics, cb=cb)
+            if pattern_topics:
+                self.unregister(patterns=pattern_topics, cb=cb)
+            self.unregister(topics=self._stream_subs.all_topics, cb=cb)
 
     def _unregister_stream(self, topics: list[str], cb: Callable | None = None) -> bool:
         """Unregister callbacks from a list of topics. Returns true if any were removed"""
