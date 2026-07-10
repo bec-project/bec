@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.151.3 (2026-07-10)
+
+### Bug Fixes
+
+- **redis_connector**: Fix unregister for just cb as input
+  ([`cbceca5`](https://github.com/bec-project/bec/commit/cbceca5a3b927db3d872c2ec5af4232cd8b2f5f4))
+
+
 ## v3.151.2 (2026-07-09)
 
 ### Bug Fixes
