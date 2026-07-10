@@ -256,6 +256,7 @@ class RequestBase(ABC):
         *args,
         device_manager: DeviceManagerBase = None,
         monitored: list = None,
+        on_request: list = None,
         parameter: dict = None,
         metadata: dict = None,
         instruction_handler: InstructionHandler = None,
@@ -283,7 +284,7 @@ class RequestBase(ABC):
         self.readout_priority = {
             "monitored": monitored if monitored is not None else [],
             "baseline": [],
-            "on_request": [],
+            "on_request": on_request if on_request is not None else [],
             "async": [],
         }
         self.update_readout_priority()

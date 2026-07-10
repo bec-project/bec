@@ -173,6 +173,8 @@ class ScanBase(ABC):
         instruction_handler: InstructionHandler,
         request_inputs: dict,
         system_config: dict,
+        monitored: list[str] | None = None,
+        on_request: list[str] | None = None,
         scan_modifier: Type[ScanModifier] | None = None,
         user_metadata: dict | None = None,
         metadata: dict | None = None,
@@ -203,6 +205,8 @@ class ScanBase(ABC):
         self.scan_info = ScanInfo(
             scan_name=self.scan_name, scan_id=scan_id, scan_type=self.scan_type, **optional_kwargs
         )
+        self.update_scan_info(monitored=monitored, on_request=on_request)
+
         self.scan_info.request_inputs = request_inputs
         self.scan_info.system_config = system_config
         self._baseline_readout_status = None
@@ -227,6 +231,8 @@ class ScanBase(ABC):
         relative: bool | None = None,
         run_on_exception_hook: bool | None = None,
         scan_report_devices: Sequence[str | DeviceBase] | None = None,
+        monitored: Sequence[str | DeviceBase] | None = None,
+        on_request: Sequence[str | DeviceBase] | None = None,
         **kwargs,
     ):
         """
@@ -249,6 +255,8 @@ class ScanBase(ABC):
             run_on_exception_hook (bool, optional): Whether to run the on_exception hook if the scan is interrupted. Defaults to None.
             scan_report_devices (Sequence[str | DeviceBase], optional): Devices to report
                 during the scan. Device objects are stored by name. Defaults to None.
+            monitored (Sequence[str | DeviceBase], optional): Devices to be put on the readout priority `monitored`. Defaults to None.
+            on_request (Sequence[str | DeviceBase], optional): Devices to be put on the readout priority `on_request`. Defaults to None.
             **kwargs: Keyword arguments to update the scan info with.
         """
         for attr_name, value in [
@@ -271,6 +279,14 @@ class ScanBase(ABC):
                 setattr(self.scan_info, key, value)
             else:
                 self.scan_info.additional_scan_parameters[key] = value
+        if monitored is not None:
+            self.scan_info.readout_priority_modification["monitored"] = [
+                device.name if isinstance(device, DeviceBase) else device for device in monitored
+            ]
+        if on_request is not None:
+            self.scan_info.readout_priority_modification["on_request"] = [
+                device.name if isinstance(device, DeviceBase) else device for device in on_request
+            ]
 
     @scan_hook
     @abstractmethod
