@@ -4,6 +4,7 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.acl_login import BECAccess, BECAuthenticationError
+from bec_lib.endpoints import EndpointType, MessageEndpoints
 from bec_lib.utils.user_acls_test import BECAccessDemo
 
 # pylint: disable=protected-access
@@ -97,6 +98,30 @@ def test_login_psi_login(bec_access, access_control):
             local_login.assert_not_called()
 
 
+def test_temporary_user_restores_previous_user(bec_access, access_control):
+    access_control.add_account("operator", "operator", "admin")
+    access_control.add_account("admin", "admin", "admin")
+    bec_access.login_with_token(username="operator", token="operator")
+
+    with bec_access.temporary_user(username="admin", token="admin"):
+        assert bec_access.connector.username == "admin"
+
+    assert bec_access.connector.username == "operator"
+
+
+def test_temporary_user_restores_previous_user_after_exception(bec_access, access_control):
+    access_control.add_account("operator", "operator", "admin")
+    access_control.add_account("admin", "admin", "admin")
+    bec_access.login_with_token(username="operator", token="operator")
+
+    with pytest.raises(RuntimeError):
+        with bec_access.temporary_user(username="admin", token="admin"):
+            assert bec_access.connector.username == "admin"
+            raise RuntimeError("boom")
+
+    assert bec_access.connector.username == "operator"
+
+
 def test_bec_service_login_default(bec_access):
     bec_access._info = _login_info()
 
@@ -104,6 +129,62 @@ def test_bec_service_login_default(bec_access):
     conn = bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
     assert conn["username"] is None
     assert conn["password"] is None
+
+
+def test_access_demo_uses_current_admin_connection_without_auth():
+    connector = mock.MagicMock()
+    connector.acl_list.return_value = ["user default on nopass ~* &* +@all"]
+
+    handler = BECAccessDemo(connector)
+
+    assert handler.connector is connector
+    connector.authenticate.assert_not_called()
+
+
+def test_access_demo_falls_back_to_configured_admin_account():
+    connector = mock.MagicMock()
+    connector.acl_list.side_effect = Exception("Access denied")
+    connector.authenticate.side_effect = [Exception("auth failed"), None, None]
+
+    BECAccessDemo(connector)
+
+    assert connector.authenticate.call_args_list == [
+        mock.call(username="default", password="null"),
+        mock.call(username="admin", password="admin"),
+        mock.call(username="admin", password="admin"),
+    ]
+
+
+def test_access_demo_set_default_non_admin_allows_non_admin_namespaces(access_control, bec_access):
+    access_control.add_admin()
+    access_control.set_default_non_admin()
+
+    acl_info = bec_access.connector._managed_connection._redis_conn.acl_getuser("default")
+    assert "nopass" in acl_info["flags"]
+    assert sorted(acl_info["channels"]) == sorted(
+        [
+            f"&{EndpointType.PUBLIC.value}/*",
+            f"&{EndpointType.PERSONAL.value}/*",
+            f"&{EndpointType.USER.value}/*",
+            f"&{EndpointType.INFO.value}/*",
+            f"&{EndpointType.INTERNAL.value}/*",
+        ]
+    )
+    assert f"&{EndpointType.ADMIN.value}/*" not in acl_info["channels"]
+
+
+def test_access_demo_main_non_admin_mode():
+    demo = mock.MagicMock()
+
+    with mock.patch("bec_lib.utils.user_acls_test.BECAccessDemo", return_value=demo):
+        from bec_lib.utils.user_acls_test import _main
+
+        _main("non_admin", shutdown=False)
+
+    demo.reset.assert_called_once()
+    demo.add_user.assert_called_once()
+    demo.add_admin.assert_called_once()
+    demo.set_default_non_admin.assert_called_once()
 
 
 @mock.patch("bec_lib.acl_login.input")
@@ -273,6 +354,35 @@ def test_config_login_successful_with_env_file_failure(mock_exists, bec_access):
 
             assert result is False
             mock_check.assert_called_once_with("env_user", "env_pass")
+
+
+@mock.patch("os.path.exists")
+@mock.patch("bec_lib.acl_login.dotenv_values")
+def test_config_login_successful_with_dict_env_file(mock_dotenv, mock_exists, bec_access):
+    """Test _config_login_successful with an env_file from the service config."""
+    mock_exists.return_value = True
+    mock_dotenv.return_value = {"REDIS_USER": "env_user", "REDIS_PASSWORD": "env_pass"}
+
+    with mock.patch.object(bec_access, "_check_redis_auth", return_value=True) as mock_check:
+        result = bec_access._config_login_successful(
+            False, {"env_file": "/path/to/.bec_acl.env", "user": None}
+        )
+
+        assert result is True
+        mock_check.assert_called_once_with("env_user", "env_pass")
+
+
+def test_config_login_successful_with_prompt_and_env_file_uses_user_login(bec_access):
+    """Prompted clients should defer env_file-only configs to the default/full-access check."""
+    with mock.patch.object(bec_access, "_check_redis_auth", return_value=True) as mock_check:
+        with mock.patch.object(bec_access, "_user_service_login") as mock_user_login:
+            result = bec_access._config_login_successful(
+                True, {"env_file": "/path/to/.bec_acl.env"}
+            )
+
+            assert result is False
+            mock_check.assert_not_called()
+            mock_user_login.assert_not_called()
 
 
 def test_config_login_successful_with_dict(bec_access):

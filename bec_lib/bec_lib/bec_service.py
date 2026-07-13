@@ -6,19 +6,15 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import os
 import socket
 import sys
 import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as importlib_version
 from typing import TYPE_CHECKING, Any, Literal
 
 import psutil
-import tomli
 from rich.console import Console
 from rich.table import Table
 
@@ -111,7 +107,7 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
     config_file = args.config
     cli_args = vars(args)
     user = cli_args.pop("user")
-    acl_config = {"username": user} if user else {}
+    acl_config = {"user": user} if user else None
     redis_url = args.bec_server
 
     if redis_url and config_file:
@@ -134,18 +130,21 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
             except ValueError:
                 raise ValueError(f"Invalid port number in Redis URL: {comps[1]}")
 
-        service_config = ServiceConfig(
-            redis=redis_data, cmdline_args=cli_args, acl=acl_config, config_name=config_name
-        )
+        kwargs = {"redis": redis_data, "cmdline_args": cli_args, "config_name": config_name}
+        if acl_config:
+            kwargs["acl"] = acl_config
+        service_config = ServiceConfig(**kwargs)
     elif config_file:
-        service_config = ServiceConfig(
-            config_file, cmdline_args=cli_args, acl=acl_config, config_name=config_name
-        )
+        kwargs = {"cmdline_args": cli_args, "config_name": config_name}
+        if acl_config:
+            kwargs["acl"] = acl_config
+        service_config = ServiceConfig(config_file, **kwargs)
     else:
         # If no config file or Redis URL is provided, use the default ServiceConfig
-        service_config = ServiceConfig(
-            cmdline_args=cli_args, acl=acl_config, config_name=config_name
-        )
+        kwargs = {"cmdline_args": cli_args, "config_name": config_name}
+        if acl_config:
+            kwargs["acl"] = acl_config
+        service_config = ServiceConfig(**kwargs)
 
     return args, extra_args, service_config
 
@@ -173,7 +172,7 @@ class BECService:
             else connector
         )
         self.acl = BECAccess(self.connector)
-        self.acl._bec_service_login(prompt_for_acl, self._service_config.config.get("acl"))
+        self.acl._bec_service_login(prompt_for_acl, self._service_config.model.acl)
 
         self._unique_service = unique_service
         self.wait_for_server = wait_for_server

@@ -410,7 +410,28 @@ def test_parse_cmdline_args_with_config():
                     "bec_server": None,
                     "use_subprocess_proc_worker": False,
                 },
-                acl={},
+                config_name="server",
+            )
+
+
+def test_parse_cmdline_args_with_user():
+    """Test parse_cmdline_args with a service ACL user."""
+    with mock.patch.object(sys, "argv", ["script.py", "--user", "admin"]):
+        with mock.patch("bec_lib.bec_service.ServiceConfig", autospec=True) as mock_service_config:
+            parse_cmdline_args()
+
+            mock_service_config.assert_called_once_with(
+                cmdline_args={
+                    "version": False,
+                    "json": False,
+                    "config": "",
+                    "log_level": None,
+                    "file_log_level": None,
+                    "redis_log_level": None,
+                    "bec_server": None,
+                    "use_subprocess_proc_worker": False,
+                },
+                acl={"user": "admin"},
                 config_name="server",
             )
 

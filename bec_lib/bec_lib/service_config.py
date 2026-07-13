@@ -83,6 +83,7 @@ class ACLConfig(BaseModel):
 
     env_file: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, ".bec_acl.env"))
     user: str | None = None
+    password: str | None = None
 
 
 class ProcedureConfig(BaseModel):

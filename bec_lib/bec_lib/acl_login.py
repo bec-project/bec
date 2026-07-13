@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import wraps
 from getpass import getpass
 from typing import TYPE_CHECKING, cast
@@ -13,6 +15,7 @@ from rich.table import Table
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.service_config import ACLConfig
 from bec_lib.utils.import_utils import lazy_import_from
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -87,8 +90,35 @@ class BECAccess:
         """
         self.connector.authenticate(username=username, password=token)
 
+    @contextmanager
+    def temporary_user(self, *, username: str, token: str | None) -> Iterator[None]:
+        """
+        Temporarily authenticate as another ACL user and restore the current user on exit.
+        """
+        credentials = self.current_credentials()
+        self.login_with_token(username=username, token=token)
+        try:
+            yield
+        finally:
+            self.login_with_token(
+                username=credentials["username"] or "default", token=credentials.get("token")
+            )
+
+    def current_credentials(self) -> dict[str, str | None]:
+        """
+        Return the current Redis ACL credentials for forwarding to linked clients.
+        """
+        # pylint: disable=protected-access
+        conn_kwargs = (
+            self.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
+        )
+        token = conn_kwargs.get("password")
+        if token == "null":
+            token = None
+        return {"username": self.connector.username, "token": token}
+
     def _bec_service_login(
-        self, prompt_for_acl: bool = False, acl_config: dict | str | None = None
+        self, prompt_for_acl: bool = False, acl_config: ACLConfig | dict | str | None = None
     ) -> None:
         """
         Login to Redis using the ACL system. This is the main entry point for the login process, started
@@ -97,9 +127,8 @@ class BECAccess:
         Args:
             prompt_for_acl (bool): If True, prompt the user to login using ACL. This is typically only used
                 for user-facing services. Default is False.
-            acl_config (dict or str): The ACL configuration. If a string is provided, it will be treated as a
-                path to the configuration file. If a dictionary is provided, it should contain the username and
-                password for the account.
+            acl_config (ACLConfig, dict, str, optional): The ACL configuration. If a string is provided,
+                it will be treated as a path to the configuration file.
         """
 
         if not self.connector.redis_server_is_running():
@@ -241,40 +270,58 @@ class BECAccess:
         password = getpass(f"Enter the token for {selected_account} (hidden): ")
         return password
 
-    def _config_login_successful(self, prompt_for_acl: bool, acl_config: dict | str) -> bool:
+    def _config_login_successful(
+        self, prompt_for_acl: bool, acl_config: ACLConfig | dict | str | None
+    ) -> bool:
         """
         Login to Redis using the configuration file.
 
         Args:
             prompt_for_acl (bool): If True, prompt the user to login using ACL. Default is False.
-            acl_config (dict or str): The ACL configuration. If a string is provided, it will be treated as a path to the configuration file.
+            acl_config (ACLConfig, dict, str, optional): The ACL configuration. If a string is provided,
+                it will be treated as a path to the configuration file.
 
         Returns:
             bool: True if the login was successful, False otherwise.
         """
 
+        if acl_config is None:
+            return False
+
         if isinstance(acl_config, str):
-            if os.path.exists(acl_config) and not prompt_for_acl:
-                # Load the account information from the .env file
-                # This is relevant for the BEC services that are not launched by the user
-                # but are auto-deployed.
-                account = dotenv_values(acl_config)
-                user = account.get("REDIS_USER")
-                password = account.get("REDIS_PASSWORD")
-                if self._check_redis_auth(user, password):
-                    return True
+            env_file = acl_config
+            username = None
+            password = None
         elif isinstance(acl_config, dict):
-            username = acl_config.get("username")
+            env_file = acl_config.get("env_file")
+            username = acl_config.get("username") or acl_config.get("user")
             password = acl_config.get("password")
-            if self._check_redis_auth(username, password):
-                return True
-            if not password and prompt_for_acl:
-                self._user_service_login(username=username)
-                return True
+        elif isinstance(acl_config, ACLConfig):
+            env_file = acl_config.env_file
+            username = acl_config.user
+            password = acl_config.password
         else:
             raise ValueError(
-                "Invalid value for 'acl' in the service config. Must be a dict or a path to a .env file."
+                "Invalid value for 'acl' in the service config. Must be an ACLConfig, dict, "
+                "or a path to a .env file."
             )
+
+        if env_file and not prompt_for_acl and os.path.exists(env_file):
+            # Load the account information from the .env file. This is relevant for BEC services
+            # that are not launched by the user but are auto-deployed.
+            account = dotenv_values(env_file)
+            user = account.get("REDIS_USER")
+            env_password = account.get("REDIS_PASSWORD")
+            if self._check_redis_auth(user, env_password):
+                return True
+
+        if (username or password) and self._check_redis_auth(username, password):
+            return True
+
+        if prompt_for_acl and username:
+            self._user_service_login(username=username)
+            return True
+
         return False
 
     def _default_user_login_successful(self, full_access: bool) -> bool:
