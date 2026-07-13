@@ -1738,18 +1738,18 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def gui_acl(gui_id: str):
+    def acl_session(session_id: str):
         """
-        Endpoint for exchanging GUI ACL information. This endpoint is used by the CLI or GUI to exchange
+        Endpoint for exchanging ACL session information. This endpoint is used by the CLI or GUI to exchange
         updates on the required ACL user. It uses a messages.CredentialsMessage message.
 
         Args:
-            gui_id (str): GUI ID.
+            session_id (str): Session ID.
         Returns:
-            EndpointInfo: Endpoint for GUI ACL.
+            EndpointInfo: Endpoint for ACL session.
         """
 
-        endpoint = f"{EndpointType.USER.value}/gui/acl/{gui_id}"
+        endpoint = f"{EndpointType.USER.value}/acl/{session_id}"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.CredentialsMessage, message_op=MessageOp.SEND
         )

@@ -1,7 +1,7 @@
 import sys
 from typing import Literal
 
-from bec_lib.endpoints import MessageEndpoints
+from bec_lib.endpoints import EndpointType, MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
 
 
@@ -12,12 +12,20 @@ class BECAccessDemo:  # pragma: no cover
             self.connector = connector
         else:
             self.connector = RedisConnector("localhost:6379")
-        self.connector.authenticate(**self._find_admin_account())
+        admin_account = self._find_admin_account()
+        if admin_account:
+            self.connector.authenticate(**admin_account)
         self.username = "user"
         self.admin_username = "admin"
         self.deployment_id = "test_deployment"
 
-    def _find_admin_account(self) -> dict[str, str]:
+    def _find_admin_account(self) -> dict[str, str] | None:
+        try:
+            self.connector.acl_list()
+            return None
+        except Exception:
+            pass
+
         for user, token in [("default", "null"), ("admin", "admin")]:
             try:
                 self.connector.authenticate(username=user, password=token)
@@ -149,6 +157,27 @@ class BECAccessDemo:  # pragma: no cover
                 reset_keys=True,
             )
 
+    def set_default_non_admin(self):
+        """Grant the default user access to all non-admin endpoint namespaces."""
+        allowed_namespaces = [
+            EndpointType.PUBLIC.value,
+            EndpointType.PERSONAL.value,
+            EndpointType.USER.value,
+            EndpointType.INFO.value,
+            EndpointType.INTERNAL.value,
+        ]
+        self.connector._managed_connection._redis_conn.acl_setuser(
+            "default",
+            enabled=True,
+            nopass=True,
+            categories=["+@all", "-@dangerous"],
+            keys=[f"%RW~{namespace}/*" for namespace in allowed_namespaces],
+            channels=[f"{namespace}/*" for namespace in allowed_namespaces],
+            commands=["+keys"],
+            reset_channels=True,
+            reset_keys=True,
+        )
+
 
 def _main(
     mode: str, connector: RedisConnector | None = None, shutdown: bool = True
@@ -166,6 +195,14 @@ def _main(
             demo.set_default_limited(True)
             print(
                 "Enabled mode admin. Please make sure to place the .bec_acl.env file in the root directory and restart the bec server."
+            )
+        case "non_admin":
+            demo.reset()
+            demo.add_user()
+            demo.add_admin()
+            demo.set_default_non_admin()
+            print(
+                "Enabled mode non_admin. The default user can access all non-admin namespaces. Please restart the bec server."
             )
         case _:
             raise ValueError(f"Invalid mode: {mode}")
@@ -185,6 +222,6 @@ if __name__ == "__main__":  # pragma: no cover
     args = parser.parse_args()
 
     if args.mode is None:
-        args.mode = "default"
+        args.mode = "non_admin"
 
     _main("default" if args.reset else args.mode)
