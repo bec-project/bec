@@ -1,6 +1,71 @@
 # CHANGELOG
 
 
+## v3.152.0 (2026-07-14)
+
+### Bug Fixes
+
+- Mv and umv should predeclare their locks
+  ([`83749cd`](https://github.com/bec-project/bec/commit/83749cd012c1a66bfd7392f1319cf500adba4147))
+
+- Raise on rpc calls during scan init
+  ([`c04ea8c`](https://github.com/bec-project/bec/commit/c04ea8c7bec07a93d0c51daa7c5264f4c2b54027))
+
+- Replace time.sleep with shutdown_event.wait for better control in ScanActions
+  ([`fe762e4`](https://github.com/bec-project/bec/commit/fe762e48b8c175480f0b0752aeecfa33929d3a3e))
+
+- **device_lock_registry**: Avoid deadlocks in acquire callbacks
+  ([`f7c2b1c`](https://github.com/bec-project/bec/commit/f7c2b1c6e5505afdeb44113e208989adda5e05de))
+
+- **device_serializer**: Handle invalid ownership_mode configuration with proper error reporting
+  ([`67cb317`](https://github.com/bec-project/bec/commit/67cb317e56e865fb2a378976ab2ec8356ebeacfe))
+
+- **device_server**: Stop_devices must handle None and empty list separately
+  ([`fe3307a`](https://github.com/bec-project/bec/commit/fe3307a9b955341f8b78481fe3a44de07665fba4))
+
+- **scan_actions**: Exclude on-request devices from initial device locks
+  ([`9aeb6f7`](https://github.com/bec-project/bec/commit/9aeb6f7b412551038d4b125548eb734db69df1d9))
+
+- **scan_actions**: Skip device lock acquisition for mv and umv
+  ([`6864eec`](https://github.com/bec-project/bec/commit/6864eec73d092ea53bd30dfdafe159fb32d9dd8a))
+
+- **scan_queue**: Return None for owned devices when registry is absent or empty
+  ([`3bb4c64`](https://github.com/bec-project/bec/commit/3bb4c64be0e5242ff60c891396ba7564a8b2fd8a))
+
+### Documentation
+
+- **DeviceContainer**: Improve docstring for get_software_triggered_devices method
+  ([`1bfc39c`](https://github.com/bec-project/bec/commit/1bfc39c64fa49dba3ce33ec691c74d73113e5dcd))
+
+### Features
+
+- Add live reporting of device locks
+  ([`525e0c5`](https://github.com/bec-project/bec/commit/525e0c5dc468abe04d823bd159e71c1901be76c0))
+
+- Improve device lock handling and reporting
+  ([`474fc48`](https://github.com/bec-project/bec/commit/474fc482cd8818a625313cb97d5642a325aa0e0a))
+
+- **device_lock_registry**: Implement device lock management for scan server
+  ([`45a692e`](https://github.com/bec-project/bec/commit/45a692eb57d3ac530220e053b0019a58f7ff8d32))
+
+- **device_serializer**: Add ownership mode resolution for devices and signals
+  ([`c72e403`](https://github.com/bec-project/bec/commit/c72e403672e513003b6465eb055b7f83137cce79))
+
+- **queue_manager**: Stop all devices uses owned devices
+  ([`9eabad1`](https://github.com/bec-project/bec/commit/9eabad1bff42827310667cee0f95285cf8a2d5a1))
+
+- **scan**: Add 'on_request' and update 'monitored' parameters for scan requests
+  ([`0607a35`](https://github.com/bec-project/bec/commit/0607a35bf0ea1dd63638a9b988a08af09caf22b2))
+
+- **scan_actions**: Add requires_scan_is_running decorator
+  ([`2d47e60`](https://github.com/bec-project/bec/commit/2d47e60e8b0adb4ef540955c46ab52f5f0945c0e))
+
+### Testing
+
+- **device_lock_registry**: Ensure proper release of device lock after waiting
+  ([`b188d24`](https://github.com/bec-project/bec/commit/b188d24cab3d71a7aaedc1016924b9612f4b813d))
+
+
 ## v3.151.3 (2026-07-10)
 
 ### Bug Fixes
