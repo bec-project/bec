@@ -888,9 +888,8 @@ class DeviceManagerBase:
                 if not device_obj:
                     continue
                 available_signal = device_obj._info.get("signals", {})
-                device_config = dev_conf.get("deviceConfig", {})
-                if not device_config:
-                    continue
+                device_config = dev_conf.get("deviceConfig") or {}
+
                 for signal_name in device_config:
                     if signal_name in available_signal:
                         signal_obj_name = available_signal[signal_name].get("obj_name")

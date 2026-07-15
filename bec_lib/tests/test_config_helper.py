@@ -61,6 +61,37 @@ def test_config_helper_load_config_from_file(
     config_helper._load_config_from_file(test_cfg_file)
 
 
+def test_config_helper_load_config_from_file_expands_user(
+    config_helper, tmp_path, monkeypatch, test_config_yaml_file_path
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    shutil.copyfile(test_config_yaml_file_path, config_dir / "test.yaml")
+
+    config = config_helper._load_config_from_file("~/config/test.yaml")
+
+    assert config
+
+
+def test_config_helper_add_to_session(config_helper):
+    with mock.patch.object(config_helper, "send_config_request") as mock_send_config_request:
+        with mock.patch.object(
+            config_helper, "_load_config_from_file"
+        ) as mock_load_config_from_file:
+            mock_load_config_from_file.return_value = {
+                "samx": {
+                    "deviceClass": "ophyd_devices.SimPositioner",
+                    "enabled": True,
+                    "readOnly": False,
+                    "readoutPriority": "baseline",
+                }
+            }
+            config_helper.add_to_session("test.yaml")
+            mock_send_config_request.assert_called_once()
+            assert mock_send_config_request.call_args.kwargs["action"] == "add"
+
+
 def test_config_helper_save_current_session(config_helper):
     config = [
         {
@@ -129,6 +160,330 @@ def test_config_helper_save_current_session(config_helper):
             }
             call = mock_open().write.call_args[0][0]
             assert yaml.safe_load(call) == out_data
+
+
+def test_config_helper_save_current_session_does_not_report_tag_conflicts_without_split(
+    config_helper, tmp_path, capsys
+):
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "alpha": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"tag one"},
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+            "beta": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"tag/one"},
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+        }
+
+        config_helper.save_current_session(str(tmp_path / "config.yaml"))
+
+    output = capsys.readouterr().out
+
+    assert "Multiple tags map to the same export filename" not in output
+    assert f"Config was written to {tmp_path / 'config.yaml'}." in output
+
+
+def test_config_helper_save_current_session_split_by_tag(config_helper, tmp_path):
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "pinz": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"user motors"},
+                "enabled": True,
+                "deviceConfig": {"limits": [-50, 50]},
+                "readoutPriority": "baseline",
+            },
+            "eiger": {
+                "deviceClass": "SimCamera",
+                "deviceTags": {"detector", "beamline"},
+                "enabled": True,
+                "deviceConfig": {"device_access": True},
+                "readoutPriority": "async",
+            },
+            "meta": {
+                "deviceClass": "SimSignal",
+                "enabled": True,
+                "deviceConfig": {},
+                "readoutPriority": "baseline",
+            },
+        }
+
+        output_target = tmp_path / "main.yaml"
+        config_helper.save_current_session(str(output_target), split_by_tag=True)
+
+    split_dir = tmp_path / "main"
+    output_file = split_dir / "main.yaml"
+    user_motors_file = split_dir / "user_motors.yaml"
+    beamline_file = split_dir / "beamline.yaml"
+    misc_file = split_dir / "misc.yaml"
+
+    assert output_file.exists()
+    assert split_dir.exists()
+    assert user_motors_file.exists()
+    assert not (split_dir / "detector.yaml").exists()
+    assert beamline_file.exists()
+    assert misc_file.exists()
+
+    assert output_file.read_text() == (
+        "beamline:\n"
+        "  - !include ./beamline.yaml\n"
+        "\n"
+        "misc:\n"
+        "  - !include ./misc.yaml\n"
+        "\n"
+        "user motors:\n"
+        "  - !include ./user_motors.yaml\n"
+    )
+
+    assert set(yaml.safe_load(user_motors_file.read_text()).keys()) == {"pinz"}
+    assert set(yaml.safe_load(beamline_file.read_text()).keys()) == {"eiger"}
+    assert set(yaml.safe_load(misc_file.read_text()).keys()) == {"meta"}
+
+
+def test_config_helper_save_current_session_split_by_tag_included_tags(config_helper, tmp_path):
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "pinz": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"user motors"},
+                "enabled": True,
+                "deviceConfig": {"limits": [-50, 50]},
+                "readoutPriority": "baseline",
+            },
+            "eiger": {
+                "deviceClass": "SimCamera",
+                "deviceTags": {"detector", "beamline"},
+                "enabled": True,
+                "deviceConfig": {"device_access": True},
+                "readoutPriority": "async",
+            },
+            "meta": {
+                "deviceClass": "SimSignal",
+                "enabled": True,
+                "deviceConfig": {},
+                "readoutPriority": "baseline",
+            },
+        }
+
+        output_target = tmp_path / "filtered.yaml"
+        config_helper.save_current_session(
+            str(output_target), split_by_tag=True, included_tags=["beamline", "untagged"]
+        )
+
+    split_dir = tmp_path / "filtered"
+    output_file = split_dir / "main.yaml"
+    beamline_file = split_dir / "beamline.yaml"
+    misc_file = split_dir / "misc.yaml"
+
+    assert output_file.exists()
+    assert beamline_file.exists()
+    assert misc_file.exists()
+    assert not (split_dir / "detector.yaml").exists()
+    assert not (split_dir / "untagged.yaml").exists()
+    assert not (split_dir / "user_motors.yaml").exists()
+
+    assert output_file.read_text() == (
+        "beamline:\n" "  - !include ./beamline.yaml\n" "\n" "misc:\n" "  - !include ./misc.yaml\n"
+    )
+
+    assert set(yaml.safe_load(beamline_file.read_text()).keys()) == {"eiger"}
+    assert set(yaml.safe_load(misc_file.read_text()).keys()) == {"meta", "pinz"}
+
+
+def test_config_helper_split_config_by_tag_uses_included_tags_order(config_helper):
+    split_config = config_helper._split_config_by_tag(
+        {
+            "eiger": {
+                "deviceClass": "SimCamera",
+                "deviceTags": ["beamline", "detector"],
+                "enabled": True,
+                "readoutPriority": "async",
+            }
+        },
+        included_tags=["detector", "beamline"],
+    )
+
+    assert set(split_config) == {"detector"}
+    assert set(split_config["detector"]) == {"eiger"}
+
+
+def test_config_helper_save_current_session_split_by_tag_custom_remaining_devices_tag(
+    config_helper, tmp_path
+):
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "pinz": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"user motors"},
+                "enabled": True,
+                "deviceConfig": {"limits": [-50, 50]},
+                "readoutPriority": "baseline",
+            },
+            "eiger": {
+                "deviceClass": "SimCamera",
+                "deviceTags": {"beamline"},
+                "enabled": True,
+                "deviceConfig": {"device_access": True},
+                "readoutPriority": "async",
+            },
+            "meta": {
+                "deviceClass": "SimSignal",
+                "enabled": True,
+                "deviceConfig": {},
+                "readoutPriority": "baseline",
+            },
+        }
+
+        output_target = tmp_path / "filtered.yaml"
+        config_helper.save_current_session(
+            str(output_target),
+            split_by_tag=True,
+            included_tags=["beamline"],
+            remaining_devices_tag="other",
+        )
+
+    split_dir = tmp_path / "filtered"
+    output_file = split_dir / "main.yaml"
+    other_file = split_dir / "other.yaml"
+
+    assert output_file.read_text() == (
+        "beamline:\n" "  - !include ./beamline.yaml\n" "\n" "other:\n" "  - !include ./other.yaml\n"
+    )
+    assert other_file.exists()
+    assert not (split_dir / "misc.yaml").exists()
+    assert set(yaml.safe_load(other_file.read_text()).keys()) == {"meta", "pinz"}
+
+
+def test_config_helper_split_config_by_tag_sorts_devices(config_helper):
+    split_config = config_helper._split_config_by_tag(
+        {
+            "zebra": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": ["beamline"],
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+            "alpha": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": ["beamline"],
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+            "middle": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": ["beamline"],
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+        }
+    )
+
+    assert list(split_config["beamline"]) == ["alpha", "middle", "zebra"]
+
+
+def test_config_helper_save_current_session_split_by_tag_directory_target(config_helper, tmp_path):
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "pinz": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"user motors"},
+                "enabled": True,
+                "deviceConfig": {"limits": [-50, 50]},
+                "readoutPriority": "baseline",
+            }
+        }
+
+        output_dir = tmp_path / "tsts"
+        config_helper.save_current_session(str(output_dir), split_by_tag=True)
+
+    manifest_file = output_dir / "main.yaml"
+    tag_file = output_dir / "user_motors.yaml"
+
+    assert output_dir.exists()
+    assert manifest_file.exists()
+    assert tag_file.exists()
+    assert manifest_file.read_text() == ("user motors:\n" "  - !include ./user_motors.yaml\n")
+    assert set(yaml.safe_load(tag_file.read_text()).keys()) == {"pinz"}
+
+
+def test_config_helper_save_current_session_split_by_tag_prints_conflicting_tags(
+    config_helper, tmp_path, capsys
+):
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "alpha": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"tag one"},
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+            "beta": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"tag/one"},
+                "enabled": True,
+                "readoutPriority": "baseline",
+            },
+        }
+
+        config_helper.save_current_session(str(tmp_path / "conflicts.yaml"), split_by_tag=True)
+
+    split_dir = tmp_path / "conflicts"
+    output = capsys.readouterr().out
+
+    assert (
+        "Multiple tags map to the same export filename 'tag_one.yaml': tag one, tag/one" in output
+    )
+    assert (split_dir / "tag_one.yaml").exists()
+    assert (split_dir / "tag_one_2.yaml").exists()
+    assert (split_dir / "main.yaml").read_text() == (
+        "tag one:\n"
+        "  - !include ./tag_one.yaml\n"
+        "\n"
+        "tag/one:\n"
+        "  - !include ./tag_one_2.yaml\n"
+    )
+
+
+def test_config_helper_save_current_session_split_by_tag_expands_user(
+    config_helper, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with mock.patch.object(
+        config_helper._device_manager, "get_device_config_cached"
+    ) as mock_get_config:
+        mock_get_config.return_value = {
+            "pinz": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": {"user motors"},
+                "enabled": True,
+                "deviceConfig": {"limits": [-50, 50]},
+                "readoutPriority": "baseline",
+            }
+        }
+
+        config_helper.save_current_session("~/tagged.yaml", split_by_tag=True)
+
+    split_dir = tmp_path / "tagged"
+    assert (split_dir / "main.yaml").exists()
+    assert (split_dir / "user_motors.yaml").exists()
 
 
 def test_send_config_request_raises_with_empty_config(config_helper):

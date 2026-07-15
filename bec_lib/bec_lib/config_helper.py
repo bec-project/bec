@@ -5,12 +5,14 @@ This module provides a helper class for updating and saving the BEC device confi
 from __future__ import annotations
 
 import ast
+import copy
 import datetime
 import json
 import os
 import pathlib
 import time
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -44,6 +46,55 @@ else:
 
 logger = bec_logger.logger
 
+_DEVICE_CONFIG_HEADER = (
+    "# BEC Device Configuration File\n"
+    "#\n"
+    "# The device config consists of a mapping of device names to their configurations.\n"
+    "#\n"
+    "# The following fields are required for each device:\n"
+    "# - deviceClass: The class of the device (e.g., ophyd_devices.SimPositioner).\n"
+    "# - enabled: A boolean indicating if the device is enabled.\n"
+    '# - readoutPriority: Determines how the device is read out during a scan. Possible values are ["monitored", "baseline", "async", "on_request", "continuous"].\n'
+    "#\n"
+    "# Optional fields (defaults shown):\n"
+    "# - connectionTimeout: Connection timeout in seconds. Default is 5.\n"
+    '# - description: A string description of the device. Default is "" (empty string).\n'
+    "# - deviceConfig: A dictionary of configuration parameters specific to the device class. Default is None.\n"
+    "# - deviceTags: A list/set of tags associated with the device. Default is an empty list/set.\n"
+    "# - needs: A list of other device names that this device depends on. Default is [].\n"
+    '# - onFailure: The action to take on failure. Possible values are ["buffer", "retry", "raise"]. Default is "retry".\n'
+    "# - readOnly: A boolean indicating if the device is read-only. Default is false.\n"
+    "# - softwareTrigger: A boolean indicating if the device uses software triggering. Default is false.\n"
+    "# - userParameter: A dictionary of user-defined parameters. Default is {}.\n"
+    "#\n"
+    "# Default values may be omitted for brevity.\n"
+    "##########################################################################################################################\n"
+    "\n\n"
+    "# An example device configuration with all fields:\n\n"
+    "# device1:\n"
+    "#   deviceClass: ophyd_devices.SimPositioner\n"
+    "#   description: Sample positioner device\n"
+    "#   deviceConfig:\n"
+    "#     delay: 1\n"
+    "#     update_frequency: 10\n"
+    "#   deviceTags: \n"
+    "#     - frontend\n"
+    "#     - motor\n"
+    "#   enabled: true\n"
+    "#   connectionTimeout: 20\n"
+    "#   readoutPriority: baseline\n"
+    "#   needs:\n"
+    "#     - device2\n"
+    "#     - device3\n"
+    "#   onFailure: retry\n"
+    "#   readOnly: false\n"
+    "#   softwareTrigger: false\n"
+    "#   userParameter:\n"
+    "#     in: 23.1\n"
+    "#     out: -50\n\n"
+    "##########################################################################################################################\n\n\n"
+)
+
 
 @dataclass(frozen=True)
 class _ConfigConstants:
@@ -76,42 +127,75 @@ class ConfigHelperUser:
     def update_session_with_file(
         self, file_path: str, save_recovery: bool = True, force: bool = False, validate: bool = True
     ) -> None:
-        """Update the current session with a yaml file from disk.
+        """
+        Replace the device config session with the configuration from a yaml file.
 
         Args:
             file_path (str): Full path to the yaml file.
-            save_recovery (bool, optional): Save the current session before updating. Defaults to True.
-            force (bool, optional): Force update even if there are conflicts. Defaults to False.
+            save_recovery (bool, optional): Save the current session before replacing it. Defaults to True.
+            force (bool, optional): Force replacement even if there are conflicts. Defaults to False.
             validate (bool, optional): Whether to validate the new config. Defaults to True.
         """
         self._config_helper.update_session_with_file(
             file_path, save_recovery=save_recovery, force=force, validate=validate
         )
 
-    def save_current_session(self, file_path: str):
-        """Save the current session as a yaml file to disk.
+    def add_to_session(self, file_path: str, validate: bool = True) -> None:
+        """
+        Add devices from a yaml file to the current device config session.
 
         Args:
             file_path (str): Full path to the yaml file.
+            validate (bool, optional): Whether to validate the new config. Defaults to True.
         """
-        self._config_helper.save_current_session(file_path)
+        self._config_helper.add_to_session(file_path, validate=validate)
+
+    def save_current_session(
+        self,
+        file_path: str,
+        split_by_tag: bool = False,
+        included_tags: list[str] | None = None,
+        excluded_tags: list[str] | None = None,
+        remaining_devices_tag: str = "misc",
+    ) -> None:
+        """
+        Save the current device config session as a yaml file to disk.
+
+        Args:
+            file_path (str): Full path to the yaml file.
+            split_by_tag (bool, optional): Whether to split the config by tag. Defaults to False.
+            included_tags (list[str] | None, optional): Tags to include when splitting by tag.
+                Defaults to None, which includes all tags.
+            excluded_tags (list[str] | None, optional): Tags to exclude when splitting by tag.
+                Defaults to None, which excludes no tags.
+            remaining_devices_tag (str, optional): Tag/file name for devices that do not match
+                any included tags or have no tags. Defaults to "misc".
+        """
+        self._config_helper.save_current_session(
+            file_path,
+            split_by_tag=split_by_tag,
+            included_tags=included_tags,
+            excluded_tags=excluded_tags,
+            remaining_devices_tag=remaining_devices_tag,
+        )
 
     def reset_config(self, wait_for_response: bool = True, timeout_s: float | None = None) -> None:
         """
         Send a request to reset config to default
+
         Args:
             wait_for_response (bool): whether to wait for the response, default True
             timeout_s (float, optional): how long to wait for a response. Ignored if not waiting. Defaults to best effort calculated value based on message length.
-        Returns: None
+
         """
         self._config_helper.reset_config(wait_for_response=wait_for_response, timeout_s=timeout_s)
 
     def load_demo_config(self, force: bool = False) -> None:
         """
         Load BEC device demo_config.yaml for simulation.
+
         Args:
             force (bool, optional): Force update even if there are conflicts. Defaults to False.
-        Returns: None
         """
         self._config_helper.load_demo_config(force=force)
 
@@ -141,12 +225,12 @@ class ConfigHelper:
     def update_session_with_file(
         self, file_path: str, save_recovery: bool = True, force: bool = False, validate: bool = True
     ) -> None:
-        """Update the current session with a yaml file from disk.
+        """Replace the current session with a yaml file from disk.
 
         Args:
             file_path (str): Full path to the yaml file.
-            save_recovery (bool, optional): Save the current session before updating. Defaults to True.
-            force (bool, optional): Force update even if there are conflicts. Defaults to False.
+            save_recovery (bool, optional): Save the current session before replacing it. Defaults to True.
+            force (bool, optional): Force replacement even if there are conflicts. Defaults to False.
             validate (bool, optional): Whether to validate the new config. Defaults to True.
         """
         config = self._load_config_from_file(file_path)
@@ -174,6 +258,24 @@ class ConfigHelper:
 
         self.send_config_request(action="set", config=config)
 
+    def add_to_session(self, file_path: str, validate: bool = True) -> None:
+        """Add devices from a yaml file to the current session.
+
+        Args:
+            file_path (str): Full path to the yaml file.
+            validate (bool, optional): Whether to validate the new config. Defaults to True.
+        """
+        config = self._load_config_from_file(file_path)
+        if validate:
+            for dev, dev_config in config.items():
+                try:
+                    config[dev] = _DeviceModelCore(**dev_config).model_dump()
+                except ValidationError as exc:
+                    exc.model = _DeviceModelCore  # type: ignore
+                    exc.context = f"the provided device config for device '{dev}'"  # type: ignore
+                    raise exc
+        self.send_config_request(action="add", config=config)
+
     def _update_base_path_recovery(self):
         """
         Compile the filepath for the recovery configs.
@@ -192,11 +294,12 @@ class ConfigHelper:
 
     def _load_config_from_file(self, file_path: str) -> dict:
         data = {}
-        if pathlib.Path(file_path).suffix not in (".yaml", ".yml"):
+        path = pathlib.Path(file_path).expanduser()
+        if path.suffix not in (".yaml", ".yml"):
             raise NotImplementedError
 
-        logger.info(f"Loading config from file: {file_path}")
-        with open(file_path, "r", encoding="utf-8") as stream:
+        logger.info(f"Loading config from file: {path}")
+        with open(path, "r", encoding="utf-8") as stream:
             try:
                 data = yaml_load(stream)
             except yaml.YAMLError as err:
@@ -204,14 +307,42 @@ class ConfigHelper:
 
         return data
 
-    def save_current_session(self, file_path: str):
-        """Save the current session as a yaml file to disk.
+    def save_current_session(
+        self,
+        file_path: str,
+        split_by_tag: bool = False,
+        included_tags: list[str] | None = None,
+        excluded_tags: list[str] | None = None,
+        remaining_devices_tag: str = "misc",
+    ) -> None:
+        """Save the current session as yaml file(s) to disk.
 
         Args:
             file_path (str): Full path to the yaml file.
+            split_by_tag (bool, optional): Whether to write one file per device tag. Defaults to False.
+            included_tags (list[str] | None, optional): Tags to include when splitting by tag.
+                Defaults to None, which includes all tags.
+            excluded_tags (list[str] | None, optional): Tags to exclude when splitting by tag.
+            remaining_devices_tag (str, optional): Tag/file name for devices that do not match
+                any included tags or have no tags. Defaults to "misc".
         """
-        self._save_config_to_file(file_path)
-        print(f"Config was written to {file_path}.")
+        if not split_by_tag:
+            self._save_config_to_file(file_path)
+            print(f"Config was written to {file_path}.")
+            return
+
+        config = self._get_current_session_config()
+        split_config = self._split_config_by_tag(
+            config,
+            included_tags=included_tags,
+            excluded_tags=excluded_tags,
+            remaining_devices_tag=remaining_devices_tag,
+        )
+        written_files = self._write_split_config_to_files(file_path, split_config)
+
+        print("Config was written to:")
+        for path in written_files:
+            print(f"  {path}")
 
     def _get_config_conflicts(self, new_config: dict, validate: bool = True) -> dict:
         """
@@ -231,7 +362,7 @@ class ConfigHelper:
         if not current_config:
             return {}
 
-        output_conflicts = {}
+        output_conflicts: defaultdict[str, dict] = defaultdict(dict)
         for dev, config in new_config.items():
             if dev not in current_config:
                 continue
@@ -267,18 +398,14 @@ class ConfigHelper:
                                 "current": current_sub_value,
                             }
                     if nested_conflicts:
-                        if dev not in output_conflicts:
-                            output_conflicts[dev] = {}
                         output_conflicts[dev][element] = nested_conflicts
 
                 else:
-                    if dev not in output_conflicts:
-                        output_conflicts[dev] = {}
                     output_conflicts[dev].update(
                         {element: {"new": value, "current": current_value}}
                     )
 
-        return output_conflicts
+        return dict(output_conflicts)
 
     def _merge_conflicts_with_user_input(self, config: dict, conflicts: dict) -> None:
         """
@@ -527,73 +654,140 @@ class ConfigHelper:
             bool: True if successful, False otherwise.
         """
 
-        header = (
-            "# BEC Device Configuration File\n"
-            "#\n"
-            "# The device config consists of a mapping of device names to their configurations.\n"
-            "#\n"
-            "# The following fields are required for each device:\n"
-            "# - deviceClass: The class of the device (e.g., ophyd_devices.SimPositioner).\n"
-            "# - enabled: A boolean indicating if the device is enabled.\n"
-            '# - readoutPriority: Determines how the device is read out during a scan. Possible values are ["monitored", "baseline", "async", "on_request", "continuous"].\n'
-            "#\n"
-            "# Optional fields (defaults shown):\n"
-            "# - connectionTimeout: Connection timeout in seconds. Default is 5.\n"
-            '# - description: A string description of the device. Default is "" (empty string).\n'
-            "# - deviceConfig: A dictionary of configuration parameters specific to the device class. Default is None.\n"
-            "# - deviceTags: A list/set of tags associated with the device. Default is an empty list/set.\n"
-            "# - needs: A list of other device names that this device depends on. Default is [].\n"
-            '# - onFailure: The action to take on failure. Possible values are ["buffer", "retry", "raise"]. Default is "retry".\n'
-            "# - readOnly: A boolean indicating if the device is read-only. Default is false.\n"
-            "# - softwareTrigger: A boolean indicating if the device uses software triggering. Default is false.\n"
-            "# - userParameter: A dictionary of user-defined parameters. Default is {}.\n"
-            "#\n"
-            "# Default values may be omitted for brevity.\n"
-            "##########################################################################################################################\n"
-            "\n\n"
-            "# An example device configuration with all fields:\n\n"
-            "# device1:\n"
-            "#   deviceClass: ophyd_devices.SimPositioner\n"
-            "#   description: Sample positioner device\n"
-            "#   deviceConfig:\n"
-            "#     delay: 1\n"
-            "#     update_frequency: 10\n"
-            "#   deviceTags: \n"
-            "#     - frontend\n"
-            "#     - motor\n"
-            "#   enabled: true\n"
-            "#   connectionTimeout: 20\n"
-            "#   readoutPriority: baseline\n"
-            "#   needs:\n"
-            "#     - device2\n"
-            "#     - device3\n"
-            "#   onFailure: retry\n"
-            "#   readOnly: false\n"
-            "#   softwareTrigger: false\n"
-            "#   userParameter:\n"
-            "#     in: 23.1\n"
-            "#     out: -50\n\n"
-            "##########################################################################################################################\n\n\n"
-        )
-        if not self._device_manager:
+        try:
+            config = self._get_current_session_config()
+        except DeviceConfigError:
             if raise_on_error:
-                raise DeviceConfigError("Device manager is not available.")
+                raise
             return False
+
+        self._write_config_to_file(file_path, config, header=_DEVICE_CONFIG_HEADER)
+        return True
+
+    def _get_current_session_config(self) -> dict:
+        """Fetch the current session config and prepare it for yaml serialization."""
+        if not self._device_manager:
+            raise DeviceConfigError("Device manager is not available.")
         config = self._device_manager.get_device_config_cached(exclude_defaults=True)
         if not config:
-            if raise_on_error:
-                raise DeviceConfigError("No device configuration available to save.")
-            return False
+            raise DeviceConfigError("No device configuration available to save.")
+        return self._prepare_config_for_serialization(config)
 
-        # convert the device tag sets to lists for yaml serialization
-        for dev_conf in config.values():
+    def _prepare_config_for_serialization(self, config: dict) -> dict:
+        """Convert the config to a yaml-friendly structure without mutating the cached config."""
+        prepared_config = copy.deepcopy(config)
+        for dev_conf in prepared_config.values():
             if "deviceTags" in dev_conf and isinstance(dev_conf["deviceTags"], set):
-                dev_conf["deviceTags"] = list(dev_conf["deviceTags"])
+                dev_conf["deviceTags"] = sorted(dev_conf["deviceTags"])
+        return prepared_config
 
-        with open(file_path, "w") as file:
+    def _split_config_by_tag(
+        self,
+        config: dict,
+        included_tags: list[str] | None = None,
+        excluded_tags: list[str] | None = None,
+        remaining_devices_tag: str = "misc",
+    ) -> dict[str, dict]:
+        """Split a config into per-tag configs, assigning each device to one tag."""
+        split_config: defaultdict[str, dict] = defaultdict(dict)
+        for dev_name, dev_conf in config.items():
+            tags = dev_conf.get("deviceTags") or []
+            if not tags:
+                split_config[remaining_devices_tag][dev_name] = copy.deepcopy(dev_conf)
+                continue
+
+            if included_tags is None:
+                tag = sorted(tags)[0]
+                split_config[tag][dev_name] = copy.deepcopy(dev_conf)
+                continue
+
+            tags_set = set(tags)
+            if excluded_tags:
+                tags_set -= set(excluded_tags)
+            matched_tag = (
+                next((tag for tag in included_tags if tag in tags_set), None)
+                if included_tags
+                else (sorted(tags_set)[0] if tags_set else None)
+            )
+            if matched_tag is None:
+                split_config[remaining_devices_tag][dev_name] = copy.deepcopy(dev_conf)
+                continue
+            split_config[matched_tag][dev_name] = copy.deepcopy(dev_conf)
+        return {tag: dict(sorted(devices.items())) for tag, devices in split_config.items()}
+
+    def _write_split_config_to_files(
+        self, file_path: str, split_config: dict[str, dict]
+    ) -> list[str]:
+        """Write a split config as a manifest file plus one file per tag."""
+        main_path, split_dir = self._resolve_split_output_paths(file_path)
+        split_dir.mkdir(parents=True, exist_ok=True)
+        written_files = [str(main_path)]
+        include_lines = []
+        tag_file_names = self._get_tag_file_names(split_config)
+
+        for tag in sorted(split_config):
+            tag_file_path = split_dir / tag_file_names[tag]
+            self._write_config_to_file(str(tag_file_path), split_config[tag])
+            relative_tag_path = tag_file_path.relative_to(main_path.parent)
+            include_lines.extend([f"{tag}:", f"  - !include ./{relative_tag_path.as_posix()}", ""])
+            written_files.append(str(tag_file_path))
+
+        with open(main_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(include_lines).rstrip() + "\n")
+
+        return written_files
+
+    def _get_tag_file_names(self, split_config: dict[str, dict]) -> dict[str, str]:
+        """Return unique file names for each tag, warning if normalized tag names conflict."""
+        normalized_tags: defaultdict[str, list[str]] = defaultdict(list)
+        for tag in split_config:
+            normalized_tags[self._normalize_tag_for_filename(tag)].append(tag)
+
+        tag_file_names: dict[str, str] = {}
+        used_file_names: set[str] = set()
+        for normalized_tag, tags in sorted(normalized_tags.items()):
+            sorted_tags = sorted(tags)
+            if len(sorted_tags) > 1:
+                print(
+                    "Multiple tags map to the same export filename "
+                    f"'{normalized_tag}.yaml': {', '.join(sorted_tags)}. "
+                    "Using unique suffixed filenames."
+                )
+            for index, tag in enumerate(sorted_tags):
+                file_stem = normalized_tag if index == 0 else f"{normalized_tag}_{index + 1}"
+                file_name = f"{file_stem}.yaml"
+                suffix = index + 1
+                while file_name in used_file_names:
+                    suffix += 1
+                    file_name = f"{normalized_tag}_{suffix}.yaml"
+                used_file_names.add(file_name)
+                tag_file_names[tag] = file_name
+        return tag_file_names
+
+    def _resolve_split_output_paths(self, file_path: str) -> tuple[pathlib.Path, pathlib.Path]:
+        """Resolve manifest and split-config paths for split-by-tag exports."""
+        path = pathlib.Path(file_path).expanduser()
+        if path.suffix in (".yaml", ".yml"):
+            split_dir = path.parent / path.stem
+            return split_dir / "main.yaml", split_dir
+        return path / "main.yaml", path
+
+    def _normalize_tag_for_filename(self, tag: str) -> str:
+        """Normalize a device tag so it can be used as a filename."""
+        safe_tag = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in tag).strip("_")
+        return safe_tag or "untagged"
+
+    def _write_config_to_file(
+        self, file_path: str, config: dict, header: str | None = None
+    ) -> None:
+        """Write a prepared config to disk."""
+        if header is None:
+            header = _DEVICE_CONFIG_HEADER
+
+        path = pathlib.Path(file_path).expanduser()
+        with open(path, "w", encoding="utf-8") as file:
             file.write(header)
             file.write(yaml.dump(config))
-        return True
 
     def send_config_request(
         self,
