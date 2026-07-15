@@ -727,6 +727,7 @@ class DeviceServer(BECService):
         else:
             obj = device_obj.obj
         try:
+            val = self.convert_value_if_needed(obj, val)
             status = obj.set(val)
         except Exception as exc:  # pylint: disable=broad-except
             exc = reformat_known_device_exceptions(
@@ -737,6 +738,28 @@ class DeviceServer(BECService):
         self._add_status_object_info(status, instr, obj)
         status.__dict__["sub_id"] = sub_id
         self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
+
+    @staticmethod
+    def convert_value_if_needed(obj: ophyd.OphydObject, val: Any) -> Any:
+        """
+        Convert the value to the appropriate type if needed. This is particularly
+        needed for ophyd signals that implement enum strings but are given as floats.
+
+        Args:
+            obj (ophyd.OphydObject): The ophyd object to set.
+            val (Any): The value to set.
+
+        Returns:
+            Any: The converted value.
+        """
+        if hasattr(obj, "enum_strs") and len(obj.enum_strs) > 0 and isinstance(val, float):
+            if not val.is_integer():
+                raise ValueError(
+                    f"Cannot convert float {val} to enum index for {obj.name}. "
+                    f"Value must be an integer to select one of the enum strings: {obj.enum_strs}."
+                )
+            val = int(val)
+        return val
 
     def _pre_scan(self, instr: messages.DeviceInstructionMessage) -> None:
         devices = instr.content["device"]

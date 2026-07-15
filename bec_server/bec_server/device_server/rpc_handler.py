@@ -199,6 +199,11 @@ class RPCHandler:
             instr(messages.DeviceInstructionMessage): RPC instruction
         """
         _, obj, rpc_var = self._get_rpc_components(instr)
+
+        if isinstance(obj, ophyd.Signal) and getattr(rpc_var, "__name__", None) in ["set", "put"]:
+            val = instr.parameter.get("args")[0]
+            val = self.device_server.convert_value_if_needed(obj, val)
+            instr.parameter["args"][0] = val
         res = self._execute_rpc_call(rpc_var, instr)
 
         if not isinstance(res, ophyd.StatusBase) or res.done:
