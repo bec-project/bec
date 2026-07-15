@@ -1,8 +1,10 @@
 import threading
 from io import StringIO
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import ANY, patch
 
+import numpy as np
 import pytest
 from loguru import logger
 from ophyd import Device, DeviceStatus, Kind, Staged
@@ -63,6 +65,41 @@ def device_instruction_message_mock(ophyd_device_mock):
         metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
     )
     yield instr
+
+
+@pytest.mark.parametrize("value, expected", [(0.0, 0), (1.0, 1), (np.float64(2.0), 2)])
+def test_convert_value_if_needed_converts_integral_float_for_enum(value, expected):
+    obj = SimpleNamespace(name="enum_signal", enum_strs=("zero", "one", "two"))
+
+    converted = DeviceServer.convert_value_if_needed(obj, value)
+
+    assert converted == expected
+    assert isinstance(converted, int)
+
+
+def test_convert_value_if_needed_rejects_non_integral_float_for_enum():
+    obj = SimpleNamespace(name="enum_signal", enum_strs=("zero", "one", "two"))
+
+    with pytest.raises(ValueError, match="Cannot convert float 1.5 to enum index"):
+        DeviceServer.convert_value_if_needed(obj, 1.5)
+
+
+@pytest.mark.parametrize("value", [1, 1.0, np.float64(1.0)])
+def test_convert_value_if_needed_leaves_non_enum_values_unchanged(value):
+    obj = SimpleNamespace(name="plain_signal")
+
+    converted = DeviceServer.convert_value_if_needed(obj, value)
+
+    assert converted is value
+
+
+def test_convert_value_if_needed_leaves_enum_int_unchanged():
+    obj = SimpleNamespace(name="enum_signal", enum_strs=("zero", "one"))
+
+    converted = DeviceServer.convert_value_if_needed(obj, 1)
+
+    assert converted == 1
+    assert isinstance(converted, int)
 
 
 def test_start(device_server_mock):
