@@ -5,10 +5,12 @@ configure and manage the logging of the BEC.
 
 from __future__ import annotations
 
+import datetime
 import enum
 import json
 import os
 import sys
+import time
 import traceback
 from itertools import takewhile
 from typing import TYPE_CHECKING, Literal
@@ -45,8 +47,45 @@ class LogLevel(int, enum.Enum):
     CONSOLE_LOG_ERROR = 22
 
 
+class BECLoguruRotator:
+    """
+    Custom rotator for loguru that rotates logs based on size and time. We assume
+    that logs are rotated once per day.
+
+    Args:
+        size (int): Maximum size of the log file in bytes before rotation.
+        at (datetime.time): Time of day when the log file should be rotated.
+    """
+
+    def __init__(self, *, size: int, at: datetime.time):
+        now = datetime.datetime.now()
+
+        self._size_limit = size
+        self._time_limit = now.replace(hour=at.hour, minute=at.minute, second=at.second)
+
+        if now >= self._time_limit:
+            # If current time is passed now, add one day to the time limit to ensure rotations
+            # happens at the next occurrence of the specified time.
+            self._time_limit += datetime.timedelta(days=1)
+
+    def should_rotate(self, message, file):
+        """Custom rotator function for loguru that rotates logs based on size and time."""
+        file.seek(0, 2)
+        if file.tell() + len(message) > self._size_limit:
+            return True
+        excess = message.record["time"].timestamp() - self._time_limit.timestamp()
+        if excess >= 0:
+            elapsed_days = datetime.timedelta(seconds=excess).days
+            self._time_limit += datetime.timedelta(days=elapsed_days + 1)
+            return True
+        return False
+
+
 class BECLogger:
     """Logger for BEC."""
+
+    DEFAULT_MAX_FILE_SIZE_MB = 50
+    DEFAULT_MAX_FILES = 3
 
     LOG_FORMAT_STDERR = (
         "<green>{service_name} | {{time:YYYY-MM-DD HH:mm:ss}}</green> | {{name}} | <level>[{{level}}]</level> |"
@@ -85,7 +124,10 @@ class BECLogger:
         self._file_log_level = self._log_level
         self._console_log = False
         self._configured = False
+        self._rotator = None
         self._disabled_modules = set()
+        self._file_max_size_mb = self.DEFAULT_MAX_FILE_SIZE_MB
+        self._file_max_files = self.DEFAULT_MAX_FILES
 
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
@@ -133,6 +175,10 @@ class BECLogger:
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
         self._configured = True
+        # default rotation time is 8:00AM
+        self._rotator = BECLoguruRotator(
+            size=self._file_max_size_mb * 1024 * 1024, at=datetime.time(8, 0, 0)
+        )
         self._update_sinks()
 
     def _get_connector(
@@ -336,8 +382,8 @@ class BECLogger:
             level=level,
             format=self.formatting(),
             filter=self.filter(),
-            retention="3 days",
-            rotation="3 days",
+            rotation=self._rotator.should_rotate,
+            catch=True,
             opener=self._file_opener,
         )
 
@@ -369,8 +415,9 @@ class BECLogger:
             level=LogLevel.CONSOLE_LOG,
             format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
             filter=self.filter(is_console=True),
-            retention="3 days",
-            rotation="3 days",
+            retention=self._file_retention,
+            rotation=f"{self._file_max_size_mb} MB",
+            catch=True,
             opener=self._file_opener,
         )
         self._console_log = True
