@@ -9,6 +9,7 @@ import enum
 import json
 import os
 import sys
+import time
 import traceback
 from itertools import takewhile
 from typing import TYPE_CHECKING, Literal
@@ -48,6 +49,10 @@ class LogLevel(int, enum.Enum):
 class BECLogger:
     """Logger for BEC."""
 
+    DEFAULT_MAX_FILE_SIZE_MB = 50
+    DEFAULT_MAX_FILES = 3
+    DEFAULT_MAX_FILE_AGE_DAYS = 14
+
     LOG_FORMAT_STDERR = (
         "<green>{service_name} | {{time:YYYY-MM-DD HH:mm:ss}}</green> | {{name}} | <level>[{{level}}]</level> |"
         " <level>{{message}}</level>\n"
@@ -86,6 +91,9 @@ class BECLogger:
         self._console_log = False
         self._configured = False
         self._disabled_modules = set()
+        self._file_max_size_mb = self.DEFAULT_MAX_FILE_SIZE_MB
+        self._file_max_files = self.DEFAULT_MAX_FILES
+        self._file_max_age_days = self.DEFAULT_MAX_FILE_AGE_DAYS
 
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
@@ -132,6 +140,7 @@ class BECLogger:
 
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
+        self._update_file_log_policy(service_config)
         self._configured = True
         self._update_sinks()
 
@@ -201,6 +210,39 @@ class BECLogger:
         self.writer_mixin = LogWriter(service_cfg)
         self._base_path = self.writer_mixin.directory
         self.writer_mixin.create_directory(self._base_path)
+
+    def _update_file_log_policy(self, service_config: dict | None = None) -> None:
+        """Resolve the file rotation policy for the configured service."""
+        service_cfg = service_config.get("log_writer", {}) if service_config else {}
+        max_file_size_mb = service_cfg.get("max_file_size_mb", self.DEFAULT_MAX_FILE_SIZE_MB)
+        max_files = service_cfg.get("max_files", self.DEFAULT_MAX_FILES)
+        max_file_age_days = service_cfg.get("max_file_age_days", self.DEFAULT_MAX_FILE_AGE_DAYS)
+
+        service_overrides = service_cfg.get("service_overrides", {})
+        service_override = service_overrides.get(self.service_name, {})
+        override_max_file_size_mb = service_override.get("max_file_size_mb")
+        override_max_files = service_override.get("max_files")
+        override_max_file_age_days = service_override.get("max_file_age_days")
+
+        self._file_max_size_mb = (
+            override_max_file_size_mb if override_max_file_size_mb is not None else max_file_size_mb
+        )
+        self._file_max_files = override_max_files if override_max_files is not None else max_files
+        self._file_max_age_days = (
+            override_max_file_age_days
+            if override_max_file_age_days is not None
+            else max_file_age_days
+        )
+
+    def _file_retention(self, files: list[str]) -> None:
+        """Delete archives exceeding the configured count or maximum age."""
+        max_archives = self._file_max_files - 1
+        cutoff = time.time() - self._file_max_age_days * 24 * 60 * 60
+        files_by_age = sorted(files, key=lambda path: (-os.stat(path).st_mtime, path))
+
+        for index, path in enumerate(files_by_age):
+            if index >= max_archives or os.stat(path).st_mtime <= cutoff:
+                os.remove(path)
 
     def get_format(self, level: LogLevel = None, is_stderr=False, is_container=False) -> str:
         """
@@ -336,8 +378,9 @@ class BECLogger:
             level=level,
             format=self.formatting(),
             filter=self.filter(),
-            retention="3 days",
-            rotation="3 days",
+            retention=self._file_retention,
+            rotation=f"{self._file_max_size_mb} MB",
+            catch=True,
             opener=self._file_opener,
         )
 
@@ -369,8 +412,9 @@ class BECLogger:
             level=LogLevel.CONSOLE_LOG,
             format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
             filter=self.filter(is_console=True),
-            retention="3 days",
-            rotation="3 days",
+            retention=self._file_retention,
+            rotation=f"{self._file_max_size_mb} MB",
+            catch=True,
             opener=self._file_opener,
         )
         self._console_log = True
