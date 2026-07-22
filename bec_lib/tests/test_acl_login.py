@@ -166,6 +166,8 @@ def test_access_demo_set_default_non_admin_allows_non_admin_namespaces(access_co
             f"&{EndpointType.PUBLIC.value}/*",
             f"&{EndpointType.PERSONAL.value}/*",
             f"&{EndpointType.USER.value}/*",
+            f"&{EndpointType.INFO.value}/*",
+            f"&{MessageEndpoints.public_file('*', '*').endpoint}",
         ]
     )
     assert f"&{EndpointType.ADMIN.value}/*" not in acl_info["channels"]
