@@ -164,6 +164,22 @@ def test_helper_log_streams(procedure_manager):
     assert helper.get.log_queue_names() == ["queue1", "queue2"]
 
 
+def test_procedure_manager_authenticates_with_forwarded_credentials():
+    conn = MagicMock()
+    with (
+        patch("bec_server.procedures.manager.RedisConnector", return_value=conn),
+        patch("bec_server.procedures.manager.BackendProcedureHelper", return_value=MagicMock()),
+    ):
+        manager = ProcedureManager(
+            f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}",
+            InlineWorker,
+            redis_credentials={"username": "admin", "token": "admin"},
+        )
+
+    conn.authenticate.assert_called_once_with(username="admin", password="admin")
+    manager.shutdown()
+
+
 @pytest.mark.parametrize(["accepted", "msg"], zip([True, False], ["test true", "test false"]))
 def test_ack(procedure_manager: ProcedureManager, accepted: bool, msg: str):
     ps = procedure_manager._conn._managed_connection._redis_conn.pubsub()

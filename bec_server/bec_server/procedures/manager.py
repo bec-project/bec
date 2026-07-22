@@ -39,6 +39,11 @@ class ProcedureWorkerEntry(TypedDict):
     future: Future
 
 
+class RedisCredentials(TypedDict):
+    username: str | None
+    token: str | None
+
+
 def _log_on_end(future: Future):
     """Use as a callback so that future is always done."""
     if e := future.exception():
@@ -63,7 +68,11 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
     exec_msg_type: _ExecMsgT
 
     def __init__(
-        self, redis: str, worker_type: type[ProcedureWorker], thread_prefix: str = "user_procedure_"
+        self,
+        redis: str,
+        worker_type: type[ProcedureWorker],
+        thread_prefix: str = "user_procedure_",
+        redis_credentials: RedisCredentials | None = None,
     ):
         """Watches the request queue and pushes to worker execution queues. Manages
         instantiating and cleaning up after workers.
@@ -81,7 +90,16 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         )
 
         self._logs = deque([], maxlen=1000)
+
+        # NOTE: I'm not convinced that we should really instantiate a new RedisConnector here
+        # but I will keep it for now. We should probably simply pass in the existing RedisConnector
+        # from the ScanServer, but that would require some refactoring of the ScanServer and ProcedureManager.
         self._conn = RedisConnector([redis], name="ProcedureManager RedisConnector")
+        if redis_credentials is not None:
+            self._conn.authenticate(
+                username=redis_credentials["username"] or "default",
+                password=redis_credentials.get("token"),
+            )
 
         self._active_workers: dict[str, ProcedureWorkerEntry] = {}
         self.executor = ThreadPoolExecutor(
@@ -224,9 +242,13 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
 
 class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureExecutionMessage]):
     def __init__(
-        self, redis: str, worker_type: type[ProcedureWorker], thread_prefix: str = "user_procedure_"
+        self,
+        redis: str,
+        worker_type: type[ProcedureWorker],
+        thread_prefix: str = "user_procedure_",
+        redis_credentials: RedisCredentials | None = None,
     ):
-        super().__init__(redis, worker_type, thread_prefix)
+        super().__init__(redis, worker_type, thread_prefix, redis_credentials)
         self._messages_by_ids: dict[str, ProcedureExecutionMessage] = {}
         self._helper = BackendProcedureHelper(self._conn, monitor_responses=False)
         self._startup()
