@@ -234,7 +234,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for device config request.
         """
-        endpoint = f"{EndpointType.ADMIN.value}/devices/config_request"
+        endpoint = f"{EndpointType.USER.value}/devices/config_request"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.DeviceConfigMessage, message_op=MessageOp.SEND
         )
@@ -703,7 +703,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for stopping devices.
         """
-        endpoint = f"{EndpointType.INFO.value}/queue/stop_devices"
+        endpoint = f"{EndpointType.USER.value}/queue/stop_devices"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.SEND
         )
@@ -848,17 +848,6 @@ class MessageEndpoints:
             message_type=messages.AvailableResourceMessage,
             message_op=MessageOp.SET_PUBLISH,
         )
-
-    @staticmethod
-    def bluesky_events() -> str:
-        """
-        Endpoint for bluesky events. This endpoint is used by the scan bundler to
-        publish the bluesky events using a direct msgpack dump of the bluesky event.
-
-        Returns:
-            str: Endpoint for bluesky events.
-        """
-        return f"{EndpointType.INFO.value}/scans/bluesky-events"
 
     @staticmethod
     def scan_segment():
@@ -1084,7 +1073,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for log.
         """
-        endpoint = f"{EndpointType.INFO.value}/log"
+        endpoint = f"{EndpointType.USER.value}/log"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.LogMessage, message_op=MessageOp.STREAM
         )
@@ -1626,7 +1615,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for procedure queue updates for given queue.
         """
-        endpoint = f"{EndpointType.INFO.value}/procedures/logs/{queue}"
+        endpoint = f"{EndpointType.USER.value}/procedures/logs/{queue}"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.RawMessage, message_op=MessageOp.STREAM
         )
@@ -1682,7 +1671,7 @@ class MessageEndpoints:
 
     @staticmethod
     def modify_interlock_table():
-        endpoint = f"{EndpointType.INTERNAL.value}/actor/builtin/scan_interlock/table_mod"
+        endpoint = f"{EndpointType.USER.value}/actor/builtin/scan_interlock/table_mod"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ScanInterlockModifyStateTableMessage,
@@ -1700,7 +1689,7 @@ class MessageEndpoints:
 
     @staticmethod
     def scan_interlock_enabled():
-        endpoint = f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/config/enabled"
+        endpoint = f"{EndpointType.USER.value}/actor/builtin/scan_interlock/config/enabled"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.BoolConfigDefaultFalse,
@@ -1710,7 +1699,7 @@ class MessageEndpoints:
     @staticmethod
     def scan_interlock_trigger_setting():
         """Whether to restart the scan when the interlock is triggered."""
-        endpoint = f"{EndpointType.INFO.value}/actor/builtin/scan_interlock/config/trigger_setting"
+        endpoint = f"{EndpointType.USER.value}/actor/builtin/scan_interlock/config/trigger_setting"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ScanInterlockTriggerSettingMessage,
@@ -1812,7 +1801,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for script execution info.
         """
-        endpoint = f"{EndpointType.INFO.value}/scripts/execution_info/{script_id}"
+        endpoint = f"{EndpointType.USER.value}/scripts/execution_info/{script_id}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ScriptExecutionInfoMessage,
@@ -1828,7 +1817,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for script content.
         """
-        endpoint = f"{EndpointType.INFO.value}/scripts/content/{script_id}"
+        endpoint = f"{EndpointType.USER.value}/scripts/content/{script_id}"
         return EndpointInfo(
             endpoint=endpoint, message_type=messages.VariableMessage, message_op=MessageOp.KEY_VALUE
         )
@@ -1859,7 +1848,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for beamline state.
         """
-        endpoint = f"{EndpointType.INFO.value}/beamline_state/{state_name}"
+        endpoint = f"{EndpointType.USER.value}/beamline_state/{state_name}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.BeamlineStateMessage,
@@ -1875,7 +1864,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for beamline state updates.
         """
-        endpoint = f"{EndpointType.INFO.value}/available_beamline_states"
+        endpoint = f"{EndpointType.USER.value}/available_beamline_states"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.AvailableBeamlineStatesMessage,
@@ -2073,7 +2062,7 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Endpoint for dynamic metric publishing.
         """
-        endpoint = f"{EndpointType.INFO.value}/dynamic_metrics/{group_name}"
+        endpoint = f"{EndpointType.USER.value}/dynamic_metrics/{group_name}"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.DynamicMetricMessage,
