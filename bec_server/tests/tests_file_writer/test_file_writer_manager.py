@@ -258,6 +258,34 @@ def test_update_scan_storage_with_status_ignores_none(file_writer_manager_mock):
     assert file_manager.scan_storage == {}
 
 
+def test_update_scan_storage_with_status_waits_for_v4_sync_segments(file_writer_manager_mock):
+    file_manager = file_writer_manager_mock
+    storage = ScanStorage(1, "scan_id")
+    storage.scan_segments = {point_id: {"data": point_id} for point_id in range(99)}
+    file_manager.scan_storage["scan_id"] = storage
+    msg = messages.ScanStatusMessage(
+        scan_id="scan_id",
+        status="closed",
+        scan_number=1,
+        scan_type="software_triggered",
+        num_points=100,
+        num_monitored_readouts=100,
+        readout_priority={"monitored": ["samx"]},
+        info={"scan_number": 1, "monitor_sync": None},
+    )
+
+    with (
+        mock.patch.object(file_manager, "update_baseline_reading"),
+        mock.patch.object(file_manager, "update_file_references"),
+        mock.patch.object(file_manager, "write_file") as write_file,
+    ):
+        file_manager.update_scan_storage_with_status(msg)
+
+    assert storage.enforce_sync is True
+    assert storage.ready_to_write() is False
+    write_file.assert_not_called()
+
+
 def test_ready_to_write(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
     scan_storage_mock.status_msg = messages.ScanStatusMessage(
