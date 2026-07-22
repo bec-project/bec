@@ -115,10 +115,10 @@ class ScanGuard:
         if scan_type not in avail_scans.resource:
             raise ScanRejection(f"Unknown scan type {scan_type}.")
 
-        if scan_type == "device_rpc":
+        if scan_type in ["device_rpc", "_v4_device_rpc"]:
             # ensure that the requested rpc is allowed for this particular device
-            params = request.content.get("parameter")
-            if not self._device_rpc_is_valid(device=params.get("device"), func=params.get("func")):
+            device, func = self._extract_device_rpc_target(request)
+            if not self._device_rpc_is_valid(device=device, func=func):
                 raise ScanRejection(f"Rejected rpc: {request.content}")
 
     def _device_rpc_is_valid(self, device: str, func: str) -> bool:
@@ -141,11 +141,13 @@ class ScanGuard:
             ScanRejection: If any motor is not enabled or movable
         """
         parameter = request.parameter
-        if request.scan_type == "device_rpc":
-            device = parameter.get("device")
+        if request.scan_type in ["device_rpc", "_v4_device_rpc"]:
+            device, _ = self._extract_device_rpc_target(request)
             if not isinstance(device, list):
                 device = [device]
             for dev in device:
+                if dev not in self.device_manager.devices:
+                    raise ScanRejection(f"Device {dev} is not known.")
                 if not self.device_manager.devices[dev].enabled:
                     raise ScanRejection(f"Device {dev} is not enabled.")
             return
@@ -212,13 +214,23 @@ class ScanGuard:
             logger.info(f"Request was rejected: {scan_status.message}")
             return
 
-        if msg.scan_type == "device_rpc":
-            func = msg.content.get("parameter", {}).get("func", "")
+        if msg.scan_type in ["device_rpc", "_v4_device_rpc"]:
+            _, func = self._extract_device_rpc_target(msg)
             if func in ["get", "read"] or func.endswith(".get") or func.endswith(".read"):
                 logger.info("Scan request is a read operation, not enqueuing.")
                 self._direct_device_rpc(msg)
                 return
         self._append_to_scan_queue(msg)
+
+    @staticmethod
+    def _extract_device_rpc_target(
+        msg: messages.ScanQueueMessage,
+    ) -> tuple[str | list[str] | None, str]:
+        params = msg.content.get("parameter", {})
+        if msg.scan_type == "_v4_device_rpc":
+            rpc_kwargs = params.get("kwargs", {})
+            return rpc_kwargs.get("device"), rpc_kwargs.get("func", "")
+        return params.get("device"), params.get("func", "")
 
     def _direct_device_rpc(self, msg: messages.ScanQueueMessage):
         """
@@ -226,7 +238,7 @@ class ScanGuard:
         Args:
             msg: ScanQueueMessage containing the RPC request
         """
-        device = msg.content.get("parameter", {}).get("device")
+        device, _ = self._extract_device_rpc_target(msg)
         if not device:
             logger.error("No device specified for RPC request.")
             return
@@ -235,6 +247,15 @@ class ScanGuard:
         if not params:
             logger.error("No parameters provided for device RPC request.")
             return
+        if msg.scan_type == "_v4_device_rpc":
+            rpc_kwargs = params.get("kwargs", {})
+            params = {
+                "device": device,
+                "rpc_id": rpc_kwargs.get("rpc_id"),
+                "func": rpc_kwargs.get("func"),
+                "args": rpc_kwargs.get("func_args", []),
+                "kwargs": rpc_kwargs.get("func_kwargs", {}),
+            }
         instr = messages.DeviceInstructionMessage(
             device=device,
             action="rpc",

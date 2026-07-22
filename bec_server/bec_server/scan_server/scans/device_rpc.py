@@ -114,7 +114,7 @@ class DeviceRpc(ScanBase):
         """
         Pre-scan steps to be executed before the main scan logic.
         This is typically the last chance to prepare the devices before the core scan
-        logic is executed. For example, this is a good place to initialize time-criticial
+        logic is executed. For example, this is a good place to initialize time-critical
         devices, e.g. devices that have a short timeout.
         The pre-scan logic is typically implemented on the device itself.
         """
@@ -126,10 +126,10 @@ class DeviceRpc(ScanBase):
         This is where the main scan logic should be implemented.
         """
         status = self.actions.rpc_call_no_wait(
-            self.device, self.func, self.rpc_id, *self.func_args, **self.func_kwargs
+            self.device, self.func, self.rpc_id, *self.func_args, response=True, **self.func_kwargs
         )
         # We don't wait for the RPC to resolve
-        self.actions._status_registry.pop(status._device_instr_id)
+        self.actions._status_registry.pop(status._device_instr_id, None)
 
     @scan_hook
     def at_each_point(self):

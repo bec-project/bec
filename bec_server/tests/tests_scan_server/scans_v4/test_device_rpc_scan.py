@@ -37,7 +37,7 @@ def test_device_rpc_scan_core_sends_fire_and_forget_rpc(v4_scan_assembler):
     scan.scan_core()
 
     scan.actions.rpc_call_no_wait.assert_called_once_with(
-        scan.device, "controller.set_mode", "rpc-id-123", 1, "fast", armed=True
+        scan.device, "controller.set_mode", "rpc-id-123", 1, "fast", response=True, armed=True
     )
     assert scan.actions._status_registry == {}
 
