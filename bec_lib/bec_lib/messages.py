@@ -267,7 +267,8 @@ class ScanStatusMessage(BECMessage):
         session_id (str, optional): Session ID
         num_points (int, optional): Number of points in the scan. Only relevant if the number of points is determined by BEC.
         scan_name (str, optional): Name of the scan, e.g. 'line_scan'
-        scan_type (Literal["step", "fly"], optional): Type of scan
+        scan_type (Literal["step", "fly", "software_triggered", "hardware_triggered"], optional):
+            Type of scan
         dataset_number (int, optional): Dataset number
         scan_report_devices (list[str], optional): List of devices that are part of the scan report
         user_metadata (dict, optional): User metadata
@@ -295,7 +296,9 @@ class ScanStatusMessage(BECMessage):
         default=0, description="Number of monitored readouts in the scan."
     )
     scan_name: str | None = Field(default=None, description="Name of the scan, e.g. 'line_scan'")
-    scan_type: Literal["step", "fly"] | None = Field(default=None, description="Type of scan")
+    scan_type: Literal["step", "fly", "software_triggered", "hardware_triggered"] | None = Field(
+        default=None, description="Type of scan"
+    )
     dataset_number: int | None = None
     scan_report_devices: list[str] | None = None
     user_metadata: dict | None = None
