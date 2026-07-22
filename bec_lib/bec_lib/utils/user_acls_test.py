@@ -159,18 +159,23 @@ class BECAccessDemo:  # pragma: no cover
 
     def set_default_non_admin(self):
         """Grant the default user access to all non-admin endpoint namespaces."""
-        allowed_namespaces = [
+        read_write_namespaces = [
             EndpointType.PUBLIC.value,
             EndpointType.PERSONAL.value,
             EndpointType.USER.value,
         ]
+        read_only_namespaces = [EndpointType.INFO.value]
         self.connector._managed_connection._redis_conn.acl_setuser(
             "default",
             enabled=True,
             nopass=True,
             categories=["+@all", "-@dangerous"],
-            keys=[f"%RW~{namespace}/*" for namespace in allowed_namespaces],
-            channels=[f"{namespace}/*" for namespace in allowed_namespaces],
+            keys=[f"%RW~{namespace}/*" for namespace in read_write_namespaces]
+            + [f"%R~{namespace}/*" for namespace in read_only_namespaces],
+            channels=[
+                f"{namespace}/*" for namespace in read_write_namespaces + read_only_namespaces
+            ]
+            + [MessageEndpoints.public_file("*", "*").endpoint],
             commands=["+keys"],
             reset_channels=True,
             reset_keys=True,

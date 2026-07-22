@@ -329,7 +329,8 @@ class BECAccess:
         Login using the default user account.
 
         Args:
-            full_access (bool): If True, the user has to have full access to the Redis
+            full_access (bool): If True, the user has sufficient access to perform all user
+                operations. If False, the user has limited access or no access to perform user operations.
 
         Returns:
             bool: True if the login was successful, False otherwise.
@@ -339,8 +340,8 @@ class BECAccess:
                 return True
 
             try:
-                self.connector.get(MessageEndpoints.acl_accounts())
-                # ACLs are enabled but we have full access. No need to login.
+                # We check an endpoint on level INFO to verify that the user has sufficient access to perform all user operations.
+                self.connector.get(MessageEndpoints.device_config())
                 return True
             # pylint: disable=broad-except
             except Exception:
@@ -366,7 +367,7 @@ class BECAccess:
             raise BECAuthenticationError("Login information not available. Unable to login.")
         self._atlas_login = self._info.atlas_login
         if not username and not self._info.atlas_login:
-            return self.login_with_token(username="user", token=None)
+            return self.login_with_token(username="default", token=None)
         return self.login(username)
 
     def _check_redis_auth(self, user: str | None, password: str | None) -> bool:
