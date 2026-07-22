@@ -84,7 +84,11 @@ class ScanServer(BECService):
             if (use_subprocess_proc_worker or not podman_available())
             else ContainerProcedureWorker
         )
-        self.proc_manager = ProcedureManager(self.bootstrap_server, procedure_worker)
+        self.proc_manager = ProcedureManager(
+            self.bootstrap_server,
+            procedure_worker,
+            redis_credentials=self.acl.current_credentials(),
+        )
 
     def _start_actor_managers(self):
         self.actor_manager = ActorManager(self.bootstrap_server)
