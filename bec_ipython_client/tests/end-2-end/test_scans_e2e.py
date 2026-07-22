@@ -67,7 +67,7 @@ def test_fermat_scan(capsys, bec_ipython_client_fixture, scan_name):
         optim_trajectory="corridor",
     )
     if scan_name == "_v4_fermat_scan":
-        # NOTE: v4 scan calculates the the angle more accurately, which results in a slightly different number of points
+        # NOTE: v4 scan calculates the angle more accurately, which results in a slightly different number of points
         assert len(status.scan.live_data) == 400
         assert status.scan.num_points == 400
     else:
