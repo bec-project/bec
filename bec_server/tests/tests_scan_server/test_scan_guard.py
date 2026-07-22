@@ -42,6 +42,22 @@ def scan_guard_mock(scan_server_mock):
                 queue="primary",
             )
         ),
+        (
+            messages.ScanQueueMessage(
+                scan_type="_v4_device_rpc",
+                parameter={
+                    "args": [],
+                    "kwargs": {
+                        "device": "samy",
+                        "func": "set",
+                        "func_args": [1],
+                        "func_kwargs": {},
+                        "rpc_id": "rpc-id",
+                    },
+                },
+                queue="primary",
+            )
+        ),
     ],
 )
 def test_check_motors_movable_enabled(scan_server_mock, scan_queue_msg):
@@ -92,6 +108,24 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
             messages.ScanQueueMessage(
                 scan_type="device_rpc",
                 parameter={"device": ["samy"], "args": {}, "kwargs": {}},
+                queue="primary",
+                metadata={"client_info": {"acl_user": "default"}},
+            ),
+            True,
+        ),
+        (
+            messages.ScanQueueMessage(
+                scan_type="_v4_device_rpc",
+                parameter={
+                    "args": [],
+                    "kwargs": {
+                        "device": "samy",
+                        "func": "set",
+                        "func_args": [1],
+                        "func_kwargs": {},
+                        "rpc_id": "rpc-id",
+                    },
+                },
                 queue="primary",
                 metadata={"client_info": {"acl_user": "default"}},
             ),
@@ -316,6 +350,36 @@ def test_handle_scan_request(scan_guard_mock):
             },
             queue="primary",
         ),
+        messages.ScanQueueMessage(
+            metadata={"RID": "9db0c540-c1e0-4f44-872d-f41209512316", "response": True},
+            scan_type="_v4_device_rpc",
+            parameter={
+                "args": [],
+                "kwargs": {
+                    "device": "hexapod",
+                    "rpc_id": "rpc-id-v4",
+                    "func": "x.read",
+                    "func_args": [],
+                    "func_kwargs": {},
+                },
+            },
+            queue="primary",
+        ),
+        messages.ScanQueueMessage(
+            metadata={"RID": "7d28d801-8e33-484d-af34-9cc061eefe0e", "response": True},
+            scan_type="_v4_device_rpc",
+            parameter={
+                "args": [],
+                "kwargs": {
+                    "device": "samx",
+                    "rpc_id": "rpc-id-v4-2",
+                    "func": "get",
+                    "func_args": [],
+                    "func_kwargs": {},
+                },
+            },
+            queue="primary",
+        ),
     ],
 )
 def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
@@ -330,6 +394,23 @@ def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
                 sg._handle_scan_request(msg, username="default")
                 append.assert_not_called()
                 send.assert_called_once_with(MessageEndpoints.device_instructions(), mock.ANY)
+                sent_msg = send.call_args.args[1]
+                expected_device = (
+                    msg.parameter["kwargs"]["device"]
+                    if msg.scan_type == "_v4_device_rpc"
+                    else msg.parameter["device"]
+                )
+                assert sent_msg.device == expected_device
+                if msg.scan_type == "_v4_device_rpc":
+                    assert sent_msg.parameter == {
+                        "device": expected_device,
+                        "rpc_id": msg.parameter["kwargs"]["rpc_id"],
+                        "func": msg.parameter["kwargs"]["func"],
+                        "args": msg.parameter["kwargs"]["func_args"],
+                        "kwargs": msg.parameter["kwargs"]["func_kwargs"],
+                    }
+                else:
+                    assert sent_msg.parameter == msg.parameter
 
 
 def test_handle_scan_request_rejected(scan_guard_mock):

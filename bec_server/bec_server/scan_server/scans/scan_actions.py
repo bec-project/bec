@@ -935,7 +935,7 @@ class ScanActions:
 
     @requires_scan_is_running
     def rpc_call_no_wait(
-        self, device: str | DeviceBase, func_name: str, rpc_id: str, *args, **kwargs
+        self, device: str | DeviceBase, func_name: str, rpc_id: str, *args, response=False, **kwargs
     ) -> ScanStubStatus:
         """
         Make an RPC call to a device without waiting for the result. This will call the given function on the device with the given arguments.
@@ -947,6 +947,7 @@ class ScanActions:
             func_name (str): name of the function to call on the device
             rpc_id (str): unique identifier for the RPC call, used to match the response with the request
             *args: positional arguments to pass to the function
+            response (bool): if True, request a device response for status-returning RPC calls.
             **kwargs: keyword arguments to pass to the function
 
         Returns:
@@ -966,7 +967,7 @@ class ScanActions:
             device=device_name,
             action="rpc",
             parameter=parameter,
-            metadata={"device_instr_id": status._device_instr_id},
+            metadata={"device_instr_id": status._device_instr_id, "response": response},
         )
         self._send(msg)
         return status
@@ -1392,7 +1393,7 @@ class ScanActions:
             file_components=file_components,
         )
         scan_info = self._scan.scan_info
-        scan_type = scan_info.scan_type
+        scan_type = getattr(scan_info.scan_type, "value", scan_info.scan_type)
         return messages.ScanStatusMessage(
             scan_id=scan_info.scan_id,
             status=status,
@@ -1402,7 +1403,7 @@ class ScanActions:
             session_id=scan_info.metadata.get("session_id"),
             dataset_number=scan_info.dataset_number,
             num_points=scan_info.num_points,
-            scan_type=scan_type if scan_type in {"step", "fly"} else None,
+            scan_type=scan_type,
             scan_report_devices=scan_info.scan_report_devices,
             user_metadata=scan_info.user_metadata,
             readout_priority=resolved_readout_priority,
