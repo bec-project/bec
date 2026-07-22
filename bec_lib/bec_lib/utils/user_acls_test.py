@@ -163,8 +163,6 @@ class BECAccessDemo:  # pragma: no cover
             EndpointType.PUBLIC.value,
             EndpointType.PERSONAL.value,
             EndpointType.USER.value,
-            EndpointType.INFO.value,
-            EndpointType.INTERNAL.value,
         ]
         self.connector._managed_connection._redis_conn.acl_setuser(
             "default",

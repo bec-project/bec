@@ -112,7 +112,7 @@ def test_console_redis_callback_publishes_to_log_endpoint_with_console_service_n
 
     logger.connector.xadd.assert_called_once()
     kwargs = logger.connector.xadd.call_args.kwargs
-    assert kwargs["topic"].endpoint == "info/log"
+    assert kwargs["topic"].endpoint == "user/log"
     assert kwargs["msg_dict"]["data"].log_type == "console_log"
     assert kwargs["msg_dict"]["data"].log_msg["service_name"] == "test_CONSOLE"
 
