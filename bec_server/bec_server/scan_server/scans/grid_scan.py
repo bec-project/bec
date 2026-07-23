@@ -155,7 +155,7 @@ class GridScan(ScanBase):
         )
 
         self.actions.add_scan_report_instruction_scan_progress(
-            points=self.scan_info.num_monitored_readouts, show_table=False
+            points=self.scan_info.num_monitored_readouts, show_table=True
         )
 
         self._baseline_readout_status = self.actions.read_baseline_devices(wait=False)

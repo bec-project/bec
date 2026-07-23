@@ -33,7 +33,7 @@ def test_line_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
     assert scan.scan_info.num_points == 5
     assert np.array_equal(scan.scan_info.positions, expected_positions)
     assert scan.scan_info.scan_report_instructions == [
-        {"scan_progress": {"points": 5, "show_table": False}}
+        {"scan_progress": {"points": 5, "show_table": True}}
     ]
 
 

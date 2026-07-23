@@ -21,6 +21,8 @@ from bec_server.file_writer.file_writer import HDF5FileWriter
 
 logger = bec_logger.logger
 
+SYNC_SCAN_TYPES = {"step", "software_triggered", "hardware_triggered"}
+
 
 class ScanStorage:
     def __init__(self, scan_number: int, scan_id: str) -> None:
@@ -273,7 +275,7 @@ class FileWriterManager(BECService):
             scan_storage.num_monitored_readouts = msg.num_monitored_readouts
             info = msg.content.get("info")
             if info:
-                if msg.scan_type == "step":
+                if msg.scan_type in SYNC_SCAN_TYPES:
                     scan_storage.enforce_sync = True
                 else:
                     scan_storage.enforce_sync = info["monitor_sync"] == "bec"

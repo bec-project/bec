@@ -328,6 +328,7 @@ class IPythonLiveUpdates:
         if req_block.msg.scan_type in [
             "open_scan_def",
             "mv",
+            "_v4_mv",
         ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 

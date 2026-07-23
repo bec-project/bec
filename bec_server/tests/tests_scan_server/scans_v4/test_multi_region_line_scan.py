@@ -43,7 +43,7 @@ def test_multi_region_line_scan_prepare_scan_updates_scan_info_and_queue(v4_scan
     assert scan.scan_info.num_points == len(expected_positions)
     assert np.allclose(scan.scan_info.positions, expected_positions)
     assert scan.scan_info.scan_report_instructions == [
-        {"scan_progress": {"points": len(expected_positions), "show_table": False}}
+        {"scan_progress": {"points": len(expected_positions), "show_table": True}}
     ]
 
 

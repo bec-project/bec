@@ -123,7 +123,7 @@ class LineSweepScan(ScanBase):
             self.start_positions = self.components.get_start_positions(self.motors)
             self.positions += self.start_positions
         self.components.check_limits(self.motors, self.positions)
-        self.actions.add_scan_report_instruction_scan_progress(points=0, show_table=False)
+        self.actions.add_scan_report_instruction_scan_progress(points=0, show_table=True)
 
         self.update_scan_info(positions=self.positions, num_points=0, num_monitored_readouts=0)
         self._baseline_readout_status = self.actions.read_baseline_devices(wait=False)

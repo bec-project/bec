@@ -251,6 +251,48 @@ class TestLiveTable:
             live_update.print_table_data()
             assert mock_client_msgs.called
 
+    def test_print_table_data_with_v4_software_triggered_scan(self, client_with_grid_scan):
+        client, request_msg = client_with_grid_scan
+        response_msg = messages.RequestResponseMessage(
+            accepted=True, message={"msg": ""}, metadata={"RID": "something"}
+        )
+        client.queue.request_storage.update_with_request(request_msg)
+        client.queue.request_storage.update_with_response(response_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
+        live_update.point_data = messages.ScanMessage(
+            point_id=0,
+            scan_id="",
+            data={"samx": {"samx": {"value": 0}}},
+            metadata={"scan_report_devices": ["samx"], "scan_type": "software_triggered"},
+        )
+        live_update.scan_item = ScanItemMock(live_data={0: live_update.point_data})
+        with mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs:
+            live_update.print_table_data()
+            assert mock_client_msgs.called
+
+    def test_print_table_data_with_v4_hardware_triggered_scan(self, client_with_grid_scan):
+        client, request_msg = client_with_grid_scan
+        response_msg = messages.RequestResponseMessage(
+            accepted=True, message={"msg": ""}, metadata={"RID": "something"}
+        )
+        client.queue.request_storage.update_with_request(request_msg)
+        client.queue.request_storage.update_with_response(response_msg)
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
+        live_update.point_data = messages.ScanMessage(
+            point_id=0,
+            scan_id="",
+            data={"samx": {"samx": {"value": 0}}},
+            metadata={"scan_report_devices": ["samx"], "scan_type": "hardware_triggered"},
+        )
+        live_update.scan_item = ScanItemMock(live_data={0: live_update.point_data})
+        with mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs:
+            live_update.print_table_data()
+            assert mock_client_msgs.called
+
     def test_print_table_data_lamni_flyer(self, client_with_grid_scan):
         client, request_msg = client_with_grid_scan
         response_msg = messages.RequestResponseMessage(

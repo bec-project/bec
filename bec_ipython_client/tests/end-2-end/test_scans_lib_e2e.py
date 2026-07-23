@@ -16,25 +16,31 @@ logger = bec_logger.logger
 
 
 @pytest.mark.timeout(100)
-def test_grid_scan_lib(bec_client_lib):
+@pytest.mark.parametrize("scan_name", [("umv", "grid_scan"), ("_v4_umv", "_v4_grid_scan")])
+def test_grid_scan_lib(bec_client_lib, scan_name):
     bec = bec_client_lib
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    getattr(scans, scan_name[0])(dev.samx, 0, dev.samy, 0, relative=False)
+    status = getattr(scans, scan_name[1])(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
+    )
     status.wait(num_points=True, file_written=True)
     assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
 
 
 @pytest.mark.timeout(100)
-def test_grid_scan_lib_cancel(bec_client_lib):
+@pytest.mark.parametrize("scan_name", ["grid_scan", "_v4_grid_scan"])
+def test_grid_scan_lib_cancel(bec_client_lib, scan_name):
     bec = bec_client_lib
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False)
+    status = getattr(scans, scan_name)(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False
+    )
     time.sleep(0.5)
     status.cancel()
 
@@ -375,6 +381,7 @@ def test_config_reload(
         assert bec.device_manager.devices[dev].enabled is False
 
 
+@pytest.mark.timeout(100)
 def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_config_reload"})
@@ -404,34 +411,43 @@ def test_config_reload_with_describe_failure(bec_test_config_file_path, bec_clie
         },
     }
 
-    # set hexapod to fail
-    bec.connector.set(
-        f"e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=1)
-    )
+    try:
+        # set hexapod to fail
+        bec.connector.set(
+            "e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=1)
+        )
 
-    # write new config to disk
-    with open(runtime_config_file_path, "w") as f:
-        f.write(yaml.dump(config))
+        # write new config to disk
+        with open(runtime_config_file_path, "w") as f:
+            f.write(yaml.dump(config))
 
-    with pytest.raises(DeviceConfigError):
-        bec.config.update_session_with_file(runtime_config_file_path, force=True, validate=False)
+        with pytest.raises(DeviceConfigError):
+            bec.config.update_session_with_file(
+                runtime_config_file_path, force=True, validate=False
+            )
 
-    assert len(bec.device_manager.devices) == 2
-    assert bec.device_manager.devices["eyefoc"].enabled is True
-    assert bec.device_manager.devices["hexapod"].enabled is False
+        assert len(bec.device_manager.devices) == 2
+        assert bec.device_manager.devices["eyefoc"].enabled is True
+        assert bec.device_manager.devices["hexapod"].enabled is False
 
-    # set hexapod to pass
-    bec.connector.set(
-        f"e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=0)
-    )
+        # set hexapod to pass
+        bec.connector.set(
+            "e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=0)
+        )
 
-    bec.config.update_session_with_file(runtime_config_file_path, force=True)
-    assert len(bec.device_manager.devices) == 2
-    assert bec.device_manager.devices["eyefoc"].enabled is True
-    assert bec.device_manager.devices["hexapod"].enabled is True
-    assert bec.device_manager.devices["hexapod"].precision == 3
+        bec.config.update_session_with_file(runtime_config_file_path, force=True)
+        assert len(bec.device_manager.devices) == 2
+        assert bec.device_manager.devices["eyefoc"].enabled is True
+        assert bec.device_manager.devices["hexapod"].enabled is True
+        assert bec.device_manager.devices["hexapod"].precision == 3
+    finally:
+        bec.connector.set(
+            "e2e_test_hexapod_fail", messages.DeviceStatusMessage(device="hexapod", status=0)
+        )
+        bec.config.update_session_with_file(bec_test_config_file_path, force=True)
 
 
+@pytest.mark.timeout(100)
 def test_config_add_remove_device(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_config_add_device"})
@@ -474,6 +490,7 @@ def test_config_add_remove_device(bec_client_lib):
     assert "samx" in dev
 
 
+@pytest.mark.timeout(100)
 def test_computed_signal(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_computed_signal"})
@@ -494,6 +511,7 @@ def test_computed_signal(bec_client_lib):
     assert dev.pseudo_signal1.read()["pseudo_signal1"]["value"] == 5
 
 
+@pytest.mark.timeout(100)
 def test_cached_device_readout(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_cached_device_readout"})
@@ -532,6 +550,8 @@ def test_cached_device_readout(bec_client_lib):
     assert timestamp_3 == timestamp_2
 
 
+@pytest.mark.timeout(100)
+@pytest.mark.skip(reason="Interactive scans are currently not supported in v4 scans.")
 def test_interactive_scan(bec_client_lib):
     bec = bec_client_lib
     bec.metadata.update({"unit_test": "test_interactive_scan"})

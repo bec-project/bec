@@ -15,13 +15,13 @@ from bec_lib.tests.utils import ConnectorMock
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_stubs import ScanStubStatus
-from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo
+from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo, ScanType
 from bec_server.scan_server.tests.utils import NoopScan
 
 
 class _TestScan(NoopScan):
     scan_name = "_v4_test_scan"
-    scan_type = None
+    scan_type = ScanType.SOFTWARE_TRIGGERED
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -388,7 +388,7 @@ def test_build_scan_status_message(action_context):
     assert msg.dataset_number == 2
     assert msg.num_points == 3
     assert msg.num_monitored_readouts == 0
-    assert msg.scan_type is None
+    assert msg.scan_type == "software_triggered"
     assert msg.scan_parameters == {
         "exp_time": 0.1,
         "frames_per_trigger": 1,
@@ -867,7 +867,7 @@ def test_report_instructions_update_scan_info_and_queue(action_context):
     assert ctx.actions._update_queue_info_callback.call_count == 3
 
 
-def test_report_instructions_use_dotted_name_for_nested_devices(action_context):
+def test_report_instructions_use_root_name_for_nested_device_progress(action_context):
     ctx = action_context()
     setpoint = ctx.device_manager.devices.samx.setpoint
     readback = ctx.device_manager.devices.samx.readback
@@ -877,7 +877,7 @@ def test_report_instructions_use_dotted_name_for_nested_devices(action_context):
 
     assert ctx.scan.scan_info.scan_report_instructions == [
         {"readback": {"RID": "rid", "devices": ["samx.setpoint"], "start": [0], "end": [1]}},
-        {"device_progress": ["samx.readback"]},
+        {"device_progress": ["samx"]},
     ]
     assert "samx.setpoint" in ctx.actions._devices_with_required_response
 
@@ -971,6 +971,24 @@ def test_rpc_call_no_wait_uses_dotted_name_for_nested_devices(action_context):
     sent_msg = ctx.actions._send.call_args.args[0]
     assert sent_msg.device == "samx.setpoint"
     assert sent_msg.parameter["device"] == "samx.setpoint"
+
+
+def test_rpc_call_no_wait_can_request_response(action_context):
+    ctx = action_context()
+    status = ScanStubStatus(
+        ctx.scan._instruction_handler,
+        device_instr_id="device-instr-id",
+        shutdown_event=threading.Event(),
+        registry={},
+        name="rpc_samx_set",
+    )
+    ctx.actions._create_status = mock.MagicMock(return_value=status)
+    ctx.actions._send = mock.MagicMock()
+
+    ctx.actions.rpc_call_no_wait("samx", "set", "rpc-id-123", 1, response=True)
+
+    sent_msg = ctx.actions._send.call_args.args[0]
+    assert sent_msg.metadata["response"] is True
 
 
 def test_send_scan_status_publishes_message(action_context):

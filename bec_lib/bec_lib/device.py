@@ -356,18 +356,33 @@ class DeviceBase:
         Returns:
             messages.ScanQueueMessage: The RPC message.
         """
-
-        params = {
-            "device": device,
-            "rpc_id": rpc_id,
-            "func": func_call,
-            "args": args,
-            "kwargs": kwargs,
-        }
         client: BECClient = self.root.parent.parent
+        scan_type = "_v4_device_rpc"
+        if scan_type == "_v4_device_rpc":
+            parameter = {
+                "args": [],
+                "kwargs": {
+                    "device": device,
+                    "func": func_call,
+                    "func_args": args,
+                    "func_kwargs": kwargs,
+                    "rpc_id": rpc_id,
+                    "system_config": client.system_config,
+                },
+            }
+        else:
+            # TODO: Remove once we've fully migrated to v4
+            parameter = {
+                "device": device,
+                "rpc_id": rpc_id,
+                "func": func_call,
+                "args": args,
+                "kwargs": kwargs,
+            }
+
         msg = messages.ScanQueueMessage(
-            scan_type="device_rpc",
-            parameter=params,
+            scan_type=scan_type,
+            parameter=parameter,
             queue=client.queue.get_default_scan_queue(),  # type: ignore
             metadata={"RID": request_id, "response": True},
         )
@@ -413,7 +428,7 @@ class DeviceBase:
 
     def _handle_client_info_msg(self):
         """Handle client messages during RPC calls"""
-        msgs = self.root.parent.connector.xread(MessageEndpoints.client_info(), block=200)
+        msgs = self.root.parent.connector.xread(MessageEndpoints.client_info(), block=5)
         # The client is the parent.parent of the device
         client: BECClient = self.root.parent.parent
         if client.live_updates_config.print_client_messages is False:

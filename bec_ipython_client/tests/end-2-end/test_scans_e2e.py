@@ -31,13 +31,16 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 @pytest.mark.timeout(100)
-def test_grid_scan(capsys, bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["grid_scan", "_v4_grid_scan"])
+def test_grid_scan(capsys, bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan"})
     dev = bec.device_manager.devices
     scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    status = getattr(scans, scan_name)(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
+    )
     assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
     captured = capsys.readouterr()
@@ -45,12 +48,13 @@ def test_grid_scan(capsys, bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_fermat_scan(capsys, bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["fermat_scan", "_v4_fermat_scan"])
+def test_fermat_scan(capsys, bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_fermat_scan"})
     dev = bec.device_manager.devices
-    status = scans.fermat_scan(
+    status = getattr(scans, scan_name)(
         dev.samx,
         -5,
         5,
@@ -62,19 +66,27 @@ def test_fermat_scan(capsys, bec_ipython_client_fixture):
         relative=True,
         optim_trajectory="corridor",
     )
-    assert len(status.scan.live_data) == 393
-    assert status.scan.num_points == 393
+    if scan_name == "_v4_fermat_scan":
+        # NOTE: v4 scan calculates the angle more accurately, which results in a slightly different number of points
+        assert len(status.scan.live_data) == 400
+        assert status.scan.num_points == 400
+    else:
+        assert len(status.scan.live_data) == 393
+        assert status.scan.num_points == 393
     captured = capsys.readouterr()
     assert "finished. Scan ID" in captured.out
 
 
 @pytest.mark.timeout(100)
-def test_line_scan(capsys, bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_line_scan(capsys, bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_line_scan"})
     dev = bec.device_manager.devices
-    status = scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
+    status = getattr(scans, scan_name)(
+        dev.samx, -5, 5, dev.samy, -5, 5, steps=10, exp_time=0.01, relative=True
+    )
     assert len(status.scan.live_data) == 10
     assert status.scan.num_points == 10
     captured = capsys.readouterr()
@@ -83,12 +95,13 @@ def test_line_scan(capsys, bec_ipython_client_fixture):
 
 @pytest.mark.flaky  # marked as flaky as the simulation might return a new readback value within the tolerance
 @pytest.mark.timeout(100)
-def test_mv_scan(capsys, bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", [("mv", "umv"), ("_v4_mv", "_v4_umv")])
+def test_mv_scan(capsys, bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_mv_scan"})
     dev = bec.device_manager.devices
-    scans.mv(dev.samx, 10, dev.samy, 20, relative=False).wait()
+    getattr(scans, scan_name[0])(dev.samx, 10, dev.samy, 20, relative=False).wait()
     current_pos_samx = dev.samx.read(cached=True)["samx"]["value"]
     current_pos_samy = dev.samy.read(cached=True)["samy"]["value"]
     assert np.isclose(
@@ -97,7 +110,7 @@ def test_mv_scan(capsys, bec_ipython_client_fixture):
     assert np.isclose(
         current_pos_samy, 20, atol=dev.samy._config["deviceConfig"].get("tolerance", 0.05)
     )
-    scans.umv(dev.samx, 10, dev.samy, 20, relative=False)
+    getattr(scans, scan_name[1])(dev.samx, 10, dev.samy, 20, relative=False)
     current_pos_samx = dev.samx.read(cached=True)["samx"]["value"]
     current_pos_samy = dev.samy.read(cached=True)["samy"]["value"]
     captured = capsys.readouterr()
@@ -109,12 +122,13 @@ def test_mv_scan(capsys, bec_ipython_client_fixture):
 
 @pytest.mark.flaky  # marked as flaky as the simulation might return a new readback value within the tolerance
 @pytest.mark.timeout(100)
-def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", [("mv", "umv"), ("_v4_mv", "_v4_umv")])
+def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_mv_scan_nested_device"})
     dev = bec.device_manager.devices
-    scans.mv(dev.hexapod.x, 10, dev.hexapod.y, 20, relative=False).wait()
+    getattr(scans, scan_name[0])(dev.hexapod.x, 10, dev.hexapod.y, 20, relative=False).wait()
     if not bec.connector._managed_connection._message_callbacks_queue.empty():
         print("Waiting for messages to be processed")
         time.sleep(0.5)
@@ -126,7 +140,7 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
     assert np.isclose(
         current_pos_hexapod_y, 20, atol=dev.hexapod._config["deviceConfig"].get("tolerance", 0.5)
     )
-    scans.umv(dev.hexapod.x, 10, dev.hexapod.y, 20, relative=False)
+    getattr(scans, scan_name[1])(dev.hexapod.x, 10, dev.hexapod.y, 20, relative=False)
     if not bec.connector._managed_connection._message_callbacks_queue.empty():
         print("Waiting for messages to be processed")
         time.sleep(0.5)
@@ -145,7 +159,8 @@ def test_mv_scan_nested_device(capsys, bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_mv_scan_mv(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", [("umv", "grid_scan"), ("_v4_umv", "_v4_grid_scan")])
+def test_mv_scan_mv(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_mv_scan_mv"})
@@ -154,7 +169,7 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
 
     dev.samx.limits = [-50, 50]
     dev.samy.limits = [-50, 50]
-    scans.umv(dev.samx, 10, dev.samy, 20, relative=False)
+    getattr(scans, scan_name[0])(dev.samx, 10, dev.samy, 20, relative=False)
     tolerance_samx = dev.samx._config["deviceConfig"].get("tolerance", 0.05)
     tolerance_samy = dev.samy._config["deviceConfig"].get("tolerance", 0.05)
     current_pos_samx = dev.samx.read()["samx"]["value"]
@@ -164,7 +179,9 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
     assert np.isclose(current_pos_samx, 10, atol=tolerance_samx)
     assert np.isclose(current_pos_samy, 20, atol=tolerance_samy)
 
-    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    status = getattr(scans, scan_name[1])(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
+    )
 
     # make sure the scan completed the expected number of positions
     assert len(status.scan.live_data) == 100
@@ -184,7 +201,7 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
     assert np.isclose(current_pos_samx, 10, atol=tolerance_samx * 2)
     assert np.isclose(current_pos_samy, 20, atol=tolerance_samy * 2)
 
-    scans.umv(dev.samx, 20, dev.samy, -20, relative=False)
+    getattr(scans, scan_name[0])(dev.samx, 20, dev.samy, -20, relative=False)
     current_pos_samx = dev.samx.read()["samx"]["value"]
     current_pos_samy = dev.samy.read()["samy"]["value"]
 
@@ -192,7 +209,7 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
     assert np.isclose(current_pos_samx, 20, atol=tolerance_samx)
     assert np.isclose(current_pos_samy, -20, atol=tolerance_samy)
 
-    status = scans.grid_scan(
+    status = getattr(scans, scan_name[1])(
         dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=False
     )
 
@@ -209,7 +226,8 @@ def test_mv_scan_mv(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient, scan_name: str):
     def send_abort(bec):
         while True:
             current_scan_info = bec.queue.scan_storage.current_scan_info
@@ -238,7 +256,7 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
     aborted_scan = False
     try:
         threading.Thread(target=send_abort, args=(bec,), daemon=True).start()
-        scans.line_scan(dev.samx, -5, 5, steps=200, exp_time=0.1, relative=True)
+        getattr(scans, scan_name)(dev.samx, -5, 5, steps=200, exp_time=0.1, relative=True)
     except ScanInterruption:
         logger.info("Raised ScanInterruption")
         time.sleep(2)
@@ -255,7 +273,7 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
 
     assert len(bec.queue.scan_storage.storage[-1].live_data) < 200
 
-    scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=True)
+    getattr(scans, scan_name)(dev.samx, -5, 5, steps=10, exp_time=0.1, relative=True)
     scan_number_end = bec.queue.next_scan_number
     assert scan_number_end == scan_number_start + 2
 
@@ -301,8 +319,8 @@ def test_umv_ctrl_c_stops_motion(bec_ipython_client_fixture: BECIPythonClient):
         dev.samx.velocity.set(original_velocity).wait()
 
 
-@pytest.mark.timeout(100)
-def test_limit_error(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", [("line_scan", "umv"), ("_v4_line_scan", "_v4_umv")])
+def test_limit_error(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_limit_error"})
     scan_number_start = bec.queue.next_scan_number
@@ -311,7 +329,7 @@ def test_limit_error(bec_ipython_client_fixture):
     aborted_scan = False
     dev.samx.limits = [-50, 50]
     try:
-        scans.line_scan(dev.samx, -520, 5, steps=200, exp_time=0.1, relative=False)
+        getattr(scans, scan_name[0])(dev.samx, -520, 5, steps=200, exp_time=0.1, relative=False)
     except AlarmBase as alarm:
         assert alarm.alarm_type == "LimitError"
         aborted_scan = True
@@ -321,7 +339,7 @@ def test_limit_error(bec_ipython_client_fixture):
     aborted_scan = False
     dev.samx.limits = [-50, 50]
     try:
-        scans.umv(dev.samx, 500, relative=False)
+        getattr(scans, scan_name[1])(dev.samx, 500, relative=False)
     except AlarmBase as alarm:
         assert alarm.alarm_type == "LimitError"
         aborted_scan = True
@@ -332,16 +350,17 @@ def test_limit_error(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_queued_scan(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_queued_scan(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_queued_scan"})
     scan_number_start = bec.queue.next_scan_number
     scans = bec.scans
     dev = bec.device_manager.devices
-    scan1 = scans.line_scan(
+    scan1 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=100, exp_time=0.1, hide_report=True, relative=True
     )
-    scan2 = scans.line_scan(
+    scan2 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
     )
 
@@ -375,7 +394,8 @@ def test_fly_scan(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_restart(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_restart(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_restart"})
     scans = bec.scans
@@ -397,10 +417,12 @@ def test_scan_restart(bec_ipython_client_fixture):
 
     # We start two scans to ensure that the scan restart logic works correctly in a queued scenario
     # The first scan is started without printout to allow us to submit the second scan immediately after
-    scans.line_scan(dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True)
+    getattr(scans, scan_name)(
+        dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
+    )
 
     # The second scan is using the live table printout. It should properly continue after the restart
-    scan2 = scans.line_scan(dev.samx, -5, 5, steps=50, exp_time=0.1, relative=True)
+    scan2 = getattr(scans, scan_name)(dev.samx, -5, 5, steps=50, exp_time=0.1, relative=True)
 
     scan2.wait()
 
@@ -413,7 +435,8 @@ def test_scan_restart(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClient):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClient, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_observer_repeat_queued"})
     scans = bec.scans
@@ -435,10 +458,10 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
     # start repeat thread
     threading.Thread(target=send_repeat, args=(bec,), daemon=True).start()
     # start scan
-    scan1 = scans.line_scan(
+    scan1 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=100, exp_time=0.1, hide_report=True, relative=True
     )
-    scan2 = scans.line_scan(
+    scan2 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=100, exp_time=0.1, hide_report=True, relative=True
     )
 
@@ -453,7 +476,8 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
 
 
 @pytest.mark.timeout(100)
-def test_scan_observer_repeat(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_observer_repeat(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_observer_repeat"})
     scans = bec.scans
@@ -473,7 +497,7 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
     threading.Thread(target=send_repeat, args=(bec,), daemon=True).start()
     # start scan
     with pytest.raises(ScanAbortion):
-        scan1 = scans.line_scan(
+        scan1 = getattr(scans, scan_name)(
             dev.samx, -5, 5, steps=50, exp_time=0.1, hide_report=True, relative=True
         )
         scan1.wait()
@@ -488,7 +512,8 @@ def test_scan_observer_repeat(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_file_writer(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["grid_scan", "_v4_grid_scan"])
+def test_file_writer(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_file_writer"})
     scans = bec.scans
@@ -498,7 +523,7 @@ def test_file_writer(bec_ipython_client_fixture):
     dev.samx.velocity.set(98).wait()
     dev.samy.velocity.set(101).wait()
 
-    scan = scans.grid_scan(
+    scan = getattr(scans, scan_name)(
         dev.samx,
         -5,
         5,
@@ -614,21 +639,22 @@ def test_group_def(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_list_scan(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["list_scan", "_v4_list_scan"])
+def test_list_scan(bec_ipython_client_fixture, scan_name):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_list_scan"})
     scans = bec.scans
     dev = bec.device_manager.devices
 
-    status = scans.list_scan(
+    status = getattr(scans, scan_name)(
         dev.samx, [0, 1, 2, 3, 4], dev.samy, [0, 1, 2, 3, 4], exp_time=0.1, relative=False
     )
     assert len(status.scan.live_data) == 5
 
-    status = scans.list_scan(dev.samx, [0, 1, 2, 3, 4, 5], exp_time=0.1, relative=False)
+    status = getattr(scans, scan_name)(dev.samx, [0, 1, 2, 3, 4, 5], exp_time=0.1, relative=False)
     assert len(status.scan.live_data) == 6
 
-    status = scans.list_scan(
+    status = getattr(scans, scan_name)(
         dev.samx,
         [0, 1, 2, 3],
         dev.samy,
@@ -903,7 +929,8 @@ def test_grid_scan_secondary_queue(capsys, bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_after_scan_lock(capsys, bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_after_scan_lock(capsys, bec_ipython_client_fixture, scan_name):
     """
     Test that pending scans are properly executed after a scan lock is released.
     """
@@ -912,8 +939,10 @@ def test_scan_after_scan_lock(capsys, bec_ipython_client_fixture):
     bec.metadata.update({"unit_test": "test_scan_after_scan_lock"})
     dev = bec.device_manager.devices
     bec.queue.add_queue_lock(queue="primary", reason="unit_test_scan_lock", lock_id="test_lock")
-    scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True, hide_report=True)
-    scan2 = scans.line_scan(
+    getattr(scans, scan_name)(
+        dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True, hide_report=True
+    )
+    scan2 = getattr(scans, scan_name)(
         dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True, hide_report=True
     )
 
@@ -927,7 +956,8 @@ def test_scan_after_scan_lock(capsys, bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_repeat_decorator(bec_ipython_client_fixture):
+@pytest.mark.parametrize("scan_name", ["line_scan", "_v4_line_scan"])
+def test_scan_repeat_decorator(bec_ipython_client_fixture, scan_name):
     """
     Test the scan_repeat decorator by simulating a communication failure during a scan.
     The scan should be retried according to the specified max_repeats and exc_handler.
@@ -971,7 +1001,9 @@ def test_scan_repeat_decorator(bec_ipython_client_fixture):
 
     @scan_repeat(max_repeats=2, exc_handler=exc_handler)
     def my_scan():
-        scans.line_scan(dev.positioner_with_failure, -5, 5, steps=10, exp_time=0.01, relative=True)
+        getattr(scans, scan_name)(
+            dev.positioner_with_failure, -5, 5, steps=10, exp_time=0.01, relative=True
+        )
 
     my_scan()
 
@@ -981,7 +1013,10 @@ def test_scan_repeat_decorator(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_scan_set_completed(bec_ipython_client_fixture):
+@pytest.mark.parametrize(
+    "scan_name", [("grid_scan", "line_scan"), ("_v4_grid_scan", "_v4_line_scan")]
+)
+def test_scan_set_completed(bec_ipython_client_fixture, scan_name):
     """
     Test that a scan can be manually set to completed.
     """
@@ -1001,7 +1036,9 @@ def test_scan_set_completed(bec_ipython_client_fixture):
 
     threading.Thread(target=_set_scan_completed, args=(bec,), daemon=True).start()
 
-    scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    getattr(scans, scan_name[0])(
+        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
+    )
 
     # Now add a second scan to ensure scans can continue after setting completed
-    scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
+    getattr(scans, scan_name[1])(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)

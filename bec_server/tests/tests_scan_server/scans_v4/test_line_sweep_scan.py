@@ -65,7 +65,7 @@ def test_line_sweep_scan_prepare_scan_updates_scan_info(v4_scan_assembler):
     assert scan.scan_info.frames_per_trigger == 3
     assert scan.max_update == 0.4
     assert scan.scan_info.scan_report_instructions == [
-        {"scan_progress": {"points": 0, "show_table": False}}
+        {"scan_progress": {"points": 0, "show_table": True}}
     ]
 
 

@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from typing import Any, Callable, Literal
 from unittest import mock
 
@@ -312,6 +311,20 @@ def test_handle_rpc_response_raises(dev: Any):
 def test_handle_rpc_response_returns_dict(dev: Any):
     msg = messages.DeviceRPCMessage(device="samx", return_val={"a": "b"}, out="done", success=True)
     assert dev.samx._handle_rpc_response(msg) == {"a": "b"}
+
+
+def test_prepare_rpc_msg_uses_v4_device_rpc_signature(dev: Any):
+    dev.samx.root.parent.parent.queue.get_default_scan_queue.return_value = "primary"
+
+    msg = dev.samx._prepare_rpc_msg("rpc-id", "request-id", "samx", "set", 1, "fast", armed=True)
+
+    assert msg.scan_type == "_v4_device_rpc"
+    assert msg.parameter["args"] == []
+    assert msg.parameter["kwargs"]["device"] == "samx"
+    assert msg.parameter["kwargs"]["func"] == "set"
+    assert msg.parameter["kwargs"]["func_args"] == (1, "fast")
+    assert msg.parameter["kwargs"]["func_kwargs"] == {"armed": True}
+    assert msg.parameter["kwargs"]["rpc_id"] == "rpc-id"
 
 
 def test_run_rpc_call_calls_stop_on_keyboardinterrupt(dev: Any):
