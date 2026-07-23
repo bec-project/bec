@@ -17,6 +17,7 @@ from bec_lib.file_utils import (
     LogWriter,
     compile_file_components,
     get_full_path,
+    sanitize_relative_subdir,
     wait_for_directory,
 )
 from bec_lib.messages import ScanStatusMessage
@@ -260,6 +261,36 @@ def test_compile_file_components_valid_paths(kwargs, expected_path, description)
     file_path, extension = compile_file_components(base_path="/tmp", scan_nr=10, **kwargs)
     assert extension == "h5", description
     assert file_path == expected_path, description
+
+
+@pytest.mark.parametrize(
+    "subdir, expected",
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        (".", None),
+        ("./", None),
+        ("../..", None),
+        ("../foo", "foo"),
+        ("../../foo/../bar", "foo/bar"),
+        ("foo/../../bar/./baz", "foo/bar/baz"),
+        ("/absolute/path", "absolute/path"),
+        ("//network/share/results", "network/share/results"),
+        ("~/results", "results"),
+        ("~/../results", "results"),
+        ("~user/shared/output", "user/shared/output"),
+        ("folder//nested///result", "folder/nested/result"),
+        ("folder/./nested/../result", "folder/nested/result"),
+        (".../not-parent", "not-parent"),
+        ("C:/beamline/results", "beamline/results"),
+        ("~/", None),
+        ("....", None),
+        ("safe/dir", "safe/dir"),
+    ],
+)
+def test_sanitize_relative_subdir(subdir, expected):
+    assert sanitize_relative_subdir(subdir) == expected
 
 
 def test_wait_for_directory_returns_when_directory_appears(tmpdir):
