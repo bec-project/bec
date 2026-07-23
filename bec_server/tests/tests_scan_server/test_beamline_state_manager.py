@@ -163,6 +163,33 @@ def test_state_manager_rejects_abstract_state_type(state_manager):
         state_manager.update_states(msg)
 
 
+def test_state_manager_restarts_aggregated_state_after_evaluation_method_update(state_manager):
+    def state_message(evaluation_method):
+        return messages.AvailableBeamlineStatesMessage(
+            states=[
+                messages.BeamlineStateConfig(
+                    name="evaluation",
+                    state_type="AggregatedState",
+                    parameters={
+                        "name": "evaluation",
+                        "evaluation_method": evaluation_method,
+                        "states": {"alignment": {"devices": {"bpm4i": {"value": 0}}}},
+                    },
+                )
+            ]
+        )
+
+    with mock.patch.object(bl_states.AggregatedState, "start"):
+        state_manager.update_states(state_message("any"))
+
+    state = state_manager._states["evaluation"]
+    with mock.patch.object(state, "restart") as restart:
+        state_manager.update_states(state_message("exclusive"))
+
+    assert state.config.evaluation_method == "exclusive"
+    restart.assert_called_once_with()
+
+
 @pytest.mark.timeout(5)
 def test_states_restarted_when_device_config_updated(
     state_manager, connected_connector, fake_bl_states

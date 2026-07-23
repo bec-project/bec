@@ -128,6 +128,18 @@ class _MockDevice(DeviceBase):
     def limits(self):
         return self._limits
 
+    @limits.setter
+    def limits(self, value):
+        self._limits = tuple(value)
+
+    @property
+    def low_limit(self):
+        return self._limits[0]
+
+    @property
+    def high_limit(self):
+        return self._limits[1]
+
     @property
     def enabled(self):
         return self._enabled
@@ -234,6 +246,18 @@ class MockCustomDevice(DeviceBase):
     @property
     def limits(self):
         return self._limits
+
+    @limits.setter
+    def limits(self, value):
+        self._limits = tuple(value)
+
+    @property
+    def low_limit(self):
+        return self._limits[0]
+
+    @property
+    def high_limit(self):
+        return self._limits[1]
 
     @property
     def enabled(self):
@@ -369,6 +393,7 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
 
     def _assemble_scan(scan_type, *scan_args, **scan_kwargs):
         scan_id = scan_kwargs.pop("scan_id", "scan-id-test")
+        connector = scan_kwargs.pop("connector", None) or ConnectorMock("")
 
         try:
             scan_cls = scan_classes[scan_type]
@@ -376,7 +401,6 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
             available = ", ".join(sorted(scan_classes))
             raise KeyError(f"Unknown scan type '{scan_type}'. Available: {available}") from exc
 
-        connector = ConnectorMock("")
         instruction_handler = InstructionHandler(connector)
         device_names = sorted(
             set(_infer_v4_device_names(scan_cls, scan_args, scan_kwargs))
