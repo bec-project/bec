@@ -308,22 +308,18 @@ def get_device_info(
         describe = {}
         describe_configuration = {}
     return {
-        "device_name": obj.name,
-        "device_info": {
-            "device_attr_name": getattr(obj, "attr_name", ""),
-            "device_dotted_name": getattr(obj, "dotted_name", ""),
-            "device_base_class": get_device_base_class(obj),
-            "device_class": obj.__class__.__name__,
-            "ownership_mode": get_ownership_mode(obj).value,
-            "read_access": getattr(obj, "read_access", None),
-            "write_access": getattr(obj, "write_access", None),
-            "signals": signals,
-            "hints": hints,
-            "describe": describe,
-            "describe_configuration": describe_configuration,
-            "sub_devices": sub_devices,
-            "custom_user_access": user_access,
-        },
+        "device_attr_name": getattr(obj, "attr_name", ""),
+        "device_base_class": get_device_base_class(obj),
+        "device_class": obj.__class__.__name__,
+        "ownership_mode": get_ownership_mode(obj).value,
+        "read_access": getattr(obj, "read_access", None),
+        "write_access": getattr(obj, "write_access", None),
+        "signals": signals,
+        "hints": hints,
+        "describe": describe,
+        "describe_configuration": describe_configuration,
+        "sub_devices": sub_devices,
+        "custom_user_access": user_access,
     }
 
 

@@ -154,96 +154,94 @@ class ClientMock(BECClient):
 def positioner_info_mock(device_name):
     # fmt: off
     return {
-        "device_info": {
-            "device_base_class": "positioner",
-            "device_class": "SimPositioner",
-            "signals": {
-                "readback": {
-                    "component_name": "readback",
-                    "obj_name": device_name,
-                    "kind_int": 5,
-                    "kind_str": "hinted",
-                    "doc": "readback doc string",
-                    "describe": {"source": f"SIM:{device_name}", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": False, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "setpoint": {
-                    "component_name": "setpoint",
-                    "obj_name": f"{device_name}_setpoint",
-                    "kind_int": 1,
-                    "kind_str": "normal",
-                    "doc": "setpoint doc string",
-                    "describe": {"source": f"SIM:{device_name}_setpoint", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "motor_is_moving": {
-                    "component_name": "motor_is_moving",
-                    "obj_name": f"{device_name}_motor_is_moving",
-                    "kind_int": 1,
-                    "kind_str": "normal",
-                    "doc": "motor_is_moving doc string",
-                    "describe": {"source": f"SIM:{device_name}_motor_is_moving", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "velocity": {
-                    "component_name": "velocity",
-                    "obj_name": f"{device_name}_velocity",
-                    "kind_int": 2,
-                    "kind_str": "config",
-                    "doc": "velocity doc string",
-                    "describe": {"source": f"SIM:{device_name}_velocity", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "acceleration": {
-                    "component_name": "acceleration",
-                    "obj_name": f"{device_name}_acceleration",
-                    "kind_int": 2,
-                    "kind_str": "config",
-                    "doc": "acceleration doc string",
-                    "describe": {"source": f"SIM:{device_name}_acceleration", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "high_limit_travel": {
-                    "component_name": "high_limit_travel",
-                    "obj_name": f"{device_name}_high_limit_travel",
-                    "kind_int": 2,
-                    "kind_str": "config",
-                    "doc": "",
-                    "describe": {"source": f"SIM:{device_name}_high_limit_travel", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "low_limit_travel": {
-                    "component_name": "low_limit_travel",
-                    "obj_name": f"{device_name}_low_limit_travel",
-                    "kind_int": 2,
-                    "kind_str": "config",
-                    "doc": "",
-                    "describe": {"source": f"SIM:{device_name}_low_limit_travel", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
-                "unused": {
-                    "component_name": "unused",
-                    "obj_name": f"{device_name}_unused",
-                    "kind_int": 0,
-                    "kind_str": "omitted",
-                    "doc": "",
-                    "describe": {"source": f"SIM:{device_name}_unused", "dtype": "integer", "shape": [], "precision": 3},
-                    "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                },
+        "device_base_class": "positioner",
+        "device_class": "SimPositioner",
+        "signals": {
+            "readback": {
+                "component_name": "readback",
+                "obj_name": device_name,
+                "kind_int": 5,
+                "kind_str": "hinted",
+                "doc": "readback doc string",
+                "describe": {"source": f"SIM:{device_name}", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": False, "timestamp": 0, "status": None, "severity": None, "precision": None},
             },
-            "hints": {"fields": [device_name]},
-            "describe": {
-                device_name: {"source": f"SIM:{device_name}", "dtype": "integer", "shape": [], "precision": 3},
-                f"{device_name}_setpoint": {"source": f"SIM:{device_name}_setpoint", "dtype": "integer", "shape": [], "precision": 3},
-                f"{device_name}_motor_is_moving": {"source": f"SIM:{device_name}_motor_is_moving", "dtype": "integer", "shape": [], "precision": 3},
+            "setpoint": {
+                "component_name": "setpoint",
+                "obj_name": f"{device_name}_setpoint",
+                "kind_int": 1,
+                "kind_str": "normal",
+                "doc": "setpoint doc string",
+                "describe": {"source": f"SIM:{device_name}_setpoint", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
             },
-            "describe_configuration": {
-                f"{device_name}_velocity": {"source": f"SIM:{device_name}_velocity", "dtype": "integer", "shape": []},
-                f"{device_name}_acceleration": {"source": f"SIM:{device_name}_acceleration", "dtype": "integer", "shape": []},
+            "motor_is_moving": {
+                "component_name": "motor_is_moving",
+                "obj_name": f"{device_name}_motor_is_moving",
+                "kind_int": 1,
+                "kind_str": "normal",
+                "doc": "motor_is_moving doc string",
+                "describe": {"source": f"SIM:{device_name}_motor_is_moving", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
             },
-            "sub_devices": [],
-            "custom_user_access": {},
-        }
+            "velocity": {
+                "component_name": "velocity",
+                "obj_name": f"{device_name}_velocity",
+                "kind_int": 2,
+                "kind_str": "config",
+                "doc": "velocity doc string",
+                "describe": {"source": f"SIM:{device_name}_velocity", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+            },
+            "acceleration": {
+                "component_name": "acceleration",
+                "obj_name": f"{device_name}_acceleration",
+                "kind_int": 2,
+                "kind_str": "config",
+                "doc": "acceleration doc string",
+                "describe": {"source": f"SIM:{device_name}_acceleration", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+            },
+            "high_limit_travel": {
+                "component_name": "high_limit_travel",
+                "obj_name": f"{device_name}_high_limit_travel",
+                "kind_int": 2,
+                "kind_str": "config",
+                "doc": "",
+                "describe": {"source": f"SIM:{device_name}_high_limit_travel", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+            },
+            "low_limit_travel": {
+                "component_name": "low_limit_travel",
+                "obj_name": f"{device_name}_low_limit_travel",
+                "kind_int": 2,
+                "kind_str": "config",
+                "doc": "",
+                "describe": {"source": f"SIM:{device_name}_low_limit_travel", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+            },
+            "unused": {
+                "component_name": "unused",
+                "obj_name": f"{device_name}_unused",
+                "kind_int": 0,
+                "kind_str": "omitted",
+                "doc": "",
+                "describe": {"source": f"SIM:{device_name}_unused", "dtype": "integer", "shape": [], "precision": 3},
+                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+            },
+        },
+        "hints": {"fields": [device_name]},
+        "describe": {
+            device_name: {"source": f"SIM:{device_name}", "dtype": "integer", "shape": [], "precision": 3},
+            f"{device_name}_setpoint": {"source": f"SIM:{device_name}_setpoint", "dtype": "integer", "shape": [], "precision": 3},
+            f"{device_name}_motor_is_moving": {"source": f"SIM:{device_name}_motor_is_moving", "dtype": "integer", "shape": [], "precision": 3},
+        },
+        "describe_configuration": {
+            f"{device_name}_velocity": {"source": f"SIM:{device_name}_velocity", "dtype": "integer", "shape": []},
+            f"{device_name}_acceleration": {"source": f"SIM:{device_name}_acceleration", "dtype": "integer", "shape": []},
+        },
+        "sub_devices": [],
+        "custom_user_access": {},
     }
     # fmt: on
 
@@ -251,7 +249,7 @@ def positioner_info_mock(device_name):
 def positioner_info_mock_with_user_access(device_name):
     info = positioner_info_mock(device_name)
     # fmt: off
-    info["device_info"]["custom_user_access"].update(
+    info["custom_user_access"].update(
         {
             "dummy_controller": {
                 "device_class": "DummyController",
@@ -295,133 +293,123 @@ def positioner_info_mock_with_user_access(device_name):
 DYN_SIGNALS_MSG = messages.DeviceInfoMessage(
     device="dyn_signals",
     info={
-        "device_info": {
-            "device_dotted_name": "dyn_signals",
-            "device_attr_name": "dyn_signals",
-            "device_base_class": "device",
-            "device_class": "SimDevice",
-            "signals": {},
-            "hints": {"fields": []},
-            "describe": {
-                "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
-                "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
-                "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
-                "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
-                "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
-            },
-            "describe_configuration": {},
-            "sub_devices": [
-                {
-                    "device_name": "dyn_signals_messages",
-                    "device_info": {
-                        "device_attr_name": "messages",
-                        "device_dotted_name": "messages",
-                        "device_base_class": "device",
-                        "device_class": "SimDevice",
-                        "signals": {
-                            "message1": {
-                                "component_name": "message1",
-                                "obj_name": "dyn_signals_messages_message1",
-                                "kind_int": 1,
-                                "kind_str": "normal",
-                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                            },
-                            "message2": {
-                                "component_name": "message2",
-                                "obj_name": "dyn_signals_messages_message2",
-                                "kind_int": 1,
-                                "kind_str": "normal",
-                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                            },
-                            "message3": {
-                                "component_name": "message3",
-                                "obj_name": "dyn_signals_messages_message3",
-                                "kind_int": 1,
-                                "kind_str": "normal",
-                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                            },
-                            "message4": {
-                                "component_name": "message4",
-                                "obj_name": "dyn_signals_messages_message4",
-                                "kind_int": 1,
-                                "kind_str": "normal",
-                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                            },
-                            "message5": {
-                                "component_name": "message5",
-                                "obj_name": "dyn_signals_messages_message5",
-                                "kind_int": 1,
-                                "kind_str": "normal",
-                                "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
-                            },
-                        },
-                        "hints": {"fields": []},
-                        "describe": {
-                            "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
-                            "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
-                            "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
-                            "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
-                            "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
-                        },
-                        "describe_configuration": {},
-                        "sub_devices": [],
-                        "custom_user_access": {},
+        "device_attr_name": "dyn_signals",
+        "device_base_class": "device",
+        "device_class": "SimDevice",
+        "signals": {},
+        "hints": {"fields": []},
+        "describe": {
+            "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
+            "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
+            "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
+            "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
+            "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
+        },
+        "describe_configuration": {},
+        "sub_devices": [
+            {
+                "device_attr_name": "messages",
+                "device_base_class": "device",
+                "device_class": "SimDevice",
+                "signals": {
+                    "message1": {
+                        "component_name": "message1",
+                        "obj_name": "dyn_signals_messages_message1",
+                        "kind_int": 1,
+                        "kind_str": "normal",
+                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
                     },
-                }
-            ],
-            "custom_user_access": {},
-        }
+                    "message2": {
+                        "component_name": "message2",
+                        "obj_name": "dyn_signals_messages_message2",
+                        "kind_int": 1,
+                        "kind_str": "normal",
+                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                    },
+                    "message3": {
+                        "component_name": "message3",
+                        "obj_name": "dyn_signals_messages_message3",
+                        "kind_int": 1,
+                        "kind_str": "normal",
+                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                    },
+                    "message4": {
+                        "component_name": "message4",
+                        "obj_name": "dyn_signals_messages_message4",
+                        "kind_int": 1,
+                        "kind_str": "normal",
+                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                    },
+                    "message5": {
+                        "component_name": "message5",
+                        "obj_name": "dyn_signals_messages_message5",
+                        "kind_int": 1,
+                        "kind_str": "normal",
+                        "metadata": {"connected": True, "read_access": True, "write_access": True, "timestamp": 0, "status": None, "severity": None, "precision": None},
+                    },
+                },
+                "hints": {"fields": []},
+                "describe": {
+                    "dyn_signals_messages_message1": {"source": "SIM:dyn_signals_messages_message1", "dtype": "integer", "shape": [], "precision": 3},
+                    "dyn_signals_messages_message2": {"source": "SIM:dyn_signals_messages_message2", "dtype": "integer", "shape": [], "precision": 3},
+                    "dyn_signals_messages_message3": {"source": "SIM:dyn_signals_messages_message3", "dtype": "integer", "shape": [], "precision": 3},
+                    "dyn_signals_messages_message4": {"source": "SIM:dyn_signals_messages_message4", "dtype": "integer", "shape": [], "precision": 3},
+                    "dyn_signals_messages_message5": {"source": "SIM:dyn_signals_messages_message5", "dtype": "integer", "shape": [], "precision": 3},
+                },
+                "describe_configuration": {},
+                "sub_devices": [],
+                "custom_user_access": {},
+            }
+        ],
+        "custom_user_access": {},
     },
 )
 EIGER_MSG = messages.DeviceInfoMessage(
         device="eiger",
         info={
-            "device_info": {
-                "device_dotted_name": "eiger",
-                "device_attr_name": "eiger",
-                "device_base_class": "device",
-                "device_class": "SimCamera",
-                "signals": {
-                    "preview": {
-                        "component_name": "preview",
-                        "signal_class": "PreviewSignal",
-                        "obj_name": "eiger_preview",
-                        "kind_int": 5,
-                        "kind_str": "hinted",
-                        "doc": "",
-                        "describe": {
-                            "source": "BECMessageSignal:eiger_preview",
-                            "dtype": "DevicePreviewMessage",
-                            "shape": [],
-                            "signal_info": {
-                                "data_type": "raw",
-                                "saved": False,
-                                "ndim": 2,
-                                "scope": "scan",
-                                "role": "preview",
-                                "enabled": True,
-                                "rpc_access": False,
-                                "signals": [["preview", 5]],
-                                "signal_metadata": {"num_rotation_90": 0, "transpose": False},
-                            },
+            "device_attr_name": "eiger",
+            "device_base_class": "device",
+            "device_class": "SimCamera",
+            "signals": {
+                "preview": {
+                    "component_name": "preview",
+                    "signal_class": "PreviewSignal",
+                    "obj_name": "eiger_preview",
+                    "kind_int": 5,
+                    "kind_str": "hinted",
+                    "doc": "",
+                    "describe": {
+                        "source": "BECMessageSignal:eiger_preview",
+                        "dtype": "DevicePreviewMessage",
+                        "shape": [],
+                        "signal_info": {
+                            "data_type": "raw",
+                            "saved": False,
+                            "ndim": 2,
+                            "scope": "scan",
+                            "role": "preview",
+                            "enabled": True,
+                            "rpc_access": False,
+                            "signals": [["preview", 5]],
+                            "signal_metadata": {"num_rotation_90": 0, "transpose": False},
                         },
-                        "metadata": {
-                            "connected": True,
-                            "read_access": True,
-                            "write_access": True,
-                            "timestamp": 1749046715.160324,
-                            "status": None,
-                            "severity": None,
-                            "precision": None,
-                        },
-                    }
-                },
-                "hints": {"fields": []},
-                "describe": {},
-                "describe_configuration": {},
-                "sub_devices": [],
-                "custom_user_access": {},
-            }
+                    },
+                    "metadata": {
+                        "connected": True,
+                        "read_access": True,
+                        "write_access": True,
+                        "timestamp": 1749046715.160324,
+                        "status": None,
+                        "severity": None,
+                        "precision": None,
+                    },
+                }
+            },
+            "hints": {"fields": []},
+            "describe": {},
+            "describe_configuration": {},
+            "sub_devices": [],
+            "custom_user_access": {},
         },
     )
 # fmt: on
@@ -438,7 +426,7 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
         return EIGER_MSG
     device_base_class = "positioner" if device_class == "SimPositioner" else "signal"
     if device_base_class == "positioner":
-        signals = positioner_info_mock(device_name)["device_info"]["signals"]
+        signals = positioner_info_mock(device_name)["signals"]
     elif device_base_class == "signal":
         signals = {
             device_name: {
@@ -456,14 +444,10 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
     else:
         signals = {}
     dev_info = {
-        "device_name": device_name,
-        "device_info": {
-            "device_dotted_name": device_name,
-            "device_attr_name": device_name,
-            "device_base_class": device_base_class,
-            "device_class": device_class.__class__.__name__,
-            "signals": signals,
-        },
+        "device_attr_name": device_name,
+        "device_base_class": device_base_class,
+        "device_class": device_class.__class__.__name__,
+        "signals": signals,
         "custom_user_access": {},
     }
     # fmt: on

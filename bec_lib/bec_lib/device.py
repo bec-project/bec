@@ -245,7 +245,7 @@ class DeviceBase:
         set_device_config(self, config)
         if info is None:
             info = {}
-        self._info = info.get("device_info", {})
+        self._info = info
         self.parent = parent
 
         self._custom_rpc_methods = {}
@@ -563,8 +563,8 @@ class DeviceBase:
             self.precision = precision
         if self._info.get("sub_devices"):
             for dev in self._info.get("sub_devices"):
-                base_class = dev["device_info"].get("device_base_class")
-                attr_name = dev["device_info"].get("device_attr_name")
+                base_class = dev.get("device_base_class")
+                attr_name = dev.get("device_attr_name")
                 if base_class == "positioner":
                     setattr(self, attr_name, Positioner(name=attr_name, info=dev, parent=self))
                 elif base_class == "device":
@@ -596,7 +596,7 @@ class DeviceBase:
             else:
                 self._custom_rpc_methods[user_access_name] = DeviceBase(
                     name=user_access_name,
-                    info={"device_info": {"custom_user_access": descr["info"]}},
+                    info={"custom_user_access": descr["info"]},
                     parent=self,
                     class_name=descr["device_class"],
                 )
