@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.153.1 (2026-07-23)
+
+### Bug Fixes
+
+- **device_server**: Add conversion for enum strings from float values
+  ([`b1f1b7f`](https://github.com/bec-project/bec/commit/b1f1b7f23d25c33ccbb2725ff47182429edb6186))
+
+
 ## v3.153.0 (2026-07-23)
 
 ### Bug Fixes
