@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.154.0 (2026-07-23)
+
+### Features
+
+- Remove scan def
+  ([`4280b65`](https://github.com/bec-project/bec/commit/4280b65602073436c55141da459d9ca7264e7053))
+
+
 ## v3.153.1 (2026-07-23)
 
 ### Bug Fixes
