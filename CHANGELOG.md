@@ -1,6 +1,62 @@
 # CHANGELOG
 
 
+## v3.153.0 (2026-07-23)
+
+### Bug Fixes
+
+- Move to default user when no username is provided
+  ([`2e39429`](https://github.com/bec-project/bec/commit/2e394294e88b9ba5ecc2a908c61bcf9af84fd088))
+
+- **acl**: Proceduremanager inherits scan server credentials
+  ([`c16ce95`](https://github.com/bec-project/bec/commit/c16ce95e3bdd2b1d8184e257641270a49a60f758))
+
+- **acl**: Update endpoint access levels and remove unused types
+  ([`daf2ba6`](https://github.com/bec-project/bec/commit/daf2ba6f18bdf85372a9ff682bf9d3a3e8c97c54))
+
+### Chores
+
+- **deps**: Bump hdf5plugin in /bec_lib
+  ([`2954c24`](https://github.com/bec-project/bec/commit/2954c24771f2eb681a9c310e1897308bd843e45f))
+
+Updates the requirements on [hdf5plugin](https://github.com/silx-kit/hdf5plugin) to permit the
+  latest version.
+
+Updates `hdf5plugin` to 7.0.0 - [Release notes](https://github.com/silx-kit/hdf5plugin/releases) -
+  [Changelog](https://github.com/silx-kit/hdf5plugin/blob/main/CHANGELOG.rst) -
+  [Commits](https://github.com/silx-kit/hdf5plugin/compare/v4.3.0...v7.0.0)
+
+--- updated-dependencies: - dependency-name: hdf5plugin dependency-version: 7.0.0
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps-dev**: Bump pandas in /bec_lib
+  ([`bef649d`](https://github.com/bec-project/bec/commit/bef649d39c4980baaf63e8d4c8b9e8fda9af5836))
+
+Updates the requirements on [pandas](https://github.com/pandas-dev/pandas) to permit the latest
+  version.
+
+Updates `pandas` to 3.0.3 - [Release notes](https://github.com/pandas-dev/pandas/releases) -
+  [Commits](https://github.com/pandas-dev/pandas/compare/v2.0.0...v3.0.3)
+
+--- updated-dependencies: - dependency-name: pandas dependency-version: 3.0.3
+
+dependency-type: direct:development
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+### Features
+
+- **acl**: Enhance ACL support
+  ([`9bf82d5`](https://github.com/bec-project/bec/commit/9bf82d524ef5035ad93d004a7247a20ce601db12))
+
+
 ## v3.152.0 (2026-07-14)
 
 ### Bug Fixes
