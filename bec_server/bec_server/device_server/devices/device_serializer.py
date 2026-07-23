@@ -309,7 +309,6 @@ def get_device_info(
         describe_configuration = {}
     return {
         "device_attr_name": getattr(obj, "attr_name", ""),
-        "device_dotted_name": getattr(obj, "dotted_name", ""),
         "device_base_class": get_device_base_class(obj),
         "device_class": obj.__class__.__name__,
         "ownership_mode": get_ownership_mode(obj).value,
