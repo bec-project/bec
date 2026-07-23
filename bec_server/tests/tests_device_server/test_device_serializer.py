@@ -155,8 +155,8 @@ def test_get_device_info_allows_aliased_signal_names():
 
     info = get_device_info(device, connect=True)
 
-    assert info["device_info"]["signals"]["signal"]["obj_name"] == "test_signal"
-    assert info["device_info"]["signals"]["signal_alias"]["obj_name"] == "test_signal"
+    assert info["signals"]["signal"]["obj_name"] == "test_signal"
+    assert info["signals"]["signal_alias"]["obj_name"] == "test_signal"
 
 
 def test_get_device_info_marks_read_only_plain_signal_as_free():
@@ -164,7 +164,7 @@ def test_get_device_info_marks_read_only_plain_signal_as_free():
 
     info = get_device_info(signal, connect=False)
 
-    assert info["device_info"]["ownership_mode"] == "free"
+    assert info["ownership_mode"] == "free"
 
 
 def test_get_device_info_marks_writable_plain_signal_as_claimable():
@@ -172,7 +172,7 @@ def test_get_device_info_marks_writable_plain_signal_as_claimable():
 
     info = get_device_info(signal, connect=False)
 
-    assert info["device_info"]["ownership_mode"] == "claimable"
+    assert info["ownership_mode"] == "claimable"
 
 
 def test_get_device_info_marks_psi_devices_as_pinned():
@@ -180,7 +180,7 @@ def test_get_device_info_marks_psi_devices_as_pinned():
 
     info = get_device_info(device, connect=False)
 
-    assert info["device_info"]["ownership_mode"] == "pinned"
+    assert info["ownership_mode"] == "pinned"
 
 
 def test_get_device_info_prefers_explicit_class_ownership_mode():
@@ -188,7 +188,7 @@ def test_get_device_info_prefers_explicit_class_ownership_mode():
 
     info = get_device_info(device, connect=False)
 
-    assert info["device_info"]["ownership_mode"] == "free"
+    assert info["ownership_mode"] == "free"
 
 
 def test_get_device_info_raises_device_config_error_for_invalid_explicit_ownership_mode():

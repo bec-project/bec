@@ -97,10 +97,8 @@ def device_manager(device_manager_class, session_from_test_config):
 class _MockDevice(DeviceBase):
     def __init__(self, name: str, limits=(-10.0, 10.0), value: float = 0.0):
         info = {
-            "device_info": {
-                "signals": {
-                    name: {"obj_name": name, "kind_str": "hinted", "describe": {"precision": 3}}
-                }
+            "signals": {
+                name: {"obj_name": name, "kind_str": "hinted", "describe": {"precision": 3}}
             }
         }
         super().__init__(name=name, info=info)
@@ -153,7 +151,7 @@ class MockCustomDevice(DeviceBase):
         Args:
             name (str): The name of the device.
             device_info (dict): A dictionary containing the device information, including signal definitions. Typically taken from
-                the "_info" field, e.g. dev.samx._info["signals"].
+                the "_info" field, e.g. dev.samx._info.
             signal_read_values (dict[str, float | Iterator], optional): A dictionary mapping signal names or their corresponding
                 obj_names to their read values. If a value is an iterator, the next value will be returned on each read. If not provided,
                 signals will return None. Note that the signal name should be the signal name, not the readout name (obj_name).
@@ -161,8 +159,7 @@ class MockCustomDevice(DeviceBase):
             precision (int, optional): The precision of the device. Defaults to 3.
             enabled (bool, optional): Whether the device is enabled. Defaults to True.
         """
-        info = {"device_info": device_info}
-        super().__init__(name=name, info=info)
+        super().__init__(name=name, info=device_info)
         self._limits = limits
         self._precision = precision
         self._enabled = enabled

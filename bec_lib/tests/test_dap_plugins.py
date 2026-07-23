@@ -448,7 +448,7 @@ def test_dap_wait_for_dap_response_returns(dap):
 
 def test_dap_select(dap):
     with mock.patch.object(dap.GaussianModel, "_update_dap_config") as mock_update_dap_config:
-        obj = DeviceBase(name="samx", info={"device_info": {"hints": {"fields": ["samx"]}}})
+        obj = DeviceBase(name="samx", info={"hints": {"fields": ["samx"]}})
         dap._parent.device_manager.devices.get.return_value = obj
         dap.GaussianModel.select("samx")
         mock_update_dap_config.assert_called_once()
@@ -458,9 +458,7 @@ def test_dap_select(dap):
 def test_dap_select_raises_with_too_many_hints(dap):
     with pytest.raises(AttributeError):
         with mock.patch.object(dap.GaussianModel, "_update_dap_config") as mock_update_dap_config:
-            obj = DeviceBase(
-                name="samx", info={"device_info": {"hints": {"fields": ["samx", "samx2"]}}}
-            )
+            obj = DeviceBase(name="samx", info={"hints": {"fields": ["samx", "samx2"]}})
             dap._parent.device_manager.devices.get.return_value = obj
             dap.GaussianModel.select("samx")
             mock_update_dap_config.assert_called_once()
