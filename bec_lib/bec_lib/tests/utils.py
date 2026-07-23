@@ -285,7 +285,6 @@ def positioner_info_mock_with_user_access(device_name):
 DYN_SIGNALS_MSG = messages.DeviceInfoMessage(
     device="dyn_signals",
     info={
-        "device_dotted_name": "dyn_signals",
         "device_attr_name": "dyn_signals",
         "device_base_class": "device",
         "device_class": "SimDevice",
@@ -302,7 +301,6 @@ DYN_SIGNALS_MSG = messages.DeviceInfoMessage(
         "sub_devices": [
             {
                 "device_attr_name": "messages",
-                "device_dotted_name": "messages",
                 "device_base_class": "device",
                 "device_class": "SimDevice",
                 "signals": {
@@ -361,7 +359,6 @@ DYN_SIGNALS_MSG = messages.DeviceInfoMessage(
 EIGER_MSG = messages.DeviceInfoMessage(
         device="eiger",
         info={
-            "device_dotted_name": "eiger",
             "device_attr_name": "eiger",
             "device_base_class": "device",
             "device_class": "SimCamera",
@@ -439,7 +436,6 @@ def get_device_info_mock(device_name, device_class) -> messages.DeviceInfoMessag
     else:
         signals = {}
     dev_info = {
-        "device_dotted_name": device_name,
         "device_attr_name": device_name,
         "device_base_class": device_base_class,
         "device_class": device_class.__class__.__name__,
