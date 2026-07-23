@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.155.0 (2026-07-23)
+
+### Features
+
+- Add option to separate configs by tags on export
+  ([`11da94f`](https://github.com/bec-project/bec/commit/11da94fab628763e34577673e0db56b5ba7be603))
+
+
 ## v3.154.0 (2026-07-23)
 
 ### Features
