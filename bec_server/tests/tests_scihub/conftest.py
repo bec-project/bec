@@ -85,13 +85,16 @@ def atlas_connector(connected_connector, connected_atlas_connector):
     scihub_mocked.connector = connected_connector  # Replace with fakeredis connector
 
     atlas_connector = AtlasConnector(scihub_mocked, connected_connector, connected_atlas_connector)
-    with mock.patch.object(atlas_connector, "_load_environment"):
-        with mock.patch.object(atlas_connector, "_env_configured", True):
-            atlas_connector.host = "test-host"
-            atlas_connector.deployment_name = "test-deployment"
-            atlas_connector.atlas_key = "test-key"
-            atlas_connector.start()
-            yield atlas_connector
+    with (
+        mock.patch.object(atlas_connector, "_load_environment"),
+        mock.patch.object(atlas_connector, "_env_configured", True),
+        mock.patch("bec_server.scihub.atlas.atlas_connector.AtlasPluginRepoEmitter"),
+    ):
+        atlas_connector.host = "test-host"
+        atlas_connector.deployment_name = "test-deployment"
+        atlas_connector.atlas_key = "test-key"
+        atlas_connector.start()
+        yield atlas_connector
     atlas_connector.shutdown()
     scihub_mocked.shutdown()
 

@@ -15,6 +15,7 @@ from bec_lib.signature_serializer import signature_to_dict
 from .atlas_active_client_emitter import AtlasActiveClientEmitter
 from .atlas_forwarder import AtlasForwarder
 from .atlas_metadata_handler import AtlasMetadataHandler
+from .atlas_plugin_repo_emitter import AtlasPluginRepoEmitter
 from .config_handler import ConfigHandler
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -63,6 +64,7 @@ class AtlasConnector:
         self.config_handler = None
         self.metadata_handler = None
         self.active_client_emitter = None
+        self.plugin_repo_emitter = None
         self.atlas_forwarder = None
 
     def start(self):
@@ -70,6 +72,7 @@ class AtlasConnector:
         self.config_handler = ConfigHandler(self, self.connector)
         self._start_config_request_handler()
         self.active_client_emitter = AtlasActiveClientEmitter(self)
+        self.plugin_repo_emitter = AtlasPluginRepoEmitter(self)
         if self.connected_to_atlas:
             self.metadata_handler = AtlasMetadataHandler(self)
             self.atlas_forwarder = AtlasForwarder(self)
@@ -286,6 +289,8 @@ class AtlasConnector:
             self.metadata_handler.shutdown()
         if self.active_client_emitter:
             self.active_client_emitter.shutdown()
+        if self.plugin_repo_emitter:
+            self.plugin_repo_emitter.shutdown()
         if self.atlas_forwarder:
             self.atlas_forwarder.shutdown()
         if self.redis_atlas:
