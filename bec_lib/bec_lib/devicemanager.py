@@ -593,7 +593,7 @@ class DeviceManagerBase:
                     self.devices[dev]._config["enabled"] = config[dev]["enabled"]
                     if self.devices[dev].enabled:
                         dev_info_msg = self._get_device_info(dev)
-                        self.devices[dev]._info = dev_info_msg.info.get("device_info", {})
+                        self.devices[dev]._info = dev_info_msg.info
                         if self._use_proxy_objects:
                             self.devices[dev]._parse_info()
                     status = "enabled" if self.devices[dev].enabled else "disabled"
@@ -737,8 +737,8 @@ class DeviceManagerBase:
         name = msg.content["device"]
         info = msg.content["info"]
 
-        base_class = info["device_info"]["device_base_class"]
-        class_name = info["device_info"]["device_class"]
+        base_class = info["device_base_class"]
+        class_name = info["device_class"]
 
         if base_class == (t := "device"):
             obj = Device(name=name, info=info, config=dev, parent=self, class_name=class_name)
