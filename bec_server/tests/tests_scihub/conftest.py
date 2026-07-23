@@ -3,6 +3,7 @@ from unittest import mock
 import fakeredis
 import pytest
 
+from bec_lib import plugin_helper
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import RedisConnector
@@ -19,6 +20,13 @@ from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 def threads_check(threads_check):
     yield
     bec_logger.logger.remove()
+
+
+@pytest.fixture(autouse=True)
+def clear_plugin_helper_caches():
+    plugin_helper.plugin_repo_path.cache_clear()
+    yield
+    plugin_helper.plugin_repo_path.cache_clear()
 
 
 class SciHubMocked(SciHub):
