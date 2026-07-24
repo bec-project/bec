@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Self
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from bec_lib.logger import bec_logger
 
@@ -40,10 +40,22 @@ class FileWriterConfig(BaseModel):
     base_path: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "data"))
 
 
+class LogFilePolicy(BaseModel):
+    """Optional per-service log file policy overrides."""
+
+    max_file_size_mb: PositiveInt | None = None
+    max_files: PositiveInt | None = None
+    max_file_age_days: PositiveInt | None = None
+
+
 class LogWriterConfig(BaseModel):
     """Log writer configuration model."""
 
     base_path: str = Field(default_factory=lambda: os.path.join(DEFAULT_BASE_PATH, "logs"))
+    max_file_size_mb: PositiveInt = 50
+    max_files: PositiveInt = 3
+    max_file_age_days: PositiveInt = 14
+    service_overrides: dict[str, LogFilePolicy] = Field(default_factory=dict)
 
 
 class UserMacrosConfig(BaseModel):
