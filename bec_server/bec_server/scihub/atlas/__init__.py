@@ -1,2 +1,3 @@
 from .atlas_active_client_emitter import AtlasActiveClientEmitter
 from .atlas_connector import AtlasConnector
+from .atlas_plugin_repo_emitter import AtlasPluginRepoEmitter

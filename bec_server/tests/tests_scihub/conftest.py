@@ -3,6 +3,7 @@ from unittest import mock
 import fakeredis
 import pytest
 
+from bec_lib import plugin_helper
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import RedisConnector
@@ -19,6 +20,13 @@ from bec_server.scihub.atlas.atlas_connector import AtlasConnector
 def threads_check(threads_check):
     yield
     bec_logger.logger.remove()
+
+
+@pytest.fixture(autouse=True)
+def clear_plugin_helper_caches():
+    plugin_helper.plugin_repo_path.cache_clear()
+    yield
+    plugin_helper.plugin_repo_path.cache_clear()
 
 
 class SciHubMocked(SciHub):
@@ -85,13 +93,16 @@ def atlas_connector(connected_connector, connected_atlas_connector):
     scihub_mocked.connector = connected_connector  # Replace with fakeredis connector
 
     atlas_connector = AtlasConnector(scihub_mocked, connected_connector, connected_atlas_connector)
-    with mock.patch.object(atlas_connector, "_load_environment"):
-        with mock.patch.object(atlas_connector, "_env_configured", True):
-            atlas_connector.host = "test-host"
-            atlas_connector.deployment_name = "test-deployment"
-            atlas_connector.atlas_key = "test-key"
-            atlas_connector.start()
-            yield atlas_connector
+    with (
+        mock.patch.object(atlas_connector, "_load_environment"),
+        mock.patch.object(atlas_connector, "_env_configured", True),
+        mock.patch("bec_server.scihub.atlas.atlas_connector.AtlasPluginRepoEmitter"),
+    ):
+        atlas_connector.host = "test-host"
+        atlas_connector.deployment_name = "test-deployment"
+        atlas_connector.atlas_key = "test-key"
+        atlas_connector.start()
+        yield atlas_connector
     atlas_connector.shutdown()
     scihub_mocked.shutdown()
 
