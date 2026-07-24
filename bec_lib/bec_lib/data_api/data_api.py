@@ -275,12 +275,8 @@ class DataSubscription:
         if self._callback is None or self._scan_id is None:
             # Store the device but don't subscribe yet
             self._devices[key] = None
-            logger.debug(
-                "Device %s/%s queued, waiting for %s",
-                device_name,
-                device_entry,
-                "scan binding and callback" if self._scan_id is None else "callback",
-            )
+            waiting_for = "scan binding and callback" if self._scan_id is None else "callback"
+            logger.debug(f"Device {device_name}/{device_entry} queued, waiting for {waiting_for}")
         else:
             # Subscribe immediately
             sub_id = self._data_api.subscribe(

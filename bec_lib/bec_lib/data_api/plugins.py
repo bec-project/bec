@@ -9,10 +9,10 @@ from typing import Any, Callable, Literal, Tuple
 import louie
 from pydantic import BaseModel, ConfigDict
 
-from bec_lib import bec_logger, messages
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.messages import DeviceAsyncUpdate
+from bec_lib.logger import bec_logger
+from bec_lib.messages import DeviceAsyncUpdate, DeviceMessage
 
 CallbackRef = louie.saferef.BoundMethodWeakref | weakref.ReferenceType[Callable[[dict, dict], Any]]
 logger = bec_logger.logger
@@ -534,13 +534,8 @@ class BECLiveDataPlugin(DataAPIPlugin):
 
         if state.bundle_domain != bundle_domain:
             logger.warning(
-                "Skipping async update for %s/%s in scan %s because its bundle domain "
-                "changed from %s to %s.",
-                device_name,
-                device_entry,
-                scan_id,
-                state.bundle_domain,
-                bundle_domain,
+                f"Skipping async update for {device_name}/{device_entry} in scan {scan_id} "
+                f"because its bundle domain changed from {state.bundle_domain} to {bundle_domain}."
             )
             return state.bundle_domain, False
 
@@ -600,13 +595,9 @@ class BECLiveDataPlugin(DataAPIPlugin):
         if source_domain != callback_buffer.bundle_domain:
             callback_buffer.incompatible_sources.add(source_key)
             logger.warning(
-                "Skipping update for %s/%s in scan %s because it resolved to bundle %s while "
-                "the subscription is bound to %s.",
-                device_name,
-                device_entry,
-                scan_id,
-                source_domain,
-                callback_buffer.bundle_domain,
+                f"Skipping update for {device_name}/{device_entry} in scan {scan_id} because it "
+                f"resolved to bundle {source_domain} while the subscription is bound to "
+                f"{callback_buffer.bundle_domain}."
             )
             return False
 
@@ -1085,7 +1076,7 @@ class BECLiveDataPlugin(DataAPIPlugin):
         """
 
         msg_obj = msg.get("data")
-        if not isinstance(msg_obj, messages.DeviceMessage):
+        if not isinstance(msg_obj, DeviceMessage):
             return
 
         signals = msg_obj.signals
@@ -1309,13 +1300,8 @@ class BECLiveDataPlugin(DataAPIPlugin):
 
         del data_buffer.data[:overflow]
         logger.warning(
-            "Dropping %s buffered updates for %s/%s in scan %s because bundle alignment "
-            "could not keep up for callback %s.",
-            overflow,
-            key[0],
-            key[1],
-            scan_id,
-            callback_ref,
+            f"Dropping {overflow} buffered updates for {key[0]}/{key[1]} in scan {scan_id} "
+            f"because bundle alignment could not keep up for callback {callback_ref}."
         )
 
     def _get_expected_device_count(self, callback_ref: CallbackRef, scan_id: str) -> int:
