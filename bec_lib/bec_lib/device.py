@@ -357,28 +357,18 @@ class DeviceBase:
             messages.ScanQueueMessage: The RPC message.
         """
         client: BECClient = self.root.parent.parent
-        scan_type = "_v4_device_rpc"
-        if scan_type == "_v4_device_rpc":
-            parameter = {
-                "args": [],
-                "kwargs": {
-                    "device": device,
-                    "func": func_call,
-                    "func_args": args,
-                    "func_kwargs": kwargs,
-                    "rpc_id": rpc_id,
-                    "system_config": client.system_config,
-                },
-            }
-        else:
-            # TODO: Remove once we've fully migrated to v4
-            parameter = {
+        scan_type = "device_rpc"
+        parameter = {
+            "args": [],
+            "kwargs": {
                 "device": device,
-                "rpc_id": rpc_id,
                 "func": func_call,
-                "args": args,
-                "kwargs": kwargs,
-            }
+                "func_args": args,
+                "func_kwargs": kwargs,
+                "rpc_id": rpc_id,
+                "system_config": client.system_config,
+            },
+        }
 
         msg = messages.ScanQueueMessage(
             scan_type=scan_type,

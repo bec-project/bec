@@ -54,26 +54,7 @@ class ScanInputValidator:
         bundle_size = arg_bundle_size.get("bundle", 0)
         uses_arg_input_bundle = bool(arg_input) and bundle_size > 0
 
-        validated_signature_args = self._validate_signature_inputs(
-            scan_info, args, kwargs, uses_arg_input_bundle
-        )
-
-        # TODO: Remove the section until ---> here <--- once we have migrated all scans
-        # to v4-type scans
-        required_kwargs = scan_info.get("required_kwargs") or []
-        required_names = (
-            required_kwargs.keys() if isinstance(required_kwargs, dict) else required_kwargs
-        )
-        if not all(
-            req_kwarg in kwargs or req_kwarg in validated_signature_args
-            for req_kwarg in required_names
-        ):
-            self._raise_validation_error(
-                f"{scan_info.get('doc')}\n Not all required keyword arguments have been"
-                f" specified. The required arguments are: {required_kwargs}"
-            )
-
-        # ---> here <---
+        self._validate_signature_inputs(scan_info, args, kwargs, uses_arg_input_bundle)
 
         if arg_input:
             self._validate_arg_input(scan_name, scan_info, args, arg_input)
