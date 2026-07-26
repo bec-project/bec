@@ -18,7 +18,7 @@ from bec_server.scan_server.tests.utils import ScanServerMock
 
 
 class _TestDirectScan(ScanBase):
-    scan_name = "_v4_test_direct_scan"
+    scan_name = "test_direct_scan"
     scan_type = None
 
     def __init__(self, *args, called_steps=None, fail_step=None, **kwargs):

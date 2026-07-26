@@ -20,7 +20,7 @@ from bec_server.scan_server.tests.utils import NoopScan
 
 
 class _TestScan(NoopScan):
-    scan_name = "_v4_test_scan"
+    scan_name = "test_scan"
     scan_type = ScanType.SOFTWARE_TRIGGERED
 
     def __init__(self, **kwargs):

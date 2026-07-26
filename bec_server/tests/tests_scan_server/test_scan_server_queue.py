@@ -73,7 +73,7 @@ class InstructionQueueMock(InstructionQueueItem):
 
 
 class _DummyV4Scan(NoopScan):
-    scan_name = "_v4_dummy_scan"
+    scan_name = "dummy_scan"
 
 
 def _build_dummy_v4_scan(

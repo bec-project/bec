@@ -41,7 +41,7 @@ class LineSweepScan(ScanBase):
     # Scan name: This is the name of the scan, e.g. "line_scan". This is used for display purposes and to identify the scan type in user interfaces.
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
-    scan_name = "_v4_line_sweep_scan"
+    scan_name = "line_sweep_scan"
     gui_config = {
         "Device": ["device", "start", "stop"],
         "Scan Parameters": ["min_update", "relative"],

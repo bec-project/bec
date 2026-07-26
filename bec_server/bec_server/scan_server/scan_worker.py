@@ -10,8 +10,7 @@ from bec_lib.logger import bec_logger
 
 from .direct_scan_worker import DirectScanWorker
 from .errors import ScanAbortion
-from .generator_scan_worker import GeneratorScanWorker
-from .scan_queue import DirectInstructionQueueItem, InstructionQueueItem, InstructionQueueStatus
+from .scan_queue import DirectInstructionQueueItem, InstructionQueueStatus
 
 logger = bec_logger.logger
 
@@ -33,28 +32,7 @@ class ScanWorker(threading.Thread):
         self.connector = self.parent.connector
         self.status = InstructionQueueStatus.IDLE
         self.signal_event = threading.Event()
-        self.current_instruction_queue_item: (
-            InstructionQueueItem | DirectInstructionQueueItem | None
-        ) = None
-
-    def get_worker_for_queue(
-        self, queue: InstructionQueueItem
-    ) -> GeneratorScanWorker | DirectScanWorker:
-        """
-        Get the appropriate worker for the given queue. For now, we only have one worker type,
-        but this is where we will extend the functionality to support also direct ScanWorkers
-        that do not use the generator pattern and instead send instructions to the device server directly.
-
-        For now, it simply serves as a factory.
-
-        Args:
-            queue (InstructionQueueItem): The instruction queue item for which to get the worker.
-        Returns:
-            GeneratorScanWorker: The worker that should be used to process the instructions in the given queue
-        """
-        if isinstance(queue, DirectInstructionQueueItem):
-            return DirectScanWorker(worker=self)
-        return GeneratorScanWorker(worker=self)
+        self.current_instruction_queue_item: DirectInstructionQueueItem | None = None
 
     def run(self):
         try:
@@ -66,7 +44,7 @@ class ScanWorker(threading.Thread):
                         if not queue:
                             continue
                         self.current_instruction_queue_item = queue
-                        worker = self.get_worker_for_queue(queue)
+                        worker = DirectScanWorker(worker=self)
                         worker.process_instructions(queue)
                         if not queue.stopped:
                             queue.append_to_queue_history()

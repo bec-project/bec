@@ -38,7 +38,7 @@ class LogScan(ScanBase):
     # Scan name: This is the name of the scan, e.g. "line_scan". This is used for display purposes and to identify the scan type in user interfaces.
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
-    scan_name = "_v4_log_scan"
+    scan_name = "log_scan"
 
     # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
