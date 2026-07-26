@@ -12,12 +12,10 @@ from typing import TYPE_CHECKING, Type
 
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
-from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AvailableResourceMessage, ErrorInfo
-from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
-from bec_server.scan_server.scan_gui_models import GUIConfig
+from bec_lib.signature_serializer import serialize_dtype
 from bec_server.scan_server.scans.scan_argument_modifier import (
     get_scan_modifier,
     scan_doc_with_modifiers,
@@ -25,23 +23,12 @@ from bec_server.scan_server.scans.scan_argument_modifier import (
 )
 
 from . import scans as scans_v4_module
-from .scans import legacy_scans as scans_module
 from .scans.scan_base import ScanBase as ScanBaseV4
 
 if TYPE_CHECKING:
     from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
-
-_SCAN_ARG_TYPE_TO_DTYPE = {
-    scans_module.ScanArgType.DEVICE: DeviceBase,
-    scans_module.ScanArgType.FLOAT: float,
-    scans_module.ScanArgType.INT: int,
-    scans_module.ScanArgType.BOOL: bool,
-    scans_module.ScanArgType.STR: str,
-    scans_module.ScanArgType.LIST: list,
-    scans_module.ScanArgType.DICT: dict,
-}
 
 
 class ScanManager:
@@ -55,7 +42,7 @@ class ScanManager:
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
+        self.scan_dict: dict[str, type[ScanBaseV4]] = {}
         self._plugins = {}
         self.parent.connector.register(
             MessageEndpoints.service_request(), cb=self.handle_reload_scans_request
@@ -67,30 +54,21 @@ class ScanManager:
     @staticmethod
     def get_available_scans() -> list[tuple[str, Type]]:
         """
-        Get all available scans, including legacy scans, v4 scans and plugin scans.
+        Get all available scans, including v4 scans and plugin scans.
 
         Returns:
             list[tuple[str, Type]]: list of scan name and scan class tuples
         """
-        # internal, legacy scans
-        members: list[tuple[str, Type]] = inspect.getmembers(
-            scans_module, predicate=inspect.isclass
-        )
-
-        # internal, v4 scans
-        members.extend(ScanManager._get_v4_scan_members())
+        # internal
+        members = ScanManager._get_v4_scan_members()
 
         # plugin scans
         members.extend((name, cls) for name, cls in ScanManager._get_scan_plugins().items())
 
         to_remove = []
         for name, scan_cls in members:
-            is_scan = issubclass(scan_cls, (scans_module.RequestBase, ScanBaseV4))
-            if (
-                not is_scan
-                or not scan_cls.scan_name
-                or scan_cls in (scans_module.RequestBase, ScanBaseV4)
-            ):
+            is_scan = issubclass(scan_cls, ScanBaseV4)
+            if not is_scan or not scan_cls.scan_name or scan_cls in (ScanBaseV4,):
                 logger.debug(f"Ignoring {name}")
                 to_remove.append((name, scan_cls))
         for item in to_remove:
@@ -138,24 +116,10 @@ class ScanManager:
                 )
                 continue
 
-            report_classes = [
-                scans_module.ScanBase,
-                scans_module.AsyncFlyScanBase,
-                scans_module.SyncFlyScanBase,
-                scans_module.ScanStubs,
-                scans_module.ScanComponent,
-            ]
-            base_cls = scans_module.RequestBase.__name__
-            for report_cls in report_classes:
-                if issubclass(scan_cls, report_cls):
-                    base_cls = report_cls.__name__
-            if issubclass(scan_cls, ScanBaseV4):
-                base_cls = "ScanBaseV4"
+            base_cls = "ScanBaseV4"
 
             self.scan_dict[scan_cls.scan_name] = scan_cls
-            gui_config = (
-                self.validate_gui_config(scan_cls) if hasattr(scan_cls, "gui_config") else {}
-            )
+            gui_config = scan_cls.gui_config if hasattr(scan_cls, "gui_config") else {}
             gui_visibility = {}
             if hasattr(scan_cls, "gui_visibility"):
                 gui_visibility = scan_cls.gui_visibility  # type: ignore
@@ -174,36 +138,6 @@ class ScanManager:
                 "gui_config": gui_config,  # deprecated! - should be removed
             }
 
-    def validate_gui_config(self, scan_cls, gui_config_override: dict | None = None) -> dict:
-        """
-        Validate the gui_config of the scan class
-
-        Args:
-            scan_cls: class
-            gui_config_override (dict | None): Optional raw gui_config mapping to validate
-                instead of ``scan_cls.gui_config``.
-
-        Returns:
-            dict: gui_config
-        """
-
-        if gui_config_override is None and not hasattr(scan_cls, "gui_config"):
-            return {}
-        gui_config = scan_cls.gui_config if gui_config_override is None else gui_config_override
-        if not isinstance(gui_config, GUIConfig) and not isinstance(gui_config, dict):
-            logger.error(
-                f"Invalid gui_config for {scan_cls.scan_name}. gui_config must be of type GUIConfig or dict."
-            )
-            return {}
-        if isinstance(gui_config, dict):
-            original_gui_config = getattr(scan_cls, "gui_config", None)
-            try:
-                scan_cls.gui_config = gui_config
-                gui_config = GUIConfig.from_dict(scan_cls)
-            finally:
-                scan_cls.gui_config = original_gui_config
-        return gui_config.model_dump()
-
     def convert_arg_input(self, arg_input) -> dict:
         """
         Convert the arg_input to supported data types
@@ -216,10 +150,7 @@ class ScanManager:
         """
         converted_arg_input = {}
         for key, value in arg_input.items():
-            dtype = _SCAN_ARG_TYPE_TO_DTYPE.get(value, value)
-            if inspect.isclass(dtype) and issubclass(dtype, DeviceBase):
-                dtype = DeviceBase
-            converted_arg_input[key] = serialize_dtype(dtype)
+            converted_arg_input[key] = serialize_dtype(value)
         return converted_arg_input
 
     def handle_reload_scans_request(self, msg):
@@ -235,7 +166,7 @@ class ScanManager:
         if not plugins:
             return verified_plugins
         for name, cls in plugins.items():
-            if not issubclass(cls, (scans_module.RequestBase, ScanBaseV4)):
+            if not issubclass(cls, ScanBaseV4):
                 continue
             verified_plugins[name] = cls
             logger.info(f"Loading scan plugin {name}")
