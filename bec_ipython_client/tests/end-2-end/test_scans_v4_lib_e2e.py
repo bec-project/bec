@@ -16,7 +16,7 @@ from bec_server.scan_server.scans import position_generators
 
 
 def _get_v4_scan_runner(bec, scan_name: str):
-    return getattr(bec.scans, f"_v4_{scan_name}")
+    return getattr(bec.scans, scan_name)
 
 
 def _run_v4_scan(

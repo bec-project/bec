@@ -326,9 +326,7 @@ class IPythonLiveUpdates:
             return False
         req_block = available_blocks[self._request_block_index[req_id]]
         if req_block.msg.scan_type in [
-            "open_scan_def",
-            "mv",
-            "_v4_mv",
+            "mv"
         ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 
@@ -411,11 +409,7 @@ class IPythonLiveUpdates:
         self._current_queue = None
         self._user_callback = None
         self._processed_instructions = 0
-        scan_closed = (
-            forced
-            or self._active_request is None
-            or (self._active_request.scan_type == "close_scan_def")
-        )
+        scan_closed = forced or self._active_request is None
         self._active_request = None
 
         if self.client.scans._scan_def_id and not scan_closed:
