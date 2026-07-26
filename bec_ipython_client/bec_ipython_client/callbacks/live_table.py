@@ -45,8 +45,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     MAX_DEVICES = 10
     REPORT_TYPE = "scan_progress"
-    STEP_SCAN_TYPES = {"step", "software_triggered", "hardware_triggered"}
-    FLY_SCAN_TYPES = {"fly"}
 
     def __init__(
         self,
@@ -120,14 +118,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
     @property
     def devices(self):
         """get the devices for the callback"""
-        if self.point_data.metadata["scan_type"] in self.STEP_SCAN_TYPES:
-            return self.get_devices_from_scan_data(self.scan_item.live_data[0])
-        if self.point_data.metadata["scan_type"] in self.FLY_SCAN_TYPES:
-            devices = list(self.point_data.content["data"].keys())
-            if len(devices) > self.MAX_DEVICES:
-                return devices[0 : self.MAX_DEVICES]
-            return devices
-        return None
+        return self.get_devices_from_scan_data(self.scan_item.live_data[0])
 
     def get_devices_from_scan_data(self, data: messages.ScanMessage) -> list:
         """extract interesting devices from a scan request"""
