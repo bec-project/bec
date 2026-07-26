@@ -24,13 +24,13 @@ TIME_SCAN_DEFAULT_HOOK_TESTS = [
 
 @pytest.mark.parametrize(("hook_name", "hook_tests"), TIME_SCAN_DEFAULT_HOOK_TESTS)
 def test_time_scan_default_hooks(v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests):
-    scan = v4_scan_assembler("_v4_time_scan", 3, 1.5, exp_time=0.2)
+    scan = v4_scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
 
 
 def test_time_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_time_scan", 3, 1.5, exp_time=0.2)
+    scan = v4_scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
 
     scan.prepare_scan()
 
@@ -42,7 +42,7 @@ def test_time_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
 
 
 def test_time_scan_scan_core_triggers_reads_and_waits_between_points(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_time_scan", 3, 1.5, exp_time=0.2)
+    scan = v4_scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
     scan.at_each_point = mock.MagicMock()
 
     with mock.patch("bec_server.scan_server.scans.time_scan.time.sleep") as sleep_mock:
@@ -53,7 +53,7 @@ def test_time_scan_scan_core_triggers_reads_and_waits_between_points(v4_scan_ass
 
 
 def test_time_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_time_scan", 3, 1.5, exp_time=0.2)
+    scan = v4_scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
     scan.components.trigger_and_read = mock.MagicMock()
 
     scan.at_each_point()
@@ -62,7 +62,7 @@ def test_time_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
 
 
 def test_time_scan_post_scan_completes_all_devices(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_time_scan", 3, 1.5, exp_time=0.2)
+    scan = v4_scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
     scan.actions.complete_all_devices = mock.MagicMock()
 
     scan.post_scan()

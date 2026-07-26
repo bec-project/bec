@@ -68,7 +68,7 @@ def _assemble_cont_line_scan(
     )
     device_manager.add_device(custom_samx, replace=True)
     return v4_scan_assembler(
-        "_v4_cont_line_scan", "samx", start, stop, steps=steps, exp_time=exp_time, relative=relative
+        "cont_line_scan", "samx", start, stop, steps=steps, exp_time=exp_time, relative=relative
     )
 
 
@@ -136,7 +136,7 @@ def test_cont_line_scan_example_custom_device_manager_integration(
     device_manager.add_device(custom_samx, replace=True)
 
     scan = v4_scan_assembler(
-        "_v4_cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=False
+        "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=False
     )
 
     assert scan.device is custom_samx
@@ -174,7 +174,7 @@ def test_mock_custom_device_supports_generated_signal_values():
 
 def test_cont_line_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=False
+        "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=False
     )
     scan.components.trigger_and_read = mock.MagicMock()
 
@@ -234,7 +234,7 @@ def test_cont_line_scan_prepare_scan_raises_when_motor_too_fast(v4_scan_assemble
 
 def test_cont_line_scan_post_scan_moves_back_when_relative(v4_scan_assembler, nth_done_status_mock):
     scan = v4_scan_assembler(
-        "_v4_cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True
+        "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True
     )
     completion_status = nth_done_status_mock(resolve_after=2)
     scan.start_positions = [1.5]
@@ -250,7 +250,7 @@ def test_cont_line_scan_post_scan_moves_back_when_relative(v4_scan_assembler, nt
 
 def test_cont_line_scan_on_exception_moves_back_when_relative(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True
+        "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True
     )
     scan.start_positions = [1.5]
     scan.components.move_and_wait = mock.MagicMock()

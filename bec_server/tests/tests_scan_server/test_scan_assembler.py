@@ -537,10 +537,10 @@ def test_scan_assembler_maps_optional_positional_direct_scan_args_to_request_kwa
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"_v4_acquire": Acquire}
+        scan_dict = {"acquire": Acquire}
 
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_acquire",
+        scan_type="acquire",
         parameter={
             "args": [0, 1, 0, 0, 0, 1],
             "kwargs": {"system_config": {"file_directory": "/tmp/data"}},
@@ -575,10 +575,10 @@ def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(dm_wi
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"_v4_acquire": Acquire}
+        scan_dict = {"acquire": Acquire}
 
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_acquire",
+        scan_type="acquire",
         parameter={
             "args": [0, 1],
             "kwargs": {
@@ -615,10 +615,10 @@ def test_scan_assembler_extracts_user_metadata_for_direct_scans(dm_with_devices)
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"_v4_acquire": Acquire}
+        scan_dict = {"acquire": Acquire}
 
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_acquire",
+        scan_type="acquire",
         parameter={"args": [], "kwargs": {"exp_time": 0.2, "system_config": {}}},
         queue="primary",
         metadata={"RID": "rid-123", "user_metadata": {"sample": "my_sample"}},

@@ -44,7 +44,7 @@ def scan_guard_mock(scan_server_mock):
         ),
         (
             messages.ScanQueueMessage(
-                scan_type="_v4_device_rpc",
+                scan_type="device_rpc",
                 parameter={
                     "args": [],
                     "kwargs": {
@@ -115,7 +115,7 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
         ),
         (
             messages.ScanQueueMessage(
-                scan_type="_v4_device_rpc",
+                scan_type="device_rpc",
                 parameter={
                     "args": [],
                     "kwargs": {
@@ -352,7 +352,7 @@ def test_handle_scan_request(scan_guard_mock):
         ),
         messages.ScanQueueMessage(
             metadata={"RID": "9db0c540-c1e0-4f44-872d-f41209512316", "response": True},
-            scan_type="_v4_device_rpc",
+            scan_type="device_rpc",
             parameter={
                 "args": [],
                 "kwargs": {
@@ -367,7 +367,7 @@ def test_handle_scan_request(scan_guard_mock):
         ),
         messages.ScanQueueMessage(
             metadata={"RID": "7d28d801-8e33-484d-af34-9cc061eefe0e", "response": True},
-            scan_type="_v4_device_rpc",
+            scan_type="device_rpc",
             parameter={
                 "args": [],
                 "kwargs": {
@@ -397,11 +397,11 @@ def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
                 sent_msg = send.call_args.args[1]
                 expected_device = (
                     msg.parameter["kwargs"]["device"]
-                    if msg.scan_type == "_v4_device_rpc"
+                    if msg.scan_type == "device_rpc"
                     else msg.parameter["device"]
                 )
                 assert sent_msg.device == expected_device
-                if msg.scan_type == "_v4_device_rpc":
+                if msg.scan_type == "device_rpc":
                     assert sent_msg.parameter == {
                         "device": expected_device,
                         "rpc_id": msg.parameter["kwargs"]["rpc_id"],

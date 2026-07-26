@@ -17,7 +17,7 @@ def test_multi_region_grid_scan_default_hooks(
     v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests
 ):
     scan = v4_scan_assembler(
-        "_v4_multi_region_grid_scan",
+        "multi_region_grid_scan",
         "samx",
         "samy",
         regions=[[(-3.0, -1.0, 2), (-2.0, 2.0, 3)], [(1.0, 3.0, 2), (-2.0, 2.0, 3)]],
@@ -30,7 +30,7 @@ def test_multi_region_grid_scan_default_hooks(
 
 def test_multi_region_grid_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_multi_region_grid_scan",
+        "multi_region_grid_scan",
         "samx",
         "samy",
         regions=[[(-3.0, -1.0, 2), (-2.0, 2.0, 3)], [(1.0, 3.0, 2), (-2.0, 2.0, 3)]],
@@ -66,7 +66,7 @@ def test_multi_region_grid_scan_prepare_scan_updates_scan_info_and_queue(v4_scan
 
 def test_multi_region_grid_scan_prepare_scan_offsets_positions_when_relative(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_multi_region_grid_scan",
+        "multi_region_grid_scan",
         "samx",
         "samy",
         regions=[[(-3.0, -1.0, 2), (-2.0, 2.0, 3)], [(1.0, 3.0, 2), (-2.0, 2.0, 3)]],
@@ -99,7 +99,7 @@ def test_multi_region_grid_scan_prepare_scan_offsets_positions_when_relative(v4_
 
 def test_multi_region_grid_scan_prepare_scan_rejects_empty_region_list(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_multi_region_grid_scan", "samx", "samy", regions=[], snaked=True, relative=False
+        "multi_region_grid_scan", "samx", "samy", regions=[], snaked=True, relative=False
     )
 
     with pytest.raises(ValueError, match="at least one paired region"):

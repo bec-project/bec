@@ -375,7 +375,7 @@ def test_direct_instruction_queue_non_scan_does_not_allocate_scan_number(queuema
     scan_queue.queue.append(queue)
     scan = _build_dummy_v4_scan("scan-1", is_scan=False)
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_umv",
+        scan_type="umv",
         parameter={"args": {"samx": (1,)}, "kwargs": {}},
         queue="primary",
         metadata={"RID": "rid-1"},
@@ -400,14 +400,14 @@ def test_direct_instruction_queue_non_scan_does_not_allocate_scan_id(queuemanage
     queue_manager = queuemanager_mock()
     scan_queue = queue_manager.queues["primary"]
     assembler = mock.MagicMock()
-    assembler.scan_manager.scan_dict = {"_v4_umv": mock.MagicMock(is_scan=False)}
+    assembler.scan_manager.scan_dict = {"umv": mock.MagicMock(is_scan=False)}
     scan = _build_dummy_v4_scan("placeholder-scan-id", is_scan=False)
     scan.scan_info.scan_id = None
     assembler.assemble_direct_scan.return_value = scan
     queue = DirectInstructionQueueItem(scan_queue, assembler, scan_queue.scan_worker)
 
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_umv",
+        scan_type="umv",
         parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
