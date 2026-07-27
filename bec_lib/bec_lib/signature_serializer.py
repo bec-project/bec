@@ -269,7 +269,7 @@ def signature_to_dict(
             {
                 "name": param_name,
                 "kind": param.kind.name,
-                "default": param.default if param.default != inspect._empty else "_empty",
+                "default": (param.default if param.default != inspect._empty else "_empty"),
                 "annotation": (
                     serialize_dtype(param_typehint)
                     if param_typehint is not inspect._empty
@@ -297,7 +297,7 @@ def dict_to_signature(params: list[dict]) -> inspect.Signature:
             inspect.Parameter(
                 name=param["name"],
                 kind=getattr(inspect.Parameter, param["kind"]),
-                default=param["default"] if param["default"] != "_empty" else inspect._empty,
+                default=(param["default"] if param["default"] != "_empty" else inspect._empty),
                 annotation=deserialize_dtype(param["annotation"]),
             )
         )

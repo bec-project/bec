@@ -108,7 +108,9 @@ class AtlasMetadataHandler:
         service_info = messages.AvailableMessagingServicesMessage(
             config=info.messaging_config,
             deployment_services=info.messaging_services,
-            session_services=info.active_session.messaging_services if info.active_session else [],
+            session_services=(
+                info.active_session.messaging_services if info.active_session else []
+            ),
         )
         self.atlas_connector.connector.xadd(
             MessageEndpoints.available_messaging_services(),

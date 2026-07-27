@@ -45,8 +45,6 @@ class ScanItem:
         status_message: Latest status message for this scan.
         data: Container for the scan's data points.
         live_data: Container for live/streaming scan data.
-        open_scan_defs: Set of open scan definition IDs.
-        open_queue_group: Queue group this scan belongs to.
         num_points: Total number of data points in the scan.
         num_monitored_readouts: Total number of monitored readouts in the scan.
         start_time: Unix timestamp when the scan started.
@@ -83,8 +81,6 @@ class ScanItem:
         self.status_message: messages.ScanStatusMessage | None = None
         self.data = ScanDataContainer()
         self.live_data = LiveScanData()
-        self.open_scan_defs = set()
-        self.open_queue_group = None
         self.num_points: int | None = None
         self.num_monitored_readouts: int | None = None
         self.start_time: float | None = None
@@ -384,17 +380,6 @@ class ScanStorage:
 
         # add scan report info
         scan_item.scan_report_instructions = scan_status.info.get("scan_report_instructions", [])
-
-        # add scan def id
-        scan_def_id = scan_status.info.get("scan_def_id")
-        if scan_def_id:
-            if scan_status.status in terminal_states:
-                scan_item.open_scan_defs.discard(scan_def_id)
-            else:
-                scan_item.open_scan_defs.add(scan_def_id)
-
-        # add queue group
-        scan_item.open_queue_group = scan_status.info.get("queue_group")
 
         # run status callbacks
         scan_item.emit_status(scan_status)

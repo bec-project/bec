@@ -115,7 +115,7 @@ class ScanGuard:
         if scan_type not in avail_scans.resource:
             raise ScanRejection(f"Unknown scan type {scan_type}.")
 
-        if scan_type in ["device_rpc", "_v4_device_rpc"]:
+        if scan_type == "device_rpc":
             # ensure that the requested rpc is allowed for this particular device
             device, func = self._extract_device_rpc_target(request)
             if not self._device_rpc_is_valid(device=device, func=func):
@@ -141,7 +141,7 @@ class ScanGuard:
             ScanRejection: If any motor is not enabled or movable
         """
         parameter = request.parameter
-        if request.scan_type in ["device_rpc", "_v4_device_rpc"]:
+        if request.scan_type == "device_rpc":
             device, _ = self._extract_device_rpc_target(request)
             if not isinstance(device, list):
                 device = [device]
@@ -214,7 +214,7 @@ class ScanGuard:
             logger.info(f"Request was rejected: {scan_status.message}")
             return
 
-        if msg.scan_type in ["device_rpc", "_v4_device_rpc"]:
+        if msg.scan_type == "device_rpc":
             _, func = self._extract_device_rpc_target(msg)
             if func in ["get", "read"] or func.endswith(".get") or func.endswith(".read"):
                 logger.info("Scan request is a read operation, not enqueuing.")
@@ -227,10 +227,8 @@ class ScanGuard:
         msg: messages.ScanQueueMessage,
     ) -> tuple[str | list[str] | None, str]:
         params = msg.content.get("parameter", {})
-        if msg.scan_type == "_v4_device_rpc":
-            rpc_kwargs = params.get("kwargs", {})
-            return rpc_kwargs.get("device"), rpc_kwargs.get("func", "")
-        return params.get("device"), params.get("func", "")
+        rpc_kwargs = params.get("kwargs", {})
+        return rpc_kwargs.get("device"), rpc_kwargs.get("func", "")
 
     def _direct_device_rpc(self, msg: messages.ScanQueueMessage):
         """
@@ -247,15 +245,15 @@ class ScanGuard:
         if not params:
             logger.error("No parameters provided for device RPC request.")
             return
-        if msg.scan_type == "_v4_device_rpc":
-            rpc_kwargs = params.get("kwargs", {})
-            params = {
-                "device": device,
-                "rpc_id": rpc_kwargs.get("rpc_id"),
-                "func": rpc_kwargs.get("func"),
-                "args": rpc_kwargs.get("func_args", []),
-                "kwargs": rpc_kwargs.get("func_kwargs", {}),
-            }
+
+        rpc_kwargs = params.get("kwargs", {})
+        params = {
+            "device": device,
+            "rpc_id": rpc_kwargs.get("rpc_id"),
+            "func": rpc_kwargs.get("func"),
+            "args": rpc_kwargs.get("func_args", []),
+            "kwargs": rpc_kwargs.get("func_kwargs", {}),
+        }
         instr = messages.DeviceInstructionMessage(
             device=device,
             action="rpc",

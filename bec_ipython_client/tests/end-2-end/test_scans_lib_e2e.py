@@ -16,31 +16,25 @@ logger = bec_logger.logger
 
 
 @pytest.mark.timeout(100)
-@pytest.mark.parametrize("scan_name", [("umv", "grid_scan"), ("_v4_umv", "_v4_grid_scan")])
-def test_grid_scan_lib(bec_client_lib, scan_name):
+def test_grid_scan_lib(bec_client_lib):
     bec = bec_client_lib
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    getattr(scans, scan_name[0])(dev.samx, 0, dev.samy, 0, relative=False)
-    status = getattr(scans, scan_name[1])(
-        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
-    )
+    scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
+    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
     status.wait(num_points=True, file_written=True)
     assert len(status.scan.live_data) == 100
     assert status.scan.num_points == 100
 
 
 @pytest.mark.timeout(100)
-@pytest.mark.parametrize("scan_name", ["grid_scan", "_v4_grid_scan"])
-def test_grid_scan_lib_cancel(bec_client_lib, scan_name):
+def test_grid_scan_lib_cancel(bec_client_lib):
     bec = bec_client_lib
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_grid_scan_bec_client_lib"})
     dev = bec.device_manager.devices
-    status = getattr(scans, scan_name)(
-        dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False
-    )
+    status = scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1, relative=False)
     time.sleep(0.5)
     status.cancel()
 
@@ -548,31 +542,6 @@ def test_cached_device_readout(bec_client_lib):
     dev.hexapod.x.readback.get(cached=True)
     timestamp_3 = dev.hexapod.x.readback.read(cached=True)["hexapod_x"]["timestamp"]
     assert timestamp_3 == timestamp_2
-
-
-@pytest.mark.timeout(100)
-@pytest.mark.skip(reason="Interactive scans are currently not supported in v4 scans.")
-def test_interactive_scan(bec_client_lib):
-    bec = bec_client_lib
-    bec.metadata.update({"unit_test": "test_interactive_scan"})
-    dev = bec.device_manager.devices
-    scans = bec.scans
-
-    with scans.interactive_scan(monitored=[dev.samx, dev.samy], exp_time=0.1) as scan:
-        for ii in range(10):
-            samx_status = dev.samx.set(ii)
-            samy_status = dev.samy.set(ii)
-            samx_status.wait()
-            samy_status.wait()
-            scan.trigger()
-            scan.read_monitored_devices(devices=[dev.samx, dev.samy])
-        report = scan.status
-
-    report.wait()
-
-    while len(report.scan.live_data) != 10:
-        time.sleep(0.1)
-    assert len(report.scan.live_data.samx.samx.val) == 10
 
 
 @pytest.mark.timeout(100)

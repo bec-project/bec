@@ -50,7 +50,8 @@ StreamSubsRegistry = dict[str, StreamSubsEntry]
 class StreamSubs:
     def __init__(self) -> None:
         """Manager for stream subscriptions. Since operations often need to be combined,
-        use the lock directly at point of call, it is generally not used in the methods."""
+        use the lock directly at point of call, it is generally not used in the methods.
+        """
         self.lock = threading.RLock()
 
         self._subs: StreamSubsRegistry = {}

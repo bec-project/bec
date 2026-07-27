@@ -97,8 +97,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
         """wait for scan completion"""
         while True:
             if self.scan_item.end_time:
-                if self.scan_item.open_queue_group:
-                    break
                 if self.scan_item.queue.queue_position is None:
                     break
             self.check_alarms()
@@ -109,13 +107,6 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def check_alarms(self):
         """check for alarms"""
         check_alarms(self.bec)
-
-    def resume(self, request: messages.ScanQueueMessage, report_instruction: str, callbacks):
-        """resume the scan after a pause"""
-        super().__init__(
-            self.bec, request=request, report_instruction=report_instruction, callbacks=callbacks
-        )
-        self.process_request()
 
     @property
     def devices(self):

@@ -309,28 +309,6 @@ def test_scan_object_receives_sample_name(scan_obj, dev):
             )
 
 
-def test_scan_object_receives_scan_group(scan_obj, dev):
-    scan_obj.client.scans._scan_group = "group_id"
-    with mock.patch.object(scan_obj.client, "alarm_handler"):
-        with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-            with mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"):
-                scan_obj._run(
-                    dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False
-                )
-                assert scan_report.call_args.args[0].metadata["queue_group"] == "group_id"
-
-
-def test_scan_object_receives_scan_def_id(scan_obj, dev):
-    scan_obj.client.scans._scan_def_id = "scan_def_id"
-    with mock.patch.object(scan_obj.client, "alarm_handler"):
-        with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-            with mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"):
-                scan_obj._run(
-                    dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False
-                )
-                assert scan_report.call_args.args[0].metadata["scan_def_id"] == "scan_def_id"
-
-
 def test_scan_object_receives_dataset_id_on_hold(scan_obj, dev):
     scan_obj.client.scans._dataset_id_on_hold = "dataset_id_on_hold"
     with mock.patch.object(scan_obj.client, "alarm_handler"):

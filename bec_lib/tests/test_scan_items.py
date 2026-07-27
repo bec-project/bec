@@ -345,66 +345,6 @@ def test_update_with_scan_status_updates_scan_number_already_existing():
         assert scan_item.scan_number == 1
 
 
-def test_update_with_scan_status_adds_scan_def_id():
-    scan_manager = ScanManager(ConnectorMock(""))
-    scan_manager.scan_storage.last_scan_number = 0
-    with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
-        scan_item = mock.MagicMock()
-        scan_item.open_scan_defs = set()
-        mock_find_scan.return_value = scan_item
-        scan_manager.scan_storage.update_with_scan_status(
-            messages.ScanStatusMessage(
-                scan_id="scan_id",
-                status="open",
-                scan_number=1,
-                num_points=10,
-                info={"scan_def_id": "scan_def_id"},
-                timestamp=10,
-            )
-        )
-        assert "scan_def_id" in scan_item.open_scan_defs
-
-
-def test_update_with_scan_status_removes_scan_def_id():
-    scan_manager = ScanManager(ConnectorMock(""))
-    scan_manager.scan_storage.last_scan_number = 0
-    with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
-        scan_item = mock.MagicMock()
-        scan_item.open_scan_defs = set(["scan_def_id"])
-        mock_find_scan.return_value = scan_item
-        scan_manager.scan_storage.update_with_scan_status(
-            messages.ScanStatusMessage(
-                scan_id="scan_id",
-                status="closed",
-                scan_number=1,
-                num_points=10,
-                info={"scan_def_id": "scan_def_id"},
-                timestamp=10,
-            )
-        )
-        assert "scan_def_id" not in scan_item.open_scan_defs
-
-
-def test_update_with_scan_status_keeps_scan_def_id_for_paused():
-    scan_manager = ScanManager(ConnectorMock(""))
-    scan_manager.scan_storage.last_scan_number = 0
-    with mock.patch.object(scan_manager.scan_storage, "find_scan_by_ID") as mock_find_scan:
-        scan_item = mock.MagicMock()
-        scan_item.open_scan_defs = {"scan_def_id"}
-        mock_find_scan.return_value = scan_item
-        scan_manager.scan_storage.update_with_scan_status(
-            messages.ScanStatusMessage(
-                scan_id="scan_id",
-                status="paused",
-                scan_number=1,
-                num_points=10,
-                info={"scan_def_id": "scan_def_id"},
-                timestamp=10,
-            )
-        )
-        assert "scan_def_id" in scan_item.open_scan_defs
-
-
 def test_add_scan_segment_emits_data():
     scan_manager = ScanManager(ConnectorMock(""))
     scan_item = mock.MagicMock()

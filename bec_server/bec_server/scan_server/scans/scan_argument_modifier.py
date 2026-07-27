@@ -141,7 +141,7 @@ def _build_signature_from_arguments(
         annotation = arguments[name]
         parameters.append(
             param.replace(
-                annotation=annotation if annotation is not None else inspect.Parameter.empty,
+                annotation=(annotation if annotation is not None else inspect.Parameter.empty),
                 default=defaults.get(name, inspect.Parameter.empty),
             )
         )
@@ -155,7 +155,7 @@ def _build_signature_from_arguments(
                 name=name,
                 kind=inspect.Parameter.KEYWORD_ONLY,
                 default=defaults.get(name, inspect.Parameter.empty),
-                annotation=annotation if annotation is not None else inspect.Parameter.empty,
+                annotation=(annotation if annotation is not None else inspect.Parameter.empty),
             )
         )
 
@@ -163,7 +163,7 @@ def _build_signature_from_arguments(
         annotation = arguments[trailing_var_keyword.name]
         parameters.append(
             trailing_var_keyword.replace(
-                annotation=annotation if annotation is not None else inspect.Parameter.empty,
+                annotation=(annotation if annotation is not None else inspect.Parameter.empty),
                 default=defaults.get(trailing_var_keyword.name, inspect.Parameter.empty),
             )
         )

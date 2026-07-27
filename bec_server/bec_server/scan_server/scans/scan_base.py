@@ -160,10 +160,11 @@ class ScanInfo(BaseModel):
 
 class ScanBase(ABC):
     scan_type = ScanType.SOFTWARE_TRIGGERED
-    scan_name = "_v4_base_scan"
+    scan_name = "base_scan"
     arg_input = {}
     arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
     is_scan = True
+    is_internal = False
 
     def __init__(
         self,

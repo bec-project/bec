@@ -6,7 +6,6 @@ from the client side.
 from __future__ import annotations
 
 import builtins
-import time
 import uuid
 from collections.abc import Callable
 from contextlib import ContextDecorator
@@ -16,7 +15,6 @@ from typing import TYPE_CHECKING
 from toolz import partition
 from typeguard import typechecked
 
-from bec_lib.bec_errors import ScanAbortion
 from bec_lib.callback_handler import EventType
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
@@ -133,10 +131,6 @@ class ScanObject:
 
         sys_config = sys_config.model_dump()
         # pylint: disable=protected-access
-        if scans._scan_group:
-            sys_config["queue_group"] = scans._scan_group
-        if scans._scan_def_id:
-            sys_config["scan_def_id"] = scans._scan_def_id
         if scans._dataset_id_on_hold:
             sys_config["dataset_id_on_hold"] = scans._dataset_id_on_hold
 
@@ -191,16 +185,11 @@ class Scans:
             MessageEndpoints.available_scans(), cb=self._available_scans_update
         )
         self._refresh_available_scans()
-        self._scan_group = None
-        self._scan_def_id = None
-        self._interactive_scan = False
-        self._scan_group_ctx = ScanGroup(parent=self)
         self._hide_report = None
         self._hide_report_ctx = HideReport(parent=self)
         self._dataset_id_on_hold = None
         self._dataset_id_on_hold_ctx = DatasetIdOnHold(parent=self)
         self._scan_export = None
-        setattr(self.interactive_scan, "__doc__", InteractiveScan.__doc__)
 
     def _refresh_available_scans(self) -> None:
         """Refresh scans from the scan server state."""
@@ -236,6 +225,8 @@ class Scans:
 
         self._available_scans = {}
         for scan_name, scan_info in available_scans.resource.items():
+            if scan_info.get("is_internal"):
+                continue
             scan_object = ScanObject(scan_name, scan_info, client=self.parent)
             self._available_scans[scan_name] = scan_object
             updated_scans[scan_name] = scan_object.run
@@ -376,11 +367,6 @@ class Scans:
         return params
 
     @property
-    def scan_group(self):
-        """Context manager / decorator for defining scan groups"""
-        return self._scan_group_ctx
-
-    @property
     def hide_report(self):
         """Context manager / decorator for hiding the report"""
         return self._hide_report_ctx
@@ -393,27 +379,6 @@ class Scans:
     def scan_export(self, output_file: str):
         """Context manager / decorator for exporting scans"""
         return ScanExport(output_file)
-
-    @property
-    def interactive_scan(self):
-        return InteractiveScan
-
-
-class ScanGroup(ContextDecorator):
-    """ScanGroup is a ContextDecorator for defining a scan group"""
-
-    def __init__(self, parent: Scans = None) -> None:
-        super().__init__()
-        self.parent = parent
-
-    def __enter__(self):
-        group_id = str(uuid.uuid4())
-        self.parent._scan_group = group_id
-        return self
-
-    def __exit__(self, *exc):
-        self.parent.close_scan_group()
-        self.parent._scan_group = None
 
 
 class HideReport(ContextDecorator):
@@ -547,128 +512,6 @@ class ScanExport:
                 self.scans = None
             except Exception as exc:
                 logger.warning(f"Could not export scans to csv file, due to exception {exc}")
-
-
-class InteractiveScan(ContextDecorator):
-    """
-    InteractiveScan is a context manager for running interactive scans.
-    Opening the interactive scan will stage all devices and perform the baseline reading.
-    Exiting the context manager will unstage all devices.
-    """
-
-    def __init__(
-        self, monitored: list[str] | list[DeviceBase], exp_time: float = 0, metadata=None, **kwargs
-    ) -> None:
-        """
-        InteractiveScan is a context manager for running interactive scans.
-        Opening the interactive scan will stage all devices and perform the baseline reading.
-        Exiting the context manager will unstage all devices.
-
-        Use "monitored" to specify the devices that should be monitored during the scan in addition
-        to the default monitored devices.
-
-        Args:
-            scan_motors (list[str] | list[DeviceBase]): List of scan motors that should be monitored.
-            exp_time (float): Exposure time for the scan. Default is 0.
-            metadata (dict): Metadata dictionary. Default is None.
-            kwargs: Keyword arguments that should be passed to the scan.
-
-        Example:
-            >>> with scans.interactive_scan(monitored=["samx"], exp_time=0.1, metadata={"sample": "A"}) as scan:
-            >>>     for i in range(10):
-            >>>         samx_status = dev.samx.set(i)
-            >>>         samx_status.wait()
-            >>>         scan.trigger()
-            >>>         scan.read_all_monitored_devices()
-        """
-
-        self._client = None
-        self._scans = None
-        self._point_id = 0
-        self._scan_kwargs = kwargs
-        self._scan_kwargs["exp_time"] = exp_time
-        self._scan_kwargs["metadata"] = metadata
-
-        self._input_monitored_devices = monitored
-
-    def _update_monitored_devices(self):
-        """
-        Update the monitored devices based on the scan_motors or monitored_devices arguments.
-        """
-        monitored_devices = self._input_monitored_devices
-        if monitored_devices is not None:
-            if not isinstance(monitored_devices, list):
-                monitored_devices = [monitored_devices]
-            self._scan_kwargs["monitored"] = monitored_devices
-
-        self._scan_kwargs["monitored"] = [
-            device.name if isinstance(device, DeviceBase) else device
-            for device in self._scan_kwargs["monitored"]
-        ]
-
-    def __enter__(self):
-        self._client = _get_client()
-        self._scans = self._client.scans
-        if self._scans._scan_def_id is not None:
-            raise ScanAbortion("Cannot run interactive scans within a scan definition.")
-        if self._scans._interactive_scan:
-            raise ScanAbortion("Cannot run interactive scans within another interactive scan.")
-        self._update_monitored_devices()
-        self._scans._interactive_scan = True
-        self._scans._scan_def_id = str(uuid.uuid4())
-        status = self._scans._open_interactive_scan(hide_report=True, **self._scan_kwargs)
-        self.status = status
-        return self
-
-    def __exit__(self, *exc):
-        self._scans._close_interactive_scan(hide_report=True, **self._scan_kwargs)
-        self._scans._scan_def_id = None
-        self._scans._interactive_scan = False
-        if not exc[0]:
-            self.status.wait()
-
-    def trigger(self):
-        """
-        Trigger all enabled devices that have softwareTrigger set to True
-        """
-        # self._client.alarm_handler.check_for_alarms()
-        # pylint: disable=protected-access
-        self._scans._interactive_trigger(hide_report=True, **self._scan_kwargs)
-
-    def read_monitored_devices(self, devices: list[str | DeviceBase] = None, wait: bool = False):
-        """
-        Read all monitored devices. If devices is specified, only read the specified devices.
-        Please note that in an interactive scan, scan motors are not automatically added to the monitored devices,
-        so they need to be specified explicitly.
-
-        Args:
-            devices(list[str | DeviceBase]): List of devices that should be added to the monitored devices
-
-        """
-        if devices is None:
-            devices = []
-        if not isinstance(devices, list):
-            devices = [devices]
-        devices = [device.name if isinstance(device, DeviceBase) else device for device in devices]
-        # pylint: disable=protected-access
-        self._scans._interactive_read_monitored(
-            devices=devices, point_id=self._point_id, hide_report=True, **self._scan_kwargs
-        )
-        self._point_id += 1
-        if wait:
-            self.wait()
-
-    def wait(self):
-        """
-        Wait for the all readings to arrive at the client
-        """
-        while len(self.status.scan.data) != self._point_id:
-            self._client.alarm_handler.raise_alarms()
-            time.sleep(0.1)
-
-
-# this is a workaround to make the InteractiveScan doc string available to the interactive_scan property
-Scans.interactive_scan.__doc__ = InteractiveScan.__init__.__doc__
 
 
 def _get_client():

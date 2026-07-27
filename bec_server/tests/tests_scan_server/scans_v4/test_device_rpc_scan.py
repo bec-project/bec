@@ -16,14 +16,14 @@ import pytest
     ],
 )
 def test_device_rpc_scan_default_noop_hooks_do_not_raise(v4_scan_assembler, hook_name):
-    scan = v4_scan_assembler("_v4_device_rpc", "samx", "read", [], {}, rpc_id="rpc-id-123")
+    scan = v4_scan_assembler("device_rpc", "samx", "read", [], {}, rpc_id="rpc-id-123")
 
     getattr(scan, hook_name)()
 
 
 def test_device_rpc_scan_core_sends_fire_and_forget_rpc(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_device_rpc",
+        "device_rpc",
         "samx",
         "controller.set_mode",
         [1, "fast"],
@@ -43,8 +43,8 @@ def test_device_rpc_scan_core_sends_fire_and_forget_rpc(v4_scan_assembler):
 
 
 def test_device_rpc_scan_is_registered_as_non_scan(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_device_rpc", "samx", "read", [], {}, rpc_id="rpc-id-123")
+    scan = v4_scan_assembler("device_rpc", "samx", "read", [], {}, rpc_id="rpc-id-123")
 
-    assert scan.scan_name == "_v4_device_rpc"
+    assert scan.scan_name == "device_rpc"
     assert scan.is_scan is False
     assert scan.scan_info.scan_type is None

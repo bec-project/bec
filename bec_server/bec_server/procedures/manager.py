@@ -183,7 +183,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
     def worker_statuses(self) -> dict[str, ProcedureWorkerStatus]:
         with self.lock:
             return {
-                q: w["worker"].status if w["worker"] is not None else ProcedureWorkerStatus.NONE
+                q: (w["worker"].status if w["worker"] is not None else ProcedureWorkerStatus.NONE)
                 for q, w in self._active_workers.items()
             }
 
@@ -233,7 +233,8 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
     @abstractmethod
     def _respond_to_valid_request(self, message: _ReqMsgT) -> _ExecMsgT:
         """If _validate_request passed successfully, the valid request message received here should
-        be propagated to Redis, and the execution message returned to be passed on to spawn()."""
+        be propagated to Redis, and the execution message returned to be passed on to spawn().
+        """
 
     @abstractmethod
     def _cleanup_worker_function(self, queue: str) -> Callable[[Future], None]:

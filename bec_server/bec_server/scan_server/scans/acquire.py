@@ -34,7 +34,7 @@ class Acquire(ScanBase):
     # Scan name: This is the name of the scan, e.g. "line_scan". This is used for display purposes and to identify the scan type in user interfaces.
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
-    scan_name = "_v4_acquire"
+    scan_name = "acquire"
 
     gui_config = {
         "Scan Parameters": [

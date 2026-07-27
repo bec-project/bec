@@ -145,13 +145,6 @@ scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 # s = scans.line_scan(dev.samy, -5, 40, steps=10, exp_time=0.1)
 # s = scans.round_roi_scan(dev.samx, 50, dev.samy, 20, dr=2, nth=3, exp_time=0.1)
 
-# scan_def_id = str(uuid.uuid4())
-# scans.open_interactive_scan(dev.samx, dev.samy, exp_time=0.1, md={"scan_def_id": scan_def_id})
-# for ii in range(5):
-#     scans.mv(dev.samx, ii, dev.samy, ii + 3, md={"scan_def_id": scan_def_id})
-#     scans.interactive_scan_trigger(dev.samx, dev.samy, md={"scan_def_id": scan_def_id})
-# scans.close_interactive_scan(md={"scan_def_id": scan_def_id})
-
 
 # for ii in range(10):
 #     scans.umv(dev.samx, ii * 10)
@@ -162,15 +155,6 @@ scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 # s = scans.grid_scan(dev.samx, -5, 5, 100, dev.samy, -5, 5, 100, exp_time=0.0, hide_report=True)
 # scans.umv(dev.samx, 0)
 # scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02)
-
-
-# @scans.scan_group
-# def scan_with_decorator():
-#     scans.umv(dev.samx, 5, relative=False)
-#     scans.line_scan(dev.samx, -5, 5, steps=100, exp_time=0.1, relative=True)
-#     scans.umv(dev.samx, 5, relative=False)
-#     scans.line_scan(dev.samx, -5, 5, steps=100, exp_time=0.1, relative=True)
-#     # scans.line_scan(dev.samx, -8, 8, steps=200, exp_time=0.1, relative=True)
 
 
 # with scans.dataset_id_on_hold:
@@ -185,22 +169,6 @@ scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 # scans.umv(dev.samx, 500)
 # print(dev.samx.read(cached=True, use_readback=True))
 # scans.umv(dev.samx, 1000)
-
-
-# @scans.scan_group
-# def alignment(*args, **kwargs):
-#     scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02)
-#     scans.umv(dev.samx, 10)
-#     scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02)
-#     scans.umv(dev.samx, 10)
-#     scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02)
-
-
-# with scans.scan_group:
-#     scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02, relative=True)
-#     scans.umv(dev.samx, 10, relative=True)
-
-# alignment()
 
 
 # scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02, md={"queue_group": queue_group})

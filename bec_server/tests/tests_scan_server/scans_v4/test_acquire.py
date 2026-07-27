@@ -24,13 +24,13 @@ ACQUIRE_DEFAULT_HOOK_TESTS = [
 
 @pytest.mark.parametrize(("hook_name", "hook_tests"), ACQUIRE_DEFAULT_HOOK_TESTS)
 def test_acquire_default_hooks(v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests):
-    scan = v4_scan_assembler("_v4_acquire", exp_time=0.2, burst_at_each_point=3)
+    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
 
 
 def test_acquire_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_acquire", exp_time=0.2, burst_at_each_point=3)
+    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
 
     scan.prepare_scan()
 
@@ -43,7 +43,7 @@ def test_acquire_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
 
 
 def test_acquire_scan_core_triggers_and_reads_for_each_burst(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_acquire", exp_time=0.2, burst_at_each_point=3)
+    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
     scan.at_each_point = mock.MagicMock()
 
     scan.scan_core()
@@ -52,7 +52,7 @@ def test_acquire_scan_core_triggers_and_reads_for_each_burst(v4_scan_assembler):
 
 
 def test_acquire_at_each_point_triggers_and_reads(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_acquire", exp_time=0.2, burst_at_each_point=3)
+    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
     scan.components.trigger_and_read = mock.MagicMock()
 
     scan.at_each_point()
@@ -61,7 +61,7 @@ def test_acquire_at_each_point_triggers_and_reads(v4_scan_assembler):
 
 
 def test_acquire_post_scan_completes_all_devices(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_acquire", exp_time=0.2, burst_at_each_point=3)
+    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
     scan.actions.complete_all_devices = mock.MagicMock()
 
     scan.post_scan()

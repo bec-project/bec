@@ -16,7 +16,7 @@ from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import AvailableResourceMessage, ErrorInfo
-from bec_lib.signature_serializer import serialize_dtype, signature_to_dict
+from bec_lib.signature_serializer import serialize_dtype
 from bec_server.scan_server.scan_gui_models import GUIConfig
 from bec_server.scan_server.scans.scan_argument_modifier import (
     get_scan_modifier,
@@ -32,6 +32,15 @@ if TYPE_CHECKING:
     from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
+
+INTERNAL_SCAN_CLASSES = {
+    "ScanStubs",
+    "ScanComponent",
+    "AsyncFlyScanBase",
+    "SyncFlyScanBase",
+    "ScanBase",
+    "DeviceRpc",
+}
 
 _SCAN_ARG_TYPE_TO_DTYPE = {
     scans_module.ScanArgType.DEVICE: DeviceBase,
@@ -63,25 +72,53 @@ class ScanManager:
         self.update_available_scans()
         self.publish_available_scans()
 
-    @functools.lru_cache(maxsize=1)
+    @functools.lru_cache(maxsize=2)
     @staticmethod
-    def get_available_scans() -> list[tuple[str, Type]]:
+    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, Type]]:
         """
         Get all available scans, including legacy scans, v4 scans and plugin scans.
+
+        Args:
+            allow_duplicates (bool): If True, allow duplicate scan names. Default is False.
 
         Returns:
             list[tuple[str, Type]]: list of scan name and scan class tuples
         """
-        # internal, legacy scans
-        members: list[tuple[str, Type]] = inspect.getmembers(
-            scans_module, predicate=inspect.isclass
-        )
+
+        def _append_new_scan_members(
+            members: list[tuple[str, Type]],
+            candidates: list[tuple[str, Type]],
+            skip_duplicates: bool = False,
+        ) -> None:
+            seen_scan_names = {
+                scan_cls.scan_name
+                for _, scan_cls in members
+                if hasattr(scan_cls, "scan_name") and scan_cls.scan_name
+            }
+            for name, scan_cls in candidates:
+                scan_name = getattr(scan_cls, "scan_name", None)
+                if skip_duplicates and scan_name and scan_name in seen_scan_names:
+                    continue
+                members.append((name, scan_cls))
+                if scan_name:
+                    seen_scan_names.add(scan_name)
 
         # internal, v4 scans
-        members.extend(ScanManager._get_v4_scan_members())
+        members: list[tuple[str, Type]] = ScanManager._get_v4_scan_members()
+
+        # internal, legacy scans. We skip duplicates here because we want to prioritize v4 scans over legacy scans.
+        _append_new_scan_members(
+            members,
+            inspect.getmembers(scans_module, predicate=inspect.isclass),
+            skip_duplicates=True,
+        )
 
         # plugin scans
-        members.extend((name, cls) for name, cls in ScanManager._get_scan_plugins().items())
+        _append_new_scan_members(
+            members,
+            list((name, cls) for name, cls in ScanManager._get_scan_plugins().items()),
+            skip_duplicates=not allow_duplicates,
+        )
 
         to_remove = []
         for name, scan_cls in members:
@@ -95,6 +132,7 @@ class ScanManager:
                 to_remove.append((name, scan_cls))
         for item in to_remove:
             members.remove(item)
+
         return members
 
     @classmethod
@@ -110,7 +148,7 @@ class ScanManager:
 
         self.available_scans = {}
         self.scan_dict = {}
-        members = ScanManager.get_available_scans()
+        members = ScanManager.get_available_scans(allow_duplicates=True)
 
         for name, scan_cls in members:
 
@@ -165,6 +203,8 @@ class ScanManager:
             self.available_scans[scan_cls.scan_name] = {
                 "class": scan_cls.__name__,
                 "base_class": base_cls,
+                "is_scan": scan_cls.is_scan if hasattr(scan_cls, "is_scan") else False,
+                "is_internal": self.scan_is_internal(scan_cls),
                 "arg_input": self.convert_arg_input(scan_cls.arg_input),
                 "required_kwargs": getattr(scan_cls, "required_kwargs", []),
                 "arg_bundle_size": scan_cls.arg_bundle_size,
@@ -173,6 +213,21 @@ class ScanManager:
                 "gui_visibility": gui_visibility,
                 "gui_config": gui_config,  # deprecated! - should be removed
             }
+
+    @staticmethod
+    def scan_is_internal(scan_cls) -> bool:
+        """
+        Determine if a scan class is internal.
+
+        Args:
+            scan_cls: class
+
+        Returns:
+            bool: True if the scan class is internal, False otherwise.
+        """
+        if scan_cls.__name__ in INTERNAL_SCAN_CLASSES:
+            return True
+        return getattr(scan_cls, "is_internal", False)
 
     def validate_gui_config(self, scan_cls, gui_config_override: dict | None = None) -> dict:
         """

@@ -60,9 +60,6 @@ class ScansMock(Scans):
     def _import_scans(self):
         pass
 
-    def close_scan_group(self):
-        pass
-
     def umv(self, *args, relative=False, **kwargs):
         pass
 
@@ -133,7 +130,6 @@ class ClientMock(BECClient):
             mv=self.scans.mv,
             umv=self.scans.umv,
             fermat_scan=self.scans.fermat_scan,
-            close_scan_group=self.scans.close_scan_group,
         )
 
     def get_global_var(self, name: str):

@@ -8,13 +8,13 @@ import pytest
     [("open_scan",), ("stage",), ("pre_scan",), ("post_scan",), ("unstage",), ("close_scan",)],
 )
 def test_move_scan_default_noop_hooks_do_not_raise(v4_scan_assembler, hook_name):
-    scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=False)
+    scan = v4_scan_assembler("mv", "samx", 1.5, "samy", -2.0, relative=False)
 
     getattr(scan, hook_name)()
 
 
 def test_move_scan_prepare_scan_registers_required_response_devices(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=False)
+    scan = v4_scan_assembler("mv", "samx", 1.5, "samy", -2.0, relative=False)
     scan.actions.add_device_with_required_response = mock.MagicMock()
 
     scan.prepare_scan()
@@ -23,7 +23,7 @@ def test_move_scan_prepare_scan_registers_required_response_devices(v4_scan_asse
 
 
 def test_move_scan_scan_core_sets_absolute_targets_without_wait(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=False)
+    scan = v4_scan_assembler("mv", "samx", 1.5, "samy", -2.0, relative=False)
     scan.actions.set = mock.MagicMock()
 
     scan.scan_core()
@@ -32,7 +32,7 @@ def test_move_scan_scan_core_sets_absolute_targets_without_wait(v4_scan_assemble
 
 
 def test_move_scan_scan_core_sets_relative_targets_without_wait(v4_scan_assembler):
-    scan = v4_scan_assembler("_v4_mv", "samx", 1.5, "samy", -2.0, relative=True)
+    scan = v4_scan_assembler("mv", "samx", 1.5, "samy", -2.0, relative=True)
     scan.components.get_start_positions = mock.MagicMock(return_value=[0.5, 3.0])
     scan.actions.set = mock.MagicMock()
 
