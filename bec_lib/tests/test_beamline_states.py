@@ -11,7 +11,6 @@ import yaml
 from pydantic import BaseModel
 
 from bec_lib import bl_states, messages
-from bec_lib.bl_state_machine import BeamlineStateMachine
 from bec_lib.bl_state_manager import (
     BeamlineStateClientBase,
     BeamlineStateManager,
@@ -1350,11 +1349,6 @@ class TestBeamlineStateManager:
 class TestStateMachine:
 
     @pytest.fixture()
-    def state_machine(self, state_manager):
-        state_machine = BeamlineStateMachine(manager=state_manager)
-        return state_machine
-
-    @pytest.fixture()
     def config_dict(self):
         return {
             "alignment": {
@@ -1378,13 +1372,13 @@ class TestStateMachine:
 
     @pytest.mark.timeout(30)
     def test_load_from_config_with_dict(
-        self, state_machine: BeamlineStateMachine, tmp_path, config_dict
+        self, state_manager: BeamlineStateManager, tmp_path, config_dict
     ):
         """Test loading configuration from a dictionary or file."""
 
         # Load valid configuration from dictionary
-        with mock.patch.object(state_machine._manager, "add") as manager_add:
-            state_machine.load_from_config(config_path=None, config_dict=config_dict)
+        with mock.patch.object(state_manager, "add") as manager_add:
+            state_manager.load_from_config(config_path=None, config_dict=config_dict)
             manager_add.assert_called_once_with(
                 bl_states.AggregatedStateConfig(
                     name="alignment", states=config_dict["alignment"]["config"]["states"]
@@ -1393,18 +1387,18 @@ class TestStateMachine:
             )
             # Loading with both config_path and config_dict should raise an error
             with pytest.raises(ValueError):
-                state_machine.load_from_config(
+                state_manager.load_from_config(
                     config_path="path/to/config.yaml", config_dict=config_dict
                 )
             # Loading with neither config_path nor config_dict should raise an error
             with pytest.raises(ValueError):
-                state_machine.load_from_config(config_path=None, config_dict=None)
+                state_manager.load_from_config(config_path=None, config_dict=None)
 
             # Loading from file should work.
             config_path = tmp_path / "config.yaml"
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(config_dict, f)
-            state_machine.load_from_config(config_path=str(config_path))
+            state_manager.load_from_config(config_path=str(config_path))
             manager_add.assert_called_with(
                 bl_states.AggregatedStateConfig(
                     name="alignment", states=config_dict["alignment"]["config"]["states"]
@@ -1412,33 +1406,33 @@ class TestStateMachine:
                 skip_existing=False,
             )
 
-    def test_load_from_config_rejects_invalid_evaluation_method(self, state_machine, config_dict):
+    def test_load_from_config_rejects_invalid_evaluation_method(self, state_manager, config_dict):
         config_dict["alignment"]["config"]["evaluation_method"] = "invalid"
 
         with (
-            mock.patch.object(state_machine._manager, "clear_all") as clear_all,
+            mock.patch.object(state_manager, "clear_all") as clear_all,
             pytest.raises(ValueError, match="evaluation_method"),
         ):
-            state_machine.load_from_config(config_dict=config_dict)
+            state_manager.load_from_config(config_dict=config_dict)
 
         clear_all.assert_not_called()
 
     def test_load_from_yaml_accepts_null_evaluation_method(
-        self, state_machine, config_dict, tmp_path
+        self, state_manager, config_dict, tmp_path
     ):
         config_dict["alignment"]["config"]["evaluation_method"] = None
         config_path = tmp_path / "state_config.yaml"
         with open(config_path, "w", encoding="utf-8") as stream:
             yaml.safe_dump(config_dict, stream)
 
-        with mock.patch.object(state_machine._manager, "add") as manager_add:
-            state_machine.load_from_config(config_path=str(config_path))
+        with mock.patch.object(state_manager, "add") as manager_add:
+            state_manager.load_from_config(config_path=str(config_path))
 
         loaded_config = manager_add.call_args.args[0]
         assert loaded_config.evaluation_method is None
 
     def test_load_from_yaml_preserves_scalar_aggregated_limits(
-        self, state_machine, config_dict, tmp_path
+        self, state_manager, config_dict, tmp_path
     ):
         samx_config = config_dict["alignment"]["config"]["states"]["alignment"]["devices"]["samx"]
         samx_config.update({"low_limit": -10, "high_limit": 10})
@@ -1446,8 +1440,8 @@ class TestStateMachine:
         with open(config_path, "w", encoding="utf-8") as stream:
             yaml.safe_dump(config_dict, stream)
 
-        with mock.patch.object(state_machine._manager, "add") as manager_add:
-            state_machine.load_from_config(config_path=str(config_path))
+        with mock.patch.object(state_manager, "add") as manager_add:
+            state_manager.load_from_config(config_path=str(config_path))
 
         loaded_config = manager_add.call_args.args[0]
         loaded_samx = loaded_config.states["alignment"].devices["samx"]
@@ -1457,11 +1451,11 @@ class TestStateMachine:
         assert loaded_samx.signals == {"velocity": bl_states.SignalConfig(value=5, abs_tol=0.1)}
 
     def test_load_from_config_forwards_skip_existing(
-        self, state_machine: BeamlineStateMachine, config_dict
+        self, state_manager: BeamlineStateManager, config_dict
     ):
         """Test that skip_existing is forwarded to the state manager."""
-        with mock.patch.object(state_machine._manager, "add") as manager_add:
-            state_machine.load_from_config(config_dict=config_dict, flush=False, skip_existing=True)
+        with mock.patch.object(state_manager, "add") as manager_add:
+            state_manager.load_from_config(config_dict=config_dict, flush=False, skip_existing=True)
 
         manager_add.assert_called_once_with(
             bl_states.AggregatedStateConfig(

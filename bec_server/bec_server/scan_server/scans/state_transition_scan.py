@@ -80,8 +80,8 @@ class StateTransitionScan(ScanBase):
         self._signals_to_set: list[Tuple[Signal, Any]] = []
         self._limits_to_set: dict[str, Tuple[Positioner, float, float]] = {}
         self._devices_to_set: list[Tuple[Positioner, float]] = []
+        self.config_for_label: SubDeviceStateConfig | None = None
 
-    # pylint: disable=protected-access
     @scan_hook
     def prepare_scan(self):
         """
@@ -194,7 +194,7 @@ class StateTransitionScan(ScanBase):
 
     def _set_limits(self):
         """Method to set limits for devices in the transition."""
-        for dev_name, (dev_obj, low_limit, high_limit) in self._limits_to_set.items():
+        for _, (dev_obj, low_limit, high_limit) in self._limits_to_set.items():
             dev_obj.limits = [low_limit, high_limit]
 
     def _check_if_signal_has_write_access(self, signal_obj: Signal) -> bool:
@@ -208,6 +208,7 @@ class StateTransitionScan(ScanBase):
         Returns:
             bool: True if the signal has write access, False otherwise.
         """
+        # pylint: disable=protected-access
         write_access = signal_obj._info.get("write_access", None)
         if write_access is None and signal_obj._signal_info is not None:
             write_access = signal_obj._signal_info.get("write_access", False)
