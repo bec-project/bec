@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v3.156.0 (2026-07-27)
+
+### Bug Fixes
+
+- **device**: Use v4 rpc
+  ([`dc8a821`](https://github.com/bec-project/bec/commit/dc8a821e13f1891c7d35052946fd2096143ff6a7))
+
+- **scan**: Expand scan_type options in ScanStatusMessage to include software_triggered and
+  hardware_triggered
+  ([`e520653`](https://github.com/bec-project/bec/commit/e5206539da030d8cd2246d4d16d0036416d4b781))
+
+- **scan**: Extract user metadata for direct scans in ScanAssembler
+  ([`8bc58ea`](https://github.com/bec-project/bec/commit/8bc58eac8da168159501972d701b7fa5ade06aeb))
+
+- **scan**: Update device name handling in scan report instructions
+  ([`e2dcc3e`](https://github.com/bec-project/bec/commit/e2dcc3ed39b86a3f28b99699aabba7e03ef6ba9b))
+
+- **scan**: Update scan type handling to include software_triggered and hardware_triggered in
+  FileWriterManager
+  ([`313c183`](https://github.com/bec-project/bec/commit/313c1834895d9bf5f8e747d45379036d212c6e80))
+
+- **tests**: Refactor hexapod failure handling in config reload test and skip interactive scan test
+  for v4
+  ([`1a744ad`](https://github.com/bec-project/bec/commit/1a744adfbcaedbc0304279294a0a9e6af05402de))
+
+### Features
+
+- **scan**: Enhance device RPC handling and add support for response requests
+  ([`0ebf38a`](https://github.com/bec-project/bec/commit/0ebf38a20949ddc1945e78d807c8c5b5077baf50))
+
+- **scan**: Implement DeviceRpc class and associated tests for RPC functionality
+  ([`0a9760d`](https://github.com/bec-project/bec/commit/0a9760d1fb6431b4aacc15966855db912eefbf10))
+
+- **scan**: V4 scan parity with v3
+  ([`b12b529`](https://github.com/bec-project/bec/commit/b12b529cc696b9d8261bedc4d9e853fdb924a4f5))
+
+### Testing
+
+- Add timeout to multiple test functions
+  ([`ae882a4`](https://github.com/bec-project/bec/commit/ae882a40e89fead38700c4b292f9ac5944f9ca5d))
+
+
 ## v3.155.0 (2026-07-23)
 
 ### Features
