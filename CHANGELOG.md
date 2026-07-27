@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.158.0 (2026-07-27)
+
+### Features
+
+- **scan_modifier**: Enhance scan hook functionality with name filtering and original hook access
+  ([`94d84bd`](https://github.com/bec-project/bec/commit/94d84bd3ddb3625fdbdfa4fff23f48ec1409f715))
+
+
 ## v3.157.0 (2026-07-27)
 
 ### Features
