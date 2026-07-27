@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.157.0 (2026-07-27)
+
+### Features
+
+- **storage_copy**: Implement beamline storage copy functionality and related message handling
+  ([`a977fe0`](https://github.com/bec-project/bec/commit/a977fe0dd7180e91871f5bdf478b58cfe0c901b8))
+
+
 ## v3.156.0 (2026-07-27)
 
 ### Bug Fixes
