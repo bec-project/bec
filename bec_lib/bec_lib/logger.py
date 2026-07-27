@@ -124,7 +124,6 @@ class BECLogger:
         self._file_log_level = self._log_level
         self._console_log = False
         self._configured = False
-        self._rotator = None
         self._disabled_modules = set()
         self._file_max_size_mb = self.DEFAULT_MAX_FILE_SIZE_MB
         self._file_max_files = self.DEFAULT_MAX_FILES
@@ -175,10 +174,6 @@ class BECLogger:
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
         self._configured = True
-        # default rotation time is 8:00AM
-        self._rotator = BECLoguruRotator(
-            size=self._file_max_size_mb * 1024 * 1024, at=datetime.time(8, 0, 0)
-        )
         self._update_sinks()
 
     def _get_connector(
@@ -377,13 +372,16 @@ class BECLogger:
         if not self.service_name:
             return
         filename = os.path.join(self._base_path, f"{self.service_name}.log")
+        rotator = BECLoguruRotator(
+            size=self._file_max_size_mb * 1024 * 1024, at=datetime.time(8, 0, 0)
+        )
         self.logger.add(
             filename,
             level=level,
             format=self.formatting(),
             filter=self.filter(),
             retention=self._file_max_files,
-            rotation=self._rotator.should_rotate,
+            rotation=rotator.should_rotate,
             opener=self._file_opener,
             compression="gz",
         )
@@ -410,6 +408,9 @@ class BECLogger:
         # define a level corresponding to console log - this is to be able to filter messages
         # (only those with this particular level will be recorded by the console logger,
         # while other loggers will ignore them)
+        rotator = BECLoguruRotator(
+            size=self._file_max_size_mb * 1024 * 1024, at=datetime.time(8, 0, 0)
+        )
 
         self.logger.add(
             filename,
@@ -417,7 +418,7 @@ class BECLogger:
             format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
             filter=self.filter(is_console=True),
             retention=self._file_max_files,
-            rotation=self._rotator.should_rotate,
+            rotation=rotator.should_rotate,
             opener=self._file_opener,
             compression="gz",
         )
