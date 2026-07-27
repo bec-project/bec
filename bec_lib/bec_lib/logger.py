@@ -85,7 +85,7 @@ class BECLogger:
     """Logger for BEC."""
 
     DEFAULT_MAX_FILE_SIZE_MB = 50
-    DEFAULT_MAX_FILES = 3
+    DEFAULT_MAX_FILES = 14
 
     LOG_FORMAT_STDERR = (
         "<green>{service_name} | {{time:YYYY-MM-DD HH:mm:ss}}</green> | {{name}} | <level>[{{level}}]</level> |"
@@ -382,9 +382,10 @@ class BECLogger:
             level=level,
             format=self.formatting(),
             filter=self.filter(),
+            retention=self._file_max_files,
             rotation=self._rotator.should_rotate,
-            catch=True,
             opener=self._file_opener,
+            compression="gz",
         )
 
     def add_console_log(self):
@@ -415,10 +416,10 @@ class BECLogger:
             level=LogLevel.CONSOLE_LOG,
             format=self.get_format(LogLevel.CONSOLE_LOG).rstrip(),
             filter=self.filter(is_console=True),
-            retention=self._file_retention,
-            rotation=f"{self._file_max_size_mb} MB",
-            catch=True,
+            retention=self._file_max_files,
+            rotation=self._rotator.should_rotate,
             opener=self._file_opener,
+            compression="gz",
         )
         self._console_log = True
         self.add_console_redis_log()

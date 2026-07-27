@@ -64,7 +64,6 @@ def test_file_sink_uses_resolved_rotation_policy(logger, tmp_path):
         logger.add_file_log(LogLevel.INFO)
 
     assert add.call_args.kwargs["rotation"] == logger._rotator.should_rotate
-    assert add.call_args.kwargs["catch"] is True
 
 
 @pytest.mark.parametrize(
