@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.159.0 (2026-07-27)
+
+### Features
+
+- **plugin_repo_emitter**: Implement AtlasPluginRepoEmitter for monitoring plugin repository status
+  ([`cad4b4c`](https://github.com/bec-project/bec/commit/cad4b4cc618aa7e1f6feb315afbd0d17cd623c1c))
+
+- **tests**: Add fixture to clear plugin helper caches
+  ([`79a6c06`](https://github.com/bec-project/bec/commit/79a6c06f6e1d1b31c860b7d4260a15cb6d3097e5))
+
+
 ## v3.158.0 (2026-07-27)
 
 ### Features
