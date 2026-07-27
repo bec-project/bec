@@ -56,14 +56,14 @@ def test_file_sink_uses_resolved_rotation_policy(logger, tmp_path):
     logger._base_path = tmp_path
     logger._file_max_size_mb = 75
     logger._file_max_files = 3
-    logger._rotator = BECLoguruRotator(
+    rotator = BECLoguruRotator(
         size=logger._file_max_size_mb * 1024 * 1024, at=datetime.time(8, 0, 0)
     )
 
     with mock.patch.object(logger.logger, "add") as add:
         logger.add_file_log(LogLevel.INFO)
 
-    assert add.call_args.kwargs["rotation"] == logger._rotator.should_rotate
+    assert add.call_args.kwargs["rotation"].__func__ == rotator.should_rotate.__func__
 
 
 @pytest.mark.parametrize(
