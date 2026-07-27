@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import collections
 import time
 from contextvars import Token
 from typing import TYPE_CHECKING, Any
@@ -41,12 +40,9 @@ class IPythonLiveUpdates:
         """
         self.client = client
         self._interrupted_request = None
-        self._active_callback = None
         self._processed_instructions = 0
         self._active_request: messages.ScanQueueMessage | None = None
         self._user_callback = None
-        self._request_block_index = collections.defaultdict(lambda: 0)
-        self._request_block_id = None
         self._current_queue = None
         self._status_live: Live | None = None
 
@@ -68,9 +64,6 @@ class IPythonLiveUpdates:
         """
         if not self._active_request:
             return
-        scan_type = self._active_request.scan_type
-        if scan_type == "close_scan_group":
-            return
 
         if not report_instructions:
             return
@@ -90,62 +83,33 @@ class IPythonLiveUpdates:
             instr (dict): The instruction to process.
         """
         scan_report_type = list(instr.keys())[0]
-        scan_def_id = self.client.scans._scan_def_id
-        interactive_scan = self.client.scans._interactive_scan
         if self._active_request is None:
             # Already checked in caller method. It is just for type checking purposes.
             return
-        if scan_def_id is None or interactive_scan:
-            if scan_report_type == "readback":
-                LiveUpdatesReadbackProgressbar(
-                    self.client,
-                    report_instruction=instr,
-                    request=self._active_request,
-                    callbacks=self._user_callback,
-                ).run()
-            elif scan_report_type == "scan_progress":
-                LiveUpdatesTable(
-                    self.client,
-                    report_instruction=instr,
-                    request=self._active_request,
-                    callbacks=self._user_callback,
-                    print_table_data=self.print_table_data,
-                ).run()
-            elif scan_report_type == "device_progress":
-                LiveUpdatesDeviceProgress(
-                    self.client,
-                    report_instruction=instr,
-                    request=self._active_request,
-                    callbacks=self._user_callback,
-                ).run()
-            else:
-                raise ValueError(f"Unknown scan report type: {scan_report_type}")
-        else:
-            if self._active_callback:
-                if scan_report_type == "readback":
-                    LiveUpdatesReadbackProgressbar(
-                        self.client,
-                        report_instruction=instr,
-                        request=self._active_request,
-                        callbacks=self._user_callback,
-                    ).run()
-                else:
-                    self._active_callback.resume(
-                        request=self._active_request,
-                        report_instruction=instr,
-                        callbacks=self._user_callback,
-                    )
-
-                return
-
-            self._active_callback = LiveUpdatesTable(
+        if scan_report_type == "readback":
+            LiveUpdatesReadbackProgressbar(
+                self.client,
+                report_instruction=instr,
+                request=self._active_request,
+                callbacks=self._user_callback,
+            ).run()
+        elif scan_report_type == "scan_progress":
+            LiveUpdatesTable(
                 self.client,
                 report_instruction=instr,
                 request=self._active_request,
                 callbacks=self._user_callback,
                 print_table_data=self.print_table_data,
-            )
-            self._active_callback.run()
+            ).run()
+        elif scan_report_type == "device_progress":
+            LiveUpdatesDeviceProgress(
+                self.client,
+                report_instruction=instr,
+                request=self._active_request,
+                callbacks=self._user_callback,
+            ).run()
+        else:
+            raise ValueError(f"Unknown scan report type: {scan_report_type}")
 
     def _available_req_blocks(
         self, queue: QueueItem, request: messages.ScanQueueMessage
@@ -190,15 +154,14 @@ class IPythonLiveUpdates:
 
                 self._current_queue = queue = scan_request.scan_queue_request.queue
                 request_context.queue_status = queue.status
-                self._request_block_id = req_id = self._active_request.metadata.get("RID")
 
                 while queue.status not in ["COMPLETED", "ABORTED", "HALTED", "CANCELLED"]:
                     request_context.queue_status = queue.status
-                    if self._process_queue(queue, request, req_id):
+                    if self._process_queue(queue, request):
                         break
 
                 available_blocks = self._available_req_blocks(queue, request)
-                req_block = available_blocks[self._request_block_index[req_id]]
+                req_block = available_blocks[0]
                 report_instructions = req_block.report_instructions or []
                 self._process_report_instructions(report_instructions)
 
@@ -218,15 +181,15 @@ class IPythonLiveUpdates:
             self._interrupted_request = (request,)
             if self._current_queue and self.client._service_config.abort_on_ctrl_c:
                 self._wait_for_cleanup()
-            self._reset(forced=True)
+            self._reset()
             raise scan_interr
         except KeyboardInterrupt as exc:
             self._stop_status_live()
             if self.client._service_config.abort_on_ctrl_c and self._abort_pending_request():
                 self._wait_for_cleanup()
-                self._reset(forced=True)
+                self._reset()
                 raise ScanInterruption("User abort.") from exc
-            self._reset(forced=True)
+            self._reset()
             raise
         finally:
             if context_token is not None:
@@ -285,16 +248,13 @@ class IPythonLiveUpdates:
             return False
         return any(queue_item.queue_id == self._current_queue.queue_id for queue_item in queue_info)
 
-    def _process_queue(
-        self, queue: QueueItem, request: messages.ScanQueueMessage, req_id: str
-    ) -> bool:
+    def _process_queue(self, queue: QueueItem, request: messages.ScanQueueMessage) -> bool:
         """
         Process the queue and return True if the scan is completed.
 
         Args:
             queue(QueueItem): The queue item to process.
             request(messages.ScanQueueMessage): The request message.
-            req_id(str): The request ID.
 
         Returns:
             bool: True if the scan is completed.
@@ -321,10 +281,9 @@ class IPythonLiveUpdates:
         available_blocks = self._available_req_blocks(queue, request)
         if not available_blocks:
             return False
-        req_block = available_blocks[self._request_block_index[req_id]]
+        req_block = available_blocks[0]
         if req_block.msg.scan_type in [
-            "mv",
-            "_v4_mv",
+            "mv"
         ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 
@@ -332,13 +291,6 @@ class IPythonLiveUpdates:
         if not report_instructions:
             return False
         self._process_report_instructions(report_instructions)
-
-        complete_rbl = len(available_blocks) == self._request_block_index[req_id] + 1
-        if self._active_callback and complete_rbl:
-            return True
-
-        if complete_rbl and self.client.scans._interactive_scan:
-            return True
 
         if not queue.active_request_block:
             return True
@@ -395,27 +347,15 @@ class IPythonLiveUpdates:
             self._status_live.update(Panel(message, title="[yellow]Scan Status[/yellow]"))
         return
 
-    def _reset(self, forced=False):
-        """Reset the active request and callback.
-
-        Args:
-            forced(bool): If True, the reset is forced.
-        """
+    def _reset(self):
+        """Reset the active request."""
         self._stop_status_live()
         self._interrupted_request = None
 
         self._current_queue = None
         self._user_callback = None
         self._processed_instructions = 0
-        scan_closed = forced or self._active_request is None
         self._active_request = None
-
-        if self.client.scans._scan_def_id and not scan_closed:
-            self._request_block_index[self._request_block_id] += 1
-            return
-
-        if scan_closed:
-            self._active_callback = None
 
     def continue_request(self):
         """Continue the interrupted request."""

@@ -107,7 +107,7 @@ def test_live_updates_process_queue_pending(ipython_live_updates_with_mocked_liv
                 live_updates, "_available_req_blocks", return_value=[request_block]
             ):
                 with mock.patch.object(live_updates, "_process_report_instructions") as process:
-                    res = live_updates._process_queue(queue, request_msg, "req_id")
+                    res = live_updates._process_queue(queue, request_msg)
                     # Verify Live panel was created for showing queue status
                     mock_live.assert_called_once()
                     mock_live.return_value.start.assert_called_once()
@@ -141,7 +141,7 @@ def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_liv
                 live_updates, "_available_req_blocks", return_value=[request_block]
             ):
                 with mock.patch.object(live_updates, "_process_instruction") as process:
-                    res = live_updates._process_queue(queue, request_msg, "req_id")
+                    res = live_updates._process_queue(queue, request_msg)
                     mock_live.assert_not_called()
                     process.assert_called_once_with({"wait_table": 10})
                     assert res is True
@@ -177,7 +177,7 @@ def test_live_updates_process_queue_waiting_for_device_locks(
     ):
         queue_pos.return_value = 0
 
-        assert live_updates._process_queue(queue, request_msg, "req_id") is False
+        assert live_updates._process_queue(queue, request_msg) is False
 
     process_pending.assert_called_once_with(queue)
 
@@ -214,7 +214,7 @@ def test_live_updates_process_queue_cancelled_pending_request_raises_interruptio
         mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
         pytest.raises(ScanInterruption, match="Scan was cancelled."),
     ):
-        live_updates._process_queue(queue, request_msg, "something")
+        live_updates._process_queue(queue, request_msg)
 
 
 def test_live_updates_process_queue_stopped_started_request_raises_interruption(bec_client_mock):
@@ -259,7 +259,7 @@ def test_live_updates_process_queue_stopped_started_request_raises_interruption(
         mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
         pytest.raises(ScanInterruption, match="Scan 1 was aborted by user."),
     ):
-        live_updates._process_queue(queue, request_msg, "something")
+        live_updates._process_queue(queue, request_msg)
 
 
 def test_live_updates_process_queue_stopped_restart_without_restart_message_waits_nonblocking(
@@ -300,7 +300,7 @@ def test_live_updates_process_queue_stopped_restart_without_restart_message_wait
             return_value=mock.MagicMock(status="aborted", restarted_msg=None),
         ),
     ):
-        assert live_updates._process_queue(queue, request_msg, "something") is False
+        assert live_updates._process_queue(queue, request_msg) is False
 
 
 def test_process_request_repeats_on_ScanRestart_error(
@@ -485,7 +485,7 @@ def test_process_request_keyboard_interrupt_pending_request_raises_scan_interrup
 
     abort_pending.assert_called_once()
     wait_for_cleanup.assert_called_once()
-    reset.assert_called_once_with(forced=True)
+    reset.assert_called_once_with()
 
 
 @pytest.mark.parametrize("queue_status", ["RUNNING", "LOCKED"])
@@ -515,7 +515,7 @@ def test_process_request_keyboard_interrupt_pending_request_aborts_local_request
 
     request_abort.assert_called_once_with(request_id="something")
     wait_for_cleanup.assert_called_once()
-    reset.assert_called_once_with(forced=True)
+    reset.assert_called_once_with()
 
 
 def test_process_request_keyboard_interrupt_non_pending_re_raises(
@@ -543,7 +543,7 @@ def test_process_request_keyboard_interrupt_non_pending_re_raises(
 
     abort_pending.assert_called_once()
     wait_for_cleanup.assert_not_called()
-    reset.assert_called_once_with(forced=True)
+    reset.assert_called_once_with()
 
 
 @pytest.mark.timeout(20)
@@ -552,7 +552,7 @@ def test_live_updates_process_queue_without_status(bec_client_mock, queue_elemen
     live_updates = IPythonLiveUpdates(client)
     queue, _, request_msg = queue_elements
     with mock.patch.object(queue, "_update_with_buffer"):
-        assert live_updates._process_queue(queue, request_msg, "req_id") is False
+        assert live_updates._process_queue(queue, request_msg) is False
 
 
 @pytest.mark.timeout(20)
@@ -574,7 +574,7 @@ def test_live_updates_process_queue_without_queue_number(bec_client_mock, queue_
         )
         queue_pos.return_value = None
         with mock.patch.object(queue, "_update_with_buffer"):
-            assert live_updates._process_queue(queue, request_msg, "req_id") is False
+            assert live_updates._process_queue(queue, request_msg) is False
 
 
 @pytest.mark.timeout(20)

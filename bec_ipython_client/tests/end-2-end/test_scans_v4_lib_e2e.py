@@ -16,7 +16,7 @@ from bec_server.scan_server.scans import position_generators
 
 
 def _get_v4_scan_runner(bec, scan_name: str):
-    return getattr(bec.scans, f"_v4_{scan_name}")
+    return getattr(bec.scans, scan_name)
 
 
 def _run_v4_scan(
@@ -67,15 +67,6 @@ def _wait_for_live_data_count(bec, status, expected_count: int, timeout: float =
         if len(status.scan.live_data) >= expected_count:
             return
         time.sleep(0.1)
-
-
-def _wait_for_scan_status(status, expected_status: str, timeout: float = 10):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if status.status == expected_status:
-            return
-        time.sleep(0.1)
-    raise TimeoutError(f"Timed out waiting for scan status {expected_status!r}.")
 
 
 def _wait_for_queue_status(bec, queue_name: str, expected_status: str, timeout: float = 10):
@@ -240,7 +231,7 @@ def test_v4_fixed_point_scans_lib(
 
 
 @pytest.mark.timeout(120)
-def test_v4_mv_scan_lib(bec_client_lib):
+def test_mv_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
 
@@ -252,7 +243,7 @@ def test_v4_mv_scan_lib(bec_client_lib):
 
 
 @pytest.mark.timeout(120)
-def test_v4_umv_scan_lib(bec_client_lib):
+def test_umv_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
 
@@ -264,7 +255,7 @@ def test_v4_umv_scan_lib(bec_client_lib):
 
 
 @pytest.mark.timeout(120)
-def test_v4_cont_line_scan_lib(bec_client_lib):
+def test_cont_line_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
     original_velocity = dev.samx.velocity.get()
@@ -282,7 +273,7 @@ def test_v4_cont_line_scan_lib(bec_client_lib):
 
 
 @pytest.mark.timeout(120)
-def test_v4_line_sweep_scan_lib(bec_client_lib):
+def test_line_sweep_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
     scans = bec.scans

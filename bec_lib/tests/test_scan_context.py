@@ -1,20 +1,9 @@
 import builtins
-from typing import Annotated
 from unittest import mock
 
 import pytest
 
-from bec_lib.scan_args import ScanArgument
-from bec_lib.scans import (
-    DatasetIdOnHold,
-    FileWriter,
-    HideReport,
-    Metadata,
-    ScanExport,
-    ScanGroup,
-    Scans,
-)
-from bec_lib.signature_serializer import serialize_dtype
+from bec_lib.scans import DatasetIdOnHold, FileWriter, HideReport, Metadata, ScanExport
 
 # pylint: disable=no-member
 # pylint: disable=missing-function-docstring
@@ -94,16 +83,6 @@ def test_dataset_id_on_hold_cleanup_on_error(bec_client_mock):
     assert client.scans._dataset_id_on_hold is None
 
 
-def test_scan_group_cm(bec_client_mock):
-    client = bec_client_mock
-    client.scans._scan_group = None
-    scan_group_cm = ScanGroup(client.scans)
-    with scan_group_cm:
-        assert isinstance(client.scans._scan_group, str)
-
-    assert client.scans._scan_group is None
-
-
 @pytest.mark.parametrize("abort_on_ctrl_c", [True, False])
 def test_scan_export_cm(abort_on_ctrl_c):
     scan_export = ScanExport("temp")
@@ -148,94 +127,3 @@ def test_arg_matches_type_for_generic_containers(bec_client_mock, arg, dtype, ma
     client = bec_client_mock
 
     assert client.scans._input_validator._arg_matches_type(arg, dtype) is matches
-
-
-def test_strip_scan_signature_annotations_for_ipython_signature():
-    signature = [
-        {
-            "name": "step",
-            "kind": "POSITIONAL_OR_KEYWORD",
-            "default": "_empty",
-            "annotation": serialize_dtype(Annotated[float, ScanArgument(description="Step size")]),
-        },
-        {
-            "name": "optional_step",
-            "kind": "POSITIONAL_OR_KEYWORD",
-            "default": None,
-            "annotation": serialize_dtype(
-                Annotated[float, ScanArgument(description="Optional step size")] | None
-            ),
-        },
-        {"name": "kwargs", "kind": "VAR_KEYWORD", "default": "_empty", "annotation": "_empty"},
-    ]
-
-    assert Scans._strip_scan_signature_annotations(signature) == [
-        {
-            "name": "step",
-            "kind": "POSITIONAL_OR_KEYWORD",
-            "default": "_empty",
-            "annotation": "float",
-        },
-        {
-            "name": "optional_step",
-            "kind": "POSITIONAL_OR_KEYWORD",
-            "default": None,
-            "annotation": ["float", "NoneType"],
-        },
-    ]
-
-
-def test_interactive_scan_cm(bec_client_mock):
-    client = bec_client_mock
-    with mock.patch.dict(builtins.__dict__, {"bec": client}):
-        client.scans._open_interactive_scan = mock.MagicMock()
-        client.scans._close_interactive_scan = mock.MagicMock()
-        client.scans._interactive_trigger = mock.MagicMock()
-        client.scans._interactive_read_monitored = mock.MagicMock()
-
-        with client.scans.interactive_scan("samx") as scan:
-            scan.trigger()
-            scan.read_monitored_devices()
-
-        client.scans._open_interactive_scan.assert_called_once()
-        client.scans._close_interactive_scan.assert_called_once()
-        client.scans._interactive_trigger.assert_called_once()
-        client.scans._interactive_read_monitored.assert_called_once()
-
-
-def test_interactive_scan_cm_raise_calls_close(bec_client_mock):
-    client = bec_client_mock
-    with mock.patch.dict(builtins.__dict__, {"bec": client}):
-        client.scans._open_interactive_scan = mock.MagicMock()
-        client.scans._close_interactive_scan = mock.MagicMock()
-        client.scans._interactive_trigger = mock.MagicMock()
-        client.scans._interactive_read_monitored = mock.MagicMock()
-
-        with pytest.raises(AttributeError):
-            with client.scans.interactive_scan("samx") as scan:
-                scan.trigger()
-                scan.read_monitored_devices()
-                raise AttributeError()
-
-        client.scans._open_interactive_scan.assert_called_once()
-        client.scans._close_interactive_scan.assert_called_once()
-        client.scans._interactive_trigger.assert_called_once()
-        client.scans._interactive_read_monitored.assert_called_once()
-
-
-def test_interactive_scan_cm_raises_scan_motors(bec_client_mock):
-    client = bec_client_mock
-    client.scans._open_interactive_scan = mock.MagicMock()
-    client.scans._close_interactive_scan = mock.MagicMock()
-    client.scans._interactive_trigger = mock.MagicMock()
-    client.scans._interactive_read_monitored = mock.MagicMock()
-
-    with pytest.raises(TypeError):
-        with client.scans.interactive_scan() as scan:
-            scan.trigger()
-            scan.read_monitored_devices()
-
-    client.scans._open_interactive_scan.assert_not_called()
-    client.scans._close_interactive_scan.assert_not_called()
-    client.scans._interactive_trigger.assert_not_called()
-    client.scans._interactive_read_monitored.assert_not_called()

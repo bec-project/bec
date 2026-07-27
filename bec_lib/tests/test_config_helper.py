@@ -553,7 +553,7 @@ def test_wait_for_service_response_raises_timeout(config_helper_plain):
 
 
 def test_wait_for_service_response_handles_one_by_one(config_helper_plain):
-    mock_msg_1, mock_msg_2, mock_msg_3 = mock.MagicMock(), mock.MagicMock(), mock.MagicMock()
+    mock_msg_1, mock_msg_2, mock_msg_3 = (mock.MagicMock(), mock.MagicMock(), mock.MagicMock())
     mock_msg_1.content = {"response": {"service": "DeviceServer"}}
     mock_msg_2.content = {"response": {"service": "ScanServer"}}
     mock_msg_3.content = {"response": {"service": "ServiceName123"}}

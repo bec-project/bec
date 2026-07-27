@@ -93,6 +93,17 @@ def _build_dummy_v4_scan(
     return scan
 
 
+def _queued_scan_message(
+    *, queue: str = "primary", rid: str = "something", start: float = -1, stop: float = 1
+) -> messages.ScanQueueMessage:
+    return messages.ScanQueueMessage(
+        scan_type="monitor_scan",
+        parameter={"args": {"samx": (start, stop)}, "kwargs": {"relative": False}},
+        queue=queue,
+        metadata={"RID": rid},
+    )
+
+
 def test_queuemanager_queue_contains_primary(queuemanager_mock):
     queue_manager = queuemanager_mock()
     assert "primary" in queue_manager.queues
@@ -101,12 +112,7 @@ def test_queuemanager_queue_contains_primary(queuemanager_mock):
 @pytest.mark.parametrize("queue", ["primary", "alignment"])
 def test_queuemanager_add_to_queue(queuemanager_mock, queue):
     queue_manager = queuemanager_mock()
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue=queue,
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message(queue=queue)
     queue_manager.add_queue(queue)
     queue_manager.add_to_queue(scan_queue=queue, msg=msg)
     assert queue_manager.queues[queue].queue.popleft().scan_msgs[0] == msg
@@ -114,12 +120,7 @@ def test_queuemanager_add_to_queue(queuemanager_mock, queue):
 
 def test_queuemanager_add_to_queue_publishes_status_for_default_append(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
 
     with mock.patch.object(queue_manager, "send_queue_status") as send_queue_status:
         queue_manager.add_to_queue(scan_queue="primary", msg=msg)
@@ -158,12 +159,7 @@ def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager
 
     assert original_worker.is_alive() is False
 
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     queue_manager.add_queue("primary")
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
     assert queue_manager.queues["primary"].queue.popleft().scan_msgs[0] == msg
@@ -173,12 +169,7 @@ def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager
 
 def test_queuemanager_add_to_queue_error_send_alarm(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     with mock.patch.object(queue_manager, "connector") as connector:
         with mock.patch.object(queue_manager, "add_queue", side_effects=KeyError):
             queue_manager.add_to_queue(scan_queue="dummy", msg=msg)
@@ -189,12 +180,7 @@ def test_queuemanager_add_to_queue_error_send_alarm(queuemanager_mock):
 
 def test_queuemanager_scan_queue_callback(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     obj = MessageObject("scan_queue", msg)
     with mock.patch.object(queue_manager, "add_to_queue") as add_to_queue:
         queue_manager._scan_queue_callback(obj)
@@ -308,7 +294,7 @@ def test_direct_instruction_queue_append_scan_request_assembles_and_stores_scan(
     )
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
     )
@@ -351,7 +337,7 @@ def test_direct_instruction_queue_describe_active_scan_returns_request_block(que
     scan.scan_info.scan_report_instructions = [{"device": "samx"}]
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
     )
@@ -379,13 +365,12 @@ def test_direct_instruction_queue_move_to_next_scan_activates_and_assigns_number
     queue_manager = queuemanager_mock()
     scan_queue = queue_manager.queues["primary"]
     queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
-    scan_queue.queue.append(queue)
     first_scan = _build_dummy_v4_scan("scan-1", scan_number=None)
     second_scan = _build_dummy_v4_scan("scan-2", scan_number=None)
     second_scan.scan_info.metadata["dataset_id_on_hold"] = True
     msg1 = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
     )
@@ -417,11 +402,10 @@ def test_direct_instruction_queue_non_scan_does_not_allocate_scan_number(queuema
     queue_manager = queuemanager_mock()
     scan_queue = queue_manager.queues["primary"]
     queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
-    scan_queue.queue.append(queue)
     scan = _build_dummy_v4_scan("scan-1", is_scan=False)
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_umv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        scan_type="umv",
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
     )
@@ -445,14 +429,14 @@ def test_direct_instruction_queue_non_scan_does_not_allocate_scan_id(queuemanage
     queue_manager = queuemanager_mock()
     scan_queue = queue_manager.queues["primary"]
     assembler = mock.MagicMock()
-    assembler.scan_manager.scan_dict = {"_v4_umv": mock.MagicMock(is_scan=False)}
+    assembler.scan_manager.scan_dict = {"umv": mock.MagicMock(is_scan=False)}
     scan = _build_dummy_v4_scan("placeholder-scan-id", is_scan=False)
     scan.scan_info.scan_id = None
     assembler.assemble_direct_scan.return_value = scan
     queue = DirectInstructionQueueItem(scan_queue, assembler, scan_queue.scan_worker)
 
     msg = messages.ScanQueueMessage(
-        scan_type="_v4_umv",
+        scan_type="umv",
         parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
@@ -483,7 +467,7 @@ def test_direct_instruction_queue_move_to_next_scan_raises_when_empty_or_exhaust
     scan = _build_dummy_v4_scan("scan-id-test")
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-1"},
     )
@@ -554,12 +538,7 @@ def test_set_pause(queuemanager_mock):
     queue_manager = queuemanager_mock()
 
     # Add a queue item so worker_status has something to operate on
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
 
     # Set worker status to RUNNING
@@ -578,12 +557,7 @@ def test_set_pause_does_not_change_non_running_worker(queuemanager_mock):
     queue_manager = queuemanager_mock()
 
     # Add a queue item
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
 
     # Set worker status to PENDING (not RUNNING)
@@ -628,25 +602,20 @@ def test_set_abort(queuemanager_mock):
     queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(
         return_value=["samx"]
     )
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
     scan_queue = queue_manager.queues["primary"]
     while scan_queue.scan_worker.current_instruction_queue_item is None:
         time.sleep(0.1)
-    queue_id = scan_queue.queue[0].queue_id
+    stop_id = scan_queue.queue[0].scan_id
     queue_manager.set_abort(queue="primary")
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
     while len(queue_manager.connector.message_sent) < 5:
         time.sleep(0.1)
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=["samx"], metadata={"stop_id": queue_id}),
+        "msg": messages.VariableMessage(value=["samx"], metadata={"stop_id": stop_id}),
     } in queue_manager.connector.message_sent
     assert (
         queue_manager.connector.message_sent[0].get("queue") == MessageEndpoints.scan_queue_status()
@@ -661,8 +630,8 @@ def test_set_abort_with_scan_id(queuemanager_mock):
         return_value=["samx", "samy"]
     )
     msg = messages.ScanQueueMessage(
-        scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        scan_type="monitor_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -692,8 +661,8 @@ def test_set_abort_with_scan_id_not_active(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
     msg = messages.ScanQueueMessage(
-        scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        scan_type="monitor_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -714,18 +683,8 @@ def test_set_abort_with_scan_id_not_active(queuemanager_mock):
 def test_set_abort_with_request_id_not_active(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
-    msg1 = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "rid-1"},
-    )
-    msg2 = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (2,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "rid-2"},
-    )
+    msg1 = _queued_scan_message(rid="rid-1")
+    msg2 = _queued_scan_message(rid="rid-2", start=-2, stop=2)
     queue_manager.add_to_queue(scan_queue="primary", msg=msg1)
     queue_manager.add_to_queue(scan_queue="primary", msg=msg2)
     scan_queue = queue_manager.queues["primary"]
@@ -757,8 +716,8 @@ def test_set_abort_with_wrong_scan_id(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
     msg = messages.ScanQueueMessage(
-        scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
+        scan_type="monitor_scan",
+        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -817,24 +776,19 @@ def test_set_abort_with_no_owned_devices_sends_stop_all_for_legacy_queue(queuema
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
     queue_manager.parent.device_lock_registry.get_owned_devices = mock.MagicMock(return_value=[])
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
+    msg = _queued_scan_message()
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
     scan_queue = queue_manager.queues["primary"]
     while scan_queue.scan_worker.current_instruction_queue_item is None:
         time.sleep(0.1)
 
-    queue_id = scan_queue.queue[0].queue_id
+    stop_id = scan_queue.queue[0].scan_id
     queue_manager.set_abort(queue="primary")
     wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.PAUSED)
 
     assert {
         "queue": MessageEndpoints.stop_devices(),
-        "msg": messages.VariableMessage(value=None, metadata={"stop_id": queue_id}),
+        "msg": messages.VariableMessage(value=None, metadata={"stop_id": stop_id}),
     } in queue_manager.connector.message_sent
 
 
@@ -870,7 +824,10 @@ def test_set_restart(queuemanager_mock):
     queue_manager.queues["primary"] = ScanQueue(queue_manager, queue_name="primary")
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={
+            "args": {"samx": (-5, 5, 3), "samy": (-5, 5, 3)},
+            "kwargs": {"relative": False, "system_config": {}},
+        },
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -919,7 +876,10 @@ def test_set_restart_no_active_scan(queuemanager_mock):
     queue_manager.queues["primary"] = ScanQueue(queue_manager, queue_name="primary")
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
-        parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
+        parameter={
+            "args": {"samx": (-5, 5, 3), "samy": (-5, 5, 3)},
+            "kwargs": {"relative": False, "system_config": {}},
+        },
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -943,72 +903,46 @@ def test_set_restart_no_active_scan(queuemanager_mock):
 @pytest.mark.timeout(5)
 def test_set_user_completed(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    msg = messages.ScanQueueMessage(
-        scan_type="line_scan",
-        parameter={"args": {"samx": (-1, 1)}, "kwargs": {"steps": 10, "relative": False}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
-    scan_queue = queue_manager.queues["primary"]
-    while scan_queue.scan_worker.current_instruction_queue_item is None:
-        time.sleep(0.1)
-    queue_manager.set_user_completed(queue="primary")
+    queue_manager.queues["primary"].status = ScanQueueStatus.RUNNING
 
-    # The queue should return to RUNNING state after user completion
-    wait_to_reach_state(queue_manager, "primary", ScanQueueStatus.RUNNING)
-    while len(scan_queue.queue) > 1:
-        time.sleep(0.1)
+    def _set_abort_side_effect(*, scan_id=None, request_id=None, queue="primary", exit_info=None):
+        queue_manager.queues[queue].status = ScanQueueStatus.PAUSED
 
-
-def test_request_block(scan_server_mock):
-    scan_server = scan_server_mock
-    msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
-        queue="primary",
-        metadata={"RID": "something"},
-    )
-    request_block = RequestBlock(
-        msg, assembler=ScanAssembler(parent=scan_server), parent=mock.MagicMock()
-    )
-
-
-@pytest.mark.parametrize(
-    "scan_queue_msg",
-    [
-        (
-            messages.ScanQueueMessage(
-                scan_type="mv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
-                queue="primary",
-                metadata={"RID": "something"},
-            )
-        ),
-        (
-            messages.ScanQueueMessage(
-                scan_type="grid_scan",
-                parameter={"args": {"samx": (-5, 5, 3)}, "kwargs": {}},
-                queue="primary",
-                metadata={"RID": "something"},
-            )
-        ),
-    ],
-)
-def test_request_block_scan_number(scan_server_mock, scan_queue_msg):
-    scan_server = scan_server_mock
-    request_block = RequestBlock(
-        scan_queue_msg, assembler=ScanAssembler(parent=scan_server), parent=mock.MagicMock()
-    )
-    if not request_block.is_scan:
-        assert request_block.scan_number is None
-        return
     with mock.patch.object(
-        RequestBlock, "_scan_server_scan_number", new_callable=mock.PropertyMock, return_value=5
+        queue_manager, "set_abort", side_effect=_set_abort_side_effect
+    ) as set_abort:
+        queue_manager.set_user_completed(queue="primary")
+
+    set_abort.assert_called_once_with(
+        scan_id=None, request_id=None, queue="primary", exit_info=("user_completed", "user")
+    )
+    assert queue_manager.queues["primary"].status == ScanQueueStatus.RUNNING
+
+
+@pytest.mark.parametrize("is_scan", [False, True])
+def test_request_block_scan_number(queuemanager_mock, is_scan):
+    queue_manager = queuemanager_mock()
+    scan_queue = queue_manager.queues["primary"]
+    instruction_queue = DirectInstructionQueueItem(
+        scan_queue, mock.MagicMock(), scan_queue.scan_worker
+    )
+    scan_queue.queue.append(instruction_queue)
+
+    scan = _build_dummy_v4_scan("scan-1", is_scan=is_scan)
+    instruction_queue.scans = [scan]
+
+    if not scan.is_scan:
+        assert instruction_queue.scan_number == [None]
+        return
+
+    with mock.patch.object(
+        DirectInstructionQueueItem,
+        "_scan_server_scan_number",
+        new_callable=mock.PropertyMock,
+        return_value=5,
     ):
-        with mock.patch.object(RequestBlock, "scan_ids_head", return_value=0):
-            assert request_block.scan_number == 5
+        with mock.patch.object(DirectInstructionQueueItem, "scan_ids_head", return_value=0):
+            assert instruction_queue.scan_number == [5]
 
 
 def test_direct_instruction_queue_item_scan_number_projection_within_item(queuemanager_mock):
@@ -1049,39 +983,41 @@ def test_direct_instruction_queue_item_scan_number_projection_across_queue_items
 
 def test_remove_queue_item(queuemanager_mock):
     queue_manager = queuemanager_mock()
+    scan_queue = ScanQueue(queue_manager)
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "something"},
     )
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
-    queue_manager.queues["primary"].queue[0].queue.request_blocks[0].scan_id = "random"
-    queue_manager.queues["primary"].remove_queue_item(scan_id=["random"])
-    assert len(queue_manager.queues["primary"].queue) == 0
+    scan_queue.insert(msg)
+    scan_queue.queue[0].scans[0].scan_info.scan_id = "random"
+    scan_queue.remove_queue_item(scan_id=["random"])
+    assert len(scan_queue.queue) == 0
 
 
 def test_remove_queue_item_by_request_id(queuemanager_mock):
     queue_manager = queuemanager_mock()
+    scan_queue = ScanQueue(queue_manager)
     msg1 = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "rid-1"},
     )
     msg2 = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (2,)}, "kwargs": {}},
+        parameter={"args": {"samx": (2,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "rid-2"},
     )
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg1)
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg2)
+    scan_queue.insert(msg1)
+    scan_queue.insert(msg2)
 
-    queue_manager.queues["primary"].remove_queue_item_by_request_id("rid-2")
+    scan_queue.remove_queue_item_by_request_id("rid-2")
 
-    assert len(queue_manager.queues["primary"].queue) == 1
-    remaining = queue_manager.queues["primary"].queue[0].describe().request_blocks[0]
+    assert len(scan_queue.queue) == 1
+    remaining = scan_queue.queue[0].describe().request_blocks[0]
     assert remaining.RID == "rid-1"
 
 
@@ -1089,7 +1025,7 @@ def test_invalid_scan_specified_in_message(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="fake test scan which does not exist!",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1104,7 +1040,7 @@ def test_set_clear(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1115,13 +1051,13 @@ def test_set_clear(queuemanager_mock):
 
 def test_scan_queue_next_instruction_queue(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     assert queue._next_instruction_queue() is False
 
 
 def test_scan_queue_next_instruction_queue_pops(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     queue.queue.append(InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock()))
     queue.queue[0].status = InstructionQueueStatus.RUNNING
     queue.active_instruction_queue = queue.queue[0]
@@ -1131,7 +1067,7 @@ def test_scan_queue_next_instruction_queue_pops(queuemanager_mock):
 
 def test_scan_queue_next_instruction_queue_does_not_pop(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     queue.queue.append(InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock()))
     queue.queue[0].status = InstructionQueueStatus.PENDING
     queue.active_instruction_queue = queue.queue[0]
@@ -1144,7 +1080,7 @@ def test_scan_queue_next_instruction_queue_pops_stopped_elements(queuemanager_mo
     Test that the scan queue pops the stopped elements from the queue.
     """
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     queue.queue.append(InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock()))
     queue.queue.append(InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock()))
     queue.queue[0].status = InstructionQueueStatus.STOPPED
@@ -1159,14 +1095,14 @@ def test_scan_queue_next_instruction_queue_pops_stopped_elements(queuemanager_mo
 
 def test_scan_queue_insert_defers_while_head_is_stopped(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     stopped_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
     stopped_item.status = InstructionQueueStatus.STOPPED
     queue.queue.append(stopped_item)
 
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-stopped"},
     )
@@ -1188,7 +1124,7 @@ def test_scan_queue_insert_defers_while_head_is_stopped(queuemanager_mock):
 
 def test_scan_queue_flushes_deferred_inserts_once_stopped_head_is_removed(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     stopped_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
     stopped_item.status = InstructionQueueStatus.STOPPED
     queued_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
@@ -1197,7 +1133,7 @@ def test_scan_queue_flushes_deferred_inserts_once_stopped_head_is_removed(queuem
 
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-flush"},
     )
@@ -1211,7 +1147,7 @@ def test_scan_queue_flushes_deferred_inserts_once_stopped_head_is_removed(queuem
 
 def test_scan_queue_insert_does_not_block_while_worker_waits_on_lock(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    queue = ScanQueue(queue_manager, InstructionQueueMock)
+    queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     pending_item = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
     pending_item.status = InstructionQueueStatus.PENDING
     queue.queue.append(pending_item)
@@ -1238,7 +1174,7 @@ def test_scan_queue_insert_does_not_block_while_worker_waits_on_lock(queuemanage
 
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-locked-insert"},
     )
@@ -1270,7 +1206,7 @@ def test_queue_manager_wait_for_queue_to_appear_in_history_raises_timeout(queuem
 
 def test_queue_manager_wait_for_queue_to_appear_in_history(queuemanager_mock):
     queue_manager = queuemanager_mock()
-    scan_queue = ScanQueue(queue_manager, InstructionQueueMock)
+    scan_queue = ScanQueue(queue_manager, instruction_queue_item_cls=InstructionQueueMock)
     instruction_queue = InstructionQueueItem(scan_queue, mock.MagicMock(), mock.MagicMock())
     request_queue = RequestBlockQueue(instruction_queue, mock.MagicMock())
     request_block = RequestBlock(mock.MagicMock(), mock.MagicMock(), request_queue)
@@ -1301,7 +1237,7 @@ def test_request_block_queue_append():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1319,7 +1255,7 @@ def test_request_block_queue_append():
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
+                parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
                 queue="primary",
                 metadata={"RID": "something"},
             ),
@@ -1441,7 +1377,7 @@ def test_update_point_id_takes_max(scan_queue_msg, scan_id):
         (
             messages.ScanQueueMessage(
                 scan_type="mv",
-                parameter={"args": {"samx": (1,)}, "kwargs": {}},
+                parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
                 queue="primary",
                 metadata={"RID": "something"},
             ),
@@ -1555,15 +1491,18 @@ def test_request_block_queue_raises_alarm_on_error(
 def test_queue_manager_get_active_scan_id(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
-        scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        scan_type="grid_scan",
+        parameter={
+            "args": {"samx": (-1, 1, 10), "samy": (-1, 1, 10)},
+            "kwargs": {"relative": False, "system_config": {}},
+        },
         queue="primary",
         metadata={"RID": "something"},
     )
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
-    rbl = RequestBlockMock(msg, "scan_id")
-    queue_manager.queues["primary"].queue[0].queue.active_rb = rbl
-    assert queue_manager._get_active_scan_id("primary") == "scan_id"
+    iq = queue_manager.queues["primary"].queue[0]
+    iq.active_scan = iq.scans[0]
+    assert queue_manager._get_active_scan_id("primary") == iq.active_scan.scan_info.scan_id
 
 
 def test_queue_manager_get_active_scan_id_returns_None(queuemanager_mock):
@@ -1575,7 +1514,7 @@ def test_queue_manager_get_active_scan_id_wo_rbl_returns_None(queuemanager_mock)
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1603,7 +1542,7 @@ def test_get_owned_devices_for_instruction_queue_uses_request_block_rid(queueman
     )
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False, "system_config": {}}},
         queue="primary",
         metadata={"RID": "rid-123"},
     )
@@ -1632,7 +1571,7 @@ def test_get_owned_devices_for_instruction_queue_returns_none_for_legacy_queue_w
     )
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "rid-123"},
     )
@@ -1700,7 +1639,7 @@ def test_request_block_queue_next():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1716,7 +1655,7 @@ def test_request_block_queue_next_raises_stopiteration():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1733,7 +1672,7 @@ def test_request_block_queue_next_updates_point_id():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     msg = messages.ScanQueueMessage(
         scan_type="mv",
-        parameter={"args": {"samx": (1,)}, "kwargs": {}},
+        parameter={"args": {"samx": (1,)}, "kwargs": {"relative": False}},
         queue="primary",
         metadata={"RID": "something", "scan_def_id": "scan_def_id"},
     )
@@ -1794,7 +1733,10 @@ def test_queue_order_change(queuemanager_mock, order_msg, position):
     queue_manager = queuemanager_mock()
     msg = messages.ScanQueueMessage(
         scan_type="line_scan",
-        parameter={"args": {"samx": (-5, 5)}, "kwargs": {"steps": 3}},
+        parameter={
+            "args": {"samx": (-5, 5)},
+            "kwargs": {"steps": 3, "system_config": {}, "relative": False},
+        },
         queue="primary",
         metadata={"RID": "something"},
     )
@@ -1805,14 +1747,14 @@ def test_queue_order_change(queuemanager_mock, order_msg, position):
     queue = queue_manager.queues["primary"]
     assert len(queue.queue) == 10
 
-    target_id = queue.queue[5].queue.scan_id
-    order_msg.scan_id = target_id[0]
+    target_id = queue.queue[5].scans[0].scan_info.scan_id
+    order_msg.scan_id = target_id
     queue_manager._handle_scan_order_change(order_msg)
     for ii in range(10):
         if ii == position:
-            assert queue.queue[ii].queue.scan_id == target_id
+            assert queue.queue[ii].scans[0].scan_info.scan_id == target_id
         else:
-            assert queue.queue[ii].queue.scan_id != target_id
+            assert queue.queue[ii].scans[0].scan_info.scan_id != target_id
 
 
 def test_add_lock_to_queue(queuemanager_mock):
@@ -2097,9 +2039,11 @@ def test_queue_waits_when_locked_and_resumes_after_release(queuemanager_mock):
     queue = queue_manager.queues["primary"]
 
     # Add items to the queue
-    iq1 = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
+    iq1 = DirectInstructionQueueItem(queue, mock.MagicMock(), queue.scan_worker)
+    iq1.scans = [_build_dummy_v4_scan("scan-id-1")]
     iq1.status = InstructionQueueStatus.PENDING
-    iq2 = InstructionQueueItem(queue, mock.MagicMock(), mock.MagicMock())
+    iq2 = DirectInstructionQueueItem(queue, mock.MagicMock(), queue.scan_worker)
+    iq2.scans = [_build_dummy_v4_scan("scan-id-2")]
     iq2.status = InstructionQueueStatus.PENDING
     queue.queue.append(iq1)
     queue.queue.append(iq2)

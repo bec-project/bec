@@ -179,6 +179,6 @@ def test_scan_doc_with_modifiers_renders_defaulted_acquire_parameters_as_kwargs_
 
     assert "Full:" in doc
     assert (
-        ">>> scans._v4_acquire(exp_time=0, frames_per_trigger=1, settling_time=0, "
+        ">>> scans.acquire(exp_time=0, frames_per_trigger=1, settling_time=0, "
         "settling_time_after_trigger=0, readout_time=0, burst_at_each_point=1)"
     ) in doc

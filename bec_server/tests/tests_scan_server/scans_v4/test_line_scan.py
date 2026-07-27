@@ -15,7 +15,7 @@ from bec_server.scan_server.tests.scan_hook_tests import (
 )
 def test_line_scan_default_hooks(v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests):
     scan = v4_scan_assembler(
-        "_v4_line_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, steps=5, relative=False
+        "line_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, steps=5, relative=False
     )
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
@@ -23,7 +23,7 @@ def test_line_scan_default_hooks(v4_scan_assembler, nth_done_status_mock, hook_n
 
 def test_line_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_line_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, steps=5, relative=False
+        "line_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, steps=5, relative=False
     )
 
     scan.prepare_scan()
@@ -39,7 +39,7 @@ def test_line_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
 
 def test_line_scan_prepare_scan_offsets_positions_when_relative(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_line_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, steps=5, relative=True
+        "line_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, steps=5, relative=True
     )
     scan.components.get_start_positions = lambda motors: [2.0, 3.0]
 

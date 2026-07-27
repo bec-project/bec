@@ -27,7 +27,8 @@ P = ParamSpec("P")
 class BecProcedure(Protocol[P]):
     """A procedure should not return anything, because it could be run in an isolated environment
     and data needs to be extracted in other ways. It may be a simple function, but it can also be
-    a class instance which implements __call__ and has its state initialised by its worker class."""
+    a class instance which implements __call__ and has its state initialised by its worker class.
+    """
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> None: ...
 

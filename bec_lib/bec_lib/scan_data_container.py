@@ -680,7 +680,7 @@ class ScanDataContainer:
                 signal_name: SignalDataReference(
                     file_path=self._file_reference.file_path,
                     entry_path=entry_path,
-                    dict_entry=[device_name, signal_name] if grouped_cache else [signal_name],
+                    dict_entry=([device_name, signal_name] if grouped_cache else [signal_name]),
                 )
                 for signal_name in device_info
             }

@@ -29,7 +29,8 @@ class LogTestTool:
 
     def fetch(self, count: int | None = None) -> None:
         """Fetch logs from the server and store them for interrogation, get all by default or get
-        the last `count` logs (latter will not fetch read logs again if they have been seen!)"""
+        the last `count` logs (latter will not fetch read logs again if they have been seen!)
+        """
         log_data = self._conn.xread(MessageEndpoints.log(), from_start=(count is None), count=count)
         if log_data is None:
             self._logs = None

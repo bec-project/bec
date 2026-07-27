@@ -11,6 +11,26 @@ from bec_server.scan_server.scan_queue import ScanQueueStatus
 from bec_server.scan_server.tests.fixtures import scan_server_mock
 
 
+def _device_rpc_scan_queue_message(
+    device, *, func="read", func_args=None, func_kwargs=None, metadata=None, queue="primary"
+):
+    return messages.ScanQueueMessage(
+        scan_type="device_rpc",
+        parameter={
+            "args": [],
+            "kwargs": {
+                "device": device,
+                "func": func,
+                "func_args": func_args or [],
+                "func_kwargs": func_kwargs or {},
+                "rpc_id": "rpc-id",
+            },
+        },
+        queue=queue,
+        metadata=metadata or {},
+    )
+
+
 @pytest.fixture
 def scan_guard_mock(scan_server_mock):
     sg = ScanGuard(parent=scan_server_mock)
@@ -28,36 +48,9 @@ def scan_guard_mock(scan_server_mock):
                 queue="primary",
             )
         ),
-        (
-            messages.ScanQueueMessage(
-                scan_type="device_rpc",
-                parameter={"device": "samy", "args": {}, "kwargs": {}},
-                queue="primary",
-            )
-        ),
-        (
-            messages.ScanQueueMessage(
-                scan_type="device_rpc",
-                parameter={"device": ["samy"], "args": {}, "kwargs": {}},
-                queue="primary",
-            )
-        ),
-        (
-            messages.ScanQueueMessage(
-                scan_type="_v4_device_rpc",
-                parameter={
-                    "args": [],
-                    "kwargs": {
-                        "device": "samy",
-                        "func": "set",
-                        "func_args": [1],
-                        "func_kwargs": {},
-                        "rpc_id": "rpc-id",
-                    },
-                },
-                queue="primary",
-            )
-        ),
+        (_device_rpc_scan_queue_message("samy", func="set", func_args=[1])),
+        (_device_rpc_scan_queue_message(["samy"], func="set", func_args=[1])),
+        (_device_rpc_scan_queue_message("samy", func="set", func_args=[1])),
     ],
 )
 def test_check_motors_movable_enabled(scan_server_mock, scan_queue_msg):
@@ -96,38 +89,23 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
             True,
         ),
         (
-            messages.ScanQueueMessage(
-                scan_type="device_rpc",
-                parameter={"device": "samy", "args": {}, "kwargs": {}},
-                queue="primary",
+            _device_rpc_scan_queue_message(
+                "samy", func="set", func_args=[1], metadata={"client_info": {"acl_user": "default"}}
+            ),
+            True,
+        ),
+        (
+            _device_rpc_scan_queue_message(
+                ["samy"],
+                func="set",
+                func_args=[1],
                 metadata={"client_info": {"acl_user": "default"}},
             ),
             True,
         ),
         (
-            messages.ScanQueueMessage(
-                scan_type="device_rpc",
-                parameter={"device": ["samy"], "args": {}, "kwargs": {}},
-                queue="primary",
-                metadata={"client_info": {"acl_user": "default"}},
-            ),
-            True,
-        ),
-        (
-            messages.ScanQueueMessage(
-                scan_type="_v4_device_rpc",
-                parameter={
-                    "args": [],
-                    "kwargs": {
-                        "device": "samy",
-                        "func": "set",
-                        "func_args": [1],
-                        "func_kwargs": {},
-                        "rpc_id": "rpc-id",
-                    },
-                },
-                queue="primary",
-                metadata={"client_info": {"acl_user": "default"}},
+            _device_rpc_scan_queue_message(
+                "samy", func="set", func_args=[1], metadata={"client_info": {"acl_user": "default"}}
             ),
             True,
         ),
@@ -189,11 +167,7 @@ def test_check_valid_scan_device_rpc(scan_guard_mock):
     sg.connector.get.return_value = messages.AvailableResourceMessage(
         resource={"device_rpc": "device_rpc"}
     )
-    request = messages.ScanQueueMessage(
-        scan_type="device_rpc",
-        parameter={"device": "samy", "func": "read", "args": {}, "kwargs": {}},
-        queue="primary",
-    )
+    request = _device_rpc_scan_queue_message("samy")
     with mock.patch.object(sg, "_device_rpc_is_valid") as rpc_valid:
         sg._check_valid_scan(request)
         rpc_valid.assert_called_once_with(device="samy", func="read")
@@ -205,11 +179,7 @@ def test_check_valid_scan_device_rpc_raises(scan_guard_mock):
     sg.connector.get.return_value = messages.AvailableResourceMessage(
         resource={"device_rpc": "device_rpc"}
     )
-    request = messages.ScanQueueMessage(
-        scan_type="device_rpc",
-        parameter={"device": "samy", "func": "read", "args": {}, "kwargs": {}},
-        queue="primary",
-    )
+    request = _device_rpc_scan_queue_message("samy")
     with pytest.raises(ScanRejection) as scan_rejection:
         with mock.patch.object(sg, "_device_rpc_is_valid") as rpc_valid:
             rpc_valid.return_value = False
@@ -306,11 +276,14 @@ def test_handle_scan_request(scan_guard_mock):
             metadata={"RID": "ed2c85e4-d1ed-44d3-a1ed-ec99ea5991a2", "response": True},
             scan_type="device_rpc",
             parameter={
-                "device": "samx",
-                "rpc_id": "0e5c0ca1-e471-4e30-bb45-b94d4b713e2f",
-                "func": "read",
                 "args": [],
-                "kwargs": {},
+                "kwargs": {
+                    "device": "samx",
+                    "rpc_id": "0e5c0ca1-e471-4e30-bb45-b94d4b713e2f",
+                    "func": "read",
+                    "func_args": [],
+                    "func_kwargs": {},
+                },
             },
             queue="primary",
         ),
@@ -318,11 +291,14 @@ def test_handle_scan_request(scan_guard_mock):
             metadata={"RID": "4be1449d-af68-457f-8e86-24fd9ddca803", "response": True},
             scan_type="device_rpc",
             parameter={
-                "device": "hexapod",
-                "rpc_id": "bc5fc2c3-540c-4881-b84e-89ba2c4ed3aa",
-                "func": "x.read",
                 "args": [],
-                "kwargs": {},
+                "kwargs": {
+                    "device": "hexapod",
+                    "rpc_id": "bc5fc2c3-540c-4881-b84e-89ba2c4ed3aa",
+                    "func": "x.read",
+                    "func_args": [],
+                    "func_kwargs": {},
+                },
             },
             queue="primary",
         ),
@@ -330,11 +306,14 @@ def test_handle_scan_request(scan_guard_mock):
             metadata={"RID": "ed2c85e4-d1ed-44d3-a1ed-ec99ea5991a2", "response": True},
             scan_type="device_rpc",
             parameter={
-                "device": "samx",
-                "rpc_id": "0e5c0ca1-e471-4e30-bb45-b94d4b713e2f",
-                "func": "get",
                 "args": [],
-                "kwargs": {},
+                "kwargs": {
+                    "device": "samx",
+                    "rpc_id": "0e5c0ca1-e471-4e30-bb45-b94d4b713e2f",
+                    "func": "get",
+                    "func_args": [],
+                    "func_kwargs": {},
+                },
             },
             queue="primary",
         ),
@@ -342,17 +321,20 @@ def test_handle_scan_request(scan_guard_mock):
             metadata={"RID": "4be1449d-af68-457f-8e86-24fd9ddca803", "response": True},
             scan_type="device_rpc",
             parameter={
-                "device": "hexapod",
-                "rpc_id": "bc5fc2c3-540c-4881-b84e-89ba2c4ed3aa",
-                "func": "x.get",
                 "args": [],
-                "kwargs": {},
+                "kwargs": {
+                    "device": "hexapod",
+                    "rpc_id": "bc5fc2c3-540c-4881-b84e-89ba2c4ed3aa",
+                    "func": "x.get",
+                    "func_args": [],
+                    "func_kwargs": {},
+                },
             },
             queue="primary",
         ),
         messages.ScanQueueMessage(
             metadata={"RID": "9db0c540-c1e0-4f44-872d-f41209512316", "response": True},
-            scan_type="_v4_device_rpc",
+            scan_type="device_rpc",
             parameter={
                 "args": [],
                 "kwargs": {
@@ -367,7 +349,7 @@ def test_handle_scan_request(scan_guard_mock):
         ),
         messages.ScanQueueMessage(
             metadata={"RID": "7d28d801-8e33-484d-af34-9cc061eefe0e", "response": True},
-            scan_type="_v4_device_rpc",
+            scan_type="device_rpc",
             parameter={
                 "args": [],
                 "kwargs": {
@@ -395,22 +377,15 @@ def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
                 append.assert_not_called()
                 send.assert_called_once_with(MessageEndpoints.device_instructions(), mock.ANY)
                 sent_msg = send.call_args.args[1]
-                expected_device = (
-                    msg.parameter["kwargs"]["device"]
-                    if msg.scan_type == "_v4_device_rpc"
-                    else msg.parameter["device"]
-                )
+                expected_device = msg.parameter["kwargs"]["device"]
                 assert sent_msg.device == expected_device
-                if msg.scan_type == "_v4_device_rpc":
-                    assert sent_msg.parameter == {
-                        "device": expected_device,
-                        "rpc_id": msg.parameter["kwargs"]["rpc_id"],
-                        "func": msg.parameter["kwargs"]["func"],
-                        "args": msg.parameter["kwargs"]["func_args"],
-                        "kwargs": msg.parameter["kwargs"]["func_kwargs"],
-                    }
-                else:
-                    assert sent_msg.parameter == msg.parameter
+                assert sent_msg.parameter == {
+                    "device": expected_device,
+                    "rpc_id": msg.parameter["kwargs"]["rpc_id"],
+                    "func": msg.parameter["kwargs"]["func"],
+                    "args": msg.parameter["kwargs"]["func_args"],
+                    "kwargs": msg.parameter["kwargs"]["func_kwargs"],
+                }
 
 
 def test_handle_scan_request_rejected(scan_guard_mock):

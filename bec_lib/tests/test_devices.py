@@ -313,12 +313,12 @@ def test_handle_rpc_response_returns_dict(dev: Any):
     assert dev.samx._handle_rpc_response(msg) == {"a": "b"}
 
 
-def test_prepare_rpc_msg_uses_v4_device_rpc_signature(dev: Any):
+def test_prepare_rpc_msg_uses_device_rpc_signature(dev: Any):
     dev.samx.root.parent.parent.queue.get_default_scan_queue.return_value = "primary"
 
     msg = dev.samx._prepare_rpc_msg("rpc-id", "request-id", "samx", "set", 1, "fast", armed=True)
 
-    assert msg.scan_type == "_v4_device_rpc"
+    assert msg.scan_type == "device_rpc"
     assert msg.parameter["args"] == []
     assert msg.parameter["kwargs"]["device"] == "samx"
     assert msg.parameter["kwargs"]["func"] == "set"

@@ -18,7 +18,7 @@ def test_round_roi_scan_default_hooks(
     v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests
 ):
     scan = v4_scan_assembler(
-        "_v4_round_roi_scan",
+        "round_roi_scan",
         "samx",
         -3.0,
         3.0,
@@ -35,7 +35,7 @@ def test_round_roi_scan_default_hooks(
 
 def test_round_roi_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_round_roi_scan",
+        "round_roi_scan",
         "samx",
         -3.0,
         3.0,
@@ -59,7 +59,7 @@ def test_round_roi_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembl
 
 def test_round_roi_scan_prepare_scan_offsets_positions_when_relative(v4_scan_assembler):
     scan = v4_scan_assembler(
-        "_v4_round_roi_scan",
+        "round_roi_scan",
         "samx",
         -3.0,
         3.0,
