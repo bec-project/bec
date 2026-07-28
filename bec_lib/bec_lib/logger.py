@@ -50,7 +50,8 @@ class LogLevel(int, enum.Enum):
 class BECLoguruRotator:
     """
     Custom rotator for loguru that rotates logs based on size and time. We assume
-    that logs are rotated once per day.
+    that logs are rotated once per day. There is a timer that limits rotation checks
+    to once per 10 minutes, to avoid excessive checks.
 
     Args:
         size (int): Maximum size of the log file in bytes before rotation.
@@ -59,6 +60,8 @@ class BECLoguruRotator:
 
     def __init__(self, *, size: int, at: datetime.time):
         now = datetime.datetime.now()
+        self._last_check = time.monotonic()
+        self._limiter = 600  # 10 minutes
 
         self._size_limit = size
         self._time_limit = now.replace(hour=at.hour, minute=at.minute, second=at.second)
@@ -70,6 +73,8 @@ class BECLoguruRotator:
 
     def should_rotate(self, message, file):
         """Custom rotator function for loguru that rotates logs based on size and time."""
+        if time.monotonic() - self._last_check < self._limiter:
+            return False
         file.seek(0, 2)
         if file.tell() + len(message) > self._size_limit:
             return True
