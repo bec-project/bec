@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.160.0 (2026-07-28)
+
+### Bug Fixes
+
+- **device**: Remove redundant 'device_dotted_name' from device info messages
+  ([`b1554fd`](https://github.com/bec-project/bec/commit/b1554fd45708317ed106cc84492de81c8125b24b))
+
+### Features
+
+- **device**: Simplify device info structure by removing redundant keys
+  ([`7b93deb`](https://github.com/bec-project/bec/commit/7b93deb09e6fa869f731ba51ee4f5b3595cc9964))
+
+
 ## v3.159.1 (2026-07-28)
 
 ### Bug Fixes
