@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.159.1 (2026-07-28)
+
+### Bug Fixes
+
+- **ci**: Added webengine flags "--disable-gpu" for bec widgets tests
+  ([`529f8c6`](https://github.com/bec-project/bec/commit/529f8c6e635fad6abde94ff37be39bceef4942b3))
+
+
 ## v3.159.0 (2026-07-27)
 
 ### Features
