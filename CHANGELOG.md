@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v3.161.0 (2026-07-28)
+
+### Bug Fixes
+
+- **logger**: Console and file logs should not share the rotator
+  ([`50cc84f`](https://github.com/bec-project/bec/commit/50cc84f0140eb6c34fe4172175ac815bd921a7fa))
+
+- **logger**: Fix retention policy of 3 files
+  ([`c9c2ab5`](https://github.com/bec-project/bec/commit/c9c2ab541ed42dc3fc7fded7e34ed27e84c31c41))
+
+- **logger**: Reduce rotation check to once per 10minutes
+  ([`f8d8a27`](https://github.com/bec-project/bec/commit/f8d8a2767c42f195a863ba35217a93d9b7096784))
+
+### Features
+
+- **logger**: Adapt file rotation and retention policy to reduce disk space
+  ([`38947fd`](https://github.com/bec-project/bec/commit/38947fdcf397cddf720f2a6d56b4ae5873604f3c))
+
+
 ## v3.160.0 (2026-07-28)
 
 ### Bug Fixes
