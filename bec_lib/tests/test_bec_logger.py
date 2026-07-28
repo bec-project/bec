@@ -148,8 +148,9 @@ def test_console_redis_callback_publishes_to_log_endpoint_with_console_service_n
     logger.service_name = "test"
     logger.connector = mock.MagicMock(spec=RedisConnector)
 
-    logger._console_redis_logger_callback(
-        json.dumps({"record": {"level": {"name": "CONSOLE_LOG"}}, "text": "hello"})
+    logger._publish_log_message(
+        json.dumps({"record": {"level": {"name": "CONSOLE_LOG"}}, "text": "hello"}),
+        service_name="test_CONSOLE",
     )
 
     logger.connector.xadd.assert_called_once()
@@ -161,12 +162,14 @@ def test_console_redis_callback_publishes_to_log_endpoint_with_console_service_n
 
 def test_console_redis_callback_ignores_publish_failures(logger):
     logger._configured = True
+    logger._log_throttle = 0.01
     logger.service_name = "test"
     logger.connector = mock.MagicMock(spec=RedisConnector)
     logger.connector.xadd.side_effect = RuntimeError("redis unavailable")
 
-    logger._console_redis_logger_callback(
-        json.dumps({"record": {"level": {"name": "CONSOLE_LOG_ERROR"}}, "text": "oops"})
+    logger._publish_log_message(
+        json.dumps({"record": {"level": {"name": "CONSOLE_LOG_ERROR"}}, "text": "oops"}),
+        service_name="test",
     )
 
     logger.connector.xadd.assert_called_once()
