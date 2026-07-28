@@ -370,7 +370,7 @@ class BECClient(BECService):
         if self.builtin_actors is not None:
             self.builtin_actors.shutdown()
             self.builtin_actors = None  # type: ignore
-        bec_logger.logger.remove()
+        bec_logger.shutdown()
         self.started = False
 
     def _print_available_commands(self, title: str, data: list[tuple[str, str]]) -> None:
