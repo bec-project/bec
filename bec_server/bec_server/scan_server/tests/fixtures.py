@@ -18,7 +18,7 @@ def scan_server_mock(dm_with_devices):
     server = ScanServerMock(dm_with_devices)
     yield server
     server.shutdown()
-    bec_logger.logger.remove()
+    bec_logger.shutdown()
 
 
 @pytest.fixture

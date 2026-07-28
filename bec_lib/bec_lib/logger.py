@@ -302,7 +302,7 @@ class BECLogger:
         self._log_thread.start()
 
     def _stop_log_thread(self) -> None:
-        """Stop the Redis publishing thread after flushing queued messages."""
+        """Stop the Redis publishing thread."""
         if self._log_thread is None:
             return
         if self._log_event is not None:
@@ -577,7 +577,10 @@ class BECLogger:
         """Queue a message for batched Redis publishing."""
         if not self._configured or self.connector is None:
             return
-        self._log_queue.put((msg, service_name))
+        log_queue = self._log_queue
+        if log_queue is None:
+            return
+        log_queue.put((msg, service_name))
 
     def _publish_log_batch(self, messages: list[tuple[str | dict, str | None]]) -> None:
         """Publish queued messages using one Redis pipeline."""

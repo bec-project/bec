@@ -17,7 +17,7 @@ pytest_plugins = ["bec_server.scan_server.tests.scan_fixtures"]
 @pytest.fixture(autouse=True)
 def threads_check(threads_check):
     yield
-    bec_logger.logger.remove()
+    bec_logger.shutdown()
 
 
 def fake_redis_server(host, port, **kwargs):
