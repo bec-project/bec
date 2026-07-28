@@ -28,6 +28,7 @@ jobs:
     env: 
       QTWEBENGINE_DISABLE_SANDBOX: 1
       QT_QPA_PLATFORM: "offscreen"
+      QTWEBENGINE_CHROMIUM_FLAGS: "--disable-gpu"
 
     steps:
       - name: Checkout BEC Widgets
