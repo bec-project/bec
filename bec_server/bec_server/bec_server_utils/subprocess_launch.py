@@ -63,17 +63,42 @@ def subprocess_start(bec_path: str, services: dict[str, "ServiceDesc"]):
     return processes
 
 
-def _kill_process_and_children(pid):
-    parent = psutil.Process(pid)
+def _stop_psutil_process(process: psutil.Process, timeout_s: float | None = None):
+    try:
+        process.terminate()
+        process.wait(timeout=timeout_s)
+    except psutil.NoSuchProcess:
+        return
+    except psutil.TimeoutExpired:
+        process.kill()
+        try:
+            process.wait(timeout=timeout_s)
+        except psutil.NoSuchProcess:
+            return
+
+
+def _stop_subprocess(process: subprocess.Popen, timeout_s: float | None = None):
+    try:
+        process.terminate()
+        process.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=timeout_s)
+
+
+def _kill_process_and_children(pid, timeout_s: float | None = None):
+    try:
+        parent = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        return
+
     children = parent.children(recursive=True)
     for child in children:
-        child.terminate()
-        child.wait()
-    parent.terminate()
-    parent.wait()
+        _stop_psutil_process(child, timeout_s=timeout_s)
+    _stop_psutil_process(parent, timeout_s=timeout_s)
 
 
-def subprocess_stop(processes=None):
+def subprocess_stop(processes=None, timeout_s: float | None = None):
     # For "bec-server stop" to be able to stop processes it would
     # need PID files for example... So, for now only consider to do
     # something considering we get Popen objects (like in tests)
@@ -84,13 +109,12 @@ def subprocess_stop(processes=None):
         for term in TERMINALS:
             if term.cmd == cmd:
                 if term.spawn_child:
-                    _kill_process_and_children(process.pid)
+                    _kill_process_and_children(process.pid, timeout_s=timeout_s)
                 else:
-                    process.terminate()
-                    process.wait()
+                    _stop_subprocess(process, timeout_s=timeout_s)
                 break
         else:
             # not in terminal
             # if command is launched via 'conda',
             # there might be children processes
-            _kill_process_and_children(process.pid)
+            _kill_process_and_children(process.pid, timeout_s=timeout_s)

@@ -38,6 +38,18 @@ def test_service_handler_stop():
         mock_tmux_stop.assert_called()
 
 
+def test_service_handler_stop_subprocess_forwards_timeout():
+    with mock.patch(
+        "bec_server.bec_server_utils.service_handler.subprocess_stop"
+    ) as mock_subprocess_stop:
+        service_handler = ServiceHandler("/path/to/bec", interface="subprocess")
+        processes = [object()]
+
+        service_handler.stop(processes, timeout_s=12)
+
+        mock_subprocess_stop.assert_called_once_with(processes, timeout_s=12)
+
+
 def test_service_handler_restart():
     bec_path = "/path/to/bec"
     config_path = "/path/to/config"
