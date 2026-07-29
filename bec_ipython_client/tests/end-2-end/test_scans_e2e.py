@@ -303,6 +303,7 @@ def test_umv_ctrl_c_stops_motion(bec_ipython_client_fixture: BECIPythonClient):
         dev.samx.velocity.set(original_velocity).wait()
 
 
+@pytest.mark.timeout(100)
 def test_limit_error(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_limit_error"})

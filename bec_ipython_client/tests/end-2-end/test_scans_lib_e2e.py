@@ -346,6 +346,7 @@ def test_dap_fit(bec_client_lib):
         "invalid_device_class",
     ],
 )
+@pytest.mark.timeout(100)
 def test_config_reload(
     bec_test_config_file_path, bec_client_lib, config, raises_error, deletes_config, disabled_device
 ):

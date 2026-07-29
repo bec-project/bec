@@ -12,6 +12,9 @@ from bec_lib.tests.utils import wait_for_empty_queue
 from bec_lib.utils.user_acls_test import BECAccessDemo
 from bec_server.bec_server_utils.service_handler import ServiceHandler
 
+CLIENT_SHUTDOWN_TIMEOUT_S = 10
+SERVICE_STOP_TIMEOUT_S = 20
+
 
 @pytest.fixture
 def acl_enabled_bec_services(
@@ -61,7 +64,7 @@ def acl_enabled_bec_services(
         yield bec_services_config_file_path
     finally:
         if processes is not None:
-            service_handler.stop(processes)
+            service_handler.stop(processes, timeout_s=SERVICE_STOP_TIMEOUT_S)
         restore_connector = RedisConnector(redis_url)
         try:
             BECAccessDemo(restore_connector).reset()
@@ -77,7 +80,7 @@ def test_acl_admin_server_allows_default_user_scan(acl_enabled_bec_services):
     try:
         admin_client.config.load_demo_config(force=True)
     finally:
-        admin_client.shutdown()
+        admin_client.shutdown(per_thread_timeout_s=CLIENT_SHUTDOWN_TIMEOUT_S)
         admin_client._client._reset_singleton()
 
     user_config = ServiceConfig(acl_enabled_bec_services, acl={"env_file": "", "user": "user"})
@@ -97,7 +100,7 @@ def test_acl_admin_server_allows_default_user_scan(acl_enabled_bec_services):
 
         assert status.scan.num_points == 3
     finally:
-        user_client.shutdown()
+        user_client.shutdown(per_thread_timeout_s=CLIENT_SHUTDOWN_TIMEOUT_S)
         user_client._client._reset_singleton()
 
 
@@ -136,5 +139,5 @@ def test_acl_account_endpoint_allows_user_read_but_admin_only_write(acl_enabled_
         assert user_client.username == "user"
         assert user_client.connector.get_last(account_endpoint, "data") == updated_account_msg
     finally:
-        user_client.shutdown()
+        user_client.shutdown(per_thread_timeout_s=CLIENT_SHUTDOWN_TIMEOUT_S)
         user_client._client._reset_singleton()
