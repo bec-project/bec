@@ -207,7 +207,7 @@ class ServiceHandler:
             f"Unsupported interface: {self.interface}. Supported interfaces are: tmux, iterm2, systemctl, subprocess"
         )
 
-    def stop(self, processes=None):
+    def stop(self, processes=None, timeout_s: float | None = None):
         """
         Stop the BEC server using the available interface.
         """
@@ -220,7 +220,7 @@ class ServiceHandler:
         elif self.interface == "systemctl":
             subprocess.run(["sudo", "systemctl", "stop", "bec-server.service"], check=True)
         elif self.interface == "subprocess":
-            subprocess_stop(processes)
+            subprocess_stop(processes, timeout_s=timeout_s)
         else:
             raise ValueError(
                 f"Unsupported interface: {self.interface}. Supported interfaces are: tmux, iterm2, systemctl, subprocess"

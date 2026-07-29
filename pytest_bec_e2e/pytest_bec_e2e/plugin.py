@@ -21,6 +21,9 @@ from bec_lib.tests.utils import wait_for_empty_queue
 
 RedisConnector.RETRY_ON_TIMEOUT = 1
 
+CLIENT_SHUTDOWN_TIMEOUT_S = 10
+SERVICE_STOP_TIMEOUT_S = 20
+
 
 class LogTestTool:
     def __init__(self, client: BECIPythonClient):
@@ -205,7 +208,7 @@ def bec_servers(
         try:
             yield
         finally:
-            service_handler.stop(processes)
+            service_handler.stop(processes, timeout_s=SERVICE_STOP_TIMEOUT_S)
     else:
         # Nothing to do here: servers are supposed to be started externally.
         yield
@@ -222,7 +225,7 @@ def bec_ipython_client_with_demo_config(
     try:
         yield bec
     finally:
-        bec.shutdown()
+        bec.shutdown(per_thread_timeout_s=CLIENT_SHUTDOWN_TIMEOUT_S)
         bec._client._reset_singleton()
 
 
@@ -235,7 +238,7 @@ def bec_client_lib_with_demo_config(bec_redis_fixture, bec_services_config_file_
     try:
         yield bec
     finally:
-        bec.shutdown()
+        bec.shutdown(per_thread_timeout_s=CLIENT_SHUTDOWN_TIMEOUT_S)
         bec._client._reset_singleton()
 
 
