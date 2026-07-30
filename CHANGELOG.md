@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.162.1 (2026-07-30)
+
+### Bug Fixes
+
+- **devicemanager**: Do not connect to disabled devices
+  ([`fcea788`](https://github.com/bec-project/bec/commit/fcea788aeb02d5caeaa02ea543b8a4fa29b113d2))
+
+- **devicemanager**: Prevent config updates for disabled devices
+  ([`91f8a83`](https://github.com/bec-project/bec/commit/91f8a83468d20d62819cdce75537c1456fee653b))
+
+
 ## v3.162.0 (2026-07-30)
 
 ### Features
