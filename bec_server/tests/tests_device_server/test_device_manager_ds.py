@@ -475,12 +475,18 @@ def epics_motor():
 
 
 @pytest.mark.parametrize(
-    "device_manager_class, timeout",
-    [(DeviceManagerDS, 5), (DeviceManagerDS, 10), (DeviceManagerDS, None)],
+    "device_manager_class, timeout, enabled",
+    [
+        (DeviceManagerDS, 5, True),
+        (DeviceManagerDS, 10, True),
+        (DeviceManagerDS, None, True),
+        (DeviceManagerDS, 5, False),
+    ],
 )
-def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, timeout):
+def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, timeout, enabled):
     """Test to initialize an EpicsMotor device, check if all necessary subscriptions are made."""
     cfg = {"name": "test_motor", "prefix": "TEST:MOTOR"}
+    epics_motor_config["enabled"] = enabled
     if timeout is not None:
         epics_motor_config["connectionTimeout"] = timeout
     else:
@@ -502,18 +508,26 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
         ):
             dm_with_devices.initialize_device(epics_motor_config, cfg, epics_motor)
 
-            mock_initialize_enabled_device.assert_called_once()
-            mock_publish_device_info.assert_called_once()
-            mock_connect_device.assert_called_once_with(
-                epics_motor, wait_for_all=True, timeout=timeout
+            mock_publish_device_info.assert_called_once_with(
+                epics_motor, connect=enabled, pipe=mock.ANY
             )
-            # Limit updates are queued through the auto-monitor thread callback.
-            mock_low_subscribe.assert_called_once_with(
-                dm_with_devices._obj_callback_auto_monitor_limits, run=False
-            )
-            mock_high_subscribe.assert_called_once_with(
-                dm_with_devices._obj_callback_auto_monitor_limits, run=False
-            )
+            if enabled:
+                mock_initialize_enabled_device.assert_called_once()
+                mock_connect_device.assert_called_once_with(
+                    epics_motor, wait_for_all=True, timeout=timeout
+                )
+                # Limit updates are queued through the auto-monitor thread callback.
+                mock_low_subscribe.assert_called_once_with(
+                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
+                )
+                mock_high_subscribe.assert_called_once_with(
+                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
+                )
+            else:
+                mock_initialize_enabled_device.assert_not_called()
+                mock_connect_device.assert_not_called()
+                mock_low_subscribe.assert_not_called()
+                mock_high_subscribe.assert_not_called()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
