@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v3.162.0 (2026-07-30)
+
+### Features
+
+- Move to v4 scans
+  ([`73cc01e`](https://github.com/bec-project/bec/commit/73cc01ef5485b889f6f11dbfd3d1f8f0aaad4269))
+
+- **service**: Add timeout support for stopping processes and enhance subprocess handling
+  ([`8299ac9`](https://github.com/bec-project/bec/commit/8299ac9c257dc175d32eb04e9318ba73b4132f15))
+
+- **tests**: Add timeout settings for service shutdown and test cases
+  ([`f583397`](https://github.com/bec-project/bec/commit/f5833978a6843f3ba73c31961afbe90563ce93d7))
+
+
 ## v3.161.0 (2026-07-28)
 
 ### Bug Fixes
