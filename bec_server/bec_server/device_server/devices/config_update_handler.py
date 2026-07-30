@@ -190,6 +190,10 @@ class ConfigUpdateHandler:
                 raise CancelledError("Config update cancelled")
             device = self.device_manager.devices[dev]
             if "deviceConfig" in dev_config:
+                if not device.enabled:
+                    raise DeviceConfigError(
+                        f"Cannot update deviceConfig for disabled device {dev}. Enable the device first."
+                    )
                 new_config = dev_config["deviceConfig"] or {}
                 # store old config
                 old_config = device._config["deviceConfig"].copy()
