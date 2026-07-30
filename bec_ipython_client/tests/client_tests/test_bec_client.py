@@ -10,6 +10,8 @@ from bec_ipython_client import BECIPythonClient, main
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase, AlarmHandler, Alarms
 from bec_lib.bec_errors import DeviceConfigError
+from bec_lib.connector import MessageObject
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig
 
@@ -190,6 +192,46 @@ def test_bec_ipython_client_start_without_bec_services(ipython_client):
                 client.start()
                 configure_ipython.assert_called_once()
                 wait_for_service.assert_not_called()
+
+
+def test_bec_ipython_client_subscribes_to_client_restart(service_config):
+    client = BECIPythonClient(
+        config=service_config,
+        connector_cls=mock.MagicMock(spec=RedisConnector),
+        wait_for_server=False,
+    )
+    client._local_only_types = (mock.MagicMock,)
+    real_client = client._client
+    client._client = mock.MagicMock(started=True)
+    try:
+        client._register_client_callbacks()
+        client._client.connector.register.assert_any_call(
+            topics=MessageEndpoints.client_restart(), cb=client._client_restart_callback
+        )
+    finally:
+        real_client._reset_singleton()
+
+
+def test_bec_ipython_client_exits_on_client_restart(ipython_client, capsys):
+    client = ipython_client
+    client._ip = mock.MagicMock()
+    client._ip.pt_app.app.future.done.return_value = False
+
+    client._client_restart_callback(
+        MessageObject(
+            topic=MessageEndpoints.client_restart().endpoint,
+            value=messages.ClientRestartMessage(reason="server maintenance"),
+        )
+    )
+    captured = capsys.readouterr()
+
+    assert "server maintenance" in captured.out
+    assert client._ip.confirm_exit is False
+    client._ip.ask_exit.assert_called_once_with()
+    client._ip.pt_app.app.loop.call_soon_threadsafe.assert_called_once()
+    exit_cb = client._ip.pt_app.app.loop.call_soon_threadsafe.call_args.args[0]
+    exit_cb()
+    client._ip.pt_app.app.exit.assert_called_once_with(exception=EOFError)
 
 
 def test_bec_ipython_client_property_access(ipython_client):
