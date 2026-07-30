@@ -566,6 +566,13 @@ class ClientInfoMessage(BECMessage):
     )
 
 
+class ClientRestartMessage(BECMessage):
+    """Message type for requesting an IPython client restart."""
+
+    msg_type: ClassVar[str] = "client_restart"
+    reason: str = ""
+
+
 class RequestResponseMessage(BECMessage):
     """Message type for sending back decisions on the acceptance of requests
 

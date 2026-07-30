@@ -1109,6 +1109,20 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def client_restart():
+        """
+        Endpoint for client restart. This endpoint is used to request that interactive
+        IPython clients exit using a messages.ClientRestartMessage message.
+
+        Returns:
+            EndpointInfo: Endpoint for client restart.
+        """
+        endpoint = f"{EndpointType.INFO.value}/client_restart"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.ClientRestartMessage, message_op=MessageOp.SEND
+        )
+
+    @staticmethod
     def alarm():
         """
         Endpoint for alarms. This endpoint is used by the redis connector to publish alarms

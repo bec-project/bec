@@ -22,15 +22,15 @@ from bec_ipython_client.beamline_mixin import BeamlineMixin
 from bec_ipython_client.bec_magics import BECMagics
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
 from bec_ipython_client.signals import OperationMode, ScanInterruption, SigintHandler
-from bec_lib import plugin_helper
+from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import DeviceConfigError, ExceptionWithErrorInfo
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.callback_handler import EventType
 from bec_lib.client import BECClient
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.procedures.hli import ProcedureHli
-from bec_lib.redis_connector import RedisConnector
+from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.utils.pydantic_pretty_print import pretty_print_pydantic_validation_error
 
@@ -119,6 +119,7 @@ class BECIPythonClient:
         except KeyboardInterrupt:
             raise KeyboardInterrupt("Login aborted.")
 
+        self._register_client_callbacks()
         bec_logger.add_console_log()
         self._sighandler = SigintHandler(self, self._operation_mode)
         self._beamline_mixin = BeamlineMixin()
@@ -186,6 +187,29 @@ class BECIPythonClient:
     def _set_idle(self):
         if self._ip is not None:
             self._ip.prompts.status = 2
+
+    def _register_client_callbacks(self):
+        self._client.connector.register(
+            topics=MessageEndpoints.client_restart(), cb=self._client_restart_callback
+        )
+
+    def _client_restart_callback(self, msg_obj: MessageObject):
+        msg = msg_obj.value
+        if not isinstance(msg, messages.ClientRestartMessage):
+            return
+        if msg.reason:
+            print(f"\nClient restart requested by server: {msg.reason}. Exiting...")
+        else:
+            print("\nClient restart requested by server. Exiting...")
+        if self._ip is not None:
+            self._ip.confirm_exit = False
+            self._ip.ask_exit()
+            pt_app = getattr(self._ip, "pt_app", None)
+            app = getattr(pt_app, "app", None)
+            future = getattr(app, "future", None)
+            loop = getattr(app, "loop", None)
+            if app is not None and future is not None and not future.done() and loop is not None:
+                loop.call_soon_threadsafe(lambda: app.exit(exception=EOFError))
 
     def _load_magics(self):
         magics = BECMagics(self._ip, self)

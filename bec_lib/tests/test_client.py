@@ -6,7 +6,7 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.client import SystemConfig
-from bec_lib.endpoints import MessageEndpoints
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.file_utils import sanitize_relative_subdir
 from bec_lib.tests.fixtures import bec_client_mock
 
@@ -53,6 +53,14 @@ def test_request_scan_reload_requires_initialized_client(bec_client_mock):
 
     with pytest.raises(RuntimeError, match="Client not initialized. Cannot reload scans."):
         client._request_scan_reload()
+
+
+def test_client_restart_endpoint():
+    endpoint = MessageEndpoints.client_restart()
+
+    assert endpoint.endpoint == "info/client_restart"
+    assert endpoint.message_type is messages.ClientRestartMessage
+    assert endpoint.message_op == MessageOp.SEND
 
 
 def test_beamline_storage_copy(bec_client_mock):
