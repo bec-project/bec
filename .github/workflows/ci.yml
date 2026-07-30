@@ -54,6 +54,15 @@ jobs:
       BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH || github.head_ref || github.sha}}
       OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
 
+  go-test:
+    needs: [check_pr_status, formatter]
+    if: needs.check_pr_status.outputs.branch-pr == ''
+    uses: ./.github/workflows/go.yml
+    with:
+      BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH || 'main' }}
+      BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH || github.head_ref || github.sha}}
+      OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH || 'main' }}
+
   end2end-test:
     needs: [check_pr_status, formatter]
     if: needs.check_pr_status.outputs.branch-pr == ''

@@ -12,14 +12,17 @@ import (
 	"bec_lib_go/endpoints"
 	"bec_lib_go/messages"
 	"bec_lib_go/redisconnector"
-
-	"github.com/redis/go-redis/v9"
 )
 
 func handleExistingData(data []byte, force bool) bool {
-	decoded, err := messages.DecodeVariableMessage(data)
+	decodedAny, err := messages.Decode(data)
 	if err != nil {
 		fmt.Printf("Warning: Failed to decode existing message: %v\n", err)
+		return true
+	}
+	decoded, ok := decodedAny.(messages.VariableMessage)
+	if !ok {
+		fmt.Printf("Warning: Unexpected decoded message type: %T\n", decodedAny)
 		return true
 	}
 
@@ -45,30 +48,24 @@ func handleExistingData(data []byte, force bool) bool {
 	return true
 }
 
-func checkExistingAccount(rdb *redisconnector.Client, ctx context.Context, key string, force bool) bool {
+func checkExistingAccount(
+	ctx context.Context, rdb *redisconnector.Client, endpoint endpoints.EndpointInfo, force bool,
+) bool {
 	// Check for existing stream data
-	existing, err := rdb.XRange(ctx, key)
+	existing, err := rdb.XRange(ctx, endpoint)
 
-	// Handle actual errors (not just "key not found")
-	if err != nil && err != redis.Nil {
+	// Handle actual errors.
+	if err != nil {
 		fmt.Printf("Failed to check existing account: %v\n", err)
 		panic(fmt.Sprintf("Redis access failed: %v", err))
 	}
 
-	// No existing stream data, proceed
-	if err == redis.Nil || len(existing) == 0 {
+	// No existing stream data, proceed.
+	if len(existing) == 0 {
 		return true
 	}
 
-	// Extract and handle stream data - XRange returns []redis.XMessage directly
-	msgData := existing[0].Values["data"]
-	msgBytes, ok := msgData.(string)
-	if !ok {
-		fmt.Println("Warning: Unexpected data format in existing stream message")
-		return true
-	}
-
-	return handleExistingData([]byte(msgBytes), force)
+	return handleExistingData(existing[0].Data, force)
 }
 
 func main() {
@@ -76,6 +73,7 @@ func main() {
 	redisHost := flag.String("redis-host", "", "Redis host (e.g. awi-bec-001)")
 	pgroup := flag.String("pgroup", "", "Process group (e.g. p16602 )")
 	force := flag.Bool("force", false, "Force overwrite existing account without confirmation")
+	aclFile := flag.String("acl-file", "", "Path to ACL file (optional)")
 	flag.Parse()
 
 	if *redisHost == "" {
@@ -87,21 +85,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Connect to Redis (default port)
-	ctx := context.Background()
-	rdb := redisconnector.New(*redisHost, 6379)
-	defer rdb.Close()
+	mainCtx := context.Background()
 
-	// Test the connection
-	if err := rdb.Ping(ctx); err != nil {
+	// We set the timeout to 30 seconds. Should be plenty of time for this
+	ctx, cancel := context.WithTimeout(mainCtx, 30*time.Second)
+	defer cancel()
+
+	// Connect to Redis (default port)
+	rdb, err := redisconnector.ConnectWithOptionalACL(ctx, *redisHost, 6379, *aclFile)
+	if err != nil {
 		fmt.Printf("Failed to connect to Redis: %v\n", err)
 		os.Exit(1)
 	}
-
-	key := endpoints.Account
+	defer rdb.Close()
 
 	// Check existing account and get user confirmation if needed
-	if !checkExistingAccount(rdb, ctx, key, *force) {
+	if !checkExistingAccount(ctx, rdb, endpoints.Account, *force) {
 		os.Exit(0)
 	}
 
@@ -109,17 +108,16 @@ func main() {
 	currentUser, _ := user.Current()
 	now := time.Now().Format(time.RFC3339)
 
-	packed, err := messages.Encode(messages.NewVariableMessage(*pgroup, map[string]string{
-		"timestamp": now,
-		"user":      currentUser.Username,
-	}))
-	if err != nil {
-		fmt.Println("Failed to set account")
-		panic(err)
+	message := messages.VariableMessage{
+		Value: *pgroup,
+		Metadata: map[string]string{
+			"timestamp": now,
+			"user":      currentUser.Username,
+		},
 	}
 
 	// Set key
-	if err := rdb.AddStreamMessage(ctx, key, packed, 1, false); err != nil {
+	if err := rdb.AddStreamMessage(ctx, endpoints.Account, message, 1, false); err != nil {
 		fmt.Println("Failed to set account")
 		panic(err)
 	}

@@ -1,0 +1,58 @@
+name: Run Go Tests
+on:
+  workflow_call:
+    inputs:
+      BEC_CORE_BRANCH:
+        description: "Branch of BEC Core to install"
+        required: false
+        default: "main"
+        type: string
+      OPHYD_DEVICES_BRANCH:
+        description: "Branch of Ophyd Devices to install"
+        required: false
+        default: "main"
+        type: string
+      BEC_WIDGETS_BRANCH:
+        description: "Branch of BEC Widgets to install"
+        required: false
+        default: "main"
+        type: string
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout BEC
+        uses: actions/checkout@v6
+        with:
+          repository: bec-project/bec
+          ref: ${{ inputs.BEC_CORE_BRANCH }}
+
+      - name: Install BEC and dependencies
+        uses: ./.github/actions/bec_install
+        with:
+          BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
+          OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
+          PYTHON_VERSION: 3.11
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ./bec/bin/bec_lib_go/go.mod
+
+      - name: Generate Python msgpack fixtures
+        run: |
+          cd ./bec
+          python ./bin/bec_lib_go/testdata/generate_python_messages.py --output-dir ./bin/bec_lib_go/messages/testdata/generated
+
+      - name: Run Go tests
+        run: |
+          cd ./bec/bin/bec_lib_go
+          go test ./...
+
+      - name: Build Go tools
+        run: |
+          cd ./bec/bin/bec_set_account
+          go build .
+          cd ../bec_client_restart
+          go build .

@@ -1,0 +1,16 @@
+[
+  {
+    "filename": "variable_message.msgpack",
+    "type": "VariableMessage",
+    "value": "p12345",
+    "metadata": {
+      "user": "ci-user"
+    }
+  },
+  {
+    "filename": "client_restart_message.msgpack",
+    "type": "ClientRestartMessage",
+    "reason": "server maintenance",
+    "metadata": {}
+  }
+]
