@@ -536,13 +536,16 @@ class DeviceManagerDS(DeviceManagerBase):
         # refresh the device info
         pipe = self.connector.pipeline()
         self.reset_device_data(obj, pipe)
-        # Try to connect to the device, needs wait_for_all to include lazy signals e.g. AD detectors
-        raised_exc = self.connect_device(
-            obj, wait_for_all=True, timeout=dev.get("connectionTimeout", 5)
-        )
-        # Publish device info with connect = True if no exception was raised during connection
-        # Otherwise publish with connect = False
-        connect = True if raised_exc is None else False
+        raised_exc = None
+        connect = False
+        if enabled:
+            # Try to connect to the device, needs wait_for_all to include lazy signals e.g. AD detectors
+            raised_exc = self.connect_device(
+                obj, wait_for_all=True, timeout=dev.get("connectionTimeout", 5)
+            )
+            # Publish device info with connect = True if no exception was raised during connection
+            # Otherwise publish with connect = False
+            connect = raised_exc is None
         # If .describe() fails for connect=True, we rerun with connect=False
         # and return the exception. This will later be raised even if
         # connect_device succeeded.
