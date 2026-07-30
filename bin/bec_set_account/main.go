@@ -84,11 +84,33 @@ func checkExistingAccount(rdb *redis.Client, ctx context.Context, key string, fo
 	return handleExistingData([]byte(msgBytes), force)
 }
 
+// Read ACL file and return userName and aclToken
+// The ACL file is expected to have an .env format with two lines: the first line is REDIS_USER and the second line is REDIS_PASSWORD
+// Example:
+// REDIS_USER=myuser
+// REDIS_PASSWORD=mypassword
+func readACLFile(filePath string) (string, string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", "", err
+	}
+	defer file.Close()
+
+	var userName, aclToken string
+	_, err = fmt.Fscanf(file, "REDIS_USER=%s\nREDIS_PASSWORD=%s", &userName, &aclToken)
+	if err != nil {
+		return "", "", err
+	}
+
+	return userName, aclToken, nil
+}
+
 func main() {
 	// CLI flags
 	redisHost := flag.String("redis-host", "", "Redis host (e.g. awi-bec-001)")
 	pgroup := flag.String("pgroup", "", "Process group (e.g. p16602 )")
 	force := flag.Bool("force", false, "Force overwrite existing account without confirmation")
+	aclFile := flag.String("acl-file", "", "Path to ACL file (optional)")
 	flag.Parse()
 
 	if *redisHost == "" {
@@ -100,17 +122,53 @@ func main() {
 		os.Exit(1)
 	}
 
+	var userName = "default" // Default username if no ACL file is provided
+	var aclToken = ""        // Default password if no ACL file is provided
+	// If ACL .env file is provided, read it
+	if *aclFile != "" {
+		if _, err := os.Stat(*aclFile); os.IsNotExist(err) {
+			fmt.Printf("ACL file does not exist: %s\n", *aclFile)
+			os.Exit(1)
+		}
+
+		var err error
+		userName, aclToken, err = readACLFile(*aclFile)
+		if err != nil {
+			fmt.Printf("Failed to read ACL file: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// Connect to Redis (default port)
 	ctx := context.Background()
 	rdb := redis.NewClient(&redis.Options{
-		Addr: *redisHost + ":6379",
+		Addr:     *redisHost + ":6379",
+		Username: userName,
+		Password: aclToken,
 	})
 
 	// Test the connection
 	_, err := rdb.Ping(ctx).Result()
 	if err != nil {
 		fmt.Printf("Failed to connect to Redis: %v\n", err)
-		os.Exit(1)
+		if userName == "default" {
+			os.Exit(1)
+		}
+		// If the connection failed with the provided ACL credentials, try again with the default user (no ACL)
+		fmt.Println("Retrying with default user...")
+		userName = "default"
+		aclToken = ""
+		rdb = redis.NewClient(&redis.Options{
+			Addr:     *redisHost + ":6379",
+			Username: userName,
+			Password: aclToken,
+		})
+		_, err = rdb.Ping(ctx).Result()
+		if err != nil {
+			fmt.Printf("Failed to connect to Redis with provided ACL credentials: %v\n", err)
+			os.Exit(1)
+		}
+
 	}
 
 	key := "info/account"
