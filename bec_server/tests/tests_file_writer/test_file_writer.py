@@ -310,6 +310,11 @@ def test_create_device_data_storage(hdf5_file_writer, scan_storage_mock):
                     "monitored": ["samx", "samy"],
                     "async": ["mokev"],
                 },
+                "request_inputs": {
+                    "arg_bundle": ["samx", -100, 100],
+                    "inputs": {},
+                    "kwargs": {"relative": False},
+                },
             },
         )
     ],
@@ -352,6 +357,10 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
         assert list(test_file["entry/data"].attrs["auxiliary_signals"]) == ["samy"]
         assert np.allclose(test_file["entry/data/samx"][...], [0.11, 0.21])
         assert np.allclose(test_file["entry/data/samy"][...], [1.1, 1.2])
+        assert (
+            test_file["entry/collection/metadata/bec/scan_cli_input"][()].decode("utf-8")
+            == "scans.monitor_scan('samx', -100, 100, relative=False)"
+        )
 
 
 def test_load_format_from_plugin(tmp_path, hdf5_file_writer):
