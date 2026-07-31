@@ -47,6 +47,7 @@ class ReadbackDataHandler:
         self._devices_done_state: dict[str, tuple[bool, bool]] = {
             dev: (False, False) for dev in devices
         }
+        self._rlock = threading.RLock()
         self.requests_done = threading.Event()
         self._register_callbacks()
 
@@ -82,13 +83,14 @@ class ReadbackDataHandler:
         if msg.request_id != self.request_id:
             return
         device = msg.device
-        self._devices_done_state[device] = (True, msg.success)
+        with self._rlock:
+            self._devices_done_state[device] = (True, msg.success)
 
-        if (
-            all(done for done, _ in self._devices_done_state.values())
-            and not self.requests_done.is_set()
-        ):
-            self._on_request_done()
+            if (
+                all(done for done, _ in self._devices_done_state.values())
+                and not self.requests_done.is_set()
+            ):
+                self._on_request_done()
 
     def on_readback(self, msg_obj: MessageObject, device: str):
         """Callback for updating device readback data.
@@ -149,9 +151,10 @@ class ReadbackDataHandler:
         Return the current device done states.
 
         Returns:
-            dict: dictionary with device names as keys and tuples of (done, success) as values
+            dict: snapshot with device names as keys and tuples of (done, success) as values
         """
-        return self._devices_done_state
+        with self._rlock:
+            return self._devices_done_state.copy()
 
 
 class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
