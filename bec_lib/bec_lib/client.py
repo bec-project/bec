@@ -157,7 +157,6 @@ class BECClient(BECService):
         self.history = None
         self._live_updates = None
         self.dap = None
-        self.device_monitor = None
         self.scans_namespace = SimpleNamespace()
         self._hli_funcs = {}
         self.metadata = {}
