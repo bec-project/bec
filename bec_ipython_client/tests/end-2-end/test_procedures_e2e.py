@@ -114,22 +114,32 @@ def test_happy_path_container_procedure_runner(
     _wait_while(lambda: manager._active_workers == {}, 5)
     _wait_while(lambda: manager._active_workers != {}, 90)
 
-    logtool.fetch()
-    assert logtool.is_present_in_any_message("procedure accepted: True, message:")
-    assert logtool.is_present_in_any_message(
-        "Procedure worker started container for queue primary"
-    ), f"Log content relating to procedures: {manager._logs}"
+    tests_passed = False
+    time_started = time.monotonic()
+    timeout = 20
+    while time.monotonic() - time_started < timeout:
+        logtool.fetch()
+        try:
+            assert logtool.is_present_in_any_message("procedure accepted: True, message:")
+            assert logtool.is_present_in_any_message(
+                "Procedure worker started container for queue primary"
+            ), f"Log content relating to procedures: {manager._logs}"
 
-    res, msg = logtool.are_present_in_order(
-        [
-            "Procedure worker 'primary' status update: IDLE",
-            "Procedure worker 'primary' status update: RUNNING",
-            "Procedure worker 'primary' status update: IDLE",
-            "Procedure worker 'primary' status update: FINISHED",
-        ]
-    )
-    assert res, f"failed on {msg}"
+            res, msg = logtool.are_present_in_order(
+                [
+                    "Procedure worker 'primary' status update: IDLE",
+                    "Procedure worker 'primary' status update: RUNNING",
+                    "Procedure worker 'primary' status update: IDLE",
+                    "Procedure worker 'primary' status update: FINISHED",
+                ]
+            )
+            assert res, f"failed on {msg}"
 
-    assert logtool.is_present_in_any_message(
-        f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
-    )
+            assert logtool.is_present_in_any_message(
+                f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
+            )
+            tests_passed = True
+            break
+        except AssertionError:
+            time.sleep(0.1)
+    assert tests_passed, "Test did not pass within the timeout"
