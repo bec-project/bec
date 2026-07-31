@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.163.0 (2026-07-31)
+
+### Chores
+
+- **client**: Remove unused device_monitor attribute
+  ([`00f5637`](https://github.com/bec-project/bec/commit/00f56376ae01fb5485efe7a38f2c4e5f0eaab3b5))
+
+### Features
+
+- Add support for acl files in go and restructure
+  ([`3376654`](https://github.com/bec-project/bec/commit/3376654913e02efe4555e9882b74dc81642ca4f7))
+
+- Implement client restart functionality and associated messaging
+  ([`fb74d5e`](https://github.com/bec-project/bec/commit/fb74d5e0b4371b5f9840c00c77e127ce8519acef))
+
+
 ## v3.162.1 (2026-07-30)
 
 ### Bug Fixes
