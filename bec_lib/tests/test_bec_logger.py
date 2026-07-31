@@ -1,13 +1,15 @@
 import datetime
 import json
 import os
+import threading
 from pathlib import Path
+from queue import Empty
 from unittest import mock
 
 import pytest
 
 from bec_lib.bec_errors import ServiceConfigError
-from bec_lib.logger import BECLogger, BECLoguruRotator, LogLevel
+from bec_lib.logger import BatchQueue, BECLogger, BECLoguruRotator, LogLevel
 from bec_lib.redis_connector import RedisConnector
 
 
@@ -16,6 +18,30 @@ def logger():
     BECLogger._reset_singleton()
     logger = BECLogger()
     yield logger
+    logger.shutdown()
+
+
+def test_batch_queue_blocks_and_atomically_drains_all_items():
+    batch_queue = BatchQueue[int]()
+    consumer_started = threading.Event()
+    received = []
+
+    def consume():
+        consumer_started.set()
+        received.extend(batch_queue.get_all(timeout=1))
+
+    consumer = threading.Thread(target=consume)
+    consumer.start()
+    assert consumer_started.wait(timeout=1)
+    assert consumer.is_alive()
+
+    batch_queue.put_many([1, 2, 3])
+    consumer.join(timeout=1)
+
+    assert consumer.is_alive() is False
+    assert received == [1, 2, 3]
+    with pytest.raises(Empty):
+        batch_queue.get_all_nowait()
 
 
 def test_configure(logger, tmp_path):
@@ -122,8 +148,9 @@ def test_console_redis_callback_publishes_to_log_endpoint_with_console_service_n
     logger.service_name = "test"
     logger.connector = mock.MagicMock(spec=RedisConnector)
 
-    logger._console_redis_logger_callback(
-        json.dumps({"record": {"level": {"name": "CONSOLE_LOG"}}, "text": "hello"})
+    logger._publish_log_message(
+        json.dumps({"record": {"level": {"name": "CONSOLE_LOG"}}, "text": "hello"}),
+        service_name="test_CONSOLE",
     )
 
     logger.connector.xadd.assert_called_once()
@@ -135,12 +162,60 @@ def test_console_redis_callback_publishes_to_log_endpoint_with_console_service_n
 
 def test_console_redis_callback_ignores_publish_failures(logger):
     logger._configured = True
+    logger._log_throttle = 0.01
     logger.service_name = "test"
     logger.connector = mock.MagicMock(spec=RedisConnector)
     logger.connector.xadd.side_effect = RuntimeError("redis unavailable")
 
-    logger._console_redis_logger_callback(
-        json.dumps({"record": {"level": {"name": "CONSOLE_LOG_ERROR"}}, "text": "oops"})
+    logger._publish_log_message(
+        json.dumps({"record": {"level": {"name": "CONSOLE_LOG_ERROR"}}, "text": "oops"}),
+        service_name="test",
     )
 
     logger.connector.xadd.assert_called_once()
+
+
+def test_redis_callback_queues_message_when_thread_is_configured(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_queue = BatchQueue()
+    message = json.dumps({"record": {"level": {"name": "INFO"}}, "text": "hello"})
+
+    logger._queue_log_message(message)
+
+    assert logger._log_queue.get_all_nowait() == [(message, None)]
+    logger.connector.xadd.assert_not_called()
+
+
+def test_publish_log_batch_uses_one_redis_pipeline(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    pipeline = logger.connector.pipeline.return_value
+    info = json.dumps({"record": {"level": {"name": "INFO"}}, "text": "hello"})
+    console = json.dumps({"record": {"level": {"name": "CONSOLE_LOG"}}, "text": "console"})
+
+    logger._publish_log_batch([(info, None), (console, "test_CONSOLE")])
+
+    assert logger.connector.xadd.call_count == 2
+    assert all(call.kwargs["pipe"] is pipeline for call in logger.connector.xadd.call_args_list)
+    logger.connector.execute_pipeline.assert_called_once_with(pipeline)
+
+
+def test_log_thread_publishes_queued_messages_as_one_batch(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_throttle = 0.01
+    batch_published = threading.Event()
+    logger.connector.execute_pipeline.side_effect = lambda _: batch_published.set()
+    logger._setup_log_thread()
+    info = json.dumps({"record": {"level": {"name": "INFO"}}, "text": "hello"})
+
+    logger._queue_log_message(info)
+    logger._queue_log_message(info)
+
+    assert batch_published.wait(timeout=1)
+    assert logger.connector.xadd.call_count == 2
+    logger.connector.execute_pipeline.assert_called_once()

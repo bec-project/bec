@@ -10,10 +10,13 @@ import enum
 import json
 import os
 import sys
+import threading
 import time
 import traceback
+from collections import deque
 from itertools import takewhile
-from typing import TYPE_CHECKING, Literal
+from queue import Empty
+from typing import TYPE_CHECKING, Generic, Iterable, Literal, TypeVar
 
 # TODO: Importing bec_lib, instead of `from bec_lib.messages import LogMessage`, avoids potential
 # logger <-> messages circular import. But there could be a better solution.
@@ -31,6 +34,42 @@ else:
     loguru_logger = lazy_import_from("loguru", ("logger",))
     LogWriter = lazy_import_from("bec_lib.file_utils", ("LogWriter",))
     RedisConnector = lazy_import_from("bec_lib.redis_connector", ("RedisConnector",))
+
+
+_T = TypeVar("_T")
+
+
+class BatchQueue(Generic[_T]):
+    """Thread-safe queue supporting blocking, atomic batch retrieval."""
+
+    def __init__(self) -> None:
+        self._items: deque[_T] = deque()
+        self._not_empty = threading.Condition()
+
+    def put(self, item: _T) -> None:
+        """Append one item and wake one waiting consumer."""
+        with self._not_empty:
+            self._items.append(item)
+            self._not_empty.notify()
+
+    def put_many(self, items: Iterable[_T]) -> None:
+        """Atomically append multiple items and wake one waiting consumer."""
+        with self._not_empty:
+            self._items.extend(items)
+            self._not_empty.notify()
+
+    def get_all(self, timeout: float | None = None) -> list[_T]:
+        """Block until an item is available, then atomically remove all items."""
+        with self._not_empty:
+            if not self._not_empty.wait_for(lambda: bool(self._items), timeout=timeout):
+                raise Empty
+            items = list(self._items)
+            self._items.clear()
+            return items
+
+    def get_all_nowait(self) -> list[_T]:
+        """Atomically remove all currently available items without blocking."""
+        return self.get_all(timeout=0)
 
 
 class LogLevel(int, enum.Enum):
@@ -133,6 +172,12 @@ class BECLogger:
         self._file_max_size_mb = self.DEFAULT_MAX_FILE_SIZE_MB
         self._file_max_files = self.DEFAULT_MAX_FILES
 
+        # Publish log messages to Redis in throttled batches to improve performance.
+        self._log_thread: threading.Thread | None = None
+        self._log_event: threading.Event | None = None
+        self._log_queue: BatchQueue[tuple[str | dict, str | None]] | None = None
+        self._log_throttle = 0.5
+
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
             cls._logger = super(BECLogger, cls).__new__(cls)
@@ -142,7 +187,15 @@ class BECLogger:
     def _reset_singleton(cls):
         if cls._logger is not None:
             cls._logger.logger.remove()
+            cls._logger._stop_log_thread()
         cls._logger = None
+
+    def shutdown(self):
+        """
+        Shutdown the logger and stop the log thread.
+        """
+        self.logger.remove()
+        self._stop_log_thread()
 
     def configure(
         self,
@@ -175,6 +228,7 @@ class BECLogger:
         self.connector = self._get_connector(
             connector=connector, connector_cls=connector_cls, bootstrap_server=bootstrap_server
         )
+        self._setup_log_thread()
 
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
@@ -230,6 +284,61 @@ class BECLogger:
         if not bootstrap_server:
             raise ValueError("bootstrap_server must be provided when using connector_cls")
         return connector_cls(bootstrap=bootstrap_server)
+
+    def _setup_log_thread(self):
+        """
+        Setup the log thread that publishes log messages to redis.
+        """
+        if self.connector is None:
+            return
+        if self._log_thread is not None and self._log_thread.is_alive():
+            return
+
+        self._log_event = threading.Event()
+        self._log_queue = BatchQueue()
+        self._log_thread = threading.Thread(
+            target=self._publish_pipe_to_redis, name="BECLoggerThread", daemon=True
+        )
+        self._log_thread.start()
+
+    def _stop_log_thread(self) -> None:
+        """Stop the Redis publishing thread."""
+        if self._log_thread is None:
+            return
+        if self._log_event is not None:
+            self._log_event.set()
+        self._log_thread.join(timeout=max(1.0, self._log_throttle * 4))
+        if self._log_thread.is_alive():
+            return
+        self._log_thread = None
+        self._log_event = None
+        self._log_queue = None
+
+    def _publish_pipe_to_redis(self) -> None:
+        """Collect queued messages into throttled batches and publish them to Redis."""
+        log_event = self._log_event
+        log_queue = self._log_queue
+        if log_event is None or log_queue is None:
+            return
+
+        while not log_event.is_set():
+            try:
+                messages = log_queue.get_all(timeout=self._log_throttle)
+            except Empty:
+                continue
+
+            # Wait for the batching window and atomically include messages which
+            # arrived while waiting.
+            log_event.wait(timeout=self._log_throttle)
+            try:
+                messages.extend(log_queue.get_all_nowait())
+            except Empty:
+                pass
+            if not log_event.is_set():
+                self._publish_log_batch(messages)
+
+        # We might drop messages if _reset_singleton is called with queued logs.
+        # Therefore we don't send any remaining messages after the event is set, to avoid crashing during shutdown.
 
     def _update_base_path(self, service_config: dict | None = None):
         """
@@ -438,7 +547,7 @@ class BECLogger:
             level (LogLevel): Log level.
         """
         self.logger.add(
-            self._publish_log_message,
+            self._queue_log_message,
             serialize=True,
             level=level,
             format=self.formatting(),
@@ -462,12 +571,40 @@ class BECLogger:
     def _console_redis_logger_callback(self, msg):
         if not self._configured or self.connector is None:
             return
-        self._publish_log_message(msg, service_name=f"{self.service_name}_CONSOLE")
+        self._queue_log_message(msg, service_name=f"{self.service_name}_CONSOLE")
+
+    def _queue_log_message(self, msg: str | dict, service_name: str | None = None) -> None:
+        """Queue a message for batched Redis publishing."""
+        if not self._configured or self.connector is None:
+            return
+        log_queue = self._log_queue
+        if log_queue is None:
+            return
+        log_queue.put((msg, service_name))
+
+    def _publish_log_batch(self, messages: list[tuple[str | dict, str | None]]) -> None:
+        """Publish queued messages using one Redis pipeline."""
+        if not messages or self.connector is None:
+            return
+        try:
+            pipeline = self.connector.pipeline()
+            published = False
+            for msg, service_name in messages:
+                published |= self._publish_log_message(
+                    msg, service_name=service_name, pipe=pipeline
+                )
+            if published:
+                self.connector.execute_pipeline(pipeline)
+        except Exception:
+            # The connector may be disconnected during shutdown.
+            return
 
     def _decode_log_payload(self, msg: str | dict) -> dict:
         return json.loads(msg) if isinstance(msg, str) else dict(msg)
 
-    def _publish_log_message(self, msg: str | dict, service_name: str | None = None) -> bool:
+    def _publish_log_message(
+        self, msg: str | dict, service_name: str | None = None, pipe=None
+    ) -> bool:
         if not self._configured or self.connector is None:
             return False
         payload = self._decode_log_payload(msg)
@@ -481,6 +618,7 @@ class BECLogger:
                     )
                 },
                 max_size=10000,
+                pipe=pipe,
             )
             return True
         except Exception:

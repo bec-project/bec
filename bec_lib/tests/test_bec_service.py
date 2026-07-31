@@ -42,7 +42,7 @@ def bec_service(config, connector_cls=None, connector=None, **kwargs):
             yield service
         finally:
             service.shutdown()
-            bec_logger.logger.remove()
+            bec_logger.shutdown()
             bec_logger._reset_singleton()
 
 
@@ -625,7 +625,7 @@ def test_wait_for_service():
             service.wait_for_service("ScanServer", BECStatus.RUNNING)
             mock_sleep.assert_called_once()
         service.shutdown()
-        bec_logger.logger.remove()
+        bec_logger.shutdown()
         bec_logger._reset_singleton()
 
 
@@ -647,7 +647,7 @@ def test_wait_for_service_busy():
             service.wait_for_service("ScanServer", BECStatus.BUSY)
             mock_sleep.assert_called_once()
         service.shutdown()
-        bec_logger.logger.remove()
+        bec_logger.shutdown()
         bec_logger._reset_singleton()
 
 
@@ -673,5 +673,5 @@ def test_wait_for_service_default():
             service.wait_for_service("ScanServer")
             mock_sleep.assert_called_once()
         service.shutdown()
-        bec_logger.logger.remove()
+        bec_logger.shutdown()
         bec_logger._reset_singleton()
