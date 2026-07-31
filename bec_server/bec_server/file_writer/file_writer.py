@@ -6,12 +6,14 @@ import os
 import traceback
 import typing
 from collections import defaultdict
+from copy import deepcopy
 
 import h5py
 
 from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
+from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 
 from .default_writer import DefaultFormat as default_NeXus_format
 from .merged_dicts import merge_dicts
@@ -252,7 +254,9 @@ class HDF5FileWriter:
         """
         device_storage = self._create_device_data_storage(data)
         info_storage = {}
-        info_storage["bec"] = data.metadata
+        bec_metadata = deepcopy(data.metadata)
+        bec_metadata["scan_cli_input"] = compose_cli_input_from_scan_info(bec_metadata)
+        info_storage["bec"] = bec_metadata
 
         # NeXus needs start_time and end_time in ISO8601 format, so we have to convert it
         if data.start_time is not None:
@@ -262,13 +266,13 @@ class HDF5FileWriter:
         if data.end_time is not None:
             info_storage["end_time"] = datetime.datetime.fromtimestamp(data.end_time).isoformat()
 
-        if "user_metadata" in data.metadata:
+        if "user_metadata" in bec_metadata:
             # FIXME: Remove once we've migrated everything to v4 scans
             # ---
-            info_storage.update(data.metadata["user_metadata"])
+            info_storage.update(bec_metadata["user_metadata"])
             # ---
-        elif "user_metadata" in data.metadata.get("metadata", {}):
-            info_storage.update(data.metadata["metadata"]["user_metadata"])
+        elif "user_metadata" in bec_metadata.get("metadata", {}):
+            info_storage.update(bec_metadata["metadata"]["user_metadata"])
 
         requested_plugin = self.file_writer_manager.file_writer_config.get("plugin")
         plugins = plugin_helper.get_file_writer_plugins()
