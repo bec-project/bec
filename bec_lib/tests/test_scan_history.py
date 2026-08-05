@@ -250,3 +250,41 @@ def test_scan_history_multiple_scan_numbers(scan_history_without_thread, file_hi
     assert containers[0]._msg == file_history_messages[0]
     assert containers[1]._msg == msgs[0]
     assert containers[2]._msg == msgs[1]
+
+
+def test_history_update_event_fires_after_registry_store(connected_connector):
+    """Consumers of SCAN_HISTORY_UPDATE may read the registry from the
+    callback (the DataAPI live-to-history handover does); the message must be
+    stored before the event fires."""
+    import os
+    from unittest import mock
+
+    from bec_lib import messages
+    from bec_lib.callback_handler import CallbackHandler, EventType
+    from bec_lib.scan_history import ScanHistory
+
+    client = mock.MagicMock()
+    client.connector = connected_connector
+    client.callbacks = CallbackHandler()
+    history = ScanHistory(client=client, load_threaded=False)
+
+    seen_in_registry = []
+
+    def on_update(history_msg=None, **_kwargs):
+        seen_in_registry.append(history.get_by_scan_id(history_msg.scan_id) is not None)
+
+    client.callbacks.register(EventType.SCAN_HISTORY_UPDATE, on_update)
+    msg = messages.ScanHistoryMessage(
+        scan_id="hist-1",
+        scan_number=1,
+        dataset_number=1,
+        file_path=os.devnull,
+        exit_status="closed",
+        start_time=1.0,
+        end_time=2.0,
+        scan_name="line_scan",
+        num_points=1,
+    )
+    history._on_scan_history_update({"data": msg})
+    client.callbacks.poll()
+    assert seen_in_registry == [True]
