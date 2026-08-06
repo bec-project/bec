@@ -7,7 +7,6 @@ redis server.
 from __future__ import annotations
 
 import collections
-import copy
 import inspect
 import itertools
 import queue
@@ -126,9 +125,9 @@ class ManagedRedisConnection:
     def authenticate(self, *, username: str = "default", password: str | None = "null"):
         if password is None:
             password = "null"
-        conn_kwargs = self._redis_conn.connection_pool.connection_kwargs.copy()
-        conn_kwargs.pop("server", None)  # server is not serializable
-        old_kwargs = copy.deepcopy(conn_kwargs)
+        conn_kwargs = self._redis_conn.connection_pool.connection_kwargs
+        backup_keys = ("username", "password")
+        backup_kwargs = {k: conn_kwargs[k] for k in backup_keys if k in conn_kwargs}
         try:
             self._close_pubsub()
             self._redis_conn.connection_pool.reset()
@@ -138,7 +137,11 @@ class ManagedRedisConnection:
             self._restart_pubsub()
         except redis.exceptions.RedisError as exc:
             self._redis_conn.connection_pool.reset()
-            self._redis_conn.connection_pool.connection_kwargs.update(old_kwargs)
+            for k in backup_keys:
+                if k in backup_kwargs:
+                    conn_kwargs[k] = backup_kwargs[k]
+                else:
+                    conn_kwargs.pop(k)
             raise exc
 
     @property
