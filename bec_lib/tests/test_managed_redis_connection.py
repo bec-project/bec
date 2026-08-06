@@ -2,6 +2,7 @@ from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
+from redis.exceptions import RedisError
 
 import bec_lib.messages as bec_messages
 from bec_lib import messages
@@ -401,3 +402,18 @@ def test_blocking_list_pop(connector: ManagedRedisConnection):
     connector._redis_conn.brpop.return_value = None
     connector.blocking_list_pop("topic", side="RIGHT")
     connector._redis_conn.brpop.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("test_dict"),
+    (
+        {"test_key": "test_val"},
+        {"test_key": "test_val", "username": "test123", "password": "test123"},
+    ),
+)
+def test_user_pw_restored_on_auth_fail(connector: ManagedRedisConnection, test_dict):
+    connector._redis_conn.connection_pool.connection_kwargs = test_dict
+    connector._redis_conn.auth.side_effect = RedisError
+    with pytest.raises(RedisError):
+        connector.authenticate(username="user", password="pass")
+    assert connector._redis_conn.connection_pool.connection_kwargs == test_dict
