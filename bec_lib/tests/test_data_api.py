@@ -212,7 +212,9 @@ class TestLiveSubscription:
         assert source.values == ([1, 2],)
         sub.close()
 
-    def test_correlation_error_on_subscribe(self, data_api, mock_client):
+    def test_mixed_sources_partition_into_groups(self, data_api, mock_client):
+        """Monitored + non-monitored async sources are served as separate
+        correlation groups, each with its own aligned emissions."""
         mock_client.device_manager.get_bec_signals.return_value = [
             (
                 "det",
@@ -227,10 +229,26 @@ class TestLiveSubscription:
         item = make_scan_item(mock_client, "scan_1")
         register_scan(mock_client, {"scan_1": item})
         mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
-        with pytest.raises(CorrelationGroupError):
-            data_api.subscribe(
-                sources=[("samx", "samx"), ("det", "wave")], scan="live", callback=lambda u: None
-            )
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx"), ("det", "wave")],
+            scan="live",
+            callback=updates.append,
+            min_emit_interval=0,
+        )
+        plugin = data_api.plugins[0]
+        seed_xy(item, "scan_1", 0, 2)
+        plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
+        plugin._on_async_message({"data": async_msg("wave", 10.0, 0)}, "scan_1", "det")
+
+        groups = {u.metadata.get("group") for u in updates}
+        assert groups == {"scan", "async:grp1"}
+        scan_updates = [u for u in updates if u.metadata.get("group") == "scan"]
+        async_updates = [u for u in updates if u.metadata.get("group") == "async:grp1"]
+        assert scan_updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+        assert set(scan_updates[-1].sources) == {("samx", "samx")}
+        assert async_updates[-1].aligned()[("det", "wave")] == (10.0,)
+        sub.close()
 
     def test_set_sources_atomic_rebind(self, data_api, mock_client):
         sub, item, updates = self._subscribe_xy(data_api, mock_client)
@@ -358,3 +376,53 @@ class TestLifecycle:
         assert plugin._requests
         sub.close()
         assert not plugin._requests
+
+
+class TestLegacyAsyncAndAxis:
+    def test_legacy_async_device_served_unindexed(self, data_api, mock_client):
+        item = make_scan_item(mock_client, "scan_1", monitored=())
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        legacy_dev = mock.MagicMock()
+        legacy_dev.readout_priority = "async"
+        mock_client.device_manager.devices = mock.MagicMock()
+        mock_client.device_manager.devices.get = lambda name, default=None: (
+            legacy_dev if name == "mca" else default
+        )
+
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("mca", "mca")], scan="live", callback=updates.append, min_emit_interval=0
+        )
+        assert sub.unbound_sources == []
+        plugin = data_api.plugins[0]
+        for i, value in enumerate([[1, 2], [3, 4]]):
+            msg = messages.DeviceMessage(
+                signals={"mca": {"value": value, "timestamp": 100.0 + i}}, metadata={}
+            )
+            plugin._on_async_message({"data": msg}, "scan_1", "mca")
+
+        source = updates[-1].get("mca", "mca")
+        assert source.kind == "unindexed"
+        assert source.ordinals == (0, 1)
+        assert source.values == ([1, 2], [3, 4])
+        assert updates[-1].metadata["group"] == "standalone:mca/mca"
+        sub.close()
+
+    def test_axis_modes(self, data_api, mock_client):
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        seed_xy(item, "scan_1", 0, 3)
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx"), ("samy", "samy")],
+            scan="live",
+            callback=updates.append,
+            min_emit_interval=0,
+        )
+        update = updates[-1]
+        assert update.axis("index") == (0, 1, 2)
+        assert update.axis("device", ("samx", "samx")) == (0.0, 1.0, 2.0)
+        assert update.axis("timestamp", ("samx", "samx")) == (100.0, 101.0, 102.0)
+        sub.close()

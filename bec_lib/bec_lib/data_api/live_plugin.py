@@ -140,8 +140,25 @@ class LiveDataPlugin(DataSourcePlugin):
                     )
                 )
                 continue
+            if self._is_legacy_async_device(device):
+                # Pre-AsyncSignal devices publish to device_async_readback
+                # without indices; served as standalone unindexed sources.
+                specs.append(SourceSpec(device=device, entry=entry, kind="unindexed"))
+                continue
             specs.append(SourceSpec(device=device, entry=entry, available=False))
         return specs
+
+    def _is_legacy_async_device(self, device: str) -> bool:
+        devices = getattr(getattr(self.client, "device_manager", None), "devices", None)
+        dev = devices.get(device) if hasattr(devices, "get") else None
+        if dev is None:
+            return False
+        readout_priority = getattr(dev, "readout_priority", None)
+        if readout_priority is None:
+            config = getattr(dev, "_config", None)
+            if isinstance(config, dict):
+                readout_priority = config.get("readoutPriority")
+        return "async" in str(readout_priority).lower()
 
     # --- request lifecycle ---------------------------------------------------
 
@@ -149,7 +166,7 @@ class LiveDataPlugin(DataSourcePlugin):
         with self._lock:
             self._requests.setdefault(request.scan_id, []).append(request)
             for spec in request.specs:
-                if spec.kind == "async" and spec.available:
+                if spec.kind in ("async", "unindexed") and spec.available:
                     self._ensure_feed(request.scan_id, spec)
             scan_item = self._scan_item(request.scan_id)
             if scan_item is not None:
@@ -164,7 +181,7 @@ class LiveDataPlugin(DataSourcePlugin):
             if not requests:
                 self._requests.pop(request.scan_id, None)
             for spec in request.specs:
-                if spec.kind == "async" and spec.available:
+                if spec.kind in ("async", "unindexed") and spec.available:
                     self._release_feed(request.scan_id, spec)
             if request.scan_id not in self._requests:
                 for key in [k for k in self._slice_rows if k[0] == request.scan_id]:
@@ -173,14 +190,17 @@ class LiveDataPlugin(DataSourcePlugin):
     # --- async feeds ---------------------------------------------------------
 
     def _ensure_feed(self, scan_id: str, spec: SourceSpec) -> None:
-        key = (scan_id, spec.device, spec.storage_name or spec.entry)
+        key = (scan_id, spec.device, self._feed_name(spec))
         feed = self._feeds.get(key)
         if feed is not None:
             feed["refcount"] += 1
             return
-        endpoint = MessageEndpoints.device_async_signal(
-            scan_id=scan_id, device=spec.device, signal=spec.storage_name or spec.entry
-        )
+        if spec.kind == "unindexed":
+            endpoint = MessageEndpoints.device_async_readback(scan_id=scan_id, device=spec.device)
+        else:
+            endpoint = MessageEndpoints.device_async_signal(
+                scan_id=scan_id, device=spec.device, signal=spec.storage_name or spec.entry
+            )
 
         def connector_callback(msg, *, _scan_id=scan_id, _device=spec.device):
             self._on_async_message(msg, _scan_id, _device)
@@ -188,8 +208,14 @@ class LiveDataPlugin(DataSourcePlugin):
         self.client.connector.register(endpoint, cb=connector_callback, from_start=True)
         self._feeds[key] = {"endpoint": endpoint, "callback": connector_callback, "refcount": 1}
 
+    @staticmethod
+    def _feed_name(spec: SourceSpec) -> str:
+        if spec.kind == "unindexed":
+            return "__legacy__"
+        return spec.storage_name or spec.entry
+
     def _release_feed(self, scan_id: str, spec: SourceSpec) -> None:
-        key = (scan_id, spec.device, spec.storage_name or spec.entry)
+        key = (scan_id, spec.device, self._feed_name(spec))
         feed = self._feeds.get(key)
         if feed is None:
             return
@@ -238,11 +264,15 @@ class LiveDataPlugin(DataSourcePlugin):
         if not isinstance(msg_obj, DeviceMessage):
             return
         metadata = dict(msg_obj.metadata or {})
-        try:
-            async_update = DeviceAsyncUpdate.model_validate(metadata.get("async_update", {}))
-        except Exception:  # pylint: disable=broad-except
-            logger.warning(f"Dropping async update with invalid async_update metadata: {metadata}")
-            return
+        async_update = None
+        if metadata.get("async_update") is not None:
+            try:
+                async_update = DeviceAsyncUpdate.model_validate(metadata["async_update"])
+            except Exception:  # pylint: disable=broad-except
+                logger.warning(
+                    f"Dropping async update with invalid async_update metadata: {metadata}"
+                )
+                return
         async_indices = metadata.get("async_indices", {})
 
         with self._lock:
@@ -251,7 +281,11 @@ class LiveDataPlugin(DataSourcePlugin):
                 return
             for request in requests:
                 for spec in request.specs:
-                    if spec.kind != "async" or spec.device != device or not spec.available:
+                    if (
+                        spec.kind not in ("async", "unindexed")
+                        or spec.device != device
+                        or not spec.available
+                    ):
                         continue
                     signal_data = msg_obj.signals.get(spec.entry)
                     if signal_data is None:
@@ -274,14 +308,19 @@ class LiveDataPlugin(DataSourcePlugin):
     ) -> None:
         value = signal_data.get("value")
         timestamp = signal_data.get("timestamp", metadata.get("timestamp"))
-        series = request.bundle.get_series(spec.device, spec.entry, "async")
+        series = request.bundle.get_series(spec.device, spec.entry, spec.kind or "async")
         series.metadata.update(
             {
-                "async_update_type": async_update.type,
+                "async_update_type": async_update.type if async_update else None,
                 "acquisition_group": spec.acquisition_group or metadata.get("acquisition_group"),
-                "max_shape": async_update.max_shape,
+                "max_shape": async_update.max_shape if async_update else None,
             }
         )
+
+        if async_update is None or spec.kind == "unindexed":
+            # Legacy/unindexed source: one arrival-ordered fragment per message.
+            series.insert(None, value, timestamp)
+            return
 
         if async_update.type == "add_slice":
             rows_key = (scan_id, spec.device, spec.entry)

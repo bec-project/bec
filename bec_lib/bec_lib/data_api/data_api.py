@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from bec_lib.logger import bec_logger
 
-from .alignment import Bundle, CorrelationGroupError, validate_correlation_group
+from .alignment import Bundle, CorrelationGroupError, partition_correlation_groups
 from .history_plugin import HistoryDataPlugin
 from .live_plugin import TERMINAL_SCAN_STATES, LiveDataPlugin
 from .models import SourceKey, SubscriptionUpdate, UpdateReason
@@ -85,12 +85,11 @@ class Subscription:
         self._closed = False
 
         self._plugin: DataSourcePlugin | None = None
-        self._request: SourceRequest | None = None
-        self._bundle: Bundle | None = None
+        self._requests: dict[str, SourceRequest] = {}  # group label -> request
+        self._specs: list = []
 
-        self._last_emit = 0.0
-        self._pending_reason: UpdateReason | None = None
-        self._flush_timer: threading.Timer | None = None
+        # Per-group emission coalescing state.
+        self._emit_state: dict[str, dict] = {}
 
         self._relays: list[_WeakEventRelay] = []
         if self._follow:
@@ -121,9 +120,9 @@ class Subscription:
         while unbound, or the sources the serving plugin marked unavailable.
         """
         with self._lock:
-            if self._request is None:
+            if not self._requests:
                 return list(self._sources)
-            return [spec.key for spec in self._request.specs if not spec.available]
+            return [spec.key for spec in self._specs if not spec.available]
 
     # --- source set ----------------------------------------------------------
 
@@ -139,8 +138,7 @@ class Subscription:
 
         Raises:
             RuntimeError: If the subscription is closed.
-            CorrelationGroupError: If the sources cannot form one group in the
-                currently bound scan.
+            CorrelationGroupError: If ``sources`` is empty.
         """
         with self._lock:
             if self._closed:
@@ -158,28 +156,45 @@ class Subscription:
             specs = plugin.resolve(self._sources, scan_id)
             if specs is None:
                 continue
-            available = [(s.key, s.kind, s.acquisition_group) for s in specs if s.available]
-            if available:
-                validate_correlation_group(available)
-            self._teardown_request()
+            self._teardown_requests()
             self._scan_id = scan_id
-            self._bundle = Bundle(scan_id)
-            self._request = SourceRequest(
-                scan_id=scan_id, specs=specs, bundle=self._bundle, notify=self._notify
-            )
+            self._specs = specs
             self._plugin = plugin
-            # The plugin owns the initial emission: synchronous backfill for
-            # live scans, worker-thread completion for history reads.
-            plugin.open(self._request)
+            spec_by_key = {spec.key: spec for spec in specs if spec.available}
+            groups = (
+                partition_correlation_groups(
+                    [(s.key, s.kind, s.acquisition_group) for s in specs if s.available]
+                )
+                if spec_by_key
+                else {}
+            )
+            for label, keys in groups.items():
+                bundle = Bundle(scan_id)
+                request = SourceRequest(
+                    scan_id=scan_id,
+                    specs=[spec_by_key[key] for key in keys],
+                    bundle=bundle,
+                    notify=lambda reason, _label=label: self._notify(_label, reason),
+                )
+                self._requests[label] = request
+                # The plugin owns the initial emission: synchronous backfill
+                # for live scans, worker-thread completion for history reads.
+                plugin.open(request)
             return True
         return False
 
-    def _teardown_request(self) -> None:
-        if self._request is not None and self._plugin is not None:
-            self._plugin.close(self._request)
-        self._request = None
+    def _teardown_requests(self) -> None:
+        if self._plugin is not None:
+            for request in self._requests.values():
+                self._plugin.close(request)
+        self._requests.clear()
+        self._specs = []
         self._plugin = None
-        self._bundle = None
+        for state in self._emit_state.values():
+            timer = state.get("timer")
+            if timer is not None:
+                timer.cancel()
+        self._emit_state.clear()
 
     def _on_scan_status(self, scan_status: dict, _metadata: dict) -> None:
         with self._lock:
@@ -199,7 +214,8 @@ class Subscription:
             if status in TERMINAL_SCAN_STATES and scan_id == self._scan_id:
                 # Final flush of the live state; the authoritative history
                 # re-route happens when the scan-history entry appears.
-                self._notify("live", force=True)
+                for label in list(self._requests):
+                    self._notify(label, "live", force=True)
 
     def _on_scan_history_update(self, history_msg=None, **_kwargs) -> None:
         with self._lock:
@@ -215,43 +231,54 @@ class Subscription:
 
     # --- emission ------------------------------------------------------------
 
-    def _notify(self, reason: UpdateReason, force: bool = False) -> None:
-        """Emit (or schedule) an update. Called by plugins and internally."""
+    def _notify(self, label: str, reason: UpdateReason, force: bool = False) -> None:
+        """Emit (or schedule) an update for one group. Called by plugins."""
         update = None
         with self._lock:
-            if self._closed or self._bundle is None or self._callback is None:
+            if self._closed or self._callback is None:
                 return
+            request = self._requests.get(label)
+            if request is None:
+                return
+            state = self._emit_state.setdefault(
+                label, {"last": 0.0, "pending": None, "timer": None}
+            )
             now = time.monotonic()
             immediate = (
                 force
                 or reason != "live"
                 or self._min_emit_interval <= 0
-                or now - self._last_emit >= self._min_emit_interval
+                or now - state["last"] >= self._min_emit_interval
             )
             if immediate:
-                update = self._bundle.build_update(reason)
-                self._last_emit = now
-                self._pending_reason = None
-                if self._flush_timer is not None:
-                    self._flush_timer.cancel()
-                    self._flush_timer = None
+                update = request.bundle.build_update(reason, metadata={"group": label})
+                state["last"] = now
+                state["pending"] = None
+                if state["timer"] is not None:
+                    state["timer"].cancel()
+                    state["timer"] = None
             else:
-                self._pending_reason = reason
-                if self._flush_timer is None:
-                    delay = self._min_emit_interval - (now - self._last_emit)
-                    self._flush_timer = threading.Timer(max(delay, 0.001), self._flush_pending)
-                    self._flush_timer.daemon = True
-                    self._flush_timer.start()
+                state["pending"] = reason
+                if state["timer"] is None:
+                    delay = self._min_emit_interval - (now - state["last"])
+                    state["timer"] = threading.Timer(
+                        max(delay, 0.001), self._flush_pending, args=(label,)
+                    )
+                    state["timer"].daemon = True
+                    state["timer"].start()
         if update is not None:
             self._callback(update)
 
-    def _flush_pending(self) -> None:
+    def _flush_pending(self, label: str) -> None:
         with self._lock:
-            self._flush_timer = None
-            reason = self._pending_reason
-            self._pending_reason = None
+            state = self._emit_state.get(label)
+            if state is None:
+                return
+            state["timer"] = None
+            reason = state["pending"]
+            state["pending"] = None
         if reason is not None:
-            self._notify(reason, force=True)
+            self._notify(label, reason, force=True)
 
     # --- lifecycle -----------------------------------------------------------
 
@@ -261,10 +288,7 @@ class Subscription:
             if self._closed:
                 return
             self._closed = True
-            if self._flush_timer is not None:
-                self._flush_timer.cancel()
-                self._flush_timer = None
-            self._teardown_request()
+            self._teardown_requests()
             for relay in self._relays:
                 if relay.callback_id is not None:
                     self._api.client.callbacks.remove(relay.callback_id)
@@ -346,9 +370,12 @@ class DataAPI:
         Create a subscription delivering columnar updates for the sources.
 
         Args:
-            sources (list[SourceKey]): (device, entry) pairs; must form one
-                correlation group (monitored + "monitored"-group async, one
-                shared async group, or a single standalone source).
+            sources (list[SourceKey]): (device, entry) pairs. The sources are
+                partitioned automatically into correlation groups (monitored +
+                "monitored"-group async form the "scan" group; async sources
+                sharing a free-form group align together; everything else is
+                standalone); each group emits its own updates, labelled in
+                ``update.metadata["group"]``.
             scan (str): ``"live"`` to follow the active scan, or a concrete
                 scan id (open or terminal — terminal scans are served by the
                 history plugin).
@@ -363,7 +390,7 @@ class DataAPI:
 
         Raises:
             ValueError: If a concrete scan id cannot be served by any plugin.
-            CorrelationGroupError: If the sources do not form one group.
+            CorrelationGroupError: If ``sources`` is empty.
         """
         subscription = Subscription(
             self, sources, scan, callback, min_emit_interval=min_emit_interval

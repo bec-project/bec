@@ -86,3 +86,38 @@ class SubscriptionUpdate:
             entry (str): Entry/signal name.
         """
         return self.sources.get((device, entry))
+
+    def axis(
+        self,
+        mode: Literal["index", "timestamp", "device"] = "index",
+        source: SourceKey | None = None,
+    ) -> tuple[Any, ...]:
+        """
+        Return an x-axis column parallel to the aligned value columns.
+
+        This replaces the per-widget x-mode resolution: ``"index"`` returns
+        the aligned ordinals themselves, ``"timestamp"`` the timestamps of
+        ``source`` (or of the first source), ``"device"`` the values of
+        ``source``.
+
+        Args:
+            mode: Axis mode.
+            source (SourceKey | None): Source supplying the axis for
+                ``"timestamp"``/``"device"`` modes.
+
+        Returns:
+            tuple: Column of the same length as :meth:`aligned` columns.
+
+        Raises:
+            KeyError: If ``source`` is required but not part of the update.
+        """
+        if mode == "index":
+            return self.aligned_ordinals
+        if source is None:
+            if not self.sources:
+                return ()
+            source = next(iter(self.sources))
+        source_data = self.sources[source]
+        index_of = {ordinal: i for i, ordinal in enumerate(source_data.ordinals)}
+        column = source_data.values if mode == "device" else source_data.timestamps
+        return tuple(column[index_of[o]] for o in self.aligned_ordinals)

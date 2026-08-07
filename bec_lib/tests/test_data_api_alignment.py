@@ -6,7 +6,7 @@ from bec_lib.data_api.alignment import (
     Bundle,
     CorrelationGroupError,
     SourceSeries,
-    validate_correlation_group,
+    partition_correlation_groups,
 )
 
 # pylint: disable=protected-access
@@ -56,40 +56,46 @@ class TestSourceSeries:
         assert series.frontier == 0
 
 
-class TestCorrelationGroup:
+class TestCorrelationGroups:
     def test_scan_group_mixed_monitored_and_async(self):
-        label = validate_correlation_group(
+        groups = partition_correlation_groups(
             [
                 (("samx", "samx"), "monitored", None),
                 (("samy", "samy"), "monitored", None),
                 (("det", "wave"), "async", "monitored"),
             ]
         )
-        assert label == "scan"
+        assert groups == {"scan": [("samx", "samx"), ("samy", "samy"), ("det", "wave")]}
 
     def test_async_tag_group(self):
-        label = validate_correlation_group(
+        groups = partition_correlation_groups(
             [(("a", "s1"), "async", "grp1"), (("b", "s2"), "async", "grp1")]
         )
-        assert label == "async:grp1"
+        assert groups == {"async:grp1": [("a", "s1"), ("b", "s2")]}
 
-    def test_single_source_is_standalone(self):
-        assert validate_correlation_group([(("a", "s1"), "async", None)]) == "standalone"
-        assert validate_correlation_group([(("a", "legacy"), "unindexed", None)]) == "standalone"
+    def test_mixed_sets_partition_instead_of_error(self):
+        groups = partition_correlation_groups(
+            [
+                (("samx", "samx"), "monitored", None),
+                (("det", "wave"), "async", "grp1"),
+                (("det2", "legacy"), "unindexed", None),
+            ]
+        )
+        assert groups == {
+            "scan": [("samx", "samx")],
+            "async:grp1": [("det", "wave")],
+            "standalone:det2/legacy": [("det2", "legacy")],
+        }
 
-    def test_mixed_groups_rejected(self):
-        with pytest.raises(CorrelationGroupError):
-            validate_correlation_group(
-                [(("samx", "samx"), "monitored", None), (("det", "wave"), "async", "grp1")]
-            )
-
-    def test_two_ungrouped_async_rejected(self):
-        with pytest.raises(CorrelationGroupError):
-            validate_correlation_group([(("a", "s1"), "async", None), (("b", "s2"), "async", None)])
+    def test_ungrouped_async_sources_are_separate_standalones(self):
+        groups = partition_correlation_groups(
+            [(("a", "s1"), "async", None), (("b", "s2"), "async", None)]
+        )
+        assert len(groups) == 2
 
     def test_empty_rejected(self):
         with pytest.raises(CorrelationGroupError):
-            validate_correlation_group([])
+            partition_correlation_groups([])
 
 
 class TestBundle:
