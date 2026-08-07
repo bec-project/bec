@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from bec_lib.logger import bec_logger
 
 from .alignment import Bundle, CorrelationGroupError, validate_correlation_group
+from .history_plugin import HistoryDataPlugin
 from .live_plugin import TERMINAL_SCAN_STATES, LiveDataPlugin
 from .models import SourceKey, SubscriptionUpdate, UpdateReason
 from .plugin_base import DataSourcePlugin, SourceRequest
@@ -167,9 +168,9 @@ class Subscription:
                 scan_id=scan_id, specs=specs, bundle=self._bundle, notify=self._notify
             )
             self._plugin = plugin
+            # The plugin owns the initial emission: synchronous backfill for
+            # live scans, worker-thread completion for history reads.
             plugin.open(self._request)
-            if reason != "backfill":
-                self._notify(reason)
             return True
         return False
 
@@ -312,6 +313,7 @@ class DataAPI:
         self.plugins: list[DataSourcePlugin] = []
         self._initialized = True
         self.register_plugin(LiveDataPlugin(client, self._lock))
+        self.register_plugin(HistoryDataPlugin(client, self._lock))
 
     @classmethod
     def clear_instance(cls) -> None:
