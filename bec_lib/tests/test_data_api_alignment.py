@@ -167,8 +167,12 @@ class TestBundle:
             z.insert(i, float(i), 0)
         with mock.patch("bec_lib.data_api.alignment.logger.warning") as warning:
             bundle.build_update("live")
+            first_round = warning.call_count
             bundle.build_update("live")
-        assert warning.call_count == 1
+        # Cadence violation and lag are each warned exactly once per scan
+        # (this scenario triggers both: z is ahead, x trails).
+        assert first_round == 2
+        assert warning.call_count == 2
 
     def test_update_metadata_and_reason(self):
         bundle, x, y, z = self._bundle_xyz()
