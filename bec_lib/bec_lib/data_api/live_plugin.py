@@ -133,9 +133,10 @@ class LiveDataPlugin(DataSourcePlugin):
         scan_item = self._scan_item(scan_id)
         if scan_item is None or scan_item.status_message is None:
             return None
-        if scan_item.status in TERMINAL_SCAN_STATES:
-            # Terminal scans belong to the history plugin, even while the
-            # scan item is still in the storage deque.
+        status = getattr(scan_item, "status", None)
+        if not isinstance(status, str) or status in TERMINAL_SCAN_STATES:
+            # Terminal (or malformed) scans belong to the history plugin,
+            # even while the scan item is still in the storage deque.
             return None
 
         specs: list[SourceSpec] = []

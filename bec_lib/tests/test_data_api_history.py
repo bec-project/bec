@@ -356,3 +356,32 @@ def test_async_storage_key_derived_without_device_info(data_api, mock_client):
     assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1))
     assert updates[-1].aligned()[("waveform", "waveform_waveform_0d")] == (1.0, 2.0)
     sub.close()
+
+
+def test_history_without_stored_data_info_still_serves(data_api, mock_client):
+    """Older ScanHistoryMessages carry no stored_data_info; the scan must
+    still be served (classification degrades to the device declaration and
+    the file read decides)."""
+    columns = {("samx", "samx"): ([0.0, 1.0], [100.0, 101.0])}
+    history, msg = make_history("scan_h", {"samx": {"samx": {"shape": (2,)}}}, columns, 2)
+    object.__setattr__(msg, "stored_data_info", None)
+    mock_client.history = history
+
+    updates = []
+    sub = data_api.subscribe(sources=[("samx", "samx")], scan="scan_h", callback=updates.append)
+    assert sub.unbound_sources == []
+    assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1))
+    assert updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+    sub.close()
+
+
+def test_close_joins_history_worker(data_api, mock_client):
+    """Closing a history subscription must not leak the worker thread."""
+    import threading
+
+    columns = {("samx", "samx"): ([0.0], [100.0])}
+    history, _ = make_history("scan_h", {"samx": {"samx": {"shape": (1,)}}}, columns, 1)
+    mock_client.history = history
+    sub = data_api.subscribe(sources=[("samx", "samx")], scan="scan_h", callback=lambda u: None)
+    sub.close()
+    assert not any(t.name == "data-api-history" and t.is_alive() for t in threading.enumerate())

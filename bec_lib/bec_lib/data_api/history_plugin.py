@@ -99,6 +99,22 @@ class HistoryDataPlugin(DataSourcePlugin):
         msg = self._history_message(scan_id)
         if msg is not None:
             stored = msg.stored_data_info or {}
+            if not stored:
+                # Older history messages carry no stored_data_info: classify
+                # from the device declaration and let the file read decide.
+                specs = []
+                for device, entry in sources:
+                    declared_async, group, storage_name = self._async_declaration(device, entry)
+                    specs.append(
+                        SourceSpec(
+                            device=device,
+                            entry=entry,
+                            kind="async" if declared_async else "monitored",
+                            acquisition_group=group,
+                            storage_name=storage_name,
+                        )
+                    )
+                return specs
             num_points = getattr(msg, "num_monitored_readouts", None) or getattr(
                 msg, "num_points", None
             )
@@ -240,6 +256,9 @@ class HistoryDataPlugin(DataSourcePlugin):
         worker.start()
 
     def close(self, request: SourceRequest) -> None:
+        # Only flag here: close() runs under the api lock, which the worker
+        # needs for its final insert — joining happens in the facade, outside
+        # the lock (Subscription.close).
         request.state["cancelled"] = True
 
     # --- data paths ----------------------------------------------------------

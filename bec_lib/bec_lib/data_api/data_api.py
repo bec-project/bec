@@ -359,6 +359,11 @@ class Subscription:
             if self._closed:
                 return
             self._closed = True
+            workers = [
+                request.state.get("worker")
+                for request in self._requests.values()
+                if request.state.get("worker") is not None
+            ]
             self._teardown_requests()
             for relay in self._relays:
                 if relay.callback_id is not None:
@@ -366,6 +371,11 @@ class Subscription:
                     relay.callback_id = None
             self._relays.clear()
             self._callback = None
+        # Join worker threads outside the lock (they need it for their final
+        # insert); reads are bounded, so this terminates promptly.
+        for worker in workers:
+            if worker.is_alive() and worker is not threading.current_thread():
+                worker.join(timeout=5)
 
     def __del__(self):
         if getattr(self, "_closed", True):
