@@ -22,48 +22,58 @@ MONITORED_GROUP = "monitored"
 
 
 class CorrelationGroupError(ValueError):
-    """Raised when a source set does not form one correlation group."""
+    """Raised when a source set cannot be partitioned into groups."""
 
 
-def validate_correlation_group(specs: list[tuple[SourceKey, SourceKind, str | None]]) -> str:
+def correlation_group_label(key: SourceKey, kind: SourceKind, group: str | None) -> str:
     """
-    Validate that the given sources form exactly one correlation group.
+    Return the correlation-group label of one source.
+
+    Args:
+        key (SourceKey): (device, entry) of the source.
+        kind (SourceKind): Source kind.
+        group (str | None): Acquisition group (async sources only).
+
+    Returns:
+        str: ``"scan"`` for monitored signals and async signals in the
+            "monitored" acquisition group; ``"async:<tag>"`` for async signals
+            with a free-form group; a per-source ``"standalone:..."`` label for
+            unindexed or ungrouped async sources (they cannot promise any
+            cadence and therefore cannot be correlated with other sources).
+    """
+    if kind == "monitored" or (kind == "async" and group == MONITORED_GROUP):
+        return "scan"
+    if kind == "async" and group:
+        return f"async:{group}"
+    return f"standalone:{key[0]}/{key[1]}"
+
+
+def partition_correlation_groups(
+    specs: list[tuple[SourceKey, SourceKind, str | None]],
+) -> dict[str, list[SourceKey]]:
+    """
+    Partition sources into correlation groups.
+
+    Each group is aligned independently and emits its own updates; widgets
+    can therefore subscribe to all their sources at once without caring how
+    they correlate.
 
     Args:
         specs: One ``(key, kind, acquisition_group)`` triple per source.
-            ``acquisition_group`` is only meaningful for async sources.
 
     Returns:
-        str: The group label — ``"scan"`` (monitored signals plus async
-            signals in the "monitored" acquisition group), ``"async:<tag>"``
-            (async signals sharing a free-form group), or ``"standalone"``
-            (a single source of any kind).
+        dict[str, list[SourceKey]]: Group label -> source keys, insertion
+            ordered.
 
     Raises:
-        CorrelationGroupError: If the sources span more than one group.
+        CorrelationGroupError: If ``specs`` is empty.
     """
     if not specs:
         raise CorrelationGroupError("A subscription needs at least one source.")
-    if len(specs) == 1:
-        return "standalone"
-
-    labels = set()
+    groups: dict[str, list[SourceKey]] = {}
     for key, kind, group in specs:
-        if kind == "monitored" or (kind == "async" and group == MONITORED_GROUP):
-            labels.add("scan")
-        elif kind == "async" and group:
-            labels.add(f"async:{group}")
-        else:
-            # Unindexed or ungrouped async sources cannot promise any cadence
-            # and therefore cannot be correlated with other sources.
-            labels.add(f"standalone:{key[0]}/{key[1]}")
-
-    if len(labels) > 1:
-        raise CorrelationGroupError(
-            f"Sources do not form one correlation group: {sorted(labels)}. "
-            "Subscribe to them separately."
-        )
-    return labels.pop()
+        groups.setdefault(correlation_group_label(key, kind, group), []).append(key)
+    return groups
 
 
 class SourceSeries:
