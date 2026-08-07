@@ -20,6 +20,10 @@ logger = bec_logger.logger
 #: Acquisition group promising one async emission per monitored point.
 MONITORED_GROUP = "monitored"
 
+#: A source trailing the group frontier by more than this many ordinals is
+#: reported as lagging (starvation visibility).
+LAG_THRESHOLD = 2
+
 
 class CorrelationGroupError(ValueError):
     """Raised when a source set cannot be partitioned into groups."""
@@ -173,6 +177,7 @@ class Bundle:
         self.max_points = max_points
         self.series: dict[SourceKey, SourceSeries] = {}
         self._cadence_warned = False
+        self._lag_warned = False
 
     def get_series(self, device: str, entry: str, kind: SourceKind) -> SourceSeries:
         """Return (creating if needed) the series for one source."""
@@ -213,6 +218,7 @@ class Bundle:
                 intersection of all sources' ordinals.
         """
         self._check_cadence()
+        lagging = self._lagging_sources()
         sources = {key: series.snapshot() for key, series in self.series.items()}
         if sources:
             aligned: set[int] = set.intersection(*(set(s.ordinals) for s in sources.values()))
@@ -220,14 +226,41 @@ class Bundle:
             aligned = set()
         frontiers = {series.frontier for series in self.series.values()}
         complete = all(s.complete for s in sources.values()) and len(frontiers) <= 1
+        update_metadata = dict(metadata or {})
+        if lagging:
+            update_metadata["lagging_sources"] = lagging
         return SubscriptionUpdate(
             scan_id=self.scan_id,
             reason=reason,
             sources=sources,
             aligned_ordinals=tuple(sorted(aligned)),
             complete=complete,
-            metadata=dict(metadata or {}),
+            metadata=update_metadata,
         )
+
+    def _lagging_sources(self) -> list[SourceKey]:
+        """
+        Sources trailing the bundle frontier by more than LAG_THRESHOLD.
+
+        A lagging (possibly silent) source no longer blocks delivery — every
+        emission is a full snapshot — but it does stall ``aligned_ordinals``;
+        this surfaces the responsible source(s) to consumers and the log.
+        """
+        if len(self.series) < 2:
+            return []
+        frontiers = {key: series.frontier for key, series in self.series.items()}
+        max_frontier = max(frontiers.values())
+        lagging = [
+            key for key, frontier in frontiers.items() if max_frontier - frontier > LAG_THRESHOLD
+        ]
+        if lagging and not self._lag_warned:
+            self._lag_warned = True
+            logger.warning(
+                f"Scan {self.scan_id}: source(s) {lagging} trail the bundle frontier by more "
+                f"than {LAG_THRESHOLD} points; aligned emission is stalled at the slowest "
+                "source. The subscription keeps delivering full snapshots."
+            )
+        return lagging
 
     def clear(self) -> None:
         """Clear all series (keeps the source registrations)."""

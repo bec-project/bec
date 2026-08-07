@@ -61,21 +61,24 @@ class HistoryDataPlugin(DataSourcePlugin):
             return None
         return scan_item
 
-    def _async_declaration(self, device: str, entry: str) -> tuple[bool, str | None]:
+    def _async_declaration(self, device: str, entry: str) -> tuple[bool, str | None, str | None]:
         """
         Best-effort async lookup from live device info (may be stale for old
         scans, in which case the dataset-shape heuristic decides).
 
         Returns:
-            tuple[bool, str | None]: (is declared async, acquisition group).
+            tuple: (is declared async, acquisition group, storage name). The
+                storage name matters because the file writer (and therefore
+                ``stored_data_info``) keys async datasets by it, not by the
+                signal's ``obj_name``.
         """
         device_manager = getattr(self.client, "device_manager", None)
         if not device_manager:
-            return False, None
+            return False, None, None
         try:
             signals = device_manager.get_bec_signals(_ASYNC_SIGNAL_CLASSES)
         except Exception:  # pylint: disable=broad-except
-            return False, None
+            return False, None, None
         for dev_name, _, entry_info in signals:
             if dev_name != device or entry_info.get("obj_name") != entry:
                 continue
@@ -86,8 +89,8 @@ class HistoryDataPlugin(DataSourcePlugin):
                     signal_info = signal_info.get("signal_info", {})
                 if isinstance(signal_info, dict):
                     group = signal_info.get("acquisition_group")
-            return True, group
-        return False, None
+            return True, group, entry_info.get("storage_name")
+        return False, None, None
 
     def resolve(self, sources: list[SourceKey], scan_id: str) -> list[SourceSpec] | None:
         if not scan_id:
@@ -101,7 +104,14 @@ class HistoryDataPlugin(DataSourcePlugin):
             )
             specs = []
             for device, entry in sources:
-                info = stored.get(device, {}).get(entry)
+                declared_async, group, storage_name = self._async_declaration(device, entry)
+                stored_device = stored.get(device, {})
+                stored_key, info = entry, None
+                for candidate in self._stored_key_candidates(device, entry, storage_name):
+                    info = stored_device.get(candidate)
+                    if info is not None:
+                        stored_key = candidate
+                        break
                 if info is None:
                     specs.append(SourceSpec(device=device, entry=entry, available=False))
                     continue
@@ -111,18 +121,25 @@ class HistoryDataPlugin(DataSourcePlugin):
                 # An async-signal declaration in the (possibly newer) device
                 # config wins; otherwise a 1-D dataset with one row per
                 # monitored readout is a monitored signal.
-                declared_async, group = self._async_declaration(device, entry)
                 is_async = declared_async or not (
                     len(shape) == 1 and num_points is not None and shape[0] == num_points
                 )
                 if is_async:
                     specs.append(
                         SourceSpec(
-                            device=device, entry=entry, kind="async", acquisition_group=group
+                            device=device,
+                            entry=entry,
+                            kind="async",
+                            acquisition_group=group,
+                            storage_name=stored_key,
                         )
                     )
                 else:
-                    specs.append(SourceSpec(device=device, entry=entry, kind="monitored"))
+                    specs.append(
+                        SourceSpec(
+                            device=device, entry=entry, kind="monitored", storage_name=stored_key
+                        )
+                    )
             return specs
 
         scan_item = self._terminal_scan_item(scan_id)
@@ -143,6 +160,26 @@ class HistoryDataPlugin(DataSourcePlugin):
                 )
             return specs
         return None
+
+    @staticmethod
+    def _stored_key_candidates(device: str, entry: str, storage_name: str | None) -> list[str]:
+        """
+        Dataset-key candidates for one source in ``stored_data_info``/the file.
+
+        Async datasets are stored under the signal's storage name. When device
+        info is unavailable (old scans, config reloads in flight), the storage
+        name is still derivable from the BEC naming convention
+        ``obj_name == f"{device}_{storage_name}"``.
+        """
+        candidates = [entry]
+        if storage_name and storage_name not in candidates:
+            candidates.append(storage_name)
+        prefix = f"{device}_"
+        if entry.startswith(prefix):
+            derived = entry[len(prefix) :]
+            if derived and derived not in candidates:
+                candidates.append(derived)
+        return candidates
 
     @staticmethod
     def _info_field(info, name):
@@ -169,7 +206,13 @@ class HistoryDataPlugin(DataSourcePlugin):
         stored = msg.stored_data_info or {}
         total = 0
         for device, entry in sources:
-            info = (stored.get(device) or {}).get(entry)
+            stored_device = stored.get(device) or {}
+            _, _, storage_name = self._async_declaration(device, entry)
+            info = None
+            for candidate in self._stored_key_candidates(device, entry, storage_name):
+                info = stored_device.get(candidate)
+                if info is not None:
+                    break
             if info is None:
                 continue
             shape = tuple(self._info_field(info, "shape") or ())
@@ -230,7 +273,11 @@ class HistoryDataPlugin(DataSourcePlugin):
                     continue
                 try:
                     device_data = container.devices.get(spec.device)
-                    signal_ref = device_data.get(spec.entry) if device_data else None
+                    signal_ref = None
+                    if device_data:
+                        signal_ref = device_data.get(spec.storage_name or spec.entry)
+                        if signal_ref is None and spec.storage_name != spec.entry:
+                            signal_ref = device_data.get(spec.entry)
                     data = signal_ref.read() if signal_ref is not None else None
                 except Exception as exc:  # pylint: disable=broad-except
                     logger.warning(

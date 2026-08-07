@@ -588,3 +588,95 @@ class TestDeviceStreamsThroughRealConnector:
         source = updates[-1].get("waveform", "monitor_1d")
         assert list(source.values[-1]) == [1, 2, 3]
         sub.close()
+
+
+class TestClientOwnershipAndVisibility:
+    def test_client_data_api_property_lazy_and_stable(self, connected_connector):
+        from bec_lib.client import BECClient
+
+        client = mock.MagicMock(spec=BECClient)
+        client.callbacks = mock.MagicMock()
+        client.queue = mock.MagicMock()
+        client.device_manager = mock.MagicMock()
+        client._data_api = None
+        api = BECClient.data_api.fget(client)
+        assert BECClient.data_api.fget(client) is api
+        api.close()
+
+    def test_registry_entry_dies_with_last_reference(self, mock_client):
+        DataAPI.clear_instance()
+        api = DataAPI(mock_client)
+        key_count = len(DataAPI._instances)
+        assert key_count == 1
+        api.close()
+        del api
+        gc.collect()
+        assert len(DataAPI._instances) == 0
+
+    def test_device_update_invalidates_async_info_cache(self, data_api, mock_client):
+        plugin = data_api.plugins[0]
+        plugin._async_info_cache[("det", "wave")] = {"obj_name": "wave"}
+        # The plugin registered the device_update event at connect time.
+        registered = {call.args[0] for call in mock_client.callbacks.register.call_args_list}
+        assert "device_update" in registered
+        plugin._on_device_update("update", {})
+        assert plugin._async_info_cache == {}
+
+    def test_lagging_sources_reported(self, data_api, mock_client):
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx"), ("samy", "samy")],
+            scan="live",
+            callback=updates.append,
+            min_emit_interval=0,
+        )
+        plugin = data_api.plugins[0]
+        # samx delivers 5 points; samy none — samy must be reported lagging.
+        for i in range(5):
+            msg = messages.ScanMessage(
+                point_id=i,
+                scan_id="scan_1",
+                data={"samx": {"samx": {"value": float(i), "timestamp": 100.0 + i}}},
+                metadata={"scan_id": "scan_1"},
+            )
+            item.live_data.set(i, msg)
+        plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
+        assert updates[-1].metadata.get("lagging_sources") == [("samy", "samy")]
+        assert updates[-1].aligned_ordinals == ()
+        # samx data still reaches the consumer despite the stalled alignment.
+        assert updates[-1].get("samx", "samx").values == (0.0, 1.0, 2.0, 3.0, 4.0)
+        sub.close()
+
+
+def test_unbound_source_recovers_on_next_scan_status(data_api, mock_client):
+    """A source that resolves unavailable at bind time (device info still
+    settling) is re-resolved on the next status update of the same scan
+    instead of staying lost for the whole scan (e2e flake regression)."""
+    item = make_scan_item(mock_client, "scan_1")
+    register_scan(mock_client, {"scan_1": item})
+    mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("samx", "samx"), ("det", "wave")],
+        scan="live",
+        callback=updates.append,
+        min_emit_interval=0,
+    )
+    assert sub.unbound_sources == [("det", "wave")]
+
+    # Device info settles: the async signal is now resolvable.
+    mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+    data_api.plugins[0]._async_info_cache.clear()
+    sub._on_scan_status({"scan_id": "scan_1", "status": "open"}, {})
+
+    assert sub.unbound_sources == []
+    # The recovered source is pre-registered in the scan group snapshot.
+    plugin = data_api.plugins[0]
+    seed_xy(item, "scan_1", 0, 1)
+    plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
+    scan_updates = [u for u in updates if u.metadata.get("group") == "scan"]
+    assert ("det", "wave") in scan_updates[-1].sources
+    sub.close()

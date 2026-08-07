@@ -292,3 +292,67 @@ class TestSizeGuard:
         assert wait_for(lambda: threads)
         assert threads[0] != caller_thread
         sub.close()
+
+
+def test_async_source_resolved_by_storage_name(data_api, mock_client):
+    """The file writer keys async datasets by storage_name, not obj_name: a
+    subscription using the obj_name must still resolve, read and emit under
+    the obj_name key (e2e handover regression)."""
+    stored = {
+        "samx": {"samx": {"shape": (3,), "dtype": "float64"}},
+        "waveform": {"waveform_0d": {"shape": (3,), "dtype": "float64"}},
+    }
+    columns = {
+        ("samx", "samx"): ([0.0, 1.0, 2.0], [100.0, 101.0, 102.0]),
+        ("waveform", "waveform_0d"): ([10.0, 20.0, 30.0], [100.0, 101.0, 102.0]),
+    }
+    history, _ = make_history("scan_h", stored, columns, num_points=3)
+    mock_client.history = history
+    mock_client.device_manager.get_bec_signals.return_value = [
+        (
+            "waveform",
+            None,
+            {
+                "obj_name": "waveform_waveform_0d",
+                "storage_name": "waveform_0d",
+                "describe": {"signal_info": {"acquisition_group": "monitored"}},
+            },
+        )
+    ]
+
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("samx", "samx"), ("waveform", "waveform_waveform_0d")],
+        scan="scan_h",
+        callback=updates.append,
+    )
+    assert sub.unbound_sources == []
+    assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1, 2))
+    update = updates[-1]
+    # Emitted under the subscription's obj_name key, read from the storage key.
+    assert set(update.sources) == {("samx", "samx"), ("waveform", "waveform_waveform_0d")}
+    assert update.aligned()[("waveform", "waveform_waveform_0d")] == (10.0, 20.0, 30.0)
+    assert update.get("waveform", "waveform_waveform_0d").kind == "async"
+    # The estimate finds the dataset through the same translation.
+    assert data_api.estimate_bytes(sub.sources, "scan_h") == 3 * 8 + 3 * 8
+    sub.close()
+
+
+def test_async_storage_key_derived_without_device_info(data_api, mock_client):
+    """Even with no device info at all (get_bec_signals empty — e.g. config
+    reload in flight at handover time), the storage key is derived from the
+    obj_name convention f"{device}_{storage_name}" (e2e flake regression)."""
+    stored = {"waveform": {"waveform_0d": {"shape": (2,), "dtype": "float64"}}}
+    columns = {("waveform", "waveform_0d"): ([1.0, 2.0], [100.0, 101.0])}
+    history, _ = make_history("scan_h", stored, columns, num_points=2)
+    mock_client.history = history
+    mock_client.device_manager.get_bec_signals.return_value = []
+
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("waveform", "waveform_waveform_0d")], scan="scan_h", callback=updates.append
+    )
+    assert sub.unbound_sources == []
+    assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1))
+    assert updates[-1].aligned()[("waveform", "waveform_waveform_0d")] == (1.0, 2.0)
+    sub.close()

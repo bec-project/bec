@@ -185,6 +185,12 @@ class Subscription:
             )
             for label, keys in groups.items():
                 bundle = Bundle(scan_id, max_points=self._max_points)
+                # Pre-register every declared source: a silent source must
+                # hold back aligned_ordinals (and be reported as lagging)
+                # instead of being invisible to the intersection.
+                for key in keys:
+                    spec = spec_by_key[key]
+                    bundle.get_series(spec.device, spec.entry, spec.kind or "unindexed")
                 request = SourceRequest(
                     scan_id=scan_id,
                     specs=[spec_by_key[key] for key in keys],
@@ -262,6 +268,19 @@ class Subscription:
                         logger.warning(f"No data source can serve scan {scan_id}; waiting.")
                 except CorrelationGroupError as exc:
                     logger.warning(f"Cannot bind scan {scan_id}: {exc}")
+                return
+            if (
+                status == "open"
+                and scan_id == self._scan_id
+                and any(not spec.available for spec in self._specs)
+            ):
+                # A source that resolved unavailable at bind time (e.g. device
+                # info still settling) must not stay lost for the whole scan:
+                # retry on the next status update of the same scan.
+                try:
+                    self._bind(scan_id, reason="rebind")
+                except CorrelationGroupError as exc:  # pragma: no cover - defensive
+                    logger.warning(f"Cannot rebind scan {scan_id}: {exc}")
                 return
             if status in TERMINAL_SCAN_STATES and scan_id == self._scan_id:
                 # Final flush of the live state; the authoritative history
@@ -369,10 +388,14 @@ class DataAPI:
     Per-client data access facade.
 
     Constructing a ``DataAPI`` with a client that already owns one returns
-    that instance; different clients get independent instances.
+    that instance; different clients get independent instances. Prefer
+    ``client.data_api`` — the lazy client property — over constructing
+    directly. The registry holds weak values: an entry lives exactly as long
+    as some consumer holds the instance (which in turn keeps the client
+    alive), so ``id()`` keys cannot alias across dead clients.
     """
 
-    _instances: dict[int, DataAPI] = {}
+    _instances: weakref.WeakValueDictionary[int, DataAPI] = weakref.WeakValueDictionary()
 
     def __new__(cls, client):
         instance = cls._instances.get(id(client))
@@ -397,7 +420,8 @@ class DataAPI:
         """Close and clear all per-client instances (test helper)."""
         for instance in list(cls._instances.values()):
             instance.close()
-        cls._instances.clear()
+        for key in list(cls._instances.keys()):
+            cls._instances.pop(key, None)
 
     def register_plugin(self, plugin: DataSourcePlugin) -> None:
         """

@@ -155,6 +155,7 @@ class BECClient(BECService):
         self.alarm_handler = None
         self.config = None
         self.history = None
+        self._data_api = None
         self._live_updates = None
         self.dap = None
         self.scans_namespace = SimpleNamespace()
@@ -185,6 +186,19 @@ class BECClient(BECService):
         BECClient._client = None
         BECClient._initialized = False
         BECClient.started = False
+
+    @property
+    def data_api(self):
+        """
+        Data access facade for live, history and device-stream subscriptions.
+
+        Lazily created on first access; see ``bec_lib.data_api``.
+        """
+        if self._data_api is None:
+            from bec_lib.data_api import DataAPI
+
+            self._data_api = DataAPI(self)
+        return self._data_api
 
     @property
     def username(self) -> str:

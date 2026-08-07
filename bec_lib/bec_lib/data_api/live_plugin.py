@@ -40,6 +40,7 @@ class LiveDataPlugin(DataSourcePlugin):
         self.client = client
         self._lock = lock or threading.RLock()
         self._connect_id: int | str | None = None
+        self._device_update_id: int | str | None = None
         # scan_id -> open requests
         self._requests: dict[str, list[SourceRequest]] = {}
         # (scan_id, device, storage_name) -> {"endpoint","callback","refcount"}
@@ -53,11 +54,22 @@ class LiveDataPlugin(DataSourcePlugin):
 
     def connect(self) -> None:
         self._connect_id = self.client.callbacks.register("scan_segment", self._on_scan_segment)
+        self._device_update_id = self.client.callbacks.register(
+            "device_update", self._on_device_update
+        )
+
+    def _on_device_update(self, *_args, **_kwargs) -> None:
+        """Invalidate cached device metadata on device-config changes."""
+        with self._lock:
+            self._async_info_cache.clear()
 
     def disconnect(self) -> None:
         if self._connect_id is not None:
             self.client.callbacks.remove(self._connect_id)
             self._connect_id = None
+        if getattr(self, "_device_update_id", None) is not None:
+            self.client.callbacks.remove(self._device_update_id)
+            self._device_update_id = None
         with self._lock:
             for feed in self._feeds.values():
                 self.client.connector.unregister(topics=feed["endpoint"], cb=feed["callback"])
