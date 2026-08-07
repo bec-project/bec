@@ -67,15 +67,29 @@ class SubscriptionUpdate:
         """
         Return equal-length value columns for the aligned ordinals.
 
+        The result is computed once per update and cached (updates are
+        immutable snapshots), so widgets may call this freely.
+
         Returns:
             dict[SourceKey, tuple]: For every source, the values at
                 ``aligned_ordinals``, in the same order for all sources.
         """
+        cached = getattr(self, "_aligned_cache", None)
+        if cached is not None:
+            return cached
         out: dict[SourceKey, tuple[Any, ...]] = {}
         for key, source in self.sources.items():
-            index_of = {ordinal: i for i, ordinal in enumerate(source.ordinals)}
-            out[key] = tuple(source.values[index_of[o]] for o in self.aligned_ordinals)
+            out[key] = self._column(source, source.values)
+        object.__setattr__(self, "_aligned_cache", out)
         return out
+
+    def _column(self, source: SourceData, column: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Extract one source's column at the aligned ordinals."""
+        if source.ordinals == self.aligned_ordinals:
+            # Common case: fully aligned source — the column is already exact.
+            return column
+        index_of = {ordinal: i for i, ordinal in enumerate(source.ordinals)}
+        return tuple(column[index_of[o]] for o in self.aligned_ordinals)
 
     def get(self, device: str, entry: str) -> SourceData | None:
         """
@@ -118,6 +132,6 @@ class SubscriptionUpdate:
                 return ()
             source = next(iter(self.sources))
         source_data = self.sources[source]
-        index_of = {ordinal: i for i, ordinal in enumerate(source_data.ordinals)}
-        column = source_data.values if mode == "device" else source_data.timestamps
-        return tuple(column[index_of[o]] for o in self.aligned_ordinals)
+        if mode == "device":
+            return self.aligned()[source]
+        return self._column(source_data, source_data.timestamps)

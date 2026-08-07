@@ -9,6 +9,7 @@ Out-of-order and gapped delivery fill holes instead of shifting pairs.
 
 from __future__ import annotations
 
+import bisect
 from typing import Any
 
 from bec_lib.logger import bec_logger
@@ -86,6 +87,10 @@ class SourceSeries:
 
     A point inserted at an existing ordinal overwrites it (add_slice rows grow
     in place); completeness means "no holes from ordinal 0 to the frontier".
+
+    The columns are maintained sorted **incrementally** (the hot path — a new
+    highest ordinal — is an O(1) append) and :meth:`snapshot` caches its
+    result, so an emission only pays for sources that actually changed.
     """
 
     def __init__(self, device: str, entry: str, kind: SourceKind, max_points: int | None = None):
@@ -94,8 +99,12 @@ class SourceSeries:
         self.kind = kind
         self.metadata: dict[str, Any] = {}
         self._max_points = max_points
-        self._points: dict[int, tuple[Any, Any]] = {}  # ordinal -> (value, timestamp)
+        self._known: set[int] = set()
+        self._ordinals: list[int] = []  # sorted
+        self._values: list[Any] = []  # parallel to _ordinals
+        self._timestamps: list[Any] = []  # parallel to _ordinals
         self._arrival_counter = 0
+        self._cached_snapshot: SourceData | None = None
 
     def insert(self, ordinal: int | None, value: Any, timestamp: Any) -> int:
         """
@@ -112,53 +121,84 @@ class SourceSeries:
         """
         if ordinal is None:
             ordinal = self._arrival_counter
-        self._points[ordinal] = (value, timestamp)
+        self._cached_snapshot = None
+        if ordinal in self._known:
+            # Overwrite in place: the ordinal set (and thus positions) is
+            # unchanged, so a bisect lookup is exact.
+            position = bisect.bisect_left(self._ordinals, ordinal)
+            self._values[position] = value
+            self._timestamps[position] = timestamp
+        elif not self._ordinals or ordinal > self._ordinals[-1]:
+            # Hot path: in-order arrival.
+            self._known.add(ordinal)
+            self._ordinals.append(ordinal)
+            self._values.append(value)
+            self._timestamps.append(timestamp)
+        else:
+            # Rare: a hole is filled late.
+            self._known.add(ordinal)
+            position = bisect.bisect_left(self._ordinals, ordinal)
+            self._ordinals.insert(position, ordinal)
+            self._values.insert(position, value)
+            self._timestamps.insert(position, timestamp)
         self._arrival_counter = max(self._arrival_counter, ordinal + 1)
-        if self._max_points is not None and len(self._points) > self._max_points:
+        if self._max_points is not None and len(self._ordinals) > self._max_points:
             # Endless device streams: keep only the newest points.
-            overflow = len(self._points) - self._max_points
-            for old in sorted(self._points)[:overflow]:
-                del self._points[old]
+            overflow = len(self._ordinals) - self._max_points
+            for old in self._ordinals[:overflow]:
+                self._known.discard(old)
+            del self._ordinals[:overflow]
+            del self._values[:overflow]
+            del self._timestamps[:overflow]
         return ordinal
 
     def __len__(self) -> int:
-        return len(self._points)
+        return len(self._ordinals)
 
     @property
     def frontier(self) -> int:
         """One past the highest stored ordinal (0 when empty)."""
-        return max(self._points) + 1 if self._points else 0
+        return self._ordinals[-1] + 1 if self._ordinals else 0
 
     @property
     def complete(self) -> bool:
         """Whether every ordinal from 0 to the frontier is present."""
-        return len(self._points) == self.frontier
+        return len(self._ordinals) == self.frontier
 
     @property
     def ordinals(self) -> set[int]:
         """The set of stored ordinals."""
-        return set(self._points)
+        return self._known
 
     def snapshot(self) -> SourceData:
-        """Return an immutable columnar snapshot of this series."""
-        ordinals = tuple(sorted(self._points))
-        values = tuple(self._points[o][0] for o in ordinals)
-        timestamps = tuple(self._points[o][1] for o in ordinals)
-        return SourceData(
+        """
+        Return an immutable columnar snapshot of this series.
+
+        Cached: repeated calls without an intervening :meth:`insert` return
+        the same object, so bundle emissions only rebuild changed sources.
+        """
+        if self._cached_snapshot is not None:
+            return self._cached_snapshot
+        self._cached_snapshot = SourceData(
             device=self.device,
             entry=self.entry,
             kind=self.kind,
-            ordinals=ordinals,
-            values=values,
-            timestamps=timestamps,
+            ordinals=tuple(self._ordinals),
+            values=tuple(self._values),
+            timestamps=tuple(self._timestamps),
             complete=self.complete,
             metadata=dict(self.metadata),
         )
+        return self._cached_snapshot
 
     def clear(self) -> None:
         """Drop all points and reset the arrival counter."""
-        self._points.clear()
+        self._known.clear()
+        self._ordinals.clear()
+        self._values.clear()
+        self._timestamps.clear()
         self._arrival_counter = 0
+        self._cached_snapshot = None
 
 
 class Bundle:
@@ -220,12 +260,17 @@ class Bundle:
         self._check_cadence()
         lagging = self._lagging_sources()
         sources = {key: series.snapshot() for key, series in self.series.items()}
-        if sources:
-            aligned: set[int] = set.intersection(*(set(s.ordinals) for s in sources.values()))
-        else:
-            aligned = set()
         frontiers = {series.frontier for series in self.series.values()}
         complete = all(s.complete for s in sources.values()) and len(frontiers) <= 1
+        if not sources:
+            aligned_ordinals: tuple[int, ...] = ()
+        elif complete:
+            # All sources hold exactly 0..frontier-1: no set work needed.
+            aligned_ordinals = next(iter(sources.values())).ordinals
+        else:
+            aligned_ordinals = tuple(
+                sorted(set.intersection(*(series.ordinals for series in self.series.values())))
+            )
         update_metadata = dict(metadata or {})
         if lagging:
             update_metadata["lagging_sources"] = lagging
@@ -233,7 +278,7 @@ class Bundle:
             scan_id=self.scan_id,
             reason=reason,
             sources=sources,
-            aligned_ordinals=tuple(sorted(aligned)),
+            aligned_ordinals=aligned_ordinals,
             complete=complete,
             metadata=update_metadata,
         )
