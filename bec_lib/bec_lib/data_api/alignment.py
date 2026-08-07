@@ -84,11 +84,12 @@ class SourceSeries:
     in place); completeness means "no holes from ordinal 0 to the frontier".
     """
 
-    def __init__(self, device: str, entry: str, kind: SourceKind):
+    def __init__(self, device: str, entry: str, kind: SourceKind, max_points: int | None = None):
         self.device = device
         self.entry = entry
         self.kind = kind
         self.metadata: dict[str, Any] = {}
+        self._max_points = max_points
         self._points: dict[int, tuple[Any, Any]] = {}  # ordinal -> (value, timestamp)
         self._arrival_counter = 0
 
@@ -109,6 +110,11 @@ class SourceSeries:
             ordinal = self._arrival_counter
         self._points[ordinal] = (value, timestamp)
         self._arrival_counter = max(self._arrival_counter, ordinal + 1)
+        if self._max_points is not None and len(self._points) > self._max_points:
+            # Endless device streams: keep only the newest points.
+            overflow = len(self._points) - self._max_points
+            for old in sorted(self._points)[:overflow]:
+                del self._points[old]
         return ordinal
 
     def __len__(self) -> int:
@@ -162,8 +168,9 @@ class Bundle:
     silently mispairing.
     """
 
-    def __init__(self, scan_id: str):
+    def __init__(self, scan_id: str, max_points: int | None = None):
         self.scan_id = scan_id
+        self.max_points = max_points
         self.series: dict[SourceKey, SourceSeries] = {}
         self._cadence_warned = False
 
@@ -172,7 +179,7 @@ class Bundle:
         key = (device, entry)
         series = self.series.get(key)
         if series is None:
-            series = SourceSeries(device, entry, kind)
+            series = SourceSeries(device, entry, kind, max_points=self.max_points)
             self.series[key] = series
         return series
 

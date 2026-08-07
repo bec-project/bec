@@ -31,13 +31,20 @@ class _FakeDeviceRef(dict):
 
 
 def make_history(scan_id, stored, columns, num_points):
-    """Build a fake client.history serving one scan."""
-    msg = SimpleNamespace(
+    """Build a fake client.history serving one scan (real message model, so
+    the pydantic _StoredDataInfo value type is exercised)."""
+    msg = messages.ScanHistoryMessage(
         scan_id=scan_id,
+        scan_number=1,
+        dataset_number=1,
         file_path=f"/data/{scan_id}_master.h5",
-        stored_data_info=stored,
+        exit_status="closed",
+        start_time=1.0,
+        end_time=2.0,
+        scan_name="line_scan",
         num_points=num_points,
         num_monitored_readouts=num_points,
+        stored_data_info=stored,
     )
     devices = {}
     for (device, entry), (values, timestamps) in columns.items():
@@ -199,3 +206,89 @@ class TestHistoryPlugin:
         mock_client.history._scan_data = {}
         with pytest.raises(ValueError):
             data_api.subscribe(sources=[("samx", "samx")], scan="nope", callback=lambda u: None)
+
+
+class TestSizeGuard:
+    def _history(self, mock_client, num_points=1000, entry_shape=(1000, 500)):
+        stored = {
+            "samx": {"samx": {"shape": (num_points,), "dtype": "float64"}},
+            "det": {"wave": {"shape": entry_shape, "dtype": "float64"}},
+        }
+        columns = {
+            ("samx", "samx"): ([0.0] * 3, [1.0] * 3),
+            ("det", "wave"): ([[0.0]] * 3, [1.0] * 3),
+        }
+        history, msg = make_history("scan_big", stored, columns, num_points=num_points)
+        mock_client.history = history
+        return msg
+
+    def test_estimate_matches_shapes_and_dtype(self, data_api, mock_client):
+        self._history(mock_client)
+        # 1000*8 + 1000*500*8 bytes
+        expected = 1000 * 8 + 1000 * 500 * 8
+        assert data_api.estimate_bytes([("samx", "samx"), ("det", "wave")], "scan_big") == expected
+
+    def test_estimate_needs_no_file_access(self, data_api, mock_client):
+        self._history(mock_client)
+        data_api.estimate_bytes([("det", "wave")], "scan_big")
+        mock_client.history.get_by_scan_id.assert_not_called()
+
+    def test_oversized_subscription_is_withheld_until_confirmed(self, data_api, mock_client):
+        self._history(mock_client)
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx"), ("det", "wave")],
+            scan="scan_big",
+            callback=updates.append,
+            size_limit_bytes=1024,
+        )
+        assert sub.size_gated is True
+        assert sub.estimated_bytes == 1000 * 8 + 1000 * 500 * 8
+        # Nothing was read and nothing was delivered.
+        assert not wait_for(lambda: updates, timeout=0.5)
+        mock_client.history.get_by_scan_id.assert_not_called()
+
+        sub.confirm_size()
+        assert sub.size_gated is False
+        assert wait_for(lambda: updates)
+        assert updates[-1].reason == "history"
+        sub.close()
+
+    def test_within_limit_loads_immediately(self, data_api, mock_client):
+        self._history(mock_client, num_points=3, entry_shape=(3,))
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")],
+            scan="scan_big",
+            callback=updates.append,
+            size_limit_bytes=10_000_000,
+        )
+        assert sub.size_gated is False
+        assert wait_for(lambda: updates)
+        sub.close()
+
+    def test_no_limit_never_gates(self, data_api, mock_client):
+        self._history(mock_client)
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx"), ("det", "wave")], scan="scan_big", callback=updates.append
+        )
+        assert sub.size_gated is False
+        assert wait_for(lambda: updates)
+        sub.close()
+
+    def test_history_read_runs_off_the_caller_thread(self, data_api, mock_client):
+        """The file read must not block the calling (GUI) thread."""
+        import threading
+
+        self._history(mock_client, num_points=3, entry_shape=(3,))
+        caller_thread = threading.current_thread().name
+        threads = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")],
+            scan="scan_big",
+            callback=lambda u: threads.append(threading.current_thread().name),
+        )
+        assert wait_for(lambda: threads)
+        assert threads[0] != caller_thread
+        sub.close()

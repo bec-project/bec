@@ -5,11 +5,13 @@ import time
 import weakref
 from unittest import mock
 
+import numpy as np
 import pytest
 
 from bec_lib import messages
 from bec_lib.client import BECClient
 from bec_lib.data_api import CorrelationGroupError, DataAPI
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.live_scan_data import LiveScanData
 from bec_lib.scan_items import ScanItem
 
@@ -425,4 +427,164 @@ class TestLegacyAsyncAndAxis:
         assert update.axis("index") == (0, 1, 2)
         assert update.axis("device", ("samx", "samx")) == (0.0, 1.0, 2.0)
         assert update.axis("timestamp", ("samx", "samx")) == (100.0, 101.0, 102.0)
+        sub.close()
+
+
+class TestDeviceStreams:
+    def _plugin(self, data_api):
+        return next(p for p in data_api.plugins if p.priority == 90)
+
+    def test_readback_stream(self, data_api, mock_client):
+        motor = mock.MagicMock()
+        mock_client.device_manager.devices = mock.MagicMock()
+        mock_client.device_manager.devices.get = lambda name, default=None: (
+            motor if name == "samx" else default
+        )
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")],
+            scan=None,
+            callback=updates.append,
+            min_emit_interval=0,
+            max_points=3,
+        )
+        assert sub.unbound_sources == []
+        plugin = self._plugin(data_api)
+        for i in range(5):
+            msg = messages.DeviceMessage(
+                signals={"samx": {"value": float(i), "timestamp": 100.0 + i}}, metadata={}
+            )
+            plugin._on_stream_message({"data": msg}, ("readback", "samx", "samx"))
+        source = updates[-1].get("samx", "samx")
+        # Retention cap keeps only the newest points.
+        assert source.values == (2.0, 3.0, 4.0)
+        assert source.ordinals == (2, 3, 4)
+        assert source.kind == "unindexed"
+        sub.close()
+        assert not plugin._feeds
+
+    def test_monitor_stream_sentinel_and_scan_metadata(self, data_api, mock_client):
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("waveform", "monitor_1d")],
+            scan=None,
+            callback=updates.append,
+            min_emit_interval=0,
+        )
+        plugin = self._plugin(data_api)
+        msg = mock.MagicMock()
+        msg.data = [1, 2, 3]
+        msg.metadata = {"scan_id": "scan_7"}
+        plugin._on_stream_message({"data": msg}, ("monitor_1d", "waveform", "monitor_1d"))
+        source = updates[-1].get("waveform", "monitor_1d")
+        assert source.values == ([1, 2, 3],)
+        assert source.metadata["scan_id"] == "scan_7"
+        assert source.metadata["stream"] == "monitor_1d"
+        sub.close()
+
+    def test_preview_signal_classification(self, data_api, mock_client):
+        dev = mock.MagicMock()
+        dev._info = {
+            "signals": {"preview": {"obj_name": "preview_img", "signal_class": "PreviewSignal"}}
+        }
+        mock_client.device_manager.devices = mock.MagicMock()
+        mock_client.device_manager.devices.get = lambda name, default=None: (
+            dev if name == "eiger" else default
+        )
+        plugin = self._plugin(data_api)
+        specs = plugin.resolve([("eiger", "preview_img")], "")
+        assert specs[0].storage_name == "preview"
+
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("eiger", "preview_img")],
+            scan=None,
+            callback=updates.append,
+            min_emit_interval=0,
+        )
+        msg = mock.MagicMock()
+        msg.data = [[1, 2], [3, 4]]
+        msg.metadata = {}
+        plugin._on_stream_message({"data": msg}, ("preview", "eiger", "preview_img"))
+        assert updates[-1].get("eiger", "preview_img").values == ([[1, 2], [3, 4]],)
+        sub.close()
+
+    def test_unknown_device_unavailable(self, data_api, mock_client):
+        mock_client.device_manager.devices = mock.MagicMock()
+        mock_client.device_manager.devices.get = lambda name, default=None: default
+        sub = data_api.subscribe(sources=[("ghost", "ghost")], scan=None, callback=lambda u: None)
+        assert sub.unbound_sources == [("ghost", "ghost")]
+        sub.close()
+
+    def test_scan_plugins_decline_device_scope(self, data_api, mock_client):
+        assert data_api.plugins[0].resolve([("samx", "samx")], "") is None
+        assert data_api.plugins[1].resolve([("samx", "samx")], "") is None
+
+
+class TestDeviceStreamsThroughRealConnector:
+    """Integration tests over the real (fakeredis) connector: they exercise the
+    actual callback payload shapes, which differ between pubsub (MessageObject)
+    and stream (dict) registrations."""
+
+    def _pump(self, connector, predicate, timeout=5.0):
+        """Drive the connector message loop until the predicate holds."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if predicate():
+                return True
+            try:
+                connector.poll_messages(timeout=0.05)
+            except Exception:
+                time.sleep(0.02)
+        return predicate()
+
+    def test_readback_pubsub_payload_reaches_subscriber(self, data_api, mock_client):
+        motor = mock.MagicMock()
+        mock_client.device_manager.devices = mock.MagicMock()
+        mock_client.device_manager.devices.get = lambda name, default=None: (
+            motor if name == "samx" else default
+        )
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")], scan=None, callback=updates.append, min_emit_interval=0
+        )
+
+        for position in (1.5, 2.5):
+            mock_client.connector.set_and_publish(
+                MessageEndpoints.device_readback("samx"),
+                messages.DeviceMessage(
+                    signals={"samx": {"value": position, "timestamp": 100.0 + position}},
+                    metadata={},
+                ),
+            )
+
+        assert self._pump(
+            mock_client.connector,
+            lambda: bool(updates)
+            and updates[-1].get("samx", "samx") is not None
+            and len(updates[-1].get("samx", "samx").values) == 2,
+        ), "readback positions never reached the subscriber"
+        assert updates[-1].get("samx", "samx").values == (1.5, 2.5)
+        sub.close()
+
+    def test_monitor_stream_payload_reaches_subscriber(self, data_api, mock_client):
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("waveform", "monitor_1d")],
+            scan=None,
+            callback=updates.append,
+            min_emit_interval=0,
+        )
+        mock_client.connector.xadd(
+            MessageEndpoints.device_monitor_1d("waveform"),
+            {"data": messages.DeviceMonitor1DMessage(device="waveform", data=np.array([1, 2, 3]))},
+        )
+        assert self._pump(
+            mock_client.connector,
+            lambda: bool(updates)
+            and updates[-1].get("waveform", "monitor_1d") is not None
+            and bool(updates[-1].get("waveform", "monitor_1d").values),
+        ), "monitor payload never reached the subscriber"
+        source = updates[-1].get("waveform", "monitor_1d")
+        assert list(source.values[-1]) == [1, 2, 3]
         sub.close()

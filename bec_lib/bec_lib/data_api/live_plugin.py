@@ -115,6 +115,9 @@ class LiveDataPlugin(DataSourcePlugin):
         return any(info.get("obj_name") == entry for info in signals.values())
 
     def resolve(self, sources: list[SourceKey], scan_id: str) -> list[SourceSpec] | None:
+        if not scan_id:
+            # Device-scoped (scan-less) subscriptions are not ours.
+            return None
         scan_item = self._scan_item(scan_id)
         if scan_item is None or scan_item.status_message is None:
             return None

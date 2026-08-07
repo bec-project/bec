@@ -12,8 +12,11 @@ scan item's in-memory live data.
 
 from __future__ import annotations
 
+import math
 import threading
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from bec_lib.logger import bec_logger
 
@@ -87,6 +90,9 @@ class HistoryDataPlugin(DataSourcePlugin):
         return False, None
 
     def resolve(self, sources: list[SourceKey], scan_id: str) -> list[SourceSpec] | None:
+        if not scan_id:
+            # Device-scoped (scan-less) subscriptions are not ours.
+            return None
         msg = self._history_message(scan_id)
         if msg is not None:
             stored = msg.stored_data_info or {}
@@ -115,7 +121,9 @@ class HistoryDataPlugin(DataSourcePlugin):
                 if info is None:
                     specs.append(SourceSpec(device=device, entry=entry, available=False))
                     continue
-                shape = tuple(info.get("shape") or ())
+                # ScanHistoryMessage.stored_data_info values are pydantic
+                # _StoredDataInfo objects, not dicts.
+                shape = tuple(self._info_field(info, "shape") or ())
                 # An async-signal declaration in the (possibly newer) device
                 # config wins; otherwise a 1-D dataset with one row per
                 # monitored readout is a monitored signal.
@@ -151,6 +159,43 @@ class HistoryDataPlugin(DataSourcePlugin):
                 )
             return specs
         return None
+
+    @staticmethod
+    def _info_field(info, name):
+        if isinstance(info, dict):
+            return info.get(name)
+        return getattr(info, name, None)
+
+    def estimate_bytes(self, sources: list[SourceKey], scan_id: str) -> int | None:
+        """
+        Estimate the total size of the requested sources from the scan history
+        metadata (dataset shapes and dtypes) without touching the file.
+
+        Args:
+            sources (list[SourceKey]): Requested sources.
+            scan_id (str): Identifier of the scan.
+
+        Returns:
+            int | None: Estimated size in bytes, or ``None`` when the scan has
+                no stored-data metadata (e.g. writer-latency window).
+        """
+        msg = self._history_message(scan_id)
+        if msg is None:
+            return None
+        stored = msg.stored_data_info or {}
+        total = 0
+        for device, entry in sources:
+            info = (stored.get(device) or {}).get(entry)
+            if info is None:
+                continue
+            shape = tuple(self._info_field(info, "shape") or ())
+            dtype = self._info_field(info, "dtype")
+            try:
+                itemsize = np.dtype(dtype).itemsize if dtype else 8
+            except TypeError:
+                itemsize = 8
+            total += int(math.prod(shape)) * itemsize if shape else itemsize
+        return total
 
     # --- request lifecycle ---------------------------------------------------
 
