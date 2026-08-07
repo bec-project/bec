@@ -79,6 +79,20 @@ class DataSourcePlugin(ABC):
                 unavailable), or ``None`` when the plugin does not serve it.
         """
 
+    def estimate_bytes(self, sources: list[SourceKey], scan_id: str) -> int | None:
+        """
+        Estimate the payload size of a subscription without reading data.
+
+        Args:
+            sources (list[SourceKey]): Requested sources.
+            scan_id (str): Identifier of the scan.
+
+        Returns:
+            int | None: Estimated size in bytes, or ``None`` when the plugin
+                cannot know it up front (e.g. live scans still growing).
+        """
+        return None
+
     @abstractmethod
     def open(self, request: SourceRequest) -> None:
         """Start feeding the request (backfill + live wiring as applicable)."""
