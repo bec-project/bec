@@ -3,7 +3,7 @@ Throughput guards for the DataAPI pipeline.
 
 These are not micro-benchmarks for tuning — they are regression guards that
 fail if the per-emission cost of the alignment engine becomes super-linear
-again (the original prototype spent 60+ s of callback CPU on a one-hour scan).
+again (the audited prototype spent 60+ s of callback CPU on a one-hour scan).
 Bounds are generous to stay CI-safe; the printed numbers are the useful part.
 """
 

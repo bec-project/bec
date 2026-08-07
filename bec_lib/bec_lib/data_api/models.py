@@ -3,7 +3,7 @@ Data models of the DataAPI emission contract.
 
 Every subscription delivers exactly one shape — a full-state columnar snapshot
 (:class:`SubscriptionUpdate`) holding one :class:`SourceData` per subscribed
-source — for live updates, backfills and history reads alike.
+source — for live updates, backfills and history reads alike. See DESIGN.md.
 """
 
 from __future__ import annotations

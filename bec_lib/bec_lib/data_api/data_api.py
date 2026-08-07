@@ -1,7 +1,7 @@
 """
 DataAPI facade: one subscription API for live and history scan data.
 
-A :class:`Subscription` binds a set of sources
+See DESIGN.md for the contract. A :class:`Subscription` binds a set of sources
 to a scan (a concrete scan id, or ``"live"`` to follow the active scan), routes
 it to the first claiming plugin (live for open scans, history for terminal
 ones) and delivers immutable columnar :class:`~.models.SubscriptionUpdate`
