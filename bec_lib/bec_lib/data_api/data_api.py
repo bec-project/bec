@@ -1,756 +1,412 @@
+"""
+DataAPI facade: one subscription API for live and history scan data.
+
+A :class:`Subscription` binds a set of sources
+to a scan (a concrete scan id, or ``"live"`` to follow the active scan), routes
+it to the first claiming plugin (live for open scans, history for terminal
+ones) and delivers immutable columnar :class:`~.models.SubscriptionUpdate`
+snapshots to one callback, rate-limited backend-side with a guaranteed
+trailing emission.
+
+Threading: one reentrant lock per :class:`DataAPI` instance is shared with all
+plugins and subscriptions. Callbacks may be invoked on dispatcher, timer or
+worker threads — possibly with that lock held — and must not block on other
+threads that use the data API. Qt consumers should hand the update to a queued
+signal (see ``bec_widgets`` ``QtDataSubscription``).
+"""
+
 from __future__ import annotations
 
-from typing import Any, Callable
+import threading
+import time
+import weakref
+from typing import TYPE_CHECKING, Any, Callable
 
 from bec_lib.logger import bec_logger
 
-from .plugins import BECLiveDataPlugin, DataAPIPlugin
+from .alignment import Bundle, CorrelationGroupError, validate_correlation_group
+from .live_plugin import TERMINAL_SCAN_STATES, LiveDataPlugin
+from .models import SourceKey, SubscriptionUpdate, UpdateReason
+from .plugin_base import DataSourcePlugin, SourceRequest
+
+if TYPE_CHECKING:  # pragma: no cover
+    from bec_lib.client import BECClient
 
 logger = bec_logger.logger
 
 
-class DataSubscription:
+class _WeakEventRelay:
     """
-    A subscription object that manages synchronized data updates for multiple device/signal pairs.
+    Forwards client callback events to a subscription without keeping it
+    alive; self-unregisters once the subscription is garbage collected.
+    """
 
-    The subscription automatically handles synchronization across all subscribed device/signal pairs
-    and provides methods to dynamically add/remove devices and reload data. The subscription is
-    automatically cleaned up when the object is destroyed.
+    def __init__(self, subscription: Subscription, handler_name: str):
+        self._subscription_ref = weakref.ref(subscription)
+        self._client = subscription._api.client
+        self._handler_name = handler_name
+        self.callback_id: int | str | None = None
 
-    Example:
-        >>> subscription = data_api.create_subscription("my_scan")
-        >>> subscription.add_device("samx", "samx")
-        >>> subscription.add_device("detector1", "async_sig1")
-        >>> subscription.set_callback(my_callback_function)
-        >>> # Later: update the device list
-        >>> subscription.remove_device("samx", "samx")
-        >>> subscription.add_device("samy", "samy")
-        >>> # Reload all data
-        >>> subscription.reload()
-        >>> # Cleanup happens automatically when object is destroyed or explicitly:
-        >>> subscription.close()
+    def __call__(self, *args, **kwargs) -> None:
+        subscription = self._subscription_ref()
+        if subscription is None:
+            if self.callback_id is not None:
+                self._client.callbacks.remove(self.callback_id)
+                self.callback_id = None
+            return
+        getattr(subscription, self._handler_name)(*args, **kwargs)
+
+
+class Subscription:
+    """
+    A live- or history-scan subscription delivering columnar updates.
+
+    Create via :meth:`DataAPI.subscribe`. The source set is atomic: it is
+    declared at creation and replaced wholesale with :meth:`set_sources`
+    (one rebuild, one re-emission) — there is no incremental add/remove.
     """
 
     def __init__(
         self,
-        data_api: DataAPI,
-        scan_id: str | None = None,
-        *,
-        live: bool = False,
-        buffered: bool = False,
+        api: DataAPI,
+        sources: list[SourceKey],
+        scan: str,
+        callback: Callable[[SubscriptionUpdate], Any],
+        min_emit_interval: float = 0.1,
     ):
-        """
-        Initialize a data subscription.
+        self._api = api
+        self._lock = api._lock
+        self._callback = callback
+        self._sources: list[SourceKey] = [tuple(s) for s in sources]
+        self._follow = scan == "live"
+        self._scan_id: str | None = None if self._follow else scan
+        self._min_emit_interval = min_emit_interval
+        self._closed = False
 
-        Args:
-            data_api (DataAPI): DataAPI instance that manages this
-                subscription.
-            scan_id (str | None): Identifier for the scan. When omitted or
-                ``None``, the subscription starts unbound until a scan is set
-                explicitly or live-follow mode binds it automatically.
-            live (bool): If ``True``, subscribe to scan-status updates and
-                continuously follow the current or next active scan.
-            buffered (bool): If ``True``, re-emit the entire accumulated data
-                buffer on each update. If ``False``, emit only newly aligned
-                synchronized data blocks.
+        self._plugin: DataSourcePlugin | None = None
+        self._request: SourceRequest | None = None
+        self._bundle: Bundle | None = None
 
-        Raises:
-            ValueError: If both ``scan_id`` and ``live`` are specified.
-        """
-        if scan_id is not None and live:
-            raise ValueError("scan_id and live are mutually exclusive")
+        self._last_emit = 0.0
+        self._pending_reason: UpdateReason | None = None
+        self._flush_timer: threading.Timer | None = None
 
-        self._data_api = data_api
-        self._scan_id = scan_id
-        self._follow_scan = live
-        self._devices: dict[tuple[str, str], str | None] = {}  # (device, entry) -> subscription_id
-        self._callback: Callable[[dict, dict], Any] | None = None
-        self._user_callback: Callable[[dict, dict], Any] | None = None
-        self._is_closed = False
-        self._buffered = buffered
-        self._bundle_domain: tuple | None = None
-        self._scan_status_callback_id: int | str | None = None
-        self._data_buffer: dict[str, dict[str, list[dict]]] = (
-            {}
-        )  # device_name -> device_entry -> list of {value, timestamp}
-        if self._follow_scan:
-            self._scan_status_callback_id = self._data_api.client.callbacks.register(
-                "scan_status", self._handle_scan_status_update
-            )
+        self._relays: list[_WeakEventRelay] = []
+        if self._follow:
+            for event, handler in (
+                ("scan_status", "_on_scan_status"),
+                ("scan_history_update", "_on_scan_history_update"),
+            ):
+                relay = _WeakEventRelay(self, handler)
+                relay.callback_id = api.client.callbacks.register(event, relay)
+                self._relays.append(relay)
+
+    # --- public state --------------------------------------------------------
 
     @property
     def scan_id(self) -> str | None:
-        """
-        Get the scan ID for this subscription.
-
-        Returns:
-            str | None: Current bound scan identifier, or ``None`` when the
-                subscription is currently unbound.
-        """
+        """The currently bound scan id (``None`` while unbound)."""
         return self._scan_id
 
     @property
-    def devices(self) -> list[tuple[str, str]]:
-        """
-        Get the list of subscribed device-entry pairs.
-
-        Returns:
-            list[tuple[str, str]]: Subscribed ``(device_name, device_entry)``
-                pairs.
-        """
-        return list(self._devices.keys())
+    def sources(self) -> list[SourceKey]:
+        """The declared source set."""
+        return list(self._sources)
 
     @property
-    def buffered(self) -> bool:
+    def unbound_sources(self) -> list[SourceKey]:
         """
-        Get whether this subscription is in buffered mode.
+        Sources that are declared but not currently delivering: the whole set
+        while unbound, or the sources the serving plugin marked unavailable.
+        """
+        with self._lock:
+            if self._request is None:
+                return list(self._sources)
+            return [spec.key for spec in self._request.specs if not spec.available]
 
-        Returns:
-            bool: ``True`` if buffered mode is enabled, otherwise ``False``.
-        """
-        return self._buffered
+    # --- source set ----------------------------------------------------------
 
-    def set_buffered(self, buffered: bool) -> DataSubscription:
+    def set_sources(self, sources: list[SourceKey]) -> Subscription:
         """
-        Change the buffering mode of the subscription.
+        Atomically replace the source set.
 
         Args:
-            buffered (bool): If ``True``, re-emit the entire accumulated data
-                buffer on each update. If ``False``, emit only newly aligned
-                synchronized data blocks.
+            sources (list[SourceKey]): New (device, entry) pairs.
 
         Returns:
-            DataSubscription: This subscription instance for method chaining.
+            Subscription: This subscription, for chaining.
 
         Raises:
-            RuntimeError: If the subscription is already closed.
+            RuntimeError: If the subscription is closed.
+            CorrelationGroupError: If the sources cannot form one group in the
+                currently bound scan.
         """
-        if self._is_closed:
-            raise RuntimeError("Cannot change buffered mode on a closed subscription")
-
-        if buffered == self._buffered:
-            return self
-
-        self._buffered = buffered
-
-        # Clear buffer when switching modes
-        if not buffered:
-            self._data_buffer.clear()
-
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Cannot change sources on a closed subscription")
+            self._sources = [tuple(s) for s in sources]
+            if self._scan_id is not None:
+                self._bind(self._scan_id, reason="rebind")
         return self
 
-    def _buffering_callback(self, data: dict, metadata: dict) -> None:
-        """
-        Internal callback wrapper that handles buffering logic.
+    # --- binding and routing -------------------------------------------------
 
-        Args:
-            data (dict): Data dictionary emitted by the plugin.
-            metadata (dict): Metadata dictionary emitted by the plugin.
-        """
-        if self._user_callback is None:
-            return
-
-        if not self._buffered:
-            # Pass through directly without buffering
-            self._user_callback(data, metadata)
-            return
-
-        # Buffered mode: accumulate data and re-emit entire buffer
-        for device_name, device_data in data.items():
-            if device_name not in self._data_buffer:
-                self._data_buffer[device_name] = {}
-
-            for device_entry, signal_data in device_data.items():
-                if device_entry not in self._data_buffer[device_name]:
-                    self._data_buffer[device_name][device_entry] = []
-
-                self._data_buffer[device_name][device_entry].append(signal_data)
-
-        # Re-emit the entire buffer
-        buffered_data = {}
-        for device_name, device_entries in self._data_buffer.items():
-            buffered_data[device_name] = {}
-            for device_entry, signal_list in device_entries.items():
-                buffered_data[device_name][device_entry] = signal_list
-
-        self._user_callback(buffered_data, metadata)
-
-    def set_scan_id(self, scan_id: str) -> DataSubscription:
-        """
-        Update the scan ID and resubscribe all devices to the new scan.
-
-        Args:
-            scan_id (str): New scan identifier.
-
-        Returns:
-            DataSubscription: This subscription instance for method chaining.
-
-        Raises:
-            RuntimeError: If the subscription is already closed.
-        """
-        if self._is_closed:
-            raise RuntimeError("Cannot change scan_id on a closed subscription")
-
-        if scan_id == self._scan_id:
-            return self
-
-        old_scan_id = self._scan_id
-        self._scan_id = scan_id
-
-        # Clear buffer when changing scans
-        self._data_buffer.clear()
-
-        # If we have devices and a callback, resubscribe to new scan
-        if self._devices and self._callback is not None:
-            logger.info(
-                f"Changing scan_id from {old_scan_id} to {scan_id}, resubscribing all devices"
+    def _bind(self, scan_id: str, reason: UpdateReason) -> bool:
+        """Route the subscription to a plugin for the given scan. Lock held."""
+        for plugin in self._api.plugins:
+            specs = plugin.resolve(self._sources, scan_id)
+            if specs is None:
+                continue
+            available = [(s.key, s.kind, s.acquisition_group) for s in specs if s.available]
+            if available:
+                validate_correlation_group(available)
+            self._teardown_request()
+            self._scan_id = scan_id
+            self._bundle = Bundle(scan_id)
+            self._request = SourceRequest(
+                scan_id=scan_id, specs=specs, bundle=self._bundle, notify=self._notify
             )
-            self._resubscribe_all()
+            self._plugin = plugin
+            plugin.open(self._request)
+            if reason != "backfill":
+                self._notify(reason)
+            return True
+        return False
 
-        return self
+    def _teardown_request(self) -> None:
+        if self._request is not None and self._plugin is not None:
+            self._plugin.close(self._request)
+        self._request = None
+        self._plugin = None
+        self._bundle = None
 
-    def set_callback(self, callback: Callable[[dict, dict], Any]) -> DataSubscription:
-        """
-        Set or update the callback function for data updates.
+    def _on_scan_status(self, scan_status: dict, _metadata: dict) -> None:
+        with self._lock:
+            if self._closed or not self._follow:
+                return
+            scan_id = scan_status.get("scan_id")
+            status = scan_status.get("status")
+            if not scan_id:
+                return
+            if status == "open" and scan_id != self._scan_id:
+                try:
+                    if not self._bind(scan_id, reason="rebind"):
+                        logger.warning(f"No data source can serve scan {scan_id}; waiting.")
+                except CorrelationGroupError as exc:
+                    logger.warning(f"Cannot bind scan {scan_id}: {exc}")
+                return
+            if status in TERMINAL_SCAN_STATES and scan_id == self._scan_id:
+                # Final flush of the live state; the authoritative history
+                # re-route happens when the scan-history entry appears.
+                self._notify("live", force=True)
 
-        Args:
-            callback (Callable[[dict, dict], Any]): Function to call on data
-                update. In non-buffered mode it receives individual synchronized
-                data blocks. In buffered mode it receives the entire
-                accumulated data buffer.
+    def _on_scan_history_update(self, history_msg=None, **_kwargs) -> None:
+        with self._lock:
+            if self._closed or not self._follow:
+                return
+            scan_id = getattr(history_msg, "scan_id", None)
+            if scan_id is None or scan_id != self._scan_id:
+                return
+            try:
+                self._bind(scan_id, reason="history")
+            except CorrelationGroupError as exc:  # pragma: no cover - defensive
+                logger.warning(f"Cannot re-route scan {scan_id} to history: {exc}")
 
-        Returns:
-            DataSubscription: This subscription instance for method chaining.
+    # --- emission ------------------------------------------------------------
 
-        Raises:
-            RuntimeError: If the subscription is already closed.
-        """
-        if self._is_closed:
-            raise RuntimeError("Cannot set callback on a closed subscription")
-
-        old_user_callback = self._user_callback
-        self._user_callback = callback
-
-        # The internal callback is always the buffering wrapper
-        new_internal_callback = self._buffering_callback
-        old_internal_callback = self._callback
-        self._callback = new_internal_callback
-
-        self._bind_to_current_scan_if_available()
-
-        # If devices are already tracked, the first callback assignment should
-        # activate queued subscriptions and later callback changes should
-        # rewire them to the new callable.
-        if self._devices and (old_internal_callback is None or old_user_callback != callback):
-            self._resubscribe_all()
-
-        return self
-
-    def add_device(self, device_name: str, device_entry: str) -> DataSubscription:
-        """
-        Add a device/signal pair to the synchronized subscription.
-
-        Args:
-            device_name (str): Name of the device.
-            device_entry (str): Specific entry or signal of the device.
-
-        Returns:
-            DataSubscription: This subscription instance for method chaining.
-
-        Raises:
-            RuntimeError: If the subscription is already closed.
-            ValueError: If the source is not bundle-compatible with the
-                subscription.
-        """
-        if self._is_closed:
-            raise RuntimeError("Cannot add device to a closed subscription")
-
-        key = (device_name, device_entry)
-        if key in self._devices:
-            logger.debug(f"Device {device_name}/{device_entry} already subscribed")
-            return self
-
-        self._validate_bundle_compatibility(device_name, device_entry)
-
-        if self._callback is None or self._scan_id is None:
-            # Store the device but don't subscribe yet
-            self._devices[key] = None
-            waiting_for = "scan binding and callback" if self._scan_id is None else "callback"
-            logger.debug(f"Device {device_name}/{device_entry} queued, waiting for {waiting_for}")
-        else:
-            # Subscribe immediately
-            sub_id = self._data_api.subscribe(
-                device_name, device_entry, self._scan_id, self._callback
+    def _notify(self, reason: UpdateReason, force: bool = False) -> None:
+        """Emit (or schedule) an update. Called by plugins and internally."""
+        update = None
+        with self._lock:
+            if self._closed or self._bundle is None or self._callback is None:
+                return
+            now = time.monotonic()
+            immediate = (
+                force
+                or reason != "live"
+                or self._min_emit_interval <= 0
+                or now - self._last_emit >= self._min_emit_interval
             )
-            self._devices[key] = sub_id
+            if immediate:
+                update = self._bundle.build_update(reason)
+                self._last_emit = now
+                self._pending_reason = None
+                if self._flush_timer is not None:
+                    self._flush_timer.cancel()
+                    self._flush_timer = None
+            else:
+                self._pending_reason = reason
+                if self._flush_timer is None:
+                    delay = self._min_emit_interval - (now - self._last_emit)
+                    self._flush_timer = threading.Timer(max(delay, 0.001), self._flush_pending)
+                    self._flush_timer.daemon = True
+                    self._flush_timer.start()
+        if update is not None:
+            self._callback(update)
 
-        return self
+    def _flush_pending(self) -> None:
+        with self._lock:
+            self._flush_timer = None
+            reason = self._pending_reason
+            self._pending_reason = None
+        if reason is not None:
+            self._notify(reason, force=True)
 
-    def remove_device(self, device_name: str, device_entry: str) -> DataSubscription:
-        """
-        Remove a device/signal pair from the subscription.
-
-        Args:
-            device_name (str): Name of the device.
-            device_entry (str): Specific entry or signal of the device.
-
-        Returns:
-            DataSubscription: This subscription instance for method chaining.
-
-        Raises:
-            RuntimeError: If the subscription is already closed.
-        """
-        if self._is_closed:
-            raise RuntimeError("Cannot remove device from a closed subscription")
-
-        key = (device_name, device_entry)
-        sub_id = self._devices.pop(key, None)
-
-        if sub_id is not None:
-            self._data_api.unsubscribe(subscription_id=sub_id)
-
-        return self
-
-    def reload(self) -> DataSubscription:
-        """
-        Reload data for all subscribed devices by resubscribing.
-
-        Returns:
-            DataSubscription: This subscription instance for method chaining.
-
-        Raises:
-            RuntimeError: If the subscription is already closed.
-        """
-        if self._is_closed:
-            raise RuntimeError("Cannot reload a closed subscription")
-
-        if self._callback is None:
-            logger.warning("Cannot reload without a callback set")
-            return self
-
-        self._bind_to_current_scan_if_available()
-        if self._scan_id is None:
-            logger.warning("Cannot reload subscription before a scan is bound")
-            return self
-
-        self._resubscribe_all()
-        return self
+    # --- lifecycle -----------------------------------------------------------
 
     def close(self) -> None:
-        """
-        Close the subscription and unsubscribe from all devices.
-
-        This is called automatically when the object is destroyed.
-        """
-        if self._is_closed:
-            return
-
-        # Unsubscribe from all devices
-        for sub_id in self._devices.values():
-            if sub_id is not None:
-                self._data_api.unsubscribe(subscription_id=sub_id)
-
-        self._devices.clear()
-        self._callback = None
-        self._user_callback = None
-        self._data_buffer.clear()
-        if self._scan_status_callback_id is not None:
-            self._data_api.client.callbacks.remove(self._scan_status_callback_id)
-            self._scan_status_callback_id = None
-        self._is_closed = True
-
-    def _resubscribe_all(self) -> None:
-        """
-        Resubscribe every tracked source with the current callback and scan ID.
-
-        This is used after callback changes and explicit reload requests.
-        """
-        if self._callback is None:
-            return
-
-        # Unsubscribe from all
-        for sub_id in self._devices.values():
-            if sub_id is not None:
-                self._data_api.unsubscribe(subscription_id=sub_id)
-
-        if self._scan_id is None:
-            for key in self._devices:
-                self._devices[key] = None
-            return
-
-        # Resubscribe with new callback
-        for device_name, device_entry in list(self._devices.keys()):
-            self._validate_bundle_compatibility(device_name, device_entry)
-            sub_id = self._data_api.subscribe(
-                device_name, device_entry, self._scan_id, self._callback
-            )
-            self._devices[(device_name, device_entry)] = sub_id
-
-    def _validate_bundle_compatibility(self, device_name: str, device_entry: str) -> None:
-        """
-        Validate that a source is compatible with the subscription bundle.
-
-        Args:
-            device_name (str): Name of the device to validate.
-            device_entry (str): Specific entry of the device to validate.
-
-        Raises:
-            ValueError: If the source resolves to a different bundle domain than
-                the existing subscription.
-        """
-        source_domain = self._data_api.get_bundle_domain(device_name, device_entry, self._scan_id)
-        source_signature = self._normalize_bundle_domain(source_domain)
-        if self._bundle_domain is None:
-            if source_signature is not None:
-                self._bundle_domain = source_signature
-            return
-
-        if source_domain is None and self._data_api.allows_runtime_bundle_resolution(
-            device_name, device_entry, self._scan_id
-        ):
-            return
-
-        if source_signature != self._bundle_domain:
-            raise ValueError(
-                f"Cannot add device '{device_name}' entry '{device_entry}' to subscription bundle "
-                f"{self._bundle_domain}; resolved bundle is {source_signature}."
-            )
-
-    def _normalize_bundle_domain(self, domain: tuple | None) -> tuple | None:
-        """
-        Normalize a bundle domain for compatibility checks across scans.
-
-        Args:
-            domain (tuple | None): Concrete bundle domain returned by a data
-                plugin.
-
-        Returns:
-            tuple | None: Compatibility signature without scan-specific
-                identifiers, or ``None`` when the domain is not yet known.
-        """
-        if domain is None:
-            return None
-        if len(domain) >= 2 and domain[0] == "monitored":
-            return ("monitored",)
-        if len(domain) >= 3 and domain[0] == "async_signal":
-            return ("async_signal", domain[2])
-        if len(domain) >= 4 and domain[0] == "standalone_async":
-            return ("standalone_async", domain[2], domain[3])
-        return domain
-
-    def _bind_to_current_scan_if_available(self) -> None:
-        """
-        Bind an unbound live subscription to the current active scan.
-
-        Returns:
-            None: This method updates internal subscription state in place.
-        """
-        if not self._follow_scan or self._scan_id is not None:
-            return
-
-        queue = getattr(self._data_api.client, "queue", None)
-        scan_storage = getattr(queue, "scan_storage", None)
-        current_scan_ids = getattr(scan_storage, "current_scan_id", None)
-        if not isinstance(current_scan_ids, (list, tuple)) or not current_scan_ids:
-            return
-
-        current_scan_id = current_scan_ids[0]
-        if not isinstance(current_scan_id, str) or not current_scan_id:
-            return
-
-        scan_item = scan_storage.find_scan_by_ID(current_scan_id)
-        if scan_item is None or getattr(scan_item, "status", None) in {
-            "closed",
-            "aborted",
-            "halted",
-            "user_completed",
-        }:
-            return
-
-        self.set_scan_id(current_scan_id)
-
-    def _handle_scan_status_update(self, scan_status: dict, _metadata: dict) -> None:
-        """
-        Rebind a live subscription when a new scan opens.
-
-        Args:
-            scan_status (dict): Scan-status payload emitted by the client
-                callback handler.
-            _metadata (dict): Metadata accompanying the scan-status update.
-
-        Returns:
-            None: This method updates internal subscription state in place.
-        """
-        if self._is_closed or not self._follow_scan:
-            return
-
-        scan_id = scan_status.get("scan_id")
-        status = scan_status.get("status")
-        if not scan_id or status != "open" or scan_id == self._scan_id:
-            return
-
-        self.set_scan_id(scan_id)
+        """Close the subscription and release all resources (idempotent)."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            if self._flush_timer is not None:
+                self._flush_timer.cancel()
+                self._flush_timer = None
+            self._teardown_request()
+            for relay in self._relays:
+                if relay.callback_id is not None:
+                    self._api.client.callbacks.remove(relay.callback_id)
+                    relay.callback_id = None
+            self._relays.clear()
+            self._callback = None
 
     def __del__(self):
-        """
-        Ensure cleanup when the subscription is garbage collected.
-        """
-        if not hasattr(self, "_is_closed"):
+        if getattr(self, "_closed", True):
             return
-        self.close()
+        try:
+            self.close()
+        except Exception:  # pragma: no cover - destructor safety
+            pass
 
-    def __enter__(self) -> DataSubscription:
-        """
-        Enter the context manager for this subscription.
-
-        Returns:
-            DataSubscription: This subscription instance.
-        """
+    def __enter__(self) -> Subscription:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Exit the context manager and close the subscription.
-
-        Args:
-            exc_type: Exception type, if one was raised inside the context.
-            exc_val: Exception value, if one was raised inside the context.
-            exc_tb: Exception traceback, if one was raised inside the context.
-
-        Returns:
-            bool: Always ``False`` so exceptions are not suppressed.
-        """
         self.close()
         return False
 
 
 class DataAPI:
     """
-    DataAPI class that manages data retrieval through plugins.
+    Per-client data access facade.
 
-    This is a singleton - only one instance exists globally.
+    Constructing a ``DataAPI`` with a client that already owns one returns
+    that instance; different clients get independent instances.
     """
 
-    _instance: DataAPI | None = None
+    _instances: dict[int, DataAPI] = {}
 
     def __new__(cls, client):
-        """
-        Create or return the singleton ``DataAPI`` instance.
+        instance = cls._instances.get(id(client))
+        if instance is None:
+            instance = super().__new__(cls)
+            cls._instances[id(client)] = instance
+        return instance
 
-        Args:
-            client: Client object associated with the data API.
-
-        Returns:
-            DataAPI: Singleton instance of the data API.
-        """
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self, client):
-        """
-        Initialize the singleton data API instance.
-
-        Args:
-            client: Client object used by registered plugins.
-        """
-        # Only initialize once
+    def __init__(self, client: BECClient):
         if hasattr(self, "_initialized"):
             return
-
         self.client = client
-        self.plugins: list[DataAPIPlugin] = []
+        self._lock = threading.RLock()
+        self.plugins: list[DataSourcePlugin] = []
         self._initialized = True
-        self.register_plugin(BECLiveDataPlugin(self.client))
+        self.register_plugin(LiveDataPlugin(client, self._lock))
 
     @classmethod
     def clear_instance(cls) -> None:
-        """
-        Clear the singleton instance.
+        """Close and clear all per-client instances (test helper)."""
+        for instance in list(cls._instances.values()):
+            instance.close()
+        cls._instances.clear()
 
-        This is primarily useful for tests that need a fresh ``DataAPI``.
+    def register_plugin(self, plugin: DataSourcePlugin) -> None:
         """
-        if cls._instance is not None:
-            cls._instance.close()
-        cls._instance = None
+        Register a source plugin and connect its feeds.
+
+        Args:
+            plugin (DataSourcePlugin): Plugin instance; its ``priority`` class
+                attribute determines routing order (lower first).
+        """
+        plugin._lock = self._lock
+        plugin.connect()
+        self.plugins.append(plugin)
+        self.plugins.sort(key=lambda p: p.priority)
+
+    def subscribe(
+        self,
+        sources: list[SourceKey],
+        scan: str = "live",
+        callback: Callable[[SubscriptionUpdate], Any] | None = None,
+        min_emit_interval: float = 0.1,
+    ) -> Subscription:
+        """
+        Create a subscription delivering columnar updates for the sources.
+
+        Args:
+            sources (list[SourceKey]): (device, entry) pairs; must form one
+                correlation group (monitored + "monitored"-group async, one
+                shared async group, or a single standalone source).
+            scan (str): ``"live"`` to follow the active scan, or a concrete
+                scan id (open or terminal — terminal scans are served by the
+                history plugin).
+            callback: Called with each :class:`SubscriptionUpdate`; may run on
+                dispatcher/timer/worker threads and must not block.
+            min_emit_interval (float): Backend emission coalescing interval in
+                seconds for live updates (trailing emission guaranteed);
+                ``0`` disables coalescing.
+
+        Returns:
+            Subscription: The active subscription.
+
+        Raises:
+            ValueError: If a concrete scan id cannot be served by any plugin.
+            CorrelationGroupError: If the sources do not form one group.
+        """
+        subscription = Subscription(
+            self, sources, scan, callback, min_emit_interval=min_emit_interval
+        )
+        with self._lock:
+            if scan == "live":
+                self._bind_current_scan(subscription)
+            else:
+                if not subscription._bind(scan, reason="backfill"):
+                    subscription.close()
+                    raise ValueError(f"No data source can serve scan '{scan}'.")
+        return subscription
+
+    def _bind_current_scan(self, subscription: Subscription) -> None:
+        queue = getattr(self.client, "queue", None)
+        scan_storage = getattr(queue, "scan_storage", None)
+        current = getattr(scan_storage, "current_scan_id", None)
+        if not isinstance(current, (list, tuple)) or not current:
+            return
+        scan_id = current[0]
+        if not isinstance(scan_id, str) or not scan_id:
+            return
+        scan_item = scan_storage.find_scan_by_ID(scan_id)
+        if (
+            scan_item is None
+            or getattr(scan_item, "status", None) in TERMINAL_SCAN_STATES
+            or getattr(scan_item, "status_message", None) is None
+        ):
+            return
+        subscription._bind(scan_id, reason="backfill")
 
     def close(self) -> None:
-        """
-        Disconnect registered plugins and release held API resources.
-        """
+        """Disconnect all plugins and remove this instance from the registry."""
         for plugin in self.plugins:
             plugin.disconnect()
         self.plugins.clear()
+        instances = type(self)._instances
+        for key, instance in list(instances.items()):
+            if instance is self:
+                del instances[key]
         if hasattr(self, "_initialized"):
             delattr(self, "_initialized")
 
     def __del__(self):
-        """
-        Perform best-effort cleanup for plugin connections on destruction.
-        """
         try:
             self.close()
         except Exception:  # pragma: no cover - destructor safety
             pass
-
-    def register_plugin(self, plugin: DataAPIPlugin) -> None:
-        """
-        Register and connect a new data API plugin.
-
-        Args:
-            plugin (DataAPIPlugin): Plugin instance to register.
-        """
-        plugin.connect()
-        self.plugins.append(plugin)
-        self.plugins.sort(key=lambda p: p.get_info().get("priority", 100))
-
-    def create_subscription(
-        self, scan_id: str | None = None, *, live: bool = False, buffered: bool = False
-    ) -> DataSubscription:
-        """
-        Create a new subscription object for synchronized data updates.
-
-        This is the recommended way to subscribe to data updates as it provides
-        automatic lifecycle management and synchronization across multiple devices.
-
-        Args:
-            scan_id (str | None): Identifier for the scan. When omitted or
-                ``None``, the subscription starts unbound.
-            live (bool): If ``True``, the subscription follows the current or
-                next active scan by listening to scan-status updates.
-            buffered (bool): If ``True``, re-emit the entire accumulated data
-                buffer on each update. If ``False``, emit only newly aligned
-                synchronized data blocks.
-
-        Returns:
-            A DataSubscription object that manages the subscription lifecycle.
-
-        Raises:
-            ValueError: If both ``scan_id`` and ``live`` are specified.
-
-        Example:
-            >>> # Non-buffered mode (default): receive only new data blocks
-            >>> sub = data_api.create_subscription("my_scan")
-            >>> sub.add_device("samx", "samx").add_device("detector1", "async_sig1")
-            >>> sub.set_callback(my_callback)
-            >>>
-            >>> # Buffered mode: receive entire accumulated buffer on each update
-            >>> sub = data_api.create_subscription("my_scan", buffered=True)
-            >>> sub.add_device("samx", "samx").set_callback(my_callback)
-            >>>
-            >>> # Live mode: follow newly opened scans automatically
-            >>> sub = data_api.create_subscription(live=True)
-            >>> sub.add_device("samx", "samx").set_callback(my_callback)
-            >>> # Later:
-            >>> sub.close()  # or use context manager: with data_api.create_subscription(...) as sub:
-        """
-        return DataSubscription(self, scan_id, live=live, buffered=buffered)
-
-    def subscribe(
-        self,
-        device_name: str,
-        device_entry: str,
-        scan_id: str | None,
-        callback: Callable[[dict, dict], Any],
-    ) -> str | None:
-        """
-        Subscribe to data updates for a specific device and entry.
-
-        Args:
-            device_name (str): Name of the device.
-            device_entry (str): Specific entry of the device.
-            scan_id (str | None): Identifier for the scan.
-            callback (Callable[[dict, dict], Any]): Function to call on data
-                update.
-
-        Returns:
-            str | None: Subscription identifier, or ``None`` if no plugin can
-                provide the source.
-        """
-        for plugin in self.plugins:
-            if plugin.can_provide(device_name, device_entry, scan_id):
-                return plugin.subscribe(device_name, device_entry, scan_id, callback)
-        logger.warning(
-            f"No plugin available to provide data for device '{device_name}', entry '{device_entry}', scan_id '{scan_id}'"
-        )
-
-    def get_bundle_domain(
-        self, device_name: str, device_entry: str, scan_id: str | None
-    ) -> tuple | None:
-        """
-        Resolve a source bundle domain using the registered plugins.
-
-        Args:
-            device_name (str): Name of the device.
-            device_entry (str): Specific entry of the device.
-            scan_id (str | None): Identifier for the scan.
-
-        Returns:
-            tuple | None: Resolved bundle domain, or ``None`` if no plugin can
-                determine one statically.
-        """
-        for plugin in self.plugins:
-            domain = plugin.get_bundle_domain(device_name, device_entry, scan_id)
-            if domain is not None:
-                return domain
-        return None
-
-    def allows_runtime_bundle_resolution(
-        self, device_name: str, device_entry: str, scan_id: str | None
-    ) -> bool:
-        """
-        Return whether a source may legitimately defer bundle resolution.
-
-        Args:
-            device_name (str): Name of the device.
-            device_entry (str): Specific entry of the device.
-            scan_id (str | None): Identifier for the scan.
-
-        Returns:
-            bool: ``True`` if at least one plugin allows runtime bundle
-                resolution for the source, otherwise ``False``.
-        """
-        return any(
-            plugin.allows_runtime_bundle_resolution(device_name, device_entry, scan_id)
-            for plugin in self.plugins
-        )
-
-    def unsubscribe(
-        self,
-        subscription_id: str | None = None,
-        scan_id: str | None = None,
-        callback: Callable[[dict, dict], Any] | None = None,
-    ) -> None:
-        """
-        Unsubscribe from data updates by either subscription ID, scan ID and callback, or both.
-
-        Args:
-            subscription_id (str | None): Identifier of the subscription to
-                cancel.
-            scan_id (str | None): Identifier for the scan.
-            callback (Callable[[dict, dict], Any] | None): Callback function
-                that was used for subscription.
-        """
-        for plugin in self.plugins:
-            plugin.unsubscribe(subscription_id, scan_id, callback)
-
-
-if __name__ == "__main__":
-    from bec_lib.client import BECClient
-
-    def my_callback(data, metadata):
-        """
-        Print data and metadata received from the example subscription.
-
-        Args:
-            data (dict): Data dictionary emitted by the subscription.
-            metadata (dict): Metadata dictionary emitted by the subscription.
-        """
-        print("Received data:", data)
-        print("With metadata:", metadata)
-
-    client = BECClient()
-    data_api = DataAPI(client)
-    sub = data_api.create_subscription("test_scan")
-    sub.add_device(device_name="waveform", device_entry="waveform_data")
-    sub.set_callback(my_callback)
