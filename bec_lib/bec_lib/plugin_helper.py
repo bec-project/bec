@@ -7,6 +7,7 @@ import json
 import pkgutil
 import sys
 from functools import cache, lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, Type
 
 from bec_lib.logger import bec_logger
@@ -251,6 +252,10 @@ def plugin_repo_path() -> str:
     if not dist_info.get("dir_info", {}).get("editable", False):
         raise ValueError("Plugin repo must be installed in editable mode")
     return dist_info.get("url")[5:]  # cut off "file:" prefix # type: ignore # this must exist
+
+
+def default_macro_config_path() -> Path:
+    return Path(plugin_repo_path()) / "default_macro_config.yaml"
 
 
 def reload_plugin_modules() -> None:
