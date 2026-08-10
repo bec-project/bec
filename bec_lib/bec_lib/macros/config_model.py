@@ -99,6 +99,8 @@ Namespaces can be nested and result in
             _validate_nested_contains(macro_ref, self.macros, "macros")
         return self
 
+    def get_modules(self): ...
+
 
 _NestedStrInDict = TypeAliasType("_NestedStrInDict", dict[str, "str | _NestedStrInDict"])
 _NestedStrOutDict = TypeAliasType(

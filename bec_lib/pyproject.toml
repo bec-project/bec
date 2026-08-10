@@ -40,7 +40,8 @@ dependencies = [
     "python-slugify~=8.0",
     "questionary~=2.0",
     "phonenumbers~=9.0",
-    "beautifulsoup4~=4.14"
+    "beautifulsoup4~=4.14",
+    "ipython" # for deep reload function
 ]
 
 
