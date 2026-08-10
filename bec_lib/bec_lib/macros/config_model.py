@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any, Self, TextIO, TypeAliasType
+from typing import Annotated, Any, Self, TextIO
 
 import yaml
 from pydantic import (
@@ -13,6 +13,7 @@ from pydantic import (
     TypeAdapter,
     model_validator,
 )
+from typing_extensions import TypeAliasType  # only for 3.11
 
 
 def _is_identifier(s: str) -> str:
@@ -53,8 +54,9 @@ MacroRef = Annotated[
     Discriminator(_disc_module_file),
 ]
 
-
-MacroNsSpec = TypeAliasType("MacroNsSpec", dict[str, MacroRef | "MacroNsSpec"])
+# Pydantic handles this correctly. From python 3.13 it should be replaced with
+# `type MacroNsSpec = dict[str, MacroRef | "MacroNsSpec"]` which is also interpreted correctly by pyright
+MacroNsSpec = TypeAliasType("MacroNsSpec", dict[str, MacroRef | "MacroNsSpec"])  # type: ignore
 
 
 class MacroConfig(BaseModel):
@@ -70,7 +72,7 @@ Namespaces can be nested and result in
 """
         ),
     ]
-    add_to_builtins: Annotated[
+    global_in_interactive_shell: Annotated[
         list[str],
         Field(
             description="A list of macro names (keys) to import into builtins in an interactive BEC Client session. Must exist in `macros`.",
@@ -79,7 +81,7 @@ Namespaces can be nested and result in
     ]
 
     @model_validator(mode="after")
-    def _validate_added_to_builtins(self) -> Self:
+    def _validate_added_to_shell(self) -> Self:
         def _validate_nested_contains(needle: str, haystack: MacroNsSpec, nested_name: str):
             if "." in needle:
                 head, tail = needle.split(".", 1)
@@ -93,11 +95,13 @@ Namespaces can be nested and result in
             ), f"No macro {needle} in macro namespace {nested_name} to add to builtins."
             assert isinstance(
                 haystack.get(needle), MacroRefBase
-            ), f"Cannot add macro namespace {macro_ref} to builtins. Please add individual macros instead."
+            ), f"Cannot add macro namespace {macro_ref} as a global in the interactive session. Please add individual macros instead."
 
-        for macro_ref in self.add_to_builtins:
+        for macro_ref in self.global_in_interactive_shell:
             _validate_nested_contains(macro_ref, self.macros, "macros")
         return self
+
+    def get_modules(self): ...
 
 
 _NestedStrInDict = TypeAliasType("_NestedStrInDict", dict[str, "str | _NestedStrInDict"])

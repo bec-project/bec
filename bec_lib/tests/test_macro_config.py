@@ -17,7 +17,7 @@ macros:
   check_stuff: mx_bec.macros.checks
   move_robot: /tmp/macros/robot.py
 
-add_to_builtins:
+global_in_interactive_shell:
     - test_macro
     - alignment.align_x
 """
