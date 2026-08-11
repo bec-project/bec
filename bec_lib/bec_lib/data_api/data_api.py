@@ -36,6 +36,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = bec_logger.logger
 
+#: Sentinel distinguishing "no prefetch supplied" from a prefetched None.
+_NO_PREFETCH = object()
+
 
 class _WeakEventRelay:
     """
@@ -171,18 +174,38 @@ class Subscription:
             RuntimeError: If the subscription is closed.
             CorrelationGroupError: If ``sources`` is empty.
         """
+        scan_id_hint = self._scan_id
+        prefetched = (
+            self._api._peek_scan_item(scan_id_hint) if scan_id_hint is not None else None
+        )
         with self._lock:
             if self._closed:
                 raise RuntimeError("Cannot change sources on a closed subscription")
             self._sources = [tuple(s) for s in sources]
             if self._scan_id is not None:
-                self._bind(self._scan_id, reason="rebind")
+                self._bind(
+                    self._scan_id,
+                    reason="rebind",
+                    scan_item=prefetched if self._scan_id == scan_id_hint else None,
+                )
         return self
 
     # --- binding and routing -------------------------------------------------
 
-    def _bind(self, scan_id: str, reason: UpdateReason) -> bool:
-        """Route the subscription to a plugin for the given scan. Lock held."""
+    def _bind(
+        self, scan_id: str, reason: UpdateReason, scan_item: Any = _NO_PREFETCH
+    ) -> bool:
+        """
+        Route the subscription to a plugin for the given scan. Lock held.
+
+        Lock-order rule: scan-storage accessors take the scan-manager RLock,
+        which the dispatcher thread holds while waiting for this lock — so a
+        thread that does not already hold it must NEVER call them while
+        holding the DataAPI lock. Callers on such threads prefetch the scan
+        item first and pass it via ``scan_item`` (None is a valid prefetch);
+        dispatcher-side callers omit it and the plugin re-enters the RLock it
+        already holds.
+        """
         for plugin in self._api.plugins:
             specs = plugin.resolve(self._sources, scan_id)
             if specs is None:
@@ -220,6 +243,8 @@ class Subscription:
                     notify=lambda reason, _label=label: self._notify(_label, reason),
                 )
                 self._requests[label] = request
+                if scan_item is not _NO_PREFETCH:
+                    request.state["prefetched_scan_item"] = scan_item
                 if self._size_gated:
                     # Oversized payload: nothing is read until the consumer
                     # calls confirm_size(); the estimate costs no file I/O.
@@ -318,7 +343,9 @@ class Subscription:
             if scan_id is None or scan_id != self._scan_id:
                 return
             try:
-                self._bind(scan_id, reason="history")
+                # The history thread holds no scan-manager lock: pass an
+                # explicit empty prefetch instead of reading scan storage.
+                self._bind(scan_id, reason="history", scan_item=None)
             except CorrelationGroupError as exc:  # pragma: no cover - defensive
                 logger.warning(f"Cannot re-route scan {scan_id} to history: {exc}")
 
@@ -532,12 +559,20 @@ class DataAPI:
             max_points=max_points,
             size_limit_bytes=size_limit_bytes,
         )
-        with self._lock:
-            if scan == "live":
-                self._bind_current_scan(subscription)
-            else:
-                target = DEVICE_SCOPE if scan is None else scan
-                if not subscription._bind(target, reason="backfill"):
+        # Prefetch scan items BEFORE taking the DataAPI lock: the reads take
+        # the scan-manager RLock, and acquiring it under our lock inverts the
+        # dispatcher's lock order (scan lock -> DataAPI lock) into a deadlock.
+        if scan == "live":
+            live_target = self._current_live_scan()
+            with self._lock:
+                if live_target is not None:
+                    scan_id, scan_item = live_target
+                    subscription._bind(scan_id, reason="backfill", scan_item=scan_item)
+        else:
+            target = DEVICE_SCOPE if scan is None else scan
+            prefetched = self._peek_scan_item(target) if scan is not None else None
+            with self._lock:
+                if not subscription._bind(target, reason="backfill", scan_item=prefetched):
                     subscription.close()
                     raise ValueError(f"No data source can serve scan '{scan}'.")
         return subscription
@@ -561,23 +596,38 @@ class DataAPI:
                 return plugin.estimate_bytes([s.key for s in specs if s.available], scan)
         return None
 
-    def _bind_current_scan(self, subscription: Subscription) -> None:
+    def _current_live_scan(self) -> tuple[str, Any] | None:
+        """
+        Read the currently running scan (id, item) from the queue.
+
+        Takes the scan-manager RLock internally — must be called WITHOUT the
+        DataAPI lock held (see the lock-order rule on ``Subscription._bind``).
+        """
         queue = getattr(self.client, "queue", None)
         scan_storage = getattr(queue, "scan_storage", None)
         current = getattr(scan_storage, "current_scan_id", None)
         if not isinstance(current, (list, tuple)) or not current:
-            return
+            return None
         scan_id = current[0]
         if not isinstance(scan_id, str) or not scan_id:
-            return
+            return None
         scan_item = scan_storage.find_scan_by_ID(scan_id)
         if (
             scan_item is None
             or getattr(scan_item, "status", None) in TERMINAL_SCAN_STATES
             or getattr(scan_item, "status_message", None) is None
         ):
-            return
-        subscription._bind(scan_id, reason="backfill")
+            return None
+        return scan_id, scan_item
+
+    def _peek_scan_item(self, scan_id: str) -> Any:
+        """Lock-free-caller read of one scan item (same lock-order rule)."""
+        queue = getattr(self.client, "queue", None)
+        scan_storage = getattr(queue, "scan_storage", None)
+        find = getattr(scan_storage, "find_scan_by_ID", None)
+        if find is None or not isinstance(scan_id, str) or scan_id == DEVICE_SCOPE:
+            return None
+        return find(scan_id)
 
     def close(self) -> None:
         """Disconnect all plugins and remove this instance from the registry."""

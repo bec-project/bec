@@ -131,6 +131,63 @@ class TestLiveSubscription:
         assert updates[-1].complete
         sub.close()
 
+    def test_subscribe_vs_scan_segment_lock_order(self, data_api, mock_client):
+        """ABBA guard: subscribing on the GUI thread while the dispatcher
+        holds the scan-manager lock and delivers a segment must not deadlock
+        (reproduces the mid-scan plot() freeze; scan-storage reads must happen
+        before the DataAPI lock is taken)."""
+        import threading
+
+        item = make_scan_item(mock_client, "scan_1")
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        seed_xy(item, "scan_1", 0, 2)
+        plugin = data_api.plugins[0]
+
+        scan_lock = threading.RLock()  # emulates the @threadlocked scan storage
+        dispatcher_has_lock = threading.Event()
+        main_in_subscribe = threading.Event()
+
+        def locked_find(scan_id):
+            if not scan_lock.acquire(timeout=5):
+                raise TimeoutError("scan-storage lock not acquired: ABBA deadlock")
+            try:
+                return item if scan_id == "scan_1" else None
+            finally:
+                scan_lock.release()
+
+        mock_client.queue.scan_storage.find_scan_by_ID.side_effect = locked_find
+
+        def dispatcher():
+            with scan_lock:
+                dispatcher_has_lock.set()
+                main_in_subscribe.wait(2)
+                time.sleep(0.05)  # let subscribe reach its lock acquisition
+                plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
+
+        result = {}
+
+        def gui_subscribe():
+            dispatcher_has_lock.wait(2)
+            main_in_subscribe.set()
+            result["sub"] = data_api.subscribe(
+                sources=[("samx", "samx"), ("samy", "samy")],
+                scan="live",
+                callback=lambda u: None,
+                min_emit_interval=0,
+            )
+
+        threads = [
+            threading.Thread(target=dispatcher, daemon=True),
+            threading.Thread(target=gui_subscribe, daemon=True),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        assert all(not t.is_alive() for t in threads), "deadlocked"
+        assert "sub" in result, "subscribe failed (lock-order inversion)"
+        result["sub"].close()
+
     def test_set_min_emit_interval_live_change(self, data_api, mock_client):
         """A rate change applies to subsequent emissions without a rebuild."""
         sub, item, updates = self._subscribe_xy(data_api, mock_client)

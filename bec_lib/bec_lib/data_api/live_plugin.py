@@ -179,12 +179,20 @@ class LiveDataPlugin(DataSourcePlugin):
     # --- request lifecycle ---------------------------------------------------
 
     def open(self, request: SourceRequest) -> None:
+        if "prefetched_scan_item" in request.state:
+            # Supplied by callers on threads that do not hold the scan-manager
+            # RLock (Qt/history threads) — reading scan storage here would
+            # invert the dispatcher's lock order into an ABBA deadlock.
+            scan_item = request.state.pop("prefetched_scan_item")
+        else:
+            # Dispatcher-side callers already hold the scan-manager RLock, so
+            # this read only re-enters a lock the thread owns.
+            scan_item = self._scan_item(request.scan_id)
         with self._lock:
             self._requests.setdefault(request.scan_id, []).append(request)
             for spec in request.specs:
                 if spec.kind in ("async", "unindexed") and spec.available:
                     self._ensure_feed(request.scan_id, spec)
-            scan_item = self._scan_item(request.scan_id)
             if scan_item is not None:
                 self._feed_monitored(scan_item, [request])
         request.notify("backfill")
