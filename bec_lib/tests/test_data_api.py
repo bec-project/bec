@@ -131,6 +131,26 @@ class TestLiveSubscription:
         assert updates[-1].complete
         sub.close()
 
+    def test_set_min_emit_interval_live_change(self, data_api, mock_client):
+        """A rate change applies to subsequent emissions without a rebuild."""
+        sub, item, updates = self._subscribe_xy(data_api, mock_client)
+        plugin = data_api.plugins[0]
+        assert sub.min_emit_interval == 0
+        sub.set_min_emit_interval(3600.0)
+        assert sub.min_emit_interval == 3600.0
+        n_before = len(updates)
+        # the initial backfill emission armed the limiter, so every live
+        # emission within the huge interval is coalesced
+        seed_xy(item, "scan_1", 0, 2)
+        plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
+        assert len(updates) == n_before
+        sub.set_min_emit_interval(-5)  # clamped to 0 -> uncoalesced again
+        assert sub.min_emit_interval == 0.0
+        seed_xy(item, "scan_1", 2, 3)
+        plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
+        assert len(updates) == n_before + 1
+        sub.close()
+
     def test_live_segments_extend_series(self, data_api, mock_client):
         sub, item, updates = self._subscribe_xy(data_api, mock_client)
         plugin = data_api.plugins[0]

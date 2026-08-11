@@ -133,6 +133,28 @@ class Subscription:
                 return list(self._sources)
             return [spec.key for spec in self._specs if not spec.available]
 
+    @property
+    def min_emit_interval(self) -> float:
+        """Live-emission coalescing interval in seconds (0 = uncoalesced)."""
+        return self._min_emit_interval
+
+    def set_min_emit_interval(self, seconds: float) -> Subscription:
+        """
+        Change the live-emission coalescing interval.
+
+        Takes effect from the next emission; an already scheduled trailing
+        flush fires once with the previous delay.
+
+        Args:
+            seconds (float): New interval in seconds; 0 disables coalescing.
+
+        Returns:
+            Subscription: self, for chaining.
+        """
+        with self._lock:
+            self._min_emit_interval = max(0.0, float(seconds))
+        return self
+
     # --- source set ----------------------------------------------------------
 
     def set_sources(self, sources: list[SourceKey]) -> Subscription:
