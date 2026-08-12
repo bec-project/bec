@@ -4,9 +4,8 @@ import time
 from types import SimpleNamespace
 from unittest import mock
 
-import pytest
-
 import numpy as np
+import pytest
 
 from bec_lib import messages
 from bec_lib.client import BECClient
@@ -406,4 +405,51 @@ def test_file_read_delivers_numpy_columns(data_api, mock_client):
     assert isinstance(source.values, np.ndarray)
     assert np.shares_memory(source.values, file_values)
     assert isinstance(updates[-1].aligned_ordinals, np.ndarray)
+    sub.close()
+
+
+def test_signal_reference_chunked_read_reports_progress(tmp_path):
+    """Chunked reads deliver identical data to plain reads and report
+    monotonically increasing fractions ending at 1.0."""
+    import h5py
+
+    from bec_lib.scan_data_container import SignalDataReference
+
+    fp = tmp_path / "scan.h5"
+    values = np.arange(20_000_000, dtype=np.uint16)  # > _CHUNK_ELEMENTS
+    timestamps = np.arange(2_000, dtype=float)
+    with h5py.File(fp, "w") as f:
+        grp = f.create_group("entry/collection/devices/waveform/waveform_waveform")
+        grp.create_dataset("value", data=values)
+        grp.create_dataset("timestamp", data=timestamps)
+
+    ref = SignalDataReference(str(fp), "entry/collection/devices/waveform/waveform_waveform")
+    fractions = []
+    data = ref.read(progress=fractions.append)
+    np.testing.assert_array_equal(data["value"], values)
+    np.testing.assert_array_equal(data["timestamp"], timestamps)
+    assert fractions[-1] == 1.0
+    assert len(fractions) >= 3  # slab-wise, not one-shot
+    assert fractions == sorted(fractions)
+    # plain read unchanged
+    plain = ref.read()
+    np.testing.assert_array_equal(plain["value"], values)
+
+
+def test_history_read_invokes_progress_callback(data_api, mock_client):
+    """subscribe(progress_callback=...) reaches the file read and ends at 1.0."""
+    stored = {"samx": {"samx": {"shape": (3,), "dtype": "float64"}}}
+    columns = {("samx", "samx"): ([0.0, 1.0, 2.0], [100.0, 101.0, 102.0])}
+    history, _ = make_history("scan_p", stored, columns, num_points=3)
+    mock_client.history = history
+
+    updates, fractions = [], []
+    sub = data_api.subscribe(
+        sources=[("samx", "samx")],
+        scan="scan_p",
+        callback=updates.append,
+        progress_callback=fractions.append,
+    )
+    assert wait_for(lambda: updates)
+    assert fractions and fractions[-1] == 1.0
     sub.close()

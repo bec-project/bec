@@ -80,10 +80,12 @@ class Subscription:
         min_emit_interval: float = 0.1,
         max_points: int | None = None,
         size_limit_bytes: int | None = None,
+        progress_callback: Callable[[float], None] | None = None,
     ):
         self._api = api
         self._lock = api._lock
         self._callback = callback
+        self._progress_callback = progress_callback
         self._sources: list[SourceKey] = [tuple(s) for s in sources]
         self._follow = scan == "live"
         self._scan_id: str | None = (
@@ -239,6 +241,8 @@ class Subscription:
                     notify=lambda reason, _label=label: self._notify(_label, reason),
                 )
                 self._requests[label] = request
+                if self._progress_callback is not None:
+                    request.state["progress_callback"] = self._progress_callback
                 if scan_item is not _NO_PREFETCH:
                     request.state["prefetched_scan_item"] = scan_item
                 if self._size_gated:
@@ -510,6 +514,7 @@ class DataAPI:
         min_emit_interval: float = 0.1,
         max_points: int | None = None,
         size_limit_bytes: int | None = None,
+        progress_callback: Callable[[float], None] | None = None,
     ) -> Subscription:
         """
         Create a subscription delivering columnar updates for the sources.
@@ -533,6 +538,10 @@ class DataAPI:
             max_points (int | None): Per-source retention cap; oldest points
                 are dropped beyond it. Recommended for endless device-stream
                 subscriptions.
+            progress_callback: Optional callable receiving load fractions
+                (0..1) while a plugin reads bulk data (history file reads).
+                Invoked on worker threads; must be cheap and must not call
+                back into the data API.
             size_limit_bytes (int | None): When the serving plugin can
                 estimate the payload up front (history scans) and the estimate
                 exceeds this limit, nothing is read: the subscription reports
@@ -554,6 +563,7 @@ class DataAPI:
             min_emit_interval=min_emit_interval,
             max_points=max_points,
             size_limit_bytes=size_limit_bytes,
+            progress_callback=progress_callback,
         )
         # Prefetch scan items BEFORE taking the DataAPI lock: the reads take
         # the scan-manager RLock, and acquiring it under our lock inverts the

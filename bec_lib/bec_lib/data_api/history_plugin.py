@@ -286,9 +286,11 @@ class HistoryDataPlugin(DataSourcePlugin):
             if container is None:
                 logger.warning(f"History container for scan {request.scan_id} disappeared.")
                 return
+            progress_cb = request.state.get("progress_callback")
+            available = [spec for spec in request.specs if spec.available]
             columns: dict[SourceKey, dict] = {}
-            for spec in request.specs:
-                if not spec.available or request.state.get("cancelled"):
+            for spec_index, spec in enumerate(available):
+                if request.state.get("cancelled"):
                     continue
                 try:
                     device_data = container.devices.get(spec.device)
@@ -297,7 +299,21 @@ class HistoryDataPlugin(DataSourcePlugin):
                         signal_ref = device_data.get(spec.storage_name or spec.entry)
                         if signal_ref is None and spec.storage_name != spec.entry:
                             signal_ref = device_data.get(spec.entry)
-                    data = signal_ref.read() if signal_ref is not None else None
+                    data = None
+                    if signal_ref is not None:
+                        if progress_cb is not None:
+                            n_specs = len(available)
+
+                            def _sub_progress(fraction, _base=spec_index, _n=n_specs):
+                                progress_cb((_base + min(1.0, fraction)) / _n)
+
+                            try:
+                                data = signal_ref.read(progress=_sub_progress)
+                            except TypeError:
+                                # reference without chunked-read support
+                                data = signal_ref.read()
+                        else:
+                            data = signal_ref.read()
                 except Exception as exc:  # pylint: disable=broad-except
                     logger.warning(
                         f"Reading {spec.device}/{spec.entry} from scan {request.scan_id} "
@@ -335,6 +351,11 @@ class HistoryDataPlugin(DataSourcePlugin):
                         for i, value in enumerate(values):
                             timestamp = timestamps[i] if i < n_ts else None
                             series.insert(i, value, timestamp)
+            if progress_cb is not None:
+                try:
+                    progress_cb(1.0)
+                except Exception:  # pylint: disable=broad-except
+                    pass
             request.notify("history")
         except Exception:  # pylint: disable=broad-except
             logger.exception(f"History read for scan {request.scan_id} failed.")
