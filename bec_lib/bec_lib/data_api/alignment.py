@@ -12,6 +12,8 @@ from __future__ import annotations
 import bisect
 from typing import Any
 
+import numpy as np
+
 from bec_lib.logger import bec_logger
 
 from .models import SourceData, SourceKey, SourceKind, SubscriptionUpdate, UpdateReason
@@ -103,8 +105,63 @@ class SourceSeries:
         self._ordinals: list[int] = []  # sorted
         self._values: list[Any] = []  # parallel to _ordinals
         self._timestamps: list[Any] = []  # parallel to _ordinals
+        # Bulk representation: numpy columns at contiguous ordinals 0..n-1,
+        # used for one-shot history fills (see extend_bulk).
+        self._bulk_values: Any = None
+        self._bulk_timestamps: Any = None
         self._arrival_counter = 0
         self._cached_snapshot: SourceData | None = None
+
+    def extend_bulk(self, values: Any, timestamps: Any = None) -> bool:
+        """
+        Bulk-fill an empty series with contiguous ordinals ``0..len-1``.
+
+        The value/timestamp columns stay numpy arrays end to end, so a bulk
+        history read costs O(1) per column instead of one Python object per
+        point (and holds the shared lock accordingly briefly).
+
+        Args:
+            values: Column of values; anything ``np.asarray`` accepts (ragged
+                inputs are stored as an object array).
+            timestamps: Optional column parallel to ``values``; dropped when
+                the lengths differ.
+
+        Returns:
+            bool: ``True`` when the fill happened; ``False`` when the series
+                already holds points — callers fall back to :meth:`insert`.
+        """
+        if self._ordinals or self._bulk_values is not None:
+            return False
+        try:
+            values = np.atleast_1d(np.asarray(values))
+        except ValueError:  # ragged rows (e.g. vlen datasets)
+            values = np.asarray(list(values), dtype=object)
+        n = len(values)
+        if timestamps is not None:
+            timestamps = np.atleast_1d(np.asarray(timestamps))
+            if len(timestamps) != n:
+                timestamps = None
+        if timestamps is None:
+            # virtual object-None column: zero-copy broadcast keeps downstream
+            # length checks and "no timestamps" fallbacks behaving like the
+            # per-point path without materializing n pointers
+            timestamps = np.broadcast_to(np.array([None], dtype=object), (n,))
+        self._bulk_values = values
+        self._bulk_timestamps = timestamps
+        self._arrival_counter = n
+        self._cached_snapshot = None
+        return True
+
+    def _debulk(self) -> None:
+        """Convert the bulk columns to the incremental representation."""
+        values, timestamps = self._bulk_values, self._bulk_timestamps
+        self._bulk_values = None
+        self._bulk_timestamps = None
+        n = len(values)
+        self._ordinals = list(range(n))
+        self._values = list(values)
+        self._timestamps = list(timestamps)
+        self._known = set(range(n))
 
     def insert(self, ordinal: int | None, value: Any, timestamp: Any) -> int:
         """
@@ -119,6 +176,8 @@ class SourceSeries:
         Returns:
             int: The ordinal the point was stored at.
         """
+        if self._bulk_values is not None:
+            self._debulk()
         if ordinal is None:
             ordinal = self._arrival_counter
         self._cached_snapshot = None
@@ -153,21 +212,32 @@ class SourceSeries:
         return ordinal
 
     def __len__(self) -> int:
+        if self._bulk_values is not None:
+            return len(self._bulk_values)
         return len(self._ordinals)
 
     @property
     def frontier(self) -> int:
         """One past the highest stored ordinal (0 when empty)."""
+        if self._bulk_values is not None:
+            return len(self._bulk_values)
         return self._ordinals[-1] + 1 if self._ordinals else 0
 
     @property
     def complete(self) -> bool:
         """Whether every ordinal from 0 to the frontier is present."""
+        if self._bulk_values is not None:
+            return True
         return len(self._ordinals) == self.frontier
 
     @property
     def ordinals(self) -> set[int]:
         """The set of stored ordinals."""
+        if self._bulk_values is not None and not self._known:
+            # Materialized lazily: only the (rare) set-intersection path of
+            # mixed complete/incomplete groups needs it, and for large bulk
+            # series the set costs real memory.
+            self._known = set(range(len(self._bulk_values)))
         return self._known
 
     def snapshot(self) -> SourceData:
@@ -178,6 +248,18 @@ class SourceSeries:
         the same object, so bundle emissions only rebuild changed sources.
         """
         if self._cached_snapshot is not None:
+            return self._cached_snapshot
+        if self._bulk_values is not None:
+            self._cached_snapshot = SourceData(
+                device=self.device,
+                entry=self.entry,
+                kind=self.kind,
+                ordinals=np.arange(len(self._bulk_values)),
+                values=self._bulk_values,
+                timestamps=self._bulk_timestamps,
+                complete=True,
+                metadata=dict(self.metadata),
+            )
             return self._cached_snapshot
         self._cached_snapshot = SourceData(
             device=self.device,
@@ -197,6 +279,8 @@ class SourceSeries:
         self._ordinals.clear()
         self._values.clear()
         self._timestamps.clear()
+        self._bulk_values = None
+        self._bulk_timestamps = None
         self._arrival_counter = 0
         self._cached_snapshot = None
 
@@ -261,12 +345,20 @@ class Bundle:
         lagging = self._lagging_sources()
         sources = {key: series.snapshot() for key, series in self.series.items()}
         frontiers = {series.frontier for series in self.series.values()}
-        complete = all(s.complete for s in sources.values()) and len(frontiers) <= 1
+        all_complete = all(s.complete for s in sources.values())
+        complete = all_complete and len(frontiers) <= 1
+        aligned_contiguous = False
         if not sources:
-            aligned_ordinals: tuple[int, ...] = ()
+            aligned_ordinals: Any = ()
         elif complete:
             # All sources hold exactly 0..frontier-1: no set work needed.
             aligned_ordinals = next(iter(sources.values())).ordinals
+            aligned_contiguous = True
+        elif all_complete:
+            # Complete sources of different lengths intersect on the common
+            # prefix — no set materialization for (large) bulk series.
+            aligned_ordinals = np.arange(min(frontiers))
+            aligned_contiguous = True
         else:
             aligned_ordinals = tuple(
                 sorted(set.intersection(*(series.ordinals for series in self.series.values())))
@@ -280,6 +372,7 @@ class Bundle:
             sources=sources,
             aligned_ordinals=aligned_ordinals,
             complete=complete,
+            aligned_contiguous=aligned_contiguous,
             metadata=update_metadata,
         )
 

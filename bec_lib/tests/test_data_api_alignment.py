@@ -1,5 +1,6 @@
 """Tests for the DataAPI v2 models and ordinal alignment engine."""
 
+import numpy as np
 import pytest
 
 from bec_lib.data_api.alignment import (
@@ -115,11 +116,11 @@ class TestBundle:
         z.insert(1, 20.0, 201.0)
 
         update = bundle.build_update("live")
-        assert update.aligned_ordinals == (0, 1)
+        assert list(update.aligned_ordinals) == [0, 1]
         cols = update.aligned()
-        assert cols[("samx", "samx")] == (0.0, 1.0)
-        assert cols[("samy", "samy")] == (100.0, 101.0)
-        assert cols[("det", "wave")] == (10.0, 20.0)
+        assert list(cols[("samx", "samx")]) == [0.0, 1.0]
+        assert list(cols[("samy", "samy")]) == [100.0, 101.0]
+        assert list(cols[("det", "wave")]) == [10.0, 20.0]
         assert not update.complete  # frontiers differ
 
     def test_gap_does_not_shift_pairing(self):
@@ -134,17 +135,17 @@ class TestBundle:
         z.insert(2, 30.0, 202.0)  # ordinal 1 lost/late
 
         update = bundle.build_update("live")
-        assert update.aligned_ordinals == (0, 2)
+        assert list(update.aligned_ordinals) == [0, 2]
         cols = update.aligned()
         # x point 2 pairs with z ordinal 2 — never with z's second arrival.
-        assert cols[("samx", "samx")] == (0.0, 2.0)
-        assert cols[("det", "wave")] == (10.0, 30.0)
+        assert list(cols[("samx", "samx")]) == [0.0, 2.0]
+        assert list(cols[("det", "wave")]) == [10.0, 30.0]
         assert not update.complete
 
         # Late arrival fills the hole.
         z.insert(1, 20.0, 201.0)
         update = bundle.build_update("live")
-        assert update.aligned_ordinals == (0, 1, 2)
+        assert list(update.aligned_ordinals) == [0, 1, 2]
         assert update.complete
 
     def test_complete_when_all_sources_at_same_frontier(self):
@@ -155,7 +156,7 @@ class TestBundle:
             z.insert(i, float(i), 0)
         update = bundle.build_update("live")
         assert update.complete
-        assert update.aligned_ordinals == (0, 1)
+        assert list(update.aligned_ordinals) == [0, 1]
 
     def test_cadence_violation_logged_once(self):
         from unittest import mock
@@ -184,3 +185,84 @@ class TestBundle:
         assert update.metadata["file_path"] == "/x.h5"
         assert update.get("samx", "samx").values == (0.0,)
         assert update.get("nope", "nope") is None
+
+
+class TestBulkIngest:
+    """Bulk history fills must stay numpy end to end (GUI-freeze regression:
+    per-point ingest exploded file arrays into Python objects, and the render
+    paid an O(n) np.asarray on the GUI thread to rebuild them)."""
+
+    def test_extend_bulk_zero_copy_snapshot(self):
+        series = SourceSeries("det", "sig", "monitored")
+        values = np.arange(1000, dtype=float)
+        timestamps = np.arange(1000, dtype=float) + 100.0
+        assert series.extend_bulk(values, timestamps)
+        assert len(series) == 1000
+        assert series.frontier == 1000
+        assert series.complete
+        snap = series.snapshot()
+        assert snap.values is values  # zero copy - the file array itself
+        assert snap.timestamps is timestamps
+        assert isinstance(snap.ordinals, np.ndarray)
+        assert snap.complete
+
+    def test_extend_bulk_only_fills_empty_series(self):
+        series = SourceSeries("det", "sig", "monitored")
+        series.insert(0, 1.0, 100.0)
+        assert not series.extend_bulk(np.arange(5.0))
+
+    def test_insert_after_bulk_debulks_and_preserves_data(self):
+        series = SourceSeries("det", "sig", "monitored")
+        series.extend_bulk(np.array([1.0, 2.0, 3.0]), np.array([10.0, 11.0, 12.0]))
+        series.insert(3, 4.0, 13.0)
+        snap = series.snapshot()
+        assert list(snap.values) == [1.0, 2.0, 3.0, 4.0]
+        assert list(snap.ordinals) == [0, 1, 2, 3]
+        assert series.complete
+
+    def test_bulk_timestamp_length_mismatch_dropped(self):
+        series = SourceSeries("det", "sig", "monitored")
+        series.extend_bulk(np.arange(4.0), np.arange(2.0))
+        snap = series.snapshot()
+        assert len(snap.timestamps) == 4
+        assert snap.timestamps[0] is None
+
+    def test_contiguous_alignment_without_set_intersection(self):
+        """Complete sources of different lengths align on the common prefix
+        as a zero-copy view - no per-ordinal set work."""
+        bundle = Bundle("scan_1")
+        long = bundle.get_series("a", "a", "monitored")
+        short = bundle.get_series("b", "b", "monitored")
+        long_values = np.arange(5.0)
+        long.extend_bulk(long_values)
+        short.extend_bulk(np.arange(3.0) + 100.0)
+        update = bundle.build_update("history")
+        assert update.aligned_contiguous
+        assert not update.complete
+        assert list(update.aligned_ordinals) == [0, 1, 2]
+        cols = update.aligned()
+        assert list(cols[("a", "a")]) == [0.0, 1.0, 2.0]
+        assert list(cols[("b", "b")]) == [100.0, 101.0, 102.0]
+        assert np.shares_memory(cols[("a", "a")], long_values)  # prefix view
+
+    def test_bulk_and_incomplete_source_fall_back_to_intersection(self):
+        bundle = Bundle("scan_1")
+        bulk = bundle.get_series("a", "a", "monitored")
+        gappy = bundle.get_series("b", "b", "monitored")
+        bulk.extend_bulk(np.arange(5.0))
+        gappy.insert(0, 10.0, 0.0)
+        gappy.insert(2, 30.0, 0.0)
+        update = bundle.build_update("live")
+        assert not update.aligned_contiguous
+        assert list(update.aligned_ordinals) == [0, 2]
+        cols = update.aligned()
+        assert list(cols[("a", "a")]) == [0.0, 2.0]
+        assert list(cols[("b", "b")]) == [10.0, 30.0]
+
+    def test_single_bulk_source_aligned_is_the_file_array(self):
+        bundle = Bundle("scan_1")
+        series = bundle.get_series("a", "a", "monitored")
+        values = np.arange(10.0)
+        series.extend_bulk(values)
+        update = bundle.build_update("history")
+        assert update.aligned()[("a", "a")] is values  # end-to-end zero copy

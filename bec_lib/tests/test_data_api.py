@@ -126,8 +126,8 @@ class TestLiveSubscription:
         )
         assert updates and updates[-1].reason == "backfill"
         cols = updates[-1].aligned()
-        assert cols[("samx", "samx")] == (0.0, 1.0, 2.0)
-        assert cols[("samy", "samy")] == (100.0, 101.0, 102.0)
+        assert list(cols[("samx", "samx")]) == [0.0, 1.0, 2.0]
+        assert list(cols[("samy", "samy")]) == [100.0, 101.0, 102.0]
         assert updates[-1].complete
         sub.close()
 
@@ -213,7 +213,7 @@ class TestLiveSubscription:
         plugin = data_api.plugins[0]
         seed_xy(item, "scan_1", 0, 2)
         plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
-        assert updates[-1].aligned_ordinals == (0, 1)
+        assert list(updates[-1].aligned_ordinals) == [0, 1]
         assert updates[-1].reason == "live"
         sub.close()
 
@@ -238,14 +238,14 @@ class TestLiveSubscription:
         plugin._on_async_message({"data": async_msg("wave", 10.0, 0)}, "scan_1", "det")
         plugin._on_async_message({"data": async_msg("wave", 30.0, 2)}, "scan_1", "det")
         cols = updates[-1].aligned()
-        assert updates[-1].aligned_ordinals == (0, 2)
-        assert cols[("samx", "samx")] == (0.0, 2.0)
-        assert cols[("det", "wave")] == (10.0, 30.0)
+        assert list(updates[-1].aligned_ordinals) == [0, 2]
+        assert list(cols[("samx", "samx")]) == [0.0, 2.0]
+        assert list(cols[("det", "wave")]) == [10.0, 30.0]
         assert not updates[-1].complete
 
         plugin._on_async_message({"data": async_msg("wave", 20.0, 1)}, "scan_1", "det")
-        assert updates[-1].aligned_ordinals == (0, 1, 2)
-        assert updates[-1].aligned()[("det", "wave")] == (10.0, 20.0, 30.0)
+        assert list(updates[-1].aligned_ordinals) == [0, 1, 2]
+        assert list(updates[-1].aligned()[("det", "wave")]) == [10.0, 20.0, 30.0]
         assert updates[-1].complete
         sub.close()
 
@@ -300,8 +300,8 @@ class TestLiveSubscription:
         )
         plugin._on_async_message({"data": msg}, "scan_1", "det")
         cols = updates[-1].aligned()
-        assert cols[("det", "det_group_data1")] == (1.0,)
-        assert cols[("det", "det_group_data2")] == (2.0,)
+        assert list(cols[("det", "det_group_data1")]) == [1.0]
+        assert list(cols[("det", "det_group_data2")]) == [2.0]
         sub.close()
 
     def test_add_slice_rows_accumulate(self, data_api, mock_client):
@@ -379,9 +379,9 @@ class TestLiveSubscription:
         assert groups == {"scan", "async:grp1"}
         scan_updates = [u for u in updates if u.metadata.get("group") == "scan"]
         async_updates = [u for u in updates if u.metadata.get("group") == "async:grp1"]
-        assert scan_updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+        assert list(scan_updates[-1].aligned()[("samx", "samx")]) == [0.0, 1.0]
         assert set(scan_updates[-1].sources) == {("samx", "samx")}
-        assert async_updates[-1].aligned()[("det", "wave")] == (10.0,)
+        assert list(async_updates[-1].aligned()[("det", "wave")]) == [10.0]
         sub.close()
 
     def test_set_sources_atomic_rebind(self, data_api, mock_client):
@@ -390,7 +390,7 @@ class TestLiveSubscription:
         data_api.plugins[0]._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
         sub.set_sources([("samx", "samx")])
         assert set(updates[-1].sources) == {("samx", "samx")}
-        assert updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+        assert list(updates[-1].aligned()[("samx", "samx")]) == [0.0, 1.0]
         sub.close()
 
     def test_rate_limit_delivers_trailing_state(self, data_api, mock_client):
@@ -438,7 +438,7 @@ class TestLiveSubscription:
         seed_xy(item2, "scan_2", 0, 2)
         data_api.plugins[0]._on_scan_segment({"scan_id": "scan_2"}, {"scan_id": "scan_2"})
         assert updates[-1].scan_id == "scan_2"
-        assert updates[-1].aligned_ordinals == (0, 1)
+        assert list(updates[-1].aligned_ordinals) == [0, 1]
 
         n_before = len(updates)
         sub._on_scan_status({"scan_id": "scan_2", "status": "closed"}, {})
@@ -798,7 +798,7 @@ class TestClientOwnershipAndVisibility:
             item.live_data.set(i, msg)
         plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
         assert updates[-1].metadata.get("lagging_sources") == [("samy", "samy")]
-        assert updates[-1].aligned_ordinals == ()
+        assert len(updates[-1].aligned_ordinals) == 0
         # samx data still reaches the consumer despite the stalled alignment.
         assert updates[-1].get("samx", "samx").values == (0.0, 1.0, 2.0, 3.0, 4.0)
         sub.close()

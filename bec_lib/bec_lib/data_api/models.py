@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
+import numpy as np
+
 #: A subscribed source: (device_name, entry/signal name).
 SourceKey = tuple[str, str]
 
@@ -32,9 +34,9 @@ class SourceData:
     device: str
     entry: str
     kind: SourceKind
-    ordinals: tuple[int, ...]
-    values: tuple[Any, ...]
-    timestamps: tuple[Any, ...]
+    ordinals: tuple[int, ...] | np.ndarray
+    values: tuple[Any, ...] | np.ndarray
+    timestamps: tuple[Any, ...] | np.ndarray
     complete: bool
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -59,8 +61,11 @@ class SubscriptionUpdate:
     scan_id: str
     reason: UpdateReason
     sources: Mapping[SourceKey, SourceData]
-    aligned_ordinals: tuple[int, ...]
+    aligned_ordinals: tuple[int, ...] | np.ndarray
     complete: bool
+    #: Whether ``aligned_ordinals`` is the contiguous range ``0..n-1``; set
+    #: when every source is complete, and enables O(1) column extraction.
+    aligned_contiguous: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def aligned(self) -> dict[SourceKey, tuple[Any, ...]]:
@@ -83,13 +88,22 @@ class SubscriptionUpdate:
         object.__setattr__(self, "_aligned_cache", out)
         return out
 
-    def _column(self, source: SourceData, column: tuple[Any, ...]) -> tuple[Any, ...]:
+    def _column(self, source: SourceData, column: Any) -> Any:
         """Extract one source's column at the aligned ordinals."""
-        if source.ordinals == self.aligned_ordinals:
-            # Common case: fully aligned source — the column is already exact.
+        ordinals = source.ordinals
+        aligned = self.aligned_ordinals
+        if ordinals is aligned:
+            # Common case: the aligned ordinals ARE this source's ordinals.
             return column
-        index_of = {ordinal: i for i, ordinal in enumerate(source.ordinals)}
-        return tuple(column[index_of[o]] for o in self.aligned_ordinals)
+        if self.aligned_contiguous and source.complete:
+            # aligned is 0..n-1 and a complete source holds 0..frontier-1:
+            # the aligned column is a prefix (a zero-copy view for arrays).
+            n = len(aligned)
+            return column[:n] if len(column) > n else column
+        if isinstance(ordinals, tuple) and isinstance(aligned, tuple) and ordinals == aligned:
+            return column
+        index_of = {ordinal: i for i, ordinal in enumerate(ordinals)}
+        return tuple(column[index_of[o]] for o in aligned)
 
     def get(self, device: str, entry: str) -> SourceData | None:
         """

@@ -325,12 +325,16 @@ class HistoryDataPlugin(DataSourcePlugin):
                         spec.device, spec.entry, spec.kind or "monitored"
                     )
                     series.metadata["file_path"] = getattr(msg, "file_path", None)
-                    n_ts = len(timestamps) if timestamps is not None else 0
                     # Row i is ordinal i by writer construction (monitored:
-                    # point i; async: async ordinal i).
-                    for i, value in enumerate(values):
-                        timestamp = timestamps[i] if i < n_ts else None
-                        series.insert(i, value, timestamp)
+                    # point i; async: async ordinal i). The bulk fill keeps the
+                    # file's numpy columns intact — per-point inserts on large
+                    # scans held the shared lock for seconds and forced an
+                    # O(n) numpy->python->numpy round trip on the GUI thread.
+                    if not series.extend_bulk(values, timestamps):
+                        n_ts = len(timestamps) if timestamps is not None else 0
+                        for i, value in enumerate(values):
+                            timestamp = timestamps[i] if i < n_ts else None
+                            series.insert(i, value, timestamp)
             request.notify("history")
         except Exception:  # pylint: disable=broad-except
             logger.exception(f"History read for scan {request.scan_id} failed.")

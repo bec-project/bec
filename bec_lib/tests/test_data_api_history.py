@@ -6,6 +6,8 @@ from unittest import mock
 
 import pytest
 
+import numpy as np
+
 from bec_lib import messages
 from bec_lib.client import BECClient
 from bec_lib.data_api import DataAPI
@@ -119,11 +121,11 @@ class TestHistoryPlugin:
         update = updates[-1]
         assert update.reason == "history"
         assert update.scan_id == "scan_h"
-        assert update.aligned_ordinals == (0, 1, 2)
+        assert list(update.aligned_ordinals) == [0, 1, 2]
         assert update.complete
         cols = update.aligned()
-        assert cols[("samx", "samx")] == (0.0, 1.0, 2.0)
-        assert cols[("det", "wave")] == ([1] * 3, [2] * 3, [3] * 3)
+        assert list(cols[("samx", "samx")]) == [0.0, 1.0, 2.0]
+        assert np.array_equal(cols[("det", "wave")], [[1] * 3, [2] * 3, [3] * 3])
         assert update.get("samx", "samx").kind == "monitored"
         assert update.get("det", "wave").kind == "async"
         assert update.get("det", "wave").metadata["file_path"] == "/data/scan_h_master.h5"
@@ -141,7 +143,7 @@ class TestHistoryPlugin:
         )
         assert sub.unbound_sources == [("ghost", "ghost")]
         assert wait_for(lambda: updates)
-        assert updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+        assert list(updates[-1].aligned()[("samx", "samx")]) == [0.0, 1.0]
         sub.close()
 
     def test_writer_latency_window_uses_live_data(self, data_api, mock_client):
@@ -166,7 +168,7 @@ class TestHistoryPlugin:
         updates = []
         sub = data_api.subscribe(sources=[("samx", "samx")], scan="scan_t", callback=updates.append)
         assert updates and updates[-1].reason == "history"
-        assert updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+        assert list(updates[-1].aligned()[("samx", "samx")]) == [0.0, 1.0]
         sub.close()
 
     def test_live_follow_reroutes_to_history_on_publication(self, data_api, mock_client):
@@ -198,7 +200,7 @@ class TestHistoryPlugin:
 
         sub._on_scan_history_update(history_msg=msg)
         assert wait_for(lambda: updates and updates[-1].reason == "history")
-        assert updates[-1].aligned()[("samx", "samx")] == (5.0, 6.0)
+        assert list(updates[-1].aligned()[("samx", "samx")]) == [5.0, 6.0]
         sub.close()
 
     def test_unknown_scan_still_raises(self, data_api, mock_client):
@@ -327,11 +329,11 @@ def test_async_source_resolved_by_storage_name(data_api, mock_client):
         callback=updates.append,
     )
     assert sub.unbound_sources == []
-    assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1, 2))
+    assert wait_for(lambda: updates and list(updates[-1].aligned_ordinals) == [0, 1, 2])
     update = updates[-1]
     # Emitted under the subscription's obj_name key, read from the storage key.
     assert set(update.sources) == {("samx", "samx"), ("waveform", "waveform_waveform_0d")}
-    assert update.aligned()[("waveform", "waveform_waveform_0d")] == (10.0, 20.0, 30.0)
+    assert list(update.aligned()[("waveform", "waveform_waveform_0d")]) == [10.0, 20.0, 30.0]
     assert update.get("waveform", "waveform_waveform_0d").kind == "async"
     # The estimate finds the dataset through the same translation.
     assert data_api.estimate_bytes(sub.sources, "scan_h") == 3 * 8 + 3 * 8
@@ -353,8 +355,8 @@ def test_async_storage_key_derived_without_device_info(data_api, mock_client):
         sources=[("waveform", "waveform_waveform_0d")], scan="scan_h", callback=updates.append
     )
     assert sub.unbound_sources == []
-    assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1))
-    assert updates[-1].aligned()[("waveform", "waveform_waveform_0d")] == (1.0, 2.0)
+    assert wait_for(lambda: updates and list(updates[-1].aligned_ordinals) == [0, 1])
+    assert list(updates[-1].aligned()[("waveform", "waveform_waveform_0d")]) == [1.0, 2.0]
     sub.close()
 
 
@@ -370,8 +372,8 @@ def test_history_without_stored_data_info_still_serves(data_api, mock_client):
     updates = []
     sub = data_api.subscribe(sources=[("samx", "samx")], scan="scan_h", callback=updates.append)
     assert sub.unbound_sources == []
-    assert wait_for(lambda: updates and updates[-1].aligned_ordinals == (0, 1))
-    assert updates[-1].aligned()[("samx", "samx")] == (0.0, 1.0)
+    assert wait_for(lambda: updates and list(updates[-1].aligned_ordinals) == [0, 1])
+    assert list(updates[-1].aligned()[("samx", "samx")]) == [0.0, 1.0]
     sub.close()
 
 
@@ -385,3 +387,23 @@ def test_close_joins_history_worker(data_api, mock_client):
     sub = data_api.subscribe(sources=[("samx", "samx")], scan="scan_h", callback=lambda u: None)
     sub.close()
     assert not any(t.name == "data-api-history" and t.is_alive() for t in threading.enumerate())
+
+
+def test_file_read_delivers_numpy_columns(data_api, mock_client):
+    """The history worker must hand the file's numpy columns through unchanged;
+    tuples of Python floats forced an O(n) rebuild on the GUI thread."""
+    file_values = np.arange(4.0)
+    file_timestamps = np.arange(4.0) + 100.0
+    stored = {"samx": {"samx": {"shape": (4,), "dtype": "float64"}}}
+    columns = {("samx", "samx"): (file_values, file_timestamps)}
+    history, _ = make_history("scan_np", stored, columns, num_points=4)
+    mock_client.history = history
+
+    updates = []
+    sub = data_api.subscribe(sources=[("samx", "samx")], scan="scan_np", callback=updates.append)
+    assert wait_for(lambda: updates)
+    source = updates[-1].sources[("samx", "samx")]
+    assert isinstance(source.values, np.ndarray)
+    assert np.shares_memory(source.values, file_values)
+    assert isinstance(updates[-1].aligned_ordinals, np.ndarray)
+    sub.close()

@@ -175,9 +175,7 @@ class Subscription:
             CorrelationGroupError: If ``sources`` is empty.
         """
         scan_id_hint = self._scan_id
-        prefetched = (
-            self._api._peek_scan_item(scan_id_hint) if scan_id_hint is not None else None
-        )
+        prefetched = self._api._peek_scan_item(scan_id_hint) if scan_id_hint is not None else None
         with self._lock:
             if self._closed:
                 raise RuntimeError("Cannot change sources on a closed subscription")
@@ -192,9 +190,7 @@ class Subscription:
 
     # --- binding and routing -------------------------------------------------
 
-    def _bind(
-        self, scan_id: str, reason: UpdateReason, scan_item: Any = _NO_PREFETCH
-    ) -> bool:
+    def _bind(self, scan_id: str, reason: UpdateReason, scan_item: Any = _NO_PREFETCH) -> bool:
         """
         Route the subscription to a plugin for the given scan. Lock held.
 

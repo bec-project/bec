@@ -60,3 +60,31 @@ def test_unchanged_sources_reuse_cached_snapshots():
     second = bundle.build_update("live")
     assert second.sources[("samx", "samx")] is first.sources[("samx", "samx")]
     assert second.sources[("det", "wave")] is not first.sources[("det", "wave")]
+
+
+def test_bulk_history_ingest_is_zero_copy_and_fast():
+    """Regression guard for the huge-history GUI freeze: a 1M-point history
+    fill must keep the file's numpy array end to end (no per-point Python
+    objects) and complete well under the old per-point cost (~450 ms)."""
+    import numpy as np
+
+    from bec_lib.data_api.alignment import Bundle
+
+    values = np.random.default_rng(0).random(1_000_000)
+    timestamps = np.arange(1_000_000, dtype=float)
+
+    start = time.perf_counter()
+    bundle = Bundle("scan_bulk")
+    series = bundle.get_series("det", "sig", "monitored")
+    assert series.extend_bulk(values, timestamps)
+    update = bundle.build_update("history")
+    column = update.aligned()[("det", "sig")]
+    as_array = np.asarray(column)
+    elapsed = time.perf_counter() - start
+
+    # the zero-copy chain is the mechanism - guard it directly
+    assert column is values
+    assert as_array is values
+    assert isinstance(update.aligned_ordinals, np.ndarray)
+    # generous absolute bound: measured ~5 ms; the old path took ~450 ms
+    assert elapsed < 0.1, f"bulk ingest chain took {elapsed:.3f}s"
