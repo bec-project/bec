@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.163.1 (2026-08-13)
+
+### Bug Fixes
+
+- Check if enum_strs is None
+  ([`f5ef1ac`](https://github.com/bec-project/bec/commit/f5ef1ac1668f575201f1820fa8d9d11fed561822))
+
+
 ## v3.163.0 (2026-07-31)
 
 ### Chores
