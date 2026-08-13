@@ -752,7 +752,12 @@ class DeviceServer(BECService):
         Returns:
             Any: The converted value.
         """
-        if hasattr(obj, "enum_strs") and len(obj.enum_strs) > 0 and isinstance(val, float):
+        if (
+            hasattr(obj, "enum_strs")
+            and obj.enum_strs is not None
+            and len(obj.enum_strs) > 0
+            and isinstance(val, float)
+        ):
             if not val.is_integer():
                 raise ValueError(
                     f"Cannot convert float {val} to enum index for {obj.name}. "
