@@ -26,4 +26,4 @@ def connected_connector():
 @pytest.fixture(autouse=True)
 def threads_check(threads_check):
     yield
-    bec_logger.logger.remove()
+    bec_logger.shutdown()

@@ -56,7 +56,7 @@ def file_writer_manager_mock(dm_with_devices):
             yield file_writer_manager_mock
         finally:
             file_writer_manager_mock.shutdown()
-            bec_logger.logger.remove()
+            bec_logger.shutdown()
             bec_logger._reset_singleton()
 
 
