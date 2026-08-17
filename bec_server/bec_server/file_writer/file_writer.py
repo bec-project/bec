@@ -8,6 +8,7 @@ import typing
 from collections import defaultdict
 
 import h5py
+from pydantic import BaseModel
 
 from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
@@ -26,6 +27,14 @@ class NeXusLayoutError(Exception):
     """
     Exception raised when the NeXus layout is incorrect.
     """
+
+
+class AdditionalScanMetadata(BaseModel):
+    start_time: str | None = None
+    end_time: str | None = None
+    entry_identifier_uuid: str
+    deployment_info: messages.DeploymentInfoMessage | None = None
+    versions: messages.ServiceVersions
 
 
 class HDF5Storage:
@@ -215,6 +224,21 @@ class HDF5FileWriter:
         self.file_writer_manager = file_writer_manager
         self.stored_data_info = defaultdict(dict)
 
+    def _get_deployment_info(self) -> messages.DeploymentInfoMessage | None:
+        """
+        Fetch the latest deployment info.
+        """
+        deployment_info = self.file_writer_manager.connector.get_last(
+            MessageEndpoints.deployment_info(), "data"
+        )
+        if deployment_info is None:
+            return
+
+        if not isinstance(deployment_info, messages.DeploymentInfoMessage):
+            return
+
+        return deployment_info
+
     @staticmethod
     def _create_device_data_storage(data):
         device_storage = {}
@@ -263,12 +287,19 @@ class HDF5FileWriter:
             info_storage["end_time"] = datetime.datetime.fromtimestamp(data.end_time).isoformat()
 
         if "user_metadata" in data.metadata:
-            # FIXME: Remove once we've migrated everything to v4 scans
-            # ---
+            # Primary path: current scan status messages expose user metadata at the top level.
             info_storage.update(data.metadata["user_metadata"])
-            # ---
         elif "user_metadata" in data.metadata.get("metadata", {}):
+            # Compatibility fallback for producers that nest user_metadata inside metadata.
             info_storage.update(data.metadata["metadata"]["user_metadata"])
+
+        additional_scan_metadata = AdditionalScanMetadata(
+            start_time=info_storage.get("start_time"),
+            end_time=info_storage.get("end_time"),
+            entry_identifier_uuid=data.metadata.get("scan_id") or data.scan_id,
+            deployment_info=self._get_deployment_info(),
+            versions=messages.ServiceVersions._get_version_numbers(),
+        )
 
         requested_plugin = self.file_writer_manager.file_writer_config.get("plugin")
         plugins = plugin_helper.get_file_writer_plugins()
@@ -308,6 +339,7 @@ class HDF5FileWriter:
             file_references=data.file_references,
             beamline_states=data.beamline_states,
             device_manager=self.file_writer_manager.device_manager,
+            additional_scan_metadata=additional_scan_metadata,
         ).get_storage_format()
 
         file_data = {}
