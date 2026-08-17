@@ -9,6 +9,8 @@
 **/*.egg*
 **/*.env
 data/*
+.python-version
+
 # bec_widgets saved profiles
 widgets_settings/profiles/*
 
@@ -183,3 +185,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+
+# Local agent configuration file
+AGENTS_PERSONAL.md
