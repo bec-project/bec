@@ -1,172 +1,112 @@
 # Repository Guidelines — `bec`
 
-`bec` is the core of **BEC** (Beamline Experiment Control): a distributed, service-based control system
-for beamlines at large research facilities. Instead of one monolithic application, BEC is a set of small
-services that orchestrate devices, scans, and data acquisition, communicating over **Redis** for
-real-time messaging and service discovery.
+`bec` is the core BEC monorepo. Prefer focused changes, follow existing local patterns, verify the
+smallest relevant test scope, and keep downstream compatibility in mind.
 
-This file is a quick-reference for AI coding agents (and new contributors) working in this repository.
-The canonical human contribution guide is [`CONTRIBUTING.md`](CONTRIBUTING.md); user-facing docs live at
-<https://bec.readthedocs.io> and are authored in the separate
+This file is an agent-oriented operating manual. The canonical human contribution guide is
+[`CONTRIBUTING.md`](CONTRIBUTING.md). User-facing documentation lives at
+<https://bec.readthedocs.io> and is authored in the separate
 [`bec-project/bec_docs`](https://github.com/bec-project/bec_docs) repository.
 
-## Project Structure & Module Organization
+## Core Rules
 
-This repository is a **multi-package monorepo**. Each top-level directory below is an independently
-installable and independently versioned Python distribution:
+- Do not hardcode Redis keys. Use `MessageEndpoints`.
+- Treat `bec_lib/messages.py` as a versioned cross-service contract.
+- Adding optional message fields is generally backward-compatible, but consider consumers on older
+  releases; renaming or removing fields is breaking.
+- Only the device server constructs real device objects; other services use device-manager proxies.
+- New hardware support usually belongs in `ophyd_devices`, not this repo.
+- Beamline-specific scans usually belong in beamline plugin repos, not core.
+- Follow existing local patterns before introducing a new abstraction.
+- Keep diffs focused. Avoid unrelated refactors while fixing a specific issue.
+- Add regression tests for bug fixes.
+- Do not commit, push, or open PRs unless explicitly asked.
 
-| Path | Package | What it is |
-| --- | --- | --- |
-| `bec_lib/` | `bec_lib` | Core library: messaging, `MessageEndpoints`, device/scan data model, and the user-facing client (`bec_lib.client`). Everything else depends on this. |
-| `bec_server/` | `bec-server` | The services themselves — scan server, device server, scan bundler, file writer, data processing (DAP), SciHub, procedures, and the launcher that supervises them. |
-| `bec_ipython_client/` | `bec_ipython_client` | The interactive IPython shell (`bec` command) scientists use at the beamline. |
-| `pytest_bec_e2e/` | `pytest-bec-e2e` | A pytest plugin whose fixtures spin up real BEC services for end-to-end tests, reused by downstream repos. |
+## First Read
 
-Supporting directories: `bin/` and `scripts/` (entry points and helpers), `macros/` (scan macros),
-`ci/` and `.github/` (CI configuration), `docs/` (package-level notes; the published site lives in
-`bec_docs`), `data/` (sample data).
+Start here when orienting yourself:
 
-Treat each package's `pyproject.toml` as the source of truth for versions, dependencies, and entry
-points. The four packages share a single version number and are released together by
-python-semantic-release.
+- `bec_lib/bec_lib/endpoints.py` — Redis endpoint definitions
+- `bec_lib/bec_lib/messages.py` — cross-service message schemas
+- `bec_lib/bec_lib/client.py` — user-facing client API
+- `bec_lib/bec_lib/device.py`
+- `bec_lib/bec_lib/devicemanager.py`
+- `bec_server/bec_server/scan_server/scans/scan_base.py` — base scan implementation
+- `bec_server/bec_server/bec_server_utils/launch.py` — service launch and supervision
+- `CONTRIBUTING.md` — human-facing contribution guide
 
-### Orientation: the files worth reading first
+## Repo Layout
 
-- `bec_lib/bec_lib/endpoints.py` — every Redis endpoint in the system. If you need to know how two
-  services talk to each other, the answer is here.
-- `bec_lib/bec_lib/messages.py` — the pydantic message schemas sent over those endpoints.
-- `bec_lib/bec_lib/client.py` — the `BECClient` object (`dev`, `scans`, `queue`, …) that users and GUIs drive.
-- `bec_lib/bec_lib/device.py`, `devicemanager.py` — the device abstraction shared by client and server.
-- `bec_server/bec_server/scan_server/scans.py` — how scans are defined; the model to copy for a new scan.
-- `bec_server/bec_server/bec_server_utils/launch.py` — how the services are started and supervised.
+Top-level packages:
 
-## Local Environment Overlay
+- `bec_lib/` — core library used by everything else
+- `bec_server/` — backend services
+- `bec_ipython_client/` — interactive `bec` client
+- `pytest_bec_e2e/` — end-to-end pytest plugin
 
-If a file named **`AGENTS_PERSONAL.md`** exists next to this one, read it and treat it as an extension
-of this file. It carries machine-specific setup — interpreter and environment manager, local paths,
-private workflow conventions — and **its instructions take precedence over the generic
-"Development Environment" section below**. Everything else in this file still applies.
+Each top-level package directory is an independently installable Python distribution. These packages
+currently share one release version and are released together.
 
-That file is intentionally untracked and personal to one developer's machine. Do not commit it, do not
-reference it from committed files, and do not assume it exists — if it is absent, follow this file as
-written.
+Supporting directories:
 
-## Development Environment
+- `bin/` — entry points and helper scripts
+- `ci/` and `.github/` — CI configuration
+- `docs/` — package-level notes
 
-Requires **Python 3.11+** (CI tests 3.11, 3.12, and 3.13) and a **Redis server** for anything beyond
-unit tests.
+Related but separate repos:
 
-```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows is not supported; see "Platform Notes"
-python -m pip install --upgrade pip
-```
+- `ophyd_devices` — hardware and device classes
+- `bec_widgets` — Qt widgets and GUI toolkit
+- `bec_docs` — published documentation
+- beamline plugin repos — beamline-specific scans, devices, and widgets
 
-Install the packages in editable mode. Order matters — `bec_lib` first, since the others depend on it:
+Treat each package's `pyproject.toml` as the source of truth for dependencies, scripts, and tool
+configuration.
 
-```bash
-python -m pip install -e ./bec_lib[dev]
-python -m pip install -e ./bec_server[dev]
-python -m pip install -e ./bec_ipython_client[dev]
-python -m pip install -e ./pytest_bec_e2e
-```
+## Local Overlay
 
-Confirm the environment points at this checkout rather than a released wheel:
+If `AGENTS_PERSONAL.md` exists beside this file, treat it as an extension of this file.
+Machine-specific environment and workflow instructions in `AGENTS_PERSONAL.md` take precedence over
+the generic guidance here.
 
-```bash
-python -c "import bec_lib; print(bec_lib.__file__)"
-```
+- `AGENTS_PERSONAL.md` is untracked and local to one developer machine
+- do not commit it
+- do not reference it from committed files
+- do not assume it exists
 
-If you are working in a git worktree or a second clone, re-run the editable installs from that
-directory. A single virtualenv can only have one editable install per package, so give each
-checkout its own virtualenv rather than sharing one.
+## Common Task Routing
 
-### Running BEC locally
+If you change:
 
-Redis must be reachable (default `localhost:6379`). Start the services once and leave them running for
-as long as you are working:
+- `bec_lib/messages.py` or `bec_lib/endpoints.py`: inspect usages across this repo; consider
+  compatibility with `bec_widgets`, `ophyd_devices`, and plugin consumers; explicitly report
+  downstream risk
+- `bec_server/bec_server/scan_server/scans/*`: review scan base classes and run relevant scan-server
+  tests
+- `bec_server/*` service behavior: run relevant server unit tests
+- `bec_ipython_client/*`: run client tests
+- docs only: no broad test run is required unless commands, paths, or examples changed
 
-```bash
-bec-server start      # start all services (tmux session by default)
-bec                   # the IPython client, in a second shell
-```
+If the requested change sounds like one of these, it probably belongs elsewhere:
 
-The other subcommands act on that already-running session; they are not steps in the startup sequence:
+- new device or hardware class: `ophyd_devices`
+- published docs or install guide changes: `bec_docs`
+- beamline-specific scan behavior: beamline plugin repo
 
-```bash
-bec-server attach     # attach to the tmux session to read service logs (detach with Ctrl-b d)
-bec-server restart    # restart the services, e.g. after changing server-side code
-bec-server stop       # tear everything down when you are done — any client loses its backend
-```
+## BEC Architecture
 
-`bec-server start --help` lists alternatives such as running services as plain subprocesses. Service
-configuration comes from a `service_config.yaml`; see `bec_config_template.yaml` for the shape of the
-file and the installation guide in the docs for a worked example.
+Services communicate through Redis rather than calling each other directly.
 
-## Testing
+Typical cross-service change flow:
 
-**Unit tests** are fast and require no running services — Redis and hardware are mocked (`fakeredis`,
-`pytest-redis`, `unittest.mock`). Run them per package:
+1. Add or update a message schema in `bec_lib/messages.py`.
+2. Add or update the endpoint in `bec_lib/endpoints.py`.
+3. Publish from one service.
+4. Subscribe in another.
+5. Add or update regression tests.
 
-```bash
-python -m pytest --random-order ./bec_lib/tests
-python -m pytest --random-order ./bec_server/tests
-python -m pytest --random-order ./bec_ipython_client/tests/client_tests
-```
-
-`--random-order` is not optional decoration: CI runs it, and it is how order-dependent test pollution
-gets caught. A test that only passes in file order is a broken test.
-
-**End-to-end tests** start real services through the `pytest_bec_e2e` fixtures and need Redis plus a
-working device configuration. They are slower and are gated in CI; run them only when you are actually
-changing service interaction:
-
-```bash
-python -m pytest -v --files-path ./ --start-servers ./bec_ipython_client/tests/end-2-end
-```
-
-**Coverage**, close to what CI measures:
-
-```bash
-coverage run --branch --source=./bec_lib/bec_lib,./bec_server/bec_server,./bec_ipython_client/bec_ipython_client \
-    -m pytest --random-order ./bec_lib/tests ./bec_server/tests ./bec_ipython_client/tests/client_tests
-coverage report
-```
-
-Guidelines: name test files `test_<feature>.py` and test functions after the behaviour they pin down
-(`test_scan_worker_aborts_on_alarm()`, not `test_scan_worker_2()`). Add tests for new features and for
-every bug you fix — a bug fix without a regression test invites the bug back. Keep coverage at or above
-its current level. Mock Redis and hardware in unit tests; reserve real services for the e2e suite.
-
-## Coding Style & Naming Conventions
-
-- Python 3.11+, 4-space indentation, **100-character** line limit.
-- **Black** and **isort** are the source of truth, configured in each `pyproject.toml`. CI fails the
-  build on any diff:
-
-  ```bash
-  black --line-length=100 --skip-magic-trailing-comma .
-  isort --line-length=100 --profile=black --multi-line=3 --trailing-comma .
-  ```
-
-- **Pylint** runs in CI over `bec_lib/`, `bec_server/`, and `bec_ipython_client/` and reports a score.
-  Do not introduce new warnings.
-- `snake_case` for modules, functions, and test files; `PascalCase` for classes.
-- Use **f-strings**; avoid `%` formatting and `str.format()`.
-- Use `pathlib` rather than string path manipulation or `os.path`.
-- Type-annotate new public functions and methods. Pydantic models are the norm for anything crossing a
-  service boundary.
-- Public functions, classes, and modules get docstrings — they are what the API reference is built from.
-
-## Architecture Notes for Contributors
-
-**Everything goes through Redis.** Services never call each other directly. A service publishes a
-message to an endpoint and other services react. This is why adding a feature usually means: define a
-message in `bec_lib/messages.py`, add an endpoint in `bec_lib/endpoints.py`, publish from one service,
-subscribe in another.
-
-**`MessageEndpoints` is the routing table.** Never hardcode a Redis key string. Always go through
-`MessageEndpoints`, so key layout stays changeable in one place.
+`MessageEndpoints` is the routing table. Never introduce literal Redis key strings when an endpoint
+helper should own that name.
 
 ```python
 from bec_lib.endpoints import MessageEndpoints
@@ -175,51 +115,122 @@ connector.set_and_publish(MessageEndpoints.device_readback("samx"), msg)
 connector.register(MessageEndpoints.scan_status(), cb=self._on_scan_status)
 ```
 
-**Messages are versioned data contracts.** `bec_lib/messages.py` classes are serialized and consumed by
-other services, GUIs, and beamline plugins that may be running a different release. Adding an optional
-field is safe; renaming or removing one is a breaking change and needs a `feat!:`/`BREAKING CHANGE:`
-commit.
+Devices are constructed on the device server. All other services interact with proxy device objects
+provided by their device manager. Do not instantiate device objects in arbitrary services; follow the
+existing device-manager and messaging patterns.
 
-**Devices are configuration, not code.** Device classes live in the separate `ophyd_devices` repository;
-`bec` consumes them via a YAML device configuration. If your change is "support a new piece of
-hardware", it very likely belongs in `ophyd_devices`, not here.
+## Validation
 
-**Scans are plugin-shaped.** New scan types subclass the scan base classes in
-`bec_server/scan_server/scans.py`. Beamline-specific scans belong in a beamline plugin repository
-rather than in core.
+Run the smallest relevant test target first. For substantial changes, cross-package changes, or work
+that touches shared contracts, run the affected package suite(s) before finishing.
 
-## Related Repositories
+Unit tests are the default. CI runs them with `--random-order`, so local validation should do the
+same when practical. Prefer existing Redis test patterns in the affected package. Use `fakeredis`
+when Redis semantics matter; use mocks when testing behavior above the Redis layer. Mock hardware in
+unit tests; reserve real services for e2e tests. Before adding a new fixture, check for reusable
+existing fixtures in the affected package or shared test helpers.
 
-BEC is developed across several repositories under <https://github.com/bec-project>:
+Reference package-level test commands:
 
-- [`ophyd_devices`](https://github.com/bec-project/ophyd_devices) — hardware abstraction (device classes).
-- [`bec_widgets`](https://github.com/bec-project/bec_widgets) — PySide6/Qt GUI toolkit.
-- [`bec_docs`](https://github.com/bec-project/bec_docs) — the published documentation site.
-- Beamline plugin repositories — beamline-specific devices, scans, and widgets.
+```bash
+python -m pytest --random-order ./bec_lib/tests
+python -m pytest --random-order ./bec_server/tests
+python -m pytest --random-order ./bec_ipython_client/tests/client_tests
+```
 
-CI here also triggers downstream builds, so a change to `bec_lib` can break `bec_widgets` or
-`ophyd_devices`. When you change a shared interface, check the downstream repositories and coordinate
-the change rather than merging and waiting for their pipelines to go red.
+Use end-to-end tests only when service interaction, startup, Redis communication, or client/server
+integration is what you are changing:
+
+```bash
+python -m pytest -v --files-path ./ --start-servers ./bec_ipython_client/tests/end-2-end
+```
+
+When the e2e command includes `--start-servers`, the fixture provisions fresh subprocess services for
+that test run, so a separate manual `bec-server restart` is not required.
+
+## Running BEC Locally
+
+Redis must be reachable, usually at `localhost:6379`.
+
+Start services in one shell:
+
+```bash
+bec-server start
+```
+
+Open the client in another shell:
+
+```bash
+bec
+```
+
+Useful service commands:
+
+```bash
+bec-server attach
+bec-server restart
+bec-server stop
+```
+
+Use `bec-server restart` after changing server-side code when validating against an already-running
+local BEC session. Otherwise you may be testing stale service code.
+
+`bec-server start --help` lists alternatives such as subprocess-based launches. Service configuration
+comes from a `service_config.yaml`; see `bec_config_template.yaml` for an example shape.
+
+## Style And Change Hygiene
+
+- Python 3.11+, 4-space indentation, 100-character line limit
+- prefer `from __future__ import annotations` in new Python modules and when touching files that
+  already follow that pattern
+- use `f`-strings instead of `%` formatting or `str.format()`
+- use `pathlib` instead of manual path-string manipulation
+- type-annotate new public functions and methods
+- follow the existing docstring style; when writing `Args` and `Returns` sections for typed public
+  functions, include the parameter and return types there as well as in the signature
+- public functions, classes, and modules should have docstrings
+- avoid formatting or import-order churn in untouched files
+
+Run Black and isort on changed files or the affected package. The whole-repo equivalents are:
+
+```bash
+black --line-length=100 --skip-magic-trailing-comma .
+isort --line-length=100 --profile=black --multi-line=3 --trailing-comma .
+```
+
+Pylint runs in CI across `bec_lib/`, `bec_server/`, and `bec_ipython_client/`. Do not introduce new
+warnings.
+
+## Development Environment
+
+Requires:
+
+- Python 3.11+
+- Redis for anything beyond unit tests
+
+CI currently runs Python 3.11, 3.12, and 3.13.
+
+Editable install order matters because the other packages depend on `bec_lib`:
+
+```bash
+python -m pip install -e ./bec_lib[dev]
+python -m pip install -e ./bec_server[dev]
+python -m pip install -e ./bec_ipython_client[dev]
+python -m pip install -e ./pytest_bec_e2e
+```
+
+If you are working in a separate clone or git worktree, reinstall editable packages from that checkout.
+A single virtualenv cannot point at multiple editable copies of the same package reliably.
 
 ## Platform Notes
 
-Code must run on **macOS and Linux**. Windows is not supported or tested. Use `pathlib` and forward
-slashes; do not add Windows-specific branches.
+Code must run on macOS and Linux. Windows is unsupported and untested. Prefer portable `pathlib`
+usage and do not add Windows-specific branches unless explicitly requested.
 
-## Commit & Pull Request Guidelines
+## Commit And PR Notes
 
-- **Do not commit or push unless explicitly asked to.** Leave the working tree for the human to review.
-- **Never open, update, or merge a pull request.** Submitting the change is the human contributor's
-  step. An agent's work ends at a reviewed working tree — or at a local commit on a branch, when a
-  commit was explicitly requested.
-- Branch from `main`; use a descriptive branch name such as `feat/procedure-timeout` or
-  `fix/scan-queue-deadlock`.
-- **Conventional Commits are mandatory** — `<type>(<scope>): <summary>`, e.g.
-  `fix(bec_lib): guard against empty readback`. Allowed types: `build`, `chore`, `ci`, `docs`, `feat`,
-  `fix`, `perf`, `refactor`, `style`, `test`. `feat` triggers a minor release, `fix` and `perf` a patch
-  release. Breaking changes need `!` after the type or a `BREAKING CHANGE:` footer.
-- Commit messages are parsed by python-semantic-release and become the published `CHANGELOG.md`. Keep
-  them to a single clean subject line describing the change.
-- The pull request itself needs a clear description, linked issues (`closes #123`), and test evidence.
-  Leave whoever opens it what that requires: what changed, why, and the output of the tests you ran.
-- Update the docs in `bec_docs` when behaviour visible to users changes.
+- Branch from `main` for new work
+- use Conventional Commits
+- breaking changes need `!` or a `BREAKING CHANGE:` footer
+- leave the eventual PR author with a short summary of what changed, why, and what you validated
+- update `bec_docs` when necessary
