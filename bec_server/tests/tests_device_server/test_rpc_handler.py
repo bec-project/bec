@@ -8,7 +8,7 @@ from ophyd import Device, DeviceStatus, Kind, Signal, Staged, StatusBase
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.device_server.device_server import DeviceServer, RequestHandler
+from bec_server.device_server.device_server import DeviceServer, DisabledDeviceError, RequestHandler
 from bec_server.device_server.rpc_handler import RPCHandler
 
 
@@ -206,6 +206,8 @@ def test_run_rpc_sends_rpc_exception(rpc_cls, instr):
 @pytest.fixture()
 def dev_mock():
     dev_mock = mock.MagicMock()
+    dev_mock.name = "device"
+    dev_mock.read_only = False
     dev_mock.obj = mock.MagicMock(spec=Device)
     dev_mock.obj.readback = mock.MagicMock(spec=Signal)
     dev_mock.obj.readback.kind = Kind.hinted
@@ -313,6 +315,36 @@ def test_process_rpc_instruction_set_attribute_on_sub_device(rpc_cls, dev_mock, 
     rpc_cls.device_manager.devices = {"device": dev_mock}
     rpc_cls.process_rpc_instruction(instr)
     rpc_cls.device_manager.devices["device"].obj.user_setpoint.attr_value == 5
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        {"func": "velocity.set", "args": [5]},
+        {"func": "user_setpoint.put", "args": [5]},
+        {"func": "attr_value", "args": [5], "kwargs": {"_set_property": True}},
+    ],
+)
+def test_process_rpc_instruction_rejects_write_calls_for_read_only_device(
+    rpc_cls, dev_mock, parameter
+):
+    dev_mock.name = "device"
+    dev_mock.read_only = True
+    rpc_cls.device_manager.devices = {"device": dev_mock}
+    instr = messages.DeviceInstructionMessage(
+        device="device",
+        action="rpc",
+        parameter=parameter,
+        metadata={"RID": "RID", "device_instr_id": "diid"},
+    )
+
+    with mock.patch.object(rpc_cls, "_execute_rpc_call") as mock_execute_rpc:
+        with pytest.raises(
+            DisabledDeviceError, match="Setting the device device is currently disabled."
+        ):
+            rpc_cls.process_rpc_instruction(instr)
+
+    mock_execute_rpc.assert_not_called()
 
 
 def test_set_config_signal_updates_cache(rpc_cls, dev_mock, instr):

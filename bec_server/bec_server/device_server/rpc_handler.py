@@ -78,10 +78,16 @@ class RPCHandler:
             return self._rpc_read_configuration_and_return(instr)
 
         if instr_params.get("kwargs", {}).get("_set_property"):
+            self._assert_rpc_write_allowed(instr)
             return self._handle_rpc_property_set(instr)
 
         if self._instr_with_operation(instr, "set"):
+            self._assert_rpc_write_allowed(instr)
             return self._handle_set(instr)
+
+        if self._instr_with_operation(instr, "put"):
+            self._assert_rpc_write_allowed(instr)
+            return self._handle_misc_rpc(instr)
 
         return self._handle_misc_rpc(instr)
 
@@ -285,6 +291,23 @@ class RPCHandler:
             )
             self.connector.raise_alarm(severity=Alarms.WARNING, info=error_info)
         return res
+
+    def _assert_rpc_write_allowed(self, instr: messages.DeviceInstructionMessage) -> None:
+        """
+        Reject write-style RPCs for read-only devices.
+
+        Args:
+            instr(messages.DeviceInstructionMessage): RPC instruction
+        """
+        # Imported lazily to avoid a circular import during module initialization.
+        from bec_server.device_server.device_server import DisabledDeviceError
+
+        device_root = self._get_device_root(instr)
+        device_obj = self.device_manager.devices[device_root]
+        if device_obj.read_only:
+            raise DisabledDeviceError(
+                f"Setting the device {device_obj.name} is currently disabled."
+            )
 
     def _get_rpc_components(
         self, instr: messages.DeviceInstructionMessage
