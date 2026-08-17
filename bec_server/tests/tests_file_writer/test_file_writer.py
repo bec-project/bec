@@ -1,5 +1,4 @@
 import datetime
-import os
 from unittest import mock
 
 import h5py
@@ -8,14 +7,34 @@ import pytest
 from test_file_writer_manager import file_writer_manager_mock
 
 from bec_lib import messages
-from bec_server import file_writer
+from bec_lib.endpoints import MessageEndpoints
 from bec_server.file_writer import HDF5FileWriter
 from bec_server.file_writer.default_writer import DefaultFormat
-from bec_server.file_writer.file_writer import HDF5Storage
+from bec_server.file_writer.file_writer import AdditionalScanMetadata, HDF5Storage
 from bec_server.file_writer.file_writer_manager import ScanStorage
-from bec_server.file_writer_plugins.cSAXS import cSAXSFormat
 
-dir_path = os.path.dirname(file_writer.__file__)
+
+class PluginFormatForTest(DefaultFormat):
+    def format(self) -> None:
+        entry = self.storage.create_group("entry")
+        entry.attrs["definition"] = "NXtest"
+
+
+def _make_additional_scan_metadata(
+    *,
+    start_time: str = "2026-08-17T10:00:00+02:00",
+    end_time: str = "2026-08-17T10:05:00+02:00",
+    entry_identifier_uuid: str = "a9fb36e4-3f38-486c-8434-c8eca19472ba",
+    deployment_info: messages.DeploymentInfoMessage | None = None,
+    versions: messages.ServiceVersions | None = None,
+) -> AdditionalScanMetadata:
+    return AdditionalScanMetadata(
+        start_time=start_time,
+        end_time=end_time,
+        entry_identifier_uuid=entry_identifier_uuid,
+        deployment_info=deployment_info,
+        versions=versions or messages.ServiceVersions._get_version_numbers(),
+    )
 
 
 @pytest.fixture
@@ -73,24 +92,8 @@ def default_format(file_writer_manager_mock_with_dm):
         configuration={},
         device_manager=file_writer_manager_mock_with_dm.device_manager,
         beamline_states={},
+        additional_scan_metadata=_make_additional_scan_metadata(),
     )
-
-
-def test_csaxs_nexus_format(file_writer_manager_mock_with_dm):
-    file_manager = file_writer_manager_mock_with_dm
-    writer_storage = cSAXSFormat(
-        storage=HDF5Storage(),
-        data={"samx": {"samx": {"value": [0, 1, 2]}}, "mokev": {"mokev": {"value": 12.456}}},
-        file_references={},
-        info_storage={
-            "bec": {"readout_priority": {"baseline": ["mokev"], "monitored": ["samx", "samy"]}}
-        },
-        configuration={},
-        device_manager=file_manager.device_manager,
-        beamline_states={},
-    ).get_storage_format()
-    assert writer_storage["entry"].attrs["definition"] == "NXsas"
-    assert writer_storage["entry"]._storage["sample"]._storage["x_translation"]._data == [0, 1, 2]
 
 
 def test_get_entry_returns_values_for_scalar_and_list_data(default_format):
@@ -209,6 +212,66 @@ def test_write_scan_report_data_skips_attrs_when_no_devices(default_format):
     assert data_group._storage == {}
 
 
+def test_default_format_writes_entry_datasets_from_info_storage(
+    default_format, deployment_info_factory
+):
+    versions = messages.ServiceVersions._get_version_numbers()
+    default_format.info_storage.update({"title": "Explicit Scan Title"})
+    default_format.additional_scan_metadata = _make_additional_scan_metadata(
+        deployment_info=deployment_info_factory(), versions=versions
+    )
+
+    writer_storage = default_format.get_storage_format()
+    entry = writer_storage["entry"]
+
+    assert entry._storage["start_time"]._data == "2026-08-17T10:00:00+02:00"
+    assert entry._storage["end_time"]._data == "2026-08-17T10:05:00+02:00"
+    assert entry._storage["title"]._data == "Explicit Scan Title"
+    assert entry._storage["entry_identifier_uuid"]._data == "a9fb36e4-3f38-486c-8434-c8eca19472ba"
+    assert (
+        entry._storage["entry_identifier_uuid"].attrs["description"]
+        == "Scan identifier (scan_id) used by BEC"
+    )
+    assert entry._storage["experiment_identifier"]._data == "p12345"
+    assert (
+        entry._storage["experiment_identifier"].attrs["description"]
+        == "Proposal group (pgroup) of the experiment"
+    )
+    assert entry._storage["experiment_description"]._data == "Experiment Title"
+    assert (
+        entry._storage["experiment_description"].attrs["description"]
+        == "Title of the experiment according to the proposal"
+    )
+    assert entry._storage["program_name"]._data == "BEC"
+    assert entry._storage["program_name"].attrs["version"] == versions.bec_server
+    assert entry._storage["user"].attrs["NX_class"] == "NXuser"
+    assert entry._storage["user"]._storage["name"]._data == "John Doe"
+    assert entry._storage["user"]._storage["role"]._data == "proposer"
+
+
+def test_default_format_falls_back_to_experiment_title(default_format, deployment_info_factory):
+    default_format.additional_scan_metadata = _make_additional_scan_metadata(
+        deployment_info=deployment_info_factory()
+    )
+
+    writer_storage = default_format.get_storage_format()
+    entry = writer_storage["entry"]
+
+    assert "title" not in entry._storage
+    assert entry._storage["experiment_identifier"]._data == "p12345"
+    assert (
+        entry._storage["experiment_identifier"].attrs["description"]
+        == "Proposal group (pgroup) of the experiment"
+    )
+    assert entry._storage["experiment_description"]._data == "Experiment Title"
+    assert (
+        entry._storage["experiment_description"].attrs["description"]
+        == "Title of the experiment according to the proposal"
+    )
+    assert entry._storage["user"]._storage["name"]._data == "John Doe"
+    assert entry._storage["user"]._storage["role"]._data == "proposer"
+
+
 def test_nexus_file_writer(hdf5_file_writer, scan_storage_mock, tmp_path):
     file_writer = hdf5_file_writer
     with mock.patch.object(
@@ -225,18 +288,26 @@ def test_nexus_file_writer(hdf5_file_writer, scan_storage_mock, tmp_path):
         },
     ):
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
-    with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
-        assert list(test_file) == ["entry"]
-        assert list(test_file["entry"]) == ["collection", "control", "data", "instrument", "sample"]
-        assert np.allclose(
-            test_file["entry/collection/devices/samx/samx/value"][...], [0, 1, 2, 3, 4]
-        )
-        assert test_file["entry/collection/file_references/eiger"] is not None
-        assert test_file["entry/data"].attrs["NX_class"] == "NXdata"
-        # assert list(test_file["entry"]["sample"]) == ["x_translation"]
-        # assert test_file["entry"]["sample"].attrs["NX_class"] == "NXsample"
-        # assert test_file["entry"]["sample"]["x_translation"].attrs["units"] == "mm"
-        # assert all(np.asarray(test_file["entry"]["sample"]["x_translation"]) == [0, 1, 2])
+        with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
+            assert list(test_file) == ["entry"]
+            assert list(test_file["entry"]) == [
+                "collection",
+                "control",
+                "data",
+                "entry_identifier_uuid",
+                "instrument",
+                "program_name",
+                "sample",
+            ]
+            assert np.allclose(
+                test_file["entry/collection/devices/samx/samx/value"][...], [0, 1, 2, 3, 4]
+            )
+            assert test_file["entry/collection/file_references/eiger"] is not None
+            assert test_file["entry/data"].attrs["NX_class"] == "NXdata"
+            # assert list(test_file["entry"]["sample"]) == ["x_translation"]
+            # assert test_file["entry"]["sample"].attrs["NX_class"] == "NXsample"
+            # assert test_file["entry"]["sample"]["x_translation"].attrs["units"] == "mm"
+            # assert all(np.asarray(test_file["entry"]["sample"]["x_translation"]) == [0, 1, 2])
 
 
 def test_create_device_data_storage(hdf5_file_writer, scan_storage_mock):
@@ -346,6 +417,30 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
             test_file["entry"].attrs["end_time"]
             == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
         )
+        assert (
+            test_file["entry/start_time"].asstr()[()]
+            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()
+        )
+        assert (
+            test_file["entry/end_time"].asstr()[()]
+            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
+        )
+        assert (
+            test_file["entry/collection/metadata/start_time"].asstr()[()]
+            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()
+        )
+        assert (
+            test_file["entry/collection/metadata/end_time"].asstr()[()]
+            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
+        )
+        assert (
+            test_file["entry/entry_identifier_uuid"].asstr()[()]
+            == "a9fb36e4-3f38-486c-8434-c8eca19472ba"
+        )
+        assert (
+            test_file["entry/entry_identifier_uuid"].attrs["description"]
+            == "Scan identifier (scan_id) used by BEC"
+        )
         assert "non_existing_file" not in test_file["entry/collection/file_references"].keys()
         assert test_file["entry/data"].attrs["NX_class"] == "NXdata"
         assert test_file["entry/data"].attrs["signal"] == "samx"
@@ -354,14 +449,55 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
         assert np.allclose(test_file["entry/data/samy"][...], [1.1, 1.2])
 
 
+def test_write_data_storage_injects_deployment_experiment_info(
+    hdf5_file_writer, scan_storage_mock, tmp_path, deployment_info_factory
+):
+    deployment_info = deployment_info_factory(title="Test Experiment Title")
+
+    with mock.patch.object(
+        hdf5_file_writer.file_writer_manager.connector, "get_last", return_value=deployment_info
+    ) as mock_get_last:
+        hdf5_file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
+
+    mock_get_last.assert_called_once_with(MessageEndpoints.deployment_info(), "data")
+
+    with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
+        assert test_file["entry/entry_identifier_uuid"].asstr()[()] == "scan_id-string"
+        assert (
+            test_file["entry/entry_identifier_uuid"].attrs["description"]
+            == "Scan identifier (scan_id) used by BEC"
+        )
+        assert test_file["entry/experiment_identifier"].asstr()[()] == "p12345"
+        assert (
+            test_file["entry/experiment_identifier"].attrs["description"]
+            == "Proposal group (pgroup) of the experiment"
+        )
+        assert test_file["entry/experiment_description"].asstr()[()] == "Test Experiment Title"
+        assert (
+            test_file["entry/experiment_description"].attrs["description"]
+            == "Title of the experiment according to the proposal"
+        )
+        assert test_file["entry/program_name"].asstr()[()] == "BEC"
+        assert test_file["entry/user"].attrs["NX_class"] == "NXuser"
+        assert test_file["entry/user/name"].asstr()[()] == "John Doe"
+        assert test_file["entry/user/role"].asstr()[()] == "proposer"
+        assert (
+            test_file["entry/program_name"].attrs["version"]
+            == messages.ServiceVersions._get_version_numbers().bec_server
+        )
+        assert "deployment" not in test_file["entry/collection/metadata"]
+        assert "session" not in test_file["entry/collection/metadata"]
+        assert "experiment" not in test_file["entry/collection/metadata"]
+
+
 def test_load_format_from_plugin(tmp_path, hdf5_file_writer):
     file_writer = hdf5_file_writer
-    file_writer.file_writer_manager.file_writer_config["plugin"] = "cSAXS"
+    file_writer.file_writer_manager.file_writer_config["plugin"] = "test_plugin"
 
     with mock.patch(
         "bec_lib.plugin_helper.get_file_writer_plugins"
     ) as mock_get_file_writer_plugins:
-        mock_get_file_writer_plugins.return_value = {"cSAXS": cSAXSFormat}
+        mock_get_file_writer_plugins.return_value = {"test_plugin": PluginFormatForTest}
         data = ScanStorage(2, "scan_id-string")
         data.metadata = {
             "readout_priority": {
@@ -372,7 +508,7 @@ def test_load_format_from_plugin(tmp_path, hdf5_file_writer):
         }
         file_writer.write(f"{tmp_path}/test.h5", data, configuration_data={})
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
-        assert test_file["entry"].attrs["definition"] == "NXsas"
+        assert test_file["entry"].attrs["definition"] == "NXtest"
 
 
 def test_load_format_from_plugin_uses_default(tmp_path, hdf5_file_writer, scan_storage_mock):
@@ -387,8 +523,8 @@ def test_load_format_from_plugin_uses_default(tmp_path, hdf5_file_writer, scan_s
         "bec_lib.plugin_helper.get_file_writer_plugins"
     ) as mock_get_file_writer_plugins:
         mock_get_file_writer_plugins.return_value = {
-            "cSAXS": cSAXSFormat,
-            "anotherPlugin": cSAXSFormat,
+            "test_plugin": PluginFormatForTest,
+            "anotherPlugin": PluginFormatForTest,
         }
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
@@ -404,10 +540,10 @@ def test_load_format_from_plugin_uses_plugin(tmp_path, hdf5_file_writer, scan_st
     with mock.patch(
         "bec_lib.plugin_helper.get_file_writer_plugins"
     ) as mock_get_file_writer_plugins:
-        mock_get_file_writer_plugins.return_value = {"cSAXS": cSAXSFormat}
+        mock_get_file_writer_plugins.return_value = {"test_plugin": PluginFormatForTest}
         file_writer.write(f"{tmp_path}/test.h5", scan_storage_mock, configuration_data={})
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
-        assert test_file["entry"].attrs["definition"] == "NXsas"
+        assert test_file["entry"].attrs["definition"] == "NXtest"
 
 
 def test_states_are_converted_to_compound_types(tmp_path, hdf5_file_writer, scan_storage_mock):

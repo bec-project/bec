@@ -8,7 +8,7 @@ import numpy as np
 if TYPE_CHECKING:
     from bec_lib import messages
     from bec_lib.devicemanager import DeviceManagerBase
-    from bec_server.file_writer.file_writer import HDF5Storage
+    from bec_server.file_writer.file_writer import AdditionalScanMetadata, HDF5Storage
 
 
 class DefaultFormat:
@@ -25,6 +25,7 @@ class DefaultFormat:
         file_references: dict[str, messages.FileMessage],
         beamline_states: dict[str, list[messages.BeamlineStateMessage]],
         device_manager: DeviceManagerBase,
+        additional_scan_metadata: AdditionalScanMetadata,
     ):
         self.storage = storage
         self.data = data
@@ -33,6 +34,34 @@ class DefaultFormat:
         self.device_manager = device_manager
         self.info_storage = info_storage
         self.beamline_states = beamline_states
+        self.additional_scan_metadata = additional_scan_metadata
+
+    def _experiment_metadata(self) -> dict:
+        deployment_info = self.additional_scan_metadata.deployment_info
+        session = deployment_info.active_session if deployment_info is not None else None
+        experiment = session.experiment if session is not None else None
+        if experiment is None:
+            return {}
+        return experiment.model_dump(mode="json")
+
+    def _user_metadata(self) -> dict[str, str]:
+        experiment_metadata = self._experiment_metadata()
+        name_parts = [experiment_metadata.get("firstname"), experiment_metadata.get("lastname")]
+        name = " ".join(part for part in name_parts if part)
+        role = "proposer"
+
+        if not name:
+            pi_name_parts = [
+                experiment_metadata.get("pi_firstname"),
+                experiment_metadata.get("pi_lastname"),
+            ]
+            name = " ".join(part for part in pi_name_parts if part)
+            role = "principal_investigator"
+
+        if not name:
+            return {}
+
+        return {"name": name, "role": role}
 
     def get_storage_format(self) -> dict:
         """
@@ -95,8 +124,8 @@ class DefaultFormat:
         # /entry
         entry = self.storage.create_group("entry")
         entry.attrs["NX_class"] = "NXentry"
-        entry.attrs["start_time"] = self.info_storage.get("start_time")
-        entry.attrs["end_time"] = self.info_storage.get("end_time")
+        entry.attrs["start_time"] = self.additional_scan_metadata.start_time
+        entry.attrs["end_time"] = self.additional_scan_metadata.end_time
         entry.attrs["version"] = 1.0
 
         # /entry/collection
@@ -245,6 +274,53 @@ class DefaultFormat:
         for device in compatible_devices:
             self.safe_dataset(data_group, name=device, device=device, softlink=True)
 
+    def write_entry_metadata(self, entry: HDF5Storage) -> None:
+        """
+        Write standard NXentry metadata datasets, program metadata, and optional NXuser data.
+
+        See PSI's data policy (2.4 b, checked on Aug 18th, 2026):
+            > High level Metadata such as title, authors, abstract, specific Research Infrastructure used are made
+            > public as soon as the experiment has been carried out at PSI's large research facilities.
+
+        We can therefore safely add the high level information to the nexus file as well.
+
+        """
+        entry.create_dataset(name="start_time", data=self.additional_scan_metadata.start_time)
+        entry.create_dataset(name="end_time", data=self.additional_scan_metadata.end_time)
+        title = self.info_storage.get("title")
+        if title:
+            entry.create_dataset(name="title", data=title)
+        entry_identifier_uuid_ds = entry.create_dataset(
+            name="entry_identifier_uuid", data=self.additional_scan_metadata.entry_identifier_uuid
+        )
+        entry_identifier_uuid_ds.attrs["description"] = "Scan identifier (scan_id) used by BEC"
+        experiment_metadata = self._experiment_metadata()
+        experiment_identifier = experiment_metadata.get("pgroup")
+        if experiment_identifier:
+            experiment_identifier_ds = entry.create_dataset(
+                name="experiment_identifier", data=experiment_identifier
+            )
+            experiment_identifier_ds.attrs["description"] = (
+                "Proposal group (pgroup) of the experiment"
+            )
+        experiment_description = experiment_metadata.get("title")
+        if experiment_description:
+            experiment_description_ds = entry.create_dataset(
+                name="experiment_description", data=experiment_description
+            )
+            experiment_description_ds.attrs["description"] = (
+                "Title of the experiment according to the proposal"
+            )
+        program_name_ds = entry.create_dataset(name="program_name", data="BEC")
+        program_name_ds.attrs["version"] = self.additional_scan_metadata.versions.bec_server
+
+        user_metadata = self._user_metadata()
+        if user_metadata:
+            user_group = entry.create_group("user")
+            user_group.attrs["NX_class"] = "NXuser"
+            for field_name, field_value in user_metadata.items():
+                user_group.create_dataset(name=field_name, data=field_value)
+
     def format(self) -> None:
         """
         Prepare the NeXus file format.
@@ -261,6 +337,7 @@ class DefaultFormat:
         """
 
         entry = self.storage.create_group("entry")
+        self.write_entry_metadata(entry)
 
         # /entry/control
         control = entry.create_group("control")
