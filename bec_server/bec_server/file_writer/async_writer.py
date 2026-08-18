@@ -106,8 +106,19 @@ class AsyncWriter(threading.Thread):
         self.device_data_replace = {}
         self.append_shapes = {}
         self.written_devices = set()
+        self._written_signals = defaultdict(set)
         self.file_handle = None
         self.cursor = defaultdict(dict)
+
+    @property
+    def written_signals(self) -> dict[str, list[str]]:
+        """
+        Return the async signals that were written, grouped by device.
+        """
+        return {
+            device_name: sorted(signal_names)
+            for device_name, signal_names in self._written_signals.items()
+        }
 
     def initialize_stream_keys(self):
         """
@@ -305,6 +316,7 @@ class AsyncWriter(threading.Thread):
                                 info=error_info,
                                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                             )
+                    self._written_signals[device_name].add(signal_name)
 
         if write_replace:
             for group_name, value in self.device_data_replace.items():

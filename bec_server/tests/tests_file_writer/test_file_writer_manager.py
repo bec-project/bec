@@ -218,7 +218,15 @@ class MockWriter(HDF5FileWriter):
         super().__init__(file_writer_manager)
         self.write_called = False
 
-    def write(self, file_path: str, data, configuration_data, mode="w", file_handle=None):
+    def write(
+        self,
+        file_path: str,
+        data,
+        configuration_data,
+        mode="w",
+        file_handle=None,
+        written_async_signals=None,
+    ):
         self.write_called = True
 
 
@@ -232,6 +240,24 @@ def test_write_file(file_writer_manager_mock, scan_storage_mock):
         file_manager.file_writer = MockWriter(file_manager)
         file_manager.write_file("scan_id")
         assert file_manager.file_writer.write_called is True
+
+
+def test_write_file_forwards_written_async_signals(file_writer_manager_mock, scan_storage_mock):
+    file_manager = file_writer_manager_mock
+    scan_storage_mock.async_writer = mock.Mock(
+        written_signals={"waveform": ["waveform_data"]}, file_handle=None
+    )
+    file_manager.scan_storage["scan_id"] = scan_storage_mock
+
+    with mock.patch("bec_server.file_writer.file_writer_manager.get_full_path") as mock_filename:
+        mock_filename.return_value = "path"
+        file_manager.file_writer.write = mock.Mock()
+        file_manager.write_file("scan_id")
+
+    file_manager.file_writer.write.assert_called_once()
+    assert file_manager.file_writer.write.call_args.kwargs["written_async_signals"] == {
+        "waveform": ["waveform_data"]
+    }
 
 
 def test_write_file_invalid_scan_id(file_writer_manager_mock, scan_storage_mock):

@@ -26,6 +26,7 @@ class DefaultFormat:
         beamline_states: dict[str, list[messages.BeamlineStateMessage]],
         device_manager: DeviceManagerBase,
         additional_scan_metadata: AdditionalScanMetadata,
+        written_async_signals: dict[str, list[str]] | None = None,
     ):
         self.storage = storage
         self.data = data
@@ -35,6 +36,7 @@ class DefaultFormat:
         self.info_storage = info_storage
         self.beamline_states = beamline_states
         self.additional_scan_metadata = additional_scan_metadata
+        self.written_async_signals = written_async_signals
 
     def _experiment_metadata(self) -> dict:
         deployment_info = self.additional_scan_metadata.deployment_info
@@ -78,23 +80,18 @@ class DefaultFormat:
 
     def has_async_signal(self, device_name: str, signal_name: str) -> bool:
         """
-        Check if a device has an async signal.
+        Check if the specified device was written with the given async signal.
 
         Args:
             device_name (str): The name of the device.
             signal_name (str): The name of the signal.
 
         Returns:
-            bool: True if the device has an async signal, False otherwise.
+            bool: True if the device was written with the given async signal, False otherwise.
         """
-        signals = self.device_manager.get_bec_signals(
-            ["AsyncMultiSignal", "AsyncSignal", "DynamicSignal"]
-        )
-        for device_name_, _, signal_info in signals:
-            obj_name = signal_info.get("object_name", "")
-            obj_name_without_prefix = obj_name.removeprefix("devicename")
-            if device_name_ == device_name and (signal_name in [obj_name, obj_name_without_prefix]):
-                return True
+        if self.written_async_signals is not None:
+            return signal_name in self.written_async_signals.get(device_name, [])
+
         return False
 
     def get_entry(self, name: str, signal: str | None = None, default=None) -> Any:
@@ -113,7 +110,11 @@ class DefaultFormat:
         """
         signal = signal or name
         if isinstance(self.data.get(name), list) and isinstance(self.data[name][0], dict):
-            return [sub_data.get(signal, {}).get("value", default) for sub_data in self.data[name]]
+            out = [sub_data.get(signal, {}).get("value", default) for sub_data in self.data[name]]
+            # If all values are None, return None instead of a list of None values
+            if all(val is None for val in out):
+                return None
+            return out
 
         return self.data.get(name, {}).get(signal, {}).get("value", default)
 
