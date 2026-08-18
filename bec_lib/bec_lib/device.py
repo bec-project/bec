@@ -470,7 +470,9 @@ class DeviceBase:
                 return None
             return_val = self._get_rpc_response(request_id, rpc_id)
         except KeyboardInterrupt as exc:
-            self.root.stop(wait_for_rpc_response=False)
+            stop = getattr(self.root, "stop", None)
+            if callable(stop):
+                stop(wait_for_rpc_response=False)
             raise RPCError("User interruption during RPC call.") from exc
 
         return return_val
