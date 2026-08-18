@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.164.0 (2026-08-18)
+
+### Features
+
+- **file writer**: Add experiment and deployment info
+  ([`013605c`](https://github.com/bec-project/bec/commit/013605c72a2cc1e60a2a10fb23ddc51c5dab47a1))
+
+
 ## v3.163.1 (2026-08-13)
 
 ### Bug Fixes
