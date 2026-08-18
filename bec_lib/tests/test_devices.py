@@ -338,6 +338,18 @@ def test_run_rpc_call_calls_stop_on_keyboardinterrupt(dev: Any):
             mock_stop.assert_called_once()
 
 
+def test_run_rpc_call_keyboardinterrupt_on_top_level_signal_skips_stop(dm_with_override: Any):
+    dm_with_override.parent = mock.MagicMock()
+    signal = Signal(name="top_level_signal", config=BASIC_CONFIG, parent=dm_with_override)
+
+    with mock.patch.object(signal, "_prepare_rpc_msg") as mock_rpc:
+        with mock.patch.object(signal, "_validate_rpc_client"):
+            mock_rpc.side_effect = [KeyboardInterrupt]
+            with pytest.raises(RPCError, match="User interruption during RPC call."):
+                signal.read()
+            mock_rpc.assert_called_once()
+
+
 @pytest.fixture
 def device_config():
     return {
