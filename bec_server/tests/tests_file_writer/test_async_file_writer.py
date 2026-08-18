@@ -451,6 +451,7 @@ def test_async_writer_async_signal(async_writer):
     # Check that the data was appended correctly
     expected_data = np.array([1, 2, 3, 4, 5, 6, 7, 8])
     assert np.array_equal(out, expected_data)
+    assert async_writer.written_signals == {"waveform": ["waveform_data"]}
 
 
 def test_async_writer_mixed_readback_and_signal(async_writer):
@@ -509,6 +510,10 @@ def test_async_writer_mixed_readback_and_signal(async_writer):
         signal_out = f[async_writer.BASE_PATH]["waveform"]["waveform_data"]["value"][:]
         expected_signal = np.array([100, 200, 300, 400, 500])
         assert np.array_equal(signal_out, expected_signal)
+    assert async_writer.written_signals == {
+        "monitor_async": ["monitor_async"],
+        "waveform": ["waveform_data"],
+    }
 
 
 def test_async_writer_same_device_readback_and_signal(async_writer):

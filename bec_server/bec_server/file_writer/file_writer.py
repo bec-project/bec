@@ -261,6 +261,7 @@ class HDF5FileWriter:
         configuration_data: dict[str, dict],
         mode="w",
         file_handle=None,
+        written_async_signals: dict[str, list[str]] | None = None,
     ):
         """
         Write the data to an HDF5 file.
@@ -268,8 +269,10 @@ class HDF5FileWriter:
         Args:
             file_path (str): File path
             data (ScanStorage): Scan data
+            configuration_data (dict[str, dict]): Configuration data
             mode (str, optional): File mode. Defaults to "w".
             file_handle (h5py.File, optional): File handle. Defaults to None.
+            written_async_signals (dict[str, list[str]], optional): Dictionary of written async signals. Defaults to None.
 
         Raises:
             NeXusLayoutError: Raised when the NeXus layout is incorrect.
@@ -340,6 +343,7 @@ class HDF5FileWriter:
             beamline_states=data.beamline_states,
             device_manager=self.file_writer_manager.device_manager,
             additional_scan_metadata=additional_scan_metadata,
+            written_async_signals=written_async_signals,
         ).get_storage_format()
 
         file_data = {}

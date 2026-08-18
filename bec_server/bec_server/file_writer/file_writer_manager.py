@@ -427,10 +427,13 @@ class FileWriterManager(BECService):
                 log_if_dir_does_not_exist=False,
             )
             successful = True
+            written_async_signals = (
+                storage.async_writer.written_signals if storage.async_writer else None
+            )
 
             # If we've already written device data, we need to append to the file
-            writte_devices = None if not self.async_writer else self.async_writer.written_devices
-            write_mode = "w" if not writte_devices else "a"
+            written_devices = set(written_async_signals or {})
+            write_mode = "w" if not written_devices else "a"
             file_handle = storage.async_writer.file_handle if storage.async_writer else None
 
             if write_mode == "w":
@@ -449,6 +452,7 @@ class FileWriterManager(BECService):
                 configuration_data=self.device_configuration,
                 mode=write_mode,
                 file_handle=file_handle,
+                written_async_signals=written_async_signals,
             )
         # pylint: disable=broad-except
         # pylint: disable=unused-variable

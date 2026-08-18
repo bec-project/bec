@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from test_file_writer_manager import file_writer_manager_mock
 
-from bec_lib import messages
+from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.file_writer import HDF5FileWriter
 from bec_server.file_writer.default_writer import DefaultFormat
@@ -18,6 +18,18 @@ class PluginFormatForTest(DefaultFormat):
     def format(self) -> None:
         entry = self.storage.create_group("entry")
         entry.attrs["definition"] = "NXtest"
+
+
+class CapturingFormatForTest(DefaultFormat):
+    last_written_async_signals = None
+
+    def __init__(self, *args, written_async_signals=None, **kwargs):
+        self.__class__.last_written_async_signals = written_async_signals
+        super().__init__(*args, written_async_signals=written_async_signals, **kwargs)
+
+    def format(self) -> None:
+        entry = self.storage.create_group("entry")
+        entry.attrs["definition"] = "NXcapture"
 
 
 def _make_additional_scan_metadata(
@@ -49,6 +61,11 @@ def hdf5_file_writer(file_writer_manager_mock_with_dm):
     file_manager = file_writer_manager_mock_with_dm
     file_writer = HDF5FileWriter(file_manager)
     yield file_writer
+
+
+@pytest.fixture(autouse=True)
+def no_file_writer_plugins(monkeypatch):
+    monkeypatch.setattr(plugin_helper, "get_file_writer_plugins", lambda: {})
 
 
 @pytest.fixture
@@ -93,6 +110,7 @@ def default_format(file_writer_manager_mock_with_dm):
         device_manager=file_writer_manager_mock_with_dm.device_manager,
         beamline_states={},
         additional_scan_metadata=_make_additional_scan_metadata(),
+        written_async_signals=None,
     )
 
 
@@ -113,18 +131,28 @@ def test_get_entry_returns_default_for_missing_signal(default_format):
     assert default_format.get_entry("missing", default="fallback") == "fallback"
 
 
-def test_has_async_signal_matches_prefixed_and_unprefixed_object_names(default_format):
+def test_has_async_signal_returns_false_without_written_async_signals(default_format):
     with mock.patch.object(
         default_format.device_manager, "get_bec_signals"
     ) as mock_get_bec_signals:
-        mock_get_bec_signals.return_value = [
-            ("samx", None, {"object_name": "devicenamesamx"}),
-            ("waveform", None, {"object_name": "waveform"}),
-        ]
-
-        assert default_format.has_async_signal("samx", "samx") is True
-        assert default_format.has_async_signal("waveform", "waveform") is True
+        assert default_format.has_async_signal("samx", "samx") is False
+        assert default_format.has_async_signal("waveform", "waveform") is False
         assert default_format.has_async_signal("samx", "other") is False
+
+    mock_get_bec_signals.assert_not_called()
+
+
+def test_has_async_signal_uses_written_async_signals_when_provided(default_format):
+    default_format.written_async_signals = {"waveform": ["waveform_data"]}
+
+    with mock.patch.object(
+        default_format.device_manager, "get_bec_signals"
+    ) as mock_get_bec_signals:
+        assert default_format.has_async_signal("waveform", "waveform_data") is True
+        assert default_format.has_async_signal("waveform", "other") is False
+        assert default_format.has_async_signal("samx", "samx") is False
+
+    mock_get_bec_signals.assert_not_called()
 
 
 def test_safe_dataset_skips_missing_device(default_format):
@@ -595,3 +623,18 @@ def test_states_are_converted_to_compound_types(tmp_path, hdf5_file_writer, scan
         assert label_1 == "Shutter moving"
         assert status_1 == "warning"
         assert values[1]["timestamp"] == 2.34
+
+
+def test_hdf5_writer_forwards_written_async_signals(tmp_path, hdf5_file_writer, scan_storage_mock):
+    with mock.patch(
+        "bec_lib.plugin_helper.get_file_writer_plugins"
+    ) as mock_get_file_writer_plugins:
+        mock_get_file_writer_plugins.return_value = {"capture": CapturingFormatForTest}
+        hdf5_file_writer.write(
+            f"{tmp_path}/test.h5",
+            scan_storage_mock,
+            configuration_data={},
+            written_async_signals={"waveform": ["waveform_data"]},
+        )
+
+    assert CapturingFormatForTest.last_written_async_signals == {"waveform": ["waveform_data"]}
