@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.164.1 (2026-08-18)
+
+### Bug Fixes
+
+- **rpc**: Respect read_only during rpc calls
+  ([`70ed253`](https://github.com/bec-project/bec/commit/70ed253ce8e880c4745d5106fb2b73ebaac65031))
+
+
 ## v3.164.0 (2026-08-18)
 
 ### Features
