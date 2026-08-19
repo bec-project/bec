@@ -57,6 +57,11 @@ class BECMagics(Magics):
         return self.client.queue.request_scan_halt()
 
     @line_magic
+    def stop(self, line):
+        "Stop all devices"
+        return self.client._request_stop_all_devices()
+
+    @line_magic
     def server_restart(self, line):
         "Request a server restart"
         return self.client._request_server_restart()

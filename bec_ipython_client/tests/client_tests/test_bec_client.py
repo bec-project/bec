@@ -7,6 +7,7 @@ import pytest
 import redis.exceptions
 
 from bec_ipython_client import BECIPythonClient, main
+from bec_ipython_client.bec_magics import BECMagics
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase, AlarmHandler, Alarms
 from bec_lib.bec_errors import DeviceConfigError
@@ -122,6 +123,16 @@ def test_ipython_device_helper_func_inspect(bec_ipython_shell):
     """
     shell, _ = bec_ipython_shell
     shell.run_cell("dev.get_devices_with_tags?")
+
+
+def test_stop_magic_requests_stop_all_devices(bec_ipython_shell, bec_client_mock):
+    shell, _ = bec_ipython_shell
+    magics = BECMagics(shell, bec_client_mock)
+
+    with mock.patch.object(bec_client_mock, "_request_stop_all_devices") as request_stop:
+        magics.stop("")
+
+    request_stop.assert_called_once_with()
 
 
 @pytest.fixture
