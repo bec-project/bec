@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.164.2 (2026-08-19)
+
+### Bug Fixes
+
+- **device**: Handle KeyboardInterrupt gracefully in RPC calls
+  ([`4da5a66`](https://github.com/bec-project/bec/commit/4da5a6613f1fdf816c023cde7b4cec8d56444535))
+
+
 ## v3.164.1 (2026-08-18)
 
 ### Bug Fixes
