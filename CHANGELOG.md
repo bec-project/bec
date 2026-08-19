@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.165.0 (2026-08-19)
+
+### Features
+
+- **async writer**: Add tracking for written async signals
+  ([`a2935af`](https://github.com/bec-project/bec/commit/a2935af32d15349e46c3ac87fe7f158fd784b165))
+
+
 ## v3.164.2 (2026-08-19)
 
 ### Bug Fixes
