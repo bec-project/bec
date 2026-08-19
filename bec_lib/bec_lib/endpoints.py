@@ -697,8 +697,9 @@ class MessageEndpoints:
         Endpoint for stopping devices. This endpoint is used to publish a message
         to stop devices and is used by the scan server's scan queue if a scan queue
         modification was requested and accepted and requires to stop devices.
-        The variable message's value contains a list of device names to stop. If
-        the list is empty, all devices will be stopped.
+        The variable message's value contains a list of device names to stop.
+        If the value is ``None``, all devices will be stopped. If the value is
+        an empty list, no devices will be stopped.
 
         Returns:
             EndpointInfo: Endpoint for stopping devices.
