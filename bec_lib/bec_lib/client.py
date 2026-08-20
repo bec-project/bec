@@ -314,6 +314,7 @@ class BECClient(BECService):
             module_name (str): The name of the module to load
         """
         plugins = _get_available_plugins("bec")
+        ipython_is_installed = importlib.util.find_spec("bec_ipython_client")
         for plugin in plugins:
             try:
                 module = importlib.import_module(
@@ -325,11 +326,16 @@ class BECClient(BECService):
                 )
                 break
             except Exception:
+                logger.info(
+                    f"Failed to load high level interface {module_name} from plugin {plugin.__name__}."
+                )
                 continue
         else:
-            mod = importlib.import_module(f"bec_ipython_client.high_level_interfaces.{module_name}")
-            members = inspect.getmembers(mod)
-            logger.info(f"Loaded high level interface {module_name} from bec.")
+            if ipython_is_installed:
+                module = importlib.import_module(
+                    f"bec_ipython_client.high_level_interfaces.{module_name}"
+                )
+                members = inspect.getmembers(module)
         funcs = {name: func for name, func in members if not name.startswith("__")}
         self._hli_funcs.update(funcs)
         builtins.__dict__.update(funcs)
