@@ -55,6 +55,24 @@ def test_request_scan_reload_requires_initialized_client(bec_client_mock):
         client._request_scan_reload()
 
 
+def test_request_stop_all_devices(bec_client_mock):
+    client = bec_client_mock
+
+    client._request_stop_all_devices()
+
+    client.connector.send.assert_called_once_with(
+        MessageEndpoints.stop_devices(), messages.VariableMessage(value=None)
+    )
+
+
+def test_request_stop_all_devices_requires_initialized_client(bec_client_mock):
+    client = bec_client_mock
+    client.connector = None
+
+    with pytest.raises(RuntimeError, match="Client not initialized. Cannot stop devices."):
+        client._request_stop_all_devices()
+
+
 def test_client_restart_endpoint():
     endpoint = MessageEndpoints.client_restart()
 

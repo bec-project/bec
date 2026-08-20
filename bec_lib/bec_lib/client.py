@@ -448,6 +448,13 @@ class BECClient(BECService):
         msg = ServiceRequestMessage(action="reload_scans")
         self.connector.send(MessageEndpoints.service_request(), msg)
 
+    def _request_stop_all_devices(self):
+        if self.connector is None or self.device_manager is None:
+            raise RuntimeError("Client not initialized. Cannot stop devices.")
+
+        msg = VariableMessage(value=None)
+        self.connector.send(MessageEndpoints.stop_devices(), msg)
+
     def _run_script(self, script_id: str):
         executor = ScriptExecutor(self.connector)
         executor(script_id)
