@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.165.1 (2026-08-20)
+
+### Bug Fixes
+
+- Redis connection auth parameter restoration
+  ([`6e28d7e`](https://github.com/bec-project/bec/commit/6e28d7edc9336e62db6c500c69bb69baba6c9f84))
+
+
 ## v3.165.0 (2026-08-19)
 
 ### Features
