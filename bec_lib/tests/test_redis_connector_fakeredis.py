@@ -655,10 +655,14 @@ def test_merging_streams_does_not_skip_messages(connected_connector: ManagedRedi
     cb_normal.assert_not_called()
 
     connector.xadd("test", {"data": 3})
-    connector.poll_messages()
+    connector.poll_messages(timeout=1)
     cb_normal.assert_called_once_with({"data": 3}, key="normal")
     cb_normal.reset_mock()
 
+    # Finish the cursor update and pause live reads while checking history migration.
+    connector._stop_stream_events_listener_thread.set()
+    connector._stream_events_listener_thread.join(timeout=5)
+    assert not connector._stream_events_listener_thread.is_alive()
     assert (id_3 := connected_connector._stream_subs.end_id("test")) != "+"
 
     connector.xadd("test", {"data": 4})
@@ -673,7 +677,9 @@ def test_merging_streams_does_not_skip_messages(connected_connector: ManagedRedi
     connector.poll_messages(timeout=0)
     connector.poll_messages(timeout=0)
 
-    assert cb_from_start.call_count == 3
+    assert cb_from_start.call_args_list == [
+        mock.call({"data": value}, key="from_start") for value in range(1, 4)
+    ]
 
     with pytest.raises(TimeoutError):
         connector.poll_messages(timeout=0)
@@ -682,10 +688,19 @@ def test_merging_streams_does_not_skip_messages(connected_connector: ManagedRedi
     assert connected_connector._stream_subs.from_start_subs == {}
     assert connected_connector._stream_subs.end_id("test") == id_3
 
-    connector.poll_messages()
+    connector._stop_stream_events_listener_thread.clear()
+    connector._stream_events_listener_thread = threading.Thread(
+        target=connector._get_stream_messages_loop
+    )
+    connector._stream_events_listener_thread.start()
+    connector.poll_messages(timeout=1)
 
-    assert cb_from_start.call_count == 5
-    assert cb_normal.call_count == 2
+    assert cb_from_start.call_args_list == [
+        mock.call({"data": value}, key="from_start") for value in range(1, 6)
+    ]
+    assert cb_normal.call_args_list == [
+        mock.call({"data": value}, key="normal") for value in (4, 5)
+    ]
 
 
 def test_subs_garbage_collectioon(connected_connector):
