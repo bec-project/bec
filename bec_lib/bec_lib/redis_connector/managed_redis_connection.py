@@ -493,12 +493,13 @@ class ManagedRedisConnection:
             else:
                 return self._redis_conn.xread(topics_ids, block=200) or []  # type: ignore strs are fine key and id types
         except redis.exceptions.ConnectionError:
-            logger.error(self.connection_error_str)
+            return None
         except redis.exceptions.NoPermissionError:
             logger.error(f"Permission denied for stream topics: {set(topics_ids.keys())}")
         # pylint: disable=broad-except
         except Exception:
             sys.excepthook(*sys.exc_info())  # type: ignore # inside except
+        return None
 
     def _read_from_start_streams_and_migrate(self) -> bool:
         """Returns whether there was an error"""
@@ -522,25 +523,39 @@ class ManagedRedisConnection:
         Get stream messages loop. This method is run in a separate thread and listens
         for messages from the redis server.
         """
+        error = False
         while not self._stop_stream_events_listener_thread.is_set():
             # first clear any dead callbacks
             with self._stream_subs.lock:
                 self._stream_subs.gc_cb_refs()
             # First read the "from_start" streams, up until any id which is already in the normal
             # subs, then all those them to the normal streams
-            error = self._read_from_start_streams_and_migrate()
+            from_start_error = self._read_from_start_streams_and_migrate()
             # Then read all the normal streams
             with self._stream_subs.lock:
                 normal_topics = self._stream_subs.topic_ids()
                 normal_subs = self._stream_subs.normal_subs
-            if normal_topics and (response := self._try_read_streams(normal_topics)) is not None:
-                updated_ids = self._handle_stream_msg_list(response, normal_subs)
+            normal_error = False
+            if normal_topics:
+                response = self._try_read_streams(normal_topics)
+                if response is not None:
+                    updated_ids = self._handle_stream_msg_list(response, normal_subs)
+                else:
+                    updated_ids = {}
+                    normal_error = True
             else:
                 updated_ids = {}
             with self._stream_subs.lock:
                 self._stream_subs.update_normal_ids(updated_ids)
-            if error:  # Encountered an error on xread, wait a while without the lock
+            stream_error = from_start_error or normal_error
+            if stream_error:  # Encountered an error on xread, wait a while without the lock
+                if not error:
+                    error = True
+                    logger.error(self.connection_error_str)
                 self._stop_stream_events_listener_thread.wait(timeout=1)
+            elif error:
+                error = False
+                logger.info(f"{self.name} reconnected to redis ({self.host}:{self.port}).")
 
     def _register_stream(
         self,
@@ -683,6 +698,8 @@ class ManagedRedisConnection:
             except Exception:
                 sys.excepthook(*sys.exc_info())  # type: ignore # inside except
             else:
+                if error:
+                    logger.info(f"{self.name} reconnected to redis ({self.host}:{self.port}).")
                 error = False
                 if msg is not None:
                     self._message_callbacks_queue.put(msg)
