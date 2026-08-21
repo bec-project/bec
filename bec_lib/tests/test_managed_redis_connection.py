@@ -1,7 +1,9 @@
+import contextlib
 from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
+import redis.exceptions
 from redis.exceptions import RedisError
 
 import bec_lib.messages as bec_messages
@@ -417,3 +419,63 @@ def test_user_pw_restored_on_auth_fail(connector: ManagedRedisConnection, test_d
     with pytest.raises(RedisError):
         connector.authenticate(username="user", password="pass")
     assert connector._redis_conn.connection_pool.connection_kwargs == test_dict
+
+
+def test_stream_connection_logs_once_and_logs_recovery(connector: ManagedRedisConnection):
+    stream_subs = mock.MagicMock()
+    stream_subs.lock = contextlib.nullcontext()
+    stream_subs.gc_cb_refs = mock.MagicMock()
+    stream_subs.topic_ids = mock.MagicMock(
+        side_effect=[{"topic": "0-0"}, {"topic": "0-0"}, {"topic": "0-0"}]
+    )
+    stream_subs.normal_subs = {}
+    stream_subs.update_normal_ids = mock.MagicMock()
+    connector._stream_subs = stream_subs
+    connector._read_from_start_streams_and_migrate = mock.MagicMock(return_value=False)
+    connector._handle_stream_msg_list = mock.MagicMock(return_value={})
+    connector._stop_stream_events_listener_thread = mock.MagicMock()
+    connector._stop_stream_events_listener_thread.is_set.side_effect = [False, False, False, True]
+    connector._stop_stream_events_listener_thread.wait = mock.MagicMock()
+    connector._redis_conn.xread.side_effect = [
+        redis.exceptions.ConnectionError,
+        redis.exceptions.ConnectionError,
+        [],
+    ]
+
+    with (
+        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
+        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
+    ):
+        connector._get_stream_messages_loop()
+
+    log_error.assert_called_once_with(connector.connection_error_str)
+    log_info.assert_called_once_with(
+        f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
+    )
+    assert connector._stop_stream_events_listener_thread.wait.call_count == 2
+
+
+def test_pubsub_connection_logs_once_and_logs_recovery(connector: ManagedRedisConnection):
+    connector._garbage_collect_cb_refs = mock.MagicMock()
+    connector._stop_events_listener_thread = mock.MagicMock()
+    connector._stop_events_listener_thread.is_set.side_effect = [False, False, False, True]
+    connector._stop_events_listener_thread.wait = mock.MagicMock()
+    connector._pubsub_conn.get_message.side_effect = [
+        redis.exceptions.ConnectionError,
+        redis.exceptions.ConnectionError,
+        None,
+    ]
+
+    with (
+        mock.patch(
+            "bec_lib.redis_connector.managed_redis_connection.bec_logger.logger.error"
+        ) as log_error,
+        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
+    ):
+        connector._get_messages_loop()
+
+    log_error.assert_called_once_with(connector.connection_error_str)
+    log_info.assert_called_once_with(
+        f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
+    )
+    assert connector._stop_events_listener_thread.wait.call_count == 2
