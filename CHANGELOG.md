@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.166.1 (2026-08-24)
+
+### Bug Fixes
+
+- Allow fully commented out yaml files
+  ([`4a41350`](https://github.com/bec-project/bec/commit/4a41350ef7f9b2a0c1bcf39c62365dca159452d4))
+
+
 ## v3.166.0 (2026-08-24)
 
 ### Features
