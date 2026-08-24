@@ -55,7 +55,7 @@ def _strip_includes(d: dict):
 
 
 def _parse_data_stream(stream: io.TextIOWrapper, process_includes: bool = True) -> dict:
-    out = yaml.load(stream, Loader=bec_loader())
+    out = yaml.load(stream, Loader=bec_loader()) or {}
     included = []
     if not process_includes:
         _strip_includes(out)

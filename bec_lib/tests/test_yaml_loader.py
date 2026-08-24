@@ -132,3 +132,31 @@ def test_load_yaml_skip_includes(test_file1, test_file2, test_file3):
     assert len(out) == 2
     assert "samx" not in out
     assert "__include__" not in out
+
+
+def test_load_yaml_comment_only_file():
+    with open("test_file_1.yaml", "w", encoding="utf-8") as file:
+        file.write("# comment-only config\n# still intentionally empty\n")
+    try:
+        out = yaml_load("test_file_1.yaml")
+    finally:
+        _remove_files(["test_file_1.yaml"])
+
+    assert out == {}
+
+
+def test_load_yaml_comment_only_include(test_file1):
+    include_str = "sastt: !include ./test_file2.yaml"
+    output_file_1 = test_file1 + "\n" + include_str
+    with open("test_file_1.yaml", "w", encoding="utf-8") as file:
+        file.write(output_file_1)
+    with open("test_file2.yaml", "w", encoding="utf-8") as file:
+        file.write("# comment-only config\n# nothing to merge\n")
+    try:
+        out = yaml_load("test_file_1.yaml")
+    finally:
+        _remove_files(["test_file_1.yaml", "test_file2.yaml"])
+
+    assert "eiger" in out
+    assert "sastt" not in out
+    assert len(out) == 1
