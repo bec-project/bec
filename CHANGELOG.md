@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.166.0 (2026-08-24)
+
+### Features
+
+- **magics**: Add stop magic to halt all devices and implement corresponding client method
+  ([`c8eae1d`](https://github.com/bec-project/bec/commit/c8eae1dbdcb3f184ae22515b241273fd77803ddb))
+
+
 ## v3.165.1 (2026-08-20)
 
 ### Bug Fixes
