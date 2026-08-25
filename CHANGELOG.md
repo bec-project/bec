@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.166.2 (2026-08-25)
+
+### Bug Fixes
+
+- Limit max failures in e2e tests
+  ([`6ebeb29`](https://github.com/bec-project/bec/commit/6ebeb2950ab6df8a6f8ff9142b281cdfc5385a4d))
+
+
 ## v3.166.1 (2026-08-24)
 
 ### Bug Fixes
