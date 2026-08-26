@@ -27,7 +27,17 @@ logger = bec_logger.logger
 if TYPE_CHECKING:  # pragma: no cover
     from bec_ipython_client.main import BECIPythonClient
 
+
 # pylint: disable=protected-access
+class _ScanDataRecorder:
+    def __init__(self):
+        self.data = []
+        self.metadata = {}
+
+    def callback(self, data, metadata):
+        logger.info(f"callback metadata: {metadata}")
+        self.metadata = metadata
+        self.data.append(data)
 
 
 @pytest.mark.timeout(100)
@@ -634,21 +644,16 @@ def test_callback_data_matches_scan_data(bec_ipython_client_fixture):
     bec.metadata.update({"unit_test": "test_callback_data_matches_scan_data"})
     dev = bec.device_manager.devices
     scans = bec.scans
-    reference_container = {"data": [], "metadata": {}}
+    recorder = _ScanDataRecorder()
 
-    def dummy_callback(data, metadata):
-        logger.info(f"callback metadata: {metadata}")
-        reference_container["metadata"] = metadata
-        reference_container["data"].append(data)
-
-    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, callback=dummy_callback)
-    while len(reference_container["data"]) < 10:
+    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, callback=recorder.callback)
+    while len(recorder.data) < 10:
         time.sleep(0.1)
     assert len(s.scan.live_data) == 10
-    assert len(reference_container["data"]) == 10
+    assert len(recorder.data) == 10
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
-        assert msg.content == reference_container["data"][ii]
+        assert msg.content == recorder.data[ii]
 
 
 @pytest.mark.timeout(100)
@@ -657,23 +662,18 @@ def test_async_callback_data_matches_scan_data(bec_ipython_client_fixture):
     bec.metadata.update({"unit_test": "test_async_callback_data_matches_scan_data"})
     dev = bec.device_manager.devices
     scans = bec.scans
-    reference_container = {"data": [], "metadata": {}}
+    recorder = _ScanDataRecorder()
 
-    def dummy_callback(data, metadata):
-        logger.info(f"callback metadata: {metadata}")
-        reference_container["metadata"] = metadata
-        reference_container["data"].append(data)
+    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=recorder.callback)
 
-    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=dummy_callback)
-
-    while len(reference_container["data"]) < 10:
+    while len(recorder.data) < 10:
         time.sleep(0.1)
 
     assert len(s.scan.live_data) == 10
-    assert len(reference_container["data"]) == 10
+    assert len(recorder.data) == 10
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
-        assert msg.content == reference_container["data"][ii]
+        assert msg.content == recorder.data[ii]
 
 
 @pytest.mark.timeout(100)
