@@ -9,13 +9,27 @@ import builtins
 import enum
 import threading
 import traceback
+import types
+import weakref
 from collections import deque
 from collections.abc import Callable
+
+import louie
 
 from bec_lib.logger import bec_logger
 from bec_lib.utils import threadlocked
 
 logger = bec_logger.logger
+
+
+class _StrongCallableRef:
+    """Fallback ref wrapper for callables that cannot be safely weak-referenced."""
+
+    def __init__(self, func: Callable) -> None:
+        self._func = func
+
+    def __call__(self) -> Callable:
+        return self._func
 
 
 class EventType(str, enum.Enum):
@@ -38,11 +52,27 @@ class CallbackEntry:
 
     def __init__(self, id: int, event_type: EventType, func: Callable, sync: bool) -> None:
         self.id = id
-        self.func = func
+        self.func = self._make_ref(func)
         self.event_type = event_type
         self.sync = sync
         self.queue = deque(maxlen=1000)
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _make_ref(func: Callable):
+        if isinstance(func, types.FunctionType):
+            # Lambdas and regular functions cannot be weak-referenced safely, so we use a strong reference.
+            return _StrongCallableRef(func)
+        try:
+            return louie.saferef.safe_ref(func)
+        except (AttributeError, TypeError):
+            try:
+                return weakref.ref(func)
+            except TypeError:
+                return _StrongCallableRef(func)
+
+    def _resolve_func(self) -> Callable | None:
+        return None if self.func is None else self.func()
 
     @threadlocked
     def run(self, *args, **kwargs) -> None:
@@ -55,18 +85,26 @@ class CallbackEntry:
     def _run_cb(self, *args, **kwargs) -> None:
         """Run the callback function in a safe way."""
         try:
-            self.func(*args, **kwargs)
+            func = self._resolve_func()
+            if func is not None:
+                func(*args, **kwargs)
         except Exception:
             content = traceback.format_exc()
             logger.warning(f"Failed to run callback function: {content}")
 
     def __str__(self) -> str:
-        return f"<CallbackEntry>: (event_type: {self.event_type}, function: {self.func.__name__}, sync: {self.sync}, pending events: {self.num_pending_events})"
+        func = self._resolve_func()
+        func_name = getattr(func, "__name__", type(func).__name__) if func is not None else "<dead>"
+        return f"<CallbackEntry>: (event_type: {self.event_type}, function: {func_name}, sync: {self.sync}, pending events: {self.num_pending_events})"
 
     @property
     def num_pending_events(self):
         """number of pending events"""
         return len(self.queue)
+
+    def is_alive(self) -> bool:
+        """Check if the callback function is still alive"""
+        return self._resolve_func() is not None
 
     @threadlocked
     def poll(self) -> None:
@@ -153,19 +191,31 @@ class CallbackHandler:
     @threadlocked
     def run(self, event_type: str, *args, **kwargs):
         """Run all callbacks for a given event type"""
+        dead_cbs = []
         for cb in self.callbacks.values():
             if event_type != cb.event_type:
                 continue
-            cb.run(*args, **kwargs)
+            if cb.is_alive():
+                cb.run(*args, **kwargs)
+            else:
+                dead_cbs.append(cb.id)
+        for cb_id in dead_cbs:
+            self.callbacks.pop(cb_id, None)
 
     @threadlocked
     def poll(self):
         """Run all pending callbacks"""
+        dead_cbs = []
         for callback in self.callbacks.values():
+            if not callback.is_alive():
+                dead_cbs.append(callback.id)
+                continue
             if not callback.sync:
                 continue
             while callback.num_pending_events:
                 callback.poll()
+        for cb_id in dead_cbs:
+            self.callbacks.pop(cb_id, None)
 
 
 class CallbackRegister:
