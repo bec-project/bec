@@ -14,6 +14,17 @@ from bec_lib.redis_connector import RedisConnector
 # pylint: disable=missing-function-docstring
 
 
+class _ScanHistoryUpdateRecorder:
+    def __init__(self):
+        self.cbs_run = 0
+        self.event = Event()
+
+    def __call__(self):
+        self.cbs_run += 1
+        if self.cbs_run >= 2:
+            self.event.set()
+
+
 @pytest.fixture
 def scan_history_without_thread(connected_connector, file_history_messages):
     with mock.patch("bec_lib.scan_history.os.access") as access:
@@ -60,16 +71,9 @@ def test_scan_history_loads_messages(scan_history_without_thread, file_history_m
 # @pytest.mark.timeout(20)
 def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_history_messages):
     scan_history, _ = scan_history_without_thread
-    cbs_run = 0
-    ev = Event()
+    recorder = _ScanHistoryUpdateRecorder()
 
-    def _cb():
-        nonlocal cbs_run, ev
-        cbs_run += 1
-        if cbs_run >= 2:
-            ev.set()
-
-    scan_history._client.callbacks.register(EventType.SCAN_HISTORY_UPDATE, _cb)
+    scan_history._client.callbacks.register(EventType.SCAN_HISTORY_UPDATE, recorder)
     msg = [
         messages.ScanHistoryMessage(
             scan_id="scan_id_4",
@@ -102,7 +106,7 @@ def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_hist
         while len(scan_history._scan_ids) > 2:
             time.sleep(0.1)
 
-    if ev.wait(timeout=1):
+    if recorder.event.wait(timeout=1):
         raise TimeoutError()
 
     with scan_history._scan_data_lock:

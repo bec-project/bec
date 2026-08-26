@@ -7,10 +7,14 @@ in a with statement.
 
 import builtins
 import enum
+import functools
 import threading
 import traceback
+import types
 from collections import deque
 from collections.abc import Callable
+
+import louie
 
 from bec_lib.logger import bec_logger
 from bec_lib.utils import threadlocked
@@ -36,13 +40,40 @@ class EventType(str, enum.Enum):
 class CallbackEntry:
     """Callback entry class to store callback information"""
 
-    def __init__(self, id: int, event_type: EventType, func: Callable, sync: bool) -> None:
+    def __init__(
+        self,
+        id: int,
+        event_type: EventType,
+        func: Callable,
+        sync: bool,
+        on_delete: Callable | None = None,
+    ) -> None:
         self.id = id
-        self.func = func
+        self.func = self._make_ref(func, on_delete=on_delete)
         self.event_type = event_type
         self.sync = sync
         self.queue = deque(maxlen=1000)
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _make_ref(func: Callable, on_delete: Callable | None = None):
+        if isinstance(func, functools.partial):
+            raise ValueError(
+                "functools.partial objects cannot be used as callbacks; use a callable object "
+                "instead."
+            )
+        if CallbackEntry._is_local_function(func):
+            raise ValueError(
+                "Local functions such as lambdas or inline functions cannot be used as callbacks."
+            )
+        return louie.saferef.safe_ref(func, on_delete=on_delete)
+
+    @staticmethod
+    def _is_local_function(func: Callable) -> bool:
+        return isinstance(func, types.FunctionType) and "<locals>" in func.__qualname__
+
+    def _resolve_func(self) -> Callable | None:
+        return None if self.func is None else self.func()
 
     @threadlocked
     def run(self, *args, **kwargs) -> None:
@@ -55,18 +86,26 @@ class CallbackEntry:
     def _run_cb(self, *args, **kwargs) -> None:
         """Run the callback function in a safe way."""
         try:
-            self.func(*args, **kwargs)
+            func = self._resolve_func()
+            if func is not None:
+                func(*args, **kwargs)
         except Exception:
             content = traceback.format_exc()
             logger.warning(f"Failed to run callback function: {content}")
 
     def __str__(self) -> str:
-        return f"<CallbackEntry>: (event_type: {self.event_type}, function: {self.func.__name__}, sync: {self.sync}, pending events: {self.num_pending_events})"
+        func = self._resolve_func()
+        func_name = getattr(func, "__name__", type(func).__name__) if func is not None else "<dead>"
+        return f"<CallbackEntry>: (event_type: {self.event_type}, function: {func_name}, sync: {self.sync}, pending events: {self.num_pending_events})"
 
     @property
     def num_pending_events(self):
         """number of pending events"""
         return len(self.queue)
+
+    def is_alive(self) -> bool:
+        """Check if the callback function is still alive"""
+        return self._resolve_func() is not None
 
     @threadlocked
     def poll(self) -> None:
@@ -103,7 +142,13 @@ class CallbackHandler:
         """
         event_type = EventType(event_type)
         callback_id = self.new_id()
-        self.callbacks[callback_id] = CallbackEntry(callback_id, event_type, callback, sync)
+        self.callbacks[callback_id] = CallbackEntry(
+            callback_id,
+            event_type,
+            callback,
+            sync,
+            on_delete=lambda _ref, callback_id=callback_id: self.remove(callback_id),
+        )
         return callback_id
 
     @threadlocked
@@ -153,7 +198,7 @@ class CallbackHandler:
     @threadlocked
     def run(self, event_type: str, *args, **kwargs):
         """Run all callbacks for a given event type"""
-        for cb in self.callbacks.values():
+        for cb in list(self.callbacks.values()):
             if event_type != cb.event_type:
                 continue
             cb.run(*args, **kwargs)
@@ -161,7 +206,7 @@ class CallbackHandler:
     @threadlocked
     def poll(self):
         """Run all pending callbacks"""
-        for callback in self.callbacks.values():
+        for callback in list(self.callbacks.values()):
             if not callback.sync:
                 continue
             while callback.num_pending_events:
