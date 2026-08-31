@@ -92,6 +92,59 @@ def test_scan_report_wait_for_scan_file_pending(scan_report):
             assert file_written.call_count == 3
 
 
+def test_scan_report_wait_for_non_scan_without_scan_item(scan_report):
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="umv", parameter={})
+    scan_report.request.requestID = "request-id"
+    scan_report.queue_item.status = "COMPLETED"
+    scan_report.request.queue.request_blocks = [mock.MagicMock(RID="request-id", is_scan=False)]
+
+    with (
+        mock.patch.object(ScanReport, "scan", new_callable=mock.PropertyMock) as scan,
+        mock.patch("time.sleep") as sleep,
+    ):
+        scan.return_value = None
+        scan_report._wait_scan(None, 0.1, num_points=False, file_written=True)
+
+    sleep.assert_not_called()
+
+
+def test_scan_report_wait_for_non_scan_uses_cached_queue_item(scan_report):
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="umv", parameter={})
+    scan_report.request.requestID = "request-id"
+    scan_report.queue_item.status = "COMPLETED"
+    scan_report.queue_item.request_blocks = [mock.MagicMock(RID="request-id", is_scan=False)]
+    scan_report.request.queue = None
+
+    with (
+        mock.patch.object(ScanReport, "scan", new_callable=mock.PropertyMock) as scan,
+        mock.patch("time.sleep") as sleep,
+    ):
+        scan.return_value = None
+        scan_report._wait_scan(None, 0.1, num_points=False, file_written=True)
+
+    sleep.assert_not_called()
+
+
+def test_scan_report_wait_for_scan_num_points_waits_for_scan_item(scan_report):
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
+    scan_report.queue_item.status = "COMPLETED"
+
+    missing_scan = None
+    incomplete_scan = mock.MagicMock(num_monitored_readouts=3, live_data={"0": "msg"})
+    complete_scan = mock.MagicMock(
+        num_monitored_readouts=3, live_data={"0": "msg", "1": "msg", "2": "msg"}
+    )
+
+    with (
+        mock.patch.object(ScanReport, "scan", new_callable=mock.PropertyMock) as scan,
+        mock.patch("time.sleep"),
+    ):
+        scan.side_effect = [missing_scan, *([incomplete_scan] * 4), *([complete_scan] * 4)]
+        scan_report._wait_scan(None, 0.1, num_points=True, file_written=False)
+
+    assert scan_report._client.callbacks.poll.call_count == 3
+
+
 def test_scan_report_wait_for_scan_raises(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(scan_type="mv", parameter={})
     with mock.patch.object(scan_report, "_get_mv_status") as get_mv_status:
