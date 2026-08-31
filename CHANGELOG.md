@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v3.167.0 (2026-08-31)
+
+### Bug Fixes
+
+- Update .gitignore to include .python-version and AGENTS_PERSONAL.md
+  ([`ec98ace`](https://github.com/bec-project/bec/commit/ec98ace9b65fb7320fb80a983a33188c9d9100a5))
+
+### Features
+
+- **agents**: Curated AGENTS.md and CLAUDE.md files added with best practices for the project
+  ([`ee8e761`](https://github.com/bec-project/bec/commit/ee8e761081abfbfd81bc9bf9e25dc0d4166260eb))
+
+
 ## v3.166.2 (2026-08-25)
 
 ### Bug Fixes
