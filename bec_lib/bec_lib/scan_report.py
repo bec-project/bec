@@ -238,8 +238,11 @@ class ScanReport:
         def conditions_are_met() -> bool:
             """Check if the conditions are met"""
             if not self.scan and self.status == "COMPLETED":
-                # If it is not a scan, just return True when completed
-                return True
+                if not self._request_expects_scan_item():
+                    return True
+                # If the scan item is not available yet, only return for callers
+                # that do not need scan-derived completion checks.
+                return not num_points and not file_written
             if num_points and not self._num_points_reached():
                 return False
             if file_written and not self._file_written():
@@ -258,6 +261,14 @@ class ScanReport:
 
         # final poll to ensure all callbacks are processed
         self._client.callbacks.poll()
+
+    def _request_expects_scan_item(self) -> bool:
+        """Return whether the request should eventually have a scan item."""
+        queue_item = self.request.queue or self.queue_item
+        for request_block in getattr(queue_item, "request_blocks", []) or []:
+            if request_block.RID == self.request.requestID:
+                return request_block.is_scan
+        return True
 
     def _file_written(self) -> bool:
         """
