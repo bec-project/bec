@@ -26,12 +26,13 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v6
       - name: Run E2E Tests
         uses: ./.github/actions/bec_e2e_install
+        timeout-minutes: 30
         with:
           BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
           OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
@@ -39,7 +40,7 @@ jobs:
           PYTHON_VERSION: ${{ inputs.PYTHON_VERSION }}
 
       - name: Upload E2E log artifacts
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
           name: e2e-logs
@@ -48,6 +49,7 @@ jobs:
           retention-days: 7
 
       - name: Upload E2E coverage artifact
+        if: success()
         uses: actions/upload-artifact@v6
         with:
           name: coverage-e2e
