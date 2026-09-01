@@ -5,6 +5,7 @@ import pydantic
 import pytest
 
 from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
@@ -75,6 +76,44 @@ def test_device_async_signal_index_message():
     res_loaded = MsgpackSerialization.loads(res)
 
     assert res_loaded == msg
+
+
+def test_bec_signal_info_message_roundtrip():
+    msg = messages.BECSignalInfoMessage(
+        scan_id="scan-1",
+        info={
+            "eiger": {
+                "preview": messages.SignalInfo(
+                    data_type="processed",
+                    saved=False,
+                    ndim=2,
+                    scope="continuous",
+                    role="preview",
+                    rpc_access=True,
+                    signals=[("image", 1)],
+                    signal_metadata={"units": "counts"},
+                    acquisition_group="monitored",
+                    use_alias=True,
+                )
+            }
+        },
+        metadata={"RID": "rid-1"},
+    )
+
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+
+    assert res_loaded == msg
+    assert res_loaded.info["eiger"]["preview"].ndim == 2
+    assert res_loaded.info["eiger"]["preview"].role == "preview"
+
+
+def test_bec_signal_info_endpoint_contract():
+    endpoint = MessageEndpoints.bec_signal_info()
+
+    assert endpoint.endpoint == "info/bec_signal_info"
+    assert endpoint.message_type is messages.BECSignalInfoMessage
+    assert endpoint.message_op == MessageOp.STREAM
 
 
 def test_bundled_message():

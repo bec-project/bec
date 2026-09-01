@@ -440,6 +440,35 @@ def test_device_instruction_actions_emit_expected_messages(action_context):
     assert unstage_msg.metadata["device_instr_id"] == unstage_status._device_instr_id
 
 
+def test_broadcast_bec_signal_info_emits_owned_devices(action_context):
+    ctx = action_context()
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
+    ctx.device_manager.parent.device_lock_registry = mock.MagicMock()
+    ctx.device_manager.parent.device_lock_registry.get_owned_devices.return_value = ["samy", "samx"]
+
+    ctx.actions._broadcast_bec_signal_info()
+
+    msg = _last_device_instruction(ctx, "broadcast_bec_signal_info")
+    assert msg.device == ["samx", "samy"]
+    assert msg.parameter == {"scan_id": "scan-id-test"}
+    assert msg.metadata["RID"] == "rid-123"
+    assert msg.metadata["scan_id"] == "scan-id-test"
+
+
+@pytest.mark.parametrize(("is_scan", "scan_id"), [(False, "scan-id-test"), (True, None)])
+def test_broadcast_bec_signal_info_skips_when_not_scan_or_missing_scan_id(
+    action_context, is_scan, scan_id
+):
+    ctx = action_context()
+    ctx.scan.is_scan = is_scan
+    ctx.scan.scan_info.scan_id = scan_id
+    ctx.actions._send = mock.MagicMock()
+
+    ctx.actions._broadcast_bec_signal_info()
+
+    ctx.actions._send.assert_not_called()
+
+
 def test_device_instruction_actions_use_dotted_name_for_nested_devices(action_context):
     ctx = action_context()
     setpoint = ctx.device_manager.devices.samx.setpoint
