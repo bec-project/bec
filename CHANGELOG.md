@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.167.2 (2026-09-01)
+
+### Bug Fixes
+
+- Enhance scan report logic to handle non-scan requests
+  ([`a8ac534`](https://github.com/bec-project/bec/commit/a8ac534b5cac5c1b3d4c9de603495eb069fff9d1))
+
+
 ## v3.167.1 (2026-09-01)
 
 ### Bug Fixes
