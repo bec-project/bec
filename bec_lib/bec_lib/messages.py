@@ -606,6 +606,7 @@ DeviceInstructionAction = Literal[
     "baseline_reading",
     "close_scan",
     "publish_data_as_read",
+    "broadcast_scan_device_info",
 ]
 
 
@@ -629,6 +630,7 @@ class DeviceInstructionMessage(BECMessage):
                         "baseline_reading",
                         "close_scan",
                         "publish_data_as_read",
+                        "broadcast_scan_device_info",
                         ]) : Device action, note rpc calls can run any method of the device. The function name needs to be specified in parameters['func']
         parameter (dict): Parameters required for the device action
         metadata (dict, optional): Metadata to describe the conditions of the device instruction
@@ -932,6 +934,34 @@ class SignalInfo(BaseModel):
     )
 
     model_config = ConfigDict(validate_assignment=True)
+
+
+class DeviceRuntimeInfo(BaseModel):
+    """Runtime information for a device, captured for a scan.
+
+    Args:
+        signal_info (dict[str, SignalInfo]): BEC signal information keyed by dotted component
+            name. Defaults to an empty dictionary for devices without BEC signals.
+        disabled_signals (list[str]): Dotted component names of signals to ignore for this
+            scan, relative to this device. Defaults to an empty list.
+    """
+
+    signal_info: dict[str, SignalInfo] = Field(default_factory=dict)
+    disabled_signals: list[str] = Field(default_factory=list)
+
+
+class ScanDeviceInfoMessage(BECMessage):
+    """Snapshot of device runtime information for a scan.
+
+    Args:
+        scan_id (str): Scan ID that the snapshot belongs to.
+        devices (dict[str, DeviceRuntimeInfo]): Runtime information keyed by device name.
+        metadata (dict, optional): Additional metadata.
+    """
+
+    msg_type: ClassVar[str] = "scan_device_info_message"
+    scan_id: str
+    devices: dict[str, DeviceRuntimeInfo]
 
 
 class DeviceMonitor2DMessage(BECMessage):
