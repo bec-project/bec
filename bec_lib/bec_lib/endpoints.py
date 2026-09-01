@@ -362,6 +362,23 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def scan_device_info() -> EndpointInfo:
+        """
+        Endpoint for scan device runtime information. The device server publishes
+        messages.ScanDeviceInfoMessage snapshots for all scans to this shared stream.
+        Consumers should use scan_id to associate device information with a scan.
+
+        Returns:
+            EndpointInfo: Shared stream endpoint for scan device runtime information.
+        """
+        endpoint = f"{EndpointType.INFO.value}/scan_device_info"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.ScanDeviceInfoMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def device_staged(device: str):
         """
         Endpoint for the device stage status. This endpoint is used by the device server

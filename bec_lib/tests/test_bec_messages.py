@@ -5,6 +5,7 @@ import pydantic
 import pytest
 
 from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
@@ -110,6 +111,65 @@ def test_signal_info_rejects_invalid_dimension_assignment():
         info.ndim = 3
 
     assert info.ndim == 2
+
+
+def test_scan_device_info_message_roundtrip():
+    msg = messages.ScanDeviceInfoMessage(
+        scan_id="scan-1",
+        devices={
+            "eiger": messages.DeviceRuntimeInfo(
+                signal_info={
+                    "preview": messages.SignalInfo(
+                        data_type="processed",
+                        saved=False,
+                        ndim=2,
+                        scope="continuous",
+                        role="preview",
+                        rpc_access=True,
+                        signals=[("image", 1)],
+                        signal_metadata={"units": "counts"},
+                        acquisition_group="monitored",
+                        use_alias=True,
+                    )
+                },
+                disabled_signals=["raw_image", "sub.diagnostic"],
+            ),
+            "samx": messages.DeviceRuntimeInfo(),
+        },
+        metadata={"RID": "rid-1"},
+    )
+
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+
+    assert res_loaded == msg
+    assert res_loaded.devices["eiger"].signal_info["preview"].ndim == 2
+    assert res_loaded.devices["eiger"].signal_info["preview"].role == "preview"
+    assert res_loaded.devices["eiger"].disabled_signals == ["raw_image", "sub.diagnostic"]
+
+
+def test_device_runtime_info_defaults_are_independent():
+    detector = messages.DeviceRuntimeInfo()
+    motor = messages.DeviceRuntimeInfo()
+    detector.signal_info["preview"] = messages.SignalInfo(role="preview")
+    detector.disabled_signals.append("raw_image")
+    assert motor.signal_info == {}
+    assert motor.disabled_signals == []
+
+
+def test_scan_device_info_validates_nested_signal_info():
+    with pytest.raises(pydantic.ValidationError):
+        messages.ScanDeviceInfoMessage(
+            scan_id="scan-1", devices={"eiger": {"signal_info": {"preview": {"ndim": 3}}}}
+        )
+
+
+def test_scan_device_info_endpoint_contract():
+    endpoint = MessageEndpoints.scan_device_info()
+
+    assert endpoint.endpoint == "info/scan_device_info"
+    assert endpoint.message_type is messages.ScanDeviceInfoMessage
+    assert endpoint.message_op == MessageOp.STREAM
 
 
 def test_bundled_message():
