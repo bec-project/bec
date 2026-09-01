@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.167.1 (2026-09-01)
+
+### Bug Fixes
+
+- Increase timeout for E2E tests and enhance artifact upload conditions
+  ([`ece0103`](https://github.com/bec-project/bec/commit/ece01036adb520fb65dae40d1b6953c480067014))
+
+
 ## v3.167.0 (2026-08-31)
 
 ### Bug Fixes
