@@ -609,6 +609,7 @@ DeviceInstructionAction = Literal[
     "close_scan_def",
     "publish_data_as_read",
     "close_scan_group",
+    "broadcast_bec_signal_info",
 ]
 
 
@@ -635,6 +636,7 @@ class DeviceInstructionMessage(BECMessage):
                         "close_scan_def",
                         "publish_data_as_read",
                         "close_scan_group",
+                        "broadcast_bec_signal_info",
                         ]) : Device action, note rpc calls can run any method of the device. The function name needs to be specified in parameters['func']
         parameter (dict): Parameters required for the device action
         metadata (dict, optional): Metadata to describe the conditions of the device instruction
@@ -874,6 +876,76 @@ class DeviceInfoMessage(BECMessage):
     msg_type: ClassVar[str] = "device_info_message"
     device: str
     info: dict
+
+
+class SignalInfo(BaseModel):
+    """
+    Base class for signal information.
+    This is used to store metadata about the signal.
+    """
+
+    data_type: Literal["raw", "processed"] = Field(
+        default="raw",
+        description="The data type of the signal indicates whether the signal is raw data or processed data.",
+    )
+    saved: bool = Field(default=True, description="Indicates whether the signal is saved to disk.")
+    ndim: Literal[0, 1, 2] | None = Field(
+        default=None,
+        description="The number of dimensions of the signal. If None, the signal is not expected to have a shape. "
+        "If set to 0, the signal is expected to be a scalar. For signals with multiple sub-signals, "
+        "ndim is expected to be valid for all sub-signals.",
+    )
+    scope: Literal["scan", "continuous"] = Field(
+        default="scan",
+        description="The scope of the signal indicates whether it is relevant for a specific "
+        "scan or provides continuous updates, independent of a scan.",
+    )
+    role: Literal["main", "preview", "diagnostic", "file_event", "progress"] = Field(
+        default="main",
+        description="The role of the signal provides context for its usage and allows other components to filter"
+        " or prioritize signals based on their intended function.",
+    )
+    enabled: bool = True
+    rpc_access: bool = Field(
+        default=False,
+        description="Indicates whether the signal is accessible via RPC. If False, the signal is not shown in the RPC interface.",
+    )
+    signals: list[tuple[str, int]] = Field(
+        default_factory=list, description="List of sub-signals with their kinds."
+    )
+    signal_metadata: dict = Field(
+        default_factory=dict,
+        description="Metadata for the signal, which can include additional information about the signal's properties.",
+    )
+    acquisition_group: Literal["baseline", "monitored"] | str | None = Field(
+        default=None,
+        description="""Specifies the acquisition group of the signal.
+        It can be in sync with 'baseline' or 'monitored' groups mapping readoutPriority.
+        Or mapped to a custom tag that allows grouping signals for acquisition and plotting.
+        If None, the signal does not belong to any specific acquisition group.
+        """,
+    )
+    use_alias: bool = Field(
+        default=False,
+        description="Only for DynamicSignal, AsyncSignal, AsyncMultiSignal. Indicates whether the signal "
+        "should alias an EPICS signal or list of EPICS signals.",
+    )
+
+
+class BECSignalInfoMessage(BECMessage):
+    """Message type for sending signal info updates from the device server
+
+    Args:
+        scan_id (str): Scan ID that the signal info belongs to.
+        info (dict[str, dict[str, SignalInfo]]): Signal info grouped by device name and signal
+            name.
+        metadata (dict, optional): Additional metadata.
+
+    """
+
+    msg_type: ClassVar[str] = "bec_signal_info_message"
+    scan_id: str
+    info: dict[str, dict[str, SignalInfo]]
 
 
 class DeviceMonitor2DMessage(BECMessage):

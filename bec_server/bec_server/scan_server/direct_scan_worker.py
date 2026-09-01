@@ -88,6 +88,7 @@ class DirectScanWorker:
                         raise ScanAbortion(f"Scan is missing required method: {step}")
                     self.check_for_interruption()
                     method()
+                    self.run_post_scan_step(step, scan)
         except ScanAbortion as exc:
             if not self._prepare_exception_cleanup(queue, exc):
                 return
@@ -276,3 +277,14 @@ class DirectScanWorker:
         self.worker.parent.queue_manager.queues[self.worker.queue_name].abort()
         self.reset()
         self.worker.status = InstructionQueueStatus.RUNNING
+
+    def run_post_scan_step(self, step: str, scan: ScanBase):
+        """
+        Run the post-scan step for the given scan step.
+
+        Args:
+            step (str): The scan step to run the post-scan method for.
+            scan (ScanBase): The scan object to run the post-scan method on.
+        """
+        if step == "stage":
+            scan.actions._broadcast_bec_signal_info()
