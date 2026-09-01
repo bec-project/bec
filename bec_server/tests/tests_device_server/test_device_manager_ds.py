@@ -6,12 +6,14 @@ from unittest import mock
 import numpy as np
 import ophyd
 import pytest
+from ophyd_devices import PSIDeviceBase
 from ophyd_devices.devices.psi_motor import EpicsMotor
 from ophyd_devices.tests.utils import patched_device
 
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
+from bec_server.device_server.devices.device_config import extract_device_config
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
@@ -67,6 +69,49 @@ class EpicsDeviceMock(DeviceMock):
         self._connected = True
 
 
+class ConstructDeviceKwargMock:
+    def __init__(self, name, prefix=None, custom=None, device_manager=None, scan_info=None) -> None:
+        self.name = name
+        self.prefix = prefix
+        self.custom = custom
+        self.device_manager = device_manager
+        self.scan_info = scan_info
+
+
+class ConstructDeviceAccessKwargMock:
+    def __init__(self, name, device_access=None) -> None:
+        self.name = name
+        self.device_access = device_access
+
+
+class ConstructDeviceHiddenKwargsMock(ophyd.Device):
+    config_signal = ophyd.Component(ophyd.Signal, value=0)
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.opaque = kwargs.pop("opaque")
+        self.device_manager = kwargs.pop("device_manager")
+        self.forwarded_kwargs = kwargs.copy()
+        super().__init__(*args, **kwargs)
+
+    @property
+    def config_property(self):
+        return None
+
+
+class ConstructDeviceConfigUpdaterMock(ophyd.Device):
+    def __init__(self, *args, **kwargs) -> None:
+        self.forwarded_kwargs = kwargs.copy()
+        super().__init__(*args, **kwargs)
+
+    def _update_device_config(self, config: dict) -> None:
+        self.config = config
+
+
+class ConstructPSIDeviceHiddenDepsMock(PSIDeviceBase):
+    def __init__(self, **kwargs) -> None:
+        self.forwarded_kwargs = kwargs.copy()
+
+
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_device_init(dm_with_devices):
     device_manager = dm_with_devices
@@ -110,6 +155,109 @@ def test_connect_device_with_kwargs(dm_with_devices):
         device_manager.connect_device(obj, wait_for_all=True)
         mock_wait_for_connection.assert_called_once_with(all_signals=True, timeout=5)
         mock_wait_for_connection.reset_mock()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_construct_device_obj_splits_init_kwargs(dm_with_devices):
+    dev = {
+        "name": "splitter",
+        "deviceClass": "ConstructDeviceKwargMock",
+        "deviceConfig": {
+            "prefix": "PREFIX:",
+            "custom": "init-value",
+            "device_mapping": {"sim": "other"},
+            "extra_config": "post-init-value",
+        },
+    }
+
+    with mock.patch.object(
+        DeviceManagerDS, "_get_device_class", return_value=ConstructDeviceKwargMock
+    ):
+        obj, config = DeviceManagerDS.construct_device_obj(dev, dm_with_devices)
+
+    assert obj.name == "splitter"
+    assert obj.prefix == "PREFIX:"
+    assert obj.custom == "init-value"
+    assert obj.device_manager is dm_with_devices
+    assert obj.scan_info is dm_with_devices.scan_info
+    assert config == {"device_mapping": {"sim": "other"}, "extra_config": "post-init-value"}
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_construct_device_obj_keeps_device_access_as_init_kwarg(dm_with_devices):
+    dev = {
+        "name": "device_access",
+        "deviceClass": "ConstructDeviceAccessKwargMock",
+        "deviceConfig": {"device_access": True, "post_init": "value"},
+    }
+
+    with mock.patch.object(
+        DeviceManagerDS, "_get_device_class", return_value=ConstructDeviceAccessKwargMock
+    ):
+        obj, config = DeviceManagerDS.construct_device_obj(dev, dm_with_devices)
+
+    assert obj.name == "device_access"
+    assert obj.device_access is True
+    assert config == {"post_init": "value"}
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_construct_device_obj_forwards_hidden_kwargs_but_keeps_config_attrs(dm_with_devices):
+    dev = {
+        "name": "hidden_kwargs",
+        "deviceClass": "ConstructDeviceHiddenKwargsMock",
+        "deviceConfig": {
+            "prefix": "PREFIX:",
+            "opaque": "init-only",
+            "device_mapping": {"sim": "other"},
+            "config_signal": 1,
+            "config_property": 2,
+            "limits": [-1, 1],
+            "labels": ["test"],
+        },
+    }
+
+    with mock.patch.object(
+        DeviceManagerDS, "_get_device_class", return_value=ConstructDeviceHiddenKwargsMock
+    ):
+        obj, config = DeviceManagerDS.construct_device_obj(dev, dm_with_devices)
+
+    assert obj.name == "hidden_kwargs"
+    assert obj.prefix == "PREFIX:"
+    assert obj.opaque == "init-only"
+    assert obj.device_manager is dm_with_devices
+    assert obj.forwarded_kwargs == {
+        "name": "hidden_kwargs",
+        "prefix": "PREFIX:",
+        "labels": ["test"],
+    }
+    assert config == {
+        "device_mapping": {"sim": "other"},
+        "config_signal": 1,
+        "config_property": 2,
+        "limits": [-1, 1],
+    }
+
+
+def test_extract_device_config_keeps_unknown_config_for_custom_config_updaters():
+    dev = {"name": "config_updater", "deviceConfig": {"prefix": "PREFIX:", "opaque": "post-init"}}
+    device_manager = SimpleNamespace(scan_info=None)
+
+    config_split = extract_device_config(dev, ConstructDeviceConfigUpdaterMock, device_manager)
+
+    assert config_split.init_kwargs == {"name": "config_updater"}
+    assert config_split.post_init_config == {"prefix": "PREFIX:", "opaque": "post-init"}
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_extract_device_config_injects_runtime_deps_for_psi_devices(dm_with_devices):
+    dev = {"name": "psi_device", "deviceConfig": {}}
+
+    config_split = extract_device_config(dev, ConstructPSIDeviceHiddenDepsMock, dm_with_devices)
+
+    assert config_split.init_kwargs["device_manager"] is dm_with_devices
+    assert config_split.init_kwargs["scan_info"] is dm_with_devices.scan_info
+    assert config_split.post_init_config == {}
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
