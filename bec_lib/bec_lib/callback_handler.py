@@ -10,10 +10,9 @@ import enum
 import inspect
 import threading
 import traceback
+import weakref
 from collections import deque
 from collections.abc import Callable
-
-import louie
 
 from bec_lib.logger import bec_logger
 from bec_lib.utils import threadlocked
@@ -49,20 +48,33 @@ class EventType(str, enum.Enum):
 class CallbackEntry:
     """Callback entry class to store callback information"""
 
-    def __init__(self, id: int, event_type: EventType, func: Callable, sync: bool) -> None:
+    def __init__(
+        self,
+        id: int,
+        event_type: EventType,
+        func: Callable,
+        sync: bool,
+        on_dead: Callable[[int], None] | None = None,
+    ) -> None:
         self.id = id
-        self.func = self._make_ref(func)
         self.event_type = event_type
         self.sync = sync
         self.queue = deque(maxlen=1000)
         self._lock = threading.RLock()
+        self.func = self._make_ref(func, on_dead)
 
-    @staticmethod
-    def _make_ref(func: Callable):
+    def _make_ref(self, func: Callable, on_dead: Callable[[int], None] | None):
         if not inspect.ismethod(func):
             return _StrongCallableRef(func)
+        callback_id, name, event_type = self.id, func.__name__, self.event_type
+
+        def on_delete(_ref):
+            logger.info(f"Callback {name} for {event_type} was garbage collected and removed.")
+            if on_dead is not None:
+                on_dead(callback_id)
+
         try:
-            return louie.saferef.safe_ref(func)
+            return weakref.WeakMethod(func, on_delete)
         except TypeError:
             return _StrongCallableRef(func)
 
@@ -121,6 +133,7 @@ class CallbackHandler:
         self.callbacks = {}
         self.id_counter = 0
         self._lock = threading.RLock()
+        self._dead_ids = deque()
 
     @threadlocked
     def register(self, event_type: str, callback: Callable, sync=False) -> int:
@@ -136,7 +149,9 @@ class CallbackHandler:
         """
         event_type = EventType(event_type)
         callback_id = self.new_id()
-        self.callbacks[callback_id] = CallbackEntry(callback_id, event_type, callback, sync)
+        self.callbacks[callback_id] = CallbackEntry(
+            callback_id, event_type, callback, sync, on_dead=self._dead_ids.append
+        )
         return callback_id
 
     @threadlocked
@@ -183,34 +198,28 @@ class CallbackHandler:
         self.id_counter += 1
         return self.id_counter
 
+    def _remove_dead_callbacks(self) -> None:
+        while self._dead_ids:
+            self.callbacks.pop(self._dead_ids.popleft(), None)
+
     @threadlocked
     def run(self, event_type: str, *args, **kwargs):
         """Run all callbacks for a given event type"""
-        dead_cbs = []
+        self._remove_dead_callbacks()
         for cb in self.callbacks.values():
             if event_type != cb.event_type:
                 continue
-            if cb.is_alive():
-                cb.run(*args, **kwargs)
-            else:
-                dead_cbs.append(cb.id)
-        for cb_id in dead_cbs:
-            self.callbacks.pop(cb_id, None)
+            cb.run(*args, **kwargs)
 
     @threadlocked
     def poll(self):
         """Run all pending callbacks"""
-        dead_cbs = []
+        self._remove_dead_callbacks()
         for callback in self.callbacks.values():
-            if not callback.is_alive():
-                dead_cbs.append(callback.id)
-                continue
             if not callback.sync:
                 continue
             while callback.num_pending_events:
                 callback.poll()
-        for cb_id in dead_cbs:
-            self.callbacks.pop(cb_id, None)
 
 
 class CallbackRegister:

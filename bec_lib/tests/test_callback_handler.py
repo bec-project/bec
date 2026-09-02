@@ -282,3 +282,43 @@ def test_dead_bound_method_callback_is_removed_on_poll():
     handler.poll()
 
     assert callback_id not in handler.callbacks
+
+
+def test_dead_bound_method_callback_is_logged_and_removed_on_unrelated_event():
+    handler = CallbackHandler()
+    recorder = _MethodRecorder()
+    callback_id = handler.register("scan_status", recorder.callback)
+
+    with mock.patch("bec_lib.callback_handler.logger") as logger:
+        del recorder
+        gc.collect()
+    logger.info.assert_called_once()
+
+    handler.run("scan_segment", {"data": 1}, {"metadata": 1})
+
+    assert callback_id not in handler.callbacks
+
+
+def test_removed_callback_is_not_logged_when_owner_is_collected():
+    handler = CallbackHandler()
+    recorder = _MethodRecorder()
+    handler.remove(handler.register("scan_segment", recorder.callback))
+
+    with mock.patch("bec_lib.callback_handler.logger") as logger:
+        del recorder
+        gc.collect()
+
+    logger.info.assert_not_called()
+
+
+def test_bound_method_registered_twice_is_removed_from_both_entries():
+    handler = CallbackHandler()
+    recorder = _MethodRecorder()
+    handler.register("scan_segment", recorder.callback)
+    handler.register("scan_status", recorder.callback)
+
+    del recorder
+    gc.collect()
+    handler.run("scan_segment", {"data": 1}, {"metadata": 1})
+
+    assert handler.callbacks == {}
