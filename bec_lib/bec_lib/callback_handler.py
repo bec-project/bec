@@ -7,10 +7,9 @@ in a with statement.
 
 import builtins
 import enum
+import inspect
 import threading
 import traceback
-import types
-import weakref
 from collections import deque
 from collections.abc import Callable
 
@@ -60,16 +59,12 @@ class CallbackEntry:
 
     @staticmethod
     def _make_ref(func: Callable):
-        if isinstance(func, types.FunctionType):
-            # Lambdas and regular functions cannot be weak-referenced safely, so we use a strong reference.
+        if not inspect.ismethod(func):
             return _StrongCallableRef(func)
         try:
             return louie.saferef.safe_ref(func)
-        except (AttributeError, TypeError):
-            try:
-                return weakref.ref(func)
-            except TypeError:
-                return _StrongCallableRef(func)
+        except TypeError:
+            return _StrongCallableRef(func)
 
     def _resolve_func(self) -> Callable | None:
         return None if self.func is None else self.func()

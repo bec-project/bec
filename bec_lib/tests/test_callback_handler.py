@@ -1,3 +1,4 @@
+import functools
 import gc
 from unittest import mock
 
@@ -157,6 +158,60 @@ def test_inline_function_callback_is_kept_alive_by_the_handler():
     handler.run("scan_segment", {"data": 1}, {"metadata": 1})
 
     assert calls == [({"data": 1}, {"metadata": 1})]
+    assert callback_id in handler.callbacks
+
+
+def test_partial_and_callable_object_callbacks_are_kept_alive_by_the_handler():
+    class Recorder:
+        calls = []
+
+        def __call__(self, data, metadata):
+            type(self).calls.append(data)
+
+    def record(sink, data, metadata):
+        sink.append(data)
+
+    handler = CallbackHandler()
+    partial_calls = []
+    handler.register("scan_segment", functools.partial(record, partial_calls))
+    handler.register("scan_segment", Recorder())
+    gc.collect()
+
+    handler.run("scan_segment", {"data": 1}, {"metadata": 1})
+
+    assert partial_calls == [{"data": 1}]
+    assert Recorder.calls == [{"data": 1}]
+    assert len(handler.callbacks) == 2
+
+
+def test_builtin_method_callback_can_be_registered():
+    handler = CallbackHandler()
+    received = []
+    handler.register("scan_segment", received.append)
+
+    handler.run("scan_segment", {"data": 1})
+
+    assert received == [{"data": 1}]
+
+
+def test_bound_method_of_unweakrefable_owner_is_kept_alive():
+    class Owner:
+        __slots__ = ("calls",)
+
+        def __init__(self):
+            self.calls = []
+
+        def on_event(self, data, metadata):
+            self.calls.append(data)
+
+    handler = CallbackHandler()
+    owner = Owner()
+    callback_id = handler.register("scan_segment", owner.on_event)
+    gc.collect()
+
+    handler.run("scan_segment", {"data": 1}, {"metadata": 1})
+
+    assert owner.calls == [{"data": 1}]
     assert callback_id in handler.callbacks
 
 
