@@ -314,6 +314,7 @@ class BECClient(BECService):
             module_name (str): The name of the module to load
         """
         plugins = _get_available_plugins("bec")
+        members = {}
         ipython_is_installed = importlib.util.find_spec("bec_ipython_client")
         for plugin in plugins:
             try:
