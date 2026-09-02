@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.168.0 (2026-09-02)
+
+### Features
+
+- **file_writer**: Add scan cli input as metadata
+  ([`e541572`](https://github.com/bec-project/bec/commit/e541572a79eb50ff781e6a86d7fb5ec9cf2ad13f))
+
+
 ## v3.167.2 (2026-09-01)
 
 ### Bug Fixes
