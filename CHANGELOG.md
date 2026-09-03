@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.168.1 (2026-09-03)
+
+### Bug Fixes
+
+- Improve error handling when loading high level interfaces
+  ([`cb63932`](https://github.com/bec-project/bec/commit/cb639323f0da3f19610b5c1833a1715bc9f15b94))
+
+- **client**: Define members in load_high_level_interface
+  ([`0257bb5`](https://github.com/bec-project/bec/commit/0257bb530be27c4c44b86f71bcdc0261a736c3f6))
+
+
 ## v3.168.0 (2026-09-02)
 
 ### Features
