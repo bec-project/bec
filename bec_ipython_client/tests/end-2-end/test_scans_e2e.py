@@ -27,15 +27,14 @@ logger = bec_logger.logger
 if TYPE_CHECKING:  # pragma: no cover
     from bec_ipython_client.main import BECIPythonClient
 
+
 # pylint: disable=protected-access
-
-
 class _ScanDataRecorder:
     def __init__(self):
         self.data = []
         self.metadata = {}
 
-    def __call__(self, data, metadata):
+    def callback(self, data, metadata):
         logger.info(f"callback metadata: {metadata}")
         self.metadata = metadata
         self.data.append(data)
@@ -647,7 +646,7 @@ def test_callback_data_matches_scan_data(bec_ipython_client_fixture):
     scans = bec.scans
     recorder = _ScanDataRecorder()
 
-    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, callback=recorder)
+    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, callback=recorder.callback)
     while len(recorder.data) < 10:
         time.sleep(0.1)
     assert len(s.scan.live_data) == 10
@@ -665,7 +664,7 @@ def test_async_callback_data_matches_scan_data(bec_ipython_client_fixture):
     scans = bec.scans
     recorder = _ScanDataRecorder()
 
-    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=recorder)
+    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=recorder.callback)
 
     while len(recorder.data) < 10:
         time.sleep(0.1)

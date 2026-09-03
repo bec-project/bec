@@ -20,7 +20,7 @@ class _ScanDataRecorder:
         self.data = []
         self.metadata = {}
 
-    def __call__(self, data, metadata):
+    def callback(self, data, metadata):
         logger.info(f"callback metadata: {metadata}")
         self.metadata = metadata
         self.data.append(data)
@@ -111,7 +111,7 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
     dev = bec.device_manager.devices
     recorder = _ScanDataRecorder()
 
-    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=recorder)
+    s = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False, async_callback=recorder.callback)
     s.wait()
     while len(recorder.data) < 10:
         time.sleep(0.1)
