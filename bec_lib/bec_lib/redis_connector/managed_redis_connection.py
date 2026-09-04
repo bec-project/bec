@@ -49,6 +49,9 @@ if TYPE_CHECKING:  # pragma: no cover
     from concurrent.futures import Future
 
 
+StreamReadResult = tuple[StreamResponseList | None, str | None]
+
+
 @dataclass
 class GeneratorExecution:
     fut: Future[Any]
@@ -486,27 +489,36 @@ class ManagedRedisConnection:
                 new_ids[topic] = read_id.decode()
         return new_ids
 
-    def _try_read_streams(self, topics_ids: dict[str, str], from_start: bool = False):
+    def _try_read_streams(
+        self, topics_ids: dict[str, str], from_start: bool = False
+    ) -> StreamReadResult:
+        topic_set = set(topics_ids.keys())
         try:
             if from_start:
-                return [(t, self._redis_conn.xrange(t, "-", end)) for t, end in topics_ids.items()]
-            else:
-                return self._redis_conn.xread(topics_ids, block=200) or []  # type: ignore strs are fine key and id types
+                return (
+                    [(t, self._redis_conn.xrange(t, "-", end)) for t, end in topics_ids.items()],
+                    None,
+                )
+            return (
+                self._redis_conn.xread(topics_ids, block=200) or [],
+                None,
+            )  # type: ignore strs are fine key and id types
         except redis.exceptions.ConnectionError:
-            logger.error(self.connection_error_str)
+            return None, self.connection_error_str
         except redis.exceptions.NoPermissionError:
-            logger.error(f"Permission denied for stream topics: {set(topics_ids.keys())}")
+            return None, f"Permission denied for stream topics: {topic_set}"
         # pylint: disable=broad-except
-        except Exception:
+        except Exception as exc:
             sys.excepthook(*sys.exc_info())  # type: ignore # inside except
+            return None, f"Unexpected error while reading stream topics {topic_set}: {exc}"
 
-    def _read_from_start_streams_and_migrate(self) -> bool:
-        """Returns whether there was an error"""
+    def _read_from_start_streams_and_migrate(self) -> str | None:
+        """Returns an error string if the read failed."""
         with self._stream_subs.lock:
             if from_start_topics := self._stream_subs.from_start_topics():
                 topics_and_end_ids = {t: self._stream_subs.end_id(t) for t in from_start_topics}
-                response = self._try_read_streams(topics_and_end_ids, from_start=True)
-                if response is not None:
+                response, error = self._try_read_streams(topics_and_end_ids, from_start=True)
+                if error is None:
                     updated_end_ids = self._handle_stream_msg_list(
                         response, self._stream_subs.from_start_subs
                     )
@@ -514,33 +526,46 @@ class ManagedRedisConnection:
                     new_end_ids.update(updated_end_ids)
                     self._stream_subs.move_from_start_to_normal(new_end_ids)
                 else:
-                    return True
-            return False
+                    return error
+            return None
 
     def _get_stream_messages_loop(self) -> None:
         """
         Get stream messages loop. This method is run in a separate thread and listens
         for messages from the redis server.
         """
+        error: str | None = None
         while not self._stop_stream_events_listener_thread.is_set():
             # first clear any dead callbacks
             with self._stream_subs.lock:
                 self._stream_subs.gc_cb_refs()
             # First read the "from_start" streams, up until any id which is already in the normal
             # subs, then all those them to the normal streams
-            error = self._read_from_start_streams_and_migrate()
+            from_start_error = self._read_from_start_streams_and_migrate()
             # Then read all the normal streams
             with self._stream_subs.lock:
                 normal_topics = self._stream_subs.topic_ids()
                 normal_subs = self._stream_subs.normal_subs
-            if normal_topics and (response := self._try_read_streams(normal_topics)) is not None:
-                updated_ids = self._handle_stream_msg_list(response, normal_subs)
+            normal_error = None
+            if normal_topics:
+                response, normal_error = self._try_read_streams(normal_topics)
+                if normal_error is None:
+                    updated_ids = self._handle_stream_msg_list(response, normal_subs)
+                else:
+                    updated_ids = {}
             else:
                 updated_ids = {}
             with self._stream_subs.lock:
                 self._stream_subs.update_normal_ids(updated_ids)
-            if error:  # Encountered an error on xread, wait a while without the lock
+            stream_error = from_start_error or normal_error
+            if stream_error:  # Encountered an error on xread, wait a while without the lock
+                if stream_error != error:
+                    error = stream_error
+                    logger.error(stream_error)
                 self._stop_stream_events_listener_thread.wait(timeout=1)
+            elif error is not None:
+                error = None
+                logger.info(f"{self.name} reconnected to redis ({self.host}:{self.port}).")
 
     def _register_stream(
         self,
@@ -683,6 +708,8 @@ class ManagedRedisConnection:
             except Exception:
                 sys.excepthook(*sys.exc_info())  # type: ignore # inside except
             else:
+                if error:
+                    logger.info(f"{self.name} reconnected to redis ({self.host}:{self.port}).")
                 error = False
                 if msg is not None:
                     self._message_callbacks_queue.put(msg)
