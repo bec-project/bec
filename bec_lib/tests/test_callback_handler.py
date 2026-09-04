@@ -57,9 +57,10 @@ def _lock_held_by_other_thread(handler):
             acquired.set()
             release.wait()
 
-    thread = threading.Thread(target=hold)
+    thread = threading.Thread(target=hold, daemon=True)
     thread.start()
-    acquired.wait()
+    if not acquired.wait(timeout=5):
+        pytest.fail("Timed out waiting for helper thread to acquire handler._lock")
     try:
         yield
     finally:
