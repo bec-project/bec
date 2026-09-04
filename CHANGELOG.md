@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.169.0 (2026-09-04)
+
+### Features
+
+- Implement weak reference handling for callbacks and add tests for dead callbacks
+  ([`c34ed7d`](https://github.com/bec-project/bec/commit/c34ed7dab5e44665936cdde60135baa32b8334db))
+
+
 ## v3.168.1 (2026-09-03)
 
 ### Bug Fixes
