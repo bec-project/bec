@@ -531,6 +531,82 @@ def test_handle_device_instructions_rpc(device_server_mock, instructions):
                     update_device_metadata_mock.assert_called_once_with(instructions)
 
 
+def test_handle_device_instructions_broadcast_bec_signal_info(device_server_mock):
+    instructions = messages.DeviceInstructionMessage(
+        device="samx",
+        action="broadcast_bec_signal_info",
+        parameter={"scan_id": "scan-id-1"},
+        metadata={"RID": "rid-1"},
+    )
+
+    with mock.patch.object(device_server_mock, "_broadcast_bec_signal_info") as broadcast_mock:
+        device_server_mock.handle_device_instructions(instructions)
+
+    broadcast_mock.assert_called_once_with(instructions)
+
+
+def test_broadcast_bec_signal_info_publishes_bec_message_signal_info(device_server_mock):
+    class FakeBECMessageSignal:
+        def __init__(self, signal_info):
+            self.signal_info = signal_info
+
+    class FakeBECMessageSignalWithoutInfo:
+        pass
+
+    class FakeDevice:
+        def walk_signals(self):
+            return [
+                (None, "preview", FakeBECMessageSignal({"role": "preview", "ndim": 2})),
+                (None, "plain", object()),
+            ]
+
+    device_server_mock.device_manager.devices = {
+        "eiger": SimpleNamespace(obj=FakeDevice()),
+        "missing_info": SimpleNamespace(
+            obj=SimpleNamespace(
+                walk_signals=lambda: [(None, "empty", FakeBECMessageSignalWithoutInfo())]
+            )
+        ),
+    }
+    device_server_mock.connector.xadd = mock.MagicMock()
+    instructions = messages.DeviceInstructionMessage(
+        device=["eiger", "unknown", "missing_info"],
+        action="broadcast_bec_signal_info",
+        parameter={"scan_id": "scan-id-1"},
+        metadata={"RID": "rid-1"},
+    )
+
+    with mock.patch(
+        "bec_server.device_server.device_server.BECMessageSignal",
+        (FakeBECMessageSignal, FakeBECMessageSignalWithoutInfo),
+    ):
+        device_server_mock._broadcast_bec_signal_info(instructions)
+
+    device_server_mock.connector.xadd.assert_called_once()
+    endpoint, payload = device_server_mock.connector.xadd.call_args.args
+    msg = payload["data"]
+    assert endpoint == MessageEndpoints.bec_signal_info()
+    assert device_server_mock.connector.xadd.call_args.kwargs == {"max_size": 10}
+    assert msg == messages.BECSignalInfoMessage(
+        scan_id="scan-id-1",
+        info={"eiger": {"preview": messages.SignalInfo(role="preview", ndim=2)}},
+        metadata={"RID": "rid-1"},
+    )
+    assert "unknown" not in msg.info
+    assert "missing_info" not in msg.info
+
+
+def test_broadcast_bec_signal_info_skips_without_scan_id(device_server_mock):
+    device_server_mock.connector.xadd = mock.MagicMock()
+    instructions = messages.DeviceInstructionMessage(
+        device="samx", action="broadcast_bec_signal_info", parameter={}, metadata={"RID": "rid-1"}
+    )
+
+    device_server_mock._broadcast_bec_signal_info(instructions)
+
+    device_server_mock.connector.xadd.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "instructions",
     [

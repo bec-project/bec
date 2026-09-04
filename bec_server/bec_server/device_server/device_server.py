@@ -23,7 +23,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import BECMessageSignal, DeviceManagerDS
 from bec_server.device_server.friendly_device_exceptions import reformat_known_device_exceptions
 from bec_server.device_server.rpc_handler import RPCHandler
 
@@ -563,6 +563,8 @@ class DeviceServer(BECService):
                 self._unstage_device(instructions)
             elif action == "pre_scan":
                 self._pre_scan(instructions)
+            elif action == "broadcast_bec_signal_info":
+                self._broadcast_bec_signal_info(instructions)
             else:
                 logger.warning(f"Received unknown device instruction: {instructions}")
         except ophyd_errors.LimitError as limit_error:
@@ -1071,3 +1073,62 @@ class DeviceServer(BECService):
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
+
+    def _broadcast_bec_signal_info(self, instr: messages.DeviceInstructionMessage) -> None:
+        """
+        Broadcast BEC signal information to the appropriate endpoint.
+
+        Args:
+            instr (messages.DeviceInstructionMessage): The device instruction message containing the signal info.
+        """
+        devices = instr.content["device"]
+        if not isinstance(devices, list):
+            devices = [devices]
+
+        signal_info = {}
+        scan_id = instr.parameter.get("scan_id")
+        if scan_id is None:
+            return
+
+        for dev in devices:
+            if dev not in self.device_manager.devices:
+                logger.warning(f"Device {dev} not found in device manager. Skipping.")
+                continue
+            obj = self.device_manager.devices.get(dev).obj
+
+            def _fetch_signal_info(device_obj: OphydObject) -> dict:
+                """
+                Recursively fetch signal information from the device object and its sub-devices.
+
+                Args:
+                    device_obj (OphydObject): The device object to fetch signal info from.
+
+                Returns:
+                    dict: A dictionary containing signal information for the device and its sub-devices.
+                """
+                bec_signal_info = {}
+                for _, sub_name, item in device_obj.walk_signals():
+                    if not isinstance(item, BECMessageSignal):
+                        continue
+                    if not hasattr(item, "signal_info"):
+                        continue
+                    bec_signal_info[sub_name] = item.signal_info
+                return bec_signal_info
+
+            info = _fetch_signal_info(obj)
+
+            if not info:
+                # avoid adding empty signal info for this device
+                continue
+
+            signal_info[dev] = info
+
+        self.connector.xadd(
+            MessageEndpoints.bec_signal_info(),
+            {
+                "data": messages.BECSignalInfoMessage(
+                    info=signal_info, scan_id=scan_id, metadata=instr.metadata
+                )
+            },
+            max_size=10,
+        )

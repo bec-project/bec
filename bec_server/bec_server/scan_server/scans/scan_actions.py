@@ -1530,3 +1530,21 @@ class ScanActions:
             raise ValueError(
                 f"Invalid template variable: {exc} in the file base path. Please check your service config."
             ) from exc
+
+    def _broadcast_bec_signal_info(self):
+        """
+        Emit a new device instruction message to update the BEC signal info.
+        All currently locked devices will be included in this update.
+
+        Note that this is an internal method and should not be called directly by scan implementations.
+        """
+        devices = self.get_owned_device_locks()
+        if not self._scan.is_scan or self._scan.scan_info.scan_id is None:
+            return
+        instr = messages.DeviceInstructionMessage(
+            device=devices,
+            action="broadcast_bec_signal_info",
+            parameter={"scan_id": self._scan.scan_info.scan_id},
+            metadata={},
+        )
+        self._send(instr)

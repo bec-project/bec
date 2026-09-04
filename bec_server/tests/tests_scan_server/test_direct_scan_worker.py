@@ -301,6 +301,22 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
     assert direct_worker_context.direct_worker.scan is None
 
 
+def test_run_broadcasts_bec_signal_info_after_stage(direct_worker_context, make_scan):
+    called_steps = []
+    scan = make_scan(called_steps=called_steps)
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+    scan.actions._broadcast_bec_signal_info = mock.MagicMock(
+        side_effect=lambda: called_steps.append("broadcast_bec_signal_info")
+    )
+
+    direct_worker_context.direct_worker.run(scan)
+
+    scan.actions._broadcast_bec_signal_info.assert_called_once_with()
+    assert called_steps[:4] == ["prepare_scan", "open_scan", "stage", "broadcast_bec_signal_info"]
+
+
 def test_run_initializes_scan_before_scan_sequence(direct_worker_context, make_scan):
     called_steps = []
     scan = make_scan(called_steps=called_steps)

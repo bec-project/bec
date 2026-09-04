@@ -361,6 +361,23 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def bec_signal_info():
+        """
+        Endpoint for BEC signal info. This single stream is used by the device server to
+        publish messages.BECSignalInfoMessage updates for all scans. Consumers should use the
+        scan_id field on each message to associate signal info with a scan.
+
+        Returns:
+            EndpointInfo: Shared stream endpoint for BEC signal info updates.
+        """
+        endpoint = f"{EndpointType.INFO.value}/bec_signal_info"
+        return EndpointInfo(
+            endpoint=endpoint,
+            message_type=messages.BECSignalInfoMessage,
+            message_op=MessageOp.STREAM,
+        )
+
+    @staticmethod
     def device_staged(device: str):
         """
         Endpoint for the device stage status. This endpoint is used by the device server
