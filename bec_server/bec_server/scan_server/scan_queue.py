@@ -83,10 +83,16 @@ class QueueManager:
             msg (messages.ScanQueueMessage): ScanQueueMessage
 
         """
+        queue = None
         try:
             with self._lock:
                 self.add_queue(scan_queue)
-                self.queues[scan_queue].insert(msg, position=position)
+                queue = self.queues[scan_queue]
+
+                # Reserve the queue for insertion to prevent race conditions
+                # but the actual insertion happens outside the lock to avoid blocking other operations
+                queue.reserve_insert()
+            queue.insert(msg, position=position)
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
@@ -99,6 +105,9 @@ class QueueManager:
             self.connector.raise_alarm(
                 severity=Alarms.MAJOR, info=error_info, metadata=msg.metadata
             )
+        finally:
+            if queue is not None:
+                queue.finish_insert()
 
     def add_queue(self, queue_name: str) -> None:
         """add a new queue to the queue manager"""
@@ -115,7 +124,9 @@ class QueueManager:
             self.queues[queue_name].start_worker()
         self.send_queue_status()
 
-    def remove_queue(self, queue_name: str, skip_primary=True, emit_status=True) -> None:
+    def remove_queue(
+        self, queue_name: str, skip_primary=True, emit_status=True, skip_pending_inserts=False
+    ) -> None:
         """
         Remove a queue from the queue manager. If the queue is "primary" and skip_primary is True,
         the queue will not be removed to avoid removing the default queue.
@@ -126,12 +137,16 @@ class QueueManager:
             queue_name (str): The name of the queue to remove
             skip_primary (bool): If True, the primary queue will not be removed. Default is True.
             emit_status (bool): If True, the queue status will be sent after removal. Default is True.
+            skip_pending_inserts (bool): If True, the queue will not be removed if it has pending inserts. Default is False.
 
         """
         if queue_name == "primary" and skip_primary:
             return
         with self._lock:
             if queue_name not in self.queues:
+                return
+            queue = self.queues[queue_name]
+            if skip_pending_inserts and queue.has_pending_inserts:
                 return
             queue = self.queues.pop(queue_name)
 
@@ -784,6 +799,7 @@ class ScanQueue:
         self._auto_shutdown_timer: threading.Timer | None = None
         self.locks: dict[str, messages.ScanQueueLock] = {}
         self.release_lock_status: ScanQueueStatus = ScanQueueStatus.RUNNING
+        self._pending_inserts = 0
 
     def init_scan_worker(self):
         """init the scan worker"""
@@ -801,6 +817,22 @@ class ScanQueue:
             self.queue[0].stop()
         self.scan_worker.shutdown()
         self._reset_auto_shutdown_timer()
+
+    @property
+    def has_pending_inserts(self) -> bool:
+        """Whether this queue has inserts reserved by the queue manager."""
+        return self._pending_inserts > 0
+
+    def reserve_insert(self) -> None:
+        """Reserve an incoming insert so auto-shutdown keeps the queue alive."""
+        with self._lock:
+            self._pending_inserts += 1
+            self._cancel_auto_shutdown_timer_locked()
+
+    def finish_insert(self) -> None:
+        """Release a previously reserved incoming insert."""
+        with self._lock:
+            self._pending_inserts = max(0, self._pending_inserts - 1)
 
     @property
     def worker_status(self) -> InstructionQueueStatus | None:
@@ -899,27 +931,41 @@ class ScanQueue:
         Start the auto shutdown timer if it is not already running.
         """
         with self._lock:
-            if self._auto_shutdown_timer is None and len(self.queue) == 0:
+            if (
+                self._auto_shutdown_timer is None
+                and len(self.queue) == 0
+                and not self.has_pending_inserts
+            ):
                 if self.queue_name == "primary":
                     # We don't auto-shutdown the primary queue, so there is no
                     # need to set a timer
                     return
                 self._auto_shutdown_timer = threading.Timer(
-                    self.AUTO_SHUTDOWN_TIME, self.queue_manager.remove_queue, args=[self.queue_name]
+                    self.AUTO_SHUTDOWN_TIME,
+                    self.queue_manager.remove_queue,
+                    args=[self.queue_name],
+                    kwargs={"skip_pending_inserts": True},
                 )
                 self._auto_shutdown_timer.name = f"AutoShutdownTimer-{self.queue_name}"
                 self._auto_shutdown_timer.start()
+
+    def _cancel_auto_shutdown_timer_locked(self) -> None:
+        """Cancel the auto-shutdown timer without waiting for its thread."""
+        if self._auto_shutdown_timer is not None:
+            self._auto_shutdown_timer.cancel()
+            self._auto_shutdown_timer = None
 
     def _reset_auto_shutdown_timer(self):
         """
         Cancel and reset the auto shutdown timer.
         """
         with self._lock:
-            if self._auto_shutdown_timer is not None:
-                self._auto_shutdown_timer.cancel()
-                if threading.current_thread() != self._auto_shutdown_timer:
-                    self._auto_shutdown_timer.join()
-                self._auto_shutdown_timer = None
+            timer = self._auto_shutdown_timer
+            self._auto_shutdown_timer = None
+        if timer is not None:
+            timer.cancel()
+            if threading.current_thread() != timer:
+                timer.join()
 
     def _queue_should_continue(self) -> bool:
         """check if the queue should continue to the next instruction queue"""
