@@ -151,6 +151,40 @@ def test_queuemanger_shuts_down_idle_queue(queuemanager_mock):
         timer.join(timeout=1.0)
 
 
+def test_queue_manager_does_not_auto_remove_queue_with_pending_insert(queuemanager_mock):
+    queue_manager = queuemanager_mock(queues=["primary", "secondary"])
+    secondary_queue = queue_manager.queues["secondary"]
+
+    secondary_queue.reserve_insert()
+    queue_manager.remove_queue("secondary", skip_pending_inserts=True)
+
+    assert queue_manager.queues["secondary"] is secondary_queue
+
+    secondary_queue.finish_insert()
+    queue_manager.remove_queue("secondary", skip_pending_inserts=True)
+
+    assert "secondary" not in queue_manager.queues
+
+
+def test_reset_auto_shutdown_timer_joins_after_releasing_lock(queuemanager_mock):
+    queue_manager = queuemanager_mock(queues=["primary", "secondary"])
+    secondary_queue = queue_manager.queues["secondary"]
+
+    class FakeTimer:
+        cancel = mock.MagicMock()
+
+        def join(self):
+            assert not secondary_queue._lock._is_owned()
+
+    timer = FakeTimer()
+    secondary_queue._auto_shutdown_timer = timer
+
+    secondary_queue._reset_auto_shutdown_timer()
+
+    timer.cancel.assert_called_once_with()
+    assert secondary_queue._auto_shutdown_timer is None
+
+
 def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.queues["primary"].signal_event.set()
