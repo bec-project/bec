@@ -48,6 +48,22 @@ def queuemanager_mock(scan_server_mock):
     scan_server_mock.queue_manager.shutdown()
 
 
+@pytest.fixture
+def dormant_queue_manager():
+    """Use real queue locks with worker advancement controlled by the test."""
+    queue_manager = QueueManager(mock.MagicMock())
+    queue = ScanQueue(queue_manager, queue_name="secondary")
+    queue.scan_worker = mock.Mock()
+    queue.scan_worker.is_alive.return_value = True
+    queue._instruction_queue_item_cls_override = mock.Mock(
+        side_effect=lambda **kwargs: mock.Mock(status=InstructionQueueStatus.PENDING)
+    )
+    queue_manager.queues["secondary"] = queue
+    queue_manager.export_queue = mock.Mock(return_value={})
+    yield queue_manager
+    queue_manager.shutdown()
+
+
 class RequestBlockQueueMock(RequestBlockQueue):
     def __init__(self, instruction_queue, assembler) -> None:
         super().__init__(instruction_queue, assembler)
@@ -149,6 +165,171 @@ def test_queuemanger_shuts_down_idle_queue(queuemanager_mock):
     # Ensure the timer thread is fully cleaned up
     if timer is not None and timer.is_alive():
         timer.join(timeout=1.0)
+
+
+def test_queue_manager_does_not_auto_remove_queue_with_pending_insert(queuemanager_mock):
+    queue_manager = queuemanager_mock(queues=["primary", "secondary"])
+    secondary_queue = queue_manager.queues["secondary"]
+
+    secondary_queue.reserve_insert()
+    queue_manager.remove_queue("secondary", skip_pending_inserts=True)
+
+    assert queue_manager.queues["secondary"] is secondary_queue
+
+    secondary_queue.finish_insert()
+    queue_manager.remove_queue("secondary", skip_pending_inserts=True)
+
+    assert "secondary" not in queue_manager.queues
+
+
+@pytest.mark.timeout(10)
+def test_insert_reservation_does_not_deadlock_worker_status(dormant_queue_manager):
+    # pylint: disable=redefined-outer-name
+    queue_manager = dormant_queue_manager
+    queue = queue_manager.queues["secondary"]
+    completed = mock.Mock(status=InstructionQueueStatus.COMPLETED)
+    queue.queue.append(completed)
+    queue.active_instruction_queue = completed
+    worker_at_status = threading.Event()
+    reserving = threading.Event()
+    errors = []
+    lock_timeouts = []
+    original_lock = queue._lock
+
+    class WatchdogLock:
+        def __enter__(self):
+            # Release a broken interleaving through an exception rather than
+            # leaving permanently deadlocked threads behind on test failure.
+            if not original_lock.acquire(timeout=1):
+                lock_timeouts.append(threading.current_thread().name)
+                raise TimeoutError("Queue lock deadlocked with manager lock")
+            return self
+
+        def __exit__(self, *args):
+            original_lock.release()
+
+    def send_status():
+        if threading.current_thread() is worker_thread:
+            worker_at_status.set()
+            assert reserving.wait(timeout=2)
+        QueueManager.send_queue_status(queue_manager)
+
+    def reserve():
+        assert threading.current_thread() is insert_thread
+        reserving.set()
+        ScanQueue.reserve_insert(queue)
+
+    def advance_worker():
+        try:
+            queue._next_instruction_queue()
+        except Exception as exc:  # pylint: disable=broad-except
+            errors.append(exc)
+
+    worker_thread = threading.Thread(target=advance_worker, name="queue-test-worker")
+    insert_thread = threading.Thread(
+        target=queue_manager.add_to_queue,
+        args=("secondary", _queued_scan_message(queue="secondary")),
+        name="queue-test-inserter",
+    )
+    with (
+        mock.patch.object(queue, "_lock", WatchdogLock()),
+        mock.patch.object(queue, "reserve_insert", side_effect=reserve),
+        mock.patch.object(queue_manager, "send_queue_status", side_effect=send_status),
+    ):
+        worker_thread.start()
+        try:
+            assert worker_at_status.wait(timeout=2)
+            insert_thread.start()
+            insert_thread.join(timeout=3)
+        finally:
+            reserving.set()
+            worker_thread.join(timeout=3)
+
+    assert not worker_thread.is_alive()
+    assert not insert_thread.is_alive()
+    assert not errors
+    assert not lock_timeouts
+    queue_manager.connector.raise_alarm.assert_not_called()
+    assert len(queue.queue) == 1
+    assert not queue.has_pending_inserts
+
+
+@pytest.mark.timeout(10)
+@pytest.mark.parametrize("activity", ["insert", "direct_insert", "deferred", "replace", "cancel"])
+def test_expired_timer_rechecks_queue_before_removal(dormant_queue_manager, activity):
+    # pylint: disable=redefined-outer-name
+    queue_manager = dormant_queue_manager
+    queue = queue_manager.queues["secondary"]
+    queue.AUTO_SHUTDOWN_TIME = 0
+    callback_started = threading.Event()
+    continue_callback = threading.Event()
+    original_timer = threading.Timer
+
+    def delayed_timer(interval, function, args=None, kwargs=None):
+        def callback():
+            assert threading.current_thread() is timer
+            callback_started.set()
+            assert continue_callback.wait(timeout=3)
+            function(*(args or []), **(kwargs or {}))
+
+        timer = original_timer(interval, callback)
+        return timer
+
+    with mock.patch("bec_server.scan_server.scan_queue.threading.Timer", side_effect=delayed_timer):
+        queue._start_auto_shutdown_timer()
+    timer = queue._auto_shutdown_timer
+    expected_queue = queue
+    try:
+        assert callback_started.wait(timeout=2)
+        msg = _queued_scan_message(queue="secondary")
+        if activity == "insert":
+            queue_manager.add_to_queue("secondary", msg)
+        elif activity == "direct_insert":
+            queue.insert(msg)
+        elif activity == "deferred":
+            queue.queue.append(mock.Mock(status=InstructionQueueStatus.STOPPED))
+            queue.insert(msg)
+            queue.clear()
+            assert queue._deferred_inserts
+        elif activity == "replace":
+            queue.scan_worker.is_alive.return_value = False
+            with mock.patch.object(ScanQueue, "start_worker"):
+                queue_manager.add_queue("secondary")
+            expected_queue = queue_manager.queues["secondary"]
+            assert expected_queue is not queue
+        else:
+            # Even an unsuccessful insert invalidates the old idle timeout.
+            queue.reserve_insert()
+            queue.finish_insert()
+        assert not queue.has_pending_inserts
+    finally:
+        continue_callback.set()
+        timer.join(timeout=3)
+
+    assert not timer.is_alive()
+    assert queue_manager.queues["secondary"] is expected_queue
+    assert not expected_queue.signal_event.is_set()
+    assert expected_queue._auto_shutdown_timer is None
+
+
+def test_reset_auto_shutdown_timer_joins_after_releasing_lock(queuemanager_mock):
+    queue_manager = queuemanager_mock(queues=["primary", "secondary"])
+    secondary_queue = queue_manager.queues["secondary"]
+
+    class FakeTimer:
+        cancel = mock.MagicMock()
+
+        def join(self):
+            assert not secondary_queue._lock._is_owned()
+            assert not queue_manager._lock._is_owned()
+
+    timer = FakeTimer()
+    secondary_queue._auto_shutdown_timer = timer
+
+    secondary_queue._reset_auto_shutdown_timer()
+
+    timer.cancel.assert_called_once_with()
+    assert secondary_queue._auto_shutdown_timer is None
 
 
 def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager_mock):
@@ -862,6 +1043,85 @@ def test_set_restart(queuemanager_mock):
 
 
 @pytest.mark.timeout(5)
+@pytest.mark.parametrize("finish_original", [False, True])
+def test_restart_interception_releases_manager_and_only_stops_original(
+    queuemanager_mock, finish_original
+):
+    # pylint: disable=redefined-outer-name,too-many-statements
+    queue_manager = queuemanager_mock()
+    primary_queue = queue_manager.queues["primary"]
+    primary_queue.signal_event.set()
+    primary_queue.scan_worker.shutdown()
+    primary_queue = ScanQueue(queue_manager, queue_name="primary")
+    queue_manager.queues["primary"] = primary_queue
+
+    insert_started = threading.Event()
+    finish_insertion = threading.Event()
+    restart_errors = []
+
+    def blocking_insert(*args, **kwargs):
+        insert_started.set()
+        assert finish_insertion.wait(timeout=3)
+        ScanQueue.insert(primary_queue, *args, **kwargs)
+
+    def restart():
+        try:
+            queue_manager.scan_interception(restart_message)
+        except Exception as exc:  # pylint: disable=broad-except
+            restart_errors.append(exc)
+
+    # Keep a real queue with a dormant worker so its advancement is controlled by the test.
+    with mock.patch.object(primary_queue.scan_worker, "is_alive", return_value=True):
+        queue_manager.add_to_queue("primary", _queued_scan_message())
+        queue_manager.add_to_queue("primary", _queued_scan_message(rid="next"))
+        original, following = primary_queue.queue
+        original.status = InstructionQueueStatus.RUNNING
+        primary_queue.active_instruction_queue = original
+        primary_queue.scan_worker.current_instruction_queue_item = original
+        restart_message = messages.ScanQueueModificationMessage(
+            scan_id=original.scan_id[0],
+            action="restart",
+            queue="primary",
+            parameter={"RID": "restarted"},
+        )
+
+        with mock.patch.object(primary_queue, "insert", side_effect=blocking_insert):
+            restart_thread = threading.Thread(target=restart)
+            restart_thread.start()
+            try:
+                assert insert_started.wait(timeout=1)
+                acquired = queue_manager._lock.acquire(timeout=1)
+                assert acquired, "Restart holds the manager lock during replacement insertion"
+                queue_manager._lock.release()
+                assert original.status == InstructionQueueStatus.RUNNING
+                if finish_original:
+                    with primary_queue._lock:
+                        original.status = InstructionQueueStatus.COMPLETED
+                        assert primary_queue.queue.popleft() is original
+                        primary_queue.active_instruction_queue = following
+                        primary_queue.scan_worker.current_instruction_queue_item = following
+                        following.status = InstructionQueueStatus.RUNNING
+            finally:
+                finish_insertion.set()
+                restart_thread.join(timeout=2)
+
+        assert not restart_thread.is_alive()
+        assert not restart_errors
+        replacement = next(
+            item for item in primary_queue.queue if item.scan_msgs[0].metadata["RID"] == "restarted"
+        )
+        assert primary_queue.status == ScanQueueStatus.RUNNING
+        if finish_original:
+            assert original.status == InstructionQueueStatus.COMPLETED
+            assert following.status == InstructionQueueStatus.RUNNING
+            assert list(primary_queue.queue) == [following, replacement]
+        else:
+            assert original.status == InstructionQueueStatus.STOPPED
+            assert following.status == InstructionQueueStatus.PENDING
+            assert list(primary_queue.queue) == [original, replacement, following]
+
+
+@pytest.mark.timeout(5)
 def test_set_restart_no_active_scan(queuemanager_mock):
     """
     Test that set_restart does nothing when there is no active scan. A scan has to be either on
@@ -979,6 +1239,54 @@ def test_direct_instruction_queue_item_scan_number_projection_across_queue_items
 
     assert first_queue.scan_number == [base_scan_number + 1]
     assert second_queue.scan_number == [base_scan_number + 2]
+
+
+@pytest.mark.parametrize("queue_item_cls", [InstructionQueueItem, DirectInstructionQueueItem])
+def test_scan_number_projection_during_concurrent_insert(queuemanager_mock, queue_item_cls):
+    # pylint: disable=redefined-outer-name
+    queue_manager = queuemanager_mock()
+    scan_queue = ScanQueue(queue_manager)
+    assembler = mock.MagicMock()
+    instruction_queue = queue_item_cls(scan_queue, assembler, scan_queue.scan_worker)
+    if isinstance(instruction_queue, DirectInstructionQueueItem):
+        instruction_queue.scans = [_build_dummy_v4_scan("target-scan")]
+    else:
+        assembler.is_scan_message.return_value = True
+        instruction_queue.append_scan_request(_queued_scan_message())
+
+    previous_queue = mock.Mock(queue_id="previous", status=InstructionQueueStatus.PENDING)
+    inserted_queue = mock.Mock(queue_id="inserted", status=InstructionQueueStatus.PENDING)
+    scan_queue.queue.extend([previous_queue, instruction_queue])
+    calculating = threading.Event()
+    inserted = threading.Event()
+
+    def read_previous_scan_ids():
+        # Pause after iteration begins so the insert occurs before the next item is read.
+        calculating.set()
+        assert inserted.wait(timeout=2)
+        return ["previous-scan"]
+
+    type(previous_queue).scan_id = mock.PropertyMock(side_effect=read_previous_scan_ids)
+
+    def insert_queue_item():
+        if calculating.wait(timeout=2):
+            # Insertion uses the queue lock, while status export uses the manager lock.
+            with scan_queue._lock:
+                scan_queue.queue.append(inserted_queue)
+            inserted.set()
+
+    insert_thread = threading.Thread(target=insert_queue_item)
+    insert_thread.start()
+    try:
+        with queue_manager._lock:
+            assert instruction_queue.scan_number == [queue_manager.parent.scan_number + 2]
+    finally:
+        calculating.set()
+        insert_thread.join(timeout=2)
+
+    assert not insert_thread.is_alive()
+    assert inserted.is_set()
+    assert list(scan_queue.queue) == [previous_queue, instruction_queue, inserted_queue]
 
 
 def test_remove_queue_item(queuemanager_mock):

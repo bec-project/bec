@@ -500,6 +500,7 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
             self.signal_event = threading.Event()
             self.queue = [MockInstructionItem()]
             self.status = ScanQueueStatus.PAUSED if queue_paused else ScanQueueStatus.RUNNING
+            self._cancel_auto_shutdown_timer_locked = mock.Mock()
 
         def stop_worker(self):
             pass

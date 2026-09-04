@@ -83,10 +83,16 @@ class QueueManager:
             msg (messages.ScanQueueMessage): ScanQueueMessage
 
         """
+        queue = None
         try:
             with self._lock:
                 self.add_queue(scan_queue)
-                self.queues[scan_queue].insert(msg, position=position)
+                queue = self.queues[scan_queue]
+
+                # Reserve the queue without taking its lock: workers publish status
+                # while holding the queue lock and then acquire the manager lock.
+                queue.reserve_insert()
+            queue.insert(msg, position=position)
         # pylint: disable=broad-except
         except Exception as exc:
             content = traceback.format_exc()
@@ -99,6 +105,9 @@ class QueueManager:
             self.connector.raise_alarm(
                 severity=Alarms.MAJOR, info=error_info, metadata=msg.metadata
             )
+        finally:
+            if queue is not None:
+                queue.finish_insert()
 
     def add_queue(self, queue_name: str) -> None:
         """add a new queue to the queue manager"""
@@ -107,6 +116,7 @@ class QueueManager:
                 queue = self.queues[queue_name]
                 if not queue.scan_worker.is_alive():
                     logger.info(f"Restarting worker for queue {queue_name}")
+                    queue._cancel_auto_shutdown_timer_locked()  # pylint: disable=protected-access
                     queue.clear()
                     self.queues[queue_name] = ScanQueue(self, queue_name=queue_name)
                     self.queues[queue_name].start_worker()
@@ -115,7 +125,9 @@ class QueueManager:
             self.queues[queue_name].start_worker()
         self.send_queue_status()
 
-    def remove_queue(self, queue_name: str, skip_primary=True, emit_status=True) -> None:
+    def remove_queue(
+        self, queue_name: str, skip_primary=True, emit_status=True, skip_pending_inserts=False
+    ) -> None:
         """
         Remove a queue from the queue manager. If the queue is "primary" and skip_primary is True,
         the queue will not be removed to avoid removing the default queue.
@@ -126,6 +138,7 @@ class QueueManager:
             queue_name (str): The name of the queue to remove
             skip_primary (bool): If True, the primary queue will not be removed. Default is True.
             emit_status (bool): If True, the queue status will be sent after removal. Default is True.
+            skip_pending_inserts (bool): If True, the queue will not be removed if it has pending inserts. Default is False.
 
         """
         if queue_name == "primary" and skip_primary:
@@ -133,12 +146,38 @@ class QueueManager:
         with self._lock:
             if queue_name not in self.queues:
                 return
+            queue = self.queues[queue_name]
+            if skip_pending_inserts and queue.has_pending_inserts:
+                return
             queue = self.queues.pop(queue_name)
+            queue._cancel_auto_shutdown_timer_locked()  # pylint: disable=protected-access
+            queue.signal_event.set()
 
-        queue.signal_event.set()
         queue.stop_worker()
         if emit_status:
             self.send_queue_status()
+
+    def _remove_idle_queue(self, queue: ScanQueue) -> None:
+        """Remove a still-idle queue when its current auto-shutdown timer expires."""
+        # pylint: disable=protected-access
+        # Match the worker's queue -> manager lock order. Reservations use only
+        # the manager lock, so they cannot block a worker publishing queue status.
+        with queue._lock:
+            with self._lock:
+                if self.queues.get(queue.queue_name) is not queue:
+                    return
+                if queue._auto_shutdown_timer is not threading.current_thread():
+                    return
+                # Clear the timer before stopping the worker, which may itself
+                # reset the timer. Otherwise the two threads can join each other.
+                queue._auto_shutdown_timer = None
+                if queue.has_pending_inserts or queue.queue or queue._deferred_inserts:
+                    return
+                self.queues.pop(queue.queue_name)
+                queue.signal_event.set()
+
+        queue.stop_worker()
+        self.send_queue_status()
 
     def add_queue_lock(self, queue_name: str, lock: messages.ScanQueueLock) -> None:
         """Add a lock to the specified queue.
@@ -289,17 +328,20 @@ class QueueManager:
             scan_mod_msg (messages.ScanQueueModificationMessage): ScanQueueModificationMessage
 
         """
+        logger.info(f"Scan interception: {scan_mod_msg}")
+        action = scan_mod_msg.action
+        parameters = {
+            "scan_id": scan_mod_msg.scan_id,
+            "request_id": scan_mod_msg.request_id,
+            "queue": scan_mod_msg.queue,
+            "parameter": scan_mod_msg.parameter,
+        }
+        if action == "restart":
+            # Restart manages its own locks so replacement insertion can release the manager.
+            self.set_restart(**parameters)
+            return
         with self._lock:
-            logger.info(f"Scan interception: {scan_mod_msg}")
-            action = scan_mod_msg.action
-            parameter = scan_mod_msg.parameter
-            queue = scan_mod_msg.queue
-            getattr(self, f"set_{action}")(
-                scan_id=scan_mod_msg.scan_id,
-                request_id=scan_mod_msg.request_id,
-                queue=queue,
-                parameter=parameter,
-            )
+            getattr(self, f"set_{action}")(**parameters)
 
     @requires_queue
     def set_pause(
@@ -501,34 +543,39 @@ class QueueManager:
         parameter: dict | None = None,
     ) -> None:
         """abort and restart the currently running scan. The active scan will be aborted."""
-        if not scan_id:
-            scan_id = self._get_active_scan_id(queue)
-        if not scan_id:
+        # pylint: disable=protected-access
+        with self._lock:
+            que = self.queues.get(queue)
+        if que is None:
             return
-        if isinstance(scan_id, list):
-            scan_id = scan_id[0]
-        que = self.queues[queue]
+        # Workers acquire the queue lock before publishing through the manager lock.
+        with que._lock, self._lock:
+            if self.queues.get(queue) is not que:
+                return
+            if not scan_id:
+                scan_id = self._get_active_scan_id(queue)
+            if not scan_id:
+                return
+            if isinstance(scan_id, list):
+                scan_id = scan_id[0]
 
-        # Find the scan in the active queue
-        for iq in que.queue:
-            if scan_id in iq.scan_id:
-                instruction_queue = iq
-                break
-        else:
-            logger.error(f"Scan {scan_id} not found in queue {queue}")
-            return
-        if instruction_queue.status in [
-            InstructionQueueStatus.IDLE,
-            InstructionQueueStatus.PENDING,
-        ]:
-            # If the scan is not running, we don't need to restart it
-            return
+            # Find the scan in the active queue.
+            instruction_queue = next((iq for iq in que.queue if scan_id in iq.scan_id), None)
+            if instruction_queue is None:
+                logger.error(f"Scan {scan_id} not found in queue {queue}")
+                return
+            if instruction_queue.status in [
+                InstructionQueueStatus.IDLE,
+                InstructionQueueStatus.PENDING,
+            ]:
+                # If the scan is not running, we don't need to restart it.
+                return
 
-        restart_scan_msg = instruction_queue.scan_msgs[0].model_copy(deep=True)
-        request_id = parameter.get("RID") if parameter else None
-        if request_id:
-            restart_scan_msg.metadata["RID"] = request_id
-        instruction_queue.reason = "restart"
+            restart_scan_msg = instruction_queue.scan_msgs[0].model_copy(deep=True)
+            request_id = parameter.get("RID") if parameter else None
+            if request_id:
+                restart_scan_msg.metadata["RID"] = request_id
+            instruction_queue.reason = "restart"
 
         scan_restart_msg = messages.ScanRestartMessage(
             original_scan_id=scan_id, scan_msg=restart_scan_msg
@@ -541,18 +588,26 @@ class QueueManager:
         else:
             logger.info(f"Scan {scan_id} restart not allowed, only sending ScanRestartMessage")
 
-        # Abort the current scan after queueing its restart replacement.
-        with AutoResetCM(que):
-            original_queue_status = que.status
-            que.status = ScanQueueStatus.PAUSED
-            if que.worker_status in [
-                InstructionQueueStatus.RUNNING,
-                InstructionQueueStatus.PAUSED,
-                InstructionQueueStatus.DEFERRED_PAUSE,
-            ]:
-                que.worker_status = InstructionQueueStatus.STOPPED
+        # The original may have finished while its replacement was being inserted.
+        # Only stop that original, never a new head or a recreated queue's worker.
+        with que._lock, self._lock:
+            if (
+                self.queues.get(queue) is not que
+                or not que.queue
+                or que.queue[0] is not instruction_queue
+            ):
+                return
+            with AutoResetCM(que):
+                original_queue_status = que.status
+                que.status = ScanQueueStatus.PAUSED
+                if que.worker_status in [
+                    InstructionQueueStatus.RUNNING,
+                    InstructionQueueStatus.PAUSED,
+                    InstructionQueueStatus.DEFERRED_PAUSE,
+                ]:
+                    que.worker_status = InstructionQueueStatus.STOPPED
 
-        self.queues[queue].status = original_queue_status
+            que.status = original_queue_status
 
     @requires_queue
     def set_lock(
@@ -784,6 +839,8 @@ class ScanQueue:
         self._auto_shutdown_timer: threading.Timer | None = None
         self.locks: dict[str, messages.ScanQueueLock] = {}
         self.release_lock_status: ScanQueueStatus = ScanQueueStatus.RUNNING
+        # Reservations and timer lifetime are protected by the manager lock.
+        self._pending_inserts = 0
 
     def init_scan_worker(self):
         """init the scan worker"""
@@ -801,6 +858,23 @@ class ScanQueue:
             self.queue[0].stop()
         self.scan_worker.shutdown()
         self._reset_auto_shutdown_timer()
+
+    @property
+    def has_pending_inserts(self) -> bool:
+        """Whether this queue has inserts reserved by the queue manager."""
+        with self.queue_manager._lock:  # pylint: disable=protected-access
+            return self._pending_inserts > 0
+
+    def reserve_insert(self) -> None:
+        """Reserve an incoming insert so auto-shutdown keeps the queue alive."""
+        with self.queue_manager._lock:  # pylint: disable=protected-access
+            self._pending_inserts += 1
+            self._cancel_auto_shutdown_timer_locked()
+
+    def finish_insert(self) -> None:
+        """Release a previously reserved incoming insert."""
+        with self.queue_manager._lock:  # pylint: disable=protected-access
+            self._pending_inserts = max(0, self._pending_inserts - 1)
 
     @property
     def worker_status(self) -> InstructionQueueStatus | None:
@@ -898,28 +972,44 @@ class ScanQueue:
         """
         Start the auto shutdown timer if it is not already running.
         """
+        # pylint: disable=protected-access
         with self._lock:
-            if self._auto_shutdown_timer is None and len(self.queue) == 0:
-                if self.queue_name == "primary":
-                    # We don't auto-shutdown the primary queue, so there is no
-                    # need to set a timer
+            with self.queue_manager._lock:
+                if (
+                    self.queue_name == "primary"
+                    or self.signal_event.is_set()
+                    or self.queue_manager.queues.get(self.queue_name) is not self
+                ):
+                    return
+                if (
+                    self._auto_shutdown_timer is not None
+                    or self.queue
+                    or self._deferred_inserts
+                    or self.has_pending_inserts
+                ):
                     return
                 self._auto_shutdown_timer = threading.Timer(
-                    self.AUTO_SHUTDOWN_TIME, self.queue_manager.remove_queue, args=[self.queue_name]
+                    self.AUTO_SHUTDOWN_TIME, self.queue_manager._remove_idle_queue, args=[self]
                 )
                 self._auto_shutdown_timer.name = f"AutoShutdownTimer-{self.queue_name}"
                 self._auto_shutdown_timer.start()
+
+    def _cancel_auto_shutdown_timer_locked(self) -> None:
+        """Cancel the timer under the manager lock without waiting for its thread."""
+        if self._auto_shutdown_timer is not None:
+            self._auto_shutdown_timer.cancel()
+            self._auto_shutdown_timer = None
 
     def _reset_auto_shutdown_timer(self):
         """
         Cancel and reset the auto shutdown timer.
         """
-        with self._lock:
-            if self._auto_shutdown_timer is not None:
-                self._auto_shutdown_timer.cancel()
-                if threading.current_thread() != self._auto_shutdown_timer:
-                    self._auto_shutdown_timer.join()
-                self._auto_shutdown_timer = None
+        with self.queue_manager._lock:  # pylint: disable=protected-access
+            timer = self._auto_shutdown_timer
+            self._cancel_auto_shutdown_timer_locked()
+        if timer is not None:
+            if threading.current_thread() != timer:
+                timer.join()
 
     def _queue_should_continue(self) -> bool:
         """check if the queue should continue to the next instruction queue"""
@@ -1179,7 +1269,8 @@ class RequestBlock:
     def scan_ids_head(self) -> int:
         """calculate the scan_id offset in the queue for the current request block"""
         offset = 1
-        for queue in self.parent.scan_queue.queue:
+        # Status export can run while another thread inserts into the queue.
+        for queue in list(self.parent.scan_queue.queue):
             if queue.status in [InstructionQueueStatus.COMPLETED, InstructionQueueStatus.RUNNING]:
                 continue
             if queue.queue_id != self.parent.instruction_queue.queue_id:
@@ -1720,7 +1811,8 @@ class DirectInstructionQueueItem:
     def scan_ids_head(self, target_scan: ScanBase_v4) -> int:
         """Calculate the scan-number offset for a scan within the current queue."""
         offset = 1
-        for queue in self.parent.queue:
+        # Status export can run while another thread inserts into the queue.
+        for queue in list(self.parent.queue):
             if queue.status in [InstructionQueueStatus.COMPLETED, InstructionQueueStatus.RUNNING]:
                 continue
             if queue.queue_id != self.queue_id:
