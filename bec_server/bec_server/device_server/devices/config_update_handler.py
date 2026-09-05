@@ -14,7 +14,9 @@ from bec_lib.logger import bec_logger
 from bec_lib.plugin_helper import reload_plugin_modules
 
 if TYPE_CHECKING:
-    from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+    from ophyd import OphydObject
+
+    from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
 
 logger = bec_logger.logger
 
@@ -182,6 +184,28 @@ class ConfigUpdateHandler:
             MessageEndpoints.device_config_request_response(request_id), msg, expire=60
         )
 
+    def _cleanup_failed_device_init(self, obj: OphydObject, device: DSDevice | None = None) -> None:
+        """Best-effort cleanup that does not mask the initialization failure."""
+        try:
+            obj.destroy()
+        # pylint: disable=broad-except
+        except Exception:
+            logger.error(
+                f"Failed to destroy partially initialized device {obj.name}: "
+                f"{traceback.format_exc()}"
+            )
+
+        if device is None:
+            return
+        try:
+            self.device_manager.reset_device(device)
+        # pylint: disable=broad-except
+        except Exception:
+            logger.error(
+                f"Failed to reset partially initialized device {device.name}: "
+                f"{traceback.format_exc()}"
+            )
+
     def _update_config(
         self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event
     ) -> None:
@@ -225,10 +249,23 @@ class ConfigUpdateHandler:
                     self.device_manager.reset_device(device)
                 elif not was_enabled and dev_config["enabled"]:
                     # It was disabled and we want to enable it. Construct and initialize the device.
-                    obj, config = self.device_manager.construct_device_obj(
-                        device._config, device_manager=self.device_manager
-                    )
-                    self.device_manager.initialize_device(device._config, config, obj)
+                    obj = None
+                    try:
+                        obj, config = self.device_manager.construct_device_obj(
+                            device._config, device_manager=self.device_manager
+                        )
+                        self.device_manager.initialize_device(device._config, config, obj)
+                    # pylint: disable=broad-except
+                    except Exception:
+                        device._config["enabled"] = was_enabled
+                        failed_device = self.device_manager.devices.get(dev)
+                        if failed_device is not None and failed_device is not device:
+                            failed_device._config["enabled"] = was_enabled
+                            self.device_manager.devices._add_device(dev, device)
+                            self._cleanup_failed_device_init(failed_device.obj, failed_device)
+                        elif obj is not None:
+                            self._cleanup_failed_device_init(obj)
+                        raise
 
     def _flush_config(self) -> None:
         """Flush all devices from the device manager."""
@@ -273,9 +310,16 @@ class ConfigUpdateHandler:
                 dm.initialize_device(dev_config, config, obj)
             # pylint: disable=broad-except
             except Exception:
-                msg = traceback.format_exc()
-                dm.failed_devices[name] = msg
-                logger.error(f"Failed to initialize device {name}: {msg}")
+                error = traceback.format_exc()
+                dm.failed_devices[name] = error
+                dev_config["enabled"] = False
+                if name in dm.devices:
+                    failed_device = dm.devices[name]
+                    failed_device._config["enabled"] = False
+                    self._cleanup_failed_device_init(failed_device.obj, failed_device)
+                else:
+                    self._cleanup_failed_device_init(obj)
+                logger.error(f"Failed to initialize device {name}: {error}")
 
     def _remove_config(
         self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event

@@ -369,13 +369,23 @@ def test_device_manager_ds_obj_callback_preview(dm_with_devices, value):
 def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices_and_status, value):
     device_manager = dm_with_devices_and_status
     device = device_manager.devices.bec_signals_device.obj
-    with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
+    with mock.patch.object(device_manager._bec_message_handler, "connector") as mock_connector:
         device_manager._obj_callback_bec_message_signal(obj=device.file_event, value=value)
 
         if not isinstance(value, messages.FileMessage):
-            mock_set_and_publish.assert_not_called()
+            mock_connector.set_and_publish.assert_not_called()
         else:
-            assert mock_set_and_publish.call_count == 2
+            pipe = mock_connector.pipeline.return_value
+            assert mock_connector.set_and_publish.call_args_list == [
+                mock.call(MessageEndpoints.file_event(device.name), value, pipe=pipe, expire=3600),
+                mock.call(
+                    MessageEndpoints.public_file(scan_id="12345", name=device.name),
+                    value,
+                    pipe=pipe,
+                    expire=3600,
+                ),
+            ]
+            pipe.execute.assert_called_once_with()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -385,13 +395,15 @@ def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices_and_st
 def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices_and_status, value):
     device_manager = dm_with_devices_and_status
     device = device_manager.devices.bec_signals_device.obj
-    with mock.patch.object(device_manager.connector, "set_and_publish") as mock_set_and_publish:
+    with mock.patch.object(device_manager._bec_message_handler, "connector") as mock_connector:
         device_manager._obj_callback_bec_message_signal(obj=device.progress, value=value)
 
         if not isinstance(value, messages.ProgressMessage):
-            mock_set_and_publish.assert_not_called()
+            mock_connector.set_and_publish.assert_not_called()
         else:
-            mock_set_and_publish.assert_called_once()
+            mock_connector.set_and_publish.assert_called_once_with(
+                MessageEndpoints.device_progress(device.name), value, expire=3600
+            )
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
