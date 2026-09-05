@@ -254,8 +254,11 @@ class ConfigHandler:
         if "failed_devices" in server_response_msg.metadata:
             # failed devices indicate that the server was able to initialize them but failed to
             # connect to them
-            logger.warning(f"Failed devices: {server_response_msg.metadata['failed_devices']}")
-            msg.metadata["failed_devices"] = server_response_msg.metadata["failed_devices"]
+            failed_devices = server_response_msg.metadata["failed_devices"]
+            logger.warning(f"Failed devices: {failed_devices}")
+            msg.metadata["failed_devices"] = failed_devices
+            for dev in failed_devices:
+                dev_configs[dev]["enabled"] = False
 
         if accepted:
             # update config in redis
@@ -418,12 +421,12 @@ class ConfigHandler:
 
         if "enabled" in dev_config:
             self._validate_update({"enabled": dev_config["enabled"]})
-            device._config["enabled"] = dev_config["enabled"]
             request_id = str(uuid.uuid4())
             self._update_device_server(request_id, {device.name: dev_config})
             updated, msg = self._wait_for_device_server_update(request_id)
             if not updated:
                 raise DeviceConfigError(f"Failed to update device {device.name}. {msg.message}")
+            device._config["enabled"] = dev_config["enabled"]
             dev_config.pop("enabled")
 
         if not dev_config:

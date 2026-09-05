@@ -17,7 +17,7 @@ import pytest
 from bec_ipython_client.callbacks.utils import ScanRequestError
 from bec_lib import configs
 from bec_lib.alarm_handler import AlarmBase
-from bec_lib.bec_errors import ScanAbortion, ScanInterruption
+from bec_lib.bec_errors import DeviceConfigError, ScanAbortion, ScanInterruption
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.scan_repeat import scan_repeat
@@ -687,6 +687,40 @@ def test_disabled_device_raises_scan_request_error(bec_ipython_client_fixture):
         scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     dev.samx.enabled = True
     scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
+
+
+@pytest.mark.timeout(100)
+def test_unreachable_device_stays_disabled_when_enabled_twice(bec_ipython_client_fixture):
+    bec = bec_ipython_client_fixture
+    bec.metadata.update({"unit_test": "test_unreachable_device_stays_disabled_when_enabled_twice"})
+    dev = bec.device_manager.devices
+    device_name = "unreachable_epics_motor"
+    config = {
+        device_name: {
+            "deviceClass": "ophyd.EpicsMotor",
+            "deviceConfig": {"prefix": "BEC:E2E:INTENTIONALLY_UNREACHABLE:"},
+            "connectionTimeout": 0.1,
+            "readoutPriority": "baseline",
+            "enabled": True,
+            "readOnly": False,
+        }
+    }
+
+    try:
+        with pytest.raises(DeviceConfigError):
+            bec.device_manager.config_helper.send_config_request(action="add", config=config)
+        device = dev[device_name]
+        assert device.enabled is False
+
+        for _ in range(2):
+            with pytest.raises(DeviceConfigError):
+                device.enabled = True
+            assert device.enabled is False
+    finally:
+        if device_name in dev:
+            bec.device_manager.config_helper.send_config_request(
+                action="remove", config={device_name: {}}
+            )
 
 
 # @pytest.fixture(scope="function")

@@ -334,6 +334,27 @@ def test_config_handler_update_device_config_enable(config_handler, make_samx):
                 wait.assert_called_once_with(rid)
 
 
+def test_config_handler_update_device_config_failed_enable_keeps_device_disabled(
+    config_handler, make_samx
+):
+    dev = make_samx({"enabled": False})
+    response = mock.MagicMock(message="PV is unreachable")
+
+    with (
+        mock.patch.object(config_handler, "_update_device_server") as update_dev_server,
+        mock.patch.object(
+            config_handler, "_wait_for_device_server_update", return_value=(False, response)
+        ) as wait,
+    ):
+        for _ in range(2):
+            with pytest.raises(DeviceConfigError, match="PV is unreachable"):
+                config_handler._update_device_config(dev["samx"], {"enabled": True})
+            assert dev["samx"].enabled is False
+
+    assert update_dev_server.call_count == 2
+    assert wait.call_count == 2
+
+
 def test_config_handler_update_device_config_deviceConfig(config_handler, make_samx):
     dev = make_samx({"deviceConfig": {}})
     with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
@@ -537,6 +558,49 @@ def test_config_handler_add_to_config(config_handler: ConfigHandler):
                     req_reply.assert_called_once_with(
                         accepted=True, error_msg=None, metadata={"RID": "12345"}
                     )
+
+
+def test_config_handler_add_to_config_disables_failed_devices(config_handler: ConfigHandler):
+    config = {
+        "failed_device": {
+            "deviceConfig": {},
+            "name": "failed_device",
+            "enabled": True,
+            "readoutPriority": "baseline",
+            "deviceClass": "SimPositioner",
+        },
+        "connected_device": {
+            "deviceConfig": {},
+            "name": "connected_device",
+            "enabled": True,
+            "readoutPriority": "baseline",
+            "deviceClass": "SimPositioner",
+        },
+    }
+    msg = messages.DeviceConfigMessage(action="add", config=config, metadata={"RID": "12345"})
+    cancel_event = threading.Event()
+    response = mock.MagicMock(metadata={"failed_devices": {"failed_device": "Connection failed"}})
+
+    with (
+        mock.patch.object(config_handler, "add_devices_to_redis") as add_devices,
+        mock.patch.object(config_handler, "_update_device_server"),
+        mock.patch.object(
+            config_handler, "_wait_for_device_server_update", return_value=(True, response)
+        ),
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+        mock.patch.object(config_handler, "send_config") as send_config,
+    ):
+        config_handler._add_to_config(msg, cancel_event=cancel_event)
+
+    assert config["failed_device"]["enabled"] is False
+    assert config["connected_device"]["enabled"] is True
+    add_devices.assert_called_once_with(config)
+    req_reply.assert_called_once_with(
+        accepted=True,
+        error_msg=None,
+        metadata={"RID": "12345", "failed_devices": {"failed_device": "Connection failed"}},
+    )
+    send_config.assert_called_once_with(msg)
 
 
 def test_config_handler_remove_from_config(config_handler):
