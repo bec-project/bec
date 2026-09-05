@@ -63,6 +63,113 @@ def test_config_handler_update_config(dm_with_devices):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_cleanup_failed_device_init_destroys_disconnected_object(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    obj = mock.MagicMock(name="failed_device")
+    obj.name = "failed_device"
+    obj.connected = False
+
+    handler._cleanup_failed_device_init(obj)
+
+    obj.destroy.assert_called_once_with()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    obj = mock.MagicMock(name="failed_device")
+    obj.name = "failed_device"
+    obj.destroy.side_effect = RuntimeError("destroy failed")
+    device = mock.MagicMock(name="failed_device_wrapper")
+    device.name = "failed_device"
+
+    with mock.patch.object(
+        dm_with_devices, "reset_device", side_effect=RuntimeError("reset failed")
+    ) as reset_device:
+        handler._cleanup_failed_device_init(obj, device)
+
+    obj.destroy.assert_called_once_with()
+    reset_device.assert_called_once_with(device)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_handler_failed_enable_remains_disabled(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    device_name = "motor1_disabled"
+    constructed_objects = []
+    session_config = next(
+        config
+        for config in dm_with_devices.current_session["devices"]
+        if config["name"] == device_name
+    )
+
+    construct_device_obj = dm_with_devices.construct_device_obj
+
+    def capture_constructed_object(*args, **kwargs):
+        obj, config = construct_device_obj(*args, **kwargs)
+        constructed_objects.append(obj)
+        return obj, config
+
+    with (
+        mock.patch.object(
+            dm_with_devices, "construct_device_obj", side_effect=capture_constructed_object
+        ),
+        mock.patch.object(
+            dm_with_devices, "connect_device", return_value=ConnectionError("PV is unreachable")
+        ) as connect_device,
+        mock.patch.object(handler, "send_config_request_reply") as send_reply,
+    ):
+        for _ in range(2):
+            msg = messages.DeviceConfigMessage(
+                action="update", config={device_name: {"enabled": True}}
+            )
+            handler.parse_config_request(msg, cancel_event=threading.Event())
+
+            assert dm_with_devices.devices[device_name].enabled is False
+            assert session_config["enabled"] is False
+
+    assert connect_device.call_count == 2
+    assert len(constructed_objects) == 2
+    assert all(obj._destroyed for obj in constructed_objects)
+    assert [call.kwargs["accepted"] for call in send_reply.call_args_list] == [False, False]
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_handler_failed_enable_cleans_and_restores_old_device(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    device_name = "motor1_disabled"
+    old_device = dm_with_devices.devices[device_name]
+    replacement_devices = []
+
+    def fail_after_initialization(*_args, **_kwargs):
+        replacement_devices.append(dm_with_devices.devices[device_name])
+        raise RuntimeError("post-connect initialization failure")
+
+    with (
+        mock.patch.object(dm_with_devices, "update_config", side_effect=fail_after_initialization),
+        mock.patch.object(
+            dm_with_devices, "connect_device", wraps=dm_with_devices.connect_device
+        ) as connect_device,
+    ):
+        for _ in range(2):
+            msg = messages.DeviceConfigMessage(
+                action="update", config={device_name: {"enabled": True}}
+            )
+            with pytest.raises(RuntimeError, match="post-connect initialization failure"):
+                handler._update_config(msg, cancel_event=threading.Event())
+
+            replacement = replacement_devices[-1]
+            assert replacement is not old_device
+            assert replacement.enabled is False
+            assert replacement.initialized is False
+            assert replacement.obj.connected is False
+            assert dm_with_devices.devices[device_name] is old_device
+            assert old_device.enabled is False
+
+    assert connect_device.call_count == 2
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_config_handler_update_config_raises(dm_with_devices):
     device_manager = dm_with_devices
     handler = ConfigUpdateHandler(device_manager)
@@ -142,6 +249,79 @@ def test_parse_config_request_add_remove(dm_with_devices):
     msg = messages.DeviceConfigMessage(action="remove", config=config)
     handler.parse_config_request(msg, cancel_event=threading.Event())
     assert "new_device" not in dm_with_devices.devices
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_parse_config_request_failed_add_is_disabled(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    config = {
+        "failed_device": {
+            "readoutPriority": "baseline",
+            "deviceClass": "ophyd_devices.SimPositioner",
+            "deviceConfig": {},
+            "deviceTags": {"user motors"},
+            "enabled": True,
+            "readOnly": False,
+            "name": "failed_device",
+        }
+    }
+    msg = messages.DeviceConfigMessage(action="add", config=config)
+
+    with mock.patch.object(
+        dm_with_devices, "connect_device", return_value=ConnectionError("PV is unreachable")
+    ):
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    assert dm_with_devices.devices.failed_device._config["enabled"] is False
+    session_config = next(
+        config
+        for config in dm_with_devices.current_session["devices"]
+        if config["name"] == "failed_device"
+    )
+    assert session_config["enabled"] is False
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_parse_config_request_failed_add_cleans_initialized_device(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    device_name = "failed_device"
+    config = {
+        device_name: {
+            "readoutPriority": "baseline",
+            "deviceClass": "ophyd_devices.SimPositioner",
+            "deviceConfig": {},
+            "deviceTags": {"user motors"},
+            "enabled": True,
+            "readOnly": False,
+            "name": device_name,
+        }
+    }
+    msg = messages.DeviceConfigMessage(action="add", config=config)
+    initialized_devices = []
+
+    def fail_after_initialization(*_args, **_kwargs):
+        initialized_devices.append(dm_with_devices.devices[device_name])
+        raise RuntimeError("post-connect initialization failure")
+
+    with (
+        mock.patch.object(dm_with_devices, "update_config", side_effect=fail_after_initialization),
+        mock.patch.object(handler, "send_config_request_reply") as send_reply,
+    ):
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    failed_device = dm_with_devices.devices[device_name]
+    assert failed_device is initialized_devices[0]
+    assert failed_device.enabled is False
+    assert failed_device.initialized is False
+    assert failed_device.obj.connected is False
+    session_config = next(
+        config
+        for config in dm_with_devices.current_session["devices"]
+        if config["name"] == device_name
+    )
+    assert session_config["enabled"] is False
+    assert "post-connect initialization failure" in msg.metadata["failed_devices"][device_name]
+    send_reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
