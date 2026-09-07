@@ -88,6 +88,9 @@ class DirectScanWorker:
                         raise ScanAbortion(f"Scan is missing required method: {step}")
                     self.check_for_interruption()
                     method()
+                    # [REVIEW-6] Only v4 direct scans pass through here; legacy generator scans
+                    # (GeneratorScanWorker) never emit the snapshot. Fine if intended, but say so in
+                    # the PR and make sure consumers handle the message being absent.
                     self.run_post_scan_step(step, scan)
         except ScanAbortion as exc:
             if not self._prepare_exception_cleanup(queue, exc):
@@ -287,4 +290,9 @@ class DirectScanWorker:
             scan (ScanBase): The scan object to run the post-scan method on.
         """
         if step == "stage":
+            # [REVIEW-4] Fire-and-forget: the device server executes instructions on a 4-thread
+            # ThreadPoolExecutor, so the snapshot may land after pre_scan and the first data points.
+            # If the file writer or widgets are meant to read this at scan start, wait on a status
+            # here (needs the device_instr_id from REVIEW-2). Otherwise document that consumers must
+            # treat the message as late or absent.
             scan.actions._broadcast_bec_signal_info()

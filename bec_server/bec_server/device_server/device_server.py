@@ -577,6 +577,15 @@ class DeviceServer(BECService):
                 device=self.get_device_from_exception(limit_error),
             )
             self._ensure_request_registered(instructions)
+            # [REVIEW-2] BLOCKING: the new broadcast instruction is sent without a device_instr_id
+            # (scan_actions._broadcast_bec_signal_info passes metadata={} and _send adds none). When
+            # _broadcast_bec_signal_info raises, _ensure_request_registered() above returns early
+            # and this line raises KeyError inside the except block. handle_device_instructions runs
+            # on a ThreadPoolExecutor future nobody inspects, so the failure is logged once by the
+            # logger.error above and otherwise swallowed. That is why end2end stays green even when
+            # the broadcast is broken. Fix: metadata.get("device_instr_id") and skip set_finished
+            # when it is None, or give the broadcast a real ScanStubStatus like every other action
+            # (see REVIEW-2 in scan_actions.py).
             self.requests_handler.set_finished(
                 instructions.metadata["device_instr_id"], success=False, error_info=error_info
             )
@@ -1091,11 +1100,17 @@ class DeviceServer(BECService):
             return
 
         for dev in devices:
+            # [REVIEW-7] Unreachable via handle_device_instructions: assert_device_is_valid()
+            # already raised InvalidDeviceError for unknown devices. Only the direct unit test hits
+            # this branch.
             if dev not in self.device_manager.devices:
                 logger.warning(f"Device {dev} not found in device manager. Skipping.")
                 continue
             obj = self.device_manager.devices.get(dev).obj
 
+            # [REVIEW-8] Nit: the helper is redefined on every loop iteration; hoist it to a method
+            # or module function. The docstring says "recursively" but walk_signals() does the
+            # walking.
             def _fetch_signal_info(device_obj: Device) -> dict:
                 """
                 Recursively fetch signal information from the device object and its sub-devices.
@@ -1107,13 +1122,34 @@ class DeviceServer(BECService):
                     dict: A dictionary containing signal information for the device and its sub-devices.
                 """
                 bec_signal_info = {}
+                # [REVIEW-OK] Added in 9203872, thanks: this closes the crash on Signal-only locked
+                # devices. ring_current_sim in demo_config is a ReadOnlySignal with readoutPriority
+                # monitored, so every scan locks it and it has no walk_signals(). Before this guard
+                # the whole broadcast died on it and the error was swallowed (REVIEW-2). Mirroring
+                # the hasattr(obj, "walk_signals") guard from
+                # DeviceManagerDS._subscribe_to_bec_signals would be consistent, but either works.
                 if not isinstance(device_obj, Device):
                     return {}
                 for _, sub_name, item in device_obj.walk_signals():
                     if not isinstance(item, BECMessageSignal):
                         continue
+                    # [REVIEW-1] BLOCKING: this check is never true today. ophyd_devices'
+                    # BECMessageSignal keeps data_type/saved/ndim/scope/role/... as separate
+                    # attributes and only builds a SignalInfo inside describe()
+                    # (ophyd_devices/utils/bec_signals.py on main, on every feature branch, and in
+                    # the installed 1.44.2). SimCamera.preview and .file_event both report
+                    # hasattr(sig, "signal_info") == False, so every broadcast publishes info={}.
+                    # Either land the ophyd_devices companion change first and link it in the PR, or
+                    # build the dict from the attributes here.
                     if not hasattr(item, "signal_info"):
                         continue
+                    # [REVIEW-3] BLOCKING: the value type is undefined. BECSignalInfoMessage.info is
+                    # typed with bec_lib.messages.SignalInfo, and pydantic 2.11 rejects an instance
+                    # of ophyd_devices' own SignalInfo class ("Input should be a valid dictionary or
+                    # instance of SignalInfo", verified locally). Only a dict or the bec_lib class
+                    # passes. Pick one contract: have ophyd_devices import SignalInfo from
+                    # bec_lib.messages, or call .model_dump() here when the value is a BaseModel.
+                    # The unit test passes a plain dict, so it cannot catch this.
                     bec_signal_info[sub_name] = item.signal_info
                 return bec_signal_info
 
@@ -1132,5 +1168,9 @@ class DeviceServer(BECService):
                     info=signal_info, scan_id=scan_id, metadata=instr.metadata
                 )
             },
+            # [REVIEW-5] One shared stream, 10 entries, no expiry. Scan definitions, scan groups and
+            # fast scans evict entries quickly; a consumer that resolves late (file writer at scan
+            # end) may find its scan_id gone. Consider a scan_id-keyed endpoint with expire=...,
+            # like other per-scan data, or a much larger cap.
             max_size=10,
         )

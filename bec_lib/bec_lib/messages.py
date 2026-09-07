@@ -878,6 +878,11 @@ class DeviceInfoMessage(BECMessage):
     info: dict
 
 
+# [REVIEW-3] This copy has already drifted from ophyd_devices.utils.bec_signals.SignalInfo:
+# use_alias is new here, and signals/signal_metadata default to empty containers here but to None
+# there. If ophyd_devices is meant to import this class (the PR says "moves"), delete the
+# ophyd_devices copy in the companion PR and pin the minimum bec_lib version there. See REVIEW-3 in
+# device_server.py for the runtime consequence.
 class SignalInfo(BaseModel):
     """
     Base class for signal information.

@@ -1538,13 +1538,22 @@ class ScanActions:
 
         Note that this is an internal method and should not be called directly by scan implementations.
         """
+        # [REVIEW-9] Nit: move this below the early-return guard.
         devices = self.get_owned_device_locks()
         if not self._scan.is_scan or self._scan.scan_info.scan_id is None:
             return
         instr = messages.DeviceInstructionMessage(
             device=devices,
             action="broadcast_bec_signal_info",
+            # [REVIEW-10] Nit: _send() puts scan_id + self._metadata_suffix into metadata while the
+            # parameter carries the raw scan_id. The suffix is always "" today, so no effect yet,
+            # but the two diverge the moment the suffix is used.
             parameter={"scan_id": self._scan.scan_info.scan_id},
+            # [REVIEW-2] Every other action registers a ScanStubStatus and passes its
+            # _device_instr_id here. Without it the device server cannot report failures back (its
+            # except path KeyErrors on metadata["device_instr_id"]) and the scan server cannot wait
+            # for the snapshot (REVIEW-4). Suggest creating a status here and, if consumers need the
+            # snapshot before data arrives, waiting on it.
             metadata={},
         )
         self._send(instr)

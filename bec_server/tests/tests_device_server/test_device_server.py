@@ -545,6 +545,11 @@ def test_handle_device_instructions_broadcast_bec_signal_info(device_server_mock
     broadcast_mock.assert_called_once_with(instructions)
 
 
+# [REVIEW-11] This test patches BECMessageSignal with fakes and passes signal_info as a dict, so it
+# cannot detect REVIEW-1 (real signals have no signal_info attribute) or REVIEW-3 (a real SignalInfo
+# instance is rejected). Suggest one test that walks a real ophyd_devices SimCamera (PreviewSignal +
+# FileEventSignal) and one where a Signal-only device such as ReadOnlySignal is in the instruction's
+# device list.
 def test_broadcast_bec_signal_info_publishes_bec_message_signal_info(device_server_mock):
     class FakeBECMessageSignal:
         def __init__(self, signal_info):

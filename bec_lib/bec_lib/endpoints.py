@@ -370,6 +370,9 @@ class MessageEndpoints:
         Returns:
             EndpointInfo: Shared stream endpoint for BEC signal info updates.
         """
+        # [REVIEW-5] See REVIEW-5 in device_server.py: shared stream capped at 10 with no expiry. A
+        # per-scan endpoint (e.g. info/bec_signal_info/{scan_id}) with an expiry would let consumers
+        # look up a scan directly instead of scanning the stream for a scan_id.
         endpoint = f"{EndpointType.INFO.value}/bec_signal_info"
         return EndpointInfo(
             endpoint=endpoint,
