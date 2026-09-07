@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import ophyd
-from ophyd import DeviceStatus, Kind, OphydObject, Staged, StatusBase
+from ophyd import Device, DeviceStatus, Kind, OphydObject, Staged, StatusBase
 from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
@@ -1096,7 +1096,7 @@ class DeviceServer(BECService):
                 continue
             obj = self.device_manager.devices.get(dev).obj
 
-            def _fetch_signal_info(device_obj: OphydObject) -> dict:
+            def _fetch_signal_info(device_obj: Device) -> dict:
                 """
                 Recursively fetch signal information from the device object and its sub-devices.
 
@@ -1107,6 +1107,8 @@ class DeviceServer(BECService):
                     dict: A dictionary containing signal information for the device and its sub-devices.
                 """
                 bec_signal_info = {}
+                if not isinstance(device_obj, Device):
+                    return {}
                 for _, sub_name, item in device_obj.walk_signals():
                     if not isinstance(item, BECMessageSignal):
                         continue
