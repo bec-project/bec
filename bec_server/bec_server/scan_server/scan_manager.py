@@ -24,33 +24,15 @@ from bec_server.scan_server.scans.scan_argument_modifier import (
     scan_signature_with_modifiers,
 )
 
-from . import scans as scans_v4_module
-from .scans import legacy_scans as scans_module
-from .scans.scan_base import ScanBase as ScanBaseV4
+from . import scans as scans_module
+from .scans.scan_base import ScanBase
 
 if TYPE_CHECKING:
     from bec_server.scan_server.scan_server import ScanServer
 
 logger = bec_logger.logger
 
-INTERNAL_SCAN_CLASSES = {
-    "ScanStubs",
-    "ScanComponent",
-    "AsyncFlyScanBase",
-    "SyncFlyScanBase",
-    "ScanBase",
-    "DeviceRpc",
-}
-
-_SCAN_ARG_TYPE_TO_DTYPE = {
-    scans_module.ScanArgType.DEVICE: DeviceBase,
-    scans_module.ScanArgType.FLOAT: float,
-    scans_module.ScanArgType.INT: int,
-    scans_module.ScanArgType.BOOL: bool,
-    scans_module.ScanArgType.STR: str,
-    scans_module.ScanArgType.LIST: list,
-    scans_module.ScanArgType.DICT: dict,
-}
+INTERNAL_SCAN_CLASSES = {"ScanBase", "DeviceRpc"}
 
 
 class ScanManager:
@@ -64,7 +46,7 @@ class ScanManager:
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
+        self.scan_dict: dict[str, type[ScanBase]] = {}
         self._plugins = {}
         self.parent.connector.register(
             MessageEndpoints.service_request(), cb=self.handle_reload_scans_request
@@ -76,7 +58,7 @@ class ScanManager:
     @staticmethod
     def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, Type]]:
         """
-        Get all available scans, including legacy scans, v4 scans and plugin scans.
+        Get all available built-in scans and plugin scans.
 
         Args:
             allow_duplicates (bool): If True, allow duplicate scan names. Default is False.
@@ -103,15 +85,7 @@ class ScanManager:
                 if scan_name:
                     seen_scan_names.add(scan_name)
 
-        # internal, v4 scans
-        members: list[tuple[str, Type]] = ScanManager._get_v4_scan_members()
-
-        # internal, legacy scans. We skip duplicates here because we want to prioritize v4 scans over legacy scans.
-        _append_new_scan_members(
-            members,
-            inspect.getmembers(scans_module, predicate=inspect.isclass),
-            skip_duplicates=True,
-        )
+        members: list[tuple[str, Type]] = ScanManager._get_scan_members()
 
         # plugin scans
         _append_new_scan_members(
@@ -122,12 +96,8 @@ class ScanManager:
 
         to_remove = []
         for name, scan_cls in members:
-            is_scan = issubclass(scan_cls, (scans_module.RequestBase, ScanBaseV4))
-            if (
-                not is_scan
-                or not scan_cls.scan_name
-                or scan_cls in (scans_module.RequestBase, ScanBaseV4)
-            ):
+            is_scan = issubclass(scan_cls, ScanBase)
+            if not is_scan or not scan_cls.scan_name or scan_cls is ScanBase:
                 logger.debug(f"Ignoring {name}")
                 to_remove.append((name, scan_cls))
         for item in to_remove:
@@ -176,20 +146,6 @@ class ScanManager:
                 )
                 continue
 
-            report_classes = [
-                scans_module.ScanBase,
-                scans_module.AsyncFlyScanBase,
-                scans_module.SyncFlyScanBase,
-                scans_module.ScanStubs,
-                scans_module.ScanComponent,
-            ]
-            base_cls = scans_module.RequestBase.__name__
-            for report_cls in report_classes:
-                if issubclass(scan_cls, report_cls):
-                    base_cls = report_cls.__name__
-            if issubclass(scan_cls, ScanBaseV4):
-                base_cls = "ScanBaseV4"
-
             self.scan_dict[scan_cls.scan_name] = scan_cls
             gui_config = (
                 self.validate_gui_config(scan_cls) if hasattr(scan_cls, "gui_config") else {}
@@ -202,7 +158,8 @@ class ScanManager:
 
             self.available_scans[scan_cls.scan_name] = {
                 "class": scan_cls.__name__,
-                "base_class": base_cls,
+                # Preserve the identifier consumed by existing clients.
+                "base_class": "ScanBaseV4",
                 "is_scan": scan_cls.is_scan if hasattr(scan_cls, "is_scan") else False,
                 "is_internal": self.scan_is_internal(scan_cls),
                 "arg_input": self.convert_arg_input(scan_cls.arg_input),
@@ -271,7 +228,7 @@ class ScanManager:
         """
         converted_arg_input = {}
         for key, value in arg_input.items():
-            dtype = _SCAN_ARG_TYPE_TO_DTYPE.get(value, value)
+            dtype = value
             if inspect.isclass(dtype) and issubclass(dtype, DeviceBase):
                 dtype = DeviceBase
             converted_arg_input[key] = serialize_dtype(dtype)
@@ -290,7 +247,7 @@ class ScanManager:
         if not plugins:
             return verified_plugins
         for name, cls in plugins.items():
-            if not issubclass(cls, (scans_module.RequestBase, ScanBaseV4)):
+            if not inspect.isclass(cls) or not issubclass(cls, ScanBase):
                 continue
             verified_plugins[name] = cls
             logger.info(f"Loading scan plugin {name}")
@@ -298,14 +255,12 @@ class ScanManager:
         return verified_plugins
 
     @staticmethod
-    def _get_v4_scan_members() -> list[tuple[str, Type[ScanBaseV4]]]:
+    def _get_scan_members() -> list[tuple[str, Type[ScanBase]]]:
         """Collect classes from all modules in the scans package."""
-        members: list[tuple[str, Type[ScanBaseV4]]] = []
+        members: list[tuple[str, Type[ScanBase]]] = []
         for module_info in pkgutil.iter_modules(
-            scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."
+            scans_module.__path__, prefix=f"{scans_module.__name__}."
         ):
-            if module_info.name == f"{scans_v4_module.__name__}.legacy_scans":
-                continue
             module = importlib.import_module(module_info.name)
             members.extend(
                 (name, cls)

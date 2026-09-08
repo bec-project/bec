@@ -1,16 +1,16 @@
 import numpy as np
 import pytest
 
-from bec_server.scan_server.path_optimization import PathOptimizerMixin
-from bec_server.scan_server.scans.legacy_scans import (
-    get_fermat_spiral_pos,
+from bec_server.scan_server.scans.path_optimization import PathOptimizerMixin
+from bec_server.scan_server.scans.position_generators import (
+    fermat_spiral_pos,
     get_round_roi_scan_positions,
 )
 
 
 def test_shell_optimization():
     optim = PathOptimizerMixin()
-    positions_orig = get_fermat_spiral_pos(-5, 5, -5, 5, 0.5)
+    positions_orig = fermat_spiral_pos(-5, 5, -5, 5, 0.5)
     step = 2
     drs = np.linspace(step - step / 2, step + step / 2, 100)
     min_length = len(positions_orig)
@@ -30,9 +30,9 @@ def path_optimizer(request):
 @pytest.mark.parametrize(
     "positions_orig",
     [
-        (get_fermat_spiral_pos(-5, 5, -5, 5, 0.5)),
-        (get_round_roi_scan_positions(10, 10, 1, 3)),
-        (get_fermat_spiral_pos(5, 15, -5, 5, 1.5)),
+        (fermat_spiral_pos(-5, 5, -5, 5, 0.5)),
+        (get_round_roi_scan_positions(-5, 5, -5, 5, 1, 3)),
+        (fermat_spiral_pos(5, 15, -5, 5, 1.5)),
         np.asarray(
             [
                 [-0.38502947, -0.42030026],
@@ -252,7 +252,7 @@ def test_corridor_optimization(positions_orig, path_optimizer):
 
 def test_optimize_corridor_raises_corridor_estimation():
     optim = PathOptimizerMixin()
-    positions_orig = get_fermat_spiral_pos(-5, 5, -5, 5, 0.5)
+    positions_orig = fermat_spiral_pos(-5, 5, -5, 5, 0.5)
     with pytest.raises(ValueError):
         optim.optimize_corridor(
             positions_orig, num_iterations=10, corridor_estimation="invalid_method"

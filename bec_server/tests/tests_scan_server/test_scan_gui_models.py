@@ -3,18 +3,15 @@ from typing import Annotated, Literal
 import pytest
 from pydantic import ValidationError
 
+from bec_lib.device import DeviceBase
 from bec_server.scan_server.scan_gui_models import GUIConfig
-from bec_server.scan_server.scans import ScanArgType, ScanBase
+from bec_server.scan_server.scans.scan_base import ScanBase
 
 
 class GoodScan(ScanBase):  # pragma: no cover
     scan_name = "good_scan"
     required_kwargs = ["steps", "relative"]
-    arg_input = {
-        "device": ScanArgType.DEVICE,
-        "start": ScanArgType.FLOAT,
-        "stop": ScanArgType.FLOAT,
-    }
+    arg_input = {"device": DeviceBase, "start": float, "stop": float}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
     gui_config = {
         "Scan Parameters": [
@@ -106,7 +103,7 @@ class RichArgInputScan(ScanBase):  # pragma: no cover
     scan_name = "rich_arg_input_scan"
     required_kwargs = []
     arg_input = {
-        "device": ScanArgType.DEVICE,
+        "device": DeviceBase,
         "start": Annotated[float, "device"],
         "stop": Annotated[float, "device"],
         "steps": int,
@@ -122,7 +119,7 @@ class RichArgInputScan(ScanBase):  # pragma: no cover
 class GenericListArgInputScan(ScanBase):  # pragma: no cover
     scan_name = "generic_list_arg_input_scan"
     required_kwargs = []
-    arg_input = {"device": ScanArgType.DEVICE, "positions": list[float]}
+    arg_input = {"device": DeviceBase, "positions": list[float]}
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
     gui_config = {"Scan Parameters": []}
 
@@ -138,11 +135,7 @@ def test_gui_config_good_scan_dump():
         "arg_group": {
             "name": "Scan Arguments",
             "bundle": 3,
-            "arg_inputs": {
-                "device": ScanArgType.DEVICE,
-                "start": ScanArgType.FLOAT,
-                "stop": ScanArgType.FLOAT,
-            },
+            "arg_inputs": {"device": "device", "start": "float", "stop": "float"},
             "inputs": [
                 {
                     "arg": True,
@@ -293,14 +286,14 @@ def test_gui_config_wrong_docs():
     assert gui_config.model_dump() == expected
 
 
-def test_gui_config_rich_arg_input_is_converted_to_legacy_scan_arg_types():
+def test_gui_config_rich_arg_input_is_serialized_to_gui_type_names():
     gui_config = GUIConfig.from_dict(RichArgInputScan)
 
     assert gui_config.arg_group.model_dump()["arg_inputs"] == {
-        "device": ScanArgType.DEVICE,
-        "start": ScanArgType.FLOAT,
-        "stop": ScanArgType.FLOAT,
-        "steps": ScanArgType.INT,
+        "device": "device",
+        "start": "float",
+        "stop": "float",
+        "steps": "int",
     }
 
     assert gui_config.arg_group.model_dump()["inputs"] == [
@@ -343,12 +336,12 @@ def test_gui_config_rich_arg_input_is_converted_to_legacy_scan_arg_types():
     ]
 
 
-def test_gui_config_generic_list_arg_input_is_converted_to_legacy_scan_arg_types():
+def test_gui_config_generic_list_arg_input_is_serialized_to_gui_type_names():
     gui_config = GUIConfig.from_dict(GenericListArgInputScan)
 
     assert gui_config.arg_group.model_dump()["arg_inputs"] == {
-        "device": ScanArgType.DEVICE,
-        "positions": ScanArgType.LIST,
+        "device": "device",
+        "positions": "list",
     }
 
     assert gui_config.arg_group.model_dump()["inputs"] == [
