@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.170.1 (2026-09-08)
+
+### Bug Fixes
+
+- Disable devices in config when initialization fails
+  ([`341cff0`](https://github.com/bec-project/bec/commit/341cff08b164cc3eccf341b4255b65e1b2e0a8f5))
+
+- Enhance device configuration handling and rollback for add operations
+  ([`934ae4f`](https://github.com/bec-project/bec/commit/934ae4f3ca426eeabf44a1517d4e1fc5cd82e416))
+
+
 ## v3.170.0 (2026-09-08)
 
 ### Features
