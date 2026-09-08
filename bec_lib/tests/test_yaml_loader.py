@@ -1,6 +1,9 @@
+import io
 import os
+from unittest import mock
 
 import pytest
+import yaml
 
 from bec_lib.bec_yaml_loader import yaml_load
 
@@ -160,3 +163,103 @@ def test_load_yaml_comment_only_include(test_file1):
     assert "eiger" in out
     assert "sastt" not in out
     assert len(out) == 1
+
+
+@pytest.mark.parametrize("process_includes", [True, False])
+@pytest.mark.parametrize("document", ["[]", "[samx]", "0", "42", "false", "samx"])
+def test_load_yaml_rejects_non_mapping_root(document, process_includes):
+    with pytest.raises(yaml.YAMLError, match="mapping at its root"):
+        yaml_load(io.StringIO(document), process_includes=process_includes)
+
+
+@pytest.mark.parametrize("process_includes", [True, False])
+@pytest.mark.parametrize(
+    "value", [None, 0, False, "samx", "__include__", [], [None], [1, "__include__", None], {}]
+)
+def test_load_yaml_preserves_ordinary_mapping_values(value, process_includes):
+    document = yaml.safe_dump({"samx": value})
+
+    assert yaml_load(io.StringIO(document), process_includes=process_includes) == {"samx": value}
+
+
+@pytest.mark.parametrize("process_includes", [True, False])
+def test_load_yaml_include_list_with_ordinary_values(tmp_path, process_includes):
+    included = tmp_path / "included.yaml"
+    included.write_text("samx: {}\n", encoding="utf-8")
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "group:\n  - null\n  - __include__\n  - !include included.yaml\n", encoding="utf-8"
+    )
+
+    out = yaml_load(str(config), process_includes=process_includes)
+
+    assert out == ({"samx": {}} if process_includes else {"group": [None, "__include__"]})
+
+
+@pytest.mark.parametrize("path_type", ["directory", "fifo"])
+def test_load_yaml_rejects_non_regular_include(tmp_path, path_type):
+    included = tmp_path / "included.yaml"
+    if path_type == "directory":
+        included.mkdir()
+    else:
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("Named pipes are unavailable on this platform.")
+        os.mkfifo(included)
+
+    with mock.patch(
+        "bec_lib.bec_yaml_loader.open", side_effect=AssertionError("Cannot open a non-regular file")
+    ) as open_file:
+        with pytest.raises(yaml.YAMLError, match="included.yaml.*not a regular file"):
+            yaml_load(io.StringIO(f"group: !include {included}\n"))
+
+    open_file.assert_not_called()
+
+
+def test_load_yaml_allows_symlink_include(tmp_path):
+    target = tmp_path / "target.yaml"
+    target.write_text("samx: {}\n", encoding="utf-8")
+    included = tmp_path / "included.yaml"
+    included.symlink_to(target)
+    config = tmp_path / "config.yaml"
+    config.write_text("group: !include included.yaml\n", encoding="utf-8")
+
+    assert yaml_load(str(config)) == {"samx": {}}
+
+
+def test_load_yaml_preserves_missing_include_error(tmp_path):
+    included = tmp_path / "missing.yaml"
+
+    with pytest.raises(FileNotFoundError) as exc:
+        yaml_load(io.StringIO(f"group: !include {included}\n"))
+
+    assert exc.value.filename == str(included)
+
+
+@pytest.mark.parametrize("in_list", [True, False])
+@pytest.mark.parametrize(
+    "marker",
+    [
+        None,
+        "included.yaml",
+        [],
+        {},
+        {"data": None, "filename": "included.yaml"},
+        {"data": [], "filename": "included.yaml"},
+        {"data": {}},
+        {"filename": "included.yaml"},
+    ],
+)
+def test_load_yaml_rejects_malformed_include_marker(marker, in_list):
+    value = {"__include__": marker}
+    document = yaml.safe_dump({"group": [value] if in_list else value})
+
+    with pytest.raises(yaml.YAMLError, match="Invalid include marker.*Use !include"):
+        yaml_load(io.StringIO(document))
+
+
+@pytest.mark.parametrize("in_list", [True, False])
+def test_load_yaml_strips_malformed_include_marker_when_disabled(in_list):
+    value = {"__include__": None}
+    document = yaml.safe_dump({"group": [value] if in_list else value})
+
+    assert yaml_load(io.StringIO(document), process_includes=False) == {}

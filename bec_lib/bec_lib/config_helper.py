@@ -10,10 +10,12 @@ import datetime
 import json
 import os
 import pathlib
+import stat
 import time
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from difflib import get_close_matches
 from typing import TYPE_CHECKING
 
 import yaml
@@ -293,19 +295,83 @@ class ConfigHelper:
         self._writer_mixin.create_directory(self._base_path_recovery)
 
     def _load_config_from_file(self, file_path: str) -> dict:
-        data = {}
         path = pathlib.Path(file_path).expanduser()
-        if path.suffix not in (".yaml", ".yml"):
-            raise NotImplementedError
+        self._validate_config_file_path(path)
 
         logger.info(f"Loading config from file: {path}")
-        with open(path, "r", encoding="utf-8") as stream:
-            try:
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
                 data = yaml_load(stream)
-            except yaml.YAMLError as err:
-                logger.error(f"Error while loading config from disk: {repr(err)}")
+        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+            raise DeviceConfigError(f"Failed to load config file '{path}': {exc}") from exc
 
+        if not data:
+            raise DeviceConfigError(f"Config file '{path}' is empty.")
+        if not isinstance(data, dict) or any(
+            not isinstance(name, str) or not isinstance(config, dict)
+            for name, config in data.items()
+        ):
+            raise DeviceConfigError(
+                f"Config file '{path}' must map device names to configuration mappings."
+            )
         return data
+
+    def _validate_config_file_path(self, path: pathlib.Path) -> None:
+        """Validate that the config path refers to a regular file with a YAML extension."""
+        yaml_extensions = (".yaml", ".yml")
+        try:
+            path_stat = path.stat()
+        except FileNotFoundError:
+            path_stat = None
+        except OSError as exc:
+            raise DeviceConfigError(f"Cannot access config file '{path}': {exc}") from exc
+
+        if path_stat is not None:
+            if not stat.S_ISREG(path_stat.st_mode):
+                raise DeviceConfigError(f"Config path '{path}' is not a regular file.")
+            if path.suffix not in yaml_extensions:
+                raise DeviceConfigError(
+                    f"File extension '{path.suffix}' is not supported for config file '{path}'. "
+                    f"Supported extensions: {', '.join(yaml_extensions)}."
+                )
+            return
+
+        message = f"Config file '{path}' does not exist."
+        suggestions = self._suggest_config_file_alternatives(path, yaml_extensions)
+        if suggestions:
+            alternatives = " or ".join(f"'{candidate}'" for candidate in suggestions)
+            message += f" Did you mean {alternatives}?"
+        raise DeviceConfigError(message)
+
+    def _suggest_config_file_alternatives(
+        self, path: pathlib.Path, extensions: tuple[str, ...]
+    ) -> list[pathlib.Path]:
+        """Suggest up to three sibling files, preferring exact names over fuzzy matches."""
+        try:
+            entries = list(path.parent.iterdir())
+        except OSError:
+            return []
+
+        candidates: dict[str, pathlib.Path] = {}
+        for candidate in entries:
+            if candidate.suffix not in extensions:
+                continue
+            try:
+                if candidate.is_file():
+                    candidates[candidate.name] = candidate
+            except OSError:
+                continue
+
+        exact_names = dict.fromkeys(
+            name
+            for extension in extensions
+            for name in (f"{path.name.rstrip('.')}{extension}", path.with_suffix(extension).name)
+        )
+        matches = [name for name in exact_names if name in candidates]
+        matches.extend(
+            get_close_matches(path.name, sorted(candidates.keys() - set(matches)), n=3, cutoff=0.8)
+        )
+        return [candidates[name] for name in matches[:3]]
 
     def save_current_session(
         self,
