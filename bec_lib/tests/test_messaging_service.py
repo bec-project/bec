@@ -11,6 +11,7 @@ from bec_lib.messaging_services import (
     MessageServiceObject,
     NotificationMessageObject,
     SciLogMessagingService,
+    SciLogTable,
     SignalMessageServiceObject,
     SignalMessagingService,
 )
@@ -243,6 +244,228 @@ def test_scilog_messaging_service_add_tags(scilog_message, connected_connector):
     assert sorted(tags_part.tags) == sorted(
         ["bec", "tag1", "tag2"]
     )  # default "bec" tag should be included
+
+
+def test_scilog_custom_table(scilog_message, connected_connector):
+    scilog_message.add_text("Before table")
+    table = scilog_message.add_table(columns=["Quantity"], title="Custom snapshot")
+    table.add_column("Value")
+    scilog_message.add_text("After table")
+
+    # Readbacks and derived values are captured as the table is populated.
+    x, y = 3.0, 4.0
+    assert table.add_row("samx", f"{x:.4f}") is table
+    table.add_row("samy", f"{y:.4f}")
+    table.add_row("Calculated radius", f"{(x**2 + y**2) ** 0.5:.4f}")
+    scilog_message.add_tags("snapshot")
+    scilog_message.send(scope="default")
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    message = out[0]["data"]
+    assert message.service_name == "scilog"
+    assert message.scope == "default"
+    assert len(message.message) == 4
+    assert message.message[0].content == "Before table"
+    assert message.message[2].content == "After table"
+    assert sorted(message.message[3].tags) == ["bec", "snapshot"]
+    content = message.message[1]
+    assert isinstance(content, messages.MessagingServiceTextContent)
+    assert content.content == (
+        '<p>Custom snapshot</p><figure class="table"><table><tbody>'
+        "<tr><td><strong>Quantity</strong></td><td><strong>Value</strong></td></tr>"
+        "<tr><td>samx</td><td>3.0000</td></tr>"
+        "<tr><td>samy</td><td>4.0000</td></tr>"
+        "<tr><td>Calculated radius</td><td>5.0000</td></tr>"
+        "</tbody></table></figure>"
+    )
+
+
+def test_scilog_table_escapes_text():
+    table = SciLogTable(columns=["Name <&>", "Value"], title='Sample "A" < B')
+    table.add_row("<script>alert('x')</script>", "first\nsecond & third")
+
+    content = table.to_html()
+    assert "<p>Sample &quot;A&quot; &lt; B</p>" in content
+    assert "<strong>Name &lt;&amp;&gt;</strong>" in content
+    assert "<td>&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;</td>" in content
+    assert "<td>first<br>second &amp; third</td>" in content
+
+
+def test_scilog_table_preserves_cell_text():
+    table = SciLogTable()
+    assert table.add_column("Text") is table
+    table.add_column("Number")
+    table.add_row("empty", "")
+    table.add_row("zero", "0.00")
+    table.add_row("rounded", f"{1.234:.2f}")
+
+    content = table.to_html()
+    assert "<td>empty</td><td></td>" in content
+    assert "<td>zero</td><td>0.00</td>" in content
+    assert "<td>rounded</td><td>1.23</td>" in content
+
+
+@pytest.mark.parametrize("values", [(), ("1",), ("1", "2", "3")])
+def test_scilog_table_rejects_incorrect_row_width(values):
+    table = SciLogTable(columns=["A", "B"])
+    before = table.to_html()
+
+    with pytest.raises(ValueError, match=f"Expected 2 values, got {len(values)}"):
+        table.add_row(*values)
+
+    assert table.to_html() == before
+
+
+def test_scilog_table_requires_columns_before_rows():
+    table = SciLogTable()
+    with pytest.raises(ValueError, match="Add columns before adding rows"):
+        table.add_row("1")
+
+    table.add_column("A").add_row("1")
+    before = table.to_html()
+    with pytest.raises(ValueError, match="Add all columns before adding rows"):
+        table.add_column("B")
+    assert table.to_html() == before
+
+
+@pytest.mark.parametrize("header", [123, None, ["Readback"]])
+def test_scilog_table_rejects_invalid_headers_without_mutating(header):
+    table = SciLogTable(columns=["Device"])
+    before = table.to_html()
+    with pytest.raises(TypeError, match="Column header must be a string"):
+        table.add_column(header)
+    assert table.to_html() == before
+    table.add_column("Readback")
+    assert "<td><strong>Readback</strong></td>" in table.to_html()
+    table.add_row("samx", "1.25")
+    assert "<td>samx</td><td>1.25</td>" in table.to_html()
+
+
+@pytest.mark.parametrize("columns", ["Device", ("Device",), ["Device", 1], {"Device": "Readback"}])
+def test_scilog_table_rejects_invalid_columns(scilog_message, columns):
+    with pytest.raises(TypeError, match="columns must be a list of strings or None"):
+        scilog_message.add_table(columns=columns)
+    assert scilog_message._content == []
+
+
+@pytest.mark.parametrize("title", [123, 0, False, [], ["Snapshot"]])
+def test_scilog_table_rejects_invalid_titles_without_blocking_message(
+    scilog_message, connected_connector, title
+):
+    scilog_message.add_text("Existing note")
+    table = scilog_message.add_table(columns=["Device"])
+    table.add_row("samx")
+
+    with pytest.raises(TypeError, match="title must be a string or None"):
+        scilog_message.add_table(columns=["Invalid table"], title=title)
+
+    table.add_row("samy")
+    scilog_message.add_text("Summary")
+    scilog_message.send()
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    content = out[0]["data"].message
+    assert len(content) == 4
+    assert content[0].content == "Existing note"
+    assert "<tr><td>samx</td></tr><tr><td>samy</td></tr>" in content[1].content
+    assert content[2].content == "Summary"
+    assert content[3].tags == ["bec"]
+
+
+@pytest.mark.parametrize("value", [1, 1.25, None, False, ["text"]])
+def test_scilog_table_rejects_non_string_cells(value):
+    table = SciLogTable(columns=["Device", "Readback"])
+    table.add_row("samx", "1.25")
+    before = table.to_html()
+
+    with pytest.raises(TypeError, match="Row values must be strings"):
+        table.add_row("samy", value)
+
+    assert table.to_html() == before
+
+
+def test_scilog_table_copies_column_headings(scilog_message, connected_connector):
+    columns = ["Device", "Readback"]
+    table = scilog_message.add_table(columns=columns)
+    columns[0] = "Changed"
+    columns.append("Extra")
+    table.add_row("samx", "1.25")
+    scilog_message.send()
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    content = out[0]["data"].message[0].content
+    assert "<td><strong>Device</strong></td><td><strong>Readback</strong></td>" in content
+    assert "<td>samx</td><td>1.25</td>" in content
+    assert "Changed" not in content
+    assert "Extra" not in content
+
+
+def test_scilog_tables_are_independent_and_keep_default_tags(scilog_message, connected_connector):
+    first = scilog_message.add_table(columns=["First"])
+    second = scilog_message.add_table(columns=["Second"])
+    second.add_row("two")
+    first.add_row("one")
+    scilog_message.send()
+    first.add_row("three")
+    scilog_message.send()
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    first_send, second_send = [entry["data"] for entry in out]
+    assert "<td>one</td>" in first_send.message[0].content
+    assert "<td>three</td>" not in first_send.message[0].content
+    assert "<td>three</td>" in second_send.message[0].content
+    assert first_send.message[1] == second_send.message[1]
+    assert "<td>two</td>" in first_send.message[1].content
+    for message in (first_send, second_send):
+        assert len(message.message) == 3
+        assert message.message[2].tags == ["bec"]
+
+
+@pytest.mark.parametrize("direct_service_send", [False, True])
+def test_scilog_table_renders_once_when_sent(
+    scilog_service, scilog_message, connected_connector, direct_service_send
+):
+    table = scilog_message.add_table(columns=["Device", "Readback"])
+    with mock.patch.object(table, "_update_content", wraps=table._update_content) as render:
+        for index in range(1000):
+            table.add_row(f"motor_{index}", "1.25")
+        render.assert_not_called()
+
+        if direct_service_send:
+            scilog_service.send(scilog_message)
+        else:
+            scilog_message.send()
+        render.assert_called_once()
+        table.to_html()
+        render.assert_called_once()
+
+        table.add_row("extra", "2.50")
+        render.assert_called_once()
+        assert "<td>extra</td><td>2.50</td>" in table.to_html()
+        assert render.call_count == 2
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    content = out[0]["data"].message[0].content
+    assert "<td>motor_999</td><td>1.25</td>" in content
+    assert "<td>extra</td>" not in content
+
+
+def test_scilog_notification_table_is_rendered_before_routing(scilog_service, connected_connector):
+    notification = NotificationMessageObject()
+    table = notification.add_table(columns=["Device", "Readback"])
+    table.add_row("samx", "1.25")
+    manager = MessagingManager(connected_connector)
+    try:
+        routed = manager.to_service_message(
+            scilog_service,
+            messages.NotificationMessage(event="new_scan", message=notification._content),
+        )
+        routed.send()
+    finally:
+        manager.shutdown()
+
+    out = connected_connector.xread(MessageEndpoints.message_service_queue(), from_start=True)
+    assert "<td>samx</td><td>1.25</td>" in out[0]["data"].message[0].content
 
 
 def test_scilog_log_positions(scilog_service_with_owner, connected_connector):
