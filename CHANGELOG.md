@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.169.1 (2026-09-08)
+
+### Bug Fixes
+
+- **queue**: Improve queue management and prevent deadlocks during insertions
+  ([`8bb63d0`](https://github.com/bec-project/bec/commit/8bb63d0938249ac8544499c1d788485101089484))
+
+- **queue**: Prevent removal of queues with pending inserts
+  ([`ca40b17`](https://github.com/bec-project/bec/commit/ca40b178759dd536d851c9ae1df7aa24c99bcd3b))
+
+
 ## v3.169.0 (2026-09-04)
 
 ### Features
