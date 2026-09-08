@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import ophyd
-from ophyd import DeviceStatus, Kind, OphydObject, Staged, StatusBase
+from ophyd import Device, DeviceStatus, Kind, OphydObject, Staged, StatusBase
 from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
@@ -23,7 +23,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import BECMessageSignal, DeviceManagerDS
 from bec_server.device_server.friendly_device_exceptions import reformat_known_device_exceptions
 from bec_server.device_server.rpc_handler import RPCHandler
 
@@ -534,11 +534,14 @@ class DeviceServer(BECService):
 
         """
         action = None
+        instructions = msg
         try:
-            instructions = msg
+            action = instructions.content["action"]
+            if action == "broadcast_bec_signal_info" and not instructions.content["device"]:
+                self._broadcast_bec_signal_info(instructions)
+                return
             if not instructions.content["device"]:
                 return
-            action = instructions.content["action"]
             self.assert_device_is_valid(instructions)
             if action != "rpc":
                 # rpc has its own error handling
@@ -563,6 +566,8 @@ class DeviceServer(BECService):
                 self._unstage_device(instructions)
             elif action == "pre_scan":
                 self._pre_scan(instructions)
+            elif action == "broadcast_bec_signal_info":
+                self._broadcast_bec_signal_info(instructions)
             else:
                 logger.warning(f"Received unknown device instruction: {instructions}")
         except ophyd_errors.LimitError as limit_error:
@@ -574,10 +579,10 @@ class DeviceServer(BECService):
                 exception_type=limit_error.__class__.__name__,
                 device=self.get_device_from_exception(limit_error),
             )
+
             self._ensure_request_registered(instructions)
-            self.requests_handler.set_finished(
-                instructions.metadata["device_instr_id"], success=False, error_info=error_info
-            )
+            if diid := instructions.metadata.get("device_instr_id"):
+                self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
             logger.error(content)
         except Exception as exc:  # pylint: disable=broad-except
@@ -599,9 +604,9 @@ class DeviceServer(BECService):
                 self.rpc_handler.send_rpc_exception(exc, instructions)
             else:
                 logger.error(content)
-            self.requests_handler.set_finished(
-                instructions.metadata["device_instr_id"], success=False, error_info=error_info
-            )
+
+            if diid := instructions.metadata.get("device_instr_id"):
+                self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
     @staticmethod
     def get_device_from_exception(exc: Exception) -> str | None:
@@ -1071,3 +1076,69 @@ class DeviceServer(BECService):
             self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
+
+    def _broadcast_bec_signal_info(self, instr: messages.DeviceInstructionMessage) -> None:
+        """
+        Broadcast BEC signal information to the appropriate endpoint.
+
+        Args:
+            instr (messages.DeviceInstructionMessage): The device instruction message containing the signal info.
+        """
+        instr_id = instr.metadata["device_instr_id"]
+        self.requests_handler.add_request(instr, num_status_objects=0)
+
+        devices = instr.content["device"]
+        if not isinstance(devices, list):
+            devices = [devices]
+
+        signal_info = {}
+        scan_id = instr.parameter.get("scan_id")
+        if scan_id is None:
+            self.requests_handler.set_finished(instr_id, success=True)
+            return
+
+        for dev in devices:
+            if dev not in self.device_manager.devices:
+                logger.warning(f"Device {dev} not found in device manager. Skipping.")
+                continue
+            obj = self.device_manager.devices.get(dev).obj
+
+            def _fetch_signal_info(device_obj: Device) -> dict:
+                """
+                Recursively fetch signal information from the device object and its sub-devices.
+
+                Args:
+                    device_obj (OphydObject): The device object to fetch signal info from.
+
+                Returns:
+                    dict: A dictionary containing signal information for the device and its sub-devices.
+                """
+                bec_signal_info = {}
+                if not isinstance(device_obj, Device):
+                    return {}
+                for _, sub_name, item in device_obj.walk_signals():
+                    if not isinstance(item, BECMessageSignal):
+                        continue
+                    if not hasattr(item, "signal_info"):
+                        continue
+                    bec_signal_info[sub_name] = item.signal_info
+                return bec_signal_info
+
+            info = _fetch_signal_info(obj)
+
+            if not info:
+                # avoid adding empty signal info for this device
+                continue
+
+            signal_info[dev] = info
+
+        self.connector.xadd(
+            MessageEndpoints.bec_signal_info(),
+            {
+                "data": messages.BECSignalInfoMessage(
+                    info=signal_info, scan_id=scan_id, metadata=instr.metadata
+                )
+            },
+            max_size=10,
+        )
+        self.requests_handler.set_finished(instr_id, success=True)
