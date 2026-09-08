@@ -24,10 +24,6 @@ class LimitError(Exception):
         self.device = device
 
 
-class DeviceMessageError(Exception):
-    pass
-
-
 class DeviceInstructionError(Exception):
     def __init__(self, error_info: ErrorInfo):
         super().__init__(error_info.compact_error_message)

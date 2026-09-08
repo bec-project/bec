@@ -7,17 +7,13 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.tests.fixtures import dm_with_devices
-from bec_server.scan_server.direct_scan_worker import DirectScanWorker
 from bec_server.scan_server.errors import ScanAbortion
-from bec_server.scan_server.generator_scan_worker import GeneratorScanWorker
 from bec_server.scan_server.scan_queue import (
     DirectInstructionQueueItem,
-    InstructionQueueItem,
     InstructionQueueStatus,
     QueueManager,
     ScanQueue,
 )
-from bec_server.scan_server.scan_stubs import ScanStubStatus
 from bec_server.scan_server.scan_worker import ScanWorker
 
 
@@ -32,23 +28,7 @@ def scan_worker_mock(dm_with_devices) -> ScanWorker:
     yield scan_worker
 
 
-def test_get_worker_for_instruction_queue_item(scan_worker_mock):
-    queue = InstructionQueueItem.__new__(InstructionQueueItem)
-
-    worker = scan_worker_mock.get_worker_for_queue(queue)
-
-    assert isinstance(worker, GeneratorScanWorker)
-
-
-def test_get_worker_for_direct_instruction_queue_item(scan_worker_mock):
-    queue = DirectInstructionQueueItem.__new__(DirectInstructionQueueItem)
-
-    worker = scan_worker_mock.get_worker_for_queue(queue)
-
-    assert isinstance(worker, DirectScanWorker)
-
-
-def test_run_delegates_to_selected_worker(scan_worker_mock):
+def test_run_executes_direct_scan(scan_worker_mock):
     queue = mock.MagicMock()
     queue.stopped = False
 
@@ -59,19 +39,19 @@ def test_run_delegates_to_selected_worker(scan_worker_mock):
 
     delegated_worker.process_instructions.side_effect = _process
 
-    with mock.patch.object(
-        scan_worker_mock, "get_worker_for_queue", return_value=delegated_worker
-    ) as get_worker:
+    with mock.patch(
+        "bec_server.scan_server.scan_worker.DirectScanWorker", return_value=delegated_worker
+    ) as worker_cls:
         scan_worker_mock.parent.queue_manager.queues[scan_worker_mock.queue_name] = [queue]
 
         scan_worker_mock.run()
 
-    get_worker.assert_called_once_with(queue)
+    worker_cls.assert_called_once_with(worker=scan_worker_mock)
     delegated_worker.process_instructions.assert_called_once_with(queue)
     queue.append_to_queue_history.assert_called_once()
 
 
-def test_run_delegates_scan_abortion_handling_to_selected_worker(scan_worker_mock):
+def test_run_handles_direct_scan_abortion(scan_worker_mock):
     queue = mock.MagicMock()
     delegated_worker = mock.MagicMock()
     delegated_worker.process_instructions.side_effect = ScanAbortion()
@@ -81,12 +61,29 @@ def test_run_delegates_scan_abortion_handling_to_selected_worker(scan_worker_moc
 
     delegated_worker._handle_scan_abortion.side_effect = _handle
 
-    with mock.patch.object(scan_worker_mock, "get_worker_for_queue", return_value=delegated_worker):
+    with mock.patch(
+        "bec_server.scan_server.scan_worker.DirectScanWorker", return_value=delegated_worker
+    ):
         scan_worker_mock.parent.queue_manager.queues[scan_worker_mock.queue_name] = [queue]
 
         scan_worker_mock.run()
 
     delegated_worker._handle_scan_abortion.assert_called_once()
+
+
+def test_run_reports_queue_iteration_error_before_first_scan(scan_worker_mock):
+    queue = mock.MagicMock()
+    queue.__iter__.side_effect = RuntimeError("Queue unavailable")
+    scan_worker_mock.parent.queue_manager.queues[scan_worker_mock.queue_name] = queue
+
+    scan_worker_mock.run()
+
+    scan_worker_mock.connector.raise_alarm.assert_called_once()
+    error = scan_worker_mock.connector.raise_alarm.call_args.kwargs["info"]
+    assert error.exception_type == "RuntimeError"
+    assert "Queue unavailable" in error.error_message
+    assert scan_worker_mock.connector.raise_alarm.call_args.kwargs["metadata"] == {}
+    queue.abort.assert_called_once_with()
 
 
 def test_shutdown(scan_worker_mock):
@@ -99,14 +96,10 @@ def test_shutdown(scan_worker_mock):
             join_mock.assert_called_once()
 
 
-@pytest.mark.parametrize("queue_item_cls", [InstructionQueueItem, DirectInstructionQueueItem])
-def test_shutdown_preserves_completed_item_status(scan_worker_mock, queue_item_cls):
-    item = queue_item_cls(mock.MagicMock(), mock.MagicMock(), scan_worker_mock)
+def test_shutdown_preserves_completed_item_status(scan_worker_mock):
+    item = DirectInstructionQueueItem(mock.MagicMock(), mock.MagicMock(), scan_worker_mock)
     scan = SimpleNamespace(_shutdown_event=threading.Event())
-    if isinstance(item, DirectInstructionQueueItem):
-        item.scans = [scan]
-    else:
-        item.queue.request_blocks = [SimpleNamespace(scan=scan)]
+    item.scans = [scan]
     item.status = InstructionQueueStatus.COMPLETED
     scan_worker_mock.current_instruction_queue_item = item
 
@@ -117,9 +110,8 @@ def test_shutdown_preserves_completed_item_status(scan_worker_mock, queue_item_c
     assert item.status == InstructionQueueStatus.COMPLETED
 
 
-@pytest.mark.parametrize("queue_item_cls", [InstructionQueueItem, DirectInstructionQueueItem])
 @pytest.mark.parametrize("reorder", [False, True])
-def test_shutdown_interrupts_current_scan_wait(queue_item_cls, reorder):
+def test_shutdown_interrupts_current_scan_wait(reorder):
     parent = SimpleNamespace(device_manager=mock.MagicMock(), connector=mock.MagicMock())
     queue_manager = QueueManager(parent)
     parent.queue_manager = queue_manager
@@ -132,20 +124,14 @@ def test_shutdown_interrupts_current_scan_wait(queue_item_cls, reorder):
         scan = SimpleNamespace(
             _shutdown_event=threading.Event(), scan_info=SimpleNamespace(scan_id=scan_id)
         )
-        item = queue_item_cls(queue, mock.MagicMock(), worker)
-        if isinstance(item, DirectInstructionQueueItem):
-            item.scans = [scan]
-        else:
-            item.queue.request_blocks = [SimpleNamespace(scan=scan, scan_id=scan_id)]
+        item = DirectInstructionQueueItem(queue, mock.MagicMock(), worker)
+        item.scans = [scan]
         item.append_to_queue_history = mock.Mock()
         return item, scan
 
     active, active_scan = make_item("active-scan")
     pending, pending_scan = make_item("pending-scan")
     queue.queue.extend([active, pending])
-    status = ScanStubStatus(
-        queue_manager.instruction_handler, shutdown_event=active_scan._shutdown_event
-    )
     waiting = threading.Event()
     shutdown_finished = threading.Event()
     errors = []
@@ -154,7 +140,7 @@ def test_shutdown_interrupts_current_scan_wait(queue_item_cls, reorder):
         assert item is active
         item.status = InstructionQueueStatus.RUNNING
         waiting.set()
-        status.wait()
+        active_scan._shutdown_event.wait()
 
     def shutdown():
         try:
@@ -167,7 +153,9 @@ def test_shutdown_interrupts_current_scan_wait(queue_item_cls, reorder):
     shutdown_thread = threading.Thread(target=shutdown)
     delegated_worker = mock.Mock()
     delegated_worker.process_instructions.side_effect = process
-    with mock.patch.object(worker, "get_worker_for_queue", return_value=delegated_worker):
+    with mock.patch(
+        "bec_server.scan_server.scan_worker.DirectScanWorker", return_value=delegated_worker
+    ):
         worker.start()
         try:
             assert waiting.wait(timeout=2)
@@ -190,7 +178,7 @@ def test_shutdown_interrupts_current_scan_wait(queue_item_cls, reorder):
             )
             assert pending.status == InstructionQueueStatus.PENDING
         finally:
-            # Release the real status wait even when testing a broken implementation.
+            # Release the scan wait even when testing a broken implementation.
             active_scan._shutdown_event.set()
             pending_scan._shutdown_event.set()
             queue.signal_event.set()
@@ -238,7 +226,9 @@ def test_shutdown_prevents_processing_item_selected_during_shutdown(scan_worker_
     delegated_worker = mock.Mock()
     delegated_worker.process_instructions.side_effect = process
     shutdown_thread = threading.Thread(target=shutdown)
-    with mock.patch.object(worker, "get_worker_for_queue", return_value=delegated_worker):
+    with mock.patch(
+        "bec_server.scan_server.scan_worker.DirectScanWorker", return_value=delegated_worker
+    ):
         worker.start()
         try:
             assert selecting.wait(timeout=2)
