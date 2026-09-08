@@ -17,7 +17,6 @@ import numpy as np
 import ophyd
 import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
-from ophyd.signal import EpicsSignalBase
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 from typeguard import typechecked
 
@@ -32,6 +31,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.bec_message_handler import BECMessageHandler
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
+from bec_server.device_server.devices.device_config import extract_device_config
 from bec_server.device_server.devices.device_serializer import (
     disable_lazy_wait_for_connection,
     get_device_info,
@@ -476,44 +476,12 @@ class DeviceManagerDS(DeviceManagerBase):
         Returns:
             (OphydObject, dict): device object and updated config dictionary
         """
-        name = dev.get("name")
         dev_cls = DeviceManagerDS._get_device_class(dev["deviceClass"])
-        device_config = dev.get("deviceConfig")
-        device_config = device_config if device_config is not None else {}
-        config = device_config.copy()
-        config["name"] = name
-
-        # pylint: disable=protected-access
-        device_classes = [dev_cls]
-        if issubclass(dev_cls, ophyd.Signal):
-            device_classes.append(ophyd.Signal)
-        if issubclass(dev_cls, EpicsSignalBase):
-            device_classes.append(EpicsSignalBase)
-        if issubclass(dev_cls, ophyd.OphydObject):
-            device_classes.append(ophyd.OphydObject)
-
-        # get all init parameters of the device class and its parents
-        class_params = set()
-        for device_class in device_classes:
-            class_params.update(inspect.signature(device_class)._parameters)
-        class_params_and_config_keys = class_params & config.keys()
-
-        init_kwargs = {key: config.pop(key) for key in class_params_and_config_keys}
-        device_access = config.pop("device_access", None)
-        if device_access or (device_access is None and config.get("device_mapping")):
-            init_kwargs["device_manager"] = device_manager
-
-        signature = inspect.signature(dev_cls)
-        if "device_manager" in signature.parameters:
-            init_kwargs["device_manager"] = device_manager
-        if "scan_info" in signature.parameters:
-            # Additional device_manager != None is needed for static_device_test which
-            # uses the static method with device_manager=None
-            init_kwargs["scan_info"] = device_manager.scan_info if device_manager else None
+        config_split = extract_device_config(dev, dev_cls, device_manager)
 
         # initialize the device object
-        obj = dev_cls(**init_kwargs)
-        return obj, config
+        obj = dev_cls(**config_split.init_kwargs)
+        return obj, config_split.post_init_config
 
     def initialize_device(self, dev: dict, config: dict, obj: OphydObject) -> DSDevice:
         """
