@@ -129,8 +129,19 @@ class ConfigUpdateHandler:
         """
         error_msg = ""
         accepted = True
+        original_devices = None
+        original_session_devices = None
         try:
             self.device_manager.check_request_validity(msg)
+            if msg.action == "add":
+                original_session_devices = self.device_manager.current_session["devices"].copy()
+                configured_devices = {device["name"] for device in original_session_devices}
+                for name in msg.config:
+                    if name in configured_devices:
+                        raise DeviceConfigError(
+                            f"Device {name} already exists in the session config."
+                        )
+                original_devices = set(self.device_manager.devices)
             match msg.action:
                 case "update":
                     self._update_config(msg, cancel_event)
@@ -162,6 +173,8 @@ class ConfigUpdateHandler:
         except Exception:
             error_msg = traceback.format_exc()
             accepted = False
+            if original_devices is not None:
+                self._rollback_added_devices(msg, original_devices, original_session_devices)
         finally:
             self.send_config_request_reply(
                 accepted=accepted, error_msg=error_msg, metadata=msg.metadata
@@ -242,13 +255,14 @@ class ConfigUpdateHandler:
             if "enabled" in dev_config:
                 # pylint: disable=protected-access
                 was_enabled = device._config.get("enabled", True)
-                device._config["enabled"] = dev_config["enabled"]
                 if was_enabled and not dev_config["enabled"]:
                     # It was enabled and we want to disable it. Disconnect and reset the device.
                     self.device_manager.disconnect_device(device.obj)
                     self.device_manager.reset_device(device)
+                    device._config["enabled"] = False
                 elif not was_enabled and dev_config["enabled"]:
                     # It was disabled and we want to enable it. Construct and initialize the device.
+                    device._config["enabled"] = True
                     obj = None
                     try:
                         obj, config = self.device_manager.construct_device_obj(
@@ -282,8 +296,6 @@ class ConfigUpdateHandler:
         reload_plugin_modules()
 
         self.device_manager._get_config(cancel_event=cancel_event)
-        if self.device_manager.failed_devices:
-            self.handle_failed_device_inits()
 
     def _add_config(self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event) -> None:
         """
@@ -311,15 +323,51 @@ class ConfigUpdateHandler:
             # pylint: disable=broad-except
             except Exception:
                 error = traceback.format_exc()
+                if name not in dm.devices:
+                    self._cleanup_failed_device_init(obj)
+                    raise
                 dm.failed_devices[name] = error
                 dev_config["enabled"] = False
-                if name in dm.devices:
-                    failed_device = dm.devices[name]
-                    failed_device._config["enabled"] = False
-                    self._cleanup_failed_device_init(failed_device.obj, failed_device)
-                else:
-                    self._cleanup_failed_device_init(obj)
+                failed_device = dm.devices[name]
+                failed_device._config["enabled"] = False
+                self._cleanup_failed_device_init(failed_device.obj, failed_device)
                 logger.error(f"Failed to initialize device {name}: {error}")
+
+    def _rollback_added_devices(
+        self,
+        msg: messages.DeviceConfigMessage,
+        original_devices: set[str],
+        original_session_devices: list[dict],
+    ) -> None:
+        """Remove a rejected add batch without masking the original failure."""
+        dm = self.device_manager
+        for name in reversed(msg.config):
+            if name in original_devices:
+                continue
+            if name in dm.devices:
+                device = dm.devices[name]
+                # Registered initialization failures have already been cleaned up.
+                if name not in dm.failed_devices:
+                    self._cleanup_failed_device_init(device.obj, device)
+                del dm.devices[name]
+            try:
+                pipe = self.connector.pipeline()
+                for endpoint in (
+                    MessageEndpoints.device_status,
+                    MessageEndpoints.device_read,
+                    MessageEndpoints.device_readback,
+                    MessageEndpoints.device_read_configuration,
+                    MessageEndpoints.device_info,
+                    MessageEndpoints.device_limits,
+                ):
+                    self.connector.delete(endpoint(name), pipe=pipe)
+                pipe.execute()
+            # pylint: disable=broad-except
+            except Exception:
+                logger.error(f"Failed to remove device data for {name}: {traceback.format_exc()}")
+        dm.current_session["devices"][:] = original_session_devices
+        dm.failed_devices = {}
+        msg.metadata.pop("failed_devices", None)
 
     def _remove_config(
         self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event
@@ -380,17 +428,20 @@ class ConfigUpdateHandler:
                         if d["name"] != dev
                     ]
 
-    def handle_failed_device_inits(self):
+    def handle_failed_device_inits(self) -> None:
+        """Clean up failed devices and persist their disabled state in the session and Redis."""
         if self.device_manager.failed_devices:
             msg = messages.DeviceConfigMessage(
                 action="update",
                 config={name: {"enabled": False} for name in self.device_manager.failed_devices},
             )
-            # Create a non-cancelled event for internal calls
-            cancel_event = threading.Event()
-            self._update_config(msg, cancel_event)
+            for name in self.device_manager.failed_devices:
+                device = self.device_manager.devices[name]
+                # pylint: disable=protected-access
+                device._config["enabled"] = False
+                self._cleanup_failed_device_init(device.obj, device)
+            self.update_session_config(msg)
             self.force_update_config_in_redis()
-        return
 
     def force_update_config_in_redis(self):
         config = []

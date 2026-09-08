@@ -687,8 +687,6 @@ class DeviceManagerDS(DeviceManagerBase):
     @staticmethod
     def disconnect_device(obj):
         """disconnect from a device"""
-        if not obj.connected:
-            return
         obj.destroy()
 
     def reset_device(self, obj: DSDevice):

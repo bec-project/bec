@@ -7,6 +7,7 @@ import pytest
 
 import bec_lib
 from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
 
@@ -60,6 +61,63 @@ def test_config_handler_update_config(dm_with_devices):
     assert device_manager.devices.bpm4i.enabled is True
     assert device_manager.devices.bpm4i.initialized is True
     assert device_manager.devices.bpm4i.obj._destroyed is False
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_handler_failed_disable_preserves_state_and_can_retry(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    device = dm_with_devices.devices.bpm4i
+    session_config = next(
+        config
+        for config in dm_with_devices.current_session["devices"]
+        if config["name"] == device.name
+    )
+    msg = messages.DeviceConfigMessage(action="update", config={device.name: {"enabled": False}})
+
+    with (
+        mock.patch.object(device.obj, "destroy", side_effect=RuntimeError("destroy failed")),
+        mock.patch.object(dm_with_devices, "reset_device") as reset_device,
+        mock.patch.object(handler, "send_config_request_reply") as send_reply,
+    ):
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    assert device.enabled is True
+    assert device.initialized is True
+    assert device.obj._destroyed is False
+    assert session_config["enabled"] is True
+    reset_device.assert_not_called()
+    assert send_reply.call_args.kwargs["accepted"] is False
+    assert "destroy failed" in send_reply.call_args.kwargs["error_msg"]
+
+    with mock.patch.object(handler, "send_config_request_reply") as send_reply:
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    assert device.enabled is False
+    assert device.initialized is False
+    assert device.obj._destroyed is True
+    assert session_config["enabled"] is False
+    send_reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_handler_disable_destroys_disconnected_device(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    device = dm_with_devices.devices.bpm4i
+    msg = messages.DeviceConfigMessage(action="update", config={device.name: {"enabled": False}})
+
+    with (
+        mock.patch.object(
+            type(device.obj), "connected", new_callable=mock.PropertyMock
+        ) as connected,
+        mock.patch.object(device.obj, "destroy", wraps=device.obj.destroy) as destroy,
+    ):
+        connected.return_value = False
+        handler._update_config(msg, cancel_event=threading.Event())
+
+    destroy.assert_called_once_with()
+    assert device.obj._destroyed is True
+    assert device.initialized is False
+    assert device.enabled is False
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -322,6 +380,179 @@ def test_parse_config_request_failed_add_cleans_initialized_device(dm_with_devic
     assert session_config["enabled"] is False
     assert "post-connect initialization failure" in msg.metadata["failed_devices"][device_name]
     send_reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("registered", [False, True])
+def test_parse_config_request_add_preserves_existing_device_data(
+    dm_with_devices, connected_connector, registered
+):
+    dm = dm_with_devices
+    dm.connector = connected_connector
+    handler = ConfigUpdateHandler(dm)
+    device = dm.devices.samx
+    if not registered:
+        device.obj.destroy()
+        del dm.devices[device.name]
+    original_devices = dict(dm.devices)
+    original_session = copy.deepcopy(dm.current_session)
+    status = messages.DeviceStatusMessage(device=device.name, status=0)
+    readback = messages.DeviceMessage(signals={"value": {"value": 12}})
+    connected_connector.set(MessageEndpoints.device_status(device.name), status)
+    connected_connector.set_and_publish(MessageEndpoints.device_readback(device.name), readback)
+    msg = messages.DeviceConfigMessage(
+        action="add",
+        config={
+            name: copy.deepcopy(device._config) | {"name": name}
+            for name in ("new_device", device.name)
+        },
+    )
+
+    with (
+        mock.patch.object(dm, "construct_device_obj") as construct,
+        mock.patch.object(handler, "send_config_request_reply") as send_reply,
+    ):
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    assert send_reply.call_args.kwargs["accepted"] is False
+    assert "already exists" in send_reply.call_args.kwargs["error_msg"]
+    construct.assert_not_called()
+    assert dict(dm.devices) == original_devices
+    assert dm.current_session == original_session
+    assert connected_connector.get(MessageEndpoints.device_status(device.name)) == status
+    assert connected_connector.get(MessageEndpoints.device_readback(device.name)) == readback
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("failure", ["device_info", "construction", "dependency"])
+@pytest.mark.parametrize("first_init_fails", [False, True])
+def test_parse_config_request_rejected_add_rolls_back_batch(
+    dm_with_devices, connected_connector, failure, first_init_fails
+):
+    dm = dm_with_devices
+    dm.connector = connected_connector
+    handler = ConfigUpdateHandler(dm)
+    original_devices = dict(dm.devices)
+    original_session = copy.deepcopy(dm.current_session)
+    config = {
+        name: {
+            "name": name,
+            "deviceClass": "ophyd_devices.SimPositioner",
+            "deviceConfig": {},
+            "enabled": True,
+            "readOnly": False,
+            "readoutPriority": "baseline",
+            "deviceTags": [],
+        }
+        for name in ("first_added", "second_added")
+    }
+    if failure == "dependency":
+        config["second_added"]["needs"] = ["missing_device"]
+    msg = messages.DeviceConfigMessage(action="add", config=config)
+    created_objects = []
+    construct_device_obj = dm.construct_device_obj
+    publish_device_info = dm.publish_device_info
+
+    def construct(dev_config, **kwargs):
+        if failure == "construction" and dev_config["name"] == "second_added":
+            raise RuntimeError("constructor failed")
+        obj, device_config = construct_device_obj(dev_config, **kwargs)
+        created_objects.append(obj)
+        obj.destroy = mock.Mock(wraps=obj.destroy)
+        return obj, device_config
+
+    def publish(obj, **kwargs):
+        if failure == "device_info" and obj.name == "second_added":
+            raise RuntimeError("device info failed")
+        result = publish_device_info(obj, **kwargs)
+        if first_init_fails and obj.name == "first_added":
+            return RuntimeError("first device initialization failed")
+        return result
+
+    with (
+        mock.patch.object(dm, "construct_device_obj", side_effect=construct),
+        mock.patch.object(dm, "publish_device_info", side_effect=publish),
+        mock.patch.object(handler, "send_config_request_reply") as send_reply,
+    ):
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    assert send_reply.call_args.kwargs["accepted"] is False
+    expected_error = {
+        "device_info": "device info failed",
+        "construction": "constructor failed",
+        "dependency": "needs unknown device",
+    }[failure]
+    assert expected_error in send_reply.call_args.kwargs["error_msg"]
+    assert dict(dm.devices) == original_devices
+    assert dm.current_session == original_session
+    assert dm.failed_devices == {}
+    assert "failed_devices" not in msg.metadata
+    assert created_objects
+    assert all(obj._destroyed for obj in created_objects)
+    for obj in created_objects:
+        obj.destroy.assert_called_once_with()
+    for name in config:
+        assert name not in dm.devices.__dict__
+        for endpoint in (
+            MessageEndpoints.device_status,
+            MessageEndpoints.device_read,
+            MessageEndpoints.device_readback,
+            MessageEndpoints.device_read_configuration,
+            MessageEndpoints.device_info,
+            MessageEndpoints.device_limits,
+        ):
+            assert connected_connector.get(endpoint(name)) is None
+
+    msg.config["second_added"].pop("needs", None)
+    msg.config["first_added"]["enabled"] = True
+    with mock.patch.object(handler, "send_config_request_reply") as send_reply:
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    send_reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
+    assert all(name in dm.devices for name in config)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_parse_config_request_rejected_add_survives_redis_cleanup_failure(dm_with_devices):
+    dm = dm_with_devices
+    handler = ConfigUpdateHandler(dm)
+    original_devices = dict(dm.devices)
+    original_session = copy.deepcopy(dm.current_session)
+    config = {
+        name: copy.deepcopy(dm.devices.samx._config.copy()) | {"name": name}
+        for name in ("first_added", "second_added")
+    }
+    msg = messages.DeviceConfigMessage(action="add", config=config)
+    created_objects = []
+    construct_device_obj = dm.construct_device_obj
+    failed_pipeline = mock.MagicMock()
+    failed_pipeline.execute.side_effect = RuntimeError("Redis cleanup failed")
+
+    def construct(dev_config, **kwargs):
+        if dev_config["name"] == "second_added":
+            raise RuntimeError("constructor failed")
+        obj, device_config = construct_device_obj(dev_config, **kwargs)
+        created_objects.append(obj)
+        return obj, device_config
+
+    with (
+        mock.patch.object(handler, "connector", wraps=dm.connector) as cleanup_connector,
+        mock.patch.object(dm, "construct_device_obj", side_effect=construct),
+        mock.patch.object(handler, "send_config_request_reply") as send_reply,
+    ):
+        # Keep the failure injection separate from the background monitor's connector.
+        cleanup_connector.pipeline.return_value = failed_pipeline
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+
+    assert send_reply.call_args.kwargs["accepted"] is False
+    assert "constructor failed" in send_reply.call_args.kwargs["error_msg"]
+    assert "Redis cleanup failed" not in send_reply.call_args.kwargs["error_msg"]
+    assert failed_pipeline.execute.call_count == len(config)
+    assert dict(dm.devices) == original_devices
+    assert dm.current_session == original_session
+    assert all(name not in dm.devices.__dict__ for name in config)
+    assert len(created_objects) == 1
+    assert created_objects[0]._destroyed is True
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

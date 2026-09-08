@@ -1,4 +1,5 @@
 import copy
+import threading
 import time
 from types import SimpleNamespace
 from unittest import mock
@@ -12,6 +13,7 @@ from ophyd_devices.tests.utils import patched_device
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
+from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
@@ -137,6 +139,71 @@ def test_disable_unreachable_devices(device_manager, session_from_test_config):
                     msg = messages.DeviceConfigMessage(
                         action="update", config={"samx": {"enabled": False}}
                     )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("reload_config", [False, True])
+@pytest.mark.parametrize("cleanup_error", [False, True])
+def test_load_unreachable_device_cleans_up_and_disables_config(
+    device_manager, connected_connector, reload_config, cleanup_error
+):
+    config = {
+        "name": "unreachable_signal",
+        "deviceClass": "ophyd.Signal",
+        "deviceConfig": {},
+        "enabled": True,
+        "readoutPriority": "monitored",
+    }
+    device_manager.connector = connected_connector
+    handler = ConfigUpdateHandler(device_manager)
+    device_manager.config_update_handler = handler
+    # Other suites can override the shared fixture with a manager that already has devices.
+    handler._flush_config()
+    connected_connector.set(
+        MessageEndpoints.device_config(), messages.AvailableResourceMessage(resource=[config])
+    )
+    obj, obj_config = device_manager.construct_device_obj(config, device_manager=device_manager)
+    original_error = "original connection failure"
+    reload_msg = messages.DeviceConfigMessage(
+        action="reload", config={}, metadata={"RID": "unreachable-reload"}
+    )
+
+    with (
+        mock.patch.object(device_manager, "construct_device_obj", return_value=(obj, obj_config)),
+        mock.patch.object(
+            type(obj), "connected", new_callable=mock.PropertyMock, return_value=False
+        ),
+        mock.patch.object(obj, "wait_for_connection", side_effect=ConnectionError(original_error)),
+        mock.patch.object(
+            obj,
+            "destroy",
+            wraps=obj.destroy,
+            side_effect=RuntimeError("cleanup failure") if cleanup_error else None,
+        ) as destroy,
+        mock.patch("bec_server.device_server.devices.config_update_handler.reload_plugin_modules"),
+    ):
+        if reload_config:
+            handler.parse_config_request(reload_msg, cancel_event=threading.Event())
+        else:
+            device_manager._get_config()
+
+        destroy.assert_called_once_with()
+        device = device_manager.devices[config["name"]]
+        assert device.obj is obj
+        assert device.enabled is False
+        assert device.initialized is False
+        assert device_manager.current_session["devices"][0]["enabled"] is False
+        redis_config = connected_connector.get(MessageEndpoints.device_config())
+        assert redis_config.resource[0]["enabled"] is False
+        failure = device_manager.failed_devices[config["name"]]
+        assert original_error in failure
+        assert "cleanup failure" not in failure
+        if reload_config:
+            reply = connected_connector.get(
+                MessageEndpoints.device_config_request_response(reload_msg.metadata["RID"])
+            )
+            assert reply.accepted is True
+            assert reply.metadata["failed_devices"][config["name"]] == failure
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
