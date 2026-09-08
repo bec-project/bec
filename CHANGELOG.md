@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.170.0 (2026-09-08)
+
+### Features
+
+- Add SciLogTable class for building HTML tables with custom columns and rows
+  ([`d3b8aab`](https://github.com/bec-project/bec/commit/d3b8aabd4d03dc313f938820bf882d4b1d097e41))
+
+
 ## v3.169.1 (2026-09-08)
 
 ### Bug Fixes
