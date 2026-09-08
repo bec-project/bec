@@ -417,7 +417,7 @@ def test_run_reraises_when_queue_is_already_stopped(direct_worker_context, make_
     direct_worker_context.queue.stopped = False
 
 
-def test_run_reraises_when_queue_has_no_active_request_block(direct_worker_context, make_scan):
+def test_run_reraises_when_queue_has_no_active_scan(direct_worker_context, make_scan):
     scan = make_scan(fail_step="scan_core")
     direct_worker_context.queue.active_scan = None
     direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue

@@ -10,7 +10,7 @@ from pydantic_core import PydanticCustomError
 
 from bec_lib.device import DeviceBase
 from bec_lib.signature_serializer import signature_to_dict
-from bec_server.scan_server.scans.legacy_scans import ScanArgType, ScanBase
+from bec_server.scan_server.scans.scan_base import ScanBase
 
 context_signature = ContextVar("context_signature")
 context_docstring = ContextVar("context_docstring")
@@ -35,11 +35,8 @@ class GUIInput(BaseModel):
     expert: Optional[bool] = Field(False)  # TODO decide later how to implement
 
     @classmethod
-    def convert_to_legacy_scan_arg_type(cls, value):
-        """Convert richer typing annotations to the legacy ScanArgType enum."""
-        if isinstance(value, ScanArgType):
-            return value
-
+    def serialize_arg_type(cls, value):
+        """Convert native argument types to the GUI configuration's type names."""
         if get_origin(value) is Annotated:
             value = get_args(value)[0]
 
@@ -51,19 +48,19 @@ class GUIInput(BaseModel):
             return value
 
         if issubclass(value, DeviceBase):
-            return ScanArgType.DEVICE
+            return "device"
         if issubclass(value, bool):
-            return ScanArgType.BOOL
+            return "bool"
         if issubclass(value, int):
-            return ScanArgType.INT
+            return "int"
         if issubclass(value, float):
-            return ScanArgType.FLOAT
+            return "float"
         if issubclass(value, str):
-            return ScanArgType.STR
+            return "str"
         if issubclass(value, list):
-            return ScanArgType.LIST
+            return "list"
         if issubclass(value, dict):
-            return ScanArgType.DICT
+            return "dict"
         return value
 
     @field_validator("name")
@@ -204,7 +201,7 @@ class GUIArgGroup(BaseModel):
     @field_validator("arg_inputs")
     @classmethod
     def validate_arg_inputs(cls, v):
-        return {key: GUIInput.convert_to_legacy_scan_arg_type(value) for key, value in v.items()}
+        return {key: GUIInput.serialize_arg_type(value) for key, value in v.items()}
 
     @field_validator("inputs")
     @classmethod
@@ -212,12 +209,8 @@ class GUIArgGroup(BaseModel):
         if v is not None:
             return v
         arg_inputs = values.data["arg_inputs"]
-        arg_inputs_str = {
-            key: value.value if isinstance(value, ScanArgType) else value
-            for key, value in arg_inputs.items()
-        }
         v = []
-        for name, type_ in arg_inputs_str.items():
+        for name, type_ in arg_inputs.items():
             v.append(GUIInput(name=name, type=type_, arg=True))
         return v
 

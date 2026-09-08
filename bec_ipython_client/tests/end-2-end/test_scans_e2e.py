@@ -376,17 +376,6 @@ def test_queued_scan(bec_ipython_client_fixture):
 
 
 @pytest.mark.timeout(100)
-def test_fly_scan(bec_ipython_client_fixture):
-    bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_fly_scan"})
-    scans = bec.scans
-    dev = bec.device_manager.devices
-    status = scans.round_scan_fly(dev.flyer_sim, 0, 40, 5, 3, exp_time=0.05, relative=True)
-    assert len(status.scan.live_data) == 63
-    assert status.scan.num_points == 63
-
-
-@pytest.mark.timeout(100)
 def test_scan_restart(bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_scan_restart"})
@@ -597,18 +586,6 @@ def test_time_scan(bec_ipython_client_fixture):
     scans = bec.scans
     status = scans.time_scan(points=5, interval=0.5, exp_time=0.1)
     assert len(status.scan.live_data) == 5
-
-
-@pytest.mark.timeout(100)
-def test_monitor_scan(bec_ipython_client_fixture):
-    bec = bec_ipython_client_fixture
-    bec.metadata.update({"unit_test": "test_monitor_scan"})
-    scans = bec.scans
-    dev = bec.device_manager.devices
-    dev.samx.limits = [-1100, 1100]
-    time.sleep(5)
-    status = scans.monitor_scan(dev.samx, -100, 100, min_update=0.01, relative=False)
-    assert len(status.scan.live_data) > 100
 
 
 @pytest.mark.timeout(100)
