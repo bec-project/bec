@@ -462,10 +462,143 @@ class MessagingService(ABC, Generic[MessageObjectT]):
         )
 
 
+class SciLogTable:
+    """
+    Build a SciLog HTML table with custom columns and rows.
+
+    Rows contain strings, which are escaped for HTML. Use an empty string for an
+    empty cell. Define columns before adding rows. Tables returned by
+    ``msg.add_table()`` remain attached to that message as they are populated.
+
+    Args:
+        columns (list[str] | None): Optional initial column headings.
+        title (str | None): Optional text displayed above the table.
+
+    Raises:
+        TypeError: If columns is not a list of strings or None, or title is not a string or None.
+    """
+
+    def __init__(self, columns: list[str] | None = None, *, title: str | None = None) -> None:
+        if columns is not None and (
+            not isinstance(columns, list) or not all(isinstance(header, str) for header in columns)
+        ):
+            raise TypeError("columns must be a list of strings or None.")
+        if title is not None and not isinstance(title, str):
+            raise TypeError("title must be a string or None.")
+        self._title = title
+        self._columns: list[str] = []
+        self._rows: list[list[str]] = []
+        self._content = messages.MessagingServiceTextContent(content="")
+        self._dirty = True
+        for header in columns or []:
+            self.add_column(header)
+
+    def add_column(self, header: str) -> Self:
+        """
+        Add a column before adding any rows.
+
+        Args:
+            header (str): Column heading, treated as plain text.
+
+        Returns:
+            SciLogTable: This table, for chaining.
+
+        Raises:
+            TypeError: If the header is not a string.
+            ValueError: If rows already exist.
+        """
+        if not isinstance(header, str):
+            raise TypeError("Column header must be a string.")
+        if self._rows:
+            raise ValueError("Add all columns before adding rows.")
+        self._columns.append(header)
+        self._dirty = True
+        return self
+
+    def add_row(self, *values: str) -> Self:
+        """
+        Add a row containing one string per column.
+
+        Args:
+            *values (str): Cell text. Convert or format numeric values before adding
+                them. An empty string produces an empty cell. Newlines produce line breaks.
+
+        Returns:
+            SciLogTable: This table, for chaining.
+
+        Raises:
+            ValueError: If no columns exist or the number of values does not match.
+            TypeError: If any cell value is not a string.
+        """
+        if not self._columns:
+            raise ValueError("Add columns before adding rows.")
+        if len(values) != len(self._columns):
+            raise ValueError(f"Expected {len(self._columns)} values, got {len(values)}.")
+        if not all(isinstance(value, str) for value in values):
+            raise TypeError("Row values must be strings.")
+        self._rows.append(list(values))
+        self._dirty = True
+        return self
+
+    @staticmethod
+    def _table_cell(value: str, bold: bool = False) -> str:
+        content = html.escape(value).replace("\n", "<br>")
+        if bold:
+            content = f"<strong>{content}</strong>"
+        return f"<td>{content}</td>"
+
+    def _update_content(self) -> None:
+        table_rows = []
+        if self._columns:
+            headers = "".join(self._table_cell(header, bold=True) for header in self._columns)
+            table_rows.append(f"<tr>{headers}</tr>")
+        for row in self._rows:
+            cells = "".join(self._table_cell(value) for value in row)
+            table_rows.append(f"<tr>{cells}</tr>")
+        content = (
+            f'<figure class="table"><table><tbody>{"".join(table_rows)}</tbody></table></figure>'
+        )
+        if self._title:
+            content = f"<p>{html.escape(self._title)}</p>{content}"
+        self._content.content = content
+
+    def to_html(self) -> str:
+        """
+        Return the table's current SciLog HTML representation.
+
+        The rendered HTML is cached until a column or row is added.
+
+        Returns:
+            str: Escaped HTML containing the optional title and the table.
+        """
+        if self._dirty:
+            self._update_content()
+            self._dirty = False
+        return self._content.content
+
+
 class SciLogMessageServiceObject(MessageServiceObject):
     """
     A class representing a message object for the SciLog messaging service.
     """
+
+    def __init__(self, service: MessagingService, scope: str | list[str] | None = None) -> None:
+        self._tables: list[SciLogTable] = []
+        self._message_content: list[messages.MessagingServiceContent] = []
+        super().__init__(service, scope=scope)
+
+    @property
+    def _content(self) -> list[messages.MessagingServiceContent]:
+        # Materialize tables when content is consumed, including notification payloads
+        # and direct service.send(message) calls that bypass this object's send().
+        for table in self._tables:
+            table.to_html()
+        return self._message_content
+
+    @_content.setter
+    def _content(self, content: list[messages.MessagingServiceContent]) -> None:
+        self._message_content = content
+        self._tables = []
 
     def add_text(
         self,
@@ -497,6 +630,40 @@ class SciLogMessageServiceObject(MessageServiceObject):
         """
         super().add_text(_format_rich_text(text, bold=bold, italic=italic, color=color))
         return self
+
+    def add_table(
+        self, columns: list[str] | None = None, *, title: str | None = None
+    ) -> SciLogTable:
+        """
+        Append a table and return its builder.
+
+        Pass column headings as a list or add them with ``add_column()``. Populate the
+        returned table with ``add_row()``, then send the parent message. The table
+        keeps its position among text and attachments.
+
+        Args:
+            columns (list[str] | None): Optional initial column headings.
+            title (str | None): Optional text displayed above the table.
+
+        Returns:
+            SciLogTable: A table builder attached to this message.
+
+        Raises:
+            TypeError: If columns is not a list of strings or None, or title is not a string or None.
+
+        Examples:
+            >>> msg = bec.messaging.scilog.new()
+            >>> table = msg.add_table(
+            ...     columns=["x", "x²"], title="Quadratic values"
+            ... )
+            >>> for x in range(5):
+            ...     table.add_row(str(x), str(x**2))
+            >>> msg.send()
+        """
+        table = SciLogTable(columns=columns, title=title)
+        self._content.append(table._content)  # pylint: disable=protected-access
+        self._tables.append(table)
+        return table
 
     def add_tags(self, tags: str | list[str]) -> Self:
         """
@@ -567,34 +734,11 @@ class SciLogMessagingService(MessagingService[SciLogMessageServiceObject]):
         return self._default_tags
 
     @staticmethod
-    def _table_cell(value: str, bold: bool = False) -> str:
-        content = html.escape(value)
-        if bold:
-            content = f"<strong>{content}</strong>"
-        return f"<td>{content}</td>"
-
-    @classmethod
-    def _position_table_html(cls, rows: list[dict[str, str]]) -> str:
-        table_rows = [
-            "<tr>"
-            f"{cls._table_cell('device', bold=True)}"
-            f"{cls._table_cell('readback', bold=True)}"
-            f"{cls._table_cell('setpoint', bold=True)}"
-            f"{cls._table_cell('limits', bold=True)}"
-            "</tr>"
-        ]
-        table_rows.extend(
-            "<tr>"
-            f"{cls._table_cell(row['name'])}"
-            f"{cls._table_cell(row['readback'])}"
-            f"{cls._table_cell(row['setpoint'])}"
-            f"{cls._table_cell(row['limits'])}"
-            "</tr>"
-            for row in rows
-        )
-        return (
-            f"<figure class=\"table\"><table><tbody>{''.join(table_rows)}</tbody></table></figure>"
-        )
+    def _position_table_html(rows: list[dict[str, str]]) -> str:
+        table = SciLogTable(columns=["device", "readback", "setpoint", "limits"])
+        for row in rows:
+            table.add_row(row["name"], row["readback"], row["setpoint"], row["limits"])
+        return table.to_html()
 
     @staticmethod
     def _code_block_html(source: str, language: str = "python") -> str:
