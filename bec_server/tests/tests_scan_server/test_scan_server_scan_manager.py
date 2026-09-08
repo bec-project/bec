@@ -8,8 +8,8 @@ from bec_lib.device import Device, DeviceBase, Positioner
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 from bec_lib.scan_args import ScanArgument
-from bec_server.scan_server.scan_manager import ScanManager, scans_module
-from bec_server.scan_server.scans import ScanArgType
+from bec_server.scan_server.scan_manager import ScanManager
+from bec_server.scan_server.scans.scan_base import ScanBase
 from bec_server.scan_server.tests.utils import NoopScan
 
 
@@ -23,12 +23,6 @@ def scan_manager():
     "arg_input, arg_output",
     [
         ({"a": float}, {"a": "float"}),
-        ({"a": ScanArgType.FLOAT}, {"a": "float"}),
-        ({"a": ScanArgType.DEVICE}, {"a": "DeviceBase"}),
-        ({"a": ScanArgType.INT}, {"a": "int"}),
-        ({"a": ScanArgType.BOOL}, {"a": "bool"}),
-        ({"a": ScanArgType.LIST}, {"a": "list"}),
-        ({"a": ScanArgType.DICT}, {"a": "dict"}),
         ({"a": str}, {"a": "str"}),
         ({"a": int}, {"a": "int"}),
         ({"a": bool}, {"a": "bool"}),
@@ -47,11 +41,11 @@ def test_scan_manager_convert_arg_input(scan_manager, arg_input, arg_output):
 
 
 def test_scan_manager_convert_arg_input_does_not_mutate(scan_manager):
-    arg_input = {"a": ScanArgType.FLOAT}
+    arg_input = {"a": float}
 
     scan_manager.convert_arg_input(arg_input)
 
-    assert arg_input == {"a": ScanArgType.FLOAT}
+    assert arg_input == {"a": float}
 
 
 class _GuiConfigScan(NoopScan):
@@ -91,7 +85,7 @@ class _GuiConfigModifier:
         return gui_config
 
 
-class _PreferredV4Scan(NoopScan):
+class _BuiltInScan(NoopScan):
     scan_name = "shared_scan"
 
 
@@ -140,12 +134,7 @@ def test_scan_manager_get_available_scans_only_appends_new_scan_names():
     try:
         with (
             mock.patch.object(
-                ScanManager, "_get_v4_scan_members", return_value=[("preferred", _PreferredV4Scan)]
-            ),
-            mock.patch.object(scans_module.LineScan, "scan_name", "shared_scan"),
-            mock.patch(
-                "bec_server.scan_server.scan_manager.inspect.getmembers",
-                return_value=[("legacy", scans_module.LineScan)],
+                ScanManager, "_get_scan_members", return_value=[("preferred", _BuiltInScan)]
             ),
             mock.patch.object(
                 ScanManager, "_get_scan_plugins", return_value={"plugin": _PluginDuplicateScan}
@@ -155,7 +144,7 @@ def test_scan_manager_get_available_scans_only_appends_new_scan_names():
     finally:
         ScanManager.get_available_scans.cache_clear()
 
-    assert members == [("preferred", _PreferredV4Scan)]
+    assert members == [("preferred", _BuiltInScan)]
 
 
 def test_scan_manager_update_available_scans_reload_forces_discovery_refresh(scan_manager):
@@ -207,3 +196,33 @@ def test_scan_manager_reload_scan_discovery_reloads_plugin_scan_modules():
 
     clear_modifier_cache.assert_called_once_with()
     reload_plugin_modules.assert_called_once_with()
+
+
+def test_scan_manager_discovers_only_current_scan_classes():
+    ScanManager.get_available_scans.cache_clear()
+    try:
+        with mock.patch.object(ScanManager, "_get_scan_plugins", return_value={}):
+            members = ScanManager.get_available_scans()
+    finally:
+        ScanManager.get_available_scans.cache_clear()
+
+    assert members
+    assert all(
+        issubclass(scan_cls, ScanBase) and scan_cls is not ScanBase for _, scan_cls in members
+    )
+
+
+def test_scan_manager_plugins_require_current_scan_base():
+    class UnsupportedScan:
+        scan_name = "unsupported_scan"
+
+    with mock.patch(
+        "bec_server.scan_server.scan_manager.plugin_helper.get_scan_plugins",
+        return_value={"supported": _PluginDuplicateScan, "unsupported": UnsupportedScan},
+    ):
+        assert ScanManager._get_scan_plugins() == {"supported": _PluginDuplicateScan}
+
+
+def test_scan_manager_preserves_published_scan_base_class(scan_manager):
+    assert scan_manager.available_scans
+    assert {info["base_class"] for info in scan_manager.available_scans.values()} == {"ScanBaseV4"}

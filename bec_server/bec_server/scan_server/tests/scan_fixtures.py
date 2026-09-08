@@ -413,7 +413,7 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
             parameter={"args": list(scan_args), "kwargs": resolved_scan_kwargs},
             queue="primary",
         )
-        scan = assembler.assemble_direct_scan(msg, scan_id)
+        scan = assembler.assemble_scan(msg, scan_id)
 
         # we pretend that the queue is scheduling the scan immediately,
         # so we can assign the scan number and dataset number here for testing purposes
