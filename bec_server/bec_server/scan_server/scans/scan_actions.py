@@ -19,7 +19,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
-from bec_server.scan_server.scan_stubs import ScanStubStatus
+from bec_server.scan_server.scans.scan_status import ScanStatus
 
 if TYPE_CHECKING:
     from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo
@@ -83,7 +83,7 @@ class ScanActions:
     @requires_scan_is_running
     def stage_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Stage all devices for the scan. This will call the "stage" method
         on all devices.
@@ -99,7 +99,7 @@ class ScanActions:
                 device(s) to exclude from staging. Defaults to None.
 
         Returns:
-            ScanStubStatus: status object to track the staging process
+            ScanStatus: status object to track the staging process
         """
         status = self._create_status(is_container=True, name="stage_all_devices")
         owned_device_names = self._get_owned_device_names()
@@ -164,7 +164,7 @@ class ScanActions:
         device: str | DeviceBase | list[str | DeviceBase],
         status_name: str | None = None,
         wait=True,
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Stage a device for the scan. This will call the "stage" method
         on the specified device(s).
@@ -177,7 +177,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the staging to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the staging process
+            ScanStatus: status object to track the staging process
         """
 
         # We support str and DeviceBase inputs as well as lists of those.
@@ -210,7 +210,7 @@ class ScanActions:
         device: str | DeviceBase | list[str | DeviceBase],
         status_name: str | None = None,
         wait=True,
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Run the pre-scan step for one or multiple devices.
 
@@ -223,7 +223,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for completion. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the pre-scan process.
+            ScanStatus: status object to track the pre-scan process.
         """
         device_names = self._normalize_device_names(device)
         if len(device_names) == 1:
@@ -249,7 +249,7 @@ class ScanActions:
     @requires_scan_is_running
     def pre_scan_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Pre-scan steps to be executed before the main scan logic. This will call
         the "pre_scan" method all devices that implement it.
@@ -264,7 +264,7 @@ class ScanActions:
                 device(s) to exclude from pre-scan. Defaults to None.
 
         Returns:
-            ScanStubStatus: status object to track the pre-scan process
+            ScanStatus: status object to track the pre-scan process
         """
         status = self._create_status(name="pre_scan_all_devices")
         owned_device_names = self._get_owned_device_names()
@@ -299,7 +299,7 @@ class ScanActions:
         device: str | DeviceBase | list[str | DeviceBase] | list[str] | list[DeviceBase],
         value: float | list[float],
         wait=True,
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Set one or multiple devices to specific values. This will call the "set" method
         on the specified device(s) with the given value(s).
@@ -310,7 +310,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the set operation to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the set process
+            ScanStatus: status object to track the set process
         """
         devices = device if isinstance(device, list) else [device]
         values = value.tolist() if isinstance(value, np.ndarray) else value
@@ -340,7 +340,7 @@ class ScanActions:
     @requires_scan_is_running
     def kickoff(
         self, device: str | DeviceBase, parameters: dict | None = None, wait=True
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Kickoff a device with the given parameters. This will call the
         "kickoff" method on the specified device with the given parameters.
@@ -351,7 +351,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the kickoff to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the kickoff process
+            ScanStatus: status object to track the kickoff process
         """
         device_name = self._normalize_device_name(device)
         self.acquire_device_lock(device_name)
@@ -369,7 +369,7 @@ class ScanActions:
         return status
 
     @requires_scan_is_running
-    def complete(self, device: str | DeviceBase, wait=True) -> ScanStubStatus:
+    def complete(self, device: str | DeviceBase, wait=True) -> ScanStatus:
         """
         Complete a device. This will call the "complete" method on the device.
 
@@ -380,7 +380,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the completion to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the completion process
+            ScanStatus: status object to track the completion process
         """
         device_name = self._normalize_device_name(device)
         self.acquire_device_lock(device_name)
@@ -400,7 +400,7 @@ class ScanActions:
     @requires_scan_is_running
     def complete_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Complete all devices for the scan. This will call the
         "complete" method on all devices that are enabled for the scan.
@@ -413,7 +413,7 @@ class ScanActions:
                 device(s) to exclude from completion. Defaults to None.
 
         Returns:
-            ScanStubStatus: status object to track the completion process
+            ScanStatus: status object to track the completion process
         """
         status = self._create_status(name="complete_all_devices")
         owned_device_names = self._get_owned_device_names()
@@ -441,7 +441,7 @@ class ScanActions:
         return status
 
     @requires_scan_is_running
-    def read_monitored_devices(self, wait=True) -> ScanStubStatus:
+    def read_monitored_devices(self, wait=True) -> ScanStatus:
         """
         Read from the monitored devices. This will call the "read" method on
         all devices that are currently configured with readout priority "monitored".
@@ -450,7 +450,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the read to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the read process
+            ScanStatus: status object to track the read process
         """
         # We set a flag to indicate that we triggered the monitored devices.
         # This is used to raise a warning if the scan definition tries to modify the
@@ -487,7 +487,7 @@ class ScanActions:
     @requires_scan_is_running
     def read_manually(
         self, devices: str | DeviceBase | list[str | DeviceBase], wait=True
-    ) -> Any | ScanStubStatus:
+    ) -> Any | ScanStatus:
         """
         Read the given devices and return the read data. This will call the
         "read" method on the specified device(s).
@@ -508,7 +508,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the read and return the read data. Defaults to True.
 
         Returns:
-            Any | ScanStubStatus: read data when ``wait`` is True, otherwise the status object.
+            Any | ScanStatus: read data when ``wait`` is True, otherwise the status object.
         """
         device_names = self._normalize_device_names(devices)
         status = self._create_status(name=f"read_manually_{device_names}")
@@ -530,9 +530,7 @@ class ScanActions:
         return status.result
 
     @requires_scan_is_running
-    def publish_manual_read(
-        self, readings: dict[str, dict] | list[dict], wait=True
-    ) -> ScanStubStatus:
+    def publish_manual_read(self, readings: dict[str, dict] | list[dict], wait=True) -> ScanStatus:
         """
         Publish externally provided data as the next monitored-device readout.
 
@@ -553,7 +551,7 @@ class ScanActions:
                 Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the publish process.
+            ScanStatus: status object to track the publish process.
         """
         self._readout_groups_read = True
         monitored_devices = self._get_monitored_device_names()
@@ -581,7 +579,7 @@ class ScanActions:
         return status
 
     @requires_scan_is_running
-    def read_baseline_devices(self, wait=True) -> ScanStubStatus:
+    def read_baseline_devices(self, wait=True) -> ScanStatus:
         """
         Read from the baseline devices. This will call the "read" method on all devices
         that are configured with readout priority "baseline".
@@ -590,7 +588,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the read to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the read process
+            ScanStatus: status object to track the read process
         """
         # We set a flag to indicate that we triggered the baseline devices
         # This is used to raise a warning if the scan definition tries to modify the
@@ -621,7 +619,7 @@ class ScanActions:
         return status
 
     @requires_scan_is_running
-    def trigger_all_devices(self, min_wait: float | None = None, wait=True) -> ScanStubStatus:
+    def trigger_all_devices(self, min_wait: float | None = None, wait=True) -> ScanStatus:
         """
         Trigger all devices for the scan. The list of devices to trigger is determined automatically
         based on their softwareTrigger configuration.
@@ -658,7 +656,7 @@ class ScanActions:
         return status
 
     @requires_scan_is_running
-    def unstage(self, device: str | DeviceBase, wait=True) -> ScanStubStatus:
+    def unstage(self, device: str | DeviceBase, wait=True) -> ScanStatus:
         """
         Unstage a device for the scan. This will call the "unstage" method on the specified device(s).
 
@@ -669,7 +667,7 @@ class ScanActions:
             wait (bool, optional): if True, wait for the unstaging to complete. Defaults to True.
 
         Returns:
-            ScanStubStatus: status object to track the unstaging process
+            ScanStatus: status object to track the unstaging process
         """
         device_name = self._normalize_to_root_device_name(device)
         status = self._create_status(name=f"unstage_{device_name}")
@@ -688,7 +686,7 @@ class ScanActions:
     @requires_scan_is_running
     def unstage_all_devices(
         self, wait=True, exclude: str | DeviceBase | list[str | DeviceBase] | None = None
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Unstage all devices for the scan. This will call the "unstage" method on all devices.
 
@@ -901,7 +899,7 @@ class ScanActions:
     @requires_scan_is_running
     def rpc_call(
         self, device: str | DeviceBase, func_name: str, *args, **kwargs
-    ) -> Any | ScanStubStatus:
+    ) -> Any | ScanStatus:
         """
         Make an RPC call to a device. This will call the given function on the device with the given arguments.
         The device server will execute the function and return the result in the instruction response.
@@ -922,7 +920,7 @@ class ScanActions:
             >>> result = self.actions.rpc_call("rt.controller", "start_interferometer", param1=42, param2="foo")
 
         Returns:
-            Any | ScanStubStatus: The result of the RPC call or a ScanStubStatus object if the result is a status object.
+            Any | ScanStatus: The result of the RPC call or a ScanStatus object if the result is a status object.
 
         """
         self.acquire_device_lock(device)
@@ -936,7 +934,7 @@ class ScanActions:
     @requires_scan_is_running
     def rpc_call_no_wait(
         self, device: str | DeviceBase, func_name: str, rpc_id: str, *args, response=False, **kwargs
-    ) -> ScanStubStatus:
+    ) -> ScanStatus:
         """
         Make an RPC call to a device without waiting for the result. This will call the given function on the device with the given arguments.
         The device server will execute the function and return the result in the instruction response.
@@ -951,7 +949,7 @@ class ScanActions:
             **kwargs: keyword arguments to pass to the function
 
         Returns:
-            ScanStubStatus: A ScanStubStatus object that can be used to wait for the result of the RPC call.
+            ScanStatus: A ScanStatus object that can be used to wait for the result of the RPC call.
         """
         device_name = self._normalize_device_name(device)
         status = self._create_status(name=f"rpc_{device_name}_{func_name}")
@@ -1033,7 +1031,7 @@ class ScanActions:
     ############## Helper methods ###########################################
     #########################################################################
 
-    def _create_status(self, is_container=False, name: str | None = None) -> ScanStubStatus:
+    def _create_status(self, is_container=False, name: str | None = None) -> ScanStatus:
         """
         Helper method to create a status object and register it in the status registry.
 
@@ -1041,7 +1039,7 @@ class ScanActions:
             is_container (bool, optional): if True, the status object is merely a container for other status objects and should not be waited on directly. Defaults to False.
             name (str, optional): name for the status object. Defaults to None.
         """
-        status = ScanStubStatus(
+        status = ScanStatus(
             self._instruction_handler,
             shutdown_event=self._shutdown_event,
             registry=self._status_registry,

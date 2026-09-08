@@ -192,8 +192,6 @@ def get_scan_argument_overrides(
         annotation and default maps after modifier processing.
     """
     arguments, defaults = _get_annotations_and_defaults(scan_cls)
-    if not issubclass(scan_cls, ScanBase):
-        return arguments, defaults
     modifier = get_scan_modifier()
     if modifier is None:
         return arguments, defaults
@@ -234,9 +232,6 @@ def gui_config_with_modifiers(
     Returns:
         dict[str, list[str]]: Modifier-adjusted GUI config for publication.
     """
-    if not issubclass(scan_cls, ScanBase):
-        return gui_config
-
     modifier = get_scan_modifier()
     if modifier is None:
         # no plugin installed, return original config
@@ -451,10 +446,6 @@ def scan_doc_with_modifiers(scan_cls: Type[ScanBase]) -> str:
     Returns:
         str: Docstring aligned with the effective scan signature.
     """
-    if not issubclass(scan_cls, ScanBase):
-        # For legacy scans, we simply return the original docstring
-        return scan_cls.__doc__ or scan_cls.__init__.__doc__ or ""
-
     raw_doc = _get_scan_raw_doc(scan_cls)
     arguments, defaults = get_scan_argument_overrides(scan_cls)
 
