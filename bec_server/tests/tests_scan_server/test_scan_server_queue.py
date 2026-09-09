@@ -1002,7 +1002,8 @@ def test_set_restart(queuemanager_mock):
     primary_queue.scan_worker.shutdown()
 
     # Replace the live queue worker with a queue whose worker thread has not been started.
-    queue_manager.queues["primary"] = ScanQueue(queue_manager, queue_name="primary")
+    primary_queue = ScanQueue(queue_manager, queue_name="primary")
+    queue_manager.queues["primary"] = primary_queue
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
         parameter={
@@ -1012,8 +1013,11 @@ def test_set_restart(queuemanager_mock):
         queue="primary",
         metadata={"RID": "something"},
     )
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
-    iq = queue_manager.queues["primary"].queue[0]
+    # Prevent add_queue() from replacing the dormant queue and starting a worker.
+    with mock.patch.object(primary_queue.scan_worker, "is_alive", return_value=True):
+        queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    assert not primary_queue.scan_worker.is_alive()
+    iq = primary_queue.queue[0]
     # We actively set the iq status to RUNNING. Otherwise, a restart would not be possible.
     iq.status = InstructionQueueStatus.RUNNING
 
@@ -1025,10 +1029,7 @@ def test_set_restart(queuemanager_mock):
             ) as scan_msg_wait:
                 with mock.patch.object(queue_manager.connector, "send") as connector_send:
                     scan_msg_wait.return_value = iq
-                    with queue_manager._lock:
-                        queue_manager.set_restart(
-                            queue="primary", parameter={"RID": "something_new"}
-                        )
+                    queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
                     scan_msg_wait.assert_not_called()
                     add_new_scan_to_queue.assert_called_once_with("primary", mock.ANY, 1)
                     restart_msg = connector_send.call_args_list[0].args[1]
@@ -1133,7 +1134,8 @@ def test_set_restart_no_active_scan(queuemanager_mock):
     primary_queue.scan_worker.shutdown()
 
     # Replace the live queue worker with a queue whose worker thread has not been started.
-    queue_manager.queues["primary"] = ScanQueue(queue_manager, queue_name="primary")
+    primary_queue = ScanQueue(queue_manager, queue_name="primary")
+    queue_manager.queues["primary"] = primary_queue
     msg = messages.ScanQueueMessage(
         scan_type="grid_scan",
         parameter={
@@ -1143,8 +1145,11 @@ def test_set_restart_no_active_scan(queuemanager_mock):
         queue="primary",
         metadata={"RID": "something"},
     )
-    queue_manager.add_to_queue(scan_queue="primary", msg=msg)
-    iq = queue_manager.queues["primary"].queue[0]
+    # Prevent add_queue() from replacing the dormant queue and starting a worker.
+    with mock.patch.object(primary_queue.scan_worker, "is_alive", return_value=True):
+        queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    assert not primary_queue.scan_worker.is_alive()
+    iq = primary_queue.queue[0]
     # We set the iq status to PENDING, meaning it's not active.
     iq.status = InstructionQueueStatus.PENDING
 
@@ -1154,8 +1159,7 @@ def test_set_restart_no_active_scan(queuemanager_mock):
             with mock.patch.object(
                 queue_manager, "_wait_for_queue_to_appear_in_history"
             ) as scan_msg_wait:
-                with queue_manager._lock:
-                    queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
+                queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
                 scan_msg_wait.assert_not_called()
                 add_new_scan_to_queue.assert_not_called()
 
