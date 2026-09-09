@@ -65,7 +65,11 @@ class ScanWorker(threading.Thread):
                             break
                         if not queue:
                             continue
+                        # Publish the item before checking shutdown: shutdown either
+                        # stops this item or this check prevents it from starting.
                         self.current_instruction_queue_item = queue
+                        if self.signal_event.is_set():
+                            break
                         worker = self.get_worker_for_queue(queue)
                         worker.process_instructions(queue)
                         if not queue.stopped:
@@ -98,5 +102,10 @@ class ScanWorker(threading.Thread):
         """shutdown the scan worker"""
         self.status = InstructionQueueStatus.STOPPED
         self.signal_event.set()
+        # Queue ordering may have moved the executing item away from the head.
+        # Its scans need their own shutdown events to interrupt device waits.
+        current_item = self.current_instruction_queue_item
+        if current_item is not None:
+            current_item.stop()
         if self._started.is_set():  # type: ignore ; _started is defined in threading.Thread
             self.join()
