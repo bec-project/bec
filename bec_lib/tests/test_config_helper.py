@@ -2,6 +2,7 @@ import errno
 import os
 import pathlib
 import shutil
+from collections.abc import Iterator
 from unittest import mock
 
 import pytest
@@ -51,6 +52,19 @@ def config_helper_for_invalid_file(config_helper):
     mock_send_config.assert_not_called()
     config_helper._connector.send.assert_not_called()
     assert config_helper._base_path_recovery is None
+
+
+@pytest.fixture
+def config_path_mock(tmp_path) -> Iterator[mock.MagicMock]:
+    """Provide a configurable path mock used only by ConfigHelper."""
+    file_path = tmp_path / "config.yaml"
+    config_path = mock.MagicMock(spec=pathlib.Path, wraps=file_path)
+    config_path.__str__.return_value = str(file_path)
+    config_path.parent = mock.Mock(spec=pathlib.Path, wraps=file_path.parent)
+    config_path.expanduser.return_value = config_path
+    with mock.patch("bec_lib.config_helper.pathlib", wraps=pathlib) as mock_pathlib:
+        mock_pathlib.Path.return_value = config_path
+        yield config_path
 
 
 def test_load_demo_config(config_helper):
@@ -141,15 +155,16 @@ def test_config_helper_loads_symlink_to_regular_config_file(
 
 @pytest.mark.parametrize("error_code", [errno.EACCES, errno.ENAMETOOLONG])
 def test_config_helper_reports_config_stat_errors(
-    config_helper_for_invalid_file, tmp_path, error_code
+    config_helper_for_invalid_file, config_path_mock, tmp_path, error_code
 ):
     file_path = tmp_path / "config.yaml"
     error = OSError(error_code, os.strerror(error_code), str(file_path))
 
-    with mock.patch("bec_lib.config_helper.pathlib.Path.stat", side_effect=error):
-        with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-            with pytest.raises(DeviceConfigError) as exc_info:
-                config_helper_for_invalid_file.update_session_with_file(str(file_path))
+    config_path_mock.stat.side_effect = error
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper_for_invalid_file.update_session_with_file(str(file_path))
 
     assert str(exc_info.value) == f"Cannot access config file '{file_path}': {error}"
     assert exc_info.value.__cause__ is error
@@ -434,20 +449,19 @@ def test_config_helper_missing_config_file_suggestions_exclude_unsupported_files
 
 @pytest.mark.parametrize("error_code", [errno.EACCES, errno.ENOTDIR])
 def test_config_helper_missing_config_file_ignores_directory_listing_errors(
-    config_helper, tmp_path, error_code
+    config_helper, config_path_mock, tmp_path, error_code
 ):
     file_path = tmp_path / "config.yaml"
     error = OSError(error_code, os.strerror(error_code), str(tmp_path))
 
-    with mock.patch(
-        "bec_lib.config_helper.pathlib.Path.iterdir", side_effect=error
-    ) as mock_iterdir:
-        with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-            with pytest.raises(DeviceConfigError) as exc_info:
-                config_helper.update_session_with_file(str(file_path))
+    config_path_mock.parent.iterdir.side_effect = error
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper.update_session_with_file(str(file_path))
 
     assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
-    mock_iterdir.assert_called_once()
+    config_path_mock.parent.iterdir.assert_called_once()
     mock_open.assert_not_called()
     config_helper._connector.send.assert_not_called()
     assert config_helper._base_path_recovery is None
