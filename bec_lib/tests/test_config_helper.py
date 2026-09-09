@@ -1,4 +1,6 @@
+import errno
 import os
+import pathlib
 import shutil
 from unittest import mock
 
@@ -29,6 +31,26 @@ def config_helper(config_helper_plain):
     with mock.patch.object(config_helper_inst, "wait_for_config_reply"):
         with mock.patch.object(config_helper_inst, "wait_for_service_response"):
             yield config_helper_inst
+
+
+@pytest.fixture
+def config_helper_for_invalid_file(config_helper):
+    with (
+        mock.patch.object(
+            config_helper, "_get_config_conflicts", return_value={}
+        ) as mock_conflicts,
+        mock.patch.object(config_helper, "_update_base_path_recovery") as mock_prepare_recovery,
+        mock.patch.object(config_helper, "_save_config_to_file") as mock_save_recovery,
+        mock.patch.object(config_helper, "send_config_request") as mock_send_config,
+    ):
+        yield config_helper
+
+    mock_conflicts.assert_not_called()
+    mock_prepare_recovery.assert_not_called()
+    mock_save_recovery.assert_not_called()
+    mock_send_config.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
 
 
 def test_load_demo_config(config_helper):
@@ -72,6 +94,411 @@ def test_config_helper_load_config_from_file_expands_user(
     config = config_helper._load_config_from_file("~/config/test.yaml")
 
     assert config
+
+
+@pytest.mark.parametrize("method", ["update_session_with_file", "add_to_session"])
+@pytest.mark.parametrize("filename", ["config.yaml", "config.yml"])
+def test_config_helper_rejects_config_directory(
+    config_helper_for_invalid_file, tmp_path, method, filename
+):
+    file_path = tmp_path / filename
+    file_path.mkdir()
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            getattr(config_helper_for_invalid_file, method)(str(file_path))
+
+    assert str(exc_info.value) == f"Config path '{file_path}' is not a regular file."
+    mock_open.assert_not_called()
+
+
+def test_config_helper_rejects_config_fifo_without_opening(
+    config_helper_for_invalid_file, tmp_path
+):
+    file_path = tmp_path / "config.yaml"
+    os.mkfifo(file_path)
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value) == f"Config path '{file_path}' is not a regular file."
+    mock_open.assert_not_called()
+
+
+def test_config_helper_loads_symlink_to_regular_config_file(
+    config_helper, tmp_path, test_config_yaml_file_path
+):
+    file_path = tmp_path / "config.yaml"
+    file_path.symlink_to(test_config_yaml_file_path)
+
+    config = config_helper._load_config_from_file(str(file_path))
+
+    assert "samx" in config
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize("error_code", [errno.EACCES, errno.ENAMETOOLONG])
+def test_config_helper_reports_config_stat_errors(
+    config_helper_for_invalid_file, tmp_path, error_code
+):
+    file_path = tmp_path / "config.yaml"
+    error = OSError(error_code, os.strerror(error_code), str(file_path))
+
+    with mock.patch("bec_lib.config_helper.pathlib.Path.stat", side_effect=error):
+        with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+            with pytest.raises(DeviceConfigError) as exc_info:
+                config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value) == f"Cannot access config file '{file_path}': {error}"
+    assert exc_info.value.__cause__ is error
+    mock_open.assert_not_called()
+
+
+@pytest.mark.parametrize("error_code", [errno.EACCES, errno.ENOENT])
+def test_config_helper_reports_config_open_errors_after_validation(
+    config_helper_for_invalid_file, tmp_path, error_code
+):
+    file_path = tmp_path / "config.yaml"
+    file_path.write_text("motor: {}", encoding="utf-8")
+    error = OSError(error_code, os.strerror(error_code), str(file_path))
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=error) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value) == f"Failed to load config file '{file_path}': {error}"
+    assert exc_info.value.__cause__ is error
+    mock_open.assert_called_once_with(file_path, "r", encoding="utf-8")
+
+
+def test_config_helper_reports_invalid_config_encoding(config_helper_for_invalid_file, tmp_path):
+    file_path = tmp_path / "config.yaml"
+    file_path.write_bytes(b"motor: \xff\n")
+
+    with pytest.raises(DeviceConfigError) as exc_info:
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value).startswith(f"Failed to load config file '{file_path}': ")
+    assert isinstance(exc_info.value.__cause__, UnicodeError)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param("motor: [\n", id="malformed-yaml"),
+        pytest.param("- motor\n", id="list-root"),
+        pytest.param("motor\n", id="string-root"),
+        pytest.param("42\n", id="integer-root"),
+        pytest.param("false\n", id="boolean-root"),
+    ],
+)
+def test_config_helper_reports_invalid_yaml_document(
+    config_helper_for_invalid_file, tmp_path, content
+):
+    file_path = tmp_path / "config.yaml"
+    file_path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(DeviceConfigError) as exc_info:
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value).startswith(f"Failed to load config file '{file_path}': ")
+    assert isinstance(exc_info.value.__cause__, yaml.YAMLError)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param("", id="empty"),
+        pytest.param("# comment-only config\n", id="comment-only"),
+        pytest.param("null\n", id="null-root"),
+        pytest.param("{}\n", id="empty-mapping"),
+    ],
+)
+def test_config_helper_rejects_empty_config_before_recovery(
+    config_helper_for_invalid_file, tmp_path, content
+):
+    file_path = tmp_path / "config.yaml"
+    file_path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(DeviceConfigError) as exc_info:
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value) == f"Config file '{file_path}' is empty."
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param("123: {}\n", id="non-string-device-name"),
+        pytest.param("motor:\n", id="null-device-config"),
+        pytest.param("motor: text\n", id="scalar-device-config"),
+        pytest.param("motor: []\n", id="list-device-config"),
+    ],
+)
+def test_config_helper_rejects_invalid_device_mapping(
+    config_helper_for_invalid_file, tmp_path, content
+):
+    file_path = tmp_path / "config.yaml"
+    file_path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(DeviceConfigError) as exc_info:
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value) == (
+        f"Config file '{file_path}' must map device names to configuration mappings."
+    )
+
+
+def test_config_helper_reports_missing_include_filename(config_helper_for_invalid_file, tmp_path):
+    file_path = tmp_path / "config.yaml"
+    included_file = tmp_path / "missing_devices.yaml"
+    file_path.write_text("devices: !include ./missing_devices.yaml\n", encoding="utf-8")
+
+    with pytest.raises(DeviceConfigError) as exc_info:
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value).startswith(f"Failed to load config file '{file_path}': ")
+    assert str(included_file) in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, FileNotFoundError)
+    assert exc_info.value.__cause__.filename == str(included_file)
+
+
+@pytest.mark.parametrize("method", ["update_session_with_file", "add_to_session"])
+@pytest.mark.parametrize("filename", ["config.txt", "config.YAML", "config"])
+def test_config_helper_unsupported_config_file_extension(config_helper, tmp_path, method, filename):
+    file_path = tmp_path / filename
+    file_path.write_text("{}", encoding="utf-8")
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            getattr(config_helper, method)(str(file_path))
+
+    assert str(exc_info.value) == (
+        f"File extension '{file_path.suffix}' is not supported for config file '{file_path}'. "
+        "Supported extensions: .yaml, .yml."
+    )
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize("method", ["update_session_with_file", "add_to_session"])
+@pytest.mark.parametrize(
+    "filename",
+    ["missing.yaml", "missing.yml", "missing", "missing.", "missing.txt", "missing.YAML"],
+)
+def test_config_helper_missing_config_file(config_helper, tmp_path, method, filename):
+    file_path = tmp_path / filename
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            getattr(config_helper, method)(str(file_path))
+
+    assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize("method", ["update_session_with_file", "add_to_session"])
+@pytest.mark.parametrize(
+    "filename, alternatives",
+    [
+        ("config", ["config.yaml"]),
+        ("config", ["config.yml"]),
+        ("config", ["config.yaml", "config.yml"]),
+        ("config.", ["config.yaml"]),
+        ("config.", ["config.yml"]),
+        ("config.", ["config.yaml", "config.yml"]),
+        ("config.yml", ["config.yaml"]),
+        ("config.yaml", ["config.yml"]),
+        ("config.txt", ["config.yaml"]),
+        ("config.v1", ["config.v1.yml"]),
+        ("config.v1", ["config.v1.yaml", "config.yaml"]),
+        ("config.v1.", ["config.v1.yaml"]),
+        ("a", ["a.yaml"]),
+        ("ab", ["ab.yml"]),
+    ],
+)
+def test_config_helper_missing_config_file_suggests_existing_yaml(
+    config_helper, tmp_path, method, filename, alternatives
+):
+    file_path = tmp_path / filename
+    for alternative in alternatives:
+        (tmp_path / alternative).write_text("{}", encoding="utf-8")
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            getattr(config_helper, method)(str(file_path))
+
+    suggestions = " or ".join(f"'{tmp_path / alternative}'" for alternative in alternatives)
+    assert str(exc_info.value) == (
+        f"Config file '{file_path}' does not exist. Did you mean {suggestions}?"
+    )
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize(
+    "filename, available_files, alternatives",
+    [
+        pytest.param(
+            "test_confgi.yaml",
+            ["test_config.yaml", "other_config.yaml"],
+            ["test_config.yaml"],
+            id="basename-typo",
+        ),
+        pytest.param(
+            "device_config.txt",
+            [
+                "device_config.txts.yml",
+                "device_config.txts.yaml",
+                "device_config.yml",
+                "device_config.yaml",
+            ],
+            ["device_config.yaml", "device_config.yml", "device_config.txts.yml"],
+            id="exact-alternatives-before-fuzzy-limit-three",
+        ),
+        pytest.param(
+            "test_config.yaml",
+            ["test_config1.yaml", "test_config2.yaml", "test_config3.yaml", "test_config4.yaml"],
+            ["test_config4.yaml", "test_config3.yaml", "test_config2.yaml"],
+            id="fuzzy-limit-three",
+        ),
+    ],
+)
+def test_config_helper_missing_config_file_suggests_similar_files(
+    config_helper, tmp_path, filename, available_files, alternatives
+):
+    file_path = tmp_path / filename
+    for available_file in available_files:
+        (tmp_path / available_file).write_text("{}", encoding="utf-8")
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper.update_session_with_file(str(file_path))
+
+    suggestions = " or ".join(f"'{tmp_path / alternative}'" for alternative in alternatives)
+    assert str(exc_info.value) == (
+        f"Config file '{file_path}' does not exist. Did you mean {suggestions}?"
+    )
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+def test_config_helper_missing_config_file_suggestions_exclude_unsupported_files_and_directories(
+    config_helper, tmp_path
+):
+    file_path = tmp_path / "test_confgi.yaml"
+    alternative = tmp_path / "test_config.yaml"
+    for filename in [
+        "test_config.yaml",
+        "test_confgi.yml.bak",
+        "test_config.txt",
+        "test_config.YAML",
+    ]:
+        (tmp_path / filename).write_text("{}", encoding="utf-8")
+    (tmp_path / "test_confgi1.yaml").mkdir()
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper.add_to_session(str(file_path))
+
+    assert str(exc_info.value) == (
+        f"Config file '{file_path}' does not exist. Did you mean '{alternative}'?"
+    )
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize("error_code", [errno.EACCES, errno.ENOTDIR])
+def test_config_helper_missing_config_file_ignores_directory_listing_errors(
+    config_helper, tmp_path, error_code
+):
+    file_path = tmp_path / "config.yaml"
+    error = OSError(error_code, os.strerror(error_code), str(tmp_path))
+
+    with mock.patch(
+        "bec_lib.config_helper.pathlib.Path.iterdir", side_effect=error
+    ) as mock_iterdir:
+        with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+            with pytest.raises(DeviceConfigError) as exc_info:
+                config_helper.update_session_with_file(str(file_path))
+
+    assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
+    mock_iterdir.assert_called_once()
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+def test_config_helper_missing_config_file_with_missing_parent_directory(config_helper, tmp_path):
+    file_path = tmp_path / "missing" / "config.yaml"
+
+    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+        with pytest.raises(DeviceConfigError) as exc_info:
+            config_helper.add_to_session(str(file_path))
+
+    assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize("method", ["update_session_with_file", "add_to_session"])
+@pytest.mark.parametrize("error_code", [errno.ENAMETOOLONG, errno.EACCES])
+@pytest.mark.parametrize("has_alternative", [False, True])
+def test_config_helper_missing_config_file_ignores_suggestion_stat_errors(
+    config_helper, tmp_path, method, error_code, has_alternative
+):
+    file_path = tmp_path / "config.yml"
+    failing_candidate = tmp_path / "config.yml.yaml"
+    alternative = tmp_path / "config.yaml"
+    failing_candidate.write_text("{}", encoding="utf-8")
+    if has_alternative:
+        alternative.write_text("{}", encoding="utf-8")
+
+    original_is_file = pathlib.Path.is_file
+
+    def is_file(candidate):
+        if candidate == failing_candidate:
+            raise OSError(error_code, os.strerror(error_code), str(candidate))
+        return original_is_file(candidate)
+
+    with mock.patch(
+        "bec_lib.config_helper.pathlib.Path.is_file", autospec=True, side_effect=is_file
+    ) as mock_is_file:
+        with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
+            with pytest.raises(DeviceConfigError) as exc_info:
+                getattr(config_helper, method)(str(file_path))
+
+    expected_message = f"Config file '{file_path}' does not exist."
+    if has_alternative:
+        expected_message += f" Did you mean '{alternative}'?"
+    assert str(exc_info.value) == expected_message
+    mock_is_file.assert_any_call(failing_candidate)
+    mock_open.assert_not_called()
+    config_helper._connector.send.assert_not_called()
+    assert config_helper._base_path_recovery is None
+
+
+@pytest.mark.parametrize("filename", ["config", "config."])
+def test_config_helper_missing_config_file_does_not_suggest_directory(
+    config_helper, tmp_path, filename
+):
+    file_path = tmp_path / filename
+    (tmp_path / "config.yaml").mkdir()
+    (tmp_path / "config.yml").mkdir()
+
+    with pytest.raises(DeviceConfigError) as exc_info:
+        config_helper._load_config_from_file(str(file_path))
+
+    assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
 
 
 def test_config_helper_add_to_session(config_helper):
