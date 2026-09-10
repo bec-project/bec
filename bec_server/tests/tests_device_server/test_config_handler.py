@@ -4,12 +4,20 @@ import threading
 from unittest import mock
 
 import pytest
+from ophyd import Component, Device, Signal
+from ophyd.utils.errors import DestroyedError
+from ophyd_devices import set_registry
+from ophyd_devices.utils.set_registry import SetCancelledError
 
 import bec_lib
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import (
+    DeviceConfigError,
+    DeviceManagerDS,
+    DSDevice,
+)
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
@@ -251,6 +259,203 @@ def test_reload_action(dm_with_devices):
             handler._reload_config(cancel_event=threading.Event())
             obj_destroy.assert_called_once()
             get_config.assert_called_once()
+
+
+class PendingConfigSignal(Signal):
+    """Keep set() pending without contacting hardware."""
+
+    def put(self, value, **kwargs):
+        pass
+
+
+class PendingConfigDevice(Device):
+    setpoint = Component(PendingConfigSignal, value=0)
+    cleanup = Component(PendingConfigSignal, value=0)
+
+
+@pytest.fixture
+def pending_config_roots(dm_with_devices):
+    roots = [PendingConfigDevice(name=name) for name in ("samx", "samy")]
+    with (
+        mock.patch.object(dm_with_devices.devices.samx, "obj", roots[0]),
+        mock.patch.object(dm_with_devices.devices.samy, "obj", roots[1]),
+    ):
+        try:
+            yield roots
+        finally:
+            for root in roots:
+                operations = set_registry.cancel(root)
+                for operation in operations:
+                    worker = operation.signal._set_thread
+                    if worker is not None:
+                        worker.join(timeout=2)
+                        assert not worker.is_alive()
+                root.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_reload_cancels_old_roots_before_destroy_and_replaces_them(
+    dm_with_devices, pending_config_roots
+):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    statuses = [root.setpoint.set(1) for root in pending_config_roots]
+    operations = [set_registry.active(root)[0] for root in pending_config_roots]
+    configs = {
+        root.name: dm_with_devices.devices[root.name]._config for root in pending_config_roots
+    }
+    first = pending_config_roots[0]
+    destroy = first.destroy
+    replacements = []
+
+    def destroy_first():
+        assert all(operation.cancel_requested for operation in operations)
+        # A destroy hook can wait for another old root without deadlocking.
+        with pytest.raises(SetCancelledError):
+            statuses[1].wait(timeout=2)
+        destroy()
+
+    def load_replacements(**_kwargs):
+        assert not dm_with_devices.devices
+        assert all(root._destroyed for root in pending_config_roots)
+        for root in pending_config_roots:
+            replacement = PendingConfigDevice(name=root.name)
+            replacements.append(replacement)
+            dm_with_devices.devices._add_device(
+                root.name, DSDevice(root.name, replacement, configs[root.name])
+            )
+            replacement.setpoint.set(0).wait(timeout=2)
+
+    with (
+        mock.patch.object(first, "destroy", side_effect=destroy_first),
+        mock.patch(
+            "bec_server.device_server.devices.config_update_handler.reload_plugin_modules"
+        ) as reload_plugins,
+        mock.patch.object(dm_with_devices, "_get_config", side_effect=load_replacements),
+    ):
+        handler._reload_config(threading.Event())
+    reload_plugins.assert_called_once_with()
+    for root, replacement, status in zip(pending_config_roots, replacements, statuses):
+        with pytest.raises(SetCancelledError):
+            status.wait(timeout=2)
+        assert not set_registry.active(root)
+        assert dm_with_devices.devices[root.name].obj is replacement
+        assert replacement is not root
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("fail_destroy", [False, True])
+def test_flush_cancels_pending_cleanup_sets_even_if_destroy_fails(
+    dm_with_devices, pending_config_roots, fail_destroy
+):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    first, second = pending_config_roots
+    old_statuses = [root.setpoint.set(1) for root in pending_config_roots]
+    cleanup_statuses = []
+    destroy = first.destroy
+
+    def destroy_first():
+        # Synchronous cleanup is still allowed during teardown.
+        first.cleanup.set(0).wait(timeout=2)
+        # Pending cleanup on either root must not outlive config teardown.
+        cleanup_statuses.extend([first.cleanup.set(1), second.cleanup.set(1)])
+        if fail_destroy:
+            raise RuntimeError("hardware destroy failed")
+        destroy()
+
+    with mock.patch.object(first, "destroy", side_effect=destroy_first):
+        if fail_destroy:
+            with pytest.raises(RuntimeError, match="Failed to flush config") as error:
+                handler._flush_config()
+            assert str(error.value.__cause__) == "hardware destroy failed"
+            assert dm_with_devices.devices[first.name].obj is first
+        else:
+            handler._flush_config()
+            assert not dm_with_devices.devices
+
+    for status in old_statuses + cleanup_statuses:
+        with pytest.raises(SetCancelledError):
+            status.wait(timeout=2)
+    assert all(not set_registry.active(root) for root in pending_config_roots)
+    if fail_destroy:
+        # Failed teardown must release admission and preserve retry behavior.
+        first.setpoint.set(0).wait(timeout=2)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("action", ["disable", "remove", "failed_init"])
+def test_config_teardown_paths_cancel_the_actual_device_root(
+    dm_with_devices, pending_config_roots, action
+):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    root, other = pending_config_roots
+    status = root.setpoint.set(1)
+    other_status = other.setpoint.set(1)
+    if action == "disable":
+        handler._update_config(
+            messages.DeviceConfigMessage(action="update", config={root.name: {"enabled": False}}),
+            threading.Event(),
+        )
+        assert not dm_with_devices.devices[root.name].enabled
+    elif action == "remove":
+        handler._remove_config(
+            messages.DeviceConfigMessage(action="remove", config={root.name: {}}), threading.Event()
+        )
+        assert root.name not in dm_with_devices.devices
+    else:
+        handler._cleanup_failed_device_init(root)
+    with pytest.raises(SetCancelledError):
+        status.wait(timeout=2)
+    assert root._destroyed
+    assert not set_registry.active(root)
+    assert not other_status.done
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_late_set_callback_cannot_restart_destroyed_config_root(
+    dm_with_devices, pending_config_roots
+):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    root, _ = pending_config_roots
+    entered, release, callback_done = (threading.Event() for _ in range(3))
+    rejected = []
+
+    def blocked_hook(*_args, **_kwargs):
+        entered.set()
+        assert release.wait(timeout=5)
+
+    def start_again(_status):
+        try:
+            root.cleanup.set(2)
+        except DestroyedError as exc:
+            rejected.append(exc)
+        finally:
+            callback_done.set()
+
+    with mock.patch.object(root.setpoint, "_set_and_wait", side_effect=blocked_hook):
+        status = root.setpoint.set(1)
+        worker = root.setpoint._set_thread
+        try:
+            assert entered.wait(timeout=2)
+            status.add_callback(start_again)
+            handler._flush_config()
+            assert root._destroyed
+            (operation,) = set_registry.active(root)
+            assert operation.cancel_requested
+            assert not status.done
+            replacement = PendingConfigDevice(name=root.name)
+            try:
+                replacement.setpoint.set(0).wait(timeout=2)
+            finally:
+                replacement.destroy()
+        finally:
+            release.set()
+            worker.join(timeout=2)
+            assert not worker.is_alive()
+    assert callback_done.is_set()
+    assert len(rejected) == 1
+    assert not set_registry.active(root)
+    with pytest.raises(SetCancelledError):
+        status.wait(timeout=2)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
