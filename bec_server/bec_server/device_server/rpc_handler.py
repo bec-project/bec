@@ -272,7 +272,14 @@ class RPCHandler:
         if callable(rpc_var):
             args = tuple(instr_params.get("args", ()))
             kwargs = instr_params.get("kwargs", {})
-            res = rpc_var(*args, **kwargs)
+            if self._instr_with_operation(instr, "stop"):
+                root = self.device_manager.devices[self._get_device_root(instr)].obj
+                # Like stop_devices, even a subdevice stop cancels pending sets
+                # across the entire root. Capture them before any stop callbacks.
+                with self.device_server.set_registry.stopping(root):
+                    res = rpc_var(*args, **kwargs)
+            else:
+                res = rpc_var(*args, **kwargs)
         else:
             res = rpc_var
         if not is_serializable(res):
