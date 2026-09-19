@@ -87,29 +87,46 @@ class IPythonLiveUpdates:
             # Already checked in caller method. It is just for type checking purposes.
             return
         if scan_report_type == "readback":
-            LiveUpdatesReadbackProgressbar(
+            callback = LiveUpdatesReadbackProgressbar(
                 self.client,
                 report_instruction=instr,
                 request=self._active_request,
                 callbacks=self._user_callback,
-            ).run()
+            )
         elif scan_report_type == "scan_progress":
-            LiveUpdatesTable(
+            callback = LiveUpdatesTable(
                 self.client,
                 report_instruction=instr,
                 request=self._active_request,
                 callbacks=self._user_callback,
                 print_table_data=self.print_table_data,
-            ).run()
+            )
         elif scan_report_type == "device_progress":
-            LiveUpdatesDeviceProgress(
+            callback = LiveUpdatesDeviceProgress(
                 self.client,
                 report_instruction=instr,
                 request=self._active_request,
                 callbacks=self._user_callback,
-            ).run()
+            )
         else:
             raise ValueError(f"Unknown scan report type: {scan_report_type}")
+
+        callback_name = type(callback).__name__
+        request_id = self._active_request.metadata.get("RID")
+        logger.info(f"Starting {callback_name}: RID={request_id}")
+        start_time = time.monotonic()
+        outcome = "completed"
+        try:
+            callback.run()
+        except BaseException as exc:
+            outcome = type(exc).__name__
+            raise
+        finally:
+            elapsed = time.monotonic() - start_time
+            logger.info(
+                f"Finished {callback_name}: RID={request_id}, "
+                f"outcome={outcome}, elapsed={elapsed:.3f}s"
+            )
 
     def _available_req_blocks(
         self, queue: QueueItem, request: messages.ScanQueueMessage
