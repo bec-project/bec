@@ -9,6 +9,7 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
+from bec_server.scan_server.device_lock_registry import DeviceLockRegistry
 from bec_server.scan_server.errors import LimitError, ScanAbortion
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
@@ -1042,6 +1043,59 @@ def test_set_restart(queuemanager_mock):
                     )
 
 
+@pytest.mark.parametrize("locked", [False, True])
+def test_set_restart_stops_owned_devices_before_shutdown(dormant_queue_manager, locked):
+    queue_manager = dormant_queue_manager
+    queue = queue_manager.queues["secondary"]
+    registry = DeviceLockRegistry()
+    queue_manager.parent.device_lock_registry = registry
+    registry.acquire_many("original", ["samx", "panda"])
+    registry.acquire("other-scan", "samy")
+
+    scan = _build_dummy_v4_scan("original-scan")
+    scan.scan_info.metadata["RID"] = "original"
+    original = DirectInstructionQueueItem(queue, mock.Mock(), queue.scan_worker)
+    original.scans = [scan]
+    original.active_scan = scan
+    original.scan_msgs = [_queued_scan_message(queue="secondary", rid="original")]
+    queue.queue.append(original)
+    queue.active_instruction_queue = original
+    queue.scan_worker.current_instruction_queue_item = original
+    original.status = InstructionQueueStatus.RUNNING
+    if locked:
+        queue.add_lock(messages.ScanQueueLock(identifier="interlock", reason="test"))
+
+    stop_requests_at_shutdown = []
+    set_shutdown = scan._shutdown_event.set
+
+    def begin_cleanup():
+        # Cleanup may start as soon as shutdown is signalled. Its device operations
+        # must not be followed by the stop request for the interrupted scan.
+        stop_requests_at_shutdown.extend(
+            call
+            for call in queue_manager.connector.send.call_args_list
+            if call.args[0] == MessageEndpoints.stop_devices()
+        )
+        registry.release_all("original")
+        set_shutdown()
+
+    with mock.patch.object(scan._shutdown_event, "set", side_effect=begin_cleanup):
+        queue_manager.set_restart(
+            queue="secondary", scan_id="original-scan", parameter={"RID": "replacement"}
+        )
+
+    expected_stop = mock.call(
+        MessageEndpoints.stop_devices(),
+        messages.VariableMessage(value=["panda", "samx"], metadata={"stop_id": "original-scan"}),
+    )
+    assert stop_requests_at_shutdown == [expected_stop]
+    assert registry.get_owned_devices("original") == []
+    assert registry.get_owned_devices("other-scan") == ["samy"]
+    assert scan._shutdown_event.is_set()
+    assert original.status == InstructionQueueStatus.STOPPED
+    assert queue.status == (ScanQueueStatus.LOCKED if locked else ScanQueueStatus.RUNNING)
+
+
 @pytest.mark.timeout(5)
 @pytest.mark.parametrize("finish_original", [False, True])
 def test_restart_interception_releases_manager_and_only_stops_original(
@@ -1078,6 +1132,7 @@ def test_restart_interception_releases_manager_and_only_stops_original(
         original.status = InstructionQueueStatus.RUNNING
         primary_queue.active_instruction_queue = original
         primary_queue.scan_worker.current_instruction_queue_item = original
+        queue_manager.connector.message_sent.clear()
         restart_message = messages.ScanQueueModificationMessage(
             scan_id=original.scan_id[0],
             action="restart",
@@ -1111,11 +1166,25 @@ def test_restart_interception_releases_manager_and_only_stops_original(
             item for item in primary_queue.queue if item.scan_msgs[0].metadata["RID"] == "restarted"
         )
         assert primary_queue.status == ScanQueueStatus.RUNNING
+        stop_messages = [
+            msg
+            for msg in queue_manager.connector.message_sent
+            if msg["queue"] == MessageEndpoints.stop_devices()
+        ]
         if finish_original:
+            assert stop_messages == []
             assert original.status == InstructionQueueStatus.COMPLETED
             assert following.status == InstructionQueueStatus.RUNNING
             assert list(primary_queue.queue) == [following, replacement]
         else:
+            assert stop_messages == [
+                {
+                    "queue": MessageEndpoints.stop_devices(),
+                    "msg": messages.VariableMessage(
+                        value=None, metadata={"stop_id": original.scan_id[0]}
+                    ),
+                }
+            ]
             assert original.status == InstructionQueueStatus.STOPPED
             assert following.status == InstructionQueueStatus.PENDING
             assert list(primary_queue.queue) == [original, replacement, following]

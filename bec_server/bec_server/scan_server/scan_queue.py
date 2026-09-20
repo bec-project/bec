@@ -605,6 +605,9 @@ class QueueManager:
                     InstructionQueueStatus.PAUSED,
                     InstructionQueueStatus.DEFERRED_PAUSE,
                 ]:
+                    devices = self._get_owned_devices_for_instruction_queue(instruction_queue)
+                    # Publish the stop before waking the worker's exception cleanup.
+                    self.stop_all_devices(stop_id=scan_id, devices=devices)
                     que.worker_status = InstructionQueueStatus.STOPPED
 
             que.status = original_queue_status
