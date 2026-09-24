@@ -653,11 +653,13 @@ class DeviceManagerBase:
         )
 
     def _reload_action(self) -> None:
+        """Reload proxy devices from Redis after any ongoing configuration change."""
         if not self._use_proxy_objects:
             return
-        logger.info("Reloading config.")
-        self.devices.flush()
-        self._get_config()
+        with self._config_lock:
+            logger.info("Reloading config.")
+            self.devices.flush()
+            self._get_config()
 
     def _remove_action(self, config) -> None:
         if not self._use_proxy_objects:
