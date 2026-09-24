@@ -579,15 +579,62 @@ def test_wait_for_server_enabled():
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
     with mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait:
         with bec_service(config=config, wait_for_server=True) as service:
-            assert mock_wait.call_count == 4
+            assert mock_wait.call_count == 5
             mock_wait.assert_has_calls(
                 [
                     mock.call("ScanServer", BECStatus.RUNNING),
                     mock.call("ScanBundler", BECStatus.RUNNING),
                     mock.call("DeviceServer", BECStatus.RUNNING),
                     mock.call("SciHub", BECStatus.RUNNING),
+                    mock.call("DAPServer", BECStatus.RUNNING),
                 ]
             )
+
+
+@pytest.mark.parametrize(
+    "name", ["ScanServer", "ScanBundler", "DeviceServer", "SciHub", "DAPServer"]
+)
+def test_wait_for_server_skips_own_service(name):
+    config = ServiceConfig(redis={"host": "localhost", "port": 6379})
+    services = ["ScanServer", "ScanBundler", "DeviceServer", "SciHub", "DAPServer"]
+    with mock.patch.object(BECService, "wait_for_service") as mock_wait:
+        with bec_service(config=config, name=name, wait_for_server=True):
+            assert mock_wait.call_args_list == [
+                mock.call(service, BECStatus.RUNNING) for service in services if service != name
+            ]
+
+
+@pytest.mark.parametrize("name", ["DAPServer", "DAPServer/first"])
+def test_wait_for_service_instances(name):
+    config = ServiceConfig(redis={"host": "localhost", "port": 6379})
+    info = ServiceInfo(user="test", hostname="localhost")
+
+    def status_messages(statuses):
+        return {
+            service: messages.StatusMessage(name=service, status=status, info=info)
+            for service, status in statuses.items()
+        }
+
+    pending = {"DAPServer/first": BECStatus.BUSY, "DAPServer/second": BECStatus.RUNNING}
+    ready = {
+        "DAPServer/first": BECStatus.RUNNING,
+        "DAPServer/second": BECStatus.RUNNING if name == "DAPServer" else BECStatus.BUSY,
+    }
+    with bec_service(config=config) as service:
+        with (
+            mock.patch.object(
+                BECService, "service_status", new_callable=mock.PropertyMock
+            ) as statuses,
+            mock.patch("bec_lib.bec_service.time.sleep") as sleep,
+        ):
+            statuses.side_effect = [
+                {},
+                status_messages({f"{name}Other": BECStatus.RUNNING}),
+                status_messages(pending),
+                status_messages(ready),
+            ]
+            service.wait_for_service(name)
+            assert sleep.call_count == 3
 
 
 def test_wait_for_server_keyboard_interrupt():

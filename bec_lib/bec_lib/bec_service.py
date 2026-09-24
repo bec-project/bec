@@ -426,21 +426,23 @@ class BECService:
         self._update_existing_services()
         return self._services_info
 
-    def wait_for_service(self, name, status: BECStatus = BECStatus.RUNNING):
+    def wait_for_service(self, name: str, status: BECStatus = BECStatus.RUNNING) -> None:
         """
-        Wait for a service to reach a certain status.
+        Wait for all currently registered instances of a service to reach a status.
 
         Args:
-            name (str): The name of the service.
+            name (str): Service name or a specific instance, e.g. DAPServer/LmfitService1D.
             status (BECStatus, optional): The status to wait for. Defaults to BECStatus.RUNNING.
         """
         logger.info(f"Waiting for {name}.")
         while True:
-            service_status_msg = self.service_status.get(name)
-            if service_status_msg is not None:
-                service_status = BECStatus(service_status_msg.content["status"])
-                if service_status == status:
-                    break
+            statuses = [
+                BECStatus(msg.content["status"])
+                for service_name, msg in self.service_status.items()
+                if service_name == name or service_name.startswith(f"{name}/")
+            ]
+            if statuses and all(service_status == status for service_status in statuses):
+                break
             time.sleep(0.05)
         logger.success(f"{name} is running.")
 
@@ -448,10 +450,10 @@ class BECService:
         if not self.wait_for_server:
             return
         try:
-            self.wait_for_service("ScanServer", BECStatus.RUNNING)
-            self.wait_for_service("ScanBundler", BECStatus.RUNNING)
-            self.wait_for_service("DeviceServer", BECStatus.RUNNING)
-            self.wait_for_service("SciHub", BECStatus.RUNNING)
+            own_service = self._service_name.split("/", 1)[0]
+            for service in ("ScanServer", "ScanBundler", "DeviceServer", "SciHub", "DAPServer"):
+                if service != own_service:
+                    self.wait_for_service(service, BECStatus.RUNNING)
             logger.success("All BEC services are running.")
         except KeyboardInterrupt:
             logger.warning("KeyboardInterrupt received. Stopped waiting for BEC services.")
