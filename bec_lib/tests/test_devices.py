@@ -116,6 +116,133 @@ def test_read_nested_device(dev: Any):
         assert res == data
 
 
+@pytest.mark.parametrize("method", ["read", "read_configuration", "get"])
+@pytest.mark.parametrize("kind", ["normal", "hinted", "config", "omitted"])
+@pytest.mark.parametrize("auto_publish", [None, False, True])
+@pytest.mark.parametrize("cached", [None, False, True])
+def test_signal_cache_default(dev, method, kind, auto_publish, cached):
+    signal = dev.samx.readback
+    cached_data = {"samx": {"value": 12, "timestamp": 1}}
+    rpc_data = {"samx": {"value": 42, "timestamp": 2}}
+    signal_info = {"obj_name": "samx", "kind_str": kind}
+    if auto_publish is not None:
+        signal_info["auto_publish"] = auto_publish
+    with (
+        mock.patch.object(signal, "_signal_info", signal_info),
+        mock.patch.object(signal, "_run", return_value=42 if method == "get" else rpc_data) as rpc,
+        mock.patch.object(
+            signal.root.parent.connector,
+            "get",
+            return_value=messages.DeviceMessage(signals=cached_data),
+        ) as redis_get,
+    ):
+        kwargs = {} if cached is None else {"cached": cached}
+        result = getattr(signal, method)(**kwargs)
+
+        if kind != "omitted" and (cached is True or (cached is None and auto_publish is True)):
+            endpoint = (
+                MessageEndpoints.device_read_configuration
+                if kind == "config"
+                else MessageEndpoints.device_readback
+            )
+            redis_get.assert_called_once_with(endpoint("samx"))
+            rpc.assert_not_called()
+            assert result == (12 if method == "get" else cached_data)
+        else:
+            rpc_method = "read" if method == "read_configuration" and kind != "config" else method
+            rpc.assert_called_once_with(cached=False, fcn=getattr(signal, rpc_method))
+            redis_get.assert_not_called()
+            assert result == (42 if method == "get" else rpc_data)
+
+
+@pytest.mark.parametrize("cached", [None, True])
+def test_auto_published_signal_read_acquisition_cache_requires_explicit_cached(dev, cached):
+    signal = dev.samx.readback
+    data = {"samx": {"value": 12, "timestamp": 1}}
+    with (
+        mock.patch.dict(signal._signal_info, {"auto_publish": True}),
+        mock.patch.object(signal, "_run", return_value=data) as rpc,
+        mock.patch.object(
+            signal.root.parent.connector, "get", return_value=messages.DeviceMessage(signals=data)
+        ) as redis_get,
+    ):
+        assert signal.read(cached=cached, use_readback=False) == data
+        if cached is True:
+            redis_get.assert_called_once_with(MessageEndpoints.device_read("samx"))
+            rpc.assert_not_called()
+        else:
+            rpc.assert_called_once_with(cached=False, fcn=signal.read)
+            redis_get.assert_not_called()
+
+
+@pytest.mark.parametrize("method", ["read", "read_configuration", "get"])
+def test_auto_published_signal_missing_cache(dev, method):
+    signal = dev.samx.readback
+    with (
+        mock.patch.dict(signal._signal_info, {"auto_publish": True}),
+        mock.patch.object(signal, "_run") as rpc,
+        mock.patch.object(signal.root.parent.connector, "get", return_value=None),
+    ):
+        assert getattr(signal, method)() is None
+        rpc.assert_not_called()
+
+
+@pytest.mark.parametrize("method", ["read", "read_configuration", "get"])
+@pytest.mark.parametrize("cached", [None, False, True])
+def test_root_signal_requires_explicit_cache(dev, method, cached):
+    signal = Signal(name="root_signal", info={"auto_publish": True}, parent=dev.samx.root.parent)
+    data = {"root_signal": {"value": 12, "timestamp": 1}}
+    with (
+        mock.patch.object(signal, "_run", return_value=42 if method == "get" else data) as rpc,
+        mock.patch.object(
+            signal.root.parent.connector, "get", return_value=messages.DeviceMessage(signals=data)
+        ) as redis_get,
+    ):
+        kwargs = {} if cached is None else {"cached": cached}
+        result = getattr(signal, method)(**kwargs)
+        if cached is not True:
+            rpc_method = "read" if method == "read_configuration" else method
+            rpc.assert_called_once_with(cached=False, fcn=getattr(signal, rpc_method))
+            redis_get.assert_not_called()
+            assert result == (42 if method == "get" else data)
+        else:
+            redis_get.assert_called_once_with(MessageEndpoints.device_readback("root_signal"))
+            rpc.assert_not_called()
+            assert result == (12 if method == "get" else data)
+
+
+@pytest.mark.parametrize("method", ["read", "read_configuration", "get"])
+@pytest.mark.parametrize("kind", ["normal", "config"])
+@pytest.mark.parametrize("cached", [None, False, True])
+def test_disabled_auto_monitored_signal_requires_explicit_cache(dev, method, kind, cached):
+    signal = dev.samx.readback
+    data = {"samx": {"value": 12, "timestamp": 1}}
+    with (
+        mock.patch.dict(signal.root._config, {"enabled": False}),
+        mock.patch.dict(signal._signal_info, {"auto_publish": True, "kind_str": kind}),
+        mock.patch.object(signal, "_run", return_value=42 if method == "get" else data) as rpc,
+        mock.patch.object(
+            signal.root.parent.connector, "get", return_value=messages.DeviceMessage(signals=data)
+        ) as redis_get,
+    ):
+        kwargs = {} if cached is None else {"cached": cached}
+        result = getattr(signal, method)(**kwargs)
+        if cached is True:
+            endpoint = (
+                MessageEndpoints.device_read_configuration
+                if kind == "config"
+                else MessageEndpoints.device_readback
+            )
+            redis_get.assert_called_once_with(endpoint("samx"))
+            rpc.assert_not_called()
+            assert result == (12 if method == "get" else data)
+        else:
+            rpc_method = "read" if method == "read_configuration" and kind != "config" else method
+            rpc.assert_called_once_with(cached=False, fcn=getattr(signal, rpc_method))
+            redis_get.assert_not_called()
+            assert result == (42 if method == "get" else data)
+
+
 @pytest.mark.parametrize(
     "kind,cached", [("normal", True), ("hinted", True), ("config", False), ("omitted", False)]
 )
