@@ -790,14 +790,30 @@ class DeviceBaseWithConfig(DeviceBase):
         return self.root._config["enabled"]
 
     @enabled.setter
-    def enabled(self, val):
-        # pylint: disable=protected-access
+    def enabled(self, val: bool) -> None:
+        self._set_config_value("enabled", "enabled", val, bool)
+
+    def _set_config_value(
+        self, attribute: str, config_key: str, value: Any, value_type: type[bool] | type[enum.Enum]
+    ) -> None:
+        """Validate and send a changed config value, leaving cache updates to the device manager."""
         if self.root != self:
             raise NotImplementedOnSubdeviceError(
-                device=self.root.name, sub_device=self.dotted_name, method="enabled"
+                device=self.root.name, sub_device=self.dotted_name, method=attribute
             )
-        self._update_config({"enabled": val})
-        self.root._config["enabled"] = val
+        if value_type is bool:
+            if not isinstance(value, bool):
+                raise TypeError(f"{attribute} must be True or False; got {value!r}.")
+        else:
+            try:
+                value = value_type(value)
+            except (ValueError, TypeError):
+                choices = ", ".join(repr(option.value) for option in value_type)
+                raise ValueError(f"{attribute} must be one of {choices}; got {value!r}.") from None
+        if getattr(self, attribute) == value:
+            return
+        # The device manager updates the cache before acknowledging this request.
+        self._update_config({config_key: value})
 
     def _update_config(self, update: dict) -> None:
         """
@@ -877,19 +893,9 @@ class DeviceBaseWithConfig(DeviceBase):
         return ReadoutPriority(self.root._config["readoutPriority"])
 
     @readout_priority.setter
-    def readout_priority(self, val: ReadoutPriority):
+    def readout_priority(self, val: ReadoutPriority | str) -> None:
         """set the readout priority for this device"""
-        if not isinstance(val, ReadoutPriority):
-            val = ReadoutPriority(val)
-        if self.root != self:
-            raise NotImplementedOnSubdeviceError(
-                device=self.root.name, sub_device=self.dotted_name, method="readout_priority"
-            )
-        # pylint: disable=protected-access
-        self.root._config["readoutPriority"] = val
-        return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"readoutPriority": val}}
-        )
+        self._set_config_value("readout_priority", "readoutPriority", val, ReadoutPriority)
 
     @property
     def on_failure(self) -> OnFailure:
@@ -898,19 +904,9 @@ class DeviceBaseWithConfig(DeviceBase):
         return OnFailure(self.root._config.get("onFailure", "retry"))
 
     @on_failure.setter
-    def on_failure(self, val: OnFailure):
+    def on_failure(self, val: OnFailure | str) -> None:
         """set the failure behaviour for this device"""
-        if not isinstance(val, OnFailure):
-            val = OnFailure(val)
-        if self.root != self:
-            raise NotImplementedOnSubdeviceError(
-                device=self.root.name, sub_device=self.dotted_name, method="on_failure"
-            )
-        # pylint: disable=protected-access
-        self.root._config["onFailure"] = val
-        return self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"onFailure": self.root._config["onFailure"]}}
-        )
+        self._set_config_value("on_failure", "onFailure", val, OnFailure)
 
     @property
     def read_only(self):
@@ -919,17 +915,9 @@ class DeviceBaseWithConfig(DeviceBase):
         return self.root._config.get("readOnly", False)
 
     @read_only.setter
-    def read_only(self, value: bool):
+    def read_only(self, value: bool) -> None:
         """Whether or not the device is read only"""
-        # pylint: disable=protected-access
-        if self.root != self:
-            raise NotImplementedOnSubdeviceError(
-                device=self.root.name, sub_device=self.dotted_name, method="read_only"
-            )
-        self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"readOnly": value}}
-        )
-        self.root._config["readOnly"] = value
+        self._set_config_value("read_only", "readOnly", value, bool)
 
     @property
     def software_trigger(self):
@@ -938,17 +926,9 @@ class DeviceBaseWithConfig(DeviceBase):
         return self.root._config.get("softwareTrigger", False)
 
     @software_trigger.setter
-    def software_trigger(self, value: bool):
+    def software_trigger(self, value: bool) -> None:
         """Whether or not the device can be software triggered"""
-        # pylint: disable=protected-access
-        if self.root != self:
-            raise NotImplementedOnSubdeviceError(
-                device=self.root.name, sub_device=self.dotted_name, method="software_trigger"
-            )
-        self.root.parent.config_helper.send_config_request(
-            action="update", config={self.name: {"softwareTrigger": value}}
-        )
-        self.root._config["softwareTrigger"] = value
+        self._set_config_value("software_trigger", "softwareTrigger", value, bool)
 
     @property
     def user_parameter(self) -> dict:

@@ -14,6 +14,7 @@ from bec_lib.device import (
     Device,
     DeviceBaseWithConfig,
     NotImplementedOnSubdeviceError,
+    OnFailure,
     Positioner,
     ReadoutPriority,
     RPCError,
@@ -393,6 +394,21 @@ def device_obj(device_config: dict[str, Any]):
     yield dm.devices[device_config["name"]]
 
 
+@pytest.fixture
+def apply_config_update(device_obj: DeviceBaseWithConfig):
+    """Deliver config updates through the device manager as a successful request would."""
+    device_manager = device_obj.parent
+    info = messages.DeviceInfoMessage(device=device_obj.name, info=device_obj._info)
+
+    def apply_update(action, config):
+        device_manager.parse_config_message(
+            messages.DeviceConfigMessage(action=action, config=config)
+        )
+
+    with mock.patch.object(device_manager, "_get_device_info", return_value=info):
+        yield apply_update
+
+
 def test_create_device_saves_config(
     device_obj: DeviceBaseWithConfig, device_config: dict[str, Any]
 ):
@@ -406,20 +422,225 @@ def test_device_enabled(device_obj: DeviceBaseWithConfig, device_config: dict[st
     assert device_obj.enabled == device_config["enabled"]
 
 
-def test_device_enable(device_obj: DeviceBaseWithConfig):
-    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
-        device_obj.enabled = True
-        config_req.assert_called_once_with(
-            action="update", config={device_obj.name: {"enabled": True}}
-        )
+@pytest.mark.parametrize(
+    "attribute,config_key",
+    [("enabled", "enabled"), ("read_only", "readOnly"), ("software_trigger", "softwareTrigger")],
+)
+@pytest.mark.parametrize("current_value", [True, False])
+@pytest.mark.parametrize("value", [True, False])
+def test_device_boolean_config(
+    device_obj: DeviceBaseWithConfig,
+    apply_config_update,
+    attribute: str,
+    config_key: str,
+    current_value: bool,
+    value: bool,
+):
+    device_obj._config[config_key] = current_value
+    with mock.patch.object(
+        device_obj.parent.config_helper, "send_config_request", side_effect=apply_config_update
+    ) as config_req:
+        setattr(device_obj, attribute, value)
+        assert getattr(device_obj, attribute) is value
+        if current_value == value:
+            config_req.assert_not_called()
+        else:
+            config_req.assert_called_once_with(
+                action="update", config={device_obj.name: {config_key: value}}
+            )
+
+        config_req.reset_mock()
+        setattr(device_obj, attribute, value)
+        config_req.assert_not_called()
 
 
-def test_device_enable_set(device_obj: DeviceBaseWithConfig):
+@pytest.mark.parametrize(
+    "attribute,config_key",
+    [("enabled", "enabled"), ("read_only", "readOnly"), ("software_trigger", "softwareTrigger")],
+)
+@pytest.mark.parametrize("current_value", [True, False])
+@pytest.mark.parametrize("value", [0, 1, "True", "False", None])
+def test_device_boolean_config_rejects_invalid_value(
+    device_obj: DeviceBaseWithConfig,
+    attribute: str,
+    config_key: str,
+    current_value: bool,
+    value: Any,
+):
+    device_obj._config[config_key] = current_value
     with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
-        device_obj.read_only = False
+        with pytest.raises(TypeError, match=f"{attribute} must be True or False") as exc:
+            setattr(device_obj, attribute, value)
+        assert f"got {value!r}" in str(exc.value)
+        config_req.assert_not_called()
+    assert getattr(device_obj, attribute) is current_value
+
+
+@pytest.mark.parametrize(
+    "attribute,config_key,current_value,value",
+    [
+        (
+            "readout_priority",
+            "readoutPriority",
+            ReadoutPriority.MONITORED,
+            ReadoutPriority.BASELINE,
+        ),
+        ("on_failure", "onFailure", OnFailure.RETRY, OnFailure.RAISE),
+    ],
+)
+@pytest.mark.parametrize("as_string", [True, False])
+@pytest.mark.parametrize("changed", [True, False])
+def test_device_enum_config(
+    device_obj: DeviceBaseWithConfig,
+    apply_config_update,
+    attribute,
+    config_key,
+    current_value,
+    value,
+    as_string,
+    changed,
+):
+    device_obj._config[config_key] = current_value.value
+    value = value if changed else current_value
+    with mock.patch.object(
+        device_obj.parent.config_helper, "send_config_request", side_effect=apply_config_update
+    ) as config_req:
+        setattr(device_obj, attribute, value.value if as_string else value)
+        assert getattr(device_obj, attribute) is value
+        if changed:
+            config_req.assert_called_once_with(
+                action="update", config={device_obj.name: {config_key: value}}
+            )
+        else:
+            config_req.assert_not_called()
+
+        config_req.reset_mock()
+        setattr(device_obj, attribute, value)
+        setattr(device_obj, attribute, value.value)
+        config_req.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "attribute,enum_type", [("readout_priority", ReadoutPriority), ("on_failure", OnFailure)]
+)
+@pytest.mark.parametrize("value", ["invalid", 0, True, None, [], {}])
+def test_device_enum_config_rejects_invalid_value(
+    device_obj: DeviceBaseWithConfig, attribute, enum_type, value
+):
+    current_value = getattr(device_obj, attribute)
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
+        with pytest.raises(ValueError, match=f"{attribute} must be one of") as exc:
+            setattr(device_obj, attribute, value)
+        assert f"got {value!r}" in str(exc.value)
+        for choice in enum_type:
+            assert repr(choice.value) in str(exc.value)
+        config_req.assert_not_called()
+    assert getattr(device_obj, attribute) is current_value
+
+
+@pytest.mark.parametrize(
+    "attribute,config_key,current_value,value",
+    [
+        ("enabled", "enabled", False, True),
+        ("read_only", "readOnly", False, True),
+        ("software_trigger", "softwareTrigger", False, True),
+        (
+            "readout_priority",
+            "readoutPriority",
+            ReadoutPriority.MONITORED,
+            ReadoutPriority.BASELINE,
+        ),
+        ("on_failure", "onFailure", OnFailure.RETRY, OnFailure.RAISE),
+    ],
+)
+def test_device_config_failed_update_can_be_retried(
+    device_obj: DeviceBaseWithConfig,
+    apply_config_update,
+    attribute,
+    config_key,
+    current_value,
+    value,
+):
+    device_obj._config[config_key] = current_value
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
+        config_req.side_effect = DeviceConfigError("Update failed")
+        with pytest.raises(DeviceConfigError, match="Update failed"):
+            setattr(device_obj, attribute, value)
+        assert getattr(device_obj, attribute) is current_value
+
+        config_req.reset_mock()
+        config_req.side_effect = apply_config_update
+        setattr(device_obj, attribute, value)
         config_req.assert_called_once_with(
-            action="update", config={device_obj.name: {"readOnly": False}}
+            action="update", config={device_obj.name: {config_key: value}}
         )
+        assert getattr(device_obj, attribute) is value
+
+
+@pytest.mark.parametrize(
+    "attribute,config_key,current_value,value,newer_value",
+    [
+        ("enabled", "enabled", False, True, False),
+        ("read_only", "readOnly", False, True, False),
+        ("software_trigger", "softwareTrigger", False, True, False),
+        (
+            "readout_priority",
+            "readoutPriority",
+            ReadoutPriority.MONITORED,
+            ReadoutPriority.BASELINE,
+            ReadoutPriority.ASYNC,
+        ),
+        ("on_failure", "onFailure", OnFailure.RETRY, OnFailure.RAISE, OnFailure.BUFFER),
+    ],
+)
+def test_device_config_preserves_newer_update(
+    device_obj: DeviceBaseWithConfig,
+    apply_config_update,
+    attribute,
+    config_key,
+    current_value,
+    value,
+    newer_value,
+):
+    device_obj._config[config_key] = current_value
+
+    def send_with_newer_update(action, config):
+        apply_config_update(action, config)
+        # Another client's update arrives before this request finishes waiting for acknowledgements.
+        apply_config_update("update", {device_obj.name: {config_key: newer_value}})
+
+    with mock.patch.object(
+        device_obj.parent.config_helper, "send_config_request", side_effect=send_with_newer_update
+    ) as config_req:
+        setattr(device_obj, attribute, value)
+        assert getattr(device_obj, attribute) is newer_value
+
+        config_req.reset_mock()
+        config_req.side_effect = apply_config_update
+        setattr(device_obj, attribute, value)
+        config_req.assert_called_once_with(
+            action="update", config={device_obj.name: {config_key: value}}
+        )
+        assert getattr(device_obj, attribute) is value
+
+
+@pytest.mark.parametrize(
+    "attribute,config_key,value",
+    [
+        ("read_only", "readOnly", False),
+        ("software_trigger", "softwareTrigger", False),
+        ("on_failure", "onFailure", "retry"),
+    ],
+)
+def test_device_config_default_needs_no_update(
+    device_obj: DeviceBaseWithConfig, attribute, config_key, value
+):
+    device_obj._config.pop(config_key, None)
+    with mock.patch.object(device_obj.parent.config_helper, "send_config_request") as config_req:
+        setattr(device_obj, attribute, value)
+        config_req.assert_not_called()
+    assert getattr(device_obj, attribute) == value
+    assert config_key not in device_obj._config
 
 
 @pytest.mark.parametrize(
@@ -588,12 +809,15 @@ def test_new_public_attributes_can_still_be_assigned(dev: Any):
     ],
 )
 def test_properties_assign(
-    dev_w_config: Callable[..., DeviceBaseWithConfig], config, attr, value, result
+    device_obj: DeviceBaseWithConfig, apply_config_update, config, attr, value, result
 ):
-    device = dev_w_config(config)
-    setattr(device, attr, value)
-    assert getattr(device, attr) == result
-    device.parent.config_helper.send_config_request.assert_called_once()
+    set_device_config(device_obj, device_obj._config | config)
+    with mock.patch.object(
+        device_obj.parent.config_helper, "send_config_request", side_effect=apply_config_update
+    ) as config_req:
+        setattr(device_obj, attr, value)
+        assert getattr(device_obj, attr) == result
+        config_req.assert_called_once()
 
 
 @pytest.fixture
@@ -788,16 +1012,36 @@ def test_attribute_access_on_sub_device(positioner_as_subdevice):
     assert dev.read_only == False
     with pytest.raises(NotImplementedOnSubdeviceError):
         dev.read_only = True
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.read_only = False
 
     # Enabled
     assert dev.enabled == True
     with pytest.raises(NotImplementedOnSubdeviceError):
         dev.enabled = False
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.enabled = True
 
     # Readout priority
     assert dev.readout_priority == ReadoutPriority.MONITORED
     with pytest.raises(NotImplementedOnSubdeviceError):
         dev.readout_priority = ReadoutPriority.BASELINE
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.readout_priority = "monitored"
+
+    # On failure
+    assert dev.on_failure == OnFailure.RETRY
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.on_failure = OnFailure.RAISE
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.on_failure = "retry"
+
+    # Software trigger
+    assert dev.software_trigger is False
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.software_trigger = True
+    with pytest.raises(NotImplementedOnSubdeviceError):
+        dev.software_trigger = False
 
     # Device tags
     assert dev.get_device_tags() == set()
