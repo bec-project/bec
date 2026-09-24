@@ -1,6 +1,73 @@
 # CHANGELOG
 
 
+## v3.171.0 (2026-09-24)
+
+### Bug Fixes
+
+- **worker**: Improve shutdown
+  ([`7e98c32`](https://github.com/bec-project/bec/commit/7e98c322218d4c513ff639030378637f7ae7fcae))
+
+### Chores
+
+- **deps**: Bump python-slugify in /bec_lib
+  ([`aa98ee1`](https://github.com/bec-project/bec/commit/aa98ee15868edf5d900ed29a1fa3fb0db84bbf7b))
+
+Updates the requirements on [python-slugify](https://github.com/un33k/python-slugify) to permit the
+  latest version.
+
+Updates `python-slugify` to 9.0.0 - [Release
+  notes](https://github.com/un33k/python-slugify/releases) -
+  [Changelog](https://github.com/un33k/python-slugify/blob/master/CHANGELOG.md) -
+  [Commits](https://github.com/un33k/python-slugify/compare/v8.0.0...v9.0.0)
+
+--- updated-dependencies: - dependency-name: python-slugify dependency-version: 9.0.0
+
+dependency-type: direct:production
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **deps-dev**: Bump pytest-redis in /bec_ipython_client
+  ([`b98cf9e`](https://github.com/bec-project/bec/commit/b98cf9ea4cb4caa2037746680a2ea56173bb0777))
+
+Updates the requirements on and [pytest-redis](https://github.com/dbfixtures/pytest-redis) to permit
+  the latest version.
+
+Updates `pytest-redis` to 5.0.0 -
+  [Changelog](https://github.com/dbfixtures/pytest-redis/blob/main/CHANGES.rst) -
+  [Commits](https://github.com/dbfixtures/pytest-redis/compare/v3.1.0...v5.0.0)
+
+--- updated-dependencies: - dependency-name: pytest-redis dependency-version: 5.0.0
+
+dependency-type: direct:development
+
+dependency-group: pip
+
+- dependency-name: pytest-redis dependency-version: 5.0.0
+
+dependency-group: pip ...
+
+Signed-off-by: dependabot[bot] <support@github.com>
+
+- **ipython**: Enhance logging and error handling in scan report processing
+  ([`b9cc8bc`](https://github.com/bec-project/bec/commit/b9cc8bc477422489a4f0cf03f1d8cf7b3910e82a))
+
+### Features
+
+- **config**: Add validation for config file paths and improve error handling
+  ([`0d61f9c`](https://github.com/bec-project/bec/commit/0d61f9c898ff41f85f73b2c02f296a37061848fe))
+
+### Testing
+
+- **queue**: Prevent premature worker activation during queue addition
+  ([`2a9f33f`](https://github.com/bec-project/bec/commit/2a9f33fde5d4be35f9cc963a062278cd22a9f126))
+
+- **queue**: Refactor queue tests to use a dormant scan queue
+  ([`bacf6ed`](https://github.com/bec-project/bec/commit/bacf6ed67b276c89cbcffb2de7252311a90972e7))
+
+
 ## v3.170.1 (2026-09-08)
 
 ### Bug Fixes
