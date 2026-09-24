@@ -58,16 +58,14 @@ def test_check_motors_movable_enabled(scan_server_mock, scan_queue_msg):
 
     sg = ScanGuard(parent=k)
     sg._check_motors_movable(scan_queue_msg)
-    config_reply = messages.RequestResponseMessage(accepted=True, message="")
-    with mock.patch.object(
-        k.device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
-    ):
-        with mock.patch.object(k.device_manager.config_helper, "wait_for_service_response"):
-            k.device_manager.devices["samx"].enabled = True
-            k.device_manager.devices["samy"].enabled = False
-            with pytest.raises(ScanRejection) as scan_rejection:
-                sg._check_motors_movable(scan_queue_msg)
-            assert "Device samy is not enabled." in scan_rejection.value.args
+    k.device_manager.parse_config_message(
+        messages.DeviceConfigMessage(
+            action="update", config={"samx": {"enabled": True}, "samy": {"enabled": False}}
+        )
+    )
+    with pytest.raises(ScanRejection) as scan_rejection:
+        sg._check_motors_movable(scan_queue_msg)
+    assert "Device samy is not enabled." in scan_rejection.value.args
 
 
 @pytest.mark.parametrize("device,func,is_valid", [("samx", "read", True)])
@@ -115,17 +113,15 @@ def test_valid_request(scan_server_mock, scan_queue_msg, valid):
     k = scan_server_mock
 
     sg = ScanGuard(parent=k)
-    config_reply = messages.RequestResponseMessage(accepted=True, message="")
-    with mock.patch.object(
-        k.device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
-    ):
-        with mock.patch.object(k.device_manager.config_helper, "wait_for_service_response"):
-            with mock.patch.object(sg, "_check_valid_scan") as valid_scan:
-                k.device_manager.devices["samx"].enabled = True
-                k.device_manager.devices["samy"].enabled = True
-                status = sg._is_valid_scan_request(scan_queue_msg, username="default")
-                valid_scan.assert_called_once_with(scan_queue_msg)
-                assert status.accepted == valid
+    k.device_manager.parse_config_message(
+        messages.DeviceConfigMessage(
+            action="update", config={"samx": {"enabled": True}, "samy": {"enabled": True}}
+        )
+    )
+    with mock.patch.object(sg, "_check_valid_scan") as valid_scan:
+        status = sg._is_valid_scan_request(scan_queue_msg, username="default")
+        valid_scan.assert_called_once_with(scan_queue_msg)
+        assert status.accepted == valid
 
 
 def test_check_valid_scan_raises_for_unknown_scan(scan_guard_mock):
