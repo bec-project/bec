@@ -1,7 +1,9 @@
 import datetime
+import gc
 import json
 import os
 import threading
+import weakref
 from pathlib import Path
 from queue import Empty
 from unittest import mock
@@ -9,6 +11,7 @@ from unittest import mock
 import pytest
 
 from bec_lib.bec_errors import ServiceConfigError
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import BatchQueue, BECLogger, BECLoguruRotator, LogLevel
 from bec_lib.redis_connector import RedisConnector
 
@@ -42,6 +45,25 @@ def test_batch_queue_blocks_and_atomically_drains_all_items():
     assert received == [1, 2, 3]
     with pytest.raises(Empty):
         batch_queue.get_all_nowait()
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+def test_batch_queue_drops_new_items_when_full_and_accepts_items_after_drain(bulk):
+    batch_queue = BatchQueue[int]()
+    batch_queue.put_many(range(990))
+
+    if bulk:
+        batch_queue.put_many(iter(range(990, 1200)))
+    else:
+        for item in range(990, 1200):
+            batch_queue.put(item)
+    batch_queue.put(1200)
+    batch_queue.put_many([1201, 1202])
+
+    assert batch_queue.get_all_nowait() == list(range(1000))
+    batch_queue.put(1203)
+    batch_queue.put_many([1204, 1205])
+    assert batch_queue.get_all_nowait() == [1203, 1204, 1205]
 
 
 def test_configure(logger, tmp_path):
@@ -219,3 +241,282 @@ def test_log_thread_publishes_queued_messages_as_one_batch(logger):
     assert batch_published.wait(timeout=1)
     assert logger.connector.xadd.call_count == 2
     logger.connector.execute_pipeline.assert_called_once()
+
+
+@pytest.mark.parametrize("shutdown", [False, True])
+def test_log_queue_drops_overflow_while_redis_publisher_is_blocked(logger, shutdown):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_throttle = 0.01
+    publishing = threading.Event()
+    release = threading.Event()
+    drained = threading.Event()
+    received = []
+
+    def execute_pipeline(_):
+        if not publishing.is_set():
+            publishing.set()
+            assert release.wait(timeout=5)
+        else:
+            drained.set()
+
+    def collect_message(*, msg_dict, **kwargs):
+        received.append(msg_dict["data"].log_msg["text"])
+
+    logger.connector.execute_pipeline.side_effect = execute_pipeline
+    logger.connector.xadd.side_effect = collect_message
+    logger._setup_log_thread()
+
+    try:
+        logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": "first"})
+        assert publishing.wait(timeout=1)
+        for index in range(1200):
+            logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": str(index)})
+        assert len(logger._log_queue._items) == 1000
+        if shutdown:
+            join = logger._log_thread.join
+
+            def release_and_join(timeout):
+                assert logger._log_event.is_set()
+                release.set()
+                join(timeout=timeout)
+
+            with mock.patch.object(logger._log_thread, "join", side_effect=release_and_join):
+                logger.shutdown()
+            assert drained.is_set()
+        else:
+            release.set()
+            assert drained.wait(timeout=5)
+    finally:
+        release.set()
+        logger.shutdown()
+
+    assert received == ["first", *map(str, range(1000))]
+
+
+def test_large_log_batch_remains_readable_between_transactions(logger, connected_connector):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = connected_connector
+    endpoint = MessageEndpoints.log()
+    connected_connector.xread(endpoint, from_start=True)
+    received = []
+    execute_pipeline = connected_connector.execute_pipeline
+
+    def execute_and_read(pipeline):
+        result = execute_pipeline(pipeline)
+        received.extend(
+            entry["data"].log_msg["text"] for entry in connected_connector.xread(endpoint) or []
+        )
+        return result
+
+    messages = [
+        ({"record": {"level": {"name": "INFO"}}, "text": str(index)}, None)
+        for index in range(12000)
+    ]
+    with mock.patch.object(connected_connector, "execute_pipeline", side_effect=execute_and_read):
+        logger._publish_log_batch(messages)
+
+    assert received == [str(index) for index in range(12000)]
+
+
+def test_publish_log_batch_flushes_all_transactions_on_shutdown(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_event = threading.Event()
+    logger.connector.execute_pipeline.side_effect = lambda _: logger._log_event.set()
+    message = {"record": {"level": {"name": "INFO"}}, "text": "hello"}
+
+    logger._publish_log_batch([(message, None)] * (logger._MAX_REDIS_BATCH_SIZE + 1))
+
+    assert logger.connector.execute_pipeline.call_count == 2
+    assert logger.connector.xadd.call_count == logger._MAX_REDIS_BATCH_SIZE + 1
+
+
+def test_shutdown_flushes_error_and_console_messages(logger, connected_connector, tmp_path):
+    logger.configure(
+        ["localhost:1"],
+        "test",
+        connector=connected_connector,
+        service_config={"log_writer": {"base_path": str(tmp_path)}},
+    )
+    logger.add_console_log()
+    logger.logger.error("failure before shutdown")
+    logger.logger.log("CONSOLE_LOG_ERROR", "console failure before shutdown")
+
+    logger.shutdown()
+
+    records = connected_connector.xread(MessageEndpoints.log(), from_start=True) or []
+    assert [entry["data"].log_msg["record"]["message"] for entry in records] == [
+        "failure before shutdown",
+        "console failure before shutdown",
+    ]
+    assert [entry["data"].log_msg["service_name"] for entry in records] == ["test", "test_CONSOLE"]
+    assert logger._log_thread is None
+
+
+@pytest.mark.parametrize("publish_fails", [False, True])
+def test_publisher_flushes_queue_when_shutdown_precedes_worker_start(logger, publish_fails):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_queue = BatchQueue()
+    logger._log_event = threading.Event()
+    logger._queue_log_message({"record": {"level": {"name": "ERROR"}}, "text": "last error"})
+    logger._log_event.set()
+    if publish_fails:
+        logger.connector.execute_pipeline.side_effect = RuntimeError("redis unavailable")
+
+    logger._publish_pipe_to_redis()
+
+    logger.connector.execute_pipeline.assert_called_once()
+    with pytest.raises(Empty):
+        logger._log_queue.get_all_nowait()
+
+
+def test_queue_rejects_new_messages_during_shutdown(logger):
+    logger._configured = True
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_queue = BatchQueue()
+    logger._log_event = threading.Event()
+    logger._log_event.set()
+
+    logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": "too late"})
+
+    with pytest.raises(Empty):
+        logger._log_queue.get_all_nowait()
+
+
+@pytest.mark.timeout(5)
+def test_shutdown_timeout_stops_additional_redis_transactions(logger):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_throttle = 0.01
+    publishing = threading.Event()
+    release = threading.Event()
+
+    def execute_pipeline(_):
+        publishing.set()
+        release.wait(timeout=10)
+
+    logger.connector.execute_pipeline.side_effect = execute_pipeline
+    logger._setup_log_thread()
+    worker = logger._log_thread
+    try:
+        logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": "first"})
+        assert publishing.wait(timeout=1)
+        logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": "pending"})
+
+        logger.shutdown()
+
+        assert worker.is_alive()
+        assert not logger._configured
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    logger.connector.execute_pipeline.assert_called_once()
+
+
+def test_reconfigure_rejects_a_publisher_still_stopping(logger, tmp_path):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_throttle = 0.01
+    publishing = threading.Event()
+    release = threading.Event()
+
+    def execute_pipeline(_):
+        publishing.set()
+        release.wait(timeout=5)
+
+    logger.connector.execute_pipeline.side_effect = execute_pipeline
+    logger._setup_log_thread()
+    worker = logger._log_thread
+    original_connector = logger.connector
+    replacement = mock.MagicMock(spec=RedisConnector)
+    try:
+        logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": "hello"})
+        assert publishing.wait(timeout=1)
+        # Simulate a join timeout while the publisher is blocked in Redis.
+        with mock.patch.object(worker, "join"):
+            logger.shutdown()
+
+        with pytest.raises(RuntimeError, match="previous publisher is stopping"):
+            logger.configure(["localhost:1"], "replacement", connector=replacement)
+        assert logger.connector is original_connector
+    finally:
+        release.set()
+        worker.join(timeout=1)
+
+    logger.configure(
+        ["localhost:1"],
+        "replacement",
+        connector=replacement,
+        service_config={"log_writer": {"base_path": str(tmp_path)}},
+    )
+    assert logger.connector is replacement
+    assert logger._log_thread is not worker
+    assert logger._log_thread.is_alive()
+
+
+def test_queued_loguru_message_releases_bound_objects(logger):
+    class Payload:
+        pass
+
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_queue = BatchQueue()
+    logger.add_redis_log(LogLevel.INFO)
+    payload = Payload()
+    payload_ref = weakref.ref(payload)
+
+    logger.logger.bind(payload=payload).info("hello")
+    del payload
+    gc.collect()
+
+    assert payload_ref() is None
+    queued, service_name = logger._log_queue.get_all_nowait()[0]
+    assert json.loads(queued)["record"]["message"] == "hello"
+    assert service_name is None
+
+
+@pytest.mark.parametrize("publish_fails", [False, True])
+def test_idle_log_thread_releases_previous_batch(logger, publish_fails):
+    class Payload(dict):
+        pass
+
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_throttle = 0.01
+    published = threading.Event()
+    idle = threading.Event()
+
+    def execute_pipeline(_):
+        published.set()
+        if publish_fails:
+            raise RuntimeError("redis unavailable")
+
+    logger.connector.execute_pipeline.side_effect = execute_pipeline
+    logger._setup_log_thread()
+    get_all = logger._log_queue.get_all
+
+    def get_all_and_signal_idle(timeout=None):
+        if published.is_set() and timeout != 0:
+            idle.set()
+        return get_all(timeout=timeout)
+
+    payload = Payload(record={"level": {"name": "INFO"}}, text="hello")
+    payload_ref = weakref.ref(payload)
+    with mock.patch.object(logger._log_queue, "get_all", side_effect=get_all_and_signal_idle):
+        logger._queue_log_message(payload)
+        del payload
+        assert idle.wait(timeout=1)
+        gc.collect()
+        assert payload_ref() is None
