@@ -351,6 +351,11 @@ class DeviceServer(BECService):
             cb=self.instructions_callback,
         )
 
+        # Notify existing consumers before unblocking services waiting for startup.
+        self.connector.send(
+            MessageEndpoints.device_config_update(),
+            messages.DeviceConfigMessage(action="reload", config={}),
+        )
         self.status = BECStatus.RUNNING
 
     def update_status(self, status: BECStatus):
