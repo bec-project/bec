@@ -10,6 +10,7 @@ from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 from bec_server.scan_server.device_lock_registry import DeviceLockRegistry
+from bec_server.scan_server.direct_scan_worker import DirectScanWorker
 from bec_server.scan_server.errors import LimitError, ScanAbortion
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scan_queue import (
@@ -776,6 +777,36 @@ def test_set_continue(queuemanager_mock):
     )
 
 
+@pytest.mark.parametrize(
+    "initial_status, expected_status",
+    [
+        (InstructionQueueStatus.PAUSED, InstructionQueueStatus.RUNNING),
+        (InstructionQueueStatus.DEFERRED_PAUSE, InstructionQueueStatus.RUNNING),
+        (InstructionQueueStatus.PENDING, InstructionQueueStatus.PENDING),
+        (InstructionQueueStatus.COMPLETED, InstructionQueueStatus.COMPLETED),
+        (InstructionQueueStatus.CANCELLED, InstructionQueueStatus.CANCELLED),
+        (InstructionQueueStatus.STOPPED, InstructionQueueStatus.STOPPED),
+    ],
+)
+@pytest.mark.parametrize("locked", [False, True])
+def test_set_continue_only_resumes_paused_items(
+    dormant_queue_manager, initial_status, expected_status, locked
+):
+    queue_manager = dormant_queue_manager
+    queue = queue_manager.queues["secondary"]
+    item = DirectInstructionQueueItem(queue, mock.Mock(), queue.scan_worker)
+    queue.queue.append(item)
+    item.status = initial_status
+    queue.status = ScanQueueStatus.PAUSED
+    if locked:
+        queue.add_lock(messages.ScanQueueLock(identifier="interlock", reason="test"))
+
+    queue_manager.set_continue(queue="secondary")
+
+    assert item.status == (initial_status if locked else expected_status)
+    assert queue.status == (ScanQueueStatus.LOCKED if locked else ScanQueueStatus.RUNNING)
+
+
 # @pytest.mark.repeat(500)
 @pytest.mark.timeout(5)
 def test_set_abort(queuemanager_mock):
@@ -1094,6 +1125,43 @@ def test_set_restart_stops_owned_devices_before_shutdown(dormant_queue_manager, 
     assert scan._shutdown_event.is_set()
     assert original.status == InstructionQueueStatus.STOPPED
     assert queue.status == (ScanQueueStatus.LOCKED if locked else ScanQueueStatus.RUNNING)
+
+
+@pytest.mark.parametrize(
+    "initial_status",
+    [
+        InstructionQueueStatus.RUNNING,
+        InstructionQueueStatus.PAUSED,
+        InstructionQueueStatus.DEFERRED_PAUSE,
+    ],
+)
+def test_restart_then_continue_preserves_scan_cancellation(dormant_queue_manager, initial_status):
+    queue_manager = dormant_queue_manager
+    queue = queue_manager.queues["secondary"]
+    scan = _build_dummy_v4_scan("original-scan")
+    original = DirectInstructionQueueItem(queue, mock.Mock(), queue.scan_worker)
+    original.scans = [scan]
+    original.active_scan = scan
+    original.scan_msgs = [_queued_scan_message(queue="secondary", rid="original")]
+    queue.queue.append(original)
+    queue.active_instruction_queue = original
+    queue.scan_worker.current_instruction_queue_item = original
+    original.status = initial_status
+    worker = DirectScanWorker(worker=queue.scan_worker)
+    worker.scan = scan
+
+    queue_manager.set_restart(
+        queue="secondary", scan_id="original-scan", parameter={"RID": "replacement"}
+    )
+    # Deliver continuation before the worker has a chance to observe cancellation.
+    queue_manager.set_continue(queue="secondary")
+
+    assert queue.status == ScanQueueStatus.RUNNING
+    assert original.status == InstructionQueueStatus.STOPPED
+    assert queue.queue[1].status == InstructionQueueStatus.PENDING
+    assert scan._shutdown_event.is_set()
+    with pytest.raises(ScanAbortion):
+        worker.check_for_interruption()
 
 
 @pytest.mark.timeout(5)
