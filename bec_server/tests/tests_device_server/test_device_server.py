@@ -13,6 +13,7 @@ from ophyd_devices import StatusBase
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import MessageObject
@@ -104,10 +105,69 @@ def test_convert_value_if_needed_leaves_enum_int_unchanged():
 
 def test_start(device_server_mock):
     device_server = device_server_mock
-
-    device_server.start()
+    startup = mock.Mock()
+    with (
+        patch.object(device_server.connector, "register") as register,
+        patch.object(device_server.connector, "send") as send,
+        patch.object(device_server, "_send_service_status") as status,
+    ):
+        startup.attach_mock(register, "register")
+        startup.attach_mock(send, "send")
+        startup.attach_mock(status, "status")
+        device_server.start()
 
     assert device_server.status == BECStatus.RUNNING
+    assert startup.mock_calls == [
+        mock.call.register(
+            MessageEndpoints.device_instructions(),
+            event=ANY,
+            cb=device_server.instructions_callback,
+        ),
+        mock.call.send(
+            MessageEndpoints.device_config_update(),
+            messages.DeviceConfigMessage(action="reload", config={}),
+        ),
+        mock.call.status(),
+    ]
+
+
+@pytest.mark.parametrize("remove_device", [False, True])
+def test_start_refreshes_existing_device_manager(
+    device_server_mock, connected_connector, remove_device
+):
+    device = device_server_mock.device_manager.devices.samx
+    config = {**device._config, "name": "samx", "enabled": True}
+    connected_connector.set(
+        MessageEndpoints.device_config(), messages.AvailableResourceMessage(resource=[config])
+    )
+    connected_connector.set(
+        MessageEndpoints.device_info("samx"),
+        messages.DeviceInfoMessage(device="samx", info=device._info),
+    )
+    service = mock.Mock(connector=connected_connector)
+    manager = DeviceManagerBase(service)
+    reloaded = threading.Event()
+    service.callbacks.run.side_effect = lambda *_: reloaded.set()
+    try:
+        manager.initialize("localhost:1")
+        assert manager.devices.samx.enabled
+
+        # A restart can change the stored configuration without a config request.
+        updated_config = [] if remove_device else [{**config, "enabled": False}]
+        connected_connector.set(
+            MessageEndpoints.device_config(),
+            messages.AvailableResourceMessage(resource=updated_config),
+        )
+        with patch.object(device_server_mock, "connector", connected_connector):
+            device_server_mock.start()
+
+        assert reloaded.wait(timeout=2), "Device-server startup did not refresh the consumer"
+        if remove_device:
+            assert not manager.devices
+        else:
+            assert not manager.devices.samx.enabled
+    finally:
+        manager.shutdown()
 
 
 @pytest.mark.parametrize("status", [BECStatus.ERROR, BECStatus.RUNNING, BECStatus.IDLE])
