@@ -54,6 +54,47 @@ def test_bec_service_init_with_service_config():
         assert service._unique_service is False
 
 
+def test_shutdown_stops_only_the_owned_logger_before_closing_connector(tmp_path):
+    config = ServiceConfig(
+        redis={"host": "localhost", "port": 6379}, log_writer={"base_path": str(tmp_path)}
+    )
+    with mock.patch.object(bec_logger, "_configured", False):
+        with bec_service(config) as owner, bec_service(config) as other:
+            worker = bec_logger._log_thread
+            assert worker is not None and worker.is_alive()
+            assert bec_logger.connector is owner.connector
+
+            other.shutdown()
+            assert worker.is_alive()
+            assert not bec_logger._log_event.is_set()
+
+            shutdown_connector = owner.connector.shutdown
+
+            def shutdown_after_logger(*args, **kwargs):
+                assert not worker.is_alive()
+                assert bec_logger._log_thread is None
+                shutdown_connector(*args, **kwargs)
+
+            with mock.patch.object(owner.connector, "shutdown", side_effect=shutdown_after_logger):
+                owner.shutdown()
+
+
+def test_new_service_restarts_logger_after_owner_shutdown(tmp_path):
+    config = ServiceConfig(
+        redis={"host": "localhost", "port": 6379}, log_writer={"base_path": str(tmp_path)}
+    )
+    with mock.patch.object(bec_logger, "_configured", False):
+        with bec_service(config):
+            first_worker = bec_logger._log_thread
+            assert first_worker is not None and first_worker.is_alive()
+
+        assert not first_worker.is_alive()
+        with bec_service(config) as restarted:
+            assert bec_logger.connector is restarted.connector
+            assert bec_logger._log_thread is not first_worker
+            assert bec_logger._log_thread.is_alive()
+
+
 def test_bec_service_init_raises_for_invalid_config():
     with pytest.raises(TypeError):
         with bec_service(mock.MagicMock()):
