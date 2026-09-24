@@ -384,9 +384,14 @@ class QueueManager:
     ) -> None:
         # pylint: disable=unused-argument
         """continue with the currently scheduled queue and instruction queue"""
-        self.queues[queue].status = ScanQueueStatus.RUNNING
-        if self.queues[queue].status == ScanQueueStatus.RUNNING:
-            self.queues[queue].worker_status = InstructionQueueStatus.RUNNING
+        que = self.queues[queue]
+        que.status = ScanQueueStatus.RUNNING
+        # A stopped item must finish cancellation before the queue advances.
+        if que.status == ScanQueueStatus.RUNNING and que.worker_status in (
+            InstructionQueueStatus.PAUSED,
+            InstructionQueueStatus.DEFERRED_PAUSE,
+        ):
+            que.worker_status = InstructionQueueStatus.RUNNING
 
     @requires_queue
     def set_abort(
