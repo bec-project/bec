@@ -233,4 +233,10 @@ usage and do not add Windows-specific branches unless explicitly requested.
 - use Conventional Commits
 - breaking changes need `!` or a `BREAKING CHANGE:` footer
 - leave the eventual PR author with a short summary of what changed, why, and what you validated
+- For PR descriptions, use [the PR template](.github/pull_request_template.md) and follow its
+  comments for describing the change, concrete test steps, and potential side effects. Fill in the
+  visible prompts and remove sections that do not apply.
+- For PR review comments, use [the review template](.github/pull_request_review_template.md)
+  and follow its instructions for full model attribution, collapsible details, and replacing existing
+  reviews from the same full model designation.
 - update `bec_docs` when necessary
