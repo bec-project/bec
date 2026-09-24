@@ -32,7 +32,6 @@ SCAN_SEQUENCE = [
 class DirectScanWorker:
     """
     DirectScanWorker runs scan lifecycle methods directly.
-    Unlike GeneratorScanWorker, it does not interpret instructions.
     Instructions are sent directly to Redis by the scan itself.
     """
 
@@ -132,7 +131,7 @@ class DirectScanWorker:
             return False
         if queue is None:
             return False
-        if queue.stopped or not queue.active_request_block:
+        if queue.stopped or not queue.active_scan:
             raise exc
 
         queue.stopped = True
@@ -252,9 +251,6 @@ class DirectScanWorker:
             logger.exception("Failed to run direct scan on_exception hook")
 
     def _handle_scan_abortion(self, queue: DirectInstructionQueueItem, exc: ScanAbortion):
-        # TODO: We currently access the method from the scan worker for being backwards compatible with
-        # the generator-based worker. Once we have fully switched to the direct worker, we should move
-        # the method to the run method of the direct worker and remove it from the scan worker.
         content = traceback.format_exc()
         logger.error(content)
         if self.scan is None:

@@ -7,7 +7,7 @@ import numpy as np
 
 from bec_lib.device import DeviceBase
 from bec_server.scan_server.errors import LimitError
-from bec_server.scan_server.path_optimization import PathOptimizerMixin
+from bec_server.scan_server.scans.path_optimization import PathOptimizerMixin
 from bec_server.scan_server.scans.position_generators import Direction
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ class ScanComponents:
     """
     Class to handle the components for the scan logic.
     The components are reusable building blocks for the scan logic,
-    such as step scans or grid scans. They use the ScanStubs to
+    such as step scans or grid scans. They use ScanActions to
     execute the scan logic.
     """
 

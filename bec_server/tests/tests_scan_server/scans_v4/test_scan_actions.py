@@ -14,8 +14,8 @@ from bec_lib.tests.fixtures import dm_with_devices  # noqa: F401
 from bec_lib.tests.utils import ConnectorMock
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.scan_server.instruction_handler import InstructionHandler
-from bec_server.scan_server.scan_stubs import ScanStubStatus
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo, ScanType
+from bec_server.scan_server.scans.scan_status import ScanStatus
 from bec_server.scan_server.tests.utils import NoopScan
 
 
@@ -682,7 +682,7 @@ def test_stage_all_devices_stages_async_and_sync_devices(action_context):
         ctx.device_manager.devices["samz"],
         ctx.device_manager.devices["bpm4i"],
     ]
-    container_status = ScanStubStatus(
+    container_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
@@ -691,13 +691,13 @@ def test_stage_all_devices_stages_async_and_sync_devices(action_context):
     )
     container_status.add_status = mock.MagicMock(wraps=container_status.add_status)
     container_status.wait = mock.MagicMock()
-    async_status = ScanStubStatus(
+    async_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
         name="stage_samx",
     )
-    sync_status = ScanStubStatus(
+    sync_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
@@ -752,14 +752,14 @@ def test_stage_all_devices_respects_exclude(action_context):
         ctx.device_manager.devices["samz"],
         ctx.device_manager.devices["bpm4i"],
     ]
-    container_status = ScanStubStatus(
+    container_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
         is_container=True,
         name="stage_all_devices",
     )
-    sync_status = ScanStubStatus(
+    sync_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
@@ -808,14 +808,14 @@ def test_stage_all_devices_only_resolves_owned_devices(action_context):
         ctx.device_manager.devices["samz"],
         ctx.device_manager.devices["bpm4i"],
     ]
-    container_status = ScanStubStatus(
+    container_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
         is_container=True,
         name="stage_all_devices",
     )
-    sync_status = ScanStubStatus(
+    sync_status = ScanStatus(
         ctx.scan._instruction_handler,
         shutdown_event=threading.Event(),
         registry={},
@@ -884,7 +884,7 @@ def test_report_instructions_use_root_name_for_nested_device_progress(action_con
 
 def test_rpc_call_returns_result_or_status(action_context):
     ctx = action_context()
-    status = ScanStubStatus(
+    status = ScanStatus(
         ctx.scan._instruction_handler,
         device_instr_id="device-instr-id",
         shutdown_event=threading.Event(),
@@ -925,7 +925,7 @@ def test_rpc_call_returns_result_or_status(action_context):
 
 def test_rpc_call_no_wait_returns_status_without_waiting(action_context):
     ctx = action_context()
-    status = ScanStubStatus(
+    status = ScanStatus(
         ctx.scan._instruction_handler,
         device_instr_id="device-instr-id",
         shutdown_event=threading.Event(),
@@ -953,7 +953,7 @@ def test_rpc_call_no_wait_returns_status_without_waiting(action_context):
 
 def test_rpc_call_no_wait_uses_dotted_name_for_nested_devices(action_context):
     ctx = action_context()
-    status = ScanStubStatus(
+    status = ScanStatus(
         ctx.scan._instruction_handler,
         device_instr_id="device-instr-id",
         shutdown_event=threading.Event(),
@@ -975,7 +975,7 @@ def test_rpc_call_no_wait_uses_dotted_name_for_nested_devices(action_context):
 
 def test_rpc_call_no_wait_can_request_response(action_context):
     ctx = action_context()
-    status = ScanStubStatus(
+    status = ScanStatus(
         ctx.scan._instruction_handler,
         device_instr_id="device-instr-id",
         shutdown_event=threading.Event(),
