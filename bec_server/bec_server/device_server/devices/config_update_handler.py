@@ -6,6 +6,8 @@ import threading
 import traceback
 from typing import TYPE_CHECKING, TypedDict
 
+from ophyd_devices import set_registry
+
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.devicemanager import CancelledError, DeviceConfigError
@@ -200,7 +202,7 @@ class ConfigUpdateHandler:
     def _cleanup_failed_device_init(self, obj: OphydObject, device: DSDevice | None = None) -> None:
         """Best-effort cleanup that does not mask the initialization failure."""
         try:
-            obj.destroy()
+            self.device_manager.disconnect_device(obj)
         # pylint: disable=broad-except
         except Exception:
             logger.error(
@@ -283,13 +285,24 @@ class ConfigUpdateHandler:
 
     def _flush_config(self) -> None:
         """Flush all devices from the device manager."""
-        for _, obj in self.device_manager.devices.items():
+        objects = [device.obj for device in self.device_manager.devices.values()]
+        roots = [obj.root for obj in objects]
+        # Cancel every old root before any destroy hook can wait for another
+        # device's set. Keep admission closed until the old config is removed.
+        with set_registry.stopping_many(roots):
             try:
-                obj.obj.destroy()
-            except Exception:
-                logger.warning(f"Failed to destroy {obj.obj.name}")
-                raise RuntimeError("Failed to flush config")
-        self.device_manager.devices.flush()
+                for obj in objects:
+                    try:
+                        self.device_manager.disconnect_device(obj)
+                    except Exception as exc:
+                        logger.warning(f"Failed to destroy {obj.name}")
+                        raise RuntimeError("Failed to flush config") from exc
+                self.device_manager.devices.flush()
+            finally:
+                # A hook may have started cleanup sets on a different old root,
+                # including one whose destroy was skipped after an earlier error.
+                for root in roots:
+                    set_registry.cancel(root)
 
     def _reload_config(self, cancel_event: threading.Event) -> None:
         self._flush_config()
@@ -387,7 +400,7 @@ class ConfigUpdateHandler:
             if dev not in self.device_manager.devices:
                 continue
             device = self.device_manager.devices[dev]
-            self.device_manager.disconnect_device(device)
+            self.device_manager.disconnect_device(device.obj)
             self.device_manager.reset_device(device)
             self.device_manager.devices.pop(dev)
 

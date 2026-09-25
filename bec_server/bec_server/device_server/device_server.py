@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import ophyd
 from ophyd import DeviceStatus, Kind, OphydObject, Staged, StatusBase
 from ophyd.utils import errors as ophyd_errors
+from ophyd_devices import set_registry
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -330,6 +331,7 @@ class DeviceServer(BECService):
     def __init__(self, config, connector_cls: type[RedisConnector]) -> None:
         super().__init__(config, connector_cls, unique_service=True)
         self._tasks = []
+        self.set_registry = set_registry
         self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._start_device_manager()
@@ -423,13 +425,15 @@ class DeviceServer(BECService):
             devices_to_stop = [
                 dev for dev in self.device_manager.devices.enabled_devices if dev.name in devices
             ]
-        for dev in devices_to_stop:
-            if dev.read_only:
-                # don't stop devices that we haven't set
-                continue
-            if hasattr(dev.obj, "stop"):
+        devices_to_stop = [dev for dev in devices_to_stop if not dev.read_only]
+        # Capture and cancel all roots before hardware: one stop hook may wait
+        # for another root's set. Keep these snapshots alive for nested stops,
+        # and reject concurrent sets until hardware stopping has finished.
+        with self.set_registry.stopping_many(dev.obj for dev in devices_to_stop):
+            for dev in devices_to_stop:
                 try:
-                    dev.obj.stop()
+                    if hasattr(dev.obj, "stop"):
+                        dev.obj.stop()
                 except Exception as exc:  # pylint: disable=broad-except
                     content = traceback.format_exc()
                     error_info = messages.ErrorInfo(

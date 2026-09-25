@@ -7,9 +7,10 @@ from unittest.mock import ANY, patch
 import numpy as np
 import pytest
 from loguru import logger
-from ophyd import Device, DeviceStatus, Kind, Staged
+from ophyd import Component, Device, DeviceStatus, Kind, Signal, Staged
 from ophyd.utils import errors as ophyd_errors
-from ophyd_devices import StatusBase
+from ophyd_devices import PSIDeviceBase, StatusBase
+from ophyd_devices.utils.set_registry import SetCancelledError, set_registry
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -267,6 +268,271 @@ def test_stop_devices(device_server_mock):
     with mock.patch.object(dev.motor1_disabled_set.obj, "stop") as stop:
         device_server.stop_devices()
         stop.assert_not_called()
+
+
+class PendingSetSignal(Signal):
+    """Keep the readback unchanged so a set waits until explicitly cancelled."""
+
+    def put(self, value, **kwargs):
+        pass
+
+
+class PendingSetChild(Device):
+    setpoint = Component(PendingSetSignal, value=0, kind=Kind.omitted)
+
+
+class PendingSetDevice(Device):
+    """Ordinary Ophyd device whose stop does not stop its signal workers."""
+
+    setpoint = Component(PendingSetSignal, value=0, kind=Kind.omitted)
+    other = Component(PendingSetSignal, value=0, kind=Kind.omitted)
+    child = Component(PendingSetChild)
+
+
+class PendingSetPSIDevice(PSIDeviceBase):
+    setpoint = Component(PendingSetSignal, value=0, kind=Kind.omitted)
+    other = Component(PendingSetSignal, value=0, kind=Kind.omitted)
+
+
+@pytest.fixture
+def pending_set_roots(device_server_mock):
+    roots = [PendingSetDevice(name="samx"), PendingSetPSIDevice(name="samy")]
+    devices = device_server_mock.device_manager.devices
+    with (
+        mock.patch.object(devices.samx, "obj", roots[0]),
+        mock.patch.object(devices.samy, "obj", roots[1]),
+        mock.patch.object(device_server_mock.device_manager, "_obj_callback_readback"),
+    ):
+        try:
+            yield roots
+        finally:
+            for root in roots:
+                operations = set_registry.active(root)
+                threads = [operation.signal._set_thread for operation in operations]
+                for operation in operations:
+                    operation.cancel()
+                for thread in threads:
+                    if thread is not None:
+                        thread.join(timeout=2)
+                        assert not thread.is_alive()
+                root.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("action", ["set", "rpc"])
+@pytest.mark.parametrize("stop_path", ["stop_devices", "stop", "child.stop"])
+def test_stop_resolves_signal_set_request(device_server_mock, pending_set_roots, action, stop_path):
+    root, other_root = pending_set_roots
+    if action == "set":
+        device, parameter = "samx.setpoint", {"value": 1}
+    else:
+        device = "samx"
+        parameter = {"func": "setpoint.set", "args": [1], "kwargs": {}, "rpc_id": "rpc"}
+    instruction = messages.DeviceInstructionMessage(
+        device=device,
+        action=action,
+        parameter=parameter,
+        metadata={"device_instr_id": "pending-set", "RID": "pending-set"},
+    )
+    other_status = other_root.setpoint.set(1)
+    child_status = root.child.setpoint.set(1)
+    device_server_mock.handle_device_instructions(instruction)
+    operation = next(
+        operation
+        for operation in device_server_mock.set_registry.active(root)
+        if operation.signal is root.setpoint
+    )
+    thread = root.setpoint._set_thread
+
+    if stop_path == "stop_devices":
+        device_server_mock.stop_devices(["samx"])
+    else:
+        stop_instruction = messages.DeviceInstructionMessage(
+            device="samx",
+            action="rpc",
+            parameter={"func": stop_path, "kwargs": {"success": False}, "rpc_id": "stop-rpc"},
+            metadata={"device_instr_id": "stop", "RID": "stop"},
+        )
+        device_server_mock.handle_device_instructions(stop_instruction)
+        stop_responses = [
+            entry["msg"]
+            for entry in device_server_mock.connector.message_sent
+            if entry["queue"] == MessageEndpoints.device_rpc("stop-rpc")
+        ]
+        assert stop_responses[-1].success
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert isinstance(operation.status.exception(timeout=0), SetCancelledError)
+    with pytest.raises(SetCancelledError):
+        child_status.wait(timeout=2)
+    assert not device_server_mock.set_registry.active(root)
+    assert not other_status.done
+    assert device_server_mock.requests_handler.get_request("pending-set") is None
+    responses = [
+        entry["msg"]
+        for entry in device_server_mock.connector.message_sent
+        if entry["queue"] == MessageEndpoints.device_instructions_response()
+        and entry["msg"].instruction_id == "pending-set"
+    ]
+    assert responses[-1].status == "error"
+    root.setpoint.set(0).wait(timeout=2)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("stop_path", ["stop_devices", "rpc"])
+def test_stop_cancels_signal_workers_if_hardware_stop_fails(
+    device_server_mock, pending_set_roots, stop_path
+):
+    root, _ = pending_set_roots
+    status = root.setpoint.set(1)
+    with (
+        mock.patch.object(root, "stop", side_effect=RuntimeError("stop failed")),
+        mock.patch.object(device_server_mock.connector, "raise_alarm") as raise_alarm,
+    ):
+        if stop_path == "stop_devices":
+            device_server_mock.stop_devices([root.name])
+        else:
+            instruction = messages.DeviceInstructionMessage(
+                device=root.name, action="rpc", parameter={"func": "stop"}
+            )
+            with pytest.raises(RuntimeError, match="stop failed"):
+                device_server_mock.rpc_handler.process_rpc_instruction(instruction)
+    with pytest.raises(SetCancelledError):
+        status.wait(timeout=2)
+    if stop_path == "stop_devices":
+        raise_alarm.assert_called_once()
+        assert device_server_mock.status == BECStatus.RUNNING
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("stop_path", ["stop_devices", "rpc"])
+def test_stop_preserves_sets_started_by_hardware_stop(
+    device_server_mock, pending_set_roots, stop_path
+):
+    root, _ = pending_set_roots
+    old_status = root.setpoint.set(1)
+    new_status = []
+
+    def stop():
+        new_status.append(root.other.set(2))
+
+    with mock.patch.object(root, "stop", side_effect=stop):
+        if stop_path == "stop_devices":
+            device_server_mock.stop_devices([root.name])
+        else:
+            instruction = messages.DeviceInstructionMessage(
+                device=root.name, action="rpc", parameter={"func": "stop"}
+            )
+            device_server_mock.rpc_handler.process_rpc_instruction(instruction)
+    with pytest.raises(SetCancelledError):
+        old_status.wait(timeout=2)
+    assert not new_status[0].done
+    assert not set_registry.active(root)[0].cancel_requested
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_stop_cancels_all_roots_before_hardware_and_preserves_nested_snapshots(
+    device_server_mock, pending_set_roots
+):
+    root, other_root = pending_set_roots
+    old_statuses = [device.setpoint.set(1) for device in pending_set_roots]
+    operations = [set_registry.active(device)[0] for device in pending_set_roots]
+    new_statuses = []
+
+    def stop_first():
+        assert all(operation.cancel_requested for operation in operations)
+        # This hook must not block waiting for the later root to be cancelled.
+        with pytest.raises(SetCancelledError):
+            old_statuses[1].wait(timeout=2)
+        new_statuses.append(other_root.other.set(2))
+        # A nested PSI stop must reuse the snapshot from the overall request.
+        other_root.stop()
+
+    devices = device_server_mock.device_manager.devices
+    with (
+        mock.patch.object(root, "stop", side_effect=stop_first) as stop,
+        mock.patch.object(
+            type(devices),
+            "enabled_devices",
+            new_callable=mock.PropertyMock,
+            return_value=[devices.samx, devices.samy],
+        ),
+        mock.patch.object(device_server_mock.connector, "raise_alarm") as raise_alarm,
+    ):
+        device_server_mock.stop_devices([root.name, other_root.name])
+    stop.assert_called_once()
+    raise_alarm.assert_not_called()
+    for status in old_statuses:
+        with pytest.raises(SetCancelledError):
+            status.wait(timeout=2)
+    assert not new_statuses[0].done
+    assert not set_registry.active(other_root)[0].cancel_requested
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("action", ["set", "rpc"])
+def test_set_request_fails_promptly_while_hardware_stop_is_active(
+    device_server_mock, pending_set_roots, action
+):
+    root, _ = pending_set_roots
+    stop_entered = threading.Event()
+    release_stop = threading.Event()
+    status = root.setpoint.set(1)
+
+    def stop():
+        stop_entered.set()
+        assert release_stop.wait(timeout=2)
+
+    stopper = threading.Thread(target=device_server_mock.stop_devices, args=([root.name],))
+    with mock.patch.object(root, "stop", side_effect=stop):
+        try:
+            stopper.start()
+            assert stop_entered.wait(timeout=2)
+            with pytest.raises(SetCancelledError):
+                status.wait(timeout=2)
+            if action == "set":
+                device, parameter = "samx.setpoint", {"value": 2}
+            else:
+                device = "samx"
+                parameter = {"func": "setpoint.set", "args": [2], "rpc_id": "during-stop"}
+            instruction = messages.DeviceInstructionMessage(
+                device=device,
+                action=action,
+                parameter=parameter,
+                metadata={"device_instr_id": "during-stop", "RID": "during-stop"},
+            )
+            device_server_mock.handle_device_instructions(instruction)
+            responses = [
+                entry["msg"]
+                for entry in device_server_mock.connector.message_sent
+                if entry["queue"] == MessageEndpoints.device_instructions_response()
+                and entry["msg"].instruction_id == "during-stop"
+            ]
+            assert responses[-1].status == "error"
+            assert device_server_mock.requests_handler.get_request("during-stop") is None
+            assert not set_registry.active(root)
+        finally:
+            release_stop.set()
+            stopper.join(timeout=2)
+            assert not stopper.is_alive()
+    root.setpoint.set(0).wait(timeout=2)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_stop_cancels_standalone_signal_without_stop_method(device_server_mock):
+    signal = PendingSetSignal(name="samx", value=0)
+    status = signal.set(1)
+    thread = signal._set_thread
+    try:
+        with mock.patch.object(device_server_mock.device_manager.devices.samx, "obj", signal):
+            device_server_mock.stop_devices([signal.name])
+        with pytest.raises(SetCancelledError):
+            status.wait(timeout=2)
+    finally:
+        set_registry.cancel(signal)
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        signal.destroy()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

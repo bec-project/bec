@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 from ophyd import Device, DeviceStatus, Kind, Signal, Staged, StatusBase
+from ophyd_devices import set_registry
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -85,6 +86,28 @@ def test_execute_rpc_call_var(rpc_cls: RPCHandler, instr_params: dict):
     )
     out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
     assert out == 5
+
+
+@pytest.mark.parametrize("func", ["stop", "child.stop"])
+def test_execute_rpc_stop_preserves_arguments_and_result(rpc_cls, dev_mock, instr, func):
+    rpc_cls.device_manager.devices = {"device": dev_mock}
+    rpc_cls.device_server.set_registry = set_registry
+    instr.parameter.update({"func": func, "args": ["reason"], "kwargs": {"success": True}})
+    rpc_var = mock.Mock(return_value="stopped")
+    with mock.patch.object(set_registry, "stopping", wraps=set_registry.stopping) as stopping:
+        result = rpc_cls._execute_rpc_call(rpc_var, instr)
+    stopping.assert_called_once_with(dev_mock.obj)
+    rpc_var.assert_called_once_with("reason", success=True)
+    assert result == "stopped"
+
+
+@pytest.mark.parametrize("func", ["stop_acquisition", "estop", "child.stop_requested"])
+def test_execute_other_rpc_does_not_cancel_sets(rpc_cls, instr, func):
+    rpc_cls.device_server.set_registry = set_registry
+    instr.parameter["func"] = func
+    with mock.patch.object(set_registry, "stopping") as stopping:
+        assert rpc_cls._execute_rpc_call(mock.Mock(return_value="result"), instr) == "result"
+    stopping.assert_not_called()
 
 
 def test_execute_rpc_call_not_serializable(rpc_cls: RPCHandler):
