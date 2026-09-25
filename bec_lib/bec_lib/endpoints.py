@@ -10,10 +10,6 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from bec_lib.utils.import_utils import lazy_import
 
-# pylint: disable=too-many-public-methods
-# pylint: disable=too-many-lines
-
-
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
 else:
@@ -38,10 +34,10 @@ class EndpointType(str, enum.Enum):
 class MessageOp(list[str], enum.Enum):
     """Message operation enum"""
 
-    SET_PUBLISH = ["register", "set_and_publish", "delete", "get", "keys"]
-    SEND = ["send", "register"]
-    STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last", "delete"]
-    LIST = [
+    SET_PUBLISH = ["register", "set_and_publish", "delete", "get", "keys"]  # noqa: RUF012 - These lists are enum values exposed through MessageOp.value.
+    SEND = ["send", "register"]  # noqa: RUF012 - These lists are enum values exposed through MessageOp.value.
+    STREAM = ["xadd", "xrange", "xread", "register_stream", "keys", "get_last", "delete"]  # noqa: RUF012 - These lists are enum values exposed through MessageOp.value.
+    LIST = [  # noqa: RUF012 - These lists are enum values exposed through MessageOp.value.
         "llen",
         "lpush",
         "lrange",
@@ -52,11 +48,11 @@ class MessageOp(list[str], enum.Enum):
         "delete",
         "blocking_list_pop",
     ]
-    KEY_VALUE = ["set", "get", "delete", "keys"]
-    SET = ["remove_from_set", "get_set_members", "delete"]
+    KEY_VALUE = ["set", "get", "delete", "keys"]  # noqa: RUF012 - These lists are enum values exposed through MessageOp.value.
+    SET = ["remove_from_set", "get_set_members", "delete"]  # noqa: RUF012 - These lists are enum values exposed through MessageOp.value.
 
 
-MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]", covariant=True)
+MessageType = TypeVar("MessageType", bound="type[messages.BECMessage]", covariant=True)  # noqa: PLC0105 - MessageType is an existing public type parameter.
 
 
 @dataclass

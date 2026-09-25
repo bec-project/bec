@@ -1,6 +1,5 @@
 """Module to test file_utils.py"""
 
-# pylint: skip-file
 import os
 import threading
 import time
@@ -34,7 +33,7 @@ def mock_connector():
 @pytest.fixture(scope="function")
 def file_writer(mock_connector):
     """File writer fixture"""
-    with mock.patch("os.makedirs") as mock_make_dirs:
+    with mock.patch("os.makedirs") as _mock_make_dirs:
         yield FileWriter(service_config={"base_path": "/tmp"}, connector=mock_connector)
 
 
@@ -51,23 +50,21 @@ def scan_msg():
 
 def test_device_config_writer():
     """Device config writer fixture and ServiceConfigParser class"""
-    with mock.patch("os.makedirs") as mock_make_dirs:
-        with mock.patch("os.chmod") as mock_chmod:
-            dcw = DeviceConfigWriter(service_config={"base_path": "/tmp"})
-            assert mock_make_dirs.call_count == 1
-            assert dcw.directory == "/tmp/device_configs"
-            assert dcw.get_recovery_directory() == "/tmp/device_configs/recovery_configs"
-            mock_chmod.assert_called_once_with("/tmp/device_configs", int("0o771", 8))
+    with mock.patch("os.makedirs") as mock_make_dirs, mock.patch("os.chmod") as mock_chmod:
+        dcw = DeviceConfigWriter(service_config={"base_path": "/tmp"})
+        assert mock_make_dirs.call_count == 1
+        assert dcw.directory == "/tmp/device_configs"
+        assert dcw.get_recovery_directory() == "/tmp/device_configs/recovery_configs"
+        mock_chmod.assert_called_once_with("/tmp/device_configs", int("0o771", 8))
 
 
 def test_log_writer():
     """Device config writer fixture and ServiceConfigParser class"""
-    with mock.patch("os.makedirs") as mock_make_dirs:
-        with mock.patch("os.chmod") as mock_chmod:
-            lw = LogWriter(service_config={"base_path": "/tmp/logs"})
-            assert mock_make_dirs.call_count == 1
-            assert lw.directory == "/tmp/logs"
-            mock_chmod.assert_called_once_with("/tmp/logs", int("0o771", 8))
+    with mock.patch("os.makedirs") as mock_make_dirs, mock.patch("os.chmod") as mock_chmod:
+        lw = LogWriter(service_config={"base_path": "/tmp/logs"})
+        assert mock_make_dirs.call_count == 1
+        assert lw.directory == "/tmp/logs"
+        mock_chmod.assert_called_once_with("/tmp/logs", int("0o771", 8))
 
 
 @pytest.mark.parametrize(
@@ -81,11 +78,10 @@ def test_log_writer():
 def test_file_writer_init(service_config, connector, raises):
     """Test file writer init"""
     if raises:
-        with pytest.raises(ServiceConfigError):
-            with mock.patch("os.makedirs") as mock_make_dirs:
-                fw = FileWriter(service_config=service_config, connector=connector)
+        with pytest.raises(ServiceConfigError), mock.patch("os.makedirs") as _mock_make_dirs:
+            fw = FileWriter(service_config=service_config, connector=connector)
     else:
-        with mock.patch("os.makedirs") as mock_make_dirs:
+        with mock.patch("os.makedirs") as _mock_make_dirs:
             fw = FileWriter(service_config=service_config, connector=ConnectorMock(""))
             if service_config.get("base_path"):
                 assert fw._base_path == service_config.get("base_path")
@@ -131,7 +127,7 @@ def test_compile_full_filename_not_configured(file_writer, scan_msg):
 
 def test_compile_full_filename(file_writer, scan_msg):
     suffix = "test"
-    file_type = ".csv"
+    _file_type = ".csv"
     # case 1
     with mock.patch.object(file_writer, "get_scan_msg", return_value=None):
         return_value = file_writer.compile_full_filename(suffix=suffix)
@@ -398,7 +394,7 @@ def test_get_full_path_creates_directory_and_logs_when_missing(tmpdir):
 
     assert ret == str(base_dir.join("S00005_detector.h5"))
     assert os.path.isdir(str(base_dir))
-    mock_warning.assert_called_once_with(f"Directory {str(base_dir)} does not exist. Creating it.")
+    mock_warning.assert_called_once_with(f"Directory {base_dir!s} does not exist. Creating it.")
 
 
 @pytest.mark.parametrize("dir_exists, log_if_dir_does_not_exist", [(True, True), (False, False)])

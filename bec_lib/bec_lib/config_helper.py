@@ -39,7 +39,7 @@ from bec_lib.utils.json_extended import ExtendedEncoder
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.devicemanager import DeviceManagerBase
-    from bec_lib.messages import DeviceConfigMessage, RequestResponseMessage, ServiceResponseMessage
+    from bec_lib.messages import DeviceConfigMessage, RequestResponseMessage
     from bec_lib.redis_connector import RedisConnector
 
 else:
@@ -244,7 +244,7 @@ class ConfigHelper:
                 print("\nConfiguration update aborted by user. No changes were made.")
                 return
         if save_recovery:
-            time_stamp = f"{datetime.datetime.now():%Y-%m-%d_%H-%M-%S}"
+            time_stamp = f"{datetime.datetime.now():%Y-%m-%d_%H-%M-%S}"  # noqa: DTZ005 - Keep the established local-time display and filename format.
             if not self._base_path_recovery:
                 self._update_base_path_recovery()
             # after update_base_path_recovery, we can
@@ -275,14 +275,14 @@ class ConfigHelper:
                 except ValidationError as exc:
                     exc.model = _DeviceModelCore  # type: ignore
                     exc.context = f"the provided device config for device '{dev}'"  # type: ignore
-                    raise exc
+                    raise
         self.send_config_request(action="add", config=config)
 
     def _update_base_path_recovery(self):
         """
         Compile the filepath for the recovery configs.
         """
-        # pylint: disable=import-outside-toplevel
+
         from bec_lib.bec_service import SERVICE_CONFIG
 
         service_cfg = SERVICE_CONFIG.config.get("log_writer", None)
@@ -441,7 +441,7 @@ class ConfigHelper:
                 except ValidationError as exc:
                     exc.model = _DeviceModelCore  # type: ignore
                     exc.context = f"the provided device config for device '{dev}'"  # type: ignore
-                    raise exc
+                    raise
 
             for element, value in config.items():
                 current_value = current_config[dev].get(element, None)
@@ -766,7 +766,7 @@ class ConfigHelper:
                 continue
 
             if included_tags is None:
-                tag = sorted(tags)[0]
+                tag = min(tags)
                 split_config[tag][dev_name] = copy.deepcopy(dev_conf)
                 continue
 
@@ -776,7 +776,7 @@ class ConfigHelper:
             matched_tag = (
                 next((tag for tag in included_tags if tag in tags_set), None)
                 if included_tags
-                else (sorted(tags_set)[0] if tags_set else None)
+                else (min(tags_set) if tags_set else None)
             )
             if matched_tag is None:
                 split_config[remaining_devices_tag][dev_name] = copy.deepcopy(dev_conf)
@@ -967,7 +967,7 @@ class ConfigHelper:
                     for msg in service_messages
                     if msg is not None
                 ]
-                checked_services = set(["DeviceServer", "ScanServer"])
+                checked_services = {"DeviceServer", "ScanServer"}
                 if self._service_name:
                     checked_services.add(self._service_name)
                 if checked_services.issubset(set(ack_services)):

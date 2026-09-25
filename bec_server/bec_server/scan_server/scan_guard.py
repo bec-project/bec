@@ -71,8 +71,8 @@ class ScanGuard:
             self._check_valid_scan(request)
             self._check_baton(request)
             self._check_motors_movable(request)
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: BLE001 -- Convert all scan validation failures to a rejected scan status.
             content = traceback.format_exc()
             return ScanStatus(False, str(content))
         return ScanStatus()
@@ -122,11 +122,9 @@ class ScanGuard:
                 raise ScanRejection(f"Rejected rpc: {request.content}")
 
     def _device_rpc_is_valid(self, device: str, func: str) -> bool:
-        # pylint: disable=unused-argument
+
         # TODO: make sure the device rpc is valid and not exceeding the scope
-        if not device:
-            return False
-        return True
+        return bool(device)
 
     def _check_baton(self, request: messages.ScanQueueMessage) -> None:
         # TODO: Implement baton handling
@@ -173,7 +171,7 @@ class ScanGuard:
         username = result.group(1)
 
         logger.info(f"Receiving scan request: {content} from user {username}")
-        # pylint: disable=protected-access
+
         self._handle_scan_request(msg.value, username=username)
 
     def _scan_queue_modification_request_callback(self, msg):
@@ -183,7 +181,7 @@ class ScanGuard:
             return
         content = mod_msg.content
         logger.info(f"Receiving scan modification request: {content}")
-        # pylint: disable=protected-access
+
         self._handle_scan_modification_request(msg.value)
 
     def _send_scan_request_response(self, scan_status: ScanStatus, metadata: dict):
@@ -216,7 +214,7 @@ class ScanGuard:
 
         if msg.scan_type == "device_rpc":
             _, func = self._extract_device_rpc_target(msg)
-            if func in ["get", "read"] or func.endswith(".get") or func.endswith(".read"):
+            if func in ["get", "read"] or func.endswith((".get", ".read")):
                 logger.info("Scan request is a read operation, not enqueuing.")
                 self._direct_device_rpc(msg)
                 return
@@ -287,7 +285,6 @@ class ScanGuard:
 
     def _append_to_scan_queue(self, msg):
         logger.info("Appending new scan to queue")
-        msg = msg
         sqi = MessageEndpoints.scan_queue_insert()
         self.device_manager.connector.send(sqi, msg)
 

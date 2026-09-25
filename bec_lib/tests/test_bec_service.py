@@ -17,11 +17,6 @@ from bec_lib.messages import BECStatus, ServiceInfo
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import DEFAULT_BASE_PATH, ServiceConfig
 
-# pylint: disable=no-member
-# pylint: disable=missing-function-docstring
-# pylint: disable=redefined-outer-name
-# pylint: disable=protected-access
-
 dir_path = os.path.dirname(bec_lib.__file__)
 
 
@@ -34,7 +29,7 @@ class MagicMockConnector(RedisConnector):
 def bec_service(config, connector_cls=None, connector=None, **kwargs):
     if connector_cls is None:
         connector_cls = MagicMockConnector
-    with mock.patch("bec_lib.bec_service.BECAccess") as mock_access:
+    with mock.patch("bec_lib.bec_service.BECAccess") as _mock_access:
         service = BECService(
             config=config, connector_cls=connector_cls, connector=connector, **kwargs
         )
@@ -55,9 +50,8 @@ def test_bec_service_init_with_service_config():
 
 
 def test_bec_service_init_raises_for_invalid_config():
-    with pytest.raises(TypeError):
-        with bec_service(mock.MagicMock()):
-            ...
+    with pytest.raises(TypeError), bec_service(mock.MagicMock()):
+        ...
 
 
 def test_bec_service_init_with_service_config_path():
@@ -68,46 +62,48 @@ def test_bec_service_init_with_service_config_path():
 
 
 def test_init_runs_service_check():
-    with mock.patch.object(
-        BECService, "_update_existing_services", return_value=False
-    ) as mock_update_existing_services:
-        with bec_service(f"{dir_path}/tests/test_service_config.yaml", unique_service=True):
-            mock_update_existing_services.assert_called_once()
+    with (
+        mock.patch.object(
+            BECService, "_update_existing_services", return_value=False
+        ) as mock_update_existing_services,
+        bec_service(f"{dir_path}/tests/test_service_config.yaml", unique_service=True),
+    ):
+        mock_update_existing_services.assert_called_once()
 
 
 def test_run_service_check_raises_for_existing_service():
-    with mock.patch.object(
-        BECService, "_update_existing_services", return_value=False
-    ) as mock_update_existing_services:
-        with bec_service(
-            f"{dir_path}/tests/test_service_config.yaml", unique_service=True
-        ) as service:
-            service._services_info = {"BECService": mock.MagicMock()}
-            with pytest.raises(RuntimeError):
-                service._run_service_check(timeout_time=0, elapsed_time=10)
+    with (
+        mock.patch.object(
+            BECService, "_update_existing_services", return_value=False
+        ) as _mock_update_existing_services,
+        bec_service(f"{dir_path}/tests/test_service_config.yaml", unique_service=True) as service,
+    ):
+        service._services_info = {"BECService": mock.MagicMock()}
+        with pytest.raises(RuntimeError):
+            service._run_service_check(timeout_time=0, elapsed_time=10)
 
 
 def test_run_service_check_repeats():
-    with mock.patch.object(
-        BECService, "_update_existing_services", return_value=False
-    ) as mock_update_existing_services:
-        with bec_service(
-            f"{dir_path}/tests/test_service_config.yaml", unique_service=True
-        ) as service:
-            service._services_info = {"BECService": mock.MagicMock()}
-            assert service._run_service_check(timeout_time=0.5, elapsed_time=0) is True
+    with (
+        mock.patch.object(
+            BECService, "_update_existing_services", return_value=False
+        ) as _mock_update_existing_services,
+        bec_service(f"{dir_path}/tests/test_service_config.yaml", unique_service=True) as service,
+    ):
+        service._services_info = {"BECService": mock.MagicMock()}
+        assert service._run_service_check(timeout_time=0.5, elapsed_time=0) is True
 
 
 def test_bec_service_service_status():
-    with mock.patch.object(
-        BECService, "_update_existing_services", return_value=False
-    ) as mock_update_existing_services:
-        with bec_service(
-            f"{dir_path}/tests/test_service_config.yaml", unique_service=True
-        ) as service:
-            mock_update_existing_services.reset_mock()
-            status = service.service_status
-            mock_update_existing_services.assert_called_once()
+    with (
+        mock.patch.object(
+            BECService, "_update_existing_services", return_value=False
+        ) as mock_update_existing_services,
+        bec_service(f"{dir_path}/tests/test_service_config.yaml", unique_service=True) as service,
+    ):
+        mock_update_existing_services.reset_mock()
+        _status = service.service_status
+        mock_update_existing_services.assert_called_once()
 
 
 def test_bec_service_update_existing_services():
@@ -345,12 +341,14 @@ def test_bec_service_show_global_vars(capsys):
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
     with bec_service(config=config, unique_service=True) as service:
         ep = MessageEndpoints.global_vars("test").endpoint.encode()
-        with mock.patch.object(service.connector, "keys", return_value=[ep]):
-            with mock.patch.object(service, "get_global_var", return_value="test_value"):
-                service.show_global_vars()
-                captured = capsys.readouterr()
-                assert "test" in captured.out
-                assert "test_value" in captured.out
+        with (
+            mock.patch.object(service.connector, "keys", return_value=[ep]),
+            mock.patch.object(service, "get_global_var", return_value="test_value"),
+        ):
+            service.show_global_vars()
+            captured = capsys.readouterr()
+            assert "test" in captured.out
+            assert "test_value" in captured.out
 
 
 def test_bec_service_globals(connected_connector):
@@ -366,16 +364,18 @@ def test_bec_service_globals(connected_connector):
 
 def test_bec_service_metrics(connected_connector):
     config = ServiceConfig(redis={"host": "localhost", "port": 1})
-    with mock.patch("bec_lib.bec_service.BECService._start_metrics_emitter") as mock_emitter:
-        with bec_service(config=config, unique_service=True) as service:
-            service._metrics_emitter_event = mock.MagicMock()
-            service._metrics_emitter_event.wait.side_effect = [False, True]
-            service.connector = connected_connector
-            assert service._services_metric == {}
-            service._send_service_status()
-            service._get_metrics()
-            service._update_existing_services()
-            assert service._services_metric != {}
+    with (
+        mock.patch("bec_lib.bec_service.BECService._start_metrics_emitter") as _mock_emitter,
+        bec_service(config=config, unique_service=True) as service,
+    ):
+        service._metrics_emitter_event = mock.MagicMock()
+        service._metrics_emitter_event.wait.side_effect = [False, True]
+        service.connector = connected_connector
+        assert service._services_metric == {}
+        service._send_service_status()
+        service._get_metrics()
+        service._update_existing_services()
+        assert service._services_metric != {}
 
 
 def test_parse_cmdline_args_default():
@@ -393,109 +393,117 @@ def test_parse_cmdline_args_default():
 
 def test_parse_cmdline_args_with_config():
     """Test parse_cmdline_args with a config file argument."""
-    with mock.patch.object(sys, "argv", ["script.py", "--config", "test_config.yaml"]):
-        with mock.patch("bec_lib.bec_service.ServiceConfig", autospec=True) as mock_service_config:
-            args, extra_args, service_config = parse_cmdline_args()
+    with (
+        mock.patch.object(sys, "argv", ["script.py", "--config", "test_config.yaml"]),
+        mock.patch("bec_lib.bec_service.ServiceConfig", autospec=True) as mock_service_config,
+    ):
+        args, _extra_args, _service_config = parse_cmdline_args()
 
-            assert args.config == "test_config.yaml"
-            mock_service_config.assert_called_once_with(
-                "test_config.yaml",
-                cmdline_args={
-                    "version": False,
-                    "json": False,
-                    "config": "test_config.yaml",
-                    "log_level": None,
-                    "file_log_level": None,
-                    "redis_log_level": None,
-                    "bec_server": None,
-                    "use_subprocess_proc_worker": False,
-                },
-                config_name="server",
-            )
+        assert args.config == "test_config.yaml"
+        mock_service_config.assert_called_once_with(
+            "test_config.yaml",
+            cmdline_args={
+                "version": False,
+                "json": False,
+                "config": "test_config.yaml",
+                "log_level": None,
+                "file_log_level": None,
+                "redis_log_level": None,
+                "bec_server": None,
+                "use_subprocess_proc_worker": False,
+            },
+            config_name="server",
+        )
 
 
 def test_parse_cmdline_args_with_user():
     """Test parse_cmdline_args with a service ACL user."""
-    with mock.patch.object(sys, "argv", ["script.py", "--user", "admin"]):
-        with mock.patch("bec_lib.bec_service.ServiceConfig", autospec=True) as mock_service_config:
-            parse_cmdline_args()
+    with (
+        mock.patch.object(sys, "argv", ["script.py", "--user", "admin"]),
+        mock.patch("bec_lib.bec_service.ServiceConfig", autospec=True) as mock_service_config,
+    ):
+        parse_cmdline_args()
 
-            mock_service_config.assert_called_once_with(
-                cmdline_args={
-                    "version": False,
-                    "json": False,
-                    "config": "",
-                    "log_level": None,
-                    "file_log_level": None,
-                    "redis_log_level": None,
-                    "bec_server": None,
-                    "use_subprocess_proc_worker": False,
-                },
-                acl={"user": "admin"},
-                config_name="server",
-            )
+        mock_service_config.assert_called_once_with(
+            cmdline_args={
+                "version": False,
+                "json": False,
+                "config": "",
+                "log_level": None,
+                "file_log_level": None,
+                "redis_log_level": None,
+                "bec_server": None,
+                "use_subprocess_proc_worker": False,
+            },
+            acl={"user": "admin"},
+            config_name="server",
+        )
 
 
 def test_parse_cmdline_args_with_log_levels():
     """Test parse_cmdline_args with log level arguments."""
-    with mock.patch.object(
-        sys,
-        "argv",
-        [
-            "script.py",
-            "--log-level",
-            "DEBUG",
-            "--file-log-level",
-            "INFO",
-            "--redis-log-level",
-            "WARNING",
-        ],
+    with (
+        mock.patch.object(
+            sys,
+            "argv",
+            [
+                "script.py",
+                "--log-level",
+                "DEBUG",
+                "--file-log-level",
+                "INFO",
+                "--redis-log-level",
+                "WARNING",
+            ],
+        ),
+        mock.patch("bec_lib.service_config.ServiceConfig", autospec=True),
     ):
-        with mock.patch("bec_lib.service_config.ServiceConfig", autospec=True):
-            # Store original log levels to restore later
-            original_stderr_level = bec_logger._stderr_log_level
-            original_file_level = bec_logger._file_log_level
-            original_redis_level = bec_logger._redis_log_level
+        # Store original log levels to restore later
+        original_stderr_level = bec_logger._stderr_log_level
+        original_file_level = bec_logger._file_log_level
+        original_redis_level = bec_logger._redis_log_level
 
-            try:
-                args, extra_args, _ = parse_cmdline_args()
+        try:
+            args, _extra_args, _ = parse_cmdline_args()
 
-                assert args.log_level == "DEBUG"
-                assert args.file_log_level == "INFO"
-                assert args.redis_log_level == "WARNING"
-                assert bec_logger._stderr_log_level == "DEBUG"
-                assert bec_logger._file_log_level == "INFO"
-                assert bec_logger._redis_log_level == "WARNING"
-            finally:
-                # Restore original log levels
-                bec_logger._stderr_log_level = original_stderr_level
-                bec_logger._file_log_level = original_file_level
-                bec_logger._redis_log_level = original_redis_level
+            assert args.log_level == "DEBUG"
+            assert args.file_log_level == "INFO"
+            assert args.redis_log_level == "WARNING"
+            assert bec_logger._stderr_log_level == "DEBUG"
+            assert bec_logger._file_log_level == "INFO"
+            assert bec_logger._redis_log_level == "WARNING"
+        finally:
+            # Restore original log levels
+            bec_logger._stderr_log_level = original_stderr_level
+            bec_logger._file_log_level = original_file_level
+            bec_logger._redis_log_level = original_redis_level
 
 
 def test_parse_cmdline_args_with_defaults_for_file_and_redis_log_level():
     """Test log level defaults when only --log-level is provided."""
-    with mock.patch.object(sys, "argv", ["script.py", "--log-level", "DEBUG"]):
-        with mock.patch("bec_lib.service_config.ServiceConfig", autospec=True):
-            # Store original log levels to restore later
-            original_stderr_level = bec_logger._stderr_log_level
-            original_file_level = bec_logger._file_log_level
-            original_redis_level = bec_logger._redis_log_level
+    with (
+        mock.patch.object(sys, "argv", ["script.py", "--log-level", "DEBUG"]),
+        mock.patch("bec_lib.service_config.ServiceConfig", autospec=True),
+    ):
+        # Store original log levels to restore later
+        original_stderr_level = bec_logger._stderr_log_level
+        original_file_level = bec_logger._file_log_level
+        original_redis_level = bec_logger._redis_log_level
 
-            try:
-                args, extra_args, _ = parse_cmdline_args()
+        try:
+            args, _extra_args, _ = parse_cmdline_args()
 
-                assert args.log_level == "DEBUG"
-                assert args.file_log_level is None
-                assert args.redis_log_level is None
-                assert bec_logger._stderr_log_level == "DEBUG"
-                assert bec_logger._file_log_level == "DEBUG"  # Defaults to stderr level
-                assert bec_logger._redis_log_level == "DEBUG"  # Defaults to stderr level
-            finally:
-                # Restore original log levels
-                bec_logger._stderr_log_level = original_stderr_level
-                bec_logger._file_log_level = original_file_level
-                bec_logger._redis_log_level = original_redis_level
+            assert args.log_level == "DEBUG"
+            assert args.file_log_level is None
+            assert args.redis_log_level is None
+            assert bec_logger._stderr_log_level == "DEBUG"
+            assert bec_logger._file_log_level == "DEBUG"  # Defaults to stderr level
+            assert bec_logger._redis_log_level == "DEBUG"  # Defaults to stderr level
+        finally:
+            # Restore original log levels
+            bec_logger._stderr_log_level = original_stderr_level
+            bec_logger._file_log_level = original_file_level
+            bec_logger._redis_log_level = original_redis_level
 
 
 def test_parse_cmdline_args_with_custom_parser():
@@ -516,19 +524,23 @@ def test_parse_cmdline_args_with_custom_parser():
 
 def test_parse_cmdline_args_with_extra_args():
     """Test parse_cmdline_args with extra arguments."""
-    with mock.patch.object(sys, "argv", ["script.py", "--log-level", "INFO", "extra1", "extra2"]):
-        with mock.patch("bec_lib.service_config.ServiceConfig", autospec=True):
-            args, extra_args, _ = parse_cmdline_args()
+    with (
+        mock.patch.object(sys, "argv", ["script.py", "--log-level", "INFO", "extra1", "extra2"]),
+        mock.patch("bec_lib.service_config.ServiceConfig", autospec=True),
+    ):
+        args, extra_args, _ = parse_cmdline_args()
 
-            assert args.log_level == "INFO"
-            assert extra_args == ["extra1", "extra2"]
+        assert args.log_level == "INFO"
+        assert extra_args == ["extra1", "extra2"]
 
 
 def test_parse_cmdline_args_with_invalid_log_level():
     """Test parse_cmdline_args with an invalid log level."""
-    with mock.patch.object(sys, "argv", ["script.py", "--log-level", "INVALID"]):
-        with pytest.raises(SystemExit):
-            parse_cmdline_args()
+    with (
+        mock.patch.object(sys, "argv", ["script.py", "--log-level", "INVALID"]),
+        pytest.raises(SystemExit),
+    ):
+        parse_cmdline_args()
 
 
 def test_parse_cmdline_args_with_bec_server_url():
@@ -542,11 +554,15 @@ def test_parse_cmdline_args_with_bec_server_url():
 
 def test_parse_cmdline_args_with_bec_server_url_and_config():
     """Test parse_cmdline_args with a BEC server URL and a config file."""
-    with mock.patch.object(
-        sys, "argv", ["script.py", "--bec-server", "localhost:8000", "--config", "test_config.yaml"]
+    with (
+        mock.patch.object(
+            sys,
+            "argv",
+            ["script.py", "--bec-server", "localhost:8000", "--config", "test_config.yaml"],
+        ),
+        pytest.raises(ValueError, match="cannot specify both"),
     ):
-        with pytest.raises(ValueError, match="cannot specify both"):
-            parse_cmdline_args()
+        parse_cmdline_args()
 
 
 def test_parse_cmdline_args_with_bec_server_url_without_port():
@@ -560,47 +576,55 @@ def test_parse_cmdline_args_with_bec_server_url_without_port():
 
 def test_parse_cmdline_args_with_bec_server_url_invalid_port():
     """Test parse_cmdline_args with an invalid BEC server URL."""
-    with mock.patch.object(sys, "argv", ["script.py", "--bec-server", "localhost:invalid_port"]):
-        with pytest.raises(ValueError, match="Invalid port number in Redis URL"):
-            parse_cmdline_args()
+    with (
+        mock.patch.object(sys, "argv", ["script.py", "--bec-server", "localhost:invalid_port"]),
+        pytest.raises(ValueError, match="Invalid port number in Redis URL"),
+    ):
+        parse_cmdline_args()
 
 
 def test_wait_for_server_disabled():
     """Test that _wait_for_server returns immediately when wait_for_server is False"""
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
-    with mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait:
-        with bec_service(config=config, wait_for_server=False) as service:
-            service._wait_for_server()
-            mock_wait.assert_not_called()
+    with (
+        mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait,
+        bec_service(config=config, wait_for_server=False) as service,
+    ):
+        service._wait_for_server()
+        mock_wait.assert_not_called()
 
 
 def test_wait_for_server_enabled():
     """Test that _wait_for_server calls wait_for_service for each required service"""
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
-    with mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait:
-        with bec_service(config=config, wait_for_server=True) as service:
-            assert mock_wait.call_count == 4
-            mock_wait.assert_has_calls(
-                [
-                    mock.call("ScanServer", BECStatus.RUNNING),
-                    mock.call("ScanBundler", BECStatus.RUNNING),
-                    mock.call("DeviceServer", BECStatus.RUNNING),
-                    mock.call("SciHub", BECStatus.RUNNING),
-                ]
-            )
+    with (
+        mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait,
+        bec_service(config=config, wait_for_server=True) as _service,
+    ):
+        assert mock_wait.call_count == 4
+        mock_wait.assert_has_calls(
+            [
+                mock.call("ScanServer", BECStatus.RUNNING),
+                mock.call("ScanBundler", BECStatus.RUNNING),
+                mock.call("DeviceServer", BECStatus.RUNNING),
+                mock.call("SciHub", BECStatus.RUNNING),
+            ]
+        )
 
 
 def test_wait_for_server_keyboard_interrupt():
     """Test that _wait_for_server handles KeyboardInterrupt gracefully"""
     config = ServiceConfig(redis={"host": "localhost", "port": 6379})
-    with mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait:
-        with bec_service(config=config, wait_for_server=True) as service:
-            mock_wait.side_effect = KeyboardInterrupt
-            with mock.patch.object(bec_logger.logger, "warning") as mock_warning:
-                service._wait_for_server()
-                mock_warning.assert_called_once_with(
-                    "KeyboardInterrupt received. Stopped waiting for BEC services."
-                )
+    with (
+        mock.patch("bec_lib.bec_service.BECService.wait_for_service") as mock_wait,
+        bec_service(config=config, wait_for_server=True) as service,
+    ):
+        mock_wait.side_effect = KeyboardInterrupt
+        with mock.patch.object(bec_logger.logger, "warning") as mock_warning:
+            service._wait_for_server()
+            mock_warning.assert_called_once_with(
+                "KeyboardInterrupt received. Stopped waiting for BEC services."
+            )
 
 
 def test_wait_for_service():

@@ -241,9 +241,11 @@ def test_process_instructions_runs_scan_and_resets_state(direct_worker_context, 
     scan = make_scan()
     _append_scan(direct_worker_context.queue, scan)
 
-    with mock.patch.object(direct_worker_context.direct_worker, "run") as run_mock:
-        with mock.patch.object(direct_worker_context.direct_worker, "reset") as reset_mock:
-            direct_worker_context.direct_worker.process_instructions(direct_worker_context.queue)
+    with (
+        mock.patch.object(direct_worker_context.direct_worker, "run") as run_mock,
+        mock.patch.object(direct_worker_context.direct_worker, "reset") as reset_mock,
+    ):
+        direct_worker_context.direct_worker.process_instructions(direct_worker_context.queue)
 
     run_mock.assert_called_once_with(scan)
     assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED

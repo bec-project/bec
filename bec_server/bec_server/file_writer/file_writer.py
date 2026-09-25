@@ -159,11 +159,12 @@ class HDF5StorageWriter:
             data = val._data
             if data is None:
                 return
-            if isinstance(data, list):
-                if data and isinstance(data[0], dict):
-                    data = json.dumps(data)
-                elif not all(isinstance(x, type(data[0])) for x in data):
-                    data = json.dumps(data)
+            if (isinstance(data, list)) and (
+                data
+                and isinstance(data[0], dict)
+                or not all(isinstance(x, type(data[0])) for x in data)
+            ):
+                data = json.dumps(data)
             dataset = container.create_dataset(name, data=data)
             self.add_attribute(dataset, val.attrs)
             self.add_content(dataset, val._storage)
@@ -173,7 +174,7 @@ class HDF5StorageWriter:
                 if signal_name == group_name:
                     container.attrs["NX_class"] = "NXdata"
                     container.attrs["signal"] = "value"
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Report dataset failures while preserving the remaining file content.
             content = traceback.format_exc()
             logger.error(f"Failed to write dataset {name}: {content}")
         return
@@ -194,7 +195,6 @@ class HDF5StorageWriter:
 
     def add_content(self, container, storage):
         for name, val in storage.items():
-            # pylint: disable=protected-access
             if val._storage_type == "group":
                 self.add_group(name, container, val)
             elif val._storage_type == "dataset":
@@ -287,11 +287,11 @@ class HDF5FileWriter:
 
         # NeXus needs start_time and end_time in ISO8601 format, so we have to convert it
         if data.start_time is not None:
-            info_storage["start_time"] = datetime.datetime.fromtimestamp(
+            info_storage["start_time"] = datetime.datetime.fromtimestamp(  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
                 data.start_time
             ).isoformat()
         if data.end_time is not None:
-            info_storage["end_time"] = datetime.datetime.fromtimestamp(data.end_time).isoformat()
+            info_storage["end_time"] = datetime.datetime.fromtimestamp(data.end_time).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
 
         if "user_metadata" in bec_metadata:
             # Primary path: current scan status messages expose user metadata at the top level.
@@ -315,7 +315,7 @@ class HDF5FileWriter:
             writer_format_cls = default_NeXus_format
         elif len(plugins) == 1:
             # only one plugin defined, use it
-            writer_format_cls = list(plugins.values())[0]
+            writer_format_cls = next(iter(plugins.values()))
         elif requested_plugin in plugins:
             # requested plugin is available, use it
             writer_format_cls = plugins[requested_plugin]
@@ -377,8 +377,8 @@ class HDF5FileWriter:
         Args:
             file_handle (h5py.File): The HDF5 file handle to update.
         """
-        device_group = file_handle.get("/entry/collection/devices")
-        for device_name, device_group in device_group.items():
+        devices_group = file_handle.get("/entry/collection/devices")
+        for device_name, device_group in devices_group.items():
             if not isinstance(device_group, h5py.Group):
                 continue
             for signal_name, signal_group in device_group.items():

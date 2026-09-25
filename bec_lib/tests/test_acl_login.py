@@ -7,8 +7,6 @@ from bec_lib.acl_login import BECAccess, BECAuthenticationError
 from bec_lib.endpoints import EndpointType, MessageEndpoints
 from bec_lib.utils.user_acls_test import BECAccessDemo
 
-# pylint: disable=protected-access
-
 
 @pytest.fixture
 def bec_access(connected_connector):
@@ -71,14 +69,16 @@ def test_login_prompts_user_for_account(bec_access, access_control):
     bec_access._info = _login_info()
     access_control.add_account("admin", "admin", "admin")
 
-    with mock.patch.object(bec_access, "_ask_user_for_account", return_value="admin"):
-        with mock.patch.object(bec_access, "_local_login", return_value="admin"):
-            bec_access.login()
-            conn = (
-                bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
-            )
-            assert conn["username"] == "admin"
-            assert conn["password"] == "admin"
+    with (
+        mock.patch.object(bec_access, "_ask_user_for_account", return_value="admin"),
+        mock.patch.object(bec_access, "_local_login", return_value="admin"),
+    ):
+        bec_access.login()
+        conn = (
+            bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
+        )
+        assert conn["username"] == "admin"
+        assert conn["password"] == "admin"
 
 
 def test_login_psi_login(bec_access, access_control):
@@ -86,16 +86,18 @@ def test_login_psi_login(bec_access, access_control):
     bec_access._atlas_login = True
     access_control.add_account("admin", "admin", "admin")
 
-    with mock.patch.object(bec_access, "_local_login") as local_login:
-        with mock.patch.object(bec_access, "_psi_login", return_value="admin") as psi_login:
-            bec_access.login("admin")
-            conn = (
-                bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
-            )
-            assert conn["username"] == "admin"
-            assert conn["password"] == "admin"
-            psi_login.assert_called_once()
-            local_login.assert_not_called()
+    with (
+        mock.patch.object(bec_access, "_local_login") as local_login,
+        mock.patch.object(bec_access, "_psi_login", return_value="admin") as psi_login,
+    ):
+        bec_access.login("admin")
+        conn = (
+            bec_access.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
+        )
+        assert conn["username"] == "admin"
+        assert conn["password"] == "admin"
+        psi_login.assert_called_once()
+        local_login.assert_not_called()
 
 
 def test_temporary_user_restores_previous_user(bec_access, access_control):
@@ -114,10 +116,9 @@ def test_temporary_user_restores_previous_user_after_exception(bec_access, acces
     access_control.add_account("admin", "admin", "admin")
     bec_access.login_with_token(username="operator", token="operator")
 
-    with pytest.raises(RuntimeError):
-        with bec_access.temporary_user(username="admin", token="admin"):
-            assert bec_access.connector.username == "admin"
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError), bec_access.temporary_user(username="admin", token="admin"):
+        assert bec_access.connector.username == "admin"
+        raise RuntimeError("boom")
 
     assert bec_access.connector.username == "operator"
 
@@ -345,15 +346,17 @@ def test_config_login_successful_with_env_file_failure(mock_exists, bec_access):
     """Test _config_login_successful with environment file but auth fails."""
     mock_exists.return_value = True
 
-    with mock.patch(
-        "bec_lib.acl_login.dotenv_values",
-        return_value={"REDIS_USER": "env_user", "REDIS_PASSWORD": "env_pass"},
+    with (
+        mock.patch(
+            "bec_lib.acl_login.dotenv_values",
+            return_value={"REDIS_USER": "env_user", "REDIS_PASSWORD": "env_pass"},
+        ),
+        mock.patch.object(bec_access, "_check_redis_auth", return_value=False) as mock_check,
     ):
-        with mock.patch.object(bec_access, "_check_redis_auth", return_value=False) as mock_check:
-            result = bec_access._config_login_successful(False, "/path/to/.env")
+        result = bec_access._config_login_successful(False, "/path/to/.env")
 
-            assert result is False
-            mock_check.assert_called_once_with("env_user", "env_pass")
+        assert result is False
+        mock_check.assert_called_once_with("env_user", "env_pass")
 
 
 @mock.patch("os.path.exists")
@@ -374,15 +377,15 @@ def test_config_login_successful_with_dict_env_file(mock_dotenv, mock_exists, be
 
 def test_config_login_successful_with_prompt_and_env_file_uses_user_login(bec_access):
     """Prompted clients should defer env_file-only configs to the default/full-access check."""
-    with mock.patch.object(bec_access, "_check_redis_auth", return_value=True) as mock_check:
-        with mock.patch.object(bec_access, "_user_service_login") as mock_user_login:
-            result = bec_access._config_login_successful(
-                True, {"env_file": "/path/to/.bec_acl.env"}
-            )
+    with (
+        mock.patch.object(bec_access, "_check_redis_auth", return_value=True) as mock_check,
+        mock.patch.object(bec_access, "_user_service_login") as mock_user_login,
+    ):
+        result = bec_access._config_login_successful(True, {"env_file": "/path/to/.bec_acl.env"})
 
-            assert result is False
-            mock_check.assert_not_called()
-            mock_user_login.assert_not_called()
+        assert result is False
+        mock_check.assert_not_called()
+        mock_user_login.assert_not_called()
 
 
 def test_config_login_successful_with_dict(bec_access):
@@ -400,13 +403,15 @@ def test_config_login_successful_with_dict_no_password(bec_access):
     """Test _config_login_successful with dictionary but no password."""
     acl_config = {"username": "dict_user"}
 
-    with mock.patch.object(bec_access, "_check_redis_auth", return_value=False) as mock_check:
-        with mock.patch.object(bec_access, "_user_service_login") as mock_user_login:
-            result = bec_access._config_login_successful(True, acl_config)
+    with (
+        mock.patch.object(bec_access, "_check_redis_auth", return_value=False) as mock_check,
+        mock.patch.object(bec_access, "_user_service_login") as mock_user_login,
+    ):
+        result = bec_access._config_login_successful(True, acl_config)
 
-            assert result is True
-            mock_check.assert_called_once_with("dict_user", None)
-            mock_user_login.assert_called_once_with(username="dict_user")
+        assert result is True
+        mock_check.assert_called_once_with("dict_user", None)
+        mock_user_login.assert_called_once_with(username="dict_user")
 
 
 def test_config_login_successful_invalid_type(bec_access):
@@ -417,11 +422,13 @@ def test_config_login_successful_invalid_type(bec_access):
 
 def test_default_user_login_successful_false_access_error(bec_access):
     """Test _default_user_login_successful with connection but access error."""
-    with mock.patch.object(bec_access, "_check_redis_auth", return_value=True) as mock_check:
-        with mock.patch.object(bec_access.connector, "get", side_effect=Exception("Access denied")):
-            result = bec_access._default_user_login_successful(True)
-            assert result is False
-            mock_check.assert_called_once_with(None, None)
+    with (
+        mock.patch.object(bec_access, "_check_redis_auth", return_value=True) as mock_check,
+        mock.patch.object(bec_access.connector, "get", side_effect=Exception("Access denied")),
+    ):
+        result = bec_access._default_user_login_successful(True)
+        assert result is False
+        mock_check.assert_called_once_with(None, None)
 
 
 def test_default_user_login_successful_false_no_connection(bec_access):
@@ -435,8 +442,10 @@ def test_default_user_login_successful_false_no_connection(bec_access):
 def test_user_service_login(bec_access):
     """Test _user_service_login."""
 
-    with mock.patch.object(bec_access.connector, "get", return_value=_login_info()):
-        with mock.patch.object(bec_access, "login") as mock_login:
-            bec_access._user_service_login("test_user")
+    with (
+        mock.patch.object(bec_access.connector, "get", return_value=_login_info()),
+        mock.patch.object(bec_access, "login") as mock_login,
+    ):
+        bec_access._user_service_login("test_user")
 
-            mock_login.assert_called_once_with("test_user")
+        mock_login.assert_called_once_with("test_user")

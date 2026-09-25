@@ -1,9 +1,10 @@
 import enum
 import inspect
 import time
-from typing import Any, Generator, Literal, Protocol
+from collections.abc import Generator
+from typing import Any, Literal
 
-from ophyd import DeviceStatus, Kind
+from ophyd import Kind
 from ophyd_devices.interfaces.protocols.bec_protocols import (
     BECDeviceProtocol,
     BECPositionerProtocol,
@@ -12,9 +13,6 @@ from ophyd_devices.interfaces.protocols.bec_protocols import (
 
 from bec_lib.devicemanager import DeviceContainer
 from bec_lib.tests.utils import ConnectorMock
-
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
 
 
 class DeviceMockType(enum.Enum):
@@ -109,7 +107,6 @@ class DeviceObjectMock(BECDeviceProtocol):
 
 
 class MockSignal(DeviceObjectMock, BECSignalProtocol):
-
     def __init__(
         self,
         name: str,
@@ -128,7 +125,7 @@ class MockSignal(DeviceObjectMock, BECSignalProtocol):
             "readoutPriority": readout_priority,
             "softwareTrigger": software_trigger,
         }
-        self._metadata = dict(read_access=True, write_access=True, precision=precision)
+        self._metadata = {"read_access": True, "write_access": True, "precision": precision}
         self._info = {
             "signals": {},
             "hints": self.hints,
@@ -145,10 +142,10 @@ class MockSignal(DeviceObjectMock, BECSignalProtocol):
     def get(self):
         return self._value
 
-    def put(self, value: Any, force: bool = False, timeout: float = None):
+    def put(self, value: Any, force: bool = False, timeout: float | None = None):
         self._value = value
 
-    def set(self, value: Any, timeout: float = None):
+    def set(self, value: Any, timeout: float | None = None):
         self._value = value
 
     @property
@@ -199,7 +196,6 @@ class MockSignal(DeviceObjectMock, BECSignalProtocol):
 
 
 class PositionerMock(DeviceObjectMock, BECPositionerProtocol):
-
     def __init__(
         self,
         name: str,
@@ -326,7 +322,6 @@ class PositionerMock(DeviceObjectMock, BECPositionerProtocol):
 
 
 class DMMock:
-
     def __init__(self):
         self.devices = DeviceContainer()
         self.connector = ConnectorMock()

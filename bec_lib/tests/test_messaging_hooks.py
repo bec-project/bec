@@ -249,10 +249,10 @@ def test_to_service_message_raises_for_unsupported_service(messaging_manager):
         message=NotificationMessageObject().add_text("Beamline checks failed")._content,
     )
 
-    with mock.patch("bec_lib.messaging_hooks.logger.warning") as warning:
-        with pytest.raises(ValueError, match="Unsupported messaging service: unsupported"):
-            messaging_manager.to_service_message(
-                SimpleNamespace(_SERVICE_NAME="unsupported"), message
-            )
+    with (
+        mock.patch("bec_lib.messaging_hooks.logger.warning") as warning,
+        pytest.raises(ValueError, match="Unsupported messaging service: unsupported"),
+    ):
+        messaging_manager.to_service_message(SimpleNamespace(_SERVICE_NAME="unsupported"), message)
 
     warning.assert_not_called()

@@ -15,13 +15,13 @@ from bec_lib.tests.utils import ClientMock, ConnectorMock, DMClientMock
 
 @pytest.fixture
 def threads_check():
-    threads_at_start = set(th for th in threading.enumerate() if th is not threading.main_thread())
+    threads_at_start = {th for th in threading.enumerate() if th is not threading.main_thread()}
     yield
-    threads_after = set(th for th in threading.enumerate() if th is not threading.main_thread())
+    threads_after = {th for th in threading.enumerate() if th is not threading.main_thread()}
     additional_threads = threads_after - threads_at_start
-    assert (
-        len(additional_threads) == 0
-    ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+    assert len(additional_threads) == 0, (
+        f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
+    )
 
 
 @pytest.fixture(scope="session")

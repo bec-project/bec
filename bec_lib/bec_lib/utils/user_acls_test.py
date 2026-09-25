@@ -5,7 +5,6 @@ from bec_lib.endpoints import EndpointType, MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
 
 
-# pylint: disable=protected-access
 class BECAccessDemo:  # pragma: no cover
     def __init__(self, connector: RedisConnector | None = None):
         if connector:
@@ -23,14 +22,14 @@ class BECAccessDemo:  # pragma: no cover
         try:
             self.connector.acl_list()
             return None
-        except Exception:
+        except Exception:  # noqa: S110, BLE001 - Try alternate credentials after any authentication failure.
             pass
 
         for user, token in [("default", "null"), ("admin", "admin")]:
             try:
                 self.connector.authenticate(username=user, password=token)
                 return {"username": user, "password": token}
-            except Exception:
+            except Exception:  # noqa: S110, BLE001 - Try alternate credentials after any authentication failure.
                 pass
         raise RuntimeError("No admin account found. Please restart the Redis server.")
 
@@ -123,8 +122,8 @@ class BECAccessDemo:  # pragma: no cover
     def reset(self):
         try:
             self.connector.authenticate(username="admin", password="admin")
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: S110, BLE001 - Try alternate credentials after any authentication failure.
             pass
 
         self.set_default_limited(False)

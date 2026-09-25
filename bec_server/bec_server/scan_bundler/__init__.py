@@ -1,1 +1,1 @@
-from .scan_bundler import ScanBundler
+from .scan_bundler import ScanBundler as ScanBundler

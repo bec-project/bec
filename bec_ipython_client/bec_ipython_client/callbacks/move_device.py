@@ -77,7 +77,7 @@ class ReadbackDataHandler:
             msg_obj (dict[str, messages.DeviceReqStatusMessage]): message object or device request status message
             parent (ReadbackDataHandler): parent instance
         """
-        # pylint: disable=protected-access
+
         msg = msg_obj["data"]
         if msg.request_id != self.request_id:
             return
@@ -98,7 +98,7 @@ class ReadbackDataHandler:
             parent (ReadbackDataHandler): parent instance
             device (str): device name
         """
-        # pylint: disable=protected-access
+
         msg: messages.DeviceMessage = cast(messages.DeviceMessage, msg_obj.value)
         self._devices_received[device] = True
         self.data[device] = msg
@@ -127,13 +127,14 @@ class ReadbackDataHandler:
                 signal_data = self.device_manager.devices[dev].read(cached=True)
             else:
                 signal_data = val.signals
-            # pylint: disable=protected-access
+
             hints = self.device_manager.devices[dev]._hints
             # if we have hints, use them to get the value, otherwise just use the first value
             if hints:
                 values.append(signal_data.get(hints[0]).get("value"))
             else:
-                values.append(signal_data.get(list(signal_data.keys())[0]).get("value"))
+                # Retain the existing IndexError when a device returns no signal data.
+                values.append(signal_data.get(list(signal_data.keys())[0]).get("value"))  # noqa: RUF015
         return values
 
     def done(self) -> bool:
@@ -225,7 +226,7 @@ class LiveUpdatesReadbackProgressbar(LiveUpdatesBase):
                         values = data_source.get_device_values(force=True)
                         progress.update(values=values)
                         progress.set_finished(dev)
-                # pylint: disable=protected-access
+
                 progress._progress.refresh()
         self._print_client_msgs_all()
 

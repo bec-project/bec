@@ -36,7 +36,7 @@ class BECPDF(FPDF):
         self.cell(
             0,
             10,
-            f"BEC, {str(datetime.datetime.now())}",
+            f"BEC, {datetime.datetime.now()!s}",  # noqa: DTZ005 - Keep the established local-time display and filename format.
             0,
             new_x=XPos.RIGHT,
             new_y=YPos.TOP,

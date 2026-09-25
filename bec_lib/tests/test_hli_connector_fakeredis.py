@@ -1,5 +1,5 @@
 import time
-from typing import Generator
+from collections.abc import Generator
 
 import fakeredis
 import pytest
@@ -16,13 +16,6 @@ from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnect
 from bec_lib.serialization import MsgpackSerialization
 
 from .test_managed_redis_connection import TestMessage
-
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=redefined-outer-name
-# pylint: disable=unused-argument
-
 
 TestStreamEndpoint = EndpointInfo("test", TestMessage, MessageOp.STREAM)
 TestStreamEndpoint2 = EndpointInfo("test2", TestMessage, MessageOp.STREAM)
@@ -73,7 +66,7 @@ def test_connector_publish_metrics(connected_connector):
     assert res.metrics["_m1"].value == 5
     assert res.metrics["_m2"].value == 5.5
     assert res.metrics["_m3"].value == "test"
-    assert set(res.metrics["_m3"].possible_values) == set(["prod", "test"])
+    assert set(res.metrics["_m3"].possible_values) == {"prod", "test"}
     assert res.metrics["_m4"].value is True
 
 

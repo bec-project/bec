@@ -61,7 +61,7 @@ class ScanBundler(BECService):
         for emi in self._emitter:
             try:
                 getattr(emi, emitter_method)(*args, **kwargs)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Isolate emitter plugin failures from scan bundling.
                 content = traceback.format_exc()
                 logger.error(f"Failed to run emitter: {content}")
 
@@ -71,7 +71,7 @@ class ScanBundler(BECService):
         self.device_manager.initialize(self.bootstrap_server)
 
     def _device_read_callback(self, msg, **_kwargs):
-        # pylint: disable=protected-access
+
         dev = msg.topic.split(MessageEndpoints.device_read("").endpoint)[-1]
         msgs = msg.value
         logger.debug(f"Received reading from device {dev}")
@@ -294,17 +294,14 @@ class ScanBundler(BECService):
             msg = self.connector.get(MessageEndpoints.public_scan_info(scan_id))
             if msg and msg.content["scan_id"] == scan_id:
                 self.handle_scan_status_message(msg)
-            if scan_id in self.sync_storage:
-                if self.sync_storage[scan_id]["status"] in [
-                    "closed",
-                    "aborted",
-                    "halted",
-                    "user_completed",
-                ]:
-                    logger.info(
-                        f"Received reading for {self.sync_storage[scan_id]['status']} scan {scan_id}."
-                    )
-                    return
+            if (scan_id in self.sync_storage) and (
+                self.sync_storage[scan_id]["status"]
+                in ["closed", "aborted", "halted", "user_completed"]
+            ):
+                logger.info(
+                    f"Received reading for {self.sync_storage[scan_id]['status']} scan {scan_id}."
+                )
+                return
             time.sleep(0.05)
             elapsed_time += 0.05
             if elapsed_time > timeout_time:
@@ -329,26 +326,26 @@ class ScanBundler(BECService):
                 logger.warning(f"Could not find a matching scan_id {scan_id} in sync_storage.")
                 return
 
-            if self.sync_storage[scan_id]["status"] in [
-                "aborted",
-                "closed",
-                "halted",
-                "user_completed",
-            ]:
-                # check if the sync_storage has been initialized properly.
-                # In case of post-scan initialization, scan info is not available
-                if not self.sync_storage[scan_id]["info"].get("scan_type"):
-                    return
+            # check if the sync_storage has been initialized properly.
+            # In case of post-scan initialization, scan info is not available
+            if (
+                self.sync_storage[scan_id]["status"]
+                in ["aborted", "closed", "halted", "user_completed"]
+            ) and (not self.sync_storage[scan_id]["info"].get("scan_type")):
+                return
             self.device_storage[device] = signal
             readout_priority = metadata.get("readout_priority")
             device_is_monitor_sync = self.sync_storage[scan_id]["info"]["monitor_sync"] == device
             dev_obj = self.device_manager.devices.get(device)
             if dev_obj in self.monitored_devices[scan_id]["devices"] or device_is_monitor_sync:
-                if self.sync_storage[scan_id]["info"]["scan_type"] in [
-                    "step",  # DEPRECATED: will be removed in the future, only software_triggered and hardware_triggered will be supported
-                    "software_triggered",
-                    "hardware_triggered",
-                ]:
+                if (
+                    self.sync_storage[scan_id]["info"]["scan_type"]
+                    in [
+                        "step",  # DEPRECATED: will be removed in the future, only software_triggered and hardware_triggered will be supported
+                        "software_triggered",
+                        "hardware_triggered",
+                    ]
+                ):
                     self._step_scan_update(scan_id, device, signal, metadata)
                 elif self.sync_storage[scan_id]["info"]["scan_type"] == "fly":
                     # DEPRECATED: will be removed in the future

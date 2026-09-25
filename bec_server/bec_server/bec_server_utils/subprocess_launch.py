@@ -39,7 +39,7 @@ def detect_terminal():
 def subprocess_start(bec_path: str, services: dict[str, "ServiceDesc"]):
     processes = []
 
-    for _, service_config in services.items():
+    for service_config in services.values():
         if os.environ.get("CONDA_DEFAULT_ENV"):
             cmd = f"{os.environ['CONDA_EXE']} run -n {os.environ['CONDA_DEFAULT_ENV']} --no-capture-output {service_config.command}"
         else:

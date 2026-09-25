@@ -248,7 +248,7 @@ class DeviceProgressBar(ProgressBarBase):
         self,
         devices: list[str],
         target_values: list[float],
-        start_values: list[float] = None,
+        start_values: list[float] | None = None,
         clear_on_exit: bool = False,
     ) -> None:
         """Progress bar for moving devices.

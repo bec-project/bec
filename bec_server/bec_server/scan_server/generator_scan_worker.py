@@ -69,18 +69,18 @@ class GeneratorScanWorker:
         self._initialize_scan_info(active_rb, instr, num_points)
 
         # only append the scan_progress if the scan is not using device_progress
-        if active_rb.scan.use_scan_progress_report:
-            if not self.scan_report_instructions or not self.scan_report_instructions[-1].get(
-                "device_progress"
-            ):
-                self.scan_report_instructions.append(
-                    {
-                        "scan_progress": {
-                            "points": num_points,
-                            "show_table": active_rb.scan.show_live_table,
-                        }
+        if (active_rb.scan.use_scan_progress_report) and (
+            not self.scan_report_instructions
+            or not self.scan_report_instructions[-1].get("device_progress")
+        ):
+            self.scan_report_instructions.append(
+                {
+                    "scan_progress": {
+                        "points": num_points,
+                        "show_table": active_rb.scan.show_live_table,
                     }
-                )
+                }
+            )
         self.worker.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
         self._send_scan_status("open")
@@ -257,7 +257,7 @@ class GeneratorScanWorker:
             current_account = current_account_msg.value
             if not isinstance(current_account, str):
                 logger.warning(
-                    f"Account name is not a string: {current_account}. " "Ignoring specified value."
+                    f"Account name is not a string: {current_account}. Ignoring specified value."
                 )
                 current_account = None
             else:
@@ -275,7 +275,6 @@ class GeneratorScanWorker:
         else:
             current_account = None
 
-        # pylint: disable=protected-access
         file_base_path = self.worker.parent._service_config.config["file_writer"]["base_path"]
         if "$" not in file_base_path:
             # we deal with a normal string
@@ -451,7 +450,7 @@ class GeneratorScanWorker:
             if self.worker.signal_event.is_set():
                 return
             if queue.stopped or not (queue.return_to_start and queue.active_request_block):
-                raise exc
+                raise
             queue.stopped = True
             try:
                 cleanup = queue.active_request_block.scan.move_to_start()
@@ -466,7 +465,7 @@ class GeneratorScanWorker:
             except DeviceInstructionError as exc_di:
                 self._propagate_pi_error(traceback.format_exc(), exc_di.error_info)
                 raise ScanAbortion from exc_di
-            except Exception as exc_return_to_start:
+            except Exception as exc_return_to_start:  # noqa: BLE001 -- Preserve the original scan error if return-to-start cleanup fails.
                 # if the return_to_start fails, raise the original exception
                 content = traceback.format_exc()
                 error_info = messages.ErrorInfo(
@@ -477,7 +476,7 @@ class GeneratorScanWorker:
                 )
                 self._propagate_pi_error(content, error_info)
                 raise exc
-            raise exc
+            raise
         except DeviceInstructionError as exc_di:
             self._propagate_pi_error(traceback.format_exc(), exc_di.error_info)
             raise ScanAbortion from exc_di
@@ -495,7 +494,7 @@ class GeneratorScanWorker:
         queue.status = InstructionQueueStatus.COMPLETED
         self.worker.current_instruction_queue_item = None
 
-        logger.info(f"QUEUE ITEM finished after {time.time()-start:.2f} seconds")
+        logger.info(f"QUEUE ITEM finished after {time.time() - start:.2f} seconds")
         self.reset()
 
     def _instruction_step(self, instr: messages.DeviceInstructionMessage):
@@ -514,9 +513,7 @@ class GeneratorScanWorker:
             self.open_scan(instr)
         elif action == "close_scan" and scan_def_id is None:
             self.close_scan(instr, self.max_point_id)
-        elif action == "close_scan" and scan_def_id is not None:
-            pass
-        elif action == "open_scan_def":
+        elif action == "close_scan" and scan_def_id is not None or action == "open_scan_def":
             pass
         elif action == "close_scan_def":
             self.close_scan(instr, self.max_point_id)

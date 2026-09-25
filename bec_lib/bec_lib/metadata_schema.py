@@ -31,7 +31,7 @@ _DEFAULT_SCHEMA = BasicScanMetadata
 
 
 def _schema_is_ok(schema: type[BasicScanMetadata], name: str | None = None) -> bool:
-    error_str = f"{'default' if name is None else ''} schema {schema} {('for scan '+name) if name else ''} is not valid!"
+    error_str = f"{'default' if name is None else ''} schema {schema} {('for scan ' + name) if name else ''} is not valid!"
     try:
         if not issubclass(schema, BasicScanMetadata):
             logger.warning(f"{error_str} It must subclass BasicScanMetadata.")

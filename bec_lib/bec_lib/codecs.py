@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from abc import ABC, abstractmethod
-from typing import Any, Type
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel
@@ -17,7 +17,7 @@ from bec_lib.messages import BECMessage, BECStatus
 class BECCodec(ABC):
     """Abstract base class for custom encoders"""
 
-    obj_type: Type | list[Type]
+    obj_type: type | list[type]
 
     @staticmethod
     @abstractmethod
@@ -31,7 +31,7 @@ class BECCodec(ABC):
 
 
 class NumpyEncoder(BECCodec):
-    obj_type: list[Type] = [np.ndarray, np.bool_, np.number, complex]
+    obj_type: ClassVar[list[type]] = [np.ndarray, np.bool_, np.number, complex]
 
     @staticmethod
     def encode(obj: np.ndarray) -> dict:
@@ -43,7 +43,7 @@ class NumpyEncoder(BECCodec):
 
 
 class NumpyEncoderList(BECCodec):
-    obj_type: list[Type] = [np.ndarray, np.bool_, np.number, complex]
+    obj_type: ClassVar[list[type]] = [np.ndarray, np.bool_, np.number, complex]
 
     @staticmethod
     def encode(obj: np.ndarray) -> dict:
@@ -55,7 +55,7 @@ class NumpyEncoderList(BECCodec):
 
 
 class BECMessageEncoder(BECCodec):
-    obj_type: Type = BECMessage
+    obj_type: type = BECMessage
 
     @staticmethod
     def encode(obj: BECMessage) -> dict:
@@ -67,7 +67,7 @@ class BECMessageEncoder(BECCodec):
 
 
 class EnumEncoder(BECCodec):
-    obj_type: Type = enum.Enum
+    obj_type: type = enum.Enum
 
     @staticmethod
     def encode(obj: enum.Enum) -> Any:
@@ -81,12 +81,11 @@ class EnumEncoder(BECCodec):
 
 
 class BECDeviceEncoder(BECCodec):
-    obj_type: Type = DeviceBase
+    obj_type: type = DeviceBase
 
     @staticmethod
     def encode(obj: DeviceBase) -> str:
         if hasattr(obj, "_compile_function_path"):
-            # pylint: disable=protected-access
             return obj._compile_function_path()
         return obj.name
 
@@ -99,7 +98,7 @@ class BECDeviceEncoder(BECCodec):
 
 
 class PydanticEncoder(BECCodec):
-    obj_type: Type = BaseModel
+    obj_type: type = BaseModel
 
     @staticmethod
     def encode(obj: BaseModel) -> dict:
@@ -111,7 +110,7 @@ class PydanticEncoder(BECCodec):
 
 
 class EndpointInfoEncoder(BECCodec):
-    obj_type: Type = EndpointInfo
+    obj_type: type = EndpointInfo
 
     @staticmethod
     def encode(obj: EndpointInfo) -> dict:
@@ -131,7 +130,7 @@ class EndpointInfoEncoder(BECCodec):
 
 
 class SetEncoder(BECCodec):
-    obj_type: Type = set
+    obj_type: type = set
 
     @staticmethod
     def encode(obj: set) -> list:
@@ -143,7 +142,7 @@ class SetEncoder(BECCodec):
 
 
 class BECTypeEncoder(BECCodec):
-    obj_type: Type = type
+    obj_type: type = type
 
     @staticmethod
     def encode(obj: type) -> dict:

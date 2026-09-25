@@ -8,6 +8,7 @@ import contextlib
 import gc
 import json
 from abc import abstractmethod
+from typing import ClassVar
 
 import msgpack as msgpack_module
 
@@ -78,7 +79,7 @@ def pause_gc():
 class MsgpackSerialization(SerializationInterface):
     """Message serialization using msgpack encoding"""
 
-    ext_type_offset_to_data = {199: 3, 200: 4, 201: 6}
+    ext_type_offset_to_data: ClassVar[dict[int, int]] = {199: 3, 200: 4, 201: 6}
 
     @staticmethod
     def loads(msg) -> BECMessage | list[BECMessage]:
@@ -89,13 +90,12 @@ class MsgpackSerialization(SerializationInterface):
                 try:
                     data = json.loads(msg)
                     return messages_module.RawMessage(data=data)
-                except Exception:
+                except Exception:  # noqa: S110, BLE001 - Retain the original decoding error if the JSON fallback also fails.
                     pass
                 raise RuntimeError("Failed to decode BECMessage") from exception
             else:
-                if isinstance(msg, BECMessage):
-                    if msg.msg_type == "bundle_message":
-                        return msg.messages
+                if isinstance(msg, BECMessage) and msg.msg_type == "bundle_message":
+                    return msg.messages
                 return msg
 
     @staticmethod

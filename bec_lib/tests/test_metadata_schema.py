@@ -73,7 +73,6 @@ def test_default_schema_is_used_as_fallback():
     with patch.dict(metadata_schema._METADATA_SCHEMA_REGISTRY, TEST_REGISTRY, clear=True):
         metadata_schema.get_metadata_schema_for_scan("")  # create cache before patching default
         with patch.object(metadata_schema, "_DEFAULT_SCHEMA", BeamlineDefaultSchema):
-
             assert metadata_schema.get_default_schema() is BeamlineDefaultSchema
             assert (
                 metadata_schema.get_metadata_schema_for_scan("not associated with anything")

@@ -21,9 +21,6 @@ from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
-
 
 class DeviceServerMock(DeviceServer):
     def __init__(self, device_manager, connector_cls) -> None:
@@ -156,7 +153,7 @@ def test_device_server_status_callback(
     sink_id = None
     try:
         sink_id = logger.add(buf, level="ERROR")
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             device_server.status_callback(status_no_info)
         output = buf.getvalue()
         assert (
@@ -193,9 +190,11 @@ def test_device_server_status_callback_response_includes_error_info(
     else:
         status.set_exception(RuntimeError("motor failed"))
 
-    with mock.patch.object(device_server, "_read_device") as mock_read_device:
-        with mock.patch.object(device_server.connector, "xadd") as xadd_mock:
-            device_server.status_callback(status)
+    with (
+        mock.patch.object(device_server, "_read_device") as mock_read_device,
+        mock.patch.object(device_server.connector, "xadd") as xadd_mock,
+    ):
+        device_server.status_callback(status)
 
     mock_read_device.assert_called_once_with(instr)
     xadd_mock.assert_called_once()
@@ -249,16 +248,18 @@ def test_stop_devices(device_server_mock):
         device_server.stop_devices()
         stop.assert_called_once()
 
-    with mock.patch.object(dev.samy.obj, "stop", side_effect=Exception) as stop:
-        with mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm:
-            device_server.stop_devices()
-            stop.assert_called_once()
-            assert raise_alarm.call_count == 1
-            assert raise_alarm.call_args == mock.call(
-                severity=Alarms.WARNING, info=mock.ANY, metadata=mock.ANY
-            )
-            # If stop raises an exception, the device server must get back to running state
-            assert device_server.status == BECStatus.RUNNING
+    with (
+        mock.patch.object(dev.samy.obj, "stop", side_effect=Exception) as stop,
+        mock.patch.object(device_server.connector, "raise_alarm") as raise_alarm,
+    ):
+        device_server.stop_devices()
+        stop.assert_called_once()
+        assert raise_alarm.call_count == 1
+        assert raise_alarm.call_args == mock.call(
+            severity=Alarms.WARNING, info=mock.ANY, metadata=mock.ANY
+        )
+        # If stop raises an exception, the device server must get back to running state
+        assert device_server.status == BECStatus.RUNNING
 
     with mock.patch.object(dev.motor1_disabled.obj, "stop") as stop:
         device_server.stop_devices()
@@ -403,21 +404,21 @@ def test_assert_device_is_valid(device_server_mock, instr):
 def test_handle_device_instructions_set(device_server_mock, instructions):
     device_server = device_server_mock
 
-    with mock.patch.object(device_server, "assert_device_is_valid") as assert_device_is_valid_mock:
-        with mock.patch.object(
+    with (
+        mock.patch.object(device_server, "assert_device_is_valid") as assert_device_is_valid_mock,
+        mock.patch.object(
             device_server, "assert_device_is_enabled"
-        ) as assert_device_is_enabled_mock:
-            with mock.patch.object(
-                device_server, "_update_device_metadata"
-            ) as update_device_metadata_mock:
-                with mock.patch.object(device_server, "_set_device") as set_mock:
-                    device_server.handle_device_instructions(instructions)
+        ) as assert_device_is_enabled_mock,
+        mock.patch.object(device_server, "_update_device_metadata") as update_device_metadata_mock,
+        mock.patch.object(device_server, "_set_device") as set_mock,
+    ):
+        device_server.handle_device_instructions(instructions)
 
-                    assert_device_is_valid_mock.assert_called_once_with(instructions)
-                    assert_device_is_enabled_mock.assert_called_once_with(instructions)
-                    update_device_metadata_mock.assert_called_once_with(instructions)
+        assert_device_is_valid_mock.assert_called_once_with(instructions)
+        assert_device_is_enabled_mock.assert_called_once_with(instructions)
+        update_device_metadata_mock.assert_called_once_with(instructions)
 
-                    set_mock.assert_called_once_with(instructions)
+        set_mock.assert_called_once_with(instructions)
 
 
 @pytest.mark.parametrize(
@@ -436,22 +437,24 @@ def test_handle_device_instruction_disabled_device(device_server_mock, instructi
     Test that handling device instructions for a disabled device resolves the status as failed.
     """
     device_server = device_server_mock
-    with mock.patch.object(device_server, "assert_device_is_enabled", side_effect=RuntimeError):
-        with mock.patch.object(device_server.connector, "send") as send_mock:
-            device_server.handle_device_instructions(instructions)
-            assert send_mock.call_count == 2
-            pending_msg = send_mock.call_args_list[0].args[1]
-            error_msg = send_mock.call_args_list[1].args[1]
+    with (
+        mock.patch.object(device_server, "assert_device_is_enabled", side_effect=RuntimeError),
+        mock.patch.object(device_server.connector, "send") as send_mock,
+    ):
+        device_server.handle_device_instructions(instructions)
+        assert send_mock.call_count == 2
+        pending_msg = send_mock.call_args_list[0].args[1]
+        error_msg = send_mock.call_args_list[1].args[1]
 
-            assert pending_msg.instruction_id == instructions.metadata["device_instr_id"]
-            assert pending_msg.status == "running"
-            assert error_msg.instruction_id == instructions.metadata["device_instr_id"]
-            assert error_msg.status == "error"
-            assert error_msg.error_info is not None
-            assert (
-                device_server.requests_handler.get_request(instructions.metadata["device_instr_id"])
-                is None
-            )
+        assert pending_msg.instruction_id == instructions.metadata["device_instr_id"]
+        assert pending_msg.status == "running"
+        assert error_msg.instruction_id == instructions.metadata["device_instr_id"]
+        assert error_msg.status == "error"
+        assert error_msg.error_info is not None
+        assert (
+            device_server.requests_handler.get_request(instructions.metadata["device_instr_id"])
+            is None
+        )
 
 
 @pytest.mark.parametrize(
@@ -472,14 +475,16 @@ def test_handle_device_instructions_limit_error(device_server_mock, instructions
     """
     device_server = device_server_mock
 
-    with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
-        with mock.patch.object(device_server, "_set_device") as set_mock:
-            set_mock.side_effect = ophyd_errors.LimitError("Wrong limits")
-            device_server.handle_device_instructions(instructions)
+    with (
+        mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock,
+        mock.patch.object(device_server, "_set_device") as set_mock,
+    ):
+        set_mock.side_effect = ophyd_errors.LimitError("Wrong limits")
+        device_server.handle_device_instructions(instructions)
 
-            set_finished_mock.assert_called_once_with(
-                instructions.metadata["device_instr_id"], success=False, error_info=ANY
-            )
+        set_finished_mock.assert_called_once_with(
+            instructions.metadata["device_instr_id"], success=False, error_info=ANY
+        )
 
 
 @pytest.mark.parametrize(
@@ -515,20 +520,20 @@ def test_handle_device_instructions_read(device_server_mock, instructions):
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_handle_device_instructions_rpc(device_server_mock, instructions):
     device_server = device_server_mock
-    with mock.patch.object(device_server, "assert_device_is_valid") as assert_device_is_valid_mock:
-        with mock.patch.object(
+    with (
+        mock.patch.object(device_server, "assert_device_is_valid") as assert_device_is_valid_mock,
+        mock.patch.object(
             device_server, "assert_device_is_enabled"
-        ) as assert_device_is_enabled_mock:
-            with mock.patch.object(
-                device_server, "_update_device_metadata"
-            ) as update_device_metadata_mock:
-                with mock.patch.object(device_server.rpc_handler, "run_rpc") as rpc_mock:
-                    device_server.handle_device_instructions(instructions)
-                    rpc_mock.assert_called_once_with(instructions)
+        ) as assert_device_is_enabled_mock,
+        mock.patch.object(device_server, "_update_device_metadata") as update_device_metadata_mock,
+        mock.patch.object(device_server.rpc_handler, "run_rpc") as rpc_mock,
+    ):
+        device_server.handle_device_instructions(instructions)
+        rpc_mock.assert_called_once_with(instructions)
 
-                    assert_device_is_valid_mock.assert_called_once_with(instructions)
-                    assert_device_is_enabled_mock.assert_not_called()
-                    update_device_metadata_mock.assert_called_once_with(instructions)
+        assert_device_is_valid_mock.assert_called_once_with(instructions)
+        assert_device_is_enabled_mock.assert_not_called()
+        update_device_metadata_mock.assert_called_once_with(instructions)
 
 
 @pytest.mark.parametrize(
@@ -633,29 +638,31 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
     status = DeviceStatus(device=device_server.device_manager.devices.eiger.obj)
     status.add_callback(finished_callback)
 
-    with mock.patch.object(
-        device_server.device_manager.devices.eiger.obj, "pre_scan", return_value=status
-    ):
-        with mock.patch.object(
+    with (
+        mock.patch.object(
+            device_server.device_manager.devices.eiger.obj, "pre_scan", return_value=status
+        ),
+        mock.patch.object(
             device_server.requests_handler, "send_device_instruction_response"
-        ) as send_response_mock:
-            device_server.handle_device_instructions(instructions)
-            request_info = device_server.requests_handler.get_request(instr_id="diid")
-            assert len(request_info["status_objects"]) == 1
-            assert id(status) == id(request_info["status_objects"][0])
-            assert status.done is False
-            assert send_response_mock.call_count == 2
-            assert send_response_mock.call_args_list[0] == mock.call("diid", None, False)
-            assert send_response_mock.call_args_list[1] == mock.call(
-                "diid", success=False, done=False, is_status_obj=True, result=None
-            )
-            status.set_finished()
-            finished_thread_event.wait()
-            assert status.done is True
-            assert send_response_mock.call_count == 3
-            assert send_response_mock.call_args == mock.call(
-                "diid", True, done=True, error_info=None, result=None, is_status_obj=True
-            )
+        ) as send_response_mock,
+    ):
+        device_server.handle_device_instructions(instructions)
+        request_info = device_server.requests_handler.get_request(instr_id="diid")
+        assert len(request_info["status_objects"]) == 1
+        assert id(status) == id(request_info["status_objects"][0])
+        assert status.done is False
+        assert send_response_mock.call_count == 2
+        assert send_response_mock.call_args_list[0] == mock.call("diid", None, False)
+        assert send_response_mock.call_args_list[1] == mock.call(
+            "diid", success=False, done=False, is_status_obj=True, result=None
+        )
+        status.set_finished()
+        finished_thread_event.wait()
+        assert status.done is True
+        assert send_response_mock.call_count == 3
+        assert send_response_mock.call_args == mock.call(
+            "diid", True, done=True, error_info=None, result=None, is_status_obj=True
+        )
 
 
 @pytest.mark.parametrize(
@@ -798,25 +805,29 @@ def test_set_device(device_server_mock, instr):
     assert msg.metadata["RID"] == "test"
 
     # Test that if _set raises an exception, the status is set as failed
-    with mock.patch.object(
-        device_server.device_manager.devices.samx.obj, "set", side_effect=Exception("Set failed")
-    ):
-        with mock.patch.object(
+    with (
+        mock.patch.object(
+            device_server.device_manager.devices.samx.obj,
+            "set",
+            side_effect=Exception("Set failed"),
+        ),
+        mock.patch.object(
             device_server.requests_handler, "send_device_instruction_response"
-        ) as mock_send_response:
-            device_server._set_device(instr)
-            # Call arg list should not contain any duplicate calls, error response should only be sent once
-            assert (
-                mock_send_response.call_count == 3
-            )  # Make sure that there are no duplicate calls for error response.
-            mock_send_response.assert_called_with(
-                instr.metadata["device_instr_id"],
-                False,
-                done=True,
-                error_info=ANY,
-                result=None,
-                is_status_obj=True,
-            )
+        ) as mock_send_response,
+    ):
+        device_server._set_device(instr)
+        # Call arg list should not contain any duplicate calls, error response should only be sent once
+        assert (
+            mock_send_response.call_count == 3
+        )  # Make sure that there are no duplicate calls for error response.
+        mock_send_response.assert_called_with(
+            instr.metadata["device_instr_id"],
+            False,
+            done=True,
+            error_info=ANY,
+            result=None,
+            is_status_obj=True,
+        )
 
 
 @pytest.mark.timeout(30)
@@ -931,28 +942,30 @@ def test_read_config_and_update_devices(device_server_mock, devices):
 def test_read_and_update_devices_exception(device_server_mock):
     device_server = device_server_mock
     samx_obj = device_server.device_manager.devices.samx.obj
-    with pytest.raises(Exception):
-        with mock.patch.object(device_server, "_retry_obj_method") as mock_retry:
-            with mock.patch.object(samx_obj, "read") as read_mock:
-                read_mock.side_effect = Exception
-                mock_retry.side_effect = Exception
-                device_server._read_and_update_devices(["samx"], metadata={"RID": "test"})
-                mock_retry.assert_called_once_with("samx", samx_obj, "read", Exception())
+    read_error = RuntimeError("Device read failed")
+    with (
+        mock.patch.object(device_server, "_retry_obj_method") as mock_retry,
+        mock.patch.object(samx_obj, "read", side_effect=read_error),
+    ):
+        mock_retry.side_effect = RuntimeError("Device read retry failed")
+        with pytest.raises(RuntimeError, match="Device read retry failed"):
+            device_server._read_and_update_devices(["samx"], metadata={"RID": "test"})
+        mock_retry.assert_called_once_with("samx", samx_obj, "read", read_error)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_read_config_and_update_devices_exception(device_server_mock):
     device_server = device_server_mock
     samx_obj = device_server.device_manager.devices.samx.obj
-    with pytest.raises(Exception):
-        with mock.patch.object(device_server, "_retry_obj_method") as mock_retry:
-            with mock.patch.object(samx_obj, "read_configuration") as read_config:
-                read_config.side_effect = Exception
-                mock_retry.side_effect = Exception
-                device_server._read_config_and_update_devices(["samx"], metadata={"RID": "test"})
-                mock_retry.assert_called_once_with(
-                    "samx", samx_obj, "read_configuration", Exception()
-                )
+    read_error = RuntimeError("Device configuration read failed")
+    with (
+        mock.patch.object(device_server, "_retry_obj_method") as mock_retry,
+        mock.patch.object(samx_obj, "read_configuration", side_effect=read_error),
+    ):
+        mock_retry.side_effect = RuntimeError("Device configuration read retry failed")
+        with pytest.raises(RuntimeError, match="Device configuration read retry failed"):
+            device_server._read_config_and_update_devices(["samx"], metadata={"RID": "test"})
+        mock_retry.assert_called_once_with("samx", samx_obj, "read_configuration", read_error)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -1149,10 +1162,7 @@ def test_get_metadata_for_alarm_no_scan_info_msg(device_server_mock):
     [
         messages.ScanStatusMessage(
             scan_id="12345", scan_number=1, status="open", info={}, metadata={}
-        ),
-        messages.ScanStatusMessage(
-            scan_id="12345", scan_number=1, status="open", info={}, metadata={}
-        ),
+        )
     ],
 )
 def test_get_metadata_for_alarm_with_scan_info_msg(device_server_mock, msg):
@@ -1215,11 +1225,11 @@ def test_request_handler_update_instruction_uses_snapshot_when_request_removed(d
         "is_status_obj": True,
     }
 
-    with mock.patch.object(
-        device_server.requests_handler, "get_request", return_value=request_info
+    with (
+        mock.patch.object(device_server.requests_handler, "get_request", return_value=request_info),
+        mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock,
     ):
-        with mock.patch.object(device_server.requests_handler, "set_finished") as set_finished_mock:
-            device_server.requests_handler._storage.clear()
-            device_server.requests_handler._update_instruction("diid", is_status_obj=True)
+        device_server.requests_handler._storage.clear()
+        device_server.requests_handler._update_instruction("diid", is_status_obj=True)
 
     set_finished_mock.assert_called_once_with("diid", success=True)

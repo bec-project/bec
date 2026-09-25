@@ -26,7 +26,7 @@ logger = bec_logger.logger
 class ServiceConfigParser:
     """Service Config Parser"""
 
-    def __init__(self, service_config: dict = None) -> None:
+    def __init__(self, service_config: dict | None = None) -> None:
         """Initialize the service config parser.
 
         Args:
@@ -69,7 +69,7 @@ class LogWriter:
         self._base_path = self.service_config_parser.get_base_path()
         self.create_directory(self._base_path)
 
-    def create_directory(self, fname: str = None) -> None:
+    def create_directory(self, fname: str | None = None) -> None:
         """Create the log directory."""
         self.service_config_parser.create_directory(fname)
 
@@ -99,7 +99,7 @@ class DeviceConfigWriter:
         self._directory = os.path.join(self._base_path, "device_configs")
         self.create_directory(fname=self.directory)
 
-    def create_directory(self, fname: str = None) -> None:
+    def create_directory(self, fname: str | None = None) -> None:
         """Create the device config directory."""
         self.service_config_parser.create_directory(fname)
 
@@ -166,8 +166,8 @@ def compile_file_components(
     scan_nr: int,
     scan_bundle: int = 1000,
     leading_zeros: int = 5,
-    file_directory: str = None,
-    user_suffix: str = None,
+    file_directory: str | None = None,
+    user_suffix: str | None = None,
 ) -> tuple[str, str]:
     """Compile the File Path for ScanStatusMessage without suffix and file type extension.
 
@@ -271,7 +271,7 @@ class FileWriter:
     def __init__(
         self,
         *args,
-        service_config: dict = None,
+        service_config: dict | None = None,
         connector: RedisConnector = None,
         scan_bundle: int = 1000,
         leading_zeros: int = 5,
@@ -320,7 +320,10 @@ class FileWriter:
 
     @staticmethod
     def get_scan_directory(
-        scan_number: int, scan_bundle: int, leading_zeros: int = None, user_suffix: str = None
+        scan_number: int,
+        scan_bundle: int,
+        leading_zeros: int | None = None,
+        user_suffix: str | None = None,
     ) -> str:
         """
         Get the scan directory for a given scan number and scan bundle.
@@ -343,7 +346,7 @@ class FileWriter:
         if leading_zeros is None:
             leading_zeros = len(str(scan_bundle))
         floor_dir = scan_number // scan_bundle * scan_bundle
-        rtr = f"S{floor_dir:0{leading_zeros}d}-{floor_dir+scan_bundle-1:0{leading_zeros}d}/S{scan_number:0{leading_zeros}d}"
+        rtr = f"S{floor_dir:0{leading_zeros}d}-{floor_dir + scan_bundle - 1:0{leading_zeros}d}/S{scan_number:0{leading_zeros}d}"
         if user_suffix:
             rtr += f"_{user_suffix}"
         return rtr
@@ -374,10 +377,8 @@ class FileWriter:
             str: Full filename
         """
         logger.warning(
-            (
-                "Deprecation warning. This method will be removed in the future."
-                "Use get_full_path from this module instead."
-            )
+            "Deprecation warning. This method will be removed in the future."
+            "Use get_full_path from this module instead."
         )
 
         # to check if suffix is alphanumeric and ascii, however we allow in addition - and _

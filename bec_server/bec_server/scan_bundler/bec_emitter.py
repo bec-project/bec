@@ -35,7 +35,7 @@ class BECEmitter(EmitterBase):
         )
         self._buffered_connector_thread.start()
 
-    def add_message(self, msg: messages.BECMessage, endpoint: str, public: str = None):
+    def add_message(self, msg: messages.BECMessage, endpoint: str, public: str | None = None):
         self._send_buffer.put((msg, endpoint, public))
 
     def _buffered_publish(self):

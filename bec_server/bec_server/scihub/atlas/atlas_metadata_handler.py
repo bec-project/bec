@@ -200,7 +200,7 @@ class AtlasMetadataHandler:
         msg = msg.value
         try:
             self.send_atlas_update({"scan_status": msg})
-        # pylint: disable=broad-except
+
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update scan status: {content}")
@@ -209,7 +209,7 @@ class AtlasMetadataHandler:
         msg = msg["data"]
         try:
             self.send_atlas_update({"scan_history": msg})
-        # pylint: disable=broad-except
+
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update scan history: {content}")
@@ -217,7 +217,7 @@ class AtlasMetadataHandler:
     def _handle_messaging(self, msg, **_kwargs) -> None:
         try:
             self.atlas_connector.ingest_message(msg)
-        # pylint: disable=broad-except
+
         except Exception:
             content = traceback.format_exc()
             logger.exception(f"Failed to update messaging data: {content}")
@@ -242,7 +242,7 @@ class AtlasMetadataHandler:
         try:
             enriched_msg: messages.FeedbackMessage = messages.FeedbackMessage(**content)
             self.atlas_connector.ingest_data({"user_feedback": enriched_msg})
-        # pylint: disable=broad-except
+
         except Exception:
             traceback_info = traceback.format_exc()
             logger.exception(f"Failed to update feedback: {traceback_info}")

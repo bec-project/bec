@@ -43,21 +43,7 @@ def test_scan_stub_status_init(scan_stub_status):
             ),
             instruction_id="test",
             result=None,
-        ),
-        messages.DeviceInstructionResponse(
-            metadata={"device_instr_id": "test"},
-            device="samx",
-            status="completed",
-            error_info=None,
-            instruction=messages.DeviceInstructionMessage(
-                device="samx",
-                action="set",
-                parameter={"value": 1},
-                metadata={"device_instr_id": "test"},
-            ),
-            instruction_id="test",
-            result=None,
-        ),
+        )
     ],
 )
 def test_scan_stub_status_update_future_completed(msg, scan_stub_status):

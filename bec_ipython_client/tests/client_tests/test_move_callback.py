@@ -45,22 +45,22 @@ def test_move_callback(bec_client_mock):
             return req_done.popleft()
         return req_done[0]
 
-    with mock.patch("bec_ipython_client.callbacks.move_device.check_alarms"):
-        with mock.patch.object(LiveUpdatesReadbackProgressbar, "wait_for_request_acceptance"):
-            with mock.patch.object(
-                LiveUpdatesReadbackProgressbar, "_print_client_msgs_asap"
-            ) as mock_client_msgs:
-                with mock.patch.object(
-                    LiveUpdatesReadbackProgressbar, "_print_client_msgs_all"
-                ) as mock_client_msgs_all:
-                    with mock.patch.object(ReadbackDataHandler, "get_device_values", mock_readback):
-                        with mock.patch.object(ReadbackDataHandler, "device_states", mock_req_msg):
-                            with mock.patch.object(
-                                ReadbackDataHandler, "done", side_effect=[False, False, True]
-                            ):
-                                LiveUpdatesReadbackProgressbar(bec=client, request=request).run()
-                                assert mock_client_msgs.called is True
-                                assert mock_client_msgs_all.called is True
+    with (
+        mock.patch("bec_ipython_client.callbacks.move_device.check_alarms"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "wait_for_request_acceptance"),
+        mock.patch.object(
+            LiveUpdatesReadbackProgressbar, "_print_client_msgs_asap"
+        ) as mock_client_msgs,
+        mock.patch.object(
+            LiveUpdatesReadbackProgressbar, "_print_client_msgs_all"
+        ) as mock_client_msgs_all,
+        mock.patch.object(ReadbackDataHandler, "get_device_values", mock_readback),
+        mock.patch.object(ReadbackDataHandler, "device_states", mock_req_msg),
+        mock.patch.object(ReadbackDataHandler, "done", side_effect=[False, False, True]),
+    ):
+        LiveUpdatesReadbackProgressbar(bec=client, request=request).run()
+        assert mock_client_msgs.called is True
+        assert mock_client_msgs_all.called is True
 
 
 def test_move_callback_with_report_instruction(bec_client_mock):
@@ -89,20 +89,18 @@ def test_move_callback_with_report_instruction(bec_client_mock):
             return req_done.popleft()
         return req_done[0]
 
-    with mock.patch("bec_ipython_client.callbacks.move_device.check_alarms"):
-        with mock.patch.object(LiveUpdatesReadbackProgressbar, "wait_for_request_acceptance"):
-            with mock.patch.object(LiveUpdatesReadbackProgressbar, "_print_client_msgs_asap"):
-                with mock.patch.object(LiveUpdatesReadbackProgressbar, "_print_client_msgs_all"):
-                    with mock.patch.object(ReadbackDataHandler, "get_device_values", mock_readback):
-                        with mock.patch.object(ReadbackDataHandler, "device_states", mock_req_msg):
-                            with mock.patch.object(
-                                ReadbackDataHandler, "done", side_effect=[False, False, False, True]
-                            ):
-                                LiveUpdatesReadbackProgressbar(
-                                    bec=client,
-                                    report_instruction=report_instruction,
-                                    request=request,
-                                ).run()
+    with (
+        mock.patch("bec_ipython_client.callbacks.move_device.check_alarms"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "wait_for_request_acceptance"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "_print_client_msgs_asap"),
+        mock.patch.object(LiveUpdatesReadbackProgressbar, "_print_client_msgs_all"),
+        mock.patch.object(ReadbackDataHandler, "get_device_values", mock_readback),
+        mock.patch.object(ReadbackDataHandler, "device_states", mock_req_msg),
+        mock.patch.object(ReadbackDataHandler, "done", side_effect=[False, False, False, True]),
+    ):
+        LiveUpdatesReadbackProgressbar(
+            bec=client, report_instruction=report_instruction, request=request
+        ).run()
 
 
 def test_move_callback_check_scan_state_raises_user_interruption(bec_client_mock):

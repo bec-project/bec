@@ -4,7 +4,8 @@ import functools
 import keyword
 import traceback
 from abc import ABC, abstractmethod
-from typing import Annotated, Callable, ClassVar, Generic, Type, TypeVar, cast
+from collections.abc import Callable
+from typing import Annotated, ClassVar, Generic, TypeVar, cast
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -31,12 +32,12 @@ def with_state_error_handling(func: Callable) -> Callable:
     """
 
     @functools.wraps(func)
-    def wrapper(parent: "DeviceBeamlineState", msg_obj: MessageObject) -> None:
+    def wrapper(parent: DeviceBeamlineState, msg_obj: MessageObject) -> None:
         assert parent.connector is not None
 
         try:
             parent.update_device_signal_info()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Report all user state or device callback failures through the state handler.
             parent._handle_state_exception(exc)
             return
 
@@ -44,7 +45,7 @@ def with_state_error_handling(func: Callable) -> Callable:
             result = func(parent, msg_obj)
             if result is not None:
                 parent._emit_state(result)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Report all user state or device callback failures through the state handler.
             parent._handle_state_exception(exc)
 
     return wrapper
@@ -136,11 +137,12 @@ class DeviceStateConfig(BeamlineStateConfig):
             if isinstance(self.device, DeviceBase):
                 self.device = self.device.dotted_name
             return self
-        if isinstance(self.device, DeviceBase) and isinstance(self.signal, Signal):
-            if self.signal.parent != self.device:
-                raise ValueError(
-                    f"Signal '{self.signal.dotted_name}' does not belong to device '{self.device.dotted_name}'"
-                )
+        if (isinstance(self.device, DeviceBase) and isinstance(self.signal, Signal)) and (
+            self.signal.parent != self.device
+        ):
+            raise ValueError(
+                f"Signal '{self.signal.dotted_name}' does not belong to device '{self.device.dotted_name}'"
+            )
         if isinstance(self.device, DeviceBase):
             self.device = self.device.dotted_name
         if isinstance(self.signal, Signal):
@@ -201,7 +203,7 @@ D = TypeVar("D", bound=DeviceStateConfig)
 class BeamlineState(ABC, Generic[C]):
     """Abstract base class for beamline states."""
 
-    CONFIG_CLASS: Type[C]
+    CONFIG_CLASS: type[C]
 
     def __init__(
         self,
@@ -286,7 +288,7 @@ class BeamlineState(ABC, Generic[C]):
 class DeviceBeamlineState(BeamlineState[D], Generic[D]):
     """A beamline state that depends on a device reading."""
 
-    CONFIG_CLASS: Type[D]
+    CONFIG_CLASS: type[D]
 
     def update_device_signal_info(self) -> None:
         if self.device_manager is None:
@@ -300,7 +302,6 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
         try:
             self.device_obj: DeviceBase = dev[self.config.device]
         except KeyError:
-            # pylint: disable=raise-missing-from
             raise ValueError(f"{self._error_prefix} Device '{self.config.device}' not found.")
 
         if isinstance(self.device_obj, Signal):
@@ -325,7 +326,6 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
                 try:
                     signal_obj = dev[signal]
                 except AttributeError:
-                    # pylint: disable=raise-missing-from
                     raise ValueError(
                         f"{self._error_prefix} Signal '{signal}' not found for device '{self.config.device}'."
                     )
@@ -369,7 +369,7 @@ class DeviceBeamlineState(BeamlineState[D], Generic[D]):
             raise RuntimeError("Redis connector is not set.")
         try:
             self.update_device_signal_info()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Report all user state or device callback failures through the state handler.
             self._handle_state_exception(exc)
             self.started = False
             return

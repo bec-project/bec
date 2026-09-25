@@ -5,9 +5,8 @@ This module contains the classes for storing scan data from scan_segments.
 from __future__ import annotations
 
 import collections
-from typing import TYPE_CHECKING, Any
-
 from _collections_abc import dict_items, dict_keys, dict_values
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
@@ -73,7 +72,7 @@ class SignalData:
 
         self.data[index] = device_data
 
-    def __eq__(self, __value: object) -> bool:
+    def __eq__(self, __value: object) -> bool:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         return self.data == __value
 
     def items(self) -> dict_items:
@@ -114,11 +113,11 @@ class DeviceData(dict):
     def __setattr__(self, attr: Any, value: Any) -> None:
         self.__setitem__(attr, value)
 
-    def __setitem__(self, __key: Any, __value: Any) -> None:
+    def __setitem__(self, __key: Any, __value: Any) -> None:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         super().__setitem__(__key, __value)
         self.__dict__.update({__key: __value})
 
-    def __delitem__(self, __key: Any) -> None:
+    def __delitem__(self, __key: Any) -> None:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         super().__delitem__(__key)
         del self.__dict__[__key]
 
@@ -173,21 +172,19 @@ class LiveScanData(dict):
         return self.get(key)
 
     def __contains__(self, key: Any) -> bool:
-        if key in self.devices:
-            return True
-        return False
+        return key in self.devices
 
-    def __eq__(self, __value: object) -> bool:
+    def __eq__(self, __value: object) -> bool:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         return super().__eq__(__value)
 
     def __setattr__(self, attr: Any, value: Any) -> None:
         self.__setitem__(attr, value)
 
-    def __setitem__(self, __key: Any, __value: Any) -> None:
+    def __setitem__(self, __key: Any, __value: Any) -> None:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         super().__setitem__(__key, __value)
         self.__dict__.update({__key: __value})
 
-    def __delitem__(self, __key: Any) -> None:
+    def __delitem__(self, __key: Any) -> None:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         super().__delitem__(__key)
         del self.__dict__[__key]
 

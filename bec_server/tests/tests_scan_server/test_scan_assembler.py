@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, ClassVar
 from unittest import mock
 
 import pytest
@@ -7,7 +7,9 @@ from bec_lib import messages
 from bec_lib.bec_errors import ScanInputValidationError
 from bec_lib.device import DeviceBase
 from bec_lib.scan_args import ScanArgument
-from bec_lib.tests.fixtures import dm_with_devices
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scans import ScanArgType
 from bec_server.scan_server.scans.acquire import Acquire
@@ -43,8 +45,8 @@ class CustomScan2(RequestBase):
 
 class CustomDirectScan(NoopScan):
     scan_name = "custom_direct_scan"
-    arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    arg_input: ClassVar[dict] = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
     is_scan = False
 
     def __init__(self, *args, **kwargs):
@@ -77,11 +79,11 @@ class CustomBoundedDirectScan(NoopScan):
 
 class CustomBundledBoundedDirectScan(NoopScan):
     scan_name = "custom_bundled_bounded_direct_scan"
-    arg_input = {
+    arg_input: ClassVar[dict] = {
         "device": ScanArgType.DEVICE,
         "target": Annotated[int, ScanArgument(display_name="Target", ge=1)],
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
     is_scan = False
 
     def __init__(
@@ -97,8 +99,8 @@ class CustomBundledBoundedDirectScan(NoopScan):
 
 class CustomBundledScanWithDeviceKwarg(NoopScan):
     scan_name = "custom_bundled_scan_with_device_kwarg"
-    arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    arg_input: ClassVar[dict] = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
     is_scan = False
 
     def __init__(self, *args, monitor: DeviceBase, **kwargs):
@@ -280,13 +282,13 @@ class AdditionalParamsModifier:
 def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assembler):
 
     class MockScanManager:
-        available_scans = {
+        available_scans: ClassVar[dict] = {
             "fermat_scan": {"class": "FermatSpiralScan"},
             "line_scan": {"class": "LineScan"},
             "custom_scan": {"class": "CustomScan"},
             "custom_scan2": {"class": "CustomScan2"},
         }
-        scan_dict = {
+        scan_dict: ClassVar[dict] = {
             "fermat_scan": FermatSpiralScan,
             "line_scan": LineScan,
             "custom_scan": CustomScan,
@@ -306,7 +308,7 @@ def test_scan_assembler_assemble_direct_scan_resolves_device_args(dm_with_device
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_direct_scan": CustomDirectScan}
+        scan_dict: ClassVar[dict] = {"custom_direct_scan": CustomDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_direct_scan",
@@ -345,8 +347,8 @@ def test_scan_assembler_assemble_direct_scan_propagates_monitored_kwarg(dm_with_
     }
 
     class MockScanManager:
-        available_scans = {"custom_direct_scan": scan_info}
-        scan_dict = {"custom_direct_scan": CustomDirectScan}
+        available_scans: ClassVar[dict] = {"custom_direct_scan": scan_info}
+        scan_dict: ClassVar[dict] = {"custom_direct_scan": CustomDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_direct_scan",
@@ -371,7 +373,7 @@ def test_scan_assembler_assemble_direct_scan_resolves_annotated_device_args(dm_w
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_fixed_direct_scan": CustomFixedDirectScan}
+        scan_dict: ClassVar[dict] = {"custom_fixed_direct_scan": CustomFixedDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_fixed_direct_scan",
@@ -407,7 +409,7 @@ def test_scan_assembler_validates_fixed_direct_scan_input_bounds(dm_with_devices
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_bounded_direct_scan": CustomBoundedDirectScan}
+        scan_dict: ClassVar[dict] = {"custom_bounded_direct_scan": CustomBoundedDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_bounded_direct_scan",
@@ -415,9 +417,11 @@ def test_scan_assembler_validates_fixed_direct_scan_input_bounds(dm_with_devices
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with pytest.raises(ScanInputValidationError, match=message):
-            assembler.assemble_direct_scan(msg, "scan_id")
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        pytest.raises(ScanInputValidationError, match=message),
+    ):
+        assembler.assemble_direct_scan(msg, "scan_id")
 
 
 def test_scan_assembler_validates_fixed_direct_scan_input_type(dm_with_devices):
@@ -428,7 +432,7 @@ def test_scan_assembler_validates_fixed_direct_scan_input_type(dm_with_devices):
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_fixed_direct_scan": CustomFixedDirectScan}
+        scan_dict: ClassVar[dict] = {"custom_fixed_direct_scan": CustomFixedDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_fixed_direct_scan",
@@ -439,9 +443,11 @@ def test_scan_assembler_validates_fixed_direct_scan_input_type(dm_with_devices):
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with pytest.raises(ScanInputValidationError, match="target': .*float or int") as exc:
-            assembler.assemble_direct_scan(msg, "scan_id")
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        pytest.raises(ScanInputValidationError, match="target': .*float or int") as exc,
+    ):
+        assembler.assemble_direct_scan(msg, "scan_id")
 
     assert exc.value.error_info is not None
     assert exc.value.error_info.exception_type == "ScanInputValidationError"
@@ -455,7 +461,9 @@ def test_scan_assembler_validates_bundled_direct_scan_input_bounds(dm_with_devic
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan}
+        scan_dict: ClassVar[dict] = {
+            "custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan
+        }
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_bundled_bounded_direct_scan",
@@ -466,9 +474,11 @@ def test_scan_assembler_validates_bundled_direct_scan_input_bounds(dm_with_devic
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with pytest.raises(ScanInputValidationError, match="target.*greater than or equal to"):
-            assembler.assemble_direct_scan(msg, "scan_id")
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        pytest.raises(ScanInputValidationError, match="target.*greater than or equal to"),
+    ):
+        assembler.assemble_direct_scan(msg, "scan_id")
 
 
 def test_scan_assembler_validates_bundled_direct_scan_input_type(dm_with_devices):
@@ -479,7 +489,7 @@ def test_scan_assembler_validates_bundled_direct_scan_input_type(dm_with_devices
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_direct_scan": CustomDirectScan}
+        scan_dict: ClassVar[dict] = {"custom_direct_scan": CustomDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_direct_scan",
@@ -490,9 +500,11 @@ def test_scan_assembler_validates_bundled_direct_scan_input_type(dm_with_devices
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with pytest.raises(ScanInputValidationError, match="target'.*expected float"):
-            assembler.assemble_direct_scan(msg, "scan_id")
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        pytest.raises(ScanInputValidationError, match="target'.*expected float"),
+    ):
+        assembler.assemble_direct_scan(msg, "scan_id")
 
 
 def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_devices):
@@ -503,7 +515,9 @@ def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_de
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan}
+        scan_dict: ClassVar[dict] = {
+            "custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan
+        }
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_bundled_bounded_direct_scan",
@@ -514,9 +528,11 @@ def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_de
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with pytest.raises(ScanInputValidationError, match="scale.*less than or equal to"):
-            assembler.assemble_direct_scan(msg, "scan_id")
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        pytest.raises(ScanInputValidationError, match="scale.*less than or equal to"),
+    ):
+        assembler.assemble_direct_scan(msg, "scan_id")
 
 
 def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(dm_with_devices):
@@ -527,7 +543,9 @@ def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(dm_wi
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan}
+        scan_dict: ClassVar[dict] = {
+            "custom_bundled_bounded_direct_scan": CustomBundledBoundedDirectScan
+        }
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_bundled_bounded_direct_scan",
@@ -538,9 +556,11 @@ def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(dm_wi
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with pytest.raises(ScanInputValidationError, match="scale': .*float or int"):
-            assembler.assemble_direct_scan(msg, "scan_id")
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        pytest.raises(ScanInputValidationError, match="scale': .*float or int"),
+    ):
+        assembler.assemble_direct_scan(msg, "scan_id")
 
 
 def test_scan_assembler_resolves_signature_device_kwargs_for_arg_input_scan(dm_with_devices):
@@ -551,7 +571,9 @@ def test_scan_assembler_resolves_signature_device_kwargs_for_arg_input_scan(dm_w
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"custom_bundled_scan_with_device_kwarg": CustomBundledScanWithDeviceKwarg}
+        scan_dict: ClassVar[dict] = {
+            "custom_bundled_scan_with_device_kwarg": CustomBundledScanWithDeviceKwarg
+        }
 
     msg = messages.ScanQueueMessage(
         scan_type="custom_bundled_scan_with_device_kwarg",
@@ -577,7 +599,7 @@ def test_scan_assembler_applies_modified_defaults_before_scan_construction(dm_wi
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"default_override_direct_scan": DefaultOverrideDirectScan}
+        scan_dict: ClassVar[dict] = {"default_override_direct_scan": DefaultOverrideDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="default_override_direct_scan",
@@ -585,12 +607,14 @@ def test_scan_assembler_applies_modified_defaults_before_scan_construction(dm_wi
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with mock.patch(
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        mock.patch(
             "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
             return_value=DefaultOverrideModifier,
-        ):
-            request = assembler.assemble_direct_scan(msg, "scan_id")
+        ),
+    ):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
 
     assert request.target == 1.0
     assert request.dwell == 0.25
@@ -604,7 +628,7 @@ def test_scan_assembler_applies_defaults_for_removed_signature_arguments(dm_with
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"relative_hidden_direct_scan": RelativeHiddenDirectScan}
+        scan_dict: ClassVar[dict] = {"relative_hidden_direct_scan": RelativeHiddenDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="relative_hidden_direct_scan",
@@ -612,12 +636,14 @@ def test_scan_assembler_applies_defaults_for_removed_signature_arguments(dm_with
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with mock.patch(
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        mock.patch(
             "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
             return_value=RelativeHiddenModifier,
-        ):
-            request = assembler.assemble_direct_scan(msg, "scan_id")
+        ),
+    ):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
 
     assert request.target == 1.0
     assert request.relative is False
@@ -633,7 +659,7 @@ def test_scan_assembler_moves_defaulted_added_parameters_to_additional_scan_para
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"additional_params_direct_scan": AdditionalParamsDirectScan}
+        scan_dict: ClassVar[dict] = {"additional_params_direct_scan": AdditionalParamsDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="additional_params_direct_scan",
@@ -641,12 +667,14 @@ def test_scan_assembler_moves_defaulted_added_parameters_to_additional_scan_para
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with mock.patch(
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        mock.patch(
             "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
             return_value=AdditionalParamsModifier,
-        ):
-            request = assembler.assemble_direct_scan(msg, "scan_id")
+        ),
+    ):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
 
     assert request.target == 1.0
     assert request.scan_info.additional_scan_parameters["integ_time"] == 0.5
@@ -662,7 +690,7 @@ def test_scan_assembler_moves_provided_added_parameters_to_additional_scan_param
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"additional_params_direct_scan": AdditionalParamsDirectScan}
+        scan_dict: ClassVar[dict] = {"additional_params_direct_scan": AdditionalParamsDirectScan}
 
     msg = messages.ScanQueueMessage(
         scan_type="additional_params_direct_scan",
@@ -673,12 +701,14 @@ def test_scan_assembler_moves_provided_added_parameters_to_additional_scan_param
         queue="primary",
     )
 
-    with mock.patch.object(assembler, "scan_manager", MockScanManager()):
-        with mock.patch(
+    with (
+        mock.patch.object(assembler, "scan_manager", MockScanManager()),
+        mock.patch(
             "bec_server.scan_server.scans.scan_argument_modifier.get_scan_modifier",
             return_value=AdditionalParamsModifier,
-        ):
-            request = assembler.assemble_direct_scan(msg, "scan_id")
+        ),
+    ):
+        request = assembler.assemble_direct_scan(msg, "scan_id")
 
     assert request.scan_info.additional_scan_parameters["integ_time"] == 1.25
 
@@ -693,7 +723,7 @@ def test_scan_assembler_maps_optional_positional_direct_scan_args_to_request_kwa
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"acquire": Acquire}
+        scan_dict: ClassVar[dict] = {"acquire": Acquire}
 
     msg = messages.ScanQueueMessage(
         scan_type="acquire",
@@ -731,7 +761,7 @@ def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(dm_wi
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"acquire": Acquire}
+        scan_dict: ClassVar[dict] = {"acquire": Acquire}
 
     msg = messages.ScanQueueMessage(
         scan_type="acquire",
@@ -771,7 +801,7 @@ def test_scan_assembler_extracts_user_metadata_for_direct_scans(dm_with_devices)
     assembler = ScanAssembler(parent=parent)
 
     class MockScanManager:
-        scan_dict = {"acquire": Acquire}
+        scan_dict: ClassVar[dict] = {"acquire": Acquire}
 
     msg = messages.ScanQueueMessage(
         scan_type="acquire",

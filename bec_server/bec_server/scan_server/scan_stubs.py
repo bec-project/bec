@@ -10,8 +10,8 @@ import concurrent.futures
 import threading
 import time
 import uuid
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Generator, Literal
+from collections.abc import Callable, Generator
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from typeguard import typechecked
@@ -39,10 +39,10 @@ class ScanStubStatus:
     def __init__(
         self,
         instruction_handler: InstructionHandler,
-        device_instr_id: str = None,
+        device_instr_id: str | None = None,
         done: bool = False,
-        shutdown_event: threading.Event = None,
-        registry: dict = None,
+        shutdown_event: threading.Event | None = None,
+        registry: dict | None = None,
         is_container: bool = False,
         name: str | None = None,
     ) -> None:
@@ -240,7 +240,6 @@ class ScanStubStatus:
                 self._raise_if_failed(st._future)
             return self
 
-        # pylint: disable=protected-access
         futures = [st._future for st in self._sub_status_objects]
         futures.append(self._future)
 
@@ -288,15 +287,13 @@ class ScanStubs:
         device_manager: DeviceManagerBase,
         instruction_handler: InstructionHandler,
         connector: RedisConnector,
-        device_msg_callback: Callable = None,
-        shutdown_event: threading.Event = None,
+        device_msg_callback: Callable | None = None,
+        shutdown_event: threading.Event | None = None,
     ) -> None:
         self._device_manager = device_manager
         self._instruction_handler = instruction_handler
         self.connector = connector
-        self.device_msg_metadata = (
-            device_msg_callback if device_msg_callback is not None else lambda: {}
-        )
+        self.device_msg_metadata = device_msg_callback if device_msg_callback is not None else dict
         self.shutdown_event = shutdown_event
         self._readout_priority = {}
         self._status_registry = {}
@@ -339,7 +336,7 @@ class ScanStubs:
                 input_dict.pop(key)
 
     def _device_msg(self, **kwargs) -> messages.DeviceInstructionMessage:
-        """"""
+        """Create a device instruction with the current scan metadata."""
         msg = messages.DeviceInstructionMessage(**kwargs)
         msg.metadata = {**self.device_msg_metadata(), **msg.metadata}
         return msg
@@ -354,7 +351,7 @@ class ScanStubs:
             "args": args,
             "kwargs": kwargs,
         }
-        # pylint: disable=protected-access
+
         metadata = {"device_instr_id": status._device_instr_id}
         msg = messages.DeviceInstructionMessage(
             device=device, action="rpc", parameter=parameter, metadata=metadata
@@ -470,7 +467,7 @@ class ScanStubs:
         )
 
     def kickoff(
-        self, *, device: str, parameter: dict = None, metadata=None, wait: bool = True
+        self, *, device: str, parameter: dict | None = None, metadata=None, wait: bool = True
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """Kickoff a fly scan device.
 
@@ -498,7 +495,7 @@ class ScanStubs:
         return status
 
     def complete(
-        self, *, device: str = None, metadata=None, wait: bool = True
+        self, *, device: str | None = None, metadata=None, wait: bool = True
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
         Run the complete command on a device. "Complete" typically resolves once the device has finished its operation,
@@ -721,7 +718,7 @@ class ScanStubs:
         *,
         device: list[str] | str | None = None,
         point_id: int | None = None,
-        group: Literal["monitored", None] = None,
+        group: Literal["monitored"] | None = None,
         wait: bool = True,
     ) -> Generator[messages.DeviceInstructionMessage, None, ScanStubStatus]:
         """
@@ -891,7 +888,7 @@ class ScanStubs:
         status = self._create_status(is_container=True, name="set")
         for dev, val in zip(device, value):
             sub_status = self._create_status(name=f"set_{dev}")
-            # pylint: disable=protected-access
+
             metadata["device_instr_id"] = sub_status._device_instr_id
             yield self._device_msg(
                 device=dev, action="set", parameter={"value": val}, metadata=metadata
@@ -971,7 +968,6 @@ class ScanStubs:
 
         metadata = metadata if metadata is not None else {}
 
-        # pylint: disable=protected-access
         metadata["device_instr_id"] = status._device_instr_id
 
         yield self._device_msg(device=device, action="rpc", parameter=parameter, metadata=metadata)

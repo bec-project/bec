@@ -34,7 +34,6 @@ def upload_script(connector: RedisConnector, script_content: str) -> str:
 
 
 class ScriptExecutor:
-
     def __init__(self, connector: RedisConnector):
         self.connector = connector
 
@@ -80,10 +79,10 @@ class ScriptExecutor:
                 self._send_status(script_id, "failed")
                 return
             self._send_status(script_id, "running")
-            # pylint: disable=exec-used
+
             compiled_code = compile(script_text, f"<script {script_id}>", "exec")
-            exec(compiled_code)
-        except Exception as e:
+            exec(compiled_code)  # noqa: S102 - Executing the submitted script is this service's purpose.
+        except Exception as _e:
             exc_type, exc_value, exc_tb = sys.exc_info()
             tb_frames = traceback.extract_tb(exc_tb)
 
@@ -101,7 +100,7 @@ class ScriptExecutor:
                 formatted_tb + f"{exc_type.__name__ if exc_type else 'Unknown'}: {exc_value}\n"
             )
             self._send_status(script_id, "failed", tb=formatted_exc)
-            raise e
+            raise
         except KeyboardInterrupt:
             self._send_status(script_id, "aborted")
         else:

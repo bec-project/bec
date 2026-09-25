@@ -34,7 +34,6 @@ def update_queue(fcn):
 
 
 class QueueItem:
-    # pylint: disable=too-many-arguments
     def __init__(
         self,
         scan_manager: ScanManager,

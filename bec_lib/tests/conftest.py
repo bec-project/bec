@@ -21,7 +21,7 @@ def threads_check(threads_check):
 @pytest.fixture(autouse=True)
 def bec_client_singleton_reset():
     """Reset the BECClient singleton before and after each test."""
-    # pylint: disable=protected-access
+
     BECClient._reset_singleton()
     yield
     BECClient._reset_singleton()

@@ -3,7 +3,7 @@ BECClient class. This class is the main entry point for the BEC client and all
 derived classes. It is used to initialize the client and start the client.
 """
 
-from __future__ import annotations, print_function
+from __future__ import annotations
 
 import builtins
 import getpass
@@ -173,7 +173,7 @@ class BECClient(BECService):
 
     def __new__(cls, *args, forced=False, **kwargs):
         if forced or BECClient._client is None:
-            BECClient._client = super(BECClient, cls).__new__(cls)
+            BECClient._client = super().__new__(cls)
             BECClient._initialized = False
         return BECClient._client
 
@@ -200,7 +200,7 @@ class BECClient(BECService):
             if msg:
                 return msg.value
             return ""
-        except Exception:
+        except Exception:  # noqa: BLE001 - Startup tolerates unavailable services and failing user plugins.
             return ""
 
     def start(self):
@@ -326,7 +326,7 @@ class BECClient(BECService):
                     f"Loaded high level interface {module_name} from plugin {plugin.__name__}."
                 )
                 break
-            except Exception:
+            except Exception:  # noqa: BLE001 - Startup tolerates unavailable services and failing user plugins.
                 logger.info(
                     f"Failed to load high level interface {module_name} from plugin {plugin.__name__}."
                 )
@@ -343,7 +343,7 @@ class BECClient(BECService):
         self.callbacks.run(EventType.NAMESPACE_UPDATE, action="add", ns_objects=funcs)
 
     def _update_username(self):
-        # pylint: disable=protected-access
+
         self._username = self.connector.username
         self._system_user = getpass.getuser()
 
@@ -371,7 +371,6 @@ class BECClient(BECService):
         if self.alarm_handler:
             self.alarm_handler.shutdown()
         if self.history is not None:
-            # pylint: disable=protected-access
             self.history._shutdown()
         if self.builtin_actors is not None:
             self.builtin_actors.shutdown()
@@ -421,7 +420,7 @@ class BECClient(BECService):
         return doc_string.strip().split("\n")[0]
 
     def _request_server_restart(self):
-        # pylint: disable=protected-access
+
         if self.connector is None or self.device_manager is None:
             raise RuntimeError("Client not initialized. Cannot restart server.")
 

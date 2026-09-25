@@ -26,7 +26,8 @@ def run_scan(scan_name: str, args: tuple, parameters: dict, *, bec: BECClient):
     any string arguments into devices if they exist in the device manager."""
 
     args = tuple(
-        bec.device_manager.devices[arg] if arg in bec.device_manager.devices else arg  # type: ignore
+        # DeviceContainer resolves dotted device paths through membership and indexing.
+        bec.device_manager.devices[arg] if arg in bec.device_manager.devices else arg  # noqa: SIM401
         for arg in args
     )
     if (scan := getattr(bec.scans, scan_name, None)) is None:

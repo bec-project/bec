@@ -42,9 +42,6 @@ from bec_server.scan_server.scans.legacy_scans import (
 # the following imports are fixtures that are used in the tests
 from bec_server.scan_server.tests.fixtures import *
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
-
 
 def test_unpack_scan_args_empty_dict():
     scan_args = {}
@@ -699,7 +696,7 @@ def test_fermat_scan(scan_msg, reference_scan_list, scan_assembler):
 
     scan._set_position_offset = offset_mock
     next(scan.prepare_positions())
-    # pylint: disable=protected-access
+
     pos = list(scan._get_position())
     assert pytest.approx(np.vstack(np.array(pos, dtype=object)[:, 1])) == np.vstack(
         np.array(reference_scan_list, dtype=object)[:, 1]
@@ -902,10 +899,9 @@ def test_cont_line_scan(scan_msg, reference_scan_list, scan_assembler, device_ma
         ),
         mock.patch.object(device_manager_mock.devices["samx"], "read", side_effect=samx_read),
     ):
-
         msg_list = list(request.run())
 
-        scan_uid = msg_list[0].metadata.get("scan_id")
+        _scan_uid = msg_list[0].metadata.get("scan_id")
         diid_list = []
         for ii, msg in enumerate(msg_list):
             if msg is None:
@@ -1057,16 +1053,18 @@ def test_pre_scan_macro():
     request = FermatSpiralScan(
         *args, device_manager=device_manager, parameter=scan_msg.content["parameter"], **kwargs
     )
-    with mock.patch.object(
-        request.device_manager.connector,
-        "lrange",
-        new_callable=mock.PropertyMock,
-        return_value=[messages.VariableMessage(value=macros)],
-    ) as macros_mock:
-        with mock.patch.object(request, "_get_func_name_from_macro", return_value="pre_scan_macro"):
-            with mock.patch("builtins.eval") as eval_mock:
-                request.initialize()
-                eval_mock.assert_called_once_with("pre_scan_macro")
+    with (
+        mock.patch.object(
+            request.device_manager.connector,
+            "lrange",
+            new_callable=mock.PropertyMock,
+            return_value=[messages.VariableMessage(value=macros)],
+        ) as _macros_mock,
+        mock.patch.object(request, "_get_func_name_from_macro", return_value="pre_scan_macro"),
+        mock.patch("builtins.eval") as eval_mock,
+    ):
+        request.initialize()
+        eval_mock.assert_called_once_with("pre_scan_macro")
 
 
 # def test_scan_report_devices():
@@ -1105,7 +1103,7 @@ def test_round_roi_scan():
     request = RoundROIScan(
         *args, device_manager=device_manager, parameter=scan_msg.content["parameter"], **kwargs
     )
-    assert set(request.scan_report_devices) == set(["samx", "samy"])
+    assert set(request.scan_report_devices) == {"samx", "samy"}
     assert request.dr == 2
     assert request.nth == 4
     assert request.exp_time == 2
@@ -1233,7 +1231,7 @@ def test_scan_report_devices():
     request = FermatSpiralScan(
         *args, device_manager=device_manager, parameter=scan_msg.content["parameter"], **kwargs
     )
-    assert set(request.scan_report_devices) == set(["samx", "samy"])
+    assert set(request.scan_report_devices) == {"samx", "samy"}
 
     request.scan_report_devices = ["samx", "samy", "samz"]
     assert request.scan_report_devices == ["samx", "samy", "samz"]
@@ -1340,7 +1338,7 @@ def test_scan_base_init():
         queue="primary",
     )
     with pytest.raises(ValueError) as exc_info:
-        request = ScanBaseMock(
+        _request = ScanBaseMock(
             device_manager=device_manager, parameter=scan_msg.content["parameter"]
         )
     assert exc_info.value.args[0] == "scan_name cannot be empty"
@@ -1396,7 +1394,7 @@ def test_round_scan_fly_simupdate_scan_motors():
 
     request.update_scan_motors()
     assert request.scan_motors == []
-    assert request.flyer == list(scan_msg.content["parameter"]["args"].keys())[0]
+    assert request.flyer == next(iter(scan_msg.content["parameter"]["args"]))
 
 
 def test_round_scan_fly_sim_prepare_positions():
@@ -1800,7 +1798,7 @@ def test_monitor_scan():
         queue="primary",
     )
     args = unpack_scan_args(scan_msg.content["parameter"]["args"])
-    kwargs = scan_msg.content["parameter"]["kwargs"]
+    _kwargs = scan_msg.content["parameter"]["kwargs"]
     request = MonitorScan(
         *args,
         device_manager=device_manager,
@@ -1831,84 +1829,86 @@ def test_monitor_scan_run(scan_assembler, ScanStubStatusMock):
         yield "fake_set"
         return ScanStubStatusMock(done_func=fake_done)
 
-    with mock.patch.object(request, "_get_flyer_status") as flyer_status:
-        with mock.patch.object(request, "_check_limits") as check_limits:
-            with mock.patch.object(request, "_set_position_offset") as position_offset:
-                with mock.patch.object(request.stubs, "set", side_effect=fake_set):
-                    flyer_status.side_effect = [
-                        None,
-                        None,
-                        messages.DeviceMessage(signals={"rb1": {"value": 1}}),
-                    ]
-                    ref_list = list(request.run())
-                    for msg in ref_list:
-                        if msg and msg != "fake_set":
-                            msg.metadata.pop("device_instr_id", None)
-                    assert ref_list == [
-                        messages.DeviceInstructionMessage(
-                            metadata={"readout_priority": "monitored"},
-                            device=["samx"],
-                            action="read",
-                            parameter={},
-                        ),
-                        None,
-                        messages.DeviceInstructionMessage(
-                            metadata={"readout_priority": "monitored"},
-                            device=None,
-                            action="open_scan",
-                            parameter={
-                                "readout_priority": {
-                                    "monitored": ["samx"],
-                                    "baseline": [],
-                                    "on_request": [],
-                                    "async": [],
-                                },
-                                "num_points": 0,
-                                "positions": [[-5.0], [5.0]],
-                                "scan_name": "monitor_scan",
-                                "scan_type": "fly",
-                            },
-                        ),
-                        messages.DeviceInstructionMessage(
-                            metadata={},
-                            device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
-                            action="stage",
-                            parameter={},
-                        ),
-                        messages.DeviceInstructionMessage(
-                            metadata={"readout_priority": "baseline"},
-                            device=["rtx", "samy", "samz"],
-                            action="read",
-                            parameter={},
-                        ),
-                        "fake_set",
-                        messages.DeviceInstructionMessage(
-                            metadata={"readout_priority": "monitored"},
-                            device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
-                            action="pre_scan",
-                            parameter={},
-                        ),
-                        "fake_set",
-                        "fake_set",
-                        messages.DeviceInstructionMessage(
-                            metadata={"readout_priority": "monitored"},
-                            device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
-                            action="complete",
-                            parameter={},
-                        ),
-                        messages.DeviceInstructionMessage(
-                            metadata={},
-                            device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
-                            action="unstage",
-                            parameter={},
-                        ),
-                        messages.DeviceInstructionMessage(
-                            metadata={"readout_priority": "monitored"},
-                            device=None,
-                            action="close_scan",
-                            parameter={},
-                        ),
-                    ]
+    with (
+        mock.patch.object(request, "_get_flyer_status") as flyer_status,
+        mock.patch.object(request, "_check_limits") as _check_limits,
+        mock.patch.object(request, "_set_position_offset") as _position_offset,
+        mock.patch.object(request.stubs, "set", side_effect=fake_set),
+    ):
+        flyer_status.side_effect = [
+            None,
+            None,
+            messages.DeviceMessage(signals={"rb1": {"value": 1}}),
+        ]
+        ref_list = list(request.run())
+        for msg in ref_list:
+            if msg and msg != "fake_set":
+                msg.metadata.pop("device_instr_id", None)
+        assert ref_list == [
+            messages.DeviceInstructionMessage(
+                metadata={"readout_priority": "monitored"},
+                device=["samx"],
+                action="read",
+                parameter={},
+            ),
+            None,
+            messages.DeviceInstructionMessage(
+                metadata={"readout_priority": "monitored"},
+                device=None,
+                action="open_scan",
+                parameter={
+                    "readout_priority": {
+                        "monitored": ["samx"],
+                        "baseline": [],
+                        "on_request": [],
+                        "async": [],
+                    },
+                    "num_points": 0,
+                    "positions": [[-5.0], [5.0]],
+                    "scan_name": "monitor_scan",
+                    "scan_type": "fly",
+                },
+            ),
+            messages.DeviceInstructionMessage(
+                metadata={},
+                device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                action="stage",
+                parameter={},
+            ),
+            messages.DeviceInstructionMessage(
+                metadata={"readout_priority": "baseline"},
+                device=["rtx", "samy", "samz"],
+                action="read",
+                parameter={},
+            ),
+            "fake_set",
+            messages.DeviceInstructionMessage(
+                metadata={"readout_priority": "monitored"},
+                device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                action="pre_scan",
+                parameter={},
+            ),
+            "fake_set",
+            "fake_set",
+            messages.DeviceInstructionMessage(
+                metadata={"readout_priority": "monitored"},
+                device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                action="complete",
+                parameter={},
+            ),
+            messages.DeviceInstructionMessage(
+                metadata={},
+                device=["bpm4i", "eiger", "rtx", "samx", "samy", "samz"],
+                action="unstage",
+                parameter={},
+            ),
+            messages.DeviceInstructionMessage(
+                metadata={"readout_priority": "monitored"},
+                device=None,
+                action="close_scan",
+                parameter={},
+            ),
+        ]
 
 
 def test_OpenInteractiveScan(scan_assembler):
@@ -2090,10 +2090,12 @@ def test_RoundScan(scan_assembler):
         **scan_msg.content["parameter"]["kwargs"],
     )
 
-    with mock.patch.object(request, "_check_limits") as check_limits:
-        with mock.patch.object(request, "_set_position_offset") as position_offset:
-            ref = list(request.run())
-            assert len(ref) == 47
+    with (
+        mock.patch.object(request, "_check_limits") as _check_limits,
+        mock.patch.object(request, "_set_position_offset") as _position_offset,
+    ):
+        ref = list(request.run())
+        assert len(ref) == 47
 
 
 def test_ContLineFlyScan(scan_assembler, ScanStubStatusMock):
@@ -2108,10 +2110,12 @@ def test_ContLineFlyScan(scan_assembler, ScanStubStatusMock):
         yield "fake_set"
         return ScanStubStatusMock(done_func=fake_done)
 
-    with mock.patch.object(request.stubs, "set", side_effect=fake_set):
-        with mock.patch.object(request.stubs, "_get_result_from_status") as get_result:
-            get_result.return_value = {"samx": {"value": 0}}
-            ref_list = list(request.run())
+    with (
+        mock.patch.object(request.stubs, "set", side_effect=fake_set),
+        mock.patch.object(request.stubs, "_get_result_from_status") as get_result,
+    ):
+        get_result.return_value = {"samx": {"value": 0}}
+        ref_list = list(request.run())
 
     ref_list[1].parameter["rpc_id"] = "rpc_id"
     ref_list[2].parameter["readback"]["RID"] = "ddaad496-6178-4f6a-8c2e-0c9d416e5d9c"
@@ -2353,7 +2357,7 @@ def test_hexagonal_scan_initialization():
     assert request.exp_time == 0.1
     assert request.relative is True
     assert request.snaked is True
-    assert set(request.scan_motors) == set(["samx", "samy"])
+    assert set(request.scan_motors) == {"samx", "samy"}
 
 
 def test_hexagonal_scan_positions():
@@ -2467,7 +2471,7 @@ def test_hexagonal_scan_motor_movement_optimization():
     # First move - both motors should move
     list(request._move_scan_motors_and_wait([1.0, 2.0]))
     assert len(set_calls) == 1
-    assert set(set_calls[0][0]) == set(["samx", "samy"])
+    assert set(set_calls[0][0]) == {"samx", "samy"}
 
     # Second move - only motor1 changes
     set_calls.clear()

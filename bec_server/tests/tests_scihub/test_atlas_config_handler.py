@@ -1,4 +1,3 @@
-# pylint: skip-file
 import os
 import threading
 from unittest import mock
@@ -22,8 +21,7 @@ def available_keys_fixture(test_config_yaml):
     config_content = test_config_yaml
     config_keys_from_config = []
     for dev_config in config_content.values():
-        for k in dev_config.keys():
-            config_keys_from_config.append(k)
+        config_keys_from_config.extend(dev_config)
     config_keys_from_config = set(config_keys_from_config)
     # remove enabled and deviceClass, as it is not handled from config_handler
     config_keys_from_config.remove("enabled")
@@ -42,16 +40,18 @@ def mock_active_request():
 @pytest.fixture
 def cancel_request_mocks(config_handler):
     """Fixture providing common mocks for cancel request tests."""
-    with mock.patch.object(config_handler, "_update_device_server") as update_ds:
-        with mock.patch.object(config_handler, "_wait_for_device_server_update") as wait_ds:
-            with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-                with mock.patch("concurrent.futures.wait") as cf_wait:
-                    yield {
-                        "update_device_server": update_ds,
-                        "wait_device_server_update": wait_ds,
-                        "send_config_request_reply": req_reply,
-                        "concurrent_futures_wait": cf_wait,
-                    }
+    with (
+        mock.patch.object(config_handler, "_update_device_server") as update_ds,
+        mock.patch.object(config_handler, "_wait_for_device_server_update") as wait_ds,
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+        mock.patch("concurrent.futures.wait") as cf_wait,
+    ):
+        yield {
+            "update_device_server": update_ds,
+            "wait_device_server_update": wait_ds,
+            "send_config_request_reply": req_reply,
+            "concurrent_futures_wait": cf_wait,
+        }
 
 
 def test_parse_config_request_update(config_handler):
@@ -139,14 +139,14 @@ def test_parse_config_request_unknown_exception(config_handler):
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
     cancel_event = threading.Event()
-    with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-        with mock.patch.object(config_handler.device_manager, "check_request_validity"):
-            with mock.patch.object(
-                config_handler, "_update_config", side_effect=Exception("Unknown error")
-            ):
-                config_handler.parse_config_request(msg, cancel_event=cancel_event)
-                req_reply.assert_called_once_with(accepted=False, error_msg=mock.ANY, metadata={})
-                assert "Unknown error" in req_reply.call_args.kwargs["error_msg"]
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+        mock.patch.object(config_handler.device_manager, "check_request_validity"),
+        mock.patch.object(config_handler, "_update_config", side_effect=Exception("Unknown error")),
+    ):
+        config_handler.parse_config_request(msg, cancel_event=cancel_event)
+        req_reply.assert_called_once_with(accepted=False, error_msg=mock.ANY, metadata={})
+        assert "Unknown error" in req_reply.call_args.kwargs["error_msg"]
 
 
 def test_parse_config_request_cancelled_exception(config_handler):
@@ -154,13 +154,15 @@ def test_parse_config_request_cancelled_exception(config_handler):
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
     cancel_event = threading.Event()
-    with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-        with mock.patch.object(config_handler.device_manager, "check_request_validity"):
-            with mock.patch.object(config_handler, "_update_config", side_effect=CancelledError()):
-                config_handler.parse_config_request(msg, cancel_event=cancel_event)
-                req_reply.assert_called_once_with(
-                    accepted=False, error_msg="Request was cancelled", metadata={}
-                )
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+        mock.patch.object(config_handler.device_manager, "check_request_validity"),
+        mock.patch.object(config_handler, "_update_config", side_effect=CancelledError()),
+    ):
+        config_handler.parse_config_request(msg, cancel_event=cancel_event)
+        req_reply.assert_called_once_with(
+            accepted=False, error_msg="Request was cancelled", metadata={}
+        )
 
 
 def test_parse_config_request_exception(config_handler):
@@ -168,20 +170,24 @@ def test_parse_config_request_exception(config_handler):
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
     cancel_event = threading.Event()
-    with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-        with mock.patch("bec_server.scihub.atlas.config_handler.traceback.format_exc") as exc:
-            with mock.patch.object(config_handler, "_update_config", side_effect=AttributeError()):
-                config_handler.parse_config_request(msg, cancel_event=cancel_event)
-                req_reply.assert_called_once_with(accepted=False, error_msg=exc(), metadata={})
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+        mock.patch("bec_server.scihub.atlas.config_handler.traceback.format_exc") as exc,
+        mock.patch.object(config_handler, "_update_config", side_effect=AttributeError()),
+    ):
+        config_handler.parse_config_request(msg, cancel_event=cancel_event)
+        req_reply.assert_called_once_with(accepted=False, error_msg=exc(), metadata={})
 
 
 def test_config_handler_reload_config(config_handler):
     msg = messages.DeviceConfigMessage(action="reload", config={}, metadata={})
     cancel_event = threading.Event()
-    with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-        with mock.patch.object(config_handler, "send_config") as send:
-            config_handler.parse_config_request(msg, cancel_event=cancel_event)
-            send.assert_called_once_with(msg)
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as _req_reply,
+        mock.patch.object(config_handler, "send_config") as send,
+    ):
+        config_handler.parse_config_request(msg, cancel_event=cancel_event)
+        send.assert_called_once_with(msg)
 
 
 @pytest.mark.parametrize(
@@ -225,22 +231,22 @@ def test_config_handler_reload_config(config_handler):
 def test_config_handler_set_config(config_handler, config, expected):
     msg = messages.DeviceConfigMessage(action="set", config=config, metadata={"RID": "12345"})
     cancel_event = threading.Event()
-    with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-        with mock.patch.object(
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+        mock.patch.object(
             config_handler, "_wait_for_device_server_update", return_value=(True, mock.MagicMock())
-        ) as wait:
-            with mock.patch.object(config_handler, "send_config") as send_config:
-                config_handler._set_config(msg, cancel_event=cancel_event)
-                req_reply.assert_called_once_with(
-                    accepted=True, error_msg=None, metadata={"RID": "12345", "updated_config": True}
-                )
-                send_config.assert_called_once_with(
-                    messages.DeviceConfigMessage(
-                        action="reload",
-                        config={},
-                        metadata={"RID": "12345", "updated_config": True},
-                    )
-                )
+        ) as _wait,
+        mock.patch.object(config_handler, "send_config") as send_config,
+    ):
+        config_handler._set_config(msg, cancel_event=cancel_event)
+        req_reply.assert_called_once_with(
+            accepted=True, error_msg=None, metadata={"RID": "12345", "updated_config": True}
+        )
+        send_config.assert_called_once_with(
+            messages.DeviceConfigMessage(
+                action="reload", config={}, metadata={"RID": "12345", "updated_config": True}
+            )
+        )
 
 
 def test_config_handler_set_invalid_config_raises(config_handler):
@@ -248,12 +254,12 @@ def test_config_handler_set_invalid_config_raises(config_handler):
         action="set", config={"samx": {"status": {"enabled": True}}}, metadata={"RID": "12345"}
     )
     cancel_event = threading.Event()
-    with pytest.raises(ValidationError):
-        with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-            config_handler._set_config(msg, cancel_event=cancel_event)
-            req_reply.assert_called_once_with(
-                accepted=True, error_msg=None, metadata={"RID": "12345"}
-            )
+    with (
+        pytest.raises(ValidationError),
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+    ):
+        config_handler._set_config(msg, cancel_event=cancel_event)
+        req_reply.assert_called_once_with(accepted=True, error_msg=None, metadata={"RID": "12345"})
 
 
 BASIC_CONFIG = {
@@ -265,7 +271,9 @@ BASIC_CONFIG = {
 
 @pytest.fixture
 def make_samx(config_handler):
-    def _func(config: dict = {}):
+    def _func(config: dict | None = None):
+        if config is None:
+            config = {}
         dev = config_handler.device_manager.devices
         dev.samx = DeviceBaseWithConfig(name="samx", config=BASIC_CONFIG | config)
         return dev
@@ -279,22 +287,22 @@ def test_config_handler_update_config(config_handler, make_samx):
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
     cancel_event = threading.Event()
-    with mock.patch.object(
-        config_handler, "_update_device_config", return_value=True
-    ) as update_device_config:
-        with mock.patch.object(config_handler, "update_config_in_redis") as update_config_in_redis:
-            with mock.patch.object(config_handler, "send_config") as send_config:
-                with mock.patch.object(
-                    config_handler, "send_config_request_reply"
-                ) as send_config_request_reply:
-                    config_handler._update_config(msg, cancel_event=cancel_event)
-                    update_device_config.assert_called_once_with(dev["samx"], {"enabled": True})
-                    update_config_in_redis.assert_called_once_with(dev["samx"])
+    with (
+        mock.patch.object(
+            config_handler, "_update_device_config", return_value=True
+        ) as update_device_config,
+        mock.patch.object(config_handler, "update_config_in_redis") as update_config_in_redis,
+        mock.patch.object(config_handler, "send_config") as send_config,
+        mock.patch.object(config_handler, "send_config_request_reply") as send_config_request_reply,
+    ):
+        config_handler._update_config(msg, cancel_event=cancel_event)
+        update_device_config.assert_called_once_with(dev["samx"], {"enabled": True})
+        update_config_in_redis.assert_called_once_with(dev["samx"])
 
-                    send_config.assert_called_once_with(msg)
-                    send_config_request_reply.assert_called_once_with(
-                        accepted=True, error_msg=None, metadata={}
-                    )
+        send_config.assert_called_once_with(msg)
+        send_config_request_reply.assert_called_once_with(
+            accepted=True, error_msg=None, metadata={}
+        )
 
 
 def test_config_handler_update_config_not_updated(config_handler, make_samx):
@@ -303,35 +311,37 @@ def test_config_handler_update_config_not_updated(config_handler, make_samx):
         action="update", config={"samx": {"enabled": True}}, metadata={}
     )
     cancel_event = threading.Event()
-    with mock.patch.object(
-        config_handler, "_update_device_config", return_value=False
-    ) as update_device_config:
-        with mock.patch.object(config_handler, "update_config_in_redis") as update_config_in_redis:
-            with mock.patch.object(config_handler, "send_config") as send_config:
-                with mock.patch.object(
-                    config_handler, "send_config_request_reply"
-                ) as send_config_request_reply:
-                    config_handler._update_config(msg, cancel_event=cancel_event)
-                    update_device_config.assert_called_once_with(dev["samx"], {"enabled": True})
-                    update_config_in_redis.assert_not_called()
+    with (
+        mock.patch.object(
+            config_handler, "_update_device_config", return_value=False
+        ) as update_device_config,
+        mock.patch.object(config_handler, "update_config_in_redis") as update_config_in_redis,
+        mock.patch.object(config_handler, "send_config") as send_config,
+        mock.patch.object(config_handler, "send_config_request_reply") as send_config_request_reply,
+    ):
+        config_handler._update_config(msg, cancel_event=cancel_event)
+        update_device_config.assert_called_once_with(dev["samx"], {"enabled": True})
+        update_config_in_redis.assert_not_called()
 
-                    send_config.assert_not_called()
-                    send_config_request_reply.assert_not_called()
+        send_config.assert_not_called()
+        send_config_request_reply.assert_not_called()
 
 
 def test_config_handler_update_device_config_enable(config_handler, make_samx):
     dev = make_samx()
-    with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
-        with mock.patch.object(
+    with (
+        mock.patch.object(config_handler, "_update_device_server") as update_dev_server,
+        mock.patch.object(
             config_handler, "_wait_for_device_server_update", return_value=(True, mock.MagicMock())
-        ) as wait:
-            with mock.patch("bec_server.scihub.atlas.config_handler.uuid") as uuid:
-                device = dev["samx"]
-                rid = str(uuid.uuid4())
-                config_handler._update_device_config(device, {"enabled": True})
-                # mock doesn't copy the data, hence the popped result:
-                update_dev_server.assert_called_once_with(rid, {device.name: {}})
-                wait.assert_called_once_with(rid)
+        ) as wait,
+        mock.patch("bec_server.scihub.atlas.config_handler.uuid") as uuid,
+    ):
+        device = dev["samx"]
+        rid = str(uuid.uuid4())
+        config_handler._update_device_config(device, {"enabled": True})
+        # mock doesn't copy the data, hence the popped result:
+        update_dev_server.assert_called_once_with(rid, {device.name: {}})
+        wait.assert_called_once_with(rid)
 
 
 def test_config_handler_update_device_config_failed_enable_keeps_device_disabled(
@@ -357,22 +367,20 @@ def test_config_handler_update_device_config_failed_enable_keeps_device_disabled
 
 def test_config_handler_update_device_config_deviceConfig(config_handler, make_samx):
     dev = make_samx({"deviceConfig": {}})
-    with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
-        with mock.patch.object(
+    with (
+        mock.patch.object(config_handler, "_update_device_server") as update_dev_server,
+        mock.patch.object(
             config_handler, "_wait_for_device_server_update", return_value=(True, mock.MagicMock())
-        ) as wait:
-            with mock.patch("bec_server.scihub.atlas.config_handler.uuid") as uuid:
-                device = dev["samx"]
-                rid = str(uuid.uuid4())
-                config_handler._update_device_config(
-                    device, {"deviceConfig": {"something": "to_update"}}
-                )
-                # mock doesn't copy the data, hence the popped result:
-                update_dev_server.assert_called_once_with(rid, {device.name: {}})
-                wait.assert_called_once_with(rid)
-                assert _all_in_a_in_b(
-                    {"deviceConfig": {"something": "to_update"}}, dev.samx._config
-                )
+        ) as wait,
+        mock.patch("bec_server.scihub.atlas.config_handler.uuid") as uuid,
+    ):
+        device = dev["samx"]
+        rid = str(uuid.uuid4())
+        config_handler._update_device_config(device, {"deviceConfig": {"something": "to_update"}})
+        # mock doesn't copy the data, hence the popped result:
+        update_dev_server.assert_called_once_with(rid, {device.name: {}})
+        wait.assert_called_once_with(rid)
+        assert _all_in_a_in_b({"deviceConfig": {"something": "to_update"}}, dev.samx._config)
 
 
 def test_config_handler_update_device_config_misc(config_handler, make_samx):
@@ -385,7 +393,7 @@ def test_config_handler_update_device_config_misc(config_handler, make_samx):
 
 def test_config_handler_update_device_config_raise(config_handler, make_samx):
     dev = make_samx()
-    with mock.patch.object(config_handler, "_validate_update") as validate_update:
+    with mock.patch.object(config_handler, "_validate_update") as _validate_update:
         device = dev["samx"]
         with pytest.raises(DeviceConfigError):
             config_handler._update_device_config(device, {"doesnt_exist": False})
@@ -413,38 +421,40 @@ def test_config_handler_update_device_config_available_keys(
         else:
             dev = make_samx({})
 
-        with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
-            with mock.patch.object(
+        with (
+            mock.patch.object(config_handler, "_update_device_server") as update_dev_server,
+            mock.patch.object(
                 config_handler,
                 "_wait_for_device_server_update",
                 return_value=(True, mock.MagicMock()),
-            ) as wait:
-                with mock.patch("bec_server.scihub.atlas.config_handler.uuid") as uuid:
-                    device = dev["samx"]
-                    rid = str(uuid.uuid4())
-                    if available_key in ["deviceConfig", "userParameter"]:
-                        update = {"something": "to_update"}
-                        config_handler._update_device_config(device, {available_key: update})
-                    elif available_key in ["softwareTrigger", "readOnly"]:
-                        update = True
-                        config_handler._update_device_config(device, {available_key: update})
-                    elif available_key in ["readoutPriority"]:
-                        update = ReadoutPriority.MONITORED
-                        config_handler._update_device_config(device, {available_key: update})
-                    elif available_key in ["readoutPriority"]:
-                        update = OnFailure.RETRY
-                        config_handler._update_device_config(device, {available_key: update})
-                    elif available_key in ["deviceTags"]:
-                        update = ["something"]
-                        config_handler._update_device_config(device, {available_key: update})
-                    else:
-                        update = ""
-                        config_handler._update_device_config(device, {available_key: update})
-                    # mock doesn't copy the data, hence the popped result:
-                    if available_key == "deviceConfig":
-                        update_dev_server.assert_called_once_with(rid, {device.name: {}})
-                        wait.assert_called_once_with(rid)
-                    assert _all_in_a_in_b({available_key: update}, dev.samx._config)
+            ) as wait,
+            mock.patch("bec_server.scihub.atlas.config_handler.uuid") as uuid,
+        ):
+            device = dev["samx"]
+            rid = str(uuid.uuid4())
+            if available_key in ["deviceConfig", "userParameter"]:
+                update = {"something": "to_update"}
+                config_handler._update_device_config(device, {available_key: update})
+            elif available_key in ["softwareTrigger", "readOnly"]:
+                update = True
+                config_handler._update_device_config(device, {available_key: update})
+            elif available_key in ["readoutPriority"]:
+                update = ReadoutPriority.MONITORED
+                config_handler._update_device_config(device, {available_key: update})
+            elif available_key in ["readoutPriority"]:
+                update = OnFailure.RETRY
+                config_handler._update_device_config(device, {available_key: update})
+            elif available_key in ["deviceTags"]:
+                update = ["something"]
+                config_handler._update_device_config(device, {available_key: update})
+            else:
+                update = ""
+                config_handler._update_device_config(device, {available_key: update})
+            # mock doesn't copy the data, hence the popped result:
+            if available_key == "deviceConfig":
+                update_dev_server.assert_called_once_with(rid, {device.name: {}})
+                wait.assert_called_once_with(rid)
+            assert _all_in_a_in_b({available_key: update}, dev.samx._config)
 
 
 def test_config_handler_wait_for_device_server_update(config_handler):
@@ -461,10 +471,12 @@ def test_config_handler_wait_for_device_server_update(config_handler):
 
 def test_config_handler_wait_for_device_server_update_timeout(config_handler):
     RID = "12345"
-    with mock.patch.object(config_handler.connector, "get", return_value=None) as mock_get:
-        with pytest.raises(TimeoutError):
-            config_handler._wait_for_device_server_update(RID, timeout_time=0.1)
-            mock_get.assert_called()
+    with (
+        mock.patch.object(config_handler.connector, "get", return_value=None) as mock_get,
+        pytest.raises(TimeoutError),
+    ):
+        config_handler._wait_for_device_server_update(RID, timeout_time=0.1)
+        mock_get.assert_called()
 
 
 def _all_in_a_in_b(a: dict, b: dict):
@@ -472,20 +484,22 @@ def _all_in_a_in_b(a: dict, b: dict):
 
 
 def test_config_handler_update_config_in_redis(config_handler):
-    with mock.patch.object(config_handler, "get_config_from_redis") as get_config:
-        with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
-            get_config.return_value = [{"name": "samx", "config": {}}]
-            dev = config_handler.device_manager.devices
-            dev.samx = DeviceBaseWithConfig(
-                name="samx",
-                config=BASIC_CONFIG | {"deviceConfig": {"something": "to_update"}, "name": "samx"},
-            )
-            config_handler.update_config_in_redis(dev["samx"])
-            get_config.assert_called_once()
-            assert _all_in_a_in_b(
-                {"deviceConfig": {"something": "to_update"}, "name": "samx"},
-                set_config.call_args.args[0][0],
-            )
+    with (
+        mock.patch.object(config_handler, "get_config_from_redis") as get_config,
+        mock.patch.object(config_handler, "set_config_in_redis") as set_config,
+    ):
+        get_config.return_value = [{"name": "samx", "config": {}}]
+        dev = config_handler.device_manager.devices
+        dev.samx = DeviceBaseWithConfig(
+            name="samx",
+            config=BASIC_CONFIG | {"deviceConfig": {"something": "to_update"}, "name": "samx"},
+        )
+        config_handler.update_config_in_redis(dev["samx"])
+        get_config.assert_called_once()
+        assert _all_in_a_in_b(
+            {"deviceConfig": {"something": "to_update"}, "name": "samx"},
+            set_config.call_args.args[0][0],
+        )
 
 
 def test_config_helper_get_config_from_redis(config_handler):
@@ -507,31 +521,35 @@ def test_config_helper_set_config_in_redis(config_handler):
 
 
 def test_config_handler_add_devices_to_redis(config_handler):
-    with mock.patch.object(config_handler, "get_config_from_redis") as get_config:
-        with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
-            get_config.return_value = [{"name": "samx", "deviceConfig": {}}]
-            config_handler.add_devices_to_redis(
-                {"samy": {"deviceConfig": {"something": "to_update"}, "name": "samy"}}
-            )
-            get_config.assert_called_once()
-            set_config.assert_called_once_with(
-                [
-                    {"name": "samx", "deviceConfig": {}},
-                    {"name": "samy", "deviceConfig": {"something": "to_update"}},
-                ]
-            )
+    with (
+        mock.patch.object(config_handler, "get_config_from_redis") as get_config,
+        mock.patch.object(config_handler, "set_config_in_redis") as set_config,
+    ):
+        get_config.return_value = [{"name": "samx", "deviceConfig": {}}]
+        config_handler.add_devices_to_redis(
+            {"samy": {"deviceConfig": {"something": "to_update"}, "name": "samy"}}
+        )
+        get_config.assert_called_once()
+        set_config.assert_called_once_with(
+            [
+                {"name": "samx", "deviceConfig": {}},
+                {"name": "samy", "deviceConfig": {"something": "to_update"}},
+            ]
+        )
 
 
 def test_config_handler_remove_devices_from_redis(config_handler):
-    with mock.patch.object(config_handler, "get_config_from_redis") as get_config:
-        with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
-            get_config.return_value = [
-                {"name": "samx", "deviceConfig": {}},
-                {"name": "samy", "deviceConfig": {}},
-            ]
-            config_handler.remove_devices_from_redis({"samx": {}})
-            get_config.assert_called_once()
-            set_config.assert_called_once_with([{"name": "samy", "deviceConfig": {}}])
+    with (
+        mock.patch.object(config_handler, "get_config_from_redis") as get_config,
+        mock.patch.object(config_handler, "set_config_in_redis") as set_config,
+    ):
+        get_config.return_value = [
+            {"name": "samx", "deviceConfig": {}},
+            {"name": "samy", "deviceConfig": {}},
+        ]
+        config_handler.remove_devices_from_redis({"samx": {}})
+        get_config.assert_called_once()
+        set_config.assert_called_once_with([{"name": "samy", "deviceConfig": {}}])
 
 
 def test_config_handler_add_to_config(config_handler: ConfigHandler):
@@ -546,18 +564,20 @@ def test_config_handler_add_to_config(config_handler: ConfigHandler):
     }
     msg = messages.DeviceConfigMessage(action="add", config=config, metadata={"RID": "12345"})
     cancel_event = threading.Event()
-    with mock.patch.object(config_handler, "add_devices_to_redis") as add_devices:
-        with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
-            with mock.patch.object(
-                config_handler, "_wait_for_device_server_update"
-            ) as wait_dev_server_update:
-                wait_dev_server_update.return_value = (True, mock.MagicMock())
-                with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-                    config_handler._add_to_config(msg, cancel_event=cancel_event)
-                    add_devices.assert_called_once_with(config)
-                    req_reply.assert_called_once_with(
-                        accepted=True, error_msg=None, metadata={"RID": "12345"}
-                    )
+    with (
+        mock.patch.object(config_handler, "add_devices_to_redis") as add_devices,
+        mock.patch.object(config_handler, "_update_device_server") as _update_dev_server,
+        mock.patch.object(
+            config_handler, "_wait_for_device_server_update"
+        ) as wait_dev_server_update,
+    ):
+        wait_dev_server_update.return_value = (True, mock.MagicMock())
+        with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
+            config_handler._add_to_config(msg, cancel_event=cancel_event)
+            add_devices.assert_called_once_with(config)
+            req_reply.assert_called_once_with(
+                accepted=True, error_msg=None, metadata={"RID": "12345"}
+            )
 
 
 def test_config_handler_add_to_config_disables_failed_devices(config_handler: ConfigHandler):
@@ -610,29 +630,31 @@ def test_config_handler_remove_from_config(config_handler):
     config_handler.device_manager.devices.samx = DeviceBaseWithConfig(
         name="samx", config=BASIC_CONFIG
     )
-    with mock.patch.object(config_handler, "remove_devices_from_redis") as remove_devices:
-        with mock.patch.object(config_handler, "_update_device_server") as update_dev_server:
-            with mock.patch.object(
-                config_handler, "_wait_for_device_server_update"
-            ) as wait_dev_server_update:
-                wait_dev_server_update.return_value = (True, mock.MagicMock())
-                with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-                    config_handler._remove_from_config(msg)
-                    remove_devices.assert_called_once_with({"samx": {}})
-                    req_reply.assert_called_once_with(
-                        accepted=True, error_msg=None, metadata={"RID": "12345"}
-                    )
+    with (
+        mock.patch.object(config_handler, "remove_devices_from_redis") as remove_devices,
+        mock.patch.object(config_handler, "_update_device_server") as _update_dev_server,
+        mock.patch.object(
+            config_handler, "_wait_for_device_server_update"
+        ) as wait_dev_server_update,
+    ):
+        wait_dev_server_update.return_value = (True, mock.MagicMock())
+        with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
+            config_handler._remove_from_config(msg)
+            remove_devices.assert_called_once_with({"samx": {}})
+            req_reply.assert_called_once_with(
+                accepted=True, error_msg=None, metadata={"RID": "12345"}
+            )
 
 
 def test_config_handler_reset_config(config_handler):
     msg = messages.DeviceConfigMessage(action="reset", config=None, metadata={"RID": "12345"})
-    with mock.patch.object(config_handler, "set_config_in_redis") as set_config:
-        with mock.patch.object(config_handler, "send_config_request_reply") as req_reply:
-            config_handler._reset_config(msg)
-            set_config.assert_called_once_with([])
-            req_reply.assert_called_once_with(
-                accepted=True, error_msg=None, metadata={"RID": "12345"}
-            )
+    with (
+        mock.patch.object(config_handler, "set_config_in_redis") as set_config,
+        mock.patch.object(config_handler, "send_config_request_reply") as req_reply,
+    ):
+        config_handler._reset_config(msg)
+        set_config.assert_called_once_with([])
+        req_reply.assert_called_once_with(accepted=True, error_msg=None, metadata={"RID": "12345"})
 
 
 def test_handle_config_request_callback_normal_request(config_handler):
@@ -640,26 +662,28 @@ def test_handle_config_request_callback_normal_request(config_handler):
     msg = messages.DeviceConfigMessage(
         action="update", config={"samx": {"enabled": True}}, metadata={"RID": "12345"}
     )
-    with mock.patch.object(config_handler.executor, "submit") as submit:
-        with mock.patch.object(config_handler, "_remove_active_request"):
-            mock_future = mock.MagicMock()
-            submit.return_value = mock_future
+    with (
+        mock.patch.object(config_handler.executor, "submit") as submit,
+        mock.patch.object(config_handler, "_remove_active_request"),
+    ):
+        mock_future = mock.MagicMock()
+        submit.return_value = mock_future
 
-            config_handler.handle_config_request_callback(msg)
+        config_handler.handle_config_request_callback(msg)
 
-            # Verify executor.submit was called with parse_config_request
-            submit.assert_called_once()
-            call_args = submit.call_args
-            assert call_args[0][0] == config_handler.parse_config_request
-            assert call_args[0][1] == msg
-            # Check that a cancel_event was passed
-            assert isinstance(call_args[0][2], threading.Event)
+        # Verify executor.submit was called with parse_config_request
+        submit.assert_called_once()
+        call_args = submit.call_args
+        assert call_args[0][0] == config_handler.parse_config_request
+        assert call_args[0][1] == msg
+        # Check that a cancel_event was passed
+        assert isinstance(call_args[0][2], threading.Event)
 
-            # Verify active request was set
-            assert config_handler._active_request is not None
-            assert config_handler._active_request["future"] == mock_future
-            assert config_handler._active_request["request_id"] == "12345"
-            assert isinstance(config_handler._active_request["cancel_event"], threading.Event)
+        # Verify active request was set
+        assert config_handler._active_request is not None
+        assert config_handler._active_request["future"] == mock_future
+        assert config_handler._active_request["request_id"] == "12345"
+        assert isinstance(config_handler._active_request["cancel_event"], threading.Event)
 
 
 def test_handle_config_request_callback_cancel_request(config_handler):

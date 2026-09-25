@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -31,7 +31,6 @@ logger = bec_logger.logger
 
 
 class GridScan(ScanBase):
-
     # Scan Type: Hardware triggered or software triggered?
     # If the main trigger and readout logic is done within the at_each_point method in scan_core, choose SOFTWARE_TRIGGERED.
     # If the main trigger and readout logic is implemented on a device that is simply kicked off in this scan, choose HARDWARE_TRIGGERED.
@@ -46,7 +45,7 @@ class GridScan(ScanBase):
 
     # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
-    arg_input = {
+    arg_input: ClassVar[dict] = {
         "device": DeviceBase,
         "start": Annotated[
             float, ScanArgument(display_name="Start Position", reference_units="device")
@@ -56,8 +55,8 @@ class GridScan(ScanBase):
         ],
         "steps": Annotated[int, ScanArgument(display_name="Number of Steps", ge=1)],
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 2, "max": None}
-    gui_config = {
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 2, "max": None}
+    gui_config: ClassVar[dict] = {
         "Movement Parameters": ["relative", "snaked"],
         "Acquisition Parameters": [
             "exp_time",

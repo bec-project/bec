@@ -467,7 +467,7 @@ def test_scan_manager_add_public_file(scan_manager_with_scan):
         ).endpoint,
         value=msg,
     )
-    # pylint: disable=protected-access
+
     scan_manager_with_scan._public_file_callback(msg=msg_object)
     assert scan_manager_with_scan.scan_storage.storage[-1].public_files == {
         msg.file_path: {"done_state": True, "successful": True}
@@ -490,7 +490,7 @@ def test_scan_manager_add_public_file_pending(scan_manager_with_scan):
         topic=MessageEndpoints.public_file("new_scan_id_not_yet_in_storage", "master").endpoint,
         value=msg,
     )
-    # pylint: disable=protected-access
+
     scan_manager_with_scan._public_file_callback(msg=msg_object)
 
     assert scan_manager_with_scan.scan_storage.storage[-1].public_files == {}

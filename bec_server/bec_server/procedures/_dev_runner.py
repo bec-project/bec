@@ -1,9 +1,7 @@
 """Manually startable procedure runner for testing workers during development"""
 
 if True:  # pragma: no cover # must open a clause to apply to everything
-
     from threading import Event
-    from unittest.mock import MagicMock
 
     from bec_lib.logger import bec_logger
     from bec_server.procedures.container_worker import ContainerProcedureWorker

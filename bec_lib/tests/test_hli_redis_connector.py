@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Optional
+from typing import ClassVar
 from unittest import mock
 
 import pytest
@@ -6,24 +6,17 @@ import pytest
 import bec_lib.messages as bec_messages
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
-from bec_lib.endpoints import EndpointInfo, MessageEndpoints
-from bec_lib.messages import AlarmMessage, BECMessage, BECStatus, BundleMessage, ClientInfoMessage
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import AlarmMessage, BECMessage
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.redis_connector import IncompatibleRedisOperation, RedisConnector
-from bec_lib.redis_connector.constants import WrongArguments
-from bec_lib.redis_connector.validation import validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
-
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=redefined-outer-name
 
 
 class TestMessage(BECMessage):
     __test__: ClassVar[bool] = False  # just for pytest to ignore this class
     msg_type: ClassVar[str] = "test_message"
-    msg: Optional[str] = None
+    msg: str | None = None
 
 
 # register at BEC messages module level, to be able to

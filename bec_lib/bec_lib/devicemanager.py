@@ -12,8 +12,9 @@ import functools
 import threading
 import time
 import traceback
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Iterable, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from rich.console import Console
@@ -83,7 +84,7 @@ class DeviceContainer(dict):
         if not isinstance(val, str):
             try:
                 return f"{val:.4f}"
-            except Exception:
+            except Exception:  # noqa: BLE001 - Device display and loading isolate failures from arbitrary device values.
                 return "N/A"
         return val
 
@@ -117,7 +118,7 @@ class DeviceContainer(dict):
         if isinstance(value, DeviceBase):
             self.__setitem__(key, value)
         else:
-            raise AttributeError("Unsupported device type.")
+            raise AttributeError("Unsupported device type.")  # noqa: TRY004 - Preserve the public exception type used by callers.
 
     def __getitem__(self, item):
         if isinstance(item, str) and "." in item:
@@ -162,11 +163,14 @@ class DeviceContainer(dict):
             list: List of devices that belong to the specified acquisition readoutPriority
         """
         val = ReadoutPriority(readout_priority)
-        # pylint: disable=protected-access
+
         return [dev for _, dev in self.items() if dev.root._config["readoutPriority"] == val]
 
     def _filter_devices(
-        self, readout_priority: ReadoutPriority, readout_priority_mod: dict, devices: list = None
+        self,
+        readout_priority: ReadoutPriority,
+        readout_priority_mod: dict,
+        devices: list = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
     ) -> list:
         """filter devices by readout priority"""
         if devices is None:
@@ -228,17 +232,17 @@ class DeviceContainer(dict):
 
     def async_devices(self, readout_priority: dict | None = None) -> list:
         """get a list of all synchronous devices"""
-        # pylint: disable=protected-access
+
         return self._filter_devices(ReadoutPriority.ASYNC, readout_priority)
 
     def continuous_devices(self, readout_priority: dict | None = None) -> list:
         """get a list of all continuous devices"""
-        # pylint: disable=protected-access
+
         return self._filter_devices(ReadoutPriority.CONTINUOUS, readout_priority)
 
     def on_request_devices(self, readout_priority: dict | None = None) -> list:
         """get a list of all on request devices"""
-        # pylint: disable=protected-access
+
         return self._filter_devices(ReadoutPriority.ON_REQUEST, readout_priority)
 
     @typechecked
@@ -297,7 +301,7 @@ class DeviceContainer(dict):
         Returns:
             list: List of devices with the specified tags
         """
-        # pylint: disable=protected-access
+
         if not isinstance(tags, list):
             tags = [tags]
         return [
@@ -307,8 +311,7 @@ class DeviceContainer(dict):
     def show_tags(self) -> list:
         """returns a list of used tags in the current config"""
         tags = set()
-        for _, dev in self.items():
-            # pylint: disable=protected-access
+        for dev in self.values():
             dev_tags = dev._config.get("deviceTags")
             if dev_tags:
                 tags.update(dev_tags)
@@ -318,7 +321,7 @@ class DeviceContainer(dict):
         """
         Get a list of all enabled devices that should receive a software trigger during a scan.
         """
-        # pylint: disable=protected-access
+
         devices = [
             dev for _, dev in self.items() if dev._config.get("softwareTrigger", False) is True
         ]
@@ -346,7 +349,8 @@ class DeviceContainer(dict):
         return expanded_devices
 
     def _resolve_wm_devices(
-        self, device_names: list[str | DeviceBase | None] = None
+        self,
+        device_names: list[str | DeviceBase | None] = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
     ) -> list[DeviceBase]:
         if not device_names:
             return list(self.values())
@@ -365,7 +369,8 @@ class DeviceContainer(dict):
         return expanded_devices
 
     def _position_rows(
-        self, device_names: list[str | DeviceBase | None] = None
+        self,
+        device_names: list[str | DeviceBase | None] = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
     ) -> list[dict[str, str]]:
         """
         Return normalized position rows for one or more devices.
@@ -402,7 +407,7 @@ class DeviceContainer(dict):
             )
         return rows
 
-    def wm(self, device_names: list[str | DeviceBase | None] = None, *args):
+    def wm(self, device_names: list[str | DeviceBase | None] = None, *args):  # noqa: RUF013 - Preserve the public signature used by client introspection.
         """
         Get the current position of one or more devices.
         The device name can be specified either as a string or as a Device object.
@@ -470,7 +475,6 @@ class DeviceContainer(dict):
         table.add_column("Readout priority", justify="center")
         table.add_column("Device tags", justify="center")
 
-        # pylint: disable=protected-access
         for dev in self.values():
             status = "enabled" if dev.enabled else "[red]disabled[/red]"
             table.add_row(
@@ -502,7 +506,6 @@ class ScanInfo:
 
 
 class DeviceManagerBase:
-
     def __init__(
         self, service: BECService, status_cb: list[Callable] | Callable | None = None
     ) -> None:
@@ -577,7 +580,7 @@ class DeviceManagerBase:
             msg (DeviceConfigMessage): Config message
 
         """
-        # pylint: disable=protected-access
+
         action = msg.content["action"]
         config = msg.content["config"]
         self.update_status(BECStatus.BUSY)
@@ -636,7 +639,6 @@ class DeviceManagerBase:
         self.connector.lpush(
             MessageEndpoints.service_response(msg.metadata["RID"]),
             ServiceResponseMessage(
-                # pylint: disable=no-member
                 response={"accepted": True, "service": self._service._service_name}
             ),
             expire=100,
@@ -687,7 +689,7 @@ class DeviceManagerBase:
         Returns:
 
         """
-        logger.info(f"Received log message: {str(msg)}")
+        logger.info(f"Received log message: {msg!s}")
 
     def _device_config_update_callback(self, msg) -> None:
         """
@@ -699,7 +701,7 @@ class DeviceManagerBase:
         Returns:
 
         """
-        logger.info(f"Received new config: {str(msg)}")
+        logger.info(f"Received new config: {msg!s}")
         allow_override = self._allow_override
         try:
             self._allow_override = True
@@ -729,7 +731,7 @@ class DeviceManagerBase:
             override = self._allow_override
             self._allow_override = True
             logs = (self._add_device(*conf_msg) for conf_msg in devices if conf_msg is not None)
-            logger.info(f"Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
+            logger.info("Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
         finally:
             self._allow_override = override
 
@@ -757,7 +759,7 @@ class DeviceManagerBase:
         set_device_config(obj, dev)
         try:
             self.devices._add_device(name, obj)
-        except Exception:
+        except Exception:  # noqa: BLE001 - Device display and loading isolate failures from arbitrary device values.
             logger.error(f"Failed to load device {dev}: {traceback.format_exc()}")
 
         return (name, t)
@@ -793,22 +795,20 @@ class DeviceManagerBase:
             if not isinstance(msg.content["config"], dict):
                 raise DeviceConfigError("Config must be of type dict.")
         if msg.content["action"] in ["update", "remove"]:
-            for dev in msg.content["config"].keys():
+            for dev in msg.content["config"]:
                 if dev not in self.devices:
                     raise DeviceConfigError(
                         f"Device {dev} does not exist and cannot be updated / removed."
                     )
         if msg.content["action"] == "add":
-            for dev in msg.content["config"].keys():
+            for dev in msg.content["config"]:
                 if dev in self.devices:
                     raise DeviceConfigError(f"Device {dev} already exists and cannot be added.")
 
     def _is_config_valid(self) -> bool:
         if self._config is None:
             return False
-        if not isinstance(self._config, dict):
-            return False
-        return True
+        return isinstance(self._config, dict)
 
     @typechecked
     def get_bec_signals(
@@ -853,7 +853,7 @@ class DeviceManagerBase:
             ttl_hash=ttl_hash, update_signals=update_signals, exclude_defaults=exclude_defaults
         )
 
-    @functools.lru_cache(maxsize=2)
+    @functools.lru_cache(maxsize=2)  # noqa: B019 - The bounded cache is shared by the long-lived service instance.
     def _get_device_config_cached_internal(
         self, ttl_hash: int, update_signals: bool = True, exclude_defaults: bool = False
     ) -> dict:

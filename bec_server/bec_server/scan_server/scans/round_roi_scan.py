@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -39,7 +39,7 @@ class RoundROIScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "round_roi_scan"
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Motor 1": ["motor_1", "start_motor_1", "stop_motor_1", "center_1"],
         "Motor 2": ["motor_2", "start_motor_2", "stop_motor_2", "center_2"],
         "Shell Parameters": ["shell_spacing", "pos_in_first_ring"],

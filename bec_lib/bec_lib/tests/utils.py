@@ -3,8 +3,9 @@ from __future__ import annotations
 import builtins
 import os
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 from unittest.mock import MagicMock
 
 import bec_lib
@@ -22,23 +23,17 @@ from bec_lib.scans import Scans
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.alarm_handler import Alarms
+    from bec_lib.service_config import ServiceConfig
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
 logger = bec_logger.logger
 
-# pylint: disable=no-member
-# pylint: disable=missing-function-docstring
-# pylint: disable=redefined-outer-name
-# pylint: disable=protected-access
-
 
 def queue_is_empty(queue) -> bool:  # pragma: no cover
     if not queue:
         return True
-    if not queue["primary"].info:
-        return True
-    return False
+    return bool(not queue["primary"].info)
 
 
 def get_queue(bec) -> messages.ScanQueueStatusMessage | None:  # pragma: no cover
@@ -70,7 +65,7 @@ class ScansMock(Scans):
         self,
         *args,
         exp_time: float = 0,
-        steps: int = None,
+        steps: int = None,  # noqa: RUF013 - Preserve the scan signature used by client tests.
         relative: bool = False,
         burst_at_each_point: int = 1,
         **kwargs,
@@ -91,7 +86,7 @@ class ScansMock(Scans):
         relative: bool = False,
         burst_at_each_point: int = 1,
         spiral_type: float = 0,
-        optim_trajectory: Literal["corridor", None] = None,
+        optim_trajectory: Literal["corridor", None] = None,  # noqa: PYI061 - Preserve the serialized scan signature.
         **kwargs,
     ):
         pass
@@ -516,7 +511,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
     def keys(self, *args, **kwargs):
         return []
 
-    def set(self, topic, msg, pipe=None, expire: int = None):
+    def set(self, topic, msg, pipe=None, expire: int | None = None):
         if pipe:
             pipe._pipe_buffer.append(("set", (topic.endpoint, msg), {"expire": expire}))
             return
@@ -544,7 +539,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             pipe=pipe,
         )
 
-    def set_and_publish(self, topic, msg, pipe=None, expire: int = None):
+    def set_and_publish(self, topic, msg, pipe=None, expire: int | None = None):
         if pipe:
             pipe._pipe_buffer.append(("set_and_publish", (topic.endpoint, msg), {"expire": expire}))
             return
@@ -555,11 +550,10 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             pipe._pipe_buffer.append(("lpush", (topic, msg), {}))
             return
 
-    def rpush(self, topic, msg, pipe=None, expire: int = None):
+    def rpush(self, topic, msg, pipe=None, expire: int | None = None):
         if pipe:
             pipe._pipe_buffer.append(("rpush", (topic, msg), {"expire": expire}))
             return
-        pass
 
     def lrange(self, topic, start, stop, pipe=None):
         if pipe:
@@ -595,11 +589,10 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
     def execute_pipeline(self, pipeline):
         pipeline.execute()
 
-    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire: int = None):
+    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire: int | None = None):
         if pipe:
             pipe._pipe_buffer.append(("xadd", (topic, msg_dict), {"expire": expire}))
             return
-        pass
 
     def xread(
         self, topic, id=None, count=None, block=None, pipe=None, from_start=False, user_id=None

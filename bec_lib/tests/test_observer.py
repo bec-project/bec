@@ -79,10 +79,10 @@ dir_path = os.path.dirname(bec_lib.__file__)
 )
 def test_observer(kwargs, raised_error):
     if not raised_error:
-        observer = Observer(**kwargs)
+        _observer = Observer(**kwargs)
         return
     with pytest.raises(raised_error):
-        observer = Observer(**kwargs)
+        _observer = Observer(**kwargs)
 
 
 @pytest.fixture()
@@ -136,7 +136,7 @@ def test_observer_manager_msg(device_manager):
     ],
 )
 def test_add_observer(device_manager, observer, raises_error):
-    with mock.patch.object(device_manager.connector, "get", return_value=None) as connector_get:
+    with mock.patch.object(device_manager.connector, "get", return_value=None) as _connector_get:
         observer_manager = ObserverManager(device_manager=device_manager)
         observer_manager.add_observer(observer)
         with pytest.raises(AttributeError):
@@ -182,7 +182,7 @@ def test_add_observer_existing_device(device_manager, observer, raises_error):
             "limits": [380, None],
         }
     )
-    with mock.patch.object(device_manager.connector, "get", return_value=None) as connector_get:
+    with mock.patch.object(device_manager.connector, "get", return_value=None) as _connector_get:
         observer_manager = ObserverManager(device_manager=device_manager)
         observer_manager.add_observer(default_observer)
         if raises_error:

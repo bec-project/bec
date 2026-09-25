@@ -7,7 +7,7 @@ import time
 import traceback
 import uuid
 from enum import Enum
-from typing import TYPE_CHECKING, Deque, Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from rich.console import Console
 from rich.table import Table
@@ -93,8 +93,8 @@ class QueueManager:
                 # while holding the queue lock and then acquire the manager lock.
                 queue.reserve_insert()
             queue.insert(msg, position=position)
-        # pylint: disable=broad-except
-        except Exception as exc:
+
+        except Exception as exc:  # noqa: BLE001 -- Report scan initialization failures through alarms.
             content = traceback.format_exc()
             error_info = messages.ErrorInfo(
                 error_message=content,
@@ -116,7 +116,7 @@ class QueueManager:
                 queue = self.queues[queue_name]
                 if not queue.scan_worker.is_alive():
                     logger.info(f"Restarting worker for queue {queue_name}")
-                    queue._cancel_auto_shutdown_timer_locked()  # pylint: disable=protected-access
+                    queue._cancel_auto_shutdown_timer_locked()
                     queue.clear()
                     self.queues[queue_name] = ScanQueue(self, queue_name=queue_name)
                     self.queues[queue_name].start_worker()
@@ -150,7 +150,7 @@ class QueueManager:
             if skip_pending_inserts and queue.has_pending_inserts:
                 return
             queue = self.queues.pop(queue_name)
-            queue._cancel_auto_shutdown_timer_locked()  # pylint: disable=protected-access
+            queue._cancel_auto_shutdown_timer_locked()
             queue.signal_event.set()
 
         queue.stop_worker()
@@ -159,22 +159,21 @@ class QueueManager:
 
     def _remove_idle_queue(self, queue: ScanQueue) -> None:
         """Remove a still-idle queue when its current auto-shutdown timer expires."""
-        # pylint: disable=protected-access
+
         # Match the worker's queue -> manager lock order. Reservations use only
         # the manager lock, so they cannot block a worker publishing queue status.
-        with queue._lock:
-            with self._lock:
-                if self.queues.get(queue.queue_name) is not queue:
-                    return
-                if queue._auto_shutdown_timer is not threading.current_thread():
-                    return
-                # Clear the timer before stopping the worker, which may itself
-                # reset the timer. Otherwise the two threads can join each other.
-                queue._auto_shutdown_timer = None
-                if queue.has_pending_inserts or queue.queue or queue._deferred_inserts:
-                    return
-                self.queues.pop(queue.queue_name)
-                queue.signal_event.set()
+        with queue._lock, self._lock:
+            if self.queues.get(queue.queue_name) is not queue:
+                return
+            if queue._auto_shutdown_timer is not threading.current_thread():
+                return
+            # Clear the timer before stopping the worker, which may itself
+            # reset the timer. Otherwise the two threads can join each other.
+            queue._auto_shutdown_timer = None
+            if queue.has_pending_inserts or queue.queue or queue._deferred_inserts:
+                return
+            self.queues.pop(queue.queue_name)
+            queue.signal_event.set()
 
         queue.stop_worker()
         self.send_queue_status()
@@ -351,7 +350,6 @@ class QueueManager:
         queue="primary",
         parameter: dict | None = None,
     ) -> None:
-        # pylint: disable=unused-argument
         """pause the queue and the currently running instruction queue"""
         que = self.queues[queue]
         with AutoResetCM(que):
@@ -366,7 +364,6 @@ class QueueManager:
         queue="primary",
         parameter: dict | None = None,
     ) -> None:
-        # pylint: disable=unused-argument
         """pause the queue but continue with the currently running instruction queue until the next checkpoint"""
         que = self.queues[queue]
         with AutoResetCM(que):
@@ -382,7 +379,6 @@ class QueueManager:
         queue="primary",
         parameter: dict | None = None,
     ) -> None:
-        # pylint: disable=unused-argument
         """continue with the currently scheduled queue and instruction queue"""
         self.queues[queue].status = ScanQueueStatus.RUNNING
         if self.queues[queue].status == ScanQueueStatus.RUNNING:
@@ -525,7 +521,6 @@ class QueueManager:
         queue="primary",
         parameter: dict | None = None,
     ) -> None:
-        # pylint: disable=unused-argument
         """pause the queue and clear all its elements"""
         logger.info("clearing queue")
         que = self.queues[queue]
@@ -543,7 +538,7 @@ class QueueManager:
         parameter: dict | None = None,
     ) -> None:
         """abort and restart the currently running scan. The active scan will be aborted."""
-        # pylint: disable=protected-access
+
         with self._lock:
             que = self.queues.get(queue)
         if que is None:
@@ -817,11 +812,15 @@ class ScanQueue:
         queue_manager: QueueManager,
         queue_name="primary",
         instruction_queue_item_cls: (
-            type[InstructionQueueItem] | type[DirectInstructionQueueItem] | None
+            type[InstructionQueueItem | DirectInstructionQueueItem] | None
         ) = None,
     ) -> None:
-        self.queue: Deque[InstructionQueueItem | DirectInstructionQueueItem] = collections.deque()
-        self._deferred_inserts: Deque[tuple[messages.ScanQueueMessage, int]] = collections.deque()
+        self.queue: collections.deque[InstructionQueueItem | DirectInstructionQueueItem] = (
+            collections.deque()
+        )
+        self._deferred_inserts: collections.deque[tuple[messages.ScanQueueMessage, int]] = (
+            collections.deque()
+        )
         self.queue_name = queue_name
         self.history_queue: collections.deque[InstructionQueueItem | DirectInstructionQueueItem] = (
             collections.deque(maxlen=self.MAX_HISTORY)
@@ -862,18 +861,18 @@ class ScanQueue:
     @property
     def has_pending_inserts(self) -> bool:
         """Whether this queue has inserts reserved by the queue manager."""
-        with self.queue_manager._lock:  # pylint: disable=protected-access
+        with self.queue_manager._lock:
             return self._pending_inserts > 0
 
     def reserve_insert(self) -> None:
         """Reserve an incoming insert so auto-shutdown keeps the queue alive."""
-        with self.queue_manager._lock:  # pylint: disable=protected-access
+        with self.queue_manager._lock:
             self._pending_inserts += 1
             self._cancel_auto_shutdown_timer_locked()
 
     def finish_insert(self) -> None:
         """Release a previously reserved incoming insert."""
-        with self.queue_manager._lock:  # pylint: disable=protected-access
+        with self.queue_manager._lock:
             self._pending_inserts = max(0, self._pending_inserts - 1)
 
     @property
@@ -972,27 +971,26 @@ class ScanQueue:
         """
         Start the auto shutdown timer if it is not already running.
         """
-        # pylint: disable=protected-access
-        with self._lock:
-            with self.queue_manager._lock:
-                if (
-                    self.queue_name == "primary"
-                    or self.signal_event.is_set()
-                    or self.queue_manager.queues.get(self.queue_name) is not self
-                ):
-                    return
-                if (
-                    self._auto_shutdown_timer is not None
-                    or self.queue
-                    or self._deferred_inserts
-                    or self.has_pending_inserts
-                ):
-                    return
-                self._auto_shutdown_timer = threading.Timer(
-                    self.AUTO_SHUTDOWN_TIME, self.queue_manager._remove_idle_queue, args=[self]
-                )
-                self._auto_shutdown_timer.name = f"AutoShutdownTimer-{self.queue_name}"
-                self._auto_shutdown_timer.start()
+
+        with self._lock, self.queue_manager._lock:
+            if (
+                self.queue_name == "primary"
+                or self.signal_event.is_set()
+                or self.queue_manager.queues.get(self.queue_name) is not self
+            ):
+                return
+            if (
+                self._auto_shutdown_timer is not None
+                or self.queue
+                or self._deferred_inserts
+                or self.has_pending_inserts
+            ):
+                return
+            self._auto_shutdown_timer = threading.Timer(
+                self.AUTO_SHUTDOWN_TIME, self.queue_manager._remove_idle_queue, args=[self]
+            )
+            self._auto_shutdown_timer.name = f"AutoShutdownTimer-{self.queue_name}"
+            self._auto_shutdown_timer.start()
 
     def _cancel_auto_shutdown_timer_locked(self) -> None:
         """Cancel the timer under the manager lock without waiting for its thread."""
@@ -1004,12 +1002,11 @@ class ScanQueue:
         """
         Cancel and reset the auto shutdown timer.
         """
-        with self.queue_manager._lock:  # pylint: disable=protected-access
+        with self.queue_manager._lock:
             timer = self._auto_shutdown_timer
             self._cancel_auto_shutdown_timer_locked()
-        if timer is not None:
-            if threading.current_thread() != timer:
-                timer.join()
+        if timer is not None and threading.current_thread() != timer:
+            timer.join()
 
     def _queue_should_continue(self) -> bool:
         """check if the queue should continue to the next instruction queue"""
@@ -1430,7 +1427,7 @@ class RequestBlockQueue:
                 severity=Alarms.MAJOR, info=exc.error_info, metadata=self._get_metadata_for_alarm()
             )
             raise
-        # pylint: disable=broad-except
+
         except Exception as exc:
             content = traceback.format_exc()
             logger.error(content)
@@ -1644,7 +1641,6 @@ class InstructionQueueItem:
         blcks = self.queue.request_blocks
         if len(blcks) > 0:
             for blck in blcks:
-                # pylint: disable=protected-access
                 blck.scan._shutdown_event.set()
 
 

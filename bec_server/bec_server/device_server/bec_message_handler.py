@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, TypedDict
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
 from ophyd import OphydObject

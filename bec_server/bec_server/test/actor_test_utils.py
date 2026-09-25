@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from bec_lib.client import BECClient
 from bec_lib.endpoints import EndpointInfo, MessageOp
 from bec_lib.messages import RawMessage
@@ -18,7 +20,7 @@ ep = EndpointInfo(
 
 
 class PollingTestActor(PollingActor):
-    action_table = {_test_condition: _test_action}
+    action_table: ClassVar[dict] = {_test_condition: _test_action}
 
 
 sub_ep = EndpointInfo(
@@ -29,7 +31,7 @@ sub_ep = EndpointInfo(
 
 
 class SubscriptionTestActor(SubscriptionActor):
-    action_table = {_test_condition: _test_action}
+    action_table: ClassVar[dict] = {_test_condition: _test_action}
 
     def default_monitor_endpoints(self) -> set[EndpointInfo]:
         return {sub_ep}

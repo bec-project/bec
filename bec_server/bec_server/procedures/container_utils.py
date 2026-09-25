@@ -3,10 +3,11 @@
 import json
 import subprocess
 import traceback
+from collections.abc import Iterator
 from http import HTTPStatus
 from itertools import chain
 from pathlib import Path
-from typing import Iterator, Literal, cast
+from typing import Literal, cast
 
 from podman import PodmanClient
 from podman.domain.containers import Container
@@ -38,7 +39,7 @@ def get_backend() -> ContainerCommandBackend:
 def _run_and_capture_error(*args: str, log: bool = True):
     if log:
         logger.debug(f"Running {args}")
-    output = subprocess.run([*args], capture_output=True)
+    output = subprocess.run([*args], capture_output=True, check=False)
     if output.returncode != 0:
         raise ProcedureWorkerError(
             f"Container shell command: \n    {args}\n failed with output:{output.stderr}"

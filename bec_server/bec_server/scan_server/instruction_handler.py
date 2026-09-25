@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import collections
 import threading
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from bec_lib.endpoints import MessageEndpoints
 
@@ -26,14 +27,14 @@ class InstructionHandler:
         self._connector = connector
         self._max_history = 50000
         self._instruction_storage: dict[str, messages.DeviceInstructionResponse] = {}
-        self._callback_storage = collections.defaultdict(lambda: [])
+        self._callback_storage = collections.defaultdict(list)
         self._lock = threading.Lock()
         self._connector.register(
             MessageEndpoints.device_instructions_response(), cb=self._device_instructions_callback
         )
 
     def _device_instructions_callback(self, msg):
-        # pylint: disable=protected-access
+
         with self._lock:
             self.add_instruction(msg.value)
 
@@ -70,7 +71,7 @@ class InstructionHandler:
     ) -> None:
         try:
             callback(instruction)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- A failing user callback must not stop instruction handling.
             print(f"Error in callback for instruction {instruction.instruction_id}: {e}")
 
     def register_callback(

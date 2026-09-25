@@ -6,8 +6,9 @@ import inspect
 import json
 import pkgutil
 import sys
+from collections.abc import Callable
 from functools import cache, lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Literal, Type
+from typing import TYPE_CHECKING, Any, Literal
 
 from bec_lib.logger import bec_logger
 
@@ -76,7 +77,7 @@ def get_scan_plugins() -> dict:
     return loaded_plugins
 
 
-def get_scan_modifier_plugin() -> Type[ScanModifier] | None:
+def get_scan_modifier_plugin() -> type[ScanModifier] | None:
     """
     Load all scan modifier plugins.
 
@@ -94,7 +95,7 @@ def get_scan_modifier_plugin() -> Type[ScanModifier] | None:
     return None
 
 
-def get_scan_component_plugins() -> list[Type[ScanComponents]]:
+def get_scan_component_plugins() -> list[type[ScanComponents]]:
     """
     Load all scan component plugin classes from the installed plugin's
     ``scans.scan_customization`` package.
@@ -174,7 +175,7 @@ def get_file_writer_storage_copy_plugin() -> Callable[[str, str, str, str | None
 
     try:
         plugin = matching_entry_points[0].load()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Plugin code may raise arbitrary exceptions during loading.
         logger.error(f"Error loading storage copy plugin {target}: {exc}")
         return None
 
@@ -195,7 +196,7 @@ def get_metadata_schema_registry() -> tuple[dict, type[BasicScanMetadata]]:
             registry_module.METADATA_SCHEMA_REGISTRY,
             getattr(registry_module, "DEFAULT_SCHEMA", None),
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Plugin code may raise arbitrary exceptions during loading.
         logger.error(f"Error while loading metadata schema registry from plugins: {e}")
         return {}, None
 
@@ -233,7 +234,7 @@ def plugin_package_name():
         raise ValueError(
             "You must have one and only one BEC plugin repository installed for this to work"
         )
-    return list(plugins)[0].value
+    return next(iter(plugins)).value
 
 
 def module_dist_info(name: str) -> dict[str, Any]:
@@ -242,7 +243,7 @@ def module_dist_info(name: str) -> dict[str, Any]:
     return json.loads(dist.read_text("direct_url.json") or "{}")
 
 
-@lru_cache()
+@lru_cache
 def plugin_repo_path() -> str:
     """Get the path on disk of the installed plugin repository. Raises ValueError if no plugin is
     installed or more than one plugin is installed. Raises ValueError if the installed plugin is not
@@ -316,7 +317,7 @@ def _get_available_plugins(group) -> list:
         try:
             module = plugin.load()
             modules.append(module)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - Plugin code may raise arbitrary exceptions during loading.
             logger.error(f"Error loading plugin {plugin.name}: {e}")
             continue
     return modules

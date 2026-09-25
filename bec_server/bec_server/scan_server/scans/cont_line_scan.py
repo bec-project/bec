@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -39,7 +39,7 @@ class ContLineScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "cont_line_scan"
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Device": ["device", "start", "stop"],
         "Movement Parameters": ["steps", "relative", "offset", "atol"],
         "Acquisition Parameters": ["exp_time", "readout_time", "frames_per_trigger"],

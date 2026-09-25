@@ -68,7 +68,7 @@ class EventType(str, enum.Enum):
 class CallbackEntry:
     """Callback entry class to store callback information"""
 
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(
         self,
         id: int,
         event_type: EventType,
@@ -125,7 +125,7 @@ class CallbackEntry:
             func = self._resolve_func()
             if func is not None:
                 func(*args, **kwargs)
-        except Exception:
+        except Exception:  # noqa: BLE001 - User callbacks must not stop dispatching other callbacks.
             content = traceback.format_exc()
             logger.warning(f"Failed to run callback function: {content}")
 
@@ -245,12 +245,12 @@ class CallbackHandler:
     def _notify_dead(handler_ref: weakref.ref, callback_id: int) -> None:
         handler = handler_ref()
         if handler is not None:
-            handler._mark_dead(callback_id)  # pylint: disable=protected-access
+            handler._mark_dead(callback_id)
 
     def _mark_dead(self, callback_id: int) -> None:
         # runs inside a weakref finalizer on an arbitrary thread: never block on the lock
         self._dead_ids.append(callback_id)
-        if not self._lock.acquire(blocking=False):  # pylint: disable=consider-using-with
+        if not self._lock.acquire(blocking=False):
             return
         try:
             self._remove_dead_callbacks()

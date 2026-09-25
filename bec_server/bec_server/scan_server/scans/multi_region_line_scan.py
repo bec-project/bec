@@ -16,6 +16,8 @@ Scan procedure:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 
 from bec_lib.device import DeviceBase
@@ -38,7 +40,7 @@ class MultiRegionLineScan(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "multi_region_line_scan"
 
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Movement Parameters": ["regions", "relative"],
         "Acquisition Parameters": [
             "exp_time",

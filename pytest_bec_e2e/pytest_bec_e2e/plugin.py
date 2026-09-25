@@ -1,6 +1,5 @@
 """Fixtures for end-to-end tests"""
 
-# pylint: skip-file
 import os
 import pathlib
 import platform
@@ -13,7 +12,6 @@ from redis import Redis
 
 from bec_ipython_client import BECIPythonClient
 from bec_lib.client import BECClient
-from bec_lib.config_helper import ConfigHelper
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.service_config import ServiceConfig, ServiceConfigModel
@@ -38,7 +36,7 @@ class LogTestTool:
         if log_data is None:
             self._logs = None
             return
-        self._logs = list(item["data"].log_msg["text"] for item in log_data)
+        self._logs = [item["data"].log_msg["text"] for item in log_data]
 
     def is_present_in_any_message(self, needle: str) -> bool:
         """Assert that the provided string is in at least one log message"""
@@ -82,9 +80,7 @@ def _check_path(file_path):
     if os.path.exists(file_path):
         return pathlib.Path(file_path)
     else:
-        raise RuntimeError(
-            f"end2end tests: --files-path directory {repr(file_path)} does not exist"
-        )
+        raise RuntimeError(f"end2end tests: --files-path directory {file_path!r} does not exist")
 
 
 def _get_tmp_dir():

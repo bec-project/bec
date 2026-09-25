@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -39,7 +39,7 @@ class RoundScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "round_scan"
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Motors": ["motor_1", "motor_2"],
         "Ring Parameters": [
             "inner_radius",

@@ -1,4 +1,3 @@
-# pylint: skip-file
 import os
 import uuid
 from types import SimpleNamespace
@@ -8,7 +7,9 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.tests.fixtures import dm_with_devices
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.scan_server.errors import ScanAbortion, UserScanInterruption
 from bec_server.scan_server.generator_scan_worker import GeneratorScanWorker
@@ -223,23 +224,23 @@ def test_open_scan(generator_worker_mock, instr, corr_num_points, scan_id):
     queue_mock.parent.queue_manager.send_queue_status = mock.MagicMock()
     worker.worker.current_instruction_queue_item = queue_mock
 
-    with mock.patch.object(worker, "_initialize_scan_info") as init_mock:
-        with mock.patch.object(worker, "_send_scan_status") as send_mock:
-            worker.open_scan(instr)
+    with (
+        mock.patch.object(worker, "_initialize_scan_info") as init_mock,
+        mock.patch.object(worker, "_send_scan_status") as send_mock,
+    ):
+        worker.open_scan(instr)
 
-            if not scan_id:
-                assert worker.scan_id == instr.metadata.get("scan_id")
-            else:
-                assert worker.scan_id == 111
-            assert worker.readout_priority == instr.content["parameter"].get("readout_priority", {})
-            init_mock.assert_called_once_with(
-                queue_mock.active_request_block, instr, corr_num_points
-            )
-            assert queue_mock.active_request_block.scan_report_instructions == [
-                {"scan_progress": {"points": corr_num_points, "show_table": True}}
-            ]
-            queue_mock.parent.queue_manager.send_queue_status.assert_called_once()
-            send_mock.assert_called_once_with("open")
+        if not scan_id:
+            assert worker.scan_id == instr.metadata.get("scan_id")
+        else:
+            assert worker.scan_id == 111
+        assert worker.readout_priority == instr.content["parameter"].get("readout_priority", {})
+        init_mock.assert_called_once_with(queue_mock.active_request_block, instr, corr_num_points)
+        assert queue_mock.active_request_block.scan_report_instructions == [
+            {"scan_progress": {"points": corr_num_points, "show_table": True}}
+        ]
+        queue_mock.parent.queue_manager.send_queue_status.assert_called_once()
+        send_mock.assert_called_once_with("open")
 
 
 @pytest.mark.parametrize(
@@ -461,37 +462,41 @@ def test_process_instructions(generator_worker_mock, abortion):
         __enter__=mock.MagicMock(return_value=None), __exit__=mock.MagicMock(return_value=None)
     )
 
-    with mock.patch.object(worker, "_wait_for_device_server") as wait_mock:
-        with mock.patch.object(worker, "reset") as reset_mock:
-            with mock.patch.object(worker, "_check_for_interruption") as interruption_mock:
-                queue.queue.request_blocks.append(mock.MagicMock())
-                with mock.patch.object(queue.queue, "active_rb") as rb_mock:
-                    with mock.patch.object(worker, "_instruction_step") as step_mock:
-                        if abortion:
-                            interruption_mock.side_effect = ScanAbortion
-                            with pytest.raises(ScanAbortion):
-                                worker.process_instructions(queue)
-                        else:
-                            worker.process_instructions(queue)
+    with (
+        mock.patch.object(worker, "_wait_for_device_server") as wait_mock,
+        mock.patch.object(worker, "reset") as reset_mock,
+        mock.patch.object(worker, "_check_for_interruption") as interruption_mock,
+    ):
+        queue.queue.request_blocks.append(mock.MagicMock())
+        with (
+            mock.patch.object(queue.queue, "active_rb") as _rb_mock,
+            mock.patch.object(worker, "_instruction_step") as step_mock,
+        ):
+            if abortion:
+                interruption_mock.side_effect = ScanAbortion
+                with pytest.raises(ScanAbortion):
+                    worker.process_instructions(queue)
+            else:
+                worker.process_instructions(queue)
 
-                        assert worker.max_point_id == 0
-                        wait_mock.assert_called_once()
+            assert worker.max_point_id == 0
+            wait_mock.assert_called_once()
 
-                        if not abortion:
-                            assert interruption_mock.call_count == 4
-                            assert worker._exposure_time == 1
-                            assert step_mock.call_count == 4
-                            assert queue.is_active is False
-                            assert queue.status == InstructionQueueStatus.COMPLETED
-                            assert worker.worker.current_instruction_queue_item is None
-                            reset_mock.assert_called_once()
+            if not abortion:
+                assert interruption_mock.call_count == 4
+                assert worker._exposure_time == 1
+                assert step_mock.call_count == 4
+                assert queue.is_active is False
+                assert queue.status == InstructionQueueStatus.COMPLETED
+                assert worker.worker.current_instruction_queue_item is None
+                reset_mock.assert_called_once()
 
-                        else:
-                            assert queue.stopped is True
-                            assert interruption_mock.call_count == 1
-                            assert queue.is_active is True
-                            assert queue.status == InstructionQueueStatus.PENDING
-                            assert worker.worker.current_instruction_queue_item == queue
+            else:
+                assert queue.stopped is True
+                assert interruption_mock.call_count == 1
+                assert queue.is_active is True
+                assert queue.status == InstructionQueueStatus.PENDING
+                assert worker.worker.current_instruction_queue_item == queue
 
 
 @pytest.mark.parametrize(
@@ -618,14 +623,16 @@ def test_process_instructions(generator_worker_mock, abortion):
 )
 def test_instruction_step(generator_worker_mock, msg, method):
     worker = generator_worker_mock
-    with mock.patch(
-        f"bec_server.scan_server.generator_scan_worker.GeneratorScanWorker.{method}"
-    ) as instruction_method:
-        with mock.patch.object(worker, "update_instr_with_scan_report") as update_mock:
-            worker._instruction_step(msg)
-            instruction_method.assert_called_once()
-            if method == "set":
-                update_mock.assert_called_once_with(msg)
+    with (
+        mock.patch(
+            f"bec_server.scan_server.generator_scan_worker.GeneratorScanWorker.{method}"
+        ) as instruction_method,
+        mock.patch.object(worker, "update_instr_with_scan_report") as update_mock,
+    ):
+        worker._instruction_step(msg)
+        instruction_method.assert_called_once()
+        if method == "set":
+            update_mock.assert_called_once_with(msg)
 
 
 def test_reset(generator_worker_mock):
@@ -771,9 +778,9 @@ def test_worker_get_file_base_path(
                     MessageEndpoints.account(), "data"
                 )
     finally:
-        worker.worker.parent._service_config.config["file_writer"][
-            "base_path"
-        ] = file_writer_base_path_orig
+        worker.worker.parent._service_config.config["file_writer"]["base_path"] = (
+            file_writer_base_path_orig
+        )
 
 
 @pytest.mark.parametrize(

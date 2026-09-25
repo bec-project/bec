@@ -30,7 +30,7 @@ class BeamlineStateManager:
         msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]  # type: ignore ; we know it's a AvailableBeamlineStatesMessage
         try:
             self.update_states(msg)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Report arbitrary beamline-state plugin failures as alarms.
             content = traceback.format_exc()
             info = ErrorInfo(
                 exception_type=type(exc).__name__,
@@ -52,9 +52,9 @@ class BeamlineStateManager:
         """
 
         # get the states that we need to remove
-        remove_state_names = set(self._states) - set(state.name for state in msg.states)
+        remove_state_names = set(self._states) - {state.name for state in msg.states}
 
-        added_state_names = set(state.name for state in msg.states) - set(self._states)
+        added_state_names = {state.name for state in msg.states} - set(self._states)
         added_states = {
             state.name: state for state in msg.states if state.name in added_state_names
         }
@@ -66,7 +66,7 @@ class BeamlineStateManager:
             if state is not None and state.started:
                 try:
                     state.stop()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 -- Report arbitrary beamline-state plugin failures as alarms.
                     content = traceback.format_exc()
                     info = ErrorInfo(
                         exception_type=type(exc).__name__,

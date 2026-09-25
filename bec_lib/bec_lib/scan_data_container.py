@@ -9,14 +9,14 @@ import datetime
 import functools
 import importlib
 import time
+from _collections_abc import dict_items, dict_keys
 from collections import deque, namedtuple
 from collections.abc import Iterable
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Dict, Literal, NamedTuple, Tuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import h5py
-import hdf5plugin  # Required to ensure compatibility with HDF5 files using plugins
-from _collections_abc import dict_items, dict_keys
+import hdf5plugin  # noqa: F401 -- Register compression filters needed when reading HDF5 datasets.
 from prettytable import PrettyTable
 
 from bec_lib.logger import bec_logger
@@ -37,10 +37,10 @@ class DataCache:
 
     def __new__(cls, *args, **kwargs):
         if not hasattr(cls, "_instance"):
-            cls._instance = super(DataCache, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, max_memory: int | float = 1e9) -> None:
+    def __init__(self, max_memory: float = 1e9) -> None:
         self._cache = deque()
         self._memory_usage = 0
         self._max_memory = max_memory
@@ -104,8 +104,8 @@ def retry_file_access(func):
         for _ in range(3):
             try:
                 return func(*args, **kwargs)
-            # pylint: disable=broad-except
-            except Exception as e:
+
+            except Exception as e:  # noqa: BLE001 - Retry transient failures from HDF5 access and user callbacks.
                 logger.info(f"Error accessing file: {e}")
                 time.sleep(0.1)
         raise RuntimeError("Error accessing file.")
@@ -195,7 +195,7 @@ class FileReference:
                 out = self._read_value(entry)
                 size = entry.size * entry.dtype.itemsize
             else:
-                raise ValueError(f"Entry at {entry_path} is not a group or dataset.")
+                raise ValueError(f"Entry at {entry_path} is not a group or dataset.")  # noqa: TRY004 - Preserve the public exception type used by callers.
 
         _file_cache.add_item(f"{self.file_path}::{entry_path}", out, size)
         return self._filter_entry(out, entry_filter)
@@ -218,7 +218,7 @@ class FileReference:
             out = out.get(key)
         return copy.deepcopy(out)
 
-    def _read_group(self, group: h5py.Group) -> Tuple[Dict[str, Any], int]:
+    def _read_group(self, group: h5py.Group) -> tuple[dict[str, Any], int]:
         """
         Recursively read the data from a group in the HDF5 file and return it as a dictionary.
         It also returns the memory usage of the group as specified by the HDF5 file.
@@ -297,7 +297,11 @@ class SignalDataReference:
     """
 
     def __init__(
-        self, file_path: str, entry_path: str, dict_entry: str | list[str] = None, info: dict = None
+        self,
+        file_path: str,
+        entry_path: str,
+        dict_entry: str | list[str] | None = None,
+        info: dict | None = None,
     ):
         self._file_reference = FileReference(file_path)
         self._entry_path = entry_path
@@ -359,7 +363,7 @@ class DeviceDataReference(AttributeDict, SignalDataReference):
                 [
                     signal,
                     signal_info.get("shape", "N/A"),
-                    f"{signal_info.get('mem_size', 0)/1024/1024:.2f} MB",
+                    f"{signal_info.get('mem_size', 0) / 1024 / 1024:.2f} MB",
                     signal_info.get("dtype", "N/A"),
                 ]
             )
@@ -498,7 +502,6 @@ class LinkedAttributeDict(AttributeDict):
         return {
             name: device
             for name, device in self._container.items()
-            # pylint: disable=protected-access
             if not name.startswith("_") and device._group == self._group
         }
 
@@ -594,7 +597,7 @@ class ScanDataContainer:
     This is a helper class for accessing data in an HDF5 file.
     """
 
-    def __init__(self, file_path: str = None, msg: messages.ScanHistoryMessage = None):
+    def __init__(self, file_path: str | None = None, msg: messages.ScanHistoryMessage = None):
         self._file_reference = None
         self._msg = msg
         self.devices = LazyDeviceAttributeDict(self._load_devices)
@@ -700,11 +703,11 @@ class ScanDataContainer:
         """
         if not self._msg:
             return f"ScanDataContainer: {self._file_reference.file_path}"
-        start_time = f"\tStart time: {datetime.datetime.fromtimestamp(self._msg.start_time).strftime('%c')}\n"
+        start_time = f"\tStart time: {datetime.datetime.fromtimestamp(self._msg.start_time).strftime('%c')}\n"  # noqa: DTZ006 - Keep the established local-time display and filename format.
         end_time = (
-            f"\tEnd time: {datetime.datetime.fromtimestamp(self._msg.end_time).strftime('%c')}\n"
+            f"\tEnd time: {datetime.datetime.fromtimestamp(self._msg.end_time).strftime('%c')}\n"  # noqa: DTZ006 - Keep the established local-time display and filename format.
         )
-        elapsed_time = f"\tElapsed time: {(self._msg.end_time-self._msg.start_time):.1f} s\n"
+        elapsed_time = f"\tElapsed time: {(self._msg.end_time - self._msg.start_time):.1f} s\n"
         scan_id = f"\tScan ID: {self._msg.scan_id}\n"
         scan_number = f"\tScan number: {self._msg.scan_number}\n"
         scan_name = f"\tScan name: {self._msg.scan_name}\n"

@@ -1,4 +1,3 @@
-# pylint: skip-file
 import threading
 from types import SimpleNamespace
 from unittest import mock
@@ -6,7 +5,9 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_lib.tests.fixtures import dm_with_devices
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_server.scan_server.direct_scan_worker import DirectScanWorker
 from bec_server.scan_server.errors import ScanAbortion
 from bec_server.scan_server.generator_scan_worker import GeneratorScanWorker
@@ -159,7 +160,7 @@ def test_shutdown_interrupts_current_scan_wait(queue_item_cls, reorder):
     def shutdown():
         try:
             queue_manager.shutdown()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Capture the worker failure so the test can inspect cleanup or propagate it.
             errors.append(exc)
         finally:
             shutdown_finished.set()
@@ -228,7 +229,7 @@ def test_shutdown_prevents_processing_item_selected_during_shutdown(scan_worker_
     def shutdown():
         try:
             worker.shutdown()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Capture the worker failure so the test can inspect cleanup or propagate it.
             errors.append(exc)
         finally:
             shutdown_finished.set()

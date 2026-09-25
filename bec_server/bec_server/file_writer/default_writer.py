@@ -75,7 +75,7 @@ class DefaultFormat:
         """
         self.write_bec_entries()
         self.format()
-        # pylint: disable=protected-access
+
         return self.storage._storage
 
     def has_async_signal(self, device_name: str, signal_name: str) -> bool:
@@ -246,7 +246,7 @@ class DefaultFormat:
             return False
         try:
             return np.asarray(reference_value).shape == np.asarray(candidate_value).shape
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Unusable device data must fail the shape check.
             return False
 
     def _write_scan_report_data(self, entry: HDF5Storage) -> None:

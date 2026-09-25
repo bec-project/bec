@@ -47,8 +47,7 @@ class AlarmBase(Exception):
     def __str__(self) -> str:
         msg = self.alarm.info.compact_error_message or self.alarm.info.error_message
         return (
-            f"An alarm has occurred. Severity: {self.severity.name}.\n{self.alarm_type}.\n\t"
-            f" {msg}"
+            f"An alarm has occurred. Severity: {self.severity.name}.\n{self.alarm_type}.\n\t {msg}"
         )
 
     def pretty_print(self) -> None:
@@ -151,8 +150,7 @@ class AlarmHandler:
             AlarmBase: Alarm
         """
         alarms = self.get_unhandled_alarms(severity=severity)
-        for alarm in alarms:
-            yield alarm
+        yield from alarms
 
     @threadlocked
     def raise_alarms(self, severity=Alarms.MAJOR):

@@ -3,7 +3,7 @@ from typing import ParamSpec, TypedDict, TypeVar
 from bec_lib.messages import BECMessage
 
 P = ParamSpec("P")
-_BecMsgT = TypeVar("_BecMsgT", bound=BECMessage)
+_BecMsgT = TypeVar("_BecMsgT", bound=BECMessage)  # noqa: PYI018 - Used by the connector HLI module.
 
 
 class PubSubMessage(TypedDict):

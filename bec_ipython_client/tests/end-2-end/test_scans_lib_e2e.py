@@ -99,14 +99,14 @@ def test_mv_raises_limit_error(bec_client_lib):
     bec.metadata.update({"unit_test": "test_mv_raises_limit_error"})
     dev = bec.device_manager.devices
     dev.samx.limits = [-50, 50]
-    with pytest.raises(AlarmBase) as exc:
+    with pytest.raises(AlarmBase) as _exc:
         scans.mv(dev.samx, 1000, relative=False).wait()
 
 
 @pytest.mark.timeout(100)
 def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
     bec = bec_client_lib
-    scans = bec.scans  # not needed but to silence pylint...
+    scans = bec.scans
     bec.metadata.update({"unit_test": "test_async_callback_data_matches_scan_data"})
     dev = bec.device_manager.devices
     recorder = _ScanDataRecorder()

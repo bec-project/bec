@@ -23,16 +23,15 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class RequestItem:
-    # pylint: disable=too-many-arguments
     def __init__(
         self,
         scan_manager: ScanManager,
         requestID: str,
         decision_pending: bool = True,
-        scan_id: str = None,
+        scan_id: str | None = None,
         request=None,
         response=None,
-        accepted: bool = None,
+        accepted: bool | None = None,
         **_kwargs,
     ) -> None:
         self.scan_manager = scan_manager
@@ -97,7 +96,7 @@ class RequestItem:
         queue_item = self.scan_manager.queue_storage.find_queue_item_by_requestID(self.requestID)
         if not queue_item:
             return None
-        # pylint: disable=protected-access
+
         request_index = queue_item.requestIDs.index(self.requestID)
         return queue_item.scans[request_index]
 

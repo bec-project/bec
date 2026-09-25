@@ -103,7 +103,7 @@ def _render_scan_cli_value(value: Any) -> str:
     return repr(value)
 
 
-def _write_csv(output_name: str, delimiter: str, output: list, dialect: str = None) -> None:
+def _write_csv(output_name: str, delimiter: str, output: list, dialect: str | None = None) -> None:
     """Write csv file.
 
     Args:
@@ -122,7 +122,7 @@ def _write_csv(output_name: str, delimiter: str, output: list, dialect: str = No
 
 
 def _extract_scan_data(
-    scan_item: ScanItem, header: list = None, write_metadata: bool = True
+    scan_item: ScanItem, header: list | None = None, write_metadata: bool = True
 ) -> tuple:
     """Extract scan data from scan report.
 
@@ -140,12 +140,12 @@ def _extract_scan_data(
     header_tmp.append(["#scan_id", f"{scan_item.scan_id}"])
     header_tmp.append(["#ScanStatus", f"{scan_item.status}"])
 
-    start_time = f"{datetime.datetime.fromtimestamp(scan_item.start_time).strftime('%c')}"
+    start_time = f"{datetime.datetime.fromtimestamp(scan_item.start_time).strftime('%c')}"  # noqa: DTZ006 - Keep the established local-time display and filename format.
     header_tmp.append(["#StartTime", start_time])
-    end_time = f"{datetime.datetime.fromtimestamp(scan_item.start_time).strftime('%c')}"
+    end_time = f"{datetime.datetime.fromtimestamp(scan_item.start_time).strftime('%c')}"  # noqa: DTZ006 - Keep the established local-time display and filename format.
     header_tmp.append(["#EndTime", end_time])
     elapsed_time = (
-        f"\tElapsed time: {(scan_item.end_time-scan_item.start_time):.1f} s\n"
+        f"\tElapsed time: {(scan_item.end_time - scan_item.start_time):.1f} s\n"
         if scan_item.end_time and scan_item.start_time
         else ""
     )
@@ -155,12 +155,12 @@ def _extract_scan_data(
     if write_metadata:
         header_tmp.append(["#ScanMetadata"])
         for key, value in scan_metadata.items():
-            header_tmp.append(["".join(["#", key]), value])
+            header_tmp.append([f"#{key}", value])
     if header:
         header_keys = header
     else:
         header_keys = ["scan_number", "dataset_number"]
-        # pylint: disable=expression-not-assigned
+
         [
             header_keys.extend([f"{value}_value", f"{time}_timestamp"])
             for value, time in zip(scan_dict["value"].keys(), scan_dict["timestamp"].keys())
@@ -169,7 +169,7 @@ def _extract_scan_data(
     header_tmp.append(header_keys)
 
     body_tmp = []
-    num_entries = len(list(scan_dict["value"].values())[0])
+    num_entries = len(list(scan_dict["value"].values())[0])  # noqa: RUF015 - Preserve the IndexError raised for scan data with no values.
     for ii in range(num_entries):
         sub_list = []
         sub_list.extend([scan_metadata["scan_number"], scan_metadata["dataset_number"]])
@@ -194,11 +194,11 @@ def scan_to_dict(scan_item: ScanItem, flat: bool = True) -> dict:
         >>> scan_to_dict(scan_report) with scan_report = scans.line_scan(...)
     """
     if flat:
-        scan_dict = {"timestamp": defaultdict(lambda: []), "value": defaultdict(lambda: [])}
+        scan_dict = {"timestamp": defaultdict(list), "value": defaultdict(list)}
     else:
         scan_dict = {
-            "timestamp": defaultdict(lambda: defaultdict(lambda: [])),
-            "value": defaultdict(lambda: defaultdict(lambda: [])),
+            "timestamp": defaultdict(lambda: defaultdict(list)),
+            "value": defaultdict(lambda: defaultdict(list)),
         }
 
     for dev, dev_data in scan_item.live_data.items():

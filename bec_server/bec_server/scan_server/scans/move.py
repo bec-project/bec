@@ -16,6 +16,8 @@ Scan procedure:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 from bec_lib.scan_args import DefaultArgType
@@ -26,7 +28,6 @@ logger = bec_logger.logger
 
 
 class MoveScan(ScanBase):
-
     # Scan Type: Hardware triggered or software triggered?
     # If the main trigger and readout logic is done within the at_each_point method in scan_core, choose SOFTWARE_TRIGGERED.
     # If the main trigger and readout logic is implemented on a device that is simply kicked off in this scan, choose HARDWARE_TRIGGERED.
@@ -41,8 +42,8 @@ class MoveScan(ScanBase):
 
     # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
-    arg_input = {"device": DeviceBase, "target": float}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    arg_input: ClassVar[dict] = {"device": DeviceBase, "target": float}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
     # We set is_scan to False to separate this class from the other scans in the user interface
     is_scan = False
 

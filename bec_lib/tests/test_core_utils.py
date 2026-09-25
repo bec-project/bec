@@ -1,5 +1,6 @@
 import csv
 import os
+from typing import ClassVar
 from unittest import mock
 
 import pytest
@@ -57,7 +58,7 @@ def scanitem():
 
 
 class class_mock:
-    USER_ACCESS = []
+    USER_ACCESS: ClassVar[list[str]] = []
 
     @user_access
     def _func_decorated_not_in_user_access(self, *args, **kwargs):

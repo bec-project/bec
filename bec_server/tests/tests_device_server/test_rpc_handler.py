@@ -1,4 +1,3 @@
-# pylint: skip-file
 from collections import namedtuple
 from unittest import mock
 
@@ -338,11 +337,13 @@ def test_process_rpc_instruction_rejects_write_calls_for_read_only_device(
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
 
-    with mock.patch.object(rpc_cls, "_execute_rpc_call") as mock_execute_rpc:
-        with pytest.raises(
+    with (
+        mock.patch.object(rpc_cls, "_execute_rpc_call") as mock_execute_rpc,
+        pytest.raises(
             DisabledDeviceError, match="Setting the device device is currently disabled."
-        ):
-            rpc_cls.process_rpc_instruction(instr)
+        ),
+    ):
+        rpc_cls.process_rpc_instruction(instr)
 
     mock_execute_rpc.assert_not_called()
 

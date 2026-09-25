@@ -25,7 +25,7 @@ def test_signature_serializer_merged_literals():
 
 
 def test_signature_serializer_merged_literals_different_types():
-    def test_func(a: Literal[1, 2, 3] | None | Literal["a", "b", "c"]):
+    def test_func(a: Literal[1, 2, 3] | None | Literal["a", "b", "c"]):  # noqa: PYI030 - Test merged literal ordering.
         pass
 
     params = signature_to_dict(test_func)
@@ -43,7 +43,7 @@ class SomeUnknownType: ...
 
 
 def test_signature_serializer_merged_literals_different_types_with_forwardref():
-    def test_func(a: Literal[1, 2, 3] | "SomeUnknownType" | Literal["a", "b", "c"]):
+    def test_func(a: Literal[1, 2, 3] | "SomeUnknownType" | Literal["a", "b", "c"]):  # noqa: PYI030, UP037 - Test mixed literals and a quoted forward reference.
         pass
 
     params = signature_to_dict(test_func)
@@ -60,7 +60,7 @@ def test_signature_serializer_merged_literals_different_types_with_forwardref():
 def test_serialize_dtype_imported_imported_func_arg():
     sig = inspect.signature(literal_union_test_func)
     anno = sig.parameters["a"].annotation
-    assert serialize_dtype(anno) == serialize_dtype(Union[Literal["a", "b", "c"], EnumTest])
+    assert serialize_dtype(anno) == serialize_dtype(Union[Literal["a", "b", "c"], EnumTest])  # noqa: UP007 - Exercise and preserve the typing.Union representation in serialization.
     assert serialize_dtype(anno) == {"Literal": ("a", "b", "c")}
 
 

@@ -5,7 +5,8 @@ This module provides a high level interface for interacting with the BEC Redis i
 from __future__ import annotations
 
 import traceback
-from typing import Literal, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 from redis.client import Pipeline, Redis
 

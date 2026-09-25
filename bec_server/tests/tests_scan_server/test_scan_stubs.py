@@ -9,7 +9,9 @@ from bec_server.device_server.tests.utils import DMMock
 from bec_server.scan_server.errors import DeviceMessageError
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scan_stubs import ScanStubs, ScanStubStatus
-from bec_server.scan_server.tests.fixtures import ScanStubStatusMock
+from bec_server.scan_server.tests.fixtures import (
+    ScanStubStatusMock as ScanStubStatusMock,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 
 
 @pytest.fixture
@@ -87,16 +89,18 @@ def test_kickoff(stubs, device, parameter, metadata, reference_msg):
 )
 def test_device_progress(stubs, msg, ret_value, raised_error):
     if raised_error:
-        with pytest.raises(DeviceMessageError):
-            with mock.patch.object(stubs.connector, "get", return_value=msg):
-                assert stubs.get_device_progress(device="samx", RID="rid") == ret_value
+        with (
+            pytest.raises(DeviceMessageError),
+            mock.patch.object(stubs.connector, "get", return_value=msg),
+        ):
+            assert stubs.get_device_progress(device="samx", RID="rid") == ret_value
         return
     with mock.patch.object(stubs.connector, "get", return_value=msg):
         assert stubs.get_device_progress(device="samx", RID="rid") == ret_value
 
 
 def test_send_rpc_and_wait(stubs, ScanStubStatusMock):
-    with mock.patch.object(stubs, "_get_result_from_status", return_value="msg") as get_rpc:
+    with mock.patch.object(stubs, "_get_result_from_status", return_value="msg") as _get_rpc:
         original_rpc = stubs.send_rpc
         with mock.patch.object(stubs, "send_rpc") as mock_rpc:
 

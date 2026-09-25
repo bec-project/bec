@@ -82,17 +82,14 @@ class BeamlineStateClientBase:
         self._state = state
         self._skip_parameters = {"name"}
 
-        # pylint: disable=unnecessary-lambda
         self._run = lambda **kwargs: self._run_update(**kwargs)
         self._update_signature()
 
     def _update_signature(self) -> None:
         # Dynamically update the signature of the update_parameters method to match the parameters of the state config
-        setattr(self, "update_parameters", self._run)
-        setattr(
-            getattr(self, "update_parameters"),
-            "__signature__",
-            build_signature_from_model(self._state, skip=self._skip_parameters),
+        self.update_parameters = self._run
+        self.update_parameters.__signature__ = build_signature_from_model(
+            self._state, skip=self._skip_parameters
         )
 
     def _run_update(self, **kwargs) -> None:
@@ -101,7 +98,7 @@ class BeamlineStateClientBase:
         if self._skip_parameters.intersection(kwargs):
             raise ValueError(f"Invalid parameters: {self._skip_parameters.intersection(kwargs)}")
         self._state = self._state.model_copy(update=kwargs)
-        self._manager._update_state(self._state)  # pylint: disable=protected-access
+        self._manager._update_state(self._state)
 
     def get(self) -> BeamlineStateGet:
         """
@@ -150,7 +147,7 @@ class BeamlineStateManager:
     def _on_state_update(self, msg_dict: dict, **_kwargs) -> None:
         # type: ignore ; we know it's an AvailableBeamlineStatesMessage
         msg: messages.AvailableBeamlineStatesMessage = msg_dict["data"]
-        self._update_states(msg.states)  # pylint: disable=protected-access
+        self._update_states(msg.states)
         self._ready = True
 
     def _update_state(self, state: BeamlineStateConfig) -> None:
@@ -289,7 +286,7 @@ class BeamlineStateManager:
                 str(state.state_type),
                 str(params),
                 f"[{status_style}]{status_value}[/{status_style}]",
-                f"[{status_style}]{str(status.get('label', ''))}[/{status_style}]",
+                f"[{status_style}]{status.get('label', '')!s}[/{status_style}]",
             )
 
         console.print(table)

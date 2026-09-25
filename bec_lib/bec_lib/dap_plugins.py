@@ -70,8 +70,8 @@ class DAPPlugins:
                         plugin_info.get("run_name"),
                         plugin_info.get("signature"),
                     )
-                # pylint: disable=broad-except
-                except Exception as e:
+
+                except Exception as e:  # noqa: BLE001 - A failing plugin must not prevent loading the remaining plugins.
                     logger.error(f"Error importing plugin {plugin_name}: {e}")
 
     def _get_plugin_class(self, plugin_info):
@@ -90,10 +90,9 @@ class DAPPlugins:
         run_name: str,
         signature: dict,
     ):
-        # pylint disable=protected-access
         setattr(self, plugin_name, self._available_dap_plugins[plugin_name])
         plugin = getattr(self, plugin_name)
-        setattr(plugin, "__doc__", class_doc_string)
+        plugin.__doc__ = class_doc_string
         setattr(plugin, run_name, plugin._user_run)
-        setattr(plugin._user_run, "__doc__", run_doc_string)
-        setattr(plugin._user_run, "__signature__", dict_to_signature(signature))
+        plugin._user_run.__doc__ = run_doc_string
+        plugin._user_run.__signature__ = dict_to_signature(signature)

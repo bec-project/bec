@@ -85,9 +85,11 @@ def test_update_progressbar_raises_scan_restart_when_scan_restarted():
         scan_id="scan_id", restarted_msg=restart_msg, status="open", status_message=None
     )
 
-    with mock.patch("bec_ipython_client.callbacks.device_progress.print") as mock_print:
-        with pytest.raises(ScanRestart) as exc_info:
-            live_update._update_progressbar(progressbar, ["async_dev1"])
+    with (
+        mock.patch("bec_ipython_client.callbacks.device_progress.print") as mock_print,
+        pytest.raises(ScanRestart) as exc_info,
+    ):
+        live_update._update_progressbar(progressbar, ["async_dev1"])
 
     assert exc_info.value.new_scan_msg == restart_msg
     mock_print.assert_not_called()

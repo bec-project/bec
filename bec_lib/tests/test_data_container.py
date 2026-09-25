@@ -5,9 +5,6 @@ import pytest
 
 from bec_lib.scan_data_container import FileReference, ScanDataContainer, _file_cache
 
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture
 def file_cache():

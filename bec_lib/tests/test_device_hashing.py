@@ -22,9 +22,10 @@ TEST_DEVICE_DICT = {
 }
 
 
-def _test_device_dict(extra={}, **kwargs):
+def _test_device_dict(extra=None, **kwargs):
     new = copy(TEST_DEVICE_DICT)
-    new.update(extra)
+    if extra is not None:
+        new.update(extra)
     new.update(kwargs)
     return new
 
@@ -120,7 +121,7 @@ def test_roundtrip_normal_device():
             DeviceHashModel(
                 deviceConfig=DictHashInclusion(
                     field_inclusion=HashInclusion.INCLUDE,
-                    inclusion_keys=set(["foo"]),
+                    inclusion_keys={"foo"},
                     remainder_inclusion=HashInclusion.EXCLUDE,
                 )
             ),

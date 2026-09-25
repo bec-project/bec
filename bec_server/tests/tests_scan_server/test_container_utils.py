@@ -186,6 +186,7 @@ def test_cli_build_req(cli_utils: tuple[PodmanCliUtils, MagicMock]):
     run_mock.assert_called_with(
         ["podman", "build", "--build-arg", ANY, "-f", ANY, "-t", ANY, "-v", ANY],
         capture_output=True,
+        check=False,
     )
 
 
@@ -196,6 +197,7 @@ def test_cli_build_worker(cli_utils: tuple[PodmanCliUtils, MagicMock]):
     run_mock.assert_called_with(
         ["podman", "build", "--build-arg", ANY, "-f", ANY, "-t", ANY, "-v", ANY],
         capture_output=True,
+        check=False,
     )
 
 

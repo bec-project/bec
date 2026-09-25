@@ -5,13 +5,7 @@ import pytest
 from bec_lib import messages
 from bec_lib.callback_handler import EventType
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.macro_update_handler import MacroUpdateHandler
 from bec_lib.user_macros import UserMacros
-
-# pylint: disable=no-member
-# pylint: disable=missing-function-docstring
-# pylint: disable=redefined-outer-name
-# pylint: disable=protected-access
 
 
 def dummy_func():
@@ -193,7 +187,6 @@ def test_on_macro_update_reload_case(user_macros, tmpdir):
 
     # Mock both forget and reload methods
     with mock.patch.object(macros._update_handler, "reload_user_macro") as mock_reload:
-
         msg = messages.MacroUpdateMessage(
             update_type="reload", macro_name="test_macro", file_path=str(macro_file)
         )
@@ -272,7 +265,6 @@ def integration_test():
         mock.patch.object(macros._update_handler, "reload_user_macro") as mock_reload,
         mock.patch.object(macros._update_handler, "load_all_user_macros") as mock_load_all,
     ):
-
         # Test add
         add_msg = messages.MacroUpdateMessage(
             update_type="add", macro_name="integration_test", file_path=str(macro_file)
@@ -431,7 +423,8 @@ def test_get_existing_macros_with_missing_fname(user_macros):
         "macro1", {"cls": dummy_func, "fname": "/path/to/file1.py", "source": "code1"}
     )
     macros._update_handler._add_macro(
-        "macro2", {"cls": dummy_func2, "source": "code2"}  # Missing fname
+        "macro2",
+        {"cls": dummy_func2, "source": "code2"},  # Missing fname
     )
     macros._update_handler._add_macro(
         "macro3", {"cls": dummy_func, "fname": "/path/to/file1.py", "source": "code3"}
@@ -471,15 +464,17 @@ def test_macro_update_callback_invalid_message_type(user_macros):
     mock_msg.value = "not_a_macro_update_message"
 
     # Mock the logger
-    with mock.patch("bec_lib.macro_update_handler.logger.error") as mock_logger:
+    with (
+        mock.patch("bec_lib.macro_update_handler.logger.error") as mock_logger,
+        mock.patch.object(macros._update_handler, "on_macro_update") as mock_on_update,
+    ):
         # Mock on_macro_update to ensure it's not called
-        with mock.patch.object(macros._update_handler, "on_macro_update") as mock_on_update:
-            # Call the callback
-            macros._update_handler._macro_update_callback(mock_msg)
+        # Call the callback
+        macros._update_handler._macro_update_callback(mock_msg)
 
-            # Verify error was logged and on_macro_update was not called
-            mock_logger.assert_called_once_with("Received invalid message type: <class 'str'>")
-            mock_on_update.assert_not_called()
+        # Verify error was logged and on_macro_update was not called
+        mock_logger.assert_called_once_with("Received invalid message type: <class 'str'>")
+        mock_on_update.assert_not_called()
 
 
 def test_macro_update_callback_with_different_message_types(user_macros):
@@ -521,7 +516,6 @@ def test_reload_user_macro_basic(user_macros):
         mock.patch.object(macros._update_handler, "forget_user_macro") as mock_forget,
         mock.patch.object(macros._update_handler, "load_user_macro") as mock_load,
     ):
-
         # Call reload_user_macro
         macros._update_handler.reload_user_macro("test_macro", "/test/path.py")
 
@@ -586,7 +580,6 @@ def test_reload_user_macro_nonexistent_macro(user_macros):
         mock.patch.object(macros._update_handler, "forget_user_macro") as mock_forget,
         mock.patch.object(macros._update_handler, "load_user_macro") as mock_load,
     ):
-
         # Try to reload a non-existent macro
         macros._update_handler.reload_user_macro("nonexistent_macro", "/test/path.py")
 
@@ -744,11 +737,7 @@ def config_function1():
         return path
 
     def mock_exists(path):
-        if "bec/macros" in path:
-            return True
-        elif str(config_macro_dir) in path:
-            return True
-        return False
+        return bool("bec/macros" in path or str(config_macro_dir) in path)
 
     # Mock the _macro_path to point to our test config directory
     macros._update_handler._macro_path = str(config_macro_dir)
@@ -784,6 +773,6 @@ def config_function1():
     assert hasattr(builtins, "user_function1")
     assert hasattr(builtins, "user_function2")
     assert hasattr(builtins, "config_function1")
-    assert getattr(builtins, "user_function1")() == "user1"
-    assert getattr(builtins, "user_function2")() == "user2"
-    assert getattr(builtins, "config_function1")() == "config1"
+    assert builtins.user_function1() == "user1"
+    assert builtins.user_function2() == "user2"
+    assert builtins.config_function1() == "config1"

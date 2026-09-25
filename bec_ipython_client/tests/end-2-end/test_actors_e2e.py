@@ -53,7 +53,6 @@ def _wait_for(pred, timeout=10, retries=100):
     return pred()
 
 
-# pylint: disable=protected-accesstest
 @pytest.mark.timeout(100)
 def test_scan_interlock(
     ramp_up_bl_state: tuple[BECIPythonClient, SimDeviceWithSignalDelay], bec_with_delay_device

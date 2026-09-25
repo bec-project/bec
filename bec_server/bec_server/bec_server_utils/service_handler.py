@@ -4,9 +4,10 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from string import Template
-from typing import Callable, Literal, Union
+from typing import ClassVar, Literal
 
 import redis
 
@@ -42,20 +43,18 @@ class ServiceDesc:
     path: Template
     command: str
     tmux_session: TmuxSession = field(default_factory=TmuxSession)
-    wait_func: Union[Callable, None] = None
+    wait_func: Callable | None = None
     args: list[str] = field(default_factory=list)
 
     def __eq__(self, other):
-        if isinstance(other, ServiceDesc):
-            if (
-                other.path.template == self.path.template
-                and self.command == other.command
-                and self.args == other.args
-            ):
-                if self.tmux_session.name == other.tmux_session.name:
-                    if self.wait_func == other.wait_func:
-                        return True
-        return False
+        return bool(
+            isinstance(other, ServiceDesc)
+            and other.path.template == self.path.template
+            and self.command == other.command
+            and self.args == other.args
+            and self.tmux_session.name == other.tmux_session.name
+            and self.wait_func == other.wait_func
+        )
 
 
 class ServiceHandler:
@@ -64,7 +63,7 @@ class ServiceHandler:
     Depending on the platform, the server is launched in a tmux session or in an iTerm2 session.
     """
 
-    SERVICES: dict[str, tuple[ServiceDesc, list[str]]] = {
+    SERVICES: ClassVar[dict[str, tuple[ServiceDesc, list[str]]]] = {
         # The list after the ServiceDesc represents which CLI args should be pulled from the global server args for each
         # specific service. E.g. the global 'use_subprocess_proc_worker' arg should be passed on to the ScanServer.
         "scan_server": (
@@ -121,7 +120,7 @@ class ServiceHandler:
                 print("Using systemctl to communicate with the BEC server.")
             else:
                 default_interface = "tmux"
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Fall back to tmux if host service detection fails.
             default_interface = "tmux"
 
         if default_interface == "systemctl" and os.environ.get("INVOCATION_ID"):
@@ -131,7 +130,7 @@ class ServiceHandler:
         # check if we are on MacOS and if so, check if we have iTerm2 installed
         if sys.platform == "darwin":
             try:
-                import iterm2
+                import iterm2  # noqa: F401 -- Import availability selects the macOS launch interface.
             except ImportError:
                 self.interface = default_interface
             else:

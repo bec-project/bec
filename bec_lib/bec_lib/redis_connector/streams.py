@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, NamedTuple
+from typing import Any, NamedTuple
 
 import louie
 
@@ -69,7 +70,7 @@ class StreamSubs:
         with self.lock:
             from_start_keys = [k for k in self.from_start_subs if self.from_start_subs[k] != set()]
             dr_sub_keys = [k for k in self._direct_read_subs if self._direct_read_subs[k] != set()]
-            return list(set((*self._subs.keys(), *dr_sub_keys, *from_start_keys)))
+            return list({*self._subs.keys(), *dr_sub_keys, *from_start_keys})
 
     def topic_ids(self) -> dict[str, str]:
         """Get Redis read Ids for active subscriptions"""
@@ -93,15 +94,15 @@ class StreamSubs:
             error_log_with_context(
                 f"Mismatch of subs to move! {topics_and_end_ids.keys()=}, {self.from_start_subs.keys()=} Was a lock forgotten?"
             )
-        for topic in topics_and_end_ids:
+        for topic, end_id in topics_and_end_ids.items():
             if topic in self._subs:
-                if topics_and_end_ids[topic] != self._subs[topic].read_id:
+                if end_id != self._subs[topic].read_id:
                     error_log_with_context("Mismatch of ID! Was a lock forgotten?")
                 for sub in self.from_start_subs.pop(topic):
                     self._subs[topic].subs.add(sub)  # type: ignore
             else:
                 self._subs[topic] = StreamSubsEntry(
-                    read_id=topics_and_end_ids[topic], subs=self.from_start_subs.pop(topic)
+                    read_id=end_id, subs=self.from_start_subs.pop(topic)
                 )
 
     def is_already_registered(self, topic: str, new_sub: StreamSubInfo):

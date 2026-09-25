@@ -28,7 +28,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_ipython_client.main import BECIPythonClient
 
 
-# pylint: disable=protected-access
 class _ScanDataRecorder:
     def __init__(self):
         self.data = []
@@ -447,7 +446,7 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
     # start repeat thread
     threading.Thread(target=send_repeat, args=(bec,), daemon=True).start()
     # start scan
-    scan1 = scans.line_scan(
+    _scan1 = scans.line_scan(
         dev.samx, -5, 5, steps=100, exp_time=0.1, hide_report=True, relative=True
     )
     scan2 = scans.line_scan(
@@ -734,12 +733,9 @@ def test_context_manager_export(tmp_path, bec_ipython_client_fixture, abort_on_c
     bec._client._service_config = PropertyMock()
     bec._client._service_config.abort_on_ctrl_c = abort_on_ctrl_c
     if not abort_on_ctrl_c:
-        with pytest.raises(RuntimeError):
-            with scans.scan_export(os.path.join(tmp_path, "test.csv")):
-                scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
-                scans.grid_scan(
-                    dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
-                )
+        with pytest.raises(RuntimeError), scans.scan_export(os.path.join(tmp_path, "test.csv")):
+            scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
+            scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
     else:
         scan_file = os.path.join(tmp_path, "test.csv")
         with scans.scan_export(scan_file):
@@ -827,7 +823,7 @@ def test_client_info_message(bec_ipython_client_fixture):
 
     buffer = io.StringIO()
     with redirect_stdout(buffer):
-        s1 = scans.line_scan(dev.samx, 0, 1, steps=10, exp_time=0.5, relative=False)
+        _s1 = scans.line_scan(dev.samx, 0, 1, steps=10, exp_time=0.5, relative=False)
         output = buffer.getvalue()
         assert "test_client_info_message" in output
 

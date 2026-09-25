@@ -54,7 +54,7 @@ def test_script_executor_failure(connected_connector):
 
     try:
         client._run_script(script_id)
-    except Exception as e:
+    except Exception:  # noqa: S110, BLE001 - Validate the emitted failure status even when the script raises.
         pass
 
     while not received_data:

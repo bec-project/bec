@@ -59,16 +59,16 @@ def test_service_handler_restart():
         service_handler = ServiceHandler(bec_path, config_path)
         services = {name: desc for name, (desc, _) in service_handler.SERVICES.items()}
         expected_services = copy.deepcopy(services)
-        for service_name, service_desc in expected_services.items():
+        for service_desc in expected_services.values():
             service_desc.command += f" --config {config_path}"
 
-        with mock.patch("bec_server.bec_server_utils.service_handler.tmux_stop") as mock_tmux_stop:
-            with mock.patch(
-                "bec_server.bec_server_utils.service_handler.tmux_start"
-            ) as mock_tmux_start:
-                service_handler.restart()
-                mock_tmux_stop.assert_called()
-                mock_tmux_start.assert_called_once_with(bec_path, expected_services)
+        with (
+            mock.patch("bec_server.bec_server_utils.service_handler.tmux_stop") as mock_tmux_stop,
+            mock.patch("bec_server.bec_server_utils.service_handler.tmux_start") as mock_tmux_start,
+        ):
+            service_handler.restart()
+            mock_tmux_stop.assert_called()
+            mock_tmux_start.assert_called_once_with(bec_path, expected_services)
 
 
 def test_service_handler_services():

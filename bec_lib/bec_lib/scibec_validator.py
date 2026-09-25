@@ -12,7 +12,7 @@ import bec_lib
 
 
 class SciBecValidator:
-    def __init__(self, schema_path: str = None) -> None:
+    def __init__(self, schema_path: str | None = None) -> None:
         warnings.warn(
             "SciBecValidator is deprecated and will be removed in a future release. Use bec_lib.atlas_models instead.",
             DeprecationWarning,

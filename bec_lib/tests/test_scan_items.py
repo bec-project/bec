@@ -12,8 +12,6 @@ from bec_lib.scan_items import ScanItem
 from bec_lib.scan_manager import ScanManager
 from bec_lib.tests.utils import ConnectorMock
 
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture
 def scan_item():
@@ -105,7 +103,7 @@ def test_scan_item_str(scan_item):
     start_time = "Fri Jun 23 15:11:06 2023"
     # convert to datetime string to timestamp
     scan_item.start_time = time.mktime(
-        datetime.datetime.strptime(start_time, "%a %b %d %H:%M:%S %Y").timetuple()
+        datetime.datetime.strptime(start_time, "%a %b %d %H:%M:%S %Y").timetuple()  # noqa: DTZ007 - Keep the established local-time display and filename format.
     )
     scan_item.end_time = scan_item.start_time + 10
     scan_item.num_points = 1
@@ -148,35 +146,31 @@ def test_emit_status(scan_item):
 def test_run_request_callbacks(scan_item, request_block):
     scan_manager = scan_item.scan_manager
     queue_item = QueueItem(scan_manager, "queue_id", [request_block], "status", None, ["scan_id"])
-    with mock.patch("bec_lib.queue_items.update_queue") as mock_update_queue:
-        with mock.patch.object(queue_item, "_update_with_buffer") as mock_update_buffer:
-            with mock.patch.object(
-                scan_manager.queue_storage, "find_queue_item_by_ID"
-            ) as mock_find_queue:
-                with mock.patch.object(
-                    scan_manager.request_storage, "find_request_by_ID"
-                ) as mock_find_req:
-                    mock_find_queue.return_value = queue_item
-                    scan_item._run_request_callbacks("event_type", "data", "metadata")
-                    mock_find_req.return_value.callbacks.run.assert_called_once_with(
-                        "event_type", "data", "metadata"
-                    )
+    with (
+        mock.patch("bec_lib.queue_items.update_queue") as _mock_update_queue,
+        mock.patch.object(queue_item, "_update_with_buffer") as _mock_update_buffer,
+        mock.patch.object(scan_manager.queue_storage, "find_queue_item_by_ID") as mock_find_queue,
+        mock.patch.object(scan_manager.request_storage, "find_request_by_ID") as mock_find_req,
+    ):
+        mock_find_queue.return_value = queue_item
+        scan_item._run_request_callbacks("event_type", "data", "metadata")
+        mock_find_req.return_value.callbacks.run.assert_called_once_with(
+            "event_type", "data", "metadata"
+        )
 
 
 def test_poll_callbacks(scan_item, request_block):
     scan_manager = scan_item.scan_manager
     queue_item = QueueItem(scan_manager, "queue_id", [request_block], "status", None, ["scan_id"])
-    with mock.patch("bec_lib.queue_items.update_queue") as mock_update_queue:
-        with mock.patch.object(queue_item, "_update_with_buffer") as mock_update_buffer:
-            with mock.patch.object(
-                scan_manager.queue_storage, "find_queue_item_by_ID"
-            ) as mock_find_queue:
-                with mock.patch.object(
-                    scan_manager.request_storage, "find_request_by_ID"
-                ) as mock_find_req:
-                    mock_find_queue.return_value = queue_item
-                    scan_item.poll_callbacks()
-                    mock_find_req.return_value.callbacks.poll.assert_called_once()
+    with (
+        mock.patch("bec_lib.queue_items.update_queue") as _mock_update_queue,
+        mock.patch.object(queue_item, "_update_with_buffer") as _mock_update_buffer,
+        mock.patch.object(scan_manager.queue_storage, "find_queue_item_by_ID") as mock_find_queue,
+        mock.patch.object(scan_manager.request_storage, "find_request_by_ID") as mock_find_req,
+    ):
+        mock_find_queue.return_value = queue_item
+        scan_item.poll_callbacks()
+        mock_find_req.return_value.callbacks.poll.assert_called_once()
 
 
 def test_scan_item_eq():

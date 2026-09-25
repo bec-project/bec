@@ -59,7 +59,7 @@ class BECLoguruRotator:
     """
 
     def __init__(self, *, size: int, at: datetime.time):
-        now = datetime.datetime.now()
+        now = datetime.datetime.now()  # noqa: DTZ005 - Keep the established local-time display and filename format.
         self._last_check = time.monotonic()
         self._limiter = 600  # 10 minutes
 
@@ -135,7 +135,7 @@ class BECLogger:
 
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
-            cls._logger = super(BECLogger, cls).__new__(cls)
+            cls._logger = super().__new__(cls)
         return cls._logger
 
     @classmethod
@@ -235,7 +235,7 @@ class BECLogger:
         """
         Compile the log base path.
         """
-        # pylint: disable=import-outside-toplevel
+
         if service_config:
             service_cfg = service_config.get("log_writer", None)
             if not service_cfg:
@@ -291,7 +291,7 @@ class BECLogger:
                 frames = takewhile(
                     lambda f: "/loguru/" not in f.filename, traceback.extract_stack()
                 )
-                stack = " > ".join("{}:{}:{}".format(f.filename, f.name, f.lineno) for f in frames)
+                stack = " > ".join(f"{f.filename}:{f.name}:{f.lineno}" for f in frames)
                 record["extra"]["stack"] = stack
             return level
 
@@ -328,9 +328,7 @@ class BECLogger:
         def _filter(record):
             if self._is_disabled_record(record):
                 return False
-            if not is_console and self._is_console_level(record["level"].no):
-                return False
-            return True
+            return not (not is_console and self._is_console_level(record["level"].no))
 
         return _filter
 
@@ -483,7 +481,7 @@ class BECLogger:
                 max_size=10000,
             )
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 - Logging must tolerate all connector failures without recursive logging.
             # connector disconnected?
             # just ignore the error here...
             # Exception is not explicitly specified,
@@ -558,8 +556,7 @@ class BECLogger:
         Returns:
             file: File object.
         """
-        # pylint: disable=consider-using-with
-        # pylint: disable=unspecified-encoding
+
         file_existed = os.path.exists(path)
         textio = os.open(path, mode)
         if file_existed is False:

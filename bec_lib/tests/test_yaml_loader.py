@@ -206,11 +206,14 @@ def test_load_yaml_rejects_non_regular_include(tmp_path, path_type):
             pytest.skip("Named pipes are unavailable on this platform.")
         os.mkfifo(included)
 
-    with mock.patch(
-        "bec_lib.bec_yaml_loader.open", side_effect=AssertionError("Cannot open a non-regular file")
-    ) as open_file:
-        with pytest.raises(yaml.YAMLError, match="included.yaml.*not a regular file"):
-            yaml_load(io.StringIO(f"group: !include {included}\n"))
+    with (
+        mock.patch(
+            "bec_lib.bec_yaml_loader.open",
+            side_effect=AssertionError("Cannot open a non-regular file"),
+        ) as open_file,
+        pytest.raises(yaml.YAMLError, match="included.yaml.*not a regular file"),
+    ):
+        yaml_load(io.StringIO(f"group: !include {included}\n"))
 
     open_file.assert_not_called()
 

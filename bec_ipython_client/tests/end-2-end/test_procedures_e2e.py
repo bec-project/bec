@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from importlib.metadata import version
-from typing import TYPE_CHECKING, Callable, Generator
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +23,6 @@ if TYPE_CHECKING:
 
 logger = bec_logger.logger
 
-# pylint: disable=protected-access
 
 # Random order disabled for this module so that the test for building the worker container runs first
 # and we can use lower timeouts for the remaining tests
@@ -40,8 +40,8 @@ class PATCHED_CONSTANTS:
 
 @pytest.fixture
 def client_logtool_and_manager(
-    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
-) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
+    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, LogTestTool],
+) -> Generator[tuple[BECIPythonClient, LogTestTool, ProcedureManager], None, None]:
     client, logtool = bec_ipython_client_fixture_with_logtool
     manager = ProcedureManager(f"{client.connector.host}:{client.connector.port}", SubProcessWorker)
     try:
@@ -71,7 +71,7 @@ def test_building_worker_image():
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_procedure_runner_spawns_worker(
-    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
+    client_logtool_and_manager: tuple[BECIPythonClient, LogTestTool, ProcedureManager],
 ):
     client, _, manager = client_logtool_and_manager
     assert manager._active_workers == {}
@@ -98,7 +98,7 @@ def test_procedure_runner_spawns_worker(
 @patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
 @patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
 def test_happy_path_container_procedure_runner(
-    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
+    client_logtool_and_manager: tuple[BECIPythonClient, LogTestTool, ProcedureManager],
 ):
     test_args = (1, 2, 3)
     test_kwargs = {"a": "b", "c": "d"}

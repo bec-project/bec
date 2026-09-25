@@ -1,5 +1,5 @@
 import time
-from typing import Callable
+from collections.abc import Callable
 
 
 def wait_until(predicate: Callable[[], bool], timeout_s: float = 0.1):

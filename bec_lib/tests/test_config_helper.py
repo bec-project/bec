@@ -16,8 +16,6 @@ from bec_lib.service_config import ServiceConfigModel
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
-# pylint: disable=protected-access
-
 
 @pytest.fixture
 def config_helper_plain(dm_with_devices) -> ConfigHelper:
@@ -29,9 +27,11 @@ def config_helper_plain(dm_with_devices) -> ConfigHelper:
 @pytest.fixture
 def config_helper(config_helper_plain):
     config_helper_inst = config_helper_plain
-    with mock.patch.object(config_helper_inst, "wait_for_config_reply"):
-        with mock.patch.object(config_helper_inst, "wait_for_service_response"):
-            yield config_helper_inst
+    with (
+        mock.patch.object(config_helper_inst, "wait_for_config_reply"),
+        mock.patch.object(config_helper_inst, "wait_for_service_response"),
+    ):
+        yield config_helper_inst
 
 
 @pytest.fixture
@@ -76,15 +76,15 @@ def test_load_demo_config(config_helper):
 
 
 def test_config_helper_update_session_with_file(config_helper):
-    with mock.patch.object(config_helper, "send_config_request") as mock_send_config_request:
-        with mock.patch.object(
-            config_helper, "_load_config_from_file"
-        ) as mock_load_config_from_file:
-            mock_load_config_from_file.return_value = {"test": "test"}
-            config_helper._base_path_recovery = "."
-            config_helper._writer_mixin = mock.MagicMock()
-            config_helper.update_session_with_file("test.yaml")
-            mock_send_config_request.assert_called_once_with(action="set", config={"test": "test"})
+    with (
+        mock.patch.object(config_helper, "send_config_request") as mock_send_config_request,
+        mock.patch.object(config_helper, "_load_config_from_file") as mock_load_config_from_file,
+    ):
+        mock_load_config_from_file.return_value = {"test": "test"}
+        config_helper._base_path_recovery = "."
+        config_helper._writer_mixin = mock.MagicMock()
+        config_helper.update_session_with_file("test.yaml")
+        mock_send_config_request.assert_called_once_with(action="set", config={"test": "test"})
 
 
 @pytest.mark.parametrize("config_file", ["test.yaml", "test.yml"])
@@ -118,9 +118,11 @@ def test_config_helper_rejects_config_directory(
     file_path = tmp_path / filename
     file_path.mkdir()
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            getattr(config_helper_for_invalid_file, method)(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        getattr(config_helper_for_invalid_file, method)(str(file_path))
 
     assert str(exc_info.value) == f"Config path '{file_path}' is not a regular file."
     mock_open.assert_not_called()
@@ -132,9 +134,11 @@ def test_config_helper_rejects_config_fifo_without_opening(
     file_path = tmp_path / "config.yaml"
     os.mkfifo(file_path)
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper_for_invalid_file.update_session_with_file(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
 
     assert str(exc_info.value) == f"Config path '{file_path}' is not a regular file."
     mock_open.assert_not_called()
@@ -162,9 +166,11 @@ def test_config_helper_reports_config_stat_errors(
 
     config_path_mock.stat.side_effect = error
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper_for_invalid_file.update_session_with_file(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
 
     assert str(exc_info.value) == f"Cannot access config file '{file_path}': {error}"
     assert exc_info.value.__cause__ is error
@@ -179,9 +185,11 @@ def test_config_helper_reports_config_open_errors_after_validation(
     file_path.write_text("motor: {}", encoding="utf-8")
     error = OSError(error_code, os.strerror(error_code), str(file_path))
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=error) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper_for_invalid_file.update_session_with_file(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=error) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper_for_invalid_file.update_session_with_file(str(file_path))
 
     assert str(exc_info.value) == f"Failed to load config file '{file_path}': {error}"
     assert exc_info.value.__cause__ is error
@@ -294,9 +302,11 @@ def test_config_helper_unsupported_config_file_extension(config_helper, tmp_path
     file_path = tmp_path / filename
     file_path.write_text("{}", encoding="utf-8")
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            getattr(config_helper, method)(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        getattr(config_helper, method)(str(file_path))
 
     assert str(exc_info.value) == (
         f"File extension '{file_path.suffix}' is not supported for config file '{file_path}'. "
@@ -315,9 +325,11 @@ def test_config_helper_unsupported_config_file_extension(config_helper, tmp_path
 def test_config_helper_missing_config_file(config_helper, tmp_path, method, filename):
     file_path = tmp_path / filename
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            getattr(config_helper, method)(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        getattr(config_helper, method)(str(file_path))
 
     assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
     mock_open.assert_not_called()
@@ -352,9 +364,11 @@ def test_config_helper_missing_config_file_suggests_existing_yaml(
     for alternative in alternatives:
         (tmp_path / alternative).write_text("{}", encoding="utf-8")
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            getattr(config_helper, method)(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        getattr(config_helper, method)(str(file_path))
 
     suggestions = " or ".join(f"'{tmp_path / alternative}'" for alternative in alternatives)
     assert str(exc_info.value) == (
@@ -394,9 +408,11 @@ def test_config_helper_missing_config_file_suggests_similar_files(
     for available_file in available_files:
         (tmp_path / available_file).write_text("{}", encoding="utf-8")
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper.update_session_with_file(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper.update_session_with_file(str(file_path))
 
     suggestions = " or ".join(f"'{tmp_path / alternative}'" for alternative in alternatives)
     assert str(exc_info.value) == (
@@ -435,9 +451,11 @@ def test_config_helper_missing_config_file_suggestions_exclude_unsupported_files
         (tmp_path / filename).write_text("{}", encoding="utf-8")
     (tmp_path / "test_confgi1.yaml").mkdir()
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper.add_to_session(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper.add_to_session(str(file_path))
 
     assert str(exc_info.value) == (
         f"Config file '{file_path}' does not exist. Did you mean '{alternative}'?"
@@ -456,9 +474,11 @@ def test_config_helper_missing_config_file_ignores_directory_listing_errors(
 
     config_path_mock.parent.iterdir.side_effect = error
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper.update_session_with_file(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper.update_session_with_file(str(file_path))
 
     assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
     config_path_mock.parent.iterdir.assert_called_once()
@@ -470,9 +490,11 @@ def test_config_helper_missing_config_file_ignores_directory_listing_errors(
 def test_config_helper_missing_config_file_with_missing_parent_directory(config_helper, tmp_path):
     file_path = tmp_path / "missing" / "config.yaml"
 
-    with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-        with pytest.raises(DeviceConfigError) as exc_info:
-            config_helper.add_to_session(str(file_path))
+    with (
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        config_helper.add_to_session(str(file_path))
 
     assert str(exc_info.value) == f"Config file '{file_path}' does not exist."
     mock_open.assert_not_called()
@@ -500,12 +522,14 @@ def test_config_helper_missing_config_file_ignores_suggestion_stat_errors(
             raise OSError(error_code, os.strerror(error_code), str(candidate))
         return original_is_file(candidate)
 
-    with mock.patch(
-        "bec_lib.config_helper.pathlib.Path.is_file", autospec=True, side_effect=is_file
-    ) as mock_is_file:
-        with mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open:
-            with pytest.raises(DeviceConfigError) as exc_info:
-                getattr(config_helper, method)(str(file_path))
+    with (
+        mock.patch(
+            "bec_lib.config_helper.pathlib.Path.is_file", autospec=True, side_effect=is_file
+        ) as mock_is_file,
+        mock.patch("bec_lib.config_helper.open", side_effect=AssertionError) as mock_open,
+        pytest.raises(DeviceConfigError) as exc_info,
+    ):
+        getattr(config_helper, method)(str(file_path))
 
     expected_message = f"Config file '{file_path}' does not exist."
     if has_alternative:
@@ -532,21 +556,21 @@ def test_config_helper_missing_config_file_does_not_suggest_directory(
 
 
 def test_config_helper_add_to_session(config_helper):
-    with mock.patch.object(config_helper, "send_config_request") as mock_send_config_request:
-        with mock.patch.object(
-            config_helper, "_load_config_from_file"
-        ) as mock_load_config_from_file:
-            mock_load_config_from_file.return_value = {
-                "samx": {
-                    "deviceClass": "ophyd_devices.SimPositioner",
-                    "enabled": True,
-                    "readOnly": False,
-                    "readoutPriority": "baseline",
-                }
+    with (
+        mock.patch.object(config_helper, "send_config_request") as mock_send_config_request,
+        mock.patch.object(config_helper, "_load_config_from_file") as mock_load_config_from_file,
+    ):
+        mock_load_config_from_file.return_value = {
+            "samx": {
+                "deviceClass": "ophyd_devices.SimPositioner",
+                "enabled": True,
+                "readOnly": False,
+                "readoutPriority": "baseline",
             }
-            config_helper.add_to_session("test.yaml")
-            mock_send_config_request.assert_called_once()
-            assert mock_send_config_request.call_args.kwargs["action"] == "add"
+        }
+        config_helper.add_to_session("test.yaml")
+        mock_send_config_request.assert_called_once()
+        assert mock_send_config_request.call_args.kwargs["action"] == "add"
 
 
 def test_config_helper_save_current_session(config_helper):
@@ -588,35 +612,37 @@ def test_config_helper_save_current_session(config_helper):
         },
     ]
     msg = messages.AvailableResourceMessage(resource=config)
-    with mock.patch("builtins.open", mock.mock_open()) as mock_open:
-        with mock.patch.object(config_helper._device_manager.connector, "get") as mock_get:
-            mock_get.return_value = msg
-            config_helper.save_current_session("test.yaml")
-            out_data = {
-                "pinz": {
-                    "deviceClass": "SimPositioner",
-                    "deviceTags": ["user motors"],
-                    "enabled": True,
-                    "deviceConfig": {
-                        "delay": 1,
-                        "labels": "pinz",
-                        "limits": [-50, 50],
-                        "name": "pinz",
-                        "tolerance": 0.01,
-                        "update_frequency": 400,
-                    },
-                    "readoutPriority": "baseline",
+    with (
+        mock.patch("builtins.open", mock.mock_open()) as mock_open,
+        mock.patch.object(config_helper._device_manager.connector, "get") as mock_get,
+    ):
+        mock_get.return_value = msg
+        config_helper.save_current_session("test.yaml")
+        out_data = {
+            "pinz": {
+                "deviceClass": "SimPositioner",
+                "deviceTags": ["user motors"],
+                "enabled": True,
+                "deviceConfig": {
+                    "delay": 1,
+                    "labels": "pinz",
+                    "limits": [-50, 50],
+                    "name": "pinz",
+                    "tolerance": 0.01,
+                    "update_frequency": 400,
                 },
-                "transd": {
-                    "deviceClass": "SimMonitor",
-                    "deviceTags": ["beamline"],
-                    "enabled": True,
-                    "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
-                    "readoutPriority": "monitored",
-                },
-            }
-            call = mock_open().write.call_args[0][0]
-            assert yaml.safe_load(call) == out_data
+                "readoutPriority": "baseline",
+            },
+            "transd": {
+                "deviceClass": "SimMonitor",
+                "deviceTags": ["beamline"],
+                "enabled": True,
+                "deviceConfig": {"labels": "transd", "name": "transd", "tolerance": 0.5},
+                "readoutPriority": "monitored",
+            },
+        }
+        call = mock_open().write.call_args[0][0]
+        assert yaml.safe_load(call) == out_data
 
 
 def test_config_helper_save_current_session_does_not_report_tag_conflicts_without_split(
@@ -752,7 +778,7 @@ def test_config_helper_save_current_session_split_by_tag_included_tags(config_he
     assert not (split_dir / "user_motors.yaml").exists()
 
     assert output_file.read_text() == (
-        "beamline:\n" "  - !include ./beamline.yaml\n" "\n" "misc:\n" "  - !include ./misc.yaml\n"
+        "beamline:\n  - !include ./beamline.yaml\n\nmisc:\n  - !include ./misc.yaml\n"
     )
 
     assert set(yaml.safe_load(beamline_file.read_text()).keys()) == {"eiger"}
@@ -818,7 +844,7 @@ def test_config_helper_save_current_session_split_by_tag_custom_remaining_device
     other_file = split_dir / "other.yaml"
 
     assert output_file.read_text() == (
-        "beamline:\n" "  - !include ./beamline.yaml\n" "\n" "other:\n" "  - !include ./other.yaml\n"
+        "beamline:\n  - !include ./beamline.yaml\n\nother:\n  - !include ./other.yaml\n"
     )
     assert other_file.exists()
     assert not (split_dir / "misc.yaml").exists()
@@ -875,7 +901,7 @@ def test_config_helper_save_current_session_split_by_tag_directory_target(config
     assert output_dir.exists()
     assert manifest_file.exists()
     assert tag_file.exists()
-    assert manifest_file.read_text() == ("user motors:\n" "  - !include ./user_motors.yaml\n")
+    assert manifest_file.read_text() == ("user motors:\n  - !include ./user_motors.yaml\n")
     assert set(yaml.safe_load(tag_file.read_text()).keys()) == {"pinz"}
 
 
@@ -911,11 +937,7 @@ def test_config_helper_save_current_session_split_by_tag_prints_conflicting_tags
     assert (split_dir / "tag_one.yaml").exists()
     assert (split_dir / "tag_one_2.yaml").exists()
     assert (split_dir / "main.yaml").read_text() == (
-        "tag one:\n"
-        "  - !include ./tag_one.yaml\n"
-        "\n"
-        "tag/one:\n"
-        "  - !include ./tag_one_2.yaml\n"
+        "tag one:\n  - !include ./tag_one.yaml\n\ntag/one:\n  - !include ./tag_one_2.yaml\n"
     )
 
 
@@ -1026,21 +1048,23 @@ def test_wait_for_service_response_handles_one_by_one(config_helper_plain):
 
 
 def test_update_base_path_recovery(config_helper_plain):
-    with mock.patch("bec_lib.bec_service.SERVICE_CONFIG") as mock_service_config:
-        with mock.patch("bec_lib.config_helper.DeviceConfigWriter") as mock_device_config_writer:
-            config = ServiceConfigModel(**{"log_writer": {"base_path": "./"}}).model_dump()
-            mock_service_config.config = config
-            config_helper = config_helper_plain
-            dir_path = os.path.join(
-                config["log_writer"]["base_path"], "device_configs/recovery_configs"
-            )
-            instance = mock_device_config_writer.get_recovery_directory
-            instance.return_value = dir_path
+    with (
+        mock.patch("bec_lib.bec_service.SERVICE_CONFIG") as mock_service_config,
+        mock.patch("bec_lib.config_helper.DeviceConfigWriter") as mock_device_config_writer,
+    ):
+        config = ServiceConfigModel(log_writer={"base_path": "./"}).model_dump()
+        mock_service_config.config = config
+        config_helper = config_helper_plain
+        dir_path = os.path.join(
+            config["log_writer"]["base_path"], "device_configs/recovery_configs"
+        )
+        instance = mock_device_config_writer.get_recovery_directory
+        instance.return_value = dir_path
+        config_helper._update_base_path_recovery()
+        assert mock_device_config_writer.call_args == mock.call(config["log_writer"])
+        mock_service_config.config = {}
+        with pytest.raises(ServiceConfigError):
             config_helper._update_base_path_recovery()
-            assert mock_device_config_writer.call_args == mock.call(config["log_writer"])
-            mock_service_config.config = {}
-            with pytest.raises(ServiceConfigError):
-                config_helper._update_base_path_recovery()
 
 
 @pytest.mark.parametrize(

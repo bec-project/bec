@@ -248,11 +248,13 @@ def test_queue_storage_update_queue(queue_storage: QueueStorage, scan_queue_stat
     """
     Test that _update_queue calls both update methods.
     """
-    with mock.patch.object(
-        queue_storage.scan_manager.connector, "get", return_value=scan_queue_status_message
+    with (
+        mock.patch.object(
+            queue_storage.scan_manager.connector, "get", return_value=scan_queue_status_message
+        ),
+        mock.patch.object(queue_storage.scan_manager.connector, "lrange", return_value=[]),
     ):
-        with mock.patch.object(queue_storage.scan_manager.connector, "lrange", return_value=[]):
-            queue_storage._update_queue()
+        queue_storage._update_queue()
 
     assert queue_storage.current_scan_queue is not None
     assert queue_storage.queue_history is not None
@@ -325,9 +327,11 @@ def test_queue_storage_describe_queue_multiple_queues(queue_storage: QueueStorag
         }
     )
 
-    with mock.patch.object(queue_storage.scan_manager.connector, "get", return_value=queue_msg):
-        with mock.patch.object(queue_storage.scan_manager.connector, "lrange", return_value=[]):
-            out = queue_storage.describe_queue()
+    with (
+        mock.patch.object(queue_storage.scan_manager.connector, "get", return_value=queue_msg),
+        mock.patch.object(queue_storage.scan_manager.connector, "lrange", return_value=[]),
+    ):
+        out = queue_storage.describe_queue()
     # Check that both queues are in the output
     assert "primary queue" in out
     assert "interception queue" in out

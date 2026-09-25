@@ -11,9 +11,10 @@ import threading
 import time
 import uuid
 from collections import defaultdict, namedtuple
+from collections.abc import Callable, Iterable
 from contextvars import ContextVar
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from pydantic import ConfigDict
@@ -107,7 +108,7 @@ def rpc(fcn):
 
     @functools.wraps(fcn)
     def wrapper(self, *args, **kwargs):
-        # pylint: disable=protected-access
+
         return self._run(*args, fcn=fcn, **kwargs)
 
     return wrapper
@@ -163,13 +164,13 @@ class Status:
             from_start=True,
         )
 
-    def __eq__(self, __value: object) -> bool:
+    def __eq__(self, __value: object) -> bool:  # noqa: PYI063 - Preserve the existing callable signature for introspection and callers.
         if isinstance(__value, Status):
             return self._request_id == __value._request_id
         return False
 
     def _on_status_update(self, msg: dict[str, messages.DeviceReqStatusMessage]):
-        # pylint: disable=protected-access
+
         self._request_status = msg["data"]
         self._set_done()
 
@@ -207,9 +208,9 @@ class _PermissiveDeviceModel(_DeviceModelCore):
     model_config = ConfigDict(extra="allow")
 
 
-def set_device_config(device: "DeviceBase", config: dict | _PermissiveDeviceModel | None):
+def set_device_config(device: DeviceBase, config: dict | _PermissiveDeviceModel | None):
     # device._config = config
-    device._config = (  # pylint: disable=protected-access
+    device._config = (
         _PermissiveDeviceModel.model_validate(config).model_dump() if config is not None else None
     )
 
@@ -225,10 +226,10 @@ class DeviceBase:
         self,
         *,
         name: str,
-        info: dict = None,
+        info: dict = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
         config: dict | _PermissiveDeviceModel | None = None,
         parent=None,
-        signal_info: dict = None,
+        signal_info: dict = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
         class_name: str | None = None,
     ) -> None:
         """
@@ -255,7 +256,7 @@ class DeviceBase:
 
         # the following lambda is needed to support customized RPC methods with
         # doc strings and function signatures.
-        # pylint: disable=unnecessary-lambda
+
         self.run = lambda *args, **kwargs: self._run(*args, **kwargs)
 
     def _run(self, *args, fcn=None, cached=False, **kwargs):
@@ -309,7 +310,7 @@ class DeviceBase:
         super().__setattr__(name, value)
 
     def _should_prevent_attribute_overwrite(self, name: str) -> bool:
-        # pylint: disable=protected-access
+
         # allow override is defined on the device manager
         if self.root.parent is None or getattr(self.root.parent, "_allow_override", True):
             return False
@@ -455,7 +456,6 @@ class DeviceBase:
             request_id = str(uuid.uuid4())
             msg = self._prepare_rpc_msg(rpc_id, request_id, device, func_call, *args, **kwargs)
 
-            # pylint: disable=protected-access
             msg.metadata["client_info"] = {
                 "acl_user": client.username,
                 "username": client._system_user,
@@ -486,7 +486,7 @@ class DeviceBase:
         """
         # avoid circular imports
         # only needed here for type checking
-        from bec_lib.client import BECClient  # pylint: disable=import-outside-toplevel
+        from bec_lib.client import BECClient
 
         client: BECClient = self.root.parent.parent
         if not isinstance(client, BECClient):
@@ -522,7 +522,7 @@ class DeviceBase:
         return ".".join(func_call[::-1])
 
     def _get_root_recursively(self, parent) -> tuple[Any, list]:
-        # pylint: disable=import-outside-toplevel
+
         from bec_lib.devicemanager import DeviceManagerBase
 
         max_depth = _MAX_RECURSION_DEPTH
@@ -575,7 +575,7 @@ class DeviceBase:
 
         for user_access_name, descr in self._info.get("custom_user_access", {}).items():
             # avoid circular imports as the signature serializer imports the DeviceBase class
-            # pylint: disable=import-outside-toplevel
+
             from bec_lib.signature_serializer import dict_to_signature
 
             if "type" in descr:
@@ -584,11 +584,9 @@ class DeviceBase:
                         name=user_access_name, info=descr, parent=self
                     )
                     setattr(self, user_access_name, self._custom_rpc_methods[user_access_name].run)
-                    setattr(getattr(self, user_access_name), "__doc__", descr.get("doc"))
-                    setattr(
-                        getattr(self, user_access_name),
-                        "__signature__",
-                        dict_to_signature(descr.get("signature")),
+                    getattr(self, user_access_name).__doc__ = descr.get("doc")
+                    getattr(self, user_access_name).__signature__ = dict_to_signature(
+                        descr.get("signature")
                     )
                 else:
                     # only update the property container if the user access name is not already in it
@@ -615,7 +613,7 @@ class DeviceBase:
 
     def __str__(self):
         """Simple string representation for non-IPython contexts"""
-        # pylint: disable=import-outside-toplevel
+
         from bec_lib.devicemanager import DeviceManagerBase
 
         class_name = self._class_name
@@ -691,12 +689,12 @@ class DeviceBase:
             # Format value (handle numpy arrays)
             if isinstance(value, np.ndarray):
                 with np.printoptions(precision=4, suppress=True, threshold=10):
-                    value_str = f"{str(value)}, shape={value.shape}, dtype={value.dtype}"
+                    value_str = f"{value!s}, shape={value.shape}, dtype={value.dtype}"
             else:
                 value_str = str(value)
             # Format timestamp
             if timestamp:
-                dt = datetime.fromtimestamp(timestamp)
+                dt = datetime.fromtimestamp(timestamp)  # noqa: DTZ006 - Keep the established local-time display and filename format.
                 timestamp_str = dt.strftime("%Y-%m-%d %H:%M:%S")
             else:
                 timestamp_str = "N/A"
@@ -713,7 +711,7 @@ class DeviceBase:
             # Format value (handle numpy arrays)
             if isinstance(val, np.ndarray):
                 with np.printoptions(precision=4, suppress=True, threshold=10):
-                    val_str = f"{str(val)}, shape={val.shape}, dtype={val.dtype}"
+                    val_str = f"{val!s}, shape={val.shape}, dtype={val.dtype}"
             else:
                 val_str = str(val)
             config_table.add_row(key, val_str)
@@ -748,7 +746,7 @@ class DeviceBase:
     @staticmethod
     def _compile_rich_str(obj: DeviceBase) -> str | None:
         """Compile rich formatted string for IPython display"""
-        # pylint: disable=import-outside-toplevel
+
         # avoid circular imports
         from bec_lib.devicemanager import DeviceManagerBase
 
@@ -766,7 +764,6 @@ class DeviceBase:
 
 
 class DeviceBaseWithConfig(DeviceBase):
-
     @property
     def full_name(self):
         """Returns the full name of the device or signal, separated by "_" e.g. samx_velocity"""
@@ -780,13 +777,13 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def description(self):
         """Returns the description of the device."""
-        # pylint: disable=protected-access
+
         return self.root._config.get("description", "")
 
     @property
     def enabled(self):
         """Returns True if the device is enabled, otherwise False."""
-        # pylint: disable=protected-access
+
         return self.root._config["enabled"]
 
     @enabled.setter
@@ -794,7 +791,7 @@ class DeviceBaseWithConfig(DeviceBase):
         self._set_config_value("enabled", "enabled", val, bool)
 
     def _set_config_value(
-        self, attribute: str, config_key: str, value: Any, value_type: type[bool] | type[enum.Enum]
+        self, attribute: str, config_key: str, value: Any, value_type: type[bool | enum.Enum]
     ) -> None:
         """Validate and send a changed config value, leaving cache updates to the device manager."""
         if self.root != self:
@@ -836,13 +833,13 @@ class DeviceBaseWithConfig(DeviceBase):
 
     def get_device_tags(self) -> set:
         """get the device tags for this device"""
-        # pylint: disable=protected-access
+
         return self.root._config.get("deviceTags", set())
 
     @typechecked
     def set_device_tags(self, val: Iterable):
         """set the device tags for this device - any duplicates will be discarded"""
-        # pylint: disable=protected-access
+
         if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="set_device_tags"
@@ -855,7 +852,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @typechecked
     def add_device_tag(self, val: str):
         """add a device tag for this device"""
-        # pylint: disable=protected-access
+
         if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="add_device_tag"
@@ -867,7 +864,7 @@ class DeviceBaseWithConfig(DeviceBase):
 
     def remove_device_tag(self, val: str):
         """remove a device tag for this device"""
-        # pylint: disable=protected-access
+
         if self.root != self:
             raise NotImplementedOnSubdeviceError(
                 device=self.root.name, sub_device=self.dotted_name, method="remove_device_tag"
@@ -889,7 +886,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def readout_priority(self) -> ReadoutPriority:
         """get the readout priority for this device"""
-        # pylint: disable=protected-access
+
         return ReadoutPriority(self.root._config["readoutPriority"])
 
     @readout_priority.setter
@@ -900,7 +897,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def on_failure(self) -> OnFailure:
         """get the failure behaviour for this device"""
-        # pylint: disable=protected-access
+
         return OnFailure(self.root._config.get("onFailure", "retry"))
 
     @on_failure.setter
@@ -911,7 +908,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def read_only(self):
         """Whether or not the device can be set"""
-        # pylint: disable=protected-access
+
         return self.root._config.get("readOnly", False)
 
     @read_only.setter
@@ -922,7 +919,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def software_trigger(self):
         """Whether or not the device can be software triggered"""
-        # pylint: disable=protected-access
+
         return self.root._config.get("softwareTrigger", False)
 
     @software_trigger.setter
@@ -933,7 +930,7 @@ class DeviceBaseWithConfig(DeviceBase):
     @property
     def user_parameter(self) -> dict:
         """get the user parameter for this device"""
-        # pylint: disable=protected-access
+
         return self.root._config.get("userParameter", {})
 
     @typechecked
@@ -1272,7 +1269,6 @@ class Signal(AdjustableMixin, OphydInterfaceBase):
 
 
 class ComputedSignal(Signal):
-
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._num_args_method = None
@@ -1295,7 +1291,7 @@ class ComputedSignal(Signal):
 
         """
         if not callable(method):
-            raise ValueError("The compute method must be callable.")
+            raise ValueError("The compute method must be callable.")  # noqa: TRY004 - Preserve the public exception type used by callers.
 
         # check if it is a bound method
         if hasattr(method, "__self__") and method.__self__ is not None:

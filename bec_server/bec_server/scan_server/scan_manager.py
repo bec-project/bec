@@ -8,7 +8,7 @@ import functools
 import importlib
 import inspect
 import pkgutil
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING
 
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
@@ -64,7 +64,7 @@ class ScanManager:
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
+        self.scan_dict: dict[str, type[scans_module.RequestBase | ScanBaseV4]] = {}
         self._plugins = {}
         self.parent.connector.register(
             MessageEndpoints.service_request(), cb=self.handle_reload_scans_request
@@ -74,7 +74,7 @@ class ScanManager:
 
     @functools.lru_cache(maxsize=2)
     @staticmethod
-    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, Type]]:
+    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, type]]:
         """
         Get all available scans, including legacy scans, v4 scans and plugin scans.
 
@@ -86,8 +86,8 @@ class ScanManager:
         """
 
         def _append_new_scan_members(
-            members: list[tuple[str, Type]],
-            candidates: list[tuple[str, Type]],
+            members: list[tuple[str, type]],
+            candidates: list[tuple[str, type]],
             skip_duplicates: bool = False,
         ) -> None:
             seen_scan_names = {
@@ -104,7 +104,7 @@ class ScanManager:
                     seen_scan_names.add(scan_name)
 
         # internal, v4 scans
-        members: list[tuple[str, Type]] = ScanManager._get_v4_scan_members()
+        members: list[tuple[str, type]] = ScanManager._get_v4_scan_members()
 
         # internal, legacy scans. We skip duplicates here because we want to prioritize v4 scans over legacy scans.
         _append_new_scan_members(
@@ -116,7 +116,7 @@ class ScanManager:
         # plugin scans
         _append_new_scan_members(
             members,
-            list((name, cls) for name, cls in ScanManager._get_scan_plugins().items()),
+            list(ScanManager._get_scan_plugins().items()),
             skip_duplicates=not allow_duplicates,
         )
 
@@ -151,7 +151,6 @@ class ScanManager:
         members = ScanManager.get_available_scans(allow_duplicates=True)
 
         for name, scan_cls in members:
-
             if not scan_cls.scan_name.isidentifier():
                 self.parent.connector.raise_alarm(
                     severity=Alarms.WARNING,
@@ -298,9 +297,9 @@ class ScanManager:
         return verified_plugins
 
     @staticmethod
-    def _get_v4_scan_members() -> list[tuple[str, Type[ScanBaseV4]]]:
+    def _get_v4_scan_members() -> list[tuple[str, type[ScanBaseV4]]]:
         """Collect classes from all modules in the scans package."""
-        members: list[tuple[str, Type[ScanBaseV4]]] = []
+        members: list[tuple[str, type[ScanBaseV4]]] = []
         for module_info in pkgutil.iter_modules(
             scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."
         ):

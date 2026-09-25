@@ -1,1 +1,1 @@
-from . import dap_server
+from . import dap_server as dap_server

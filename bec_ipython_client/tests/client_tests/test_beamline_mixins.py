@@ -43,7 +43,7 @@ def test_operator_messages(info, out):
         with mock.patch.object(bl_call, "_get_console", return_value=console):
             mixin.bl_show_all()
             get_op_msgs.assert_called_once()
-            # pylint: disable=no-member
+
             output = console.file.getvalue()
             assert output == out
 
@@ -79,6 +79,6 @@ def test_sls_info(info, out):
         with mock.patch.object(bl_call, "_get_console", return_value=console):
             mixin.bl_show_all()
             get_sls_info.assert_called_once()
-            # pylint: disable=no-member
+
             output = console.file.getvalue()
             assert output == out

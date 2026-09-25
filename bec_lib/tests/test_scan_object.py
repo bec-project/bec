@@ -178,21 +178,23 @@ def test_scan_object_wo_live_updates(scan_obj, dev):
 
 
 def test_scan_object_file_suffix(scan_obj, dev):
-    with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-        with mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"):
-            scan_obj._run(
-                dev.samx,
-                -5,
-                5,
-                dev.samy,
-                -5,
-                5,
-                step=0.5,
-                exp_time=0.1,
-                relative=False,
-                file_suffix="testsample",
-            )
-            assert scan_report.call_args.args[0].metadata["file_suffix"] == "testsample"
+    with (
+        mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report,
+        mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"),
+    ):
+        scan_obj._run(
+            dev.samx,
+            -5,
+            5,
+            dev.samy,
+            -5,
+            5,
+            step=0.5,
+            exp_time=0.1,
+            relative=False,
+            file_suffix="testsample",
+        )
+        assert scan_report.call_args.args[0].metadata["file_suffix"] == "testsample"
 
 
 @pytest.mark.parametrize(
@@ -212,23 +214,12 @@ def test_scan_object_file_suffix(scan_obj, dev):
     ],
 )
 def test_scan_object_raises_on_non_ascii_chars(scan_obj, dev, file_suffix, file_suffix_raises):
-    with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-        with mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"):
-            if file_suffix_raises:
-                with pytest.raises(ValueError):
-                    scan_obj._run(
-                        dev.samx,
-                        -5,
-                        5,
-                        dev.samy,
-                        -5,
-                        5,
-                        step=0.5,
-                        exp_time=0.1,
-                        relative=False,
-                        file_suffix=file_suffix,
-                    )
-            else:
+    with (
+        mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report,
+        mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"),
+    ):
+        if file_suffix_raises:
+            with pytest.raises(ValueError):
                 scan_obj._run(
                     dev.samx,
                     -5,
@@ -241,7 +232,20 @@ def test_scan_object_raises_on_non_ascii_chars(scan_obj, dev, file_suffix, file_
                     relative=False,
                     file_suffix=file_suffix,
                 )
-                assert scan_report.call_args.args[0].metadata["file_suffix"] == file_suffix
+        else:
+            scan_obj._run(
+                dev.samx,
+                -5,
+                5,
+                dev.samy,
+                -5,
+                5,
+                step=0.5,
+                exp_time=0.1,
+                relative=False,
+                file_suffix=file_suffix,
+            )
+            assert scan_report.call_args.args[0].metadata["file_suffix"] == file_suffix
 
 
 @pytest.mark.parametrize(
@@ -256,23 +260,12 @@ def test_scan_object_raises_on_non_ascii_chars(scan_obj, dev, file_suffix, file_
     ],
 )
 def test_scan_object_raises_on_non_ascii_chars_dir(scan_obj, dev, file_dir, file_suffix_raises):
-    with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-        with mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"):
-            if file_suffix_raises:
-                with pytest.raises(ValueError):
-                    scan_obj._run(
-                        dev.samx,
-                        -5,
-                        5,
-                        dev.samy,
-                        -5,
-                        5,
-                        step=0.5,
-                        exp_time=0.1,
-                        relative=False,
-                        file_directory=file_dir,
-                    )
-            else:
+    with (
+        mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report,
+        mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"),
+    ):
+        if file_suffix_raises:
+            with pytest.raises(ValueError):
                 scan_obj._run(
                     dev.samx,
                     -5,
@@ -285,9 +278,20 @@ def test_scan_object_raises_on_non_ascii_chars_dir(scan_obj, dev, file_dir, file
                     relative=False,
                     file_directory=file_dir,
                 )
-                assert scan_report.call_args.args[0].metadata["file_directory"] == file_dir.strip(
-                    "/"
-                )
+        else:
+            scan_obj._run(
+                dev.samx,
+                -5,
+                5,
+                dev.samy,
+                -5,
+                5,
+                step=0.5,
+                exp_time=0.1,
+                relative=False,
+                file_directory=file_dir,
+            )
+            assert scan_report.call_args.args[0].metadata["file_directory"] == file_dir.strip("/")
 
 
 def get_global_var_side_effect(arg):
@@ -298,26 +302,24 @@ def get_global_var_side_effect(arg):
 
 
 def test_scan_object_receives_sample_name(scan_obj, dev):
-    with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-        with mock.patch.object(
+    with (
+        mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report,
+        mock.patch.object(
             scan_obj.client, "get_global_var", side_effect=get_global_var_side_effect
-        ):
-            scan_obj._run(dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False)
-            assert (
-                scan_report.call_args.args[0].metadata["user_metadata"]["sample_name"]
-                == "test_sample"
-            )
+        ),
+    ):
+        scan_obj._run(dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False)
+        assert (
+            scan_report.call_args.args[0].metadata["user_metadata"]["sample_name"] == "test_sample"
+        )
 
 
 def test_scan_object_receives_dataset_id_on_hold(scan_obj, dev):
     scan_obj.client.scans._dataset_id_on_hold = "dataset_id_on_hold"
-    with mock.patch.object(scan_obj.client, "alarm_handler"):
-        with mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report:
-            with mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"):
-                scan_obj._run(
-                    dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False
-                )
-                assert (
-                    scan_report.call_args.args[0].metadata["dataset_id_on_hold"]
-                    == "dataset_id_on_hold"
-                )
+    with (
+        mock.patch.object(scan_obj.client, "alarm_handler"),
+        mock.patch("bec_lib.scan_report.ScanReport.from_request") as scan_report,
+        mock.patch.object(scan_obj.client, "get_global_var", return_value="test_sample"),
+    ):
+        scan_obj._run(dev.samx, -5, 5, dev.samy, -5, 5, step=0.5, exp_time=0.1, relative=False)
+        assert scan_report.call_args.args[0].metadata["dataset_id_on_hold"] == "dataset_id_on_hold"

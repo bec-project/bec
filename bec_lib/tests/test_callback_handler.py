@@ -239,11 +239,13 @@ def test_callback_register_skips_rejected_callbacks():
     handler = CallbackHandler()
     recorder = _MethodRecorder()
 
-    with mock.patch("bec_lib.callback_handler.logger"):
-        with CallbackRegister(
+    with (
+        mock.patch("bec_lib.callback_handler.logger"),
+        CallbackRegister(
             "scan_segment", [recorder.callback, lambda d, m: None], callback_handler=handler
-        ):
-            assert len(handler.callbacks) == 1
+        ),
+    ):
+        assert len(handler.callbacks) == 1
 
     assert handler.callbacks == {}
 

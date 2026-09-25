@@ -27,13 +27,14 @@ bec.start()
 scans = bec.scans
 dev = bec.device_manager.devices
 
+
 # define a dummy callback function
 def dummy_callback(data, metadata):
     print(data, metadata)
 
+
 # add the callback and subscribe to the scan segments
 bec.callbacks.register(event_type="scan_segment", callback=dummy_callback, sync=False)
-
 ```
 
 ## Contributing

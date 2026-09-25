@@ -8,7 +8,9 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 from bec_server.scan_server.scan_guard import ScanGuard, ScanRejection, ScanStatus
 from bec_server.scan_server.scan_queue import ScanQueueStatus
-from bec_server.scan_server.tests.fixtures import scan_server_mock
+from bec_server.scan_server.tests.fixtures import (
+    scan_server_mock as scan_server_mock,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 
 
 def _device_rpc_scan_queue_message(
@@ -50,7 +52,6 @@ def scan_guard_mock(scan_server_mock):
         ),
         (_device_rpc_scan_queue_message("samy", func="set", func_args=[1])),
         (_device_rpc_scan_queue_message(["samy"], func="set", func_args=[1])),
-        (_device_rpc_scan_queue_message("samy", func="set", func_args=[1])),
     ],
 )
 def test_check_motors_movable_enabled(scan_server_mock, scan_queue_msg):
@@ -101,12 +102,6 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
             ),
             True,
         ),
-        (
-            _device_rpc_scan_queue_message(
-                "samy", func="set", func_args=[1], metadata={"client_info": {"acl_user": "default"}}
-            ),
-            True,
-        ),
     ],
 )
 def test_valid_request(scan_server_mock, scan_queue_msg, valid):
@@ -137,7 +132,7 @@ def test_check_valid_scan_raises_for_unknown_scan(scan_guard_mock):
         queue="primary",
     )
 
-    with pytest.raises(ScanRejection) as scan_rejection:
+    with pytest.raises(ScanRejection) as _scan_rejection:
         sg._check_valid_scan(request)
 
 
@@ -199,10 +194,12 @@ def test_handle_scan_modification_request_restart(scan_guard_mock):
     msg = messages.ScanQueueModificationMessage(
         scan_id="scan_id", action="restart", parameter={"RID": "RID"}, metadata={"RID": "new_RID"}
     )
-    with mock.patch.object(sg, "_send_scan_request_response") as send_response:
-        with mock.patch("bec_server.scan_server.scan_guard.ScanStatus") as scan_status:
-            sg._handle_scan_modification_request(msg)
-            send_response.assert_called_once_with(scan_status(), {"RID": "RID"})
+    with (
+        mock.patch.object(sg, "_send_scan_request_response") as send_response,
+        mock.patch("bec_server.scan_server.scan_guard.ScanStatus") as scan_status,
+    ):
+        sg._handle_scan_modification_request(msg)
+        send_response.assert_called_once_with(scan_status(), {"RID": "RID"})
 
 
 def test_append_to_scan_queue(scan_guard_mock):
@@ -258,11 +255,13 @@ def test_handle_scan_request(scan_guard_mock):
         parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
         queue="primary",
     )
-    with mock.patch.object(sg, "_is_valid_scan_request") as valid:
-        with mock.patch.object(sg, "_append_to_scan_queue") as append:
-            valid.return_value = ScanStatus(accepted=True, message="")
-            sg._handle_scan_request(msg, username="default")
-            append.assert_called_once_with(msg)
+    with (
+        mock.patch.object(sg, "_is_valid_scan_request") as valid,
+        mock.patch.object(sg, "_append_to_scan_queue") as append,
+    ):
+        valid.return_value = ScanStatus(accepted=True, message="")
+        sg._handle_scan_request(msg, username="default")
+        append.assert_called_once_with(msg)
 
 
 @pytest.mark.parametrize(
@@ -365,23 +364,25 @@ def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
     Ensure that the .read and .get RPCs are bypassed in the scan guard.
     """
     sg = scan_guard_mock
-    with mock.patch.object(sg.connector, "send") as send:
-        with mock.patch.object(sg, "_is_valid_scan_request") as valid:
-            with mock.patch.object(sg, "_append_to_scan_queue") as append:
-                valid.return_value = ScanStatus(accepted=True, message="")
-                sg._handle_scan_request(msg, username="default")
-                append.assert_not_called()
-                send.assert_called_once_with(MessageEndpoints.device_instructions(), mock.ANY)
-                sent_msg = send.call_args.args[1]
-                expected_device = msg.parameter["kwargs"]["device"]
-                assert sent_msg.device == expected_device
-                assert sent_msg.parameter == {
-                    "device": expected_device,
-                    "rpc_id": msg.parameter["kwargs"]["rpc_id"],
-                    "func": msg.parameter["kwargs"]["func"],
-                    "args": msg.parameter["kwargs"]["func_args"],
-                    "kwargs": msg.parameter["kwargs"]["func_kwargs"],
-                }
+    with (
+        mock.patch.object(sg.connector, "send") as send,
+        mock.patch.object(sg, "_is_valid_scan_request") as valid,
+        mock.patch.object(sg, "_append_to_scan_queue") as append,
+    ):
+        valid.return_value = ScanStatus(accepted=True, message="")
+        sg._handle_scan_request(msg, username="default")
+        append.assert_not_called()
+        send.assert_called_once_with(MessageEndpoints.device_instructions(), mock.ANY)
+        sent_msg = send.call_args.args[1]
+        expected_device = msg.parameter["kwargs"]["device"]
+        assert sent_msg.device == expected_device
+        assert sent_msg.parameter == {
+            "device": expected_device,
+            "rpc_id": msg.parameter["kwargs"]["rpc_id"],
+            "func": msg.parameter["kwargs"]["func"],
+            "args": msg.parameter["kwargs"]["func_args"],
+            "kwargs": msg.parameter["kwargs"]["func_kwargs"],
+        }
 
 
 def test_handle_scan_request_rejected(scan_guard_mock):
@@ -391,11 +392,13 @@ def test_handle_scan_request_rejected(scan_guard_mock):
         parameter={"args": {"samx": (-5, 5), "samy": (-5, 5)}, "kwargs": {"step": 3}},
         queue="primary",
     )
-    with mock.patch.object(sg, "_is_valid_scan_request") as valid:
-        with mock.patch.object(sg, "_append_to_scan_queue") as append:
-            valid.return_value = ScanStatus(accepted=False, message="")
-            sg._handle_scan_request(msg, username="default")
-            append.assert_not_called()
+    with (
+        mock.patch.object(sg, "_is_valid_scan_request") as valid,
+        mock.patch.object(sg, "_append_to_scan_queue") as append,
+    ):
+        valid.return_value = ScanStatus(accepted=False, message="")
+        sg._handle_scan_request(msg, username="default")
+        append.assert_not_called()
 
 
 def test_is_valid_scan_request_returns_scan_status_on_error(scan_guard_mock):

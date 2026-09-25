@@ -226,11 +226,9 @@ def test_async_writer_add_slice_var_size_2D_data_warns(async_writer):
         with mock.patch.object(async_writer.connector, "raise_alarm") as mock_raise_alarm:
             async_writer.poll_and_write_data()
             mock_raise_alarm.assert_called_once()
-            args, kwargs = mock_raise_alarm.call_args
+            _args, kwargs = mock_raise_alarm.call_args
             assert kwargs["severity"] == Alarms.WARNING
-            assert any(
-                signal_name in kwargs["info"].error_message for signal_name in entry.signals.keys()
-            )
+            assert any(signal_name in kwargs["info"].error_message for signal_name in entry.signals)
 
 
 @pytest.mark.parametrize(

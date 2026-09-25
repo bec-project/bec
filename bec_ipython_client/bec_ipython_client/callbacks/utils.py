@@ -119,7 +119,7 @@ def pending_queue_message(
     if callable(get_device_lock_state):
         try:
             owned_device_locks, pending_device_locks = get_device_lock_state()
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Lock status is optional display data.
             owned_device_locks, pending_device_locks = [], []
     if pending_device_locks:
         pending_locks = ", ".join(pending_device_locks)
@@ -236,13 +236,13 @@ class LiveUpdatesBase(abc.ABC):
                 continue
             try:
                 cb(data, metadata=metadata)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Isolate failures in user-provided callbacks.
                 content = traceback.format_exc()
                 logger.warning(f"Failed to run callback function: {content}")
 
     def _print_client_msgs_asap(self):
         """Print queued client messages marked for immediate display."""
-        # pylint: disable=protected-access
+
         if self.scan_queue_request is None:
             return
         queue = self.scan_queue_request.queue
@@ -258,7 +258,7 @@ class LiveUpdatesBase(abc.ABC):
 
     def _print_client_msgs_all(self):
         """Print a summary of all queued client messages."""
-        # pylint: disable=protected-access
+
         if self.scan_queue_request is None:
             return
         queue = self.scan_queue_request.queue
@@ -272,7 +272,7 @@ class LiveUpdatesBase(abc.ABC):
         print("------------------------")
         print("Summary of client messages")
         print("------------------------")
-        # pylint: disable=protected-access
+
         for msg in msgs:
             print(queue.format_client_msg(msg))
         print("------------------------")
@@ -302,7 +302,7 @@ class ScanRequestMixin:
         while self.request_storage.find_request_by_ID(self.RID) is None:
             time.sleep(0.1)
             check_alarms(self.bec)
-        logger.trace(f"Waiting for request ID finished after {time.time()-start} s.")
+        logger.trace(f"Waiting for request ID finished after {time.time() - start} s.")
         return self.request_storage.find_request_by_ID(self.RID)
 
     def _wait_for_scan_request_decision(self) -> None:
@@ -312,7 +312,7 @@ class ScanRequestMixin:
         while self.scan_queue_request.decision_pending:
             time.sleep(0.1)
             check_alarms(self.bec)
-        logger.trace(f"Waiting for decision finished after {time.time()-start} s.")
+        logger.trace(f"Waiting for decision finished after {time.time() - start} s.")
 
     def wait(self) -> None:
         """Wait until the request is accepted and linked to a queue entry."""

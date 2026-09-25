@@ -5,7 +5,9 @@ import pytest
 
 from bec_lib import bl_states, messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.tests.fixtures import dm_with_devices
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_server.scan_server import beamline_state_manager
 from bec_server.scan_server.beamline_state_manager import BeamlineStateManager
 

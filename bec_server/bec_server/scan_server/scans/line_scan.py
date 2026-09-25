@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -42,7 +42,7 @@ class LineScan(ScanBase):
 
     # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
-    arg_input = {
+    arg_input: ClassVar[dict] = {
         "device": DeviceBase,
         "start": Annotated[
             float, ScanArgument(display_name="Start Position", reference_units="device")
@@ -51,8 +51,8 @@ class LineScan(ScanBase):
             float, ScanArgument(display_name="Stop Position", reference_units="device")
         ],
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config: ClassVar[dict] = {
         "Movement Parameters": ["steps", "relative"],
         "Acquisition Parameters": [
             "exp_time",
