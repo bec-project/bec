@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 
@@ -95,7 +95,6 @@ def get_ND_grid_pos(axes: list[np.ndarray], snaked: bool = True) -> np.ndarray:
     return positions[:, ::-1]
 
 
-# pylint: disable=too-many-arguments
 def get_fermat_spiral_pos(
     m1_start, m1_stop, m2_start, m2_stop, step=1, spiral_type=0, center=False
 ):
@@ -244,10 +243,10 @@ class RequestBase(ABC):
     """
 
     scan_name = ""
-    arg_input = {}
-    arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
-    gui_args = {}
-    required_kwargs = []
+    arg_input: ClassVar[dict] = {}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": None, "max": None}
+    gui_args: ClassVar[dict] = {}
+    required_kwargs: ClassVar[list] = []
     return_to_start_after_abort = False
     use_scan_progress_report = False
 
@@ -255,14 +254,14 @@ class RequestBase(ABC):
         self,
         *args,
         device_manager: DeviceManagerBase = None,
-        monitored: list = None,
-        on_request: list = None,
-        parameter: dict = None,
-        metadata: dict = None,
+        monitored: list = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
+        on_request: list = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
+        parameter: dict = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
+        metadata: dict = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         instruction_handler: InstructionHandler = None,
-        scan_id: str = None,
+        scan_id: str = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         return_to_start: bool = False,
-        request_inputs: dict = None,
+        request_inputs: dict = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         **kwargs,
     ) -> None:
         super().__init__()
@@ -326,7 +325,7 @@ class RequestBase(ABC):
         for macro in macros:
             macro = macro.value.strip()
             func_name = self._get_func_name_from_macro(macro)
-            exec(macro)
+            exec(macro)  # noqa: S102 -- Legacy scan stubs intentionally execute dynamically generated call code.
             eval(func_name)(self.device_manager.devices, self)
 
     def initialize(self):
@@ -365,11 +364,8 @@ class RequestBase(ABC):
     def update_readout_priority(self):
         """update the readout priority for this request. Typically the monitored devices should also include the scan motors."""
         self.readout_priority["monitored"].extend(self.scan_motors)
-        self.readout_priority["monitored"] = list(
-            sorted(
-                set(self.readout_priority["monitored"]),
-                key=self.readout_priority["monitored"].index,
-            )
+        self.readout_priority["monitored"] = sorted(
+            set(self.readout_priority["monitored"]), key=self.readout_priority["monitored"].index
         )
 
     @abstractmethod
@@ -415,7 +411,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
 
     scan_name = ""
     scan_type = "step"
-    required_kwargs = []
+    required_kwargs: ClassVar[list] = []
     return_to_start_after_abort = True
     use_scan_progress_report = True
 
@@ -426,18 +422,18 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         self,
         *args,
         device_manager: DeviceManagerBase = None,
-        parameter: dict = None,
+        parameter: dict = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         exp_time: float = 0,
         readout_time: float = 0,
         settling_time: float = 0,
         relative: bool = False,
         burst_at_each_point: int = 1,
         frames_per_trigger: int = 1,
-        optim_trajectory: Literal["corridor", "shell", "nearest", "auto", None] = None,
-        monitored: list = None,
+        optim_trajectory: Literal["corridor", "shell", "nearest", "auto", None] = None,  # noqa: PYI061 -- Preserve the published legacy scan argument schema.
+        monitored: list = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         return_to_start: bool = False,
         show_live_table: bool = True,
-        metadata: dict = None,
+        metadata: dict = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         **kwargs,
     ):
         super().__init__(
@@ -581,7 +577,8 @@ class ScanBase(RequestBase, PathOptimizerMixin):
     def scan_core(self):
         """perform the scan core procedure"""
         for ind, pos in self._get_position():
-            for self.burst_index in range(self.burst_at_each_point):
+            for burst_index in range(self.burst_at_each_point):
+                self.burst_index = burst_index
                 yield from self._at_each_point(ind, pos)
             self.burst_index = 0
 
@@ -671,8 +668,7 @@ class ScanBase(RequestBase, PathOptimizerMixin):
         yield from self.stubs.set(device=self.scan_motors, value=pos)
 
     def _get_position(self):
-        for ind, pos in enumerate(self.positions):
-            yield (ind, pos)
+        yield from enumerate(self.positions)
 
     def scan_report_instructions(self):
         yield None
@@ -800,13 +796,13 @@ class CloseScanGroup(ScanStub):
 
 class DeviceRPC(ScanStub):
     scan_name = "device_rpc"
-    arg_input = {
+    arg_input: ClassVar[dict] = {
         "device": ScanArgType.DEVICE,
         "func": ScanArgType.STR,
         "args": ScanArgType.LIST,
         "kwargs": ScanArgType.DICT,
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": 1}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": 1}
 
     def update_scan_motors(self):
         pass
@@ -826,9 +822,9 @@ class DeviceRPC(ScanStub):
 
 class Move(RequestBase):
     scan_name = "mv"
-    arg_input = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    required_kwargs = ["relative"]
+    arg_input: ClassVar[dict] = {"device": ScanArgType.DEVICE, "target": ScanArgType.FLOAT}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    required_kwargs: ClassVar[list] = ["relative"]
 
     def __init__(self, *args, relative=False, **kwargs):
         """
@@ -857,7 +853,7 @@ class Move(RequestBase):
             )
             # we won't wait for the status object to complete, hence we remove it from the status registry
             # to avoid warnings about incomplete status objects
-            # pylint: disable=protected-access
+
             self.stubs._status_registry.pop(status._device_instr_id)
 
     def cleanup(self):
@@ -922,15 +918,15 @@ class UpdatedMove(Move):
 
 class Scan(ScanBase):
     scan_name = "grid_scan"
-    arg_input = {
+    arg_input: ClassVar[dict] = {
         "device": ScanArgType.DEVICE,
         "start": ScanArgType.FLOAT,
         "stop": ScanArgType.FLOAT,
         "steps": ScanArgType.INT,
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 2, "max": None}
-    required_kwargs = ["relative"]
-    gui_config = {
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 2, "max": None}
+    required_kwargs: ClassVar[list] = ["relative"]
+    gui_config: ClassVar[dict] = {
         "Scan Parameters": [
             "exp_time",
             "settling_time",
@@ -981,7 +977,7 @@ class Scan(ScanBase):
     def _calculate_positions(self):
         axes = []
         self._last_pos = []
-        for _, val in self.caller_args.items():
+        for val in self.caller_args.values():
             axes.append(np.linspace(val[0], val[1], val[2], dtype=float))
             self._last_pos.append(None)
         self.positions = get_ND_grid_pos(axes, snaked=self.snaked)
@@ -1010,8 +1006,8 @@ class Scan(ScanBase):
 
 class FermatSpiralScan(ScanBase):
     scan_name = "fermat_scan"
-    required_kwargs = ["step", "relative"]
-    gui_config = {
+    required_kwargs: ClassVar[list] = ["step", "relative"]
+    gui_config: ClassVar[dict] = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2"],
         "Movement Parameters": ["step", "spiral_type", "relative", "optim_trajectory"],
@@ -1032,7 +1028,7 @@ class FermatSpiralScan(ScanBase):
         relative: bool = False,
         burst_at_each_point: int = 1,
         spiral_type: float = 0,
-        optim_trajectory: Literal["corridor", "shell", "nearest", None] = None,
+        optim_trajectory: Literal["corridor", "shell", "nearest", None] = None,  # noqa: PYI061 -- Preserve the published legacy scan argument schema.
         **kwargs,
     ):
         """
@@ -1098,8 +1094,8 @@ class FermatSpiralScan(ScanBase):
 
 class RoundScan(ScanBase):
     scan_name = "round_scan"
-    required_kwargs = ["relative"]
-    gui_config = {
+    required_kwargs: ClassVar[list] = ["relative"]
+    gui_config: ClassVar[dict] = {
         "Motors": ["motor_1", "motor_2"],
         "Ring Parameters": ["inner_ring", "outer_ring", "number_of_rings", "pos_in_first_ring"],
         "Scan Parameters": ["relative", "burst_at_each_point"],
@@ -1161,8 +1157,8 @@ class RoundScan(ScanBase):
 
 class HexagonalScan(ScanBase):
     scan_name = "hexagonal_scan"
-    required_kwargs = ["relative"]
-    gui_config = {
+    required_kwargs: ClassVar[list] = ["relative"]
+    gui_config: ClassVar[dict] = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1", "step_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2", "step_motor2"],
         "Movement Parameters": ["relative", "snaked"],
@@ -1269,9 +1265,9 @@ class HexagonalScan(ScanBase):
 
 class ContLineScan(ScanBase):
     scan_name = "cont_line_scan"
-    required_kwargs = ["steps", "relative"]
+    required_kwargs: ClassVar[list] = ["steps", "relative"]
     scan_type = "step"
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Device": ["device", "start", "stop"],
         "Movement Parameters": ["steps", "relative", "offset", "atol"],
         "Acquisition Parameters": ["exp_time", "burst_at_each_point"],
@@ -1282,8 +1278,8 @@ class ContLineScan(ScanBase):
         device: DeviceBase,
         start: float,
         stop: float,
-        offset: float = None,
-        atol: float = None,
+        offset: float = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
+        atol: float = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         exp_time: float = 0,
         steps: int = 10,
         relative: bool = False,
@@ -1350,7 +1346,7 @@ class ContLineScan(ScanBase):
             )
         else:
             raise ScanAbortion(f"Motor {self.device} does not have an acceleration attribute.")
-        # pylint: disable=protected-access
+
         hinted_signal = self.device_manager.devices[self.device]._info["hints"]["fields"]
         if len(hinted_signal) > 1:
             raise ScanAbortion(
@@ -1467,9 +1463,12 @@ class ContLineScan(ScanBase):
 
 class ContLineFlyScan(AsyncFlyScanBase):
     scan_name = "cont_line_fly_scan"
-    required_kwargs = []
+    required_kwargs: ClassVar[list] = []
     use_scan_progress_report = False
-    gui_config = {"Device": ["motor", "start", "stop"], "Scan Parameters": ["exp_time", "relative"]}
+    gui_config: ClassVar[dict] = {
+        "Device": ["motor", "start", "stop"],
+        "Scan Parameters": ["exp_time", "relative"],
+    }
 
     def __init__(
         self,
@@ -1551,8 +1550,8 @@ class RoundScanFlySim(SyncFlyScanBase):
     scan_name = "round_scan_fly"
     scan_type = "fly"
     pre_move = False
-    required_kwargs = ["relative"]
-    gui_config = {
+    required_kwargs: ClassVar[list] = ["relative"]
+    gui_config: ClassVar[dict] = {
         "Fly Parameters": ["flyer", "relative"],
         "Ring Parameters": ["inner_ring", "outer_ring", "number_of_rings", "number_pos"],
     }
@@ -1637,8 +1636,8 @@ class RoundScanFlySim(SyncFlyScanBase):
 
 class RoundROIScan(ScanBase):
     scan_name = "round_roi_scan"
-    required_kwargs = ["dr", "nth", "relative"]
-    gui_config = {
+    required_kwargs: ClassVar[list] = ["dr", "nth", "relative"]
+    gui_config: ClassVar[dict] = {
         "Motor 1": ["motor_1", "width_1"],
         "Motor 2": ["motor_2", "width_2"],
         "Shell Parameters": ["dr", "nth"],
@@ -1700,11 +1699,11 @@ class RoundROIScan(ScanBase):
 
 class ListScan(ScanBase):
     scan_name = "list_scan"
-    required_kwargs = ["relative"]
-    arg_input = {"device": ScanArgType.DEVICE, "positions": ScanArgType.LIST}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
+    required_kwargs: ClassVar[list] = ["relative"]
+    arg_input: ClassVar[dict] = {"device": ScanArgType.DEVICE, "positions": ScanArgType.LIST}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
 
-    def __init__(self, *args, parameter: dict = None, **kwargs):
+    def __init__(self, *args, parameter: dict = None, **kwargs):  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         """
         A scan following the positions specified in a list.
         Please note that all lists must be of equal length.
@@ -1722,7 +1721,7 @@ class ListScan(ScanBase):
 
         """
         super().__init__(parameter=parameter, **kwargs)
-        if len(set(len(entry[0]) for entry in self.caller_args.values())) != 1:
+        if len({len(entry[0]) for entry in self.caller_args.values()}) != 1:
             raise ValueError("All position lists must be of equal length.")
 
     def _calculate_positions(self):
@@ -1731,8 +1730,10 @@ class ListScan(ScanBase):
 
 class TimeScan(ScanBase):
     scan_name = "time_scan"
-    required_kwargs = []
-    gui_config = {"Scan Parameters": ["points", "interval", "exp_time", "burst_at_each_point"]}
+    required_kwargs: ClassVar[list] = []
+    gui_config: ClassVar[dict] = {
+        "Scan Parameters": ["points", "interval", "exp_time", "burst_at_each_point"]
+    }
 
     def __init__(
         self,
@@ -1780,9 +1781,12 @@ class TimeScan(ScanBase):
 
 class MonitorScan(ScanBase):
     scan_name = "monitor_scan"
-    required_kwargs = ["relative"]
+    required_kwargs: ClassVar[list] = ["relative"]
     scan_type = "fly"
-    gui_config = {"Device": ["device", "start", "stop"], "Scan Parameters": ["relative"]}
+    gui_config: ClassVar[dict] = {
+        "Device": ["device", "start", "stop"],
+        "Scan Parameters": ["relative"],
+    }
 
     def __init__(
         self,
@@ -1864,8 +1868,8 @@ class MonitorScan(ScanBase):
 
 class Acquire(ScanBase):
     scan_name = "acquire"
-    required_kwargs = []
-    gui_config = {"Scan Parameters": ["exp_time", "burst_at_each_point"]}
+    required_kwargs: ClassVar[list] = []
+    gui_config: ClassVar[dict] = {"Scan Parameters": ["exp_time", "burst_at_each_point"]}
 
     def __init__(self, exp_time: float = 0, burst_at_each_point: int = 1, **kwargs):
         """
@@ -1896,7 +1900,8 @@ class Acquire(ScanBase):
         self.point_id += 1
 
     def scan_core(self):
-        for self.burst_index in range(self.burst_at_each_point):
+        for burst_index in range(self.burst_at_each_point):
+            self.burst_index = burst_index
             yield from self._at_each_point(self.burst_index)
         self.burst_index = 0
 
@@ -1916,14 +1921,14 @@ class Acquire(ScanBase):
 
 class LineScan(ScanBase):
     scan_name = "line_scan"
-    required_kwargs = ["steps", "relative"]
-    arg_input = {
+    required_kwargs: ClassVar[list] = ["steps", "relative"]
+    arg_input: ClassVar[dict] = {
         "device": ScanArgType.DEVICE,
         "start": ScanArgType.FLOAT,
         "stop": ScanArgType.FLOAT,
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config: ClassVar[dict] = {
         "Movement Parameters": ["steps", "relative"],
         "Acquisition Parameters": ["exp_time", "burst_at_each_point"],
     }
@@ -1932,7 +1937,7 @@ class LineScan(ScanBase):
         self,
         *args,
         exp_time: float = 0,
-        steps: int = None,
+        steps: int = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         relative: bool = False,
         burst_at_each_point: int = 1,
         **kwargs,
@@ -1961,7 +1966,7 @@ class LineScan(ScanBase):
 
     def _calculate_positions(self) -> None:
         axis = []
-        for _, val in self.caller_args.items():
+        for val in self.caller_args.values():
             ax_pos = np.linspace(val[0], val[1], self.steps, dtype=float)
             axis.append(ax_pos)
         self.positions = np.array(list(zip(*axis)), dtype=float)
@@ -1973,7 +1978,7 @@ class ScanComponent(ScanBase):
 
 class OpenInteractiveScan(ScanComponent):
     scan_name = "_open_interactive_scan"
-    required_kwargs = []
+    required_kwargs: ClassVar[list] = []
     # arg_input = {}
     # arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
 
@@ -2010,7 +2015,7 @@ class OpenInteractiveScan(ScanComponent):
 
 class InteractiveTrigger(ScanComponent):
     scan_name = "_interactive_trigger"
-    required_kwargs = []
+    required_kwargs: ClassVar[list] = []
 
     def __init__(self, *args, **kwargs):
         """
@@ -2024,9 +2029,9 @@ class InteractiveTrigger(ScanComponent):
 
 class InteractiveReadMonitored(ScanComponent):
     scan_name = "_interactive_read_monitored"
-    required_kwargs = {"point_id": ScanArgType.INT}
+    required_kwargs: ClassVar[dict] = {"point_id": ScanArgType.INT}
 
-    def __init__(self, *args, monitored: list = None, point_id: int = 0, **kwargs):
+    def __init__(self, *args, monitored: list = None, point_id: int = 0, **kwargs):  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         """
         Read the devices that are on readoutPriority "monitored".
         """

@@ -27,92 +27,20 @@ bec_end2end_fixtures = "pytest_bec_e2e.plugin"
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 [tool.hatch.build.targets.wheel]
 include = ["*"]
 
-[tool.black]
+[tool.ruff]
+required-version = "==0.16.6"
 line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.format]
 skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["bec_lib", "bec_server", "bec_ipython_client"]
+split-on-trailing-comma = false

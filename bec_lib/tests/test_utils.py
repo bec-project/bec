@@ -1,7 +1,5 @@
 import json
 
-from pydantic import BaseModel
-
 from bec_lib.utils.json_extended import ExtendedEncoder
 
 

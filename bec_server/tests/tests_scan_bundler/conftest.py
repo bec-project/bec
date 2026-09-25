@@ -1,11 +1,8 @@
 import os
-from unittest import mock
 
 import pytest
-import yaml
 
 import bec_lib
-from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.service_config import ServiceConfig

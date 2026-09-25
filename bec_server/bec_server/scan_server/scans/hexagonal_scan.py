@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -39,7 +39,7 @@ class HexagonalScan(ScanBase):
     # Choose a descriptive name that does not conflict with existing scan names.
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "hexagonal_scan"
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1", "step_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2", "step_motor2"],
         "Movement Parameters": ["relative", "snaked"],

@@ -151,7 +151,7 @@ class RequestHandler:
     def set_finished(
         self,
         instr_id: str,
-        success: bool = None,
+        success: bool | None = None,
         error_info: messages.ErrorInfo | None = None,
         result: Any = None,
     ):
@@ -264,10 +264,10 @@ class RequestHandler:
         if obj.instruction.action:
             compact_msg = (
                 f"An error occurred during '{obj.instruction.action}' on device '{device_name}'.\n\n"
-                f"{error.__class__.__name__}: {str(error)}"
+                f"{error.__class__.__name__}: {error!s}"
             )
         else:
-            compact_msg = f"{error.__class__.__name__}: {str(error)}"
+            compact_msg = f"{error.__class__.__name__}: {error!s}"
         error_info = messages.ErrorInfo(
             error_message=msg,
             compact_error_message=compact_msg,
@@ -430,7 +430,7 @@ class DeviceServer(BECService):
             if hasattr(dev.obj, "stop"):
                 try:
                     dev.obj.stop()
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:  # noqa: BLE001 -- Device backends can raise arbitrary errors; preserve request error handling.
                     content = traceback.format_exc()
                     error_info = messages.ErrorInfo(
                         error_message=content,
@@ -580,7 +580,7 @@ class DeviceServer(BECService):
             )
 
             logger.error(content)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001 -- Device backends can raise arbitrary errors; preserve request error handling.
             content = traceback.format_exc()
             if isinstance(exc, ExceptionWithErrorInfo):
                 error_info = exc.error_info
@@ -722,14 +722,13 @@ class DeviceServer(BECService):
         if child_access:
             obj = rgetattr(device_obj.obj, child_access)
             if "readback" in obj.event_types or "value" in obj.event_types:
-                # pylint: disable=protected-access
                 sub_id = obj.subscribe(self.device_manager._obj_callback_readback, run=True)
         else:
             obj = device_obj.obj
         try:
             val = self.convert_value_if_needed(obj, val)
             status = obj.set(val)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001 -- Device backends can raise arbitrary errors; preserve request error handling.
             exc = reformat_known_device_exceptions(
                 exc, "set", f"Device: {device_name}, value: {val}."
             )
@@ -783,7 +782,7 @@ class DeviceServer(BECService):
             if status is None:
                 continue
             if not isinstance(status, StatusBase):
-                raise ValueError(
+                raise ValueError(  # noqa: TRY004 -- Preserve the existing ValueError contract for invalid service or device results.
                     f"The pre_scan method of {dev} does not return a StatusBase object."
                 )
 
@@ -815,9 +814,7 @@ class DeviceServer(BECService):
                 f"Could not find device object for status: {status}."
                 f"The status object has not received the metadata through the `_add_status_object_info` method properly."
             )
-        device_name = (
-            ".".join([obj.root.name, obj.dotted_name]) if obj.dotted_name else obj.root.name
-        )
+        device_name = f"{obj.root.name}.{obj.dotted_name}" if obj.dotted_name else obj.root.name
         metadata = {"action": status.instruction.content["action"]}
         metadata.update(status.instruction.metadata)
 
@@ -893,8 +890,8 @@ class DeviceServer(BECService):
             try:
                 signals = obj.read()
                 signal_container.append(signals)
-            # pylint: disable=broad-except
-            except Exception as exc:
+
+            except Exception as exc:  # noqa: BLE001 -- Device backends can raise arbitrary errors; preserve request error handling.
                 signals = self._retry_obj_method(dev, obj, "read", exc)
 
             self.connector.set_and_publish(
@@ -924,8 +921,8 @@ class DeviceServer(BECService):
             try:
                 signals = obj.read_configuration()
                 signal_container.append(signals)
-            # pylint: disable=broad-except
-            except Exception as exc:
+
+            except Exception as exc:  # noqa: BLE001 -- Device backends can raise arbitrary errors; preserve request error handling.
                 signals = self._retry_obj_method(dev, obj, "read_configuration", exc)
             self.connector.set_and_publish(
                 MessageEndpoints.device_read_configuration(dev),
@@ -995,7 +992,6 @@ class DeviceServer(BECService):
             if not hasattr(obj, "_staged"):
                 continue
 
-            # pylint: disable=protected-access
             if obj._staged == Staged.yes:
                 logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
                 status = self.device_manager.devices[dev].obj.unstage()
@@ -1015,7 +1011,7 @@ class DeviceServer(BECService):
             if status is None or isinstance(status, list):
                 continue
             if not isinstance(status, StatusBase):
-                raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")
+                raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")  # noqa: TRY004 -- Preserve the existing ValueError contract for invalid service or device results.
             num_status_objects += 1
             self._add_status_object_info(status, instr, obj)
             status.__dict__["status"] = 1
@@ -1036,7 +1032,7 @@ class DeviceServer(BECService):
         )
         if state == 1:  # Device was/is staged
             obj = self.device_manager.devices[dev_name].obj
-            # pylint: disable=protected-access
+
             if hasattr(obj, "_staged") and obj._staged != Staged.yes:
                 raise ValueError(f"Failed to stage device {dev_name}.")
 
@@ -1053,7 +1049,6 @@ class DeviceServer(BECService):
             status = None
             obj = self.device_manager.devices[dev].obj
             if hasattr(obj, "_staged"):
-                # pylint: disable=protected-access
                 if obj._staged == Staged.yes:
                     status = self.device_manager.devices[dev].obj.unstage()
                 else:
@@ -1061,7 +1056,7 @@ class DeviceServer(BECService):
             if status is None or isinstance(status, list):
                 continue
             if not isinstance(status, StatusBase):
-                raise ValueError(
+                raise ValueError(  # noqa: TRY004 -- Preserve the existing ValueError contract for invalid service or device results.
                     f"The unstage method of {dev} does not return a StatusBase object."
                 )
             num_status_objects += 1

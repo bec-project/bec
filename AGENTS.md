@@ -191,15 +191,18 @@ comes from a `service_config.yaml`; see `bec_config_template.yaml` for an exampl
 - public functions, classes, and modules should have docstrings
 - avoid formatting or import-order churn in untouched files
 
-Run Black and isort on changed files or the affected package. The whole-repo equivalents are:
+Run Ruff to fix lint issues, sort imports, and format changed files or the affected package.
+The whole-repo commands are:
 
 ```bash
-black --line-length=100 --skip-magic-trailing-comma .
-isort --line-length=100 --profile=black --multi-line=3 --trailing-comma .
+ruff check --fix .
+ruff format .
 ```
 
-Pylint runs in CI across `bec_lib/`, `bec_server/`, and `bec_ipython_client/`. Do not introduce new
-warnings.
+CI runs `ruff check .` and `ruff format --check .`. Use the Ruff version pinned in the development
+dependencies. Keep the root and package Ruff settings consistent; package configurations are
+self-contained so they also work in source distributions. Ruff's default lint rules and import
+sorting are enabled. Review fixes and use narrowly scoped exceptions for intentional runtime behavior.
 
 ## Development Environment
 

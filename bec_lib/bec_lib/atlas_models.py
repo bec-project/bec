@@ -7,16 +7,17 @@ from __future__ import annotations
 import hashlib
 import json
 import keyword
+from collections.abc import Set as AbstractSet
 from enum import Enum
 from functools import lru_cache
-from typing import AbstractSet, Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field, PrivateAttr, create_model, field_validator, model_validator
 from pydantic_core import PydanticUndefined
 
 from bec_lib.utils.json_extended import ExtendedEncoder
 
-_BM = TypeVar("BM", bound=BaseModel)
+_BM = TypeVar("_BM", bound=BaseModel)
 
 
 def make_all_fields_optional(model: type[_BM], model_name: str) -> type[_BM]:
@@ -259,9 +260,7 @@ class HashableDevice(Device, validate_assignment=True):
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, self.__class__):
             return False
-        if hash(self) == hash(value):
-            return True
-        return False
+        return hash(self) == hash(value)
 
     #############################################
     ############### Variant Logic ###############
@@ -278,13 +277,15 @@ class HashableDevice(Device, validate_assignment=True):
                 del data[field_name]
                 continue
             # Get rid of it if we include or exclude the whole field or some combination thereof
-            if hash_inclusion.field_inclusion == HashInclusion.EXCLUDE:
-                del data[field_name]
-            elif hash_inclusion.field_inclusion == HashInclusion.INCLUDE and (
-                # Including the whole field:
-                hash_inclusion.inclusion_keys is None
-                # Including some and excluding the rest:
-                or hash_inclusion.remainder_inclusion == HashInclusion.EXCLUDE
+            if (
+                hash_inclusion.field_inclusion == HashInclusion.EXCLUDE
+                or hash_inclusion.field_inclusion == HashInclusion.INCLUDE
+                and (
+                    # Including the whole field:
+                    hash_inclusion.inclusion_keys is None
+                    # Including some and excluding the rest:
+                    or hash_inclusion.remainder_inclusion == HashInclusion.EXCLUDE
+                )
             ):
                 del data[field_name]
             # If the remainder policy is set, strip the the keys which are included
@@ -302,9 +303,8 @@ class HashableDevice(Device, validate_assignment=True):
         """Check if other is a variant of self."""
         if self != other:
             return False  # always includes the hash model
-        if self._variant_info() == other._variant_info():
-            return False  # devices are completely identical
-        return True
+        # Devices differ only if their variant information differs.
+        return self._variant_info() != other._variant_info()
 
     #############################################
     ################## Utility ##################

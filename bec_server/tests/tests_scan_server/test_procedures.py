@@ -1,9 +1,9 @@
 import builtins
 import threading
 import time
+from collections.abc import Iterable
 from functools import partial
-from itertools import starmap
-from typing import Any, Iterable
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import fakeredis
@@ -38,12 +38,6 @@ from bec_server.procedures.procedure_registry import (
 from bec_server.procedures.subprocess_worker import SubProcessWorker
 from bec_server.procedures.worker_base import ProcedureWorker
 from bec_server.test.helpers import wait_until
-
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=redefined-outer-name
-
 
 LOG_MSG_PROC_NAME = "_log_msg_args"
 FAKEREDIS_HOST = "127.0.0.1"
@@ -159,8 +153,8 @@ def procedure_manager():
 def test_helper_log_streams(procedure_manager):
     conn = procedure_manager._conn
     helper = FrontendProcedureHelper(conn)
-    conn.xadd(MessageEndpoints.procedure_logs("queue1"), {"data": RawMessage(data=str("data"))})
-    conn.xadd(MessageEndpoints.procedure_logs("queue2"), {"data": RawMessage(data=str("data"))})
+    conn.xadd(MessageEndpoints.procedure_logs("queue1"), {"data": RawMessage(data="data")})
+    conn.xadd(MessageEndpoints.procedure_logs("queue2"), {"data": RawMessage(data="data")})
     assert helper.get.log_queue_names() == ["queue1", "queue2"]
 
 
@@ -249,7 +243,7 @@ def test_process_request_happy_paths(
     assert queue in endpoint.endpoint
     assert execution_msg.identifier == message.value.identifier
     process_request_manager.spawn.assert_called()
-    assert queue in process_request_manager._active_workers.keys()
+    assert queue in process_request_manager._active_workers
 
 
 def test_process_request_failure(process_request_manager):
@@ -325,7 +319,7 @@ def test_spawn(redis_connector, procedure_manager: ProcedureManager):
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     # trigger the running of the test message
     procedure_manager._process_queue_request(message)  # type: ignore
-    assert queue in procedure_manager._active_workers.keys()
+    assert queue in procedure_manager._active_workers
 
     # spawn method should be added as a future
     wait_until(procedure_manager._active_workers[queue]["future"].running)
@@ -483,7 +477,7 @@ def manager_with_test_msgs(procedure_manager: ProcedureManager):
 def _all_eq_except_id(a: list[ProcedureExecutionMessage], b: list[ProcedureExecutionMessage]):
     if len(a) != len(b):
         return False
-    return all(starmap(_eq_except_id, zip(a, b)))
+    return all(map(_eq_except_id, a, b))
 
 
 @pytest.mark.parametrize("queue", ["queue1", "queue2"])

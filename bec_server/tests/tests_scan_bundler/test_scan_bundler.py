@@ -6,9 +6,6 @@ from bec_lib import messages
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
-
 
 @pytest.fixture()
 def dummy_signal_data():
@@ -73,7 +70,7 @@ def test_device_read_callback(scan_bundler_mock, dummy_signal_data):
 def test_wait_for_scan_id(scan_bundler_mock, scan_id, storageID, scan_msg):
     sb = scan_bundler_mock
     sb.storage_initialized.add(storageID)
-    with mock.patch.object(sb.connector, "get", return_value=scan_msg) as get_scan_msgs:
+    with mock.patch.object(sb.connector, "get", return_value=scan_msg) as _get_scan_msgs:
         if not storageID and not scan_msg:
             with pytest.raises(TimeoutError):
                 sb._wait_for_scan_id(scan_id, 1)
@@ -197,7 +194,6 @@ def test_add_device_to_storage_primary_flyer(scan_bundler_mock, msg, scan_type):
     with mock.patch.object(sb, "_fly_scan_update") as fly_update:
         sb._add_device_to_storage([msg], "samx", timeout_time=1)
         fly_update.assert_called_once_with("scan_id", "samx", msg.content["signals"], msg.metadata)
-    return
 
 
 @pytest.mark.parametrize(
@@ -296,20 +292,22 @@ def test_handle_scan_status_message(scan_bundler_mock, scan_msg, sync_storage):
     scan_id = scan_msg.content["scan_id"]
     sb.sync_storage = sync_storage
 
-    with mock.patch.object(sb, "cleanup_storage") as cleanup_storage_mock:
-        with mock.patch.object(sb, "_initialize_scan_container") as init_mock:
-            with mock.patch.object(sb, "_scan_status_modification") as status_mock:
-                sb.handle_scan_status_message(scan_msg)
-                if scan_id not in sb.sync_storage:
-                    init_mock.assert_called_once_with(scan_msg)
-                    assert scan_id in sb.scan_id_history
-                else:
-                    init_mock.assert_not_called()
+    with (
+        mock.patch.object(sb, "cleanup_storage") as _cleanup_storage_mock,
+        mock.patch.object(sb, "_initialize_scan_container") as init_mock,
+        mock.patch.object(sb, "_scan_status_modification") as status_mock,
+    ):
+        sb.handle_scan_status_message(scan_msg)
+        if scan_id not in sb.sync_storage:
+            init_mock.assert_called_once_with(scan_msg)
+            assert scan_id in sb.scan_id_history
+        else:
+            init_mock.assert_not_called()
 
-                if scan_msg.content.get("status") != "open":
-                    status_mock.assert_called_once_with(scan_msg)
-                else:
-                    status_mock.assert_not_called()
+        if scan_msg.content.get("status") != "open":
+            status_mock.assert_called_once_with(scan_msg)
+        else:
+            status_mock.assert_not_called()
 
 
 def test_status_modification(scan_bundler_mock):
@@ -456,7 +454,7 @@ def test_step_scan_update(scan_bundler_mock, scan_msg, point_id, primary):
     device = "samx"
     signal = scan_msg.content.get("signals")
     sb.sync_storage[scan_id] = {"info": {}, "status": "open", "sent": set()}
-    scan_motors = list(set(sb.device_manager.devices[m] for m in ["samx", "samy"]))
+    scan_motors = list({sb.device_manager.devices[m] for m in ["samx", "samy"]})
 
     monitored_devices = sb.monitored_devices[scan_id] = {
         "devices": sb.device_manager.devices.monitored_devices(scan_motors),
@@ -469,29 +467,31 @@ def test_step_scan_update(scan_bundler_mock, scan_msg, point_id, primary):
             dev.name: True for dev in monitored_devices["devices"]
         }
 
-    with mock.patch.object(sb, "_update_monitor_signals") as update_mock:
-        with mock.patch.object(sb, "_send_scan_point") as send_mock:
-            sb._step_scan_update(scan_id, device, signal, metadata)
+    with (
+        mock.patch.object(sb, "_update_monitor_signals") as update_mock,
+        mock.patch.object(sb, "_send_scan_point") as send_mock,
+    ):
+        sb._step_scan_update(scan_id, device, signal, metadata)
 
-            if "point_id" not in metadata:
-                assert sb.sync_storage[scan_id] == {"info": {}, "status": "open", "sent": set()}
-                return
+        if "point_id" not in metadata:
+            assert sb.sync_storage[scan_id] == {"info": {}, "status": "open", "sent": set()}
+            return
 
-            assert sb.sync_storage[scan_id][point_id] == {
-                **sb.sync_storage[scan_id].get(point_id, {}),
-                **dev,
-            }
+        assert sb.sync_storage[scan_id][point_id] == {
+            **sb.sync_storage[scan_id].get(point_id, {}),
+            **dev,
+        }
 
-            assert monitored_devices["point_id"][point_id][device] == True
+        assert monitored_devices["point_id"][point_id][device] == True
 
-            if primary:
-                update_mock.assert_called_once()
-                send_mock.assert_called_once()
+        if primary:
+            update_mock.assert_called_once()
+            send_mock.assert_called_once()
 
-            else:
-                pd_test = {dev.name: False for dev in monitored_devices["devices"]}
-                pd_test["samx"] = True
-                assert monitored_devices["point_id"][point_id] == pd_test
+        else:
+            pd_test = {dev.name: False for dev in monitored_devices["devices"]}
+            pd_test["samx"] = True
+            assert monitored_devices["point_id"][point_id] == pd_test
 
 
 @pytest.mark.parametrize(
@@ -519,14 +519,16 @@ def test_cleanup_storage(scan_bundler_mock, scan_id, storage, remove):
 @pytest.mark.parametrize("scan_id,point_id,sent", [("lkasjd", 1, True), ("alskjd", 2, False)])
 def test_send_scan_point(scan_bundler_mock, scan_id, point_id, sent):
     sb = scan_bundler_mock
-    sb.sync_storage[scan_id] = {"sent": set([1])}
+    sb.sync_storage[scan_id] = {"sent": {1}}
     sb.sync_storage[scan_id][point_id] = {}
-    with mock.patch.object(sb, "run_emitter") as emitter:
-        with mock.patch("bec_server.scan_bundler.scan_bundler.logger") as logger:
-            sb._send_scan_point(scan_id, point_id)
-            emitter.assert_called_once_with("on_scan_point_emit", scan_id, point_id)
-            if sent:
-                logger.debug.assert_called_once()
+    with (
+        mock.patch.object(sb, "run_emitter") as emitter,
+        mock.patch("bec_server.scan_bundler.scan_bundler.logger") as logger,
+    ):
+        sb._send_scan_point(scan_id, point_id)
+        emitter.assert_called_once_with("on_scan_point_emit", scan_id, point_id)
+        if sent:
+            logger.debug.assert_called_once()
 
 
 def test_run_emitter(scan_bundler_mock):
@@ -550,14 +552,16 @@ def test_run_emitter(scan_bundler_mock):
 def test_fly_scan_update(scan_bundler_mock, scan_id, device, signal, metadata):
     sb = scan_bundler_mock
     sb.sync_storage[scan_id] = {}
-    with mock.patch.object(sb, "_update_monitor_signals") as update_signals:
-        with mock.patch.object(sb, "_send_scan_point") as send_point:
-            sb.sync_storage[scan_id]["info"] = {"monitor_sync": "flyer"}
-            sb._fly_scan_update(scan_id, device, signal, metadata)
-            point_id = metadata.get("point_id")
-            if point_id:
-                update_signals.assert_called_once_with(scan_id, point_id)
-                send_point.assert_called_once_with(scan_id, point_id)
+    with (
+        mock.patch.object(sb, "_update_monitor_signals") as update_signals,
+        mock.patch.object(sb, "_send_scan_point") as send_point,
+    ):
+        sb.sync_storage[scan_id]["info"] = {"monitor_sync": "flyer"}
+        sb._fly_scan_update(scan_id, device, signal, metadata)
+        point_id = metadata.get("point_id")
+        if point_id:
+            update_signals.assert_called_once_with(scan_id, point_id)
+            send_point.assert_called_once_with(scan_id, point_id)
 
 
 @pytest.mark.parametrize("scan_id,device,signal", [("scan_id-lkjd", "bpm4r", {"value": 5})])

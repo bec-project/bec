@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Callable, Literal
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -50,9 +51,10 @@ class ScanComponents:
         motors_to_move = []
         positions_to_move = []
         for motor_index, motor in enumerate(motors):
-            if last_positions is not None:
-                if np.isclose(positions[motor_index], last_positions[motor_index]):
-                    continue
+            if (last_positions is not None) and (
+                np.isclose(positions[motor_index], last_positions[motor_index])
+            ):
+                continue
             motors_to_move.append(motor)
             positions_to_move.append(positions[motor_index])
 

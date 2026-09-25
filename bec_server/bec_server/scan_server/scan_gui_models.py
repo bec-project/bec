@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import re
 from contextvars import ContextVar
-from typing import Annotated, Any, Literal, Optional, Type, get_args, get_origin
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core import PydanticCustomError
@@ -26,13 +26,13 @@ class GUIInput(BaseModel):
 
     arg: bool = Field(False)
     name: str = Field(None, validate_default=True)
-    type: Optional[
-        Literal["DeviceBase", "device", "float", "int", "bool", "str", "list", "dict"]
-    ] = Field(None, validate_default=True)
-    display_name: Optional[str] = Field(None, validate_default=True)
-    tooltip: Optional[str] = Field(None, validate_default=True)
-    default: Optional[Any] = Field(None, validate_default=True)
-    expert: Optional[bool] = Field(False)  # TODO decide later how to implement
+    type: Literal["DeviceBase", "device", "float", "int", "bool", "str", "list", "dict"] | None = (
+        Field(None, validate_default=True)
+    )
+    display_name: str | None = Field(None, validate_default=True)
+    tooltip: str | None = Field(None, validate_default=True)
+    default: Any | None = Field(None, validate_default=True)
+    expert: bool | None = Field(False)  # TODO decide later how to implement
 
     @classmethod
     def convert_to_legacy_scan_arg_type(cls, value):
@@ -197,9 +197,9 @@ class GUIArgGroup(BaseModel):
     name: str = "Scan Arguments"
     bundle: int = Field(None)
     arg_inputs: dict
-    inputs: Optional[list[GUIInput]] = Field(None, validate_default=True)
-    min: Optional[int] = Field(None)
-    max: Optional[int] = Field(None)
+    inputs: list[GUIInput] | None = Field(None, validate_default=True)
+    min: int | None = Field(None)
+    max: int | None = Field(None)
 
     @field_validator("arg_inputs")
     @classmethod
@@ -228,13 +228,13 @@ class GUIConfig(BaseModel):
     """
 
     scan_class_name: str
-    arg_group: Optional[GUIArgGroup] = Field(None)
+    arg_group: GUIArgGroup | None = Field(None)
     kwarg_groups: list[GUIGroup] = Field(None)
     signature: list[dict] = Field(..., exclude=True)
     docstring: str = Field(..., exclude=True)
 
     @classmethod
-    def from_dict(cls, scan_cls: Type[ScanBase]) -> GUIConfig:
+    def from_dict(cls, scan_cls: type[ScanBase]) -> GUIConfig:
         """
         Create a GUIConfig object from a scan class.
 

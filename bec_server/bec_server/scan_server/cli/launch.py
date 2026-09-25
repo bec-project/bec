@@ -21,7 +21,7 @@ def main():
     bec_server = scan_server.ScanServer(config=config, connector_cls=RedisConnector)
     try:
         event = threading.Event()
-        # pylint: disable=E1102
+
         logger.success("Started ScanServer")
         event.wait()
     except KeyboardInterrupt:

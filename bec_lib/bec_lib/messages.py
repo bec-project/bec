@@ -1,26 +1,15 @@
-# pylint: disable=too-many-lines
 from __future__ import annotations
 
 import getpass
 import time
 import uuid
 import warnings
+from collections.abc import Mapping
 from copy import deepcopy
 from enum import Enum, StrEnum, auto
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as importlib_version
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Generic,
-    Literal,
-    Mapping,
-    Self,
-    TypedDict,
-    TypeVar,
-    Union,
-)
+from typing import Annotated, Any, ClassVar, Generic, Literal, Self, TypedDict, TypeVar, Union
 from uuid import uuid4
 
 import numpy as np
@@ -184,15 +173,15 @@ class BundleMessage(BECMessage):
     def append(self, msg: BECMessage):
         """Append a new BECMessage to the bundle"""
         if not isinstance(msg, BECMessage):
-            raise AttributeError(f"Cannot append message of type {msg.__class__.__name__}")
-        # pylint: disable=no-member
+            raise AttributeError(f"Cannot append message of type {msg.__class__.__name__}")  # noqa: TRY004 - Preserve the public exception type used by callers.
+
         self.messages.append(msg)
 
     def __len__(self):
         return len(self.messages)
 
     def __iter__(self):
-        # pylint: disable=not-an-iterable
+
         yield from self.messages
 
 
@@ -228,7 +217,7 @@ class ScanQueueMessage(BECMessage):
             schema.model_validate(self.metadata.get("user_metadata", {}))
         except ValidationError as e:
             raise ValueError(
-                f"Scan metadata {self.metadata} does not conform to registered schema {schema}. \n Errors: {str(e)}"
+                f"Scan metadata {self.metadata} does not conform to registered schema {schema}. \n Errors: {e!s}"
             ) from e
         return self
 
@@ -553,7 +542,7 @@ class ClientInfoMessage(BECMessage):
         "file_writer",
         "scihub",
         "dap",
-        None,
+        None,  # noqa: PYI061 - Preserve the Literal representation used by signature and schema consumers.
     ] = Field(default=None)
     scope: str | None = Field(default=None)
     severity: int = Field(
@@ -764,11 +753,12 @@ class DeviceAsyncUpdate(BaseModel):
     @model_validator(mode="after")
     def validate_async_update(self) -> Self:
         """Validate that required fields are present based on update type and constraints"""
-        if self.type in ["add", "add_slice"]:
-            if self.max_shape is None or len(self.max_shape) == 0:
-                raise ValueError(
-                    f"max_shape is required and cannot be empty for async update type '{self.type}'"
-                )
+        if (self.type in ["add", "add_slice"]) and (
+            self.max_shape is None or len(self.max_shape) == 0
+        ):
+            raise ValueError(
+                f"max_shape is required and cannot be empty for async update type '{self.type}'"
+            )
 
         # Validate that None values only appear at the beginning of max_shape
         # i.e., once a non-None value is found, no None values can appear after it
@@ -789,12 +779,11 @@ class DeviceAsyncUpdate(BaseModel):
                     )
 
             # If all dimensions are None, maximum is 2 dimensions
-            if all(dim is None for dim in self.max_shape):
-                if len(self.max_shape) > 2:
-                    raise ValueError(
-                        f"Invalid max_shape {self.max_shape}: when all dimensions are None, "
-                        f"maximum number of dimensions is 2, got {len(self.max_shape)}"
-                    )
+            if all(dim is None for dim in self.max_shape) and len(self.max_shape) > 2:
+                raise ValueError(
+                    f"Invalid max_shape {self.max_shape}: when all dimensions are None, "
+                    f"maximum number of dimensions is 2, got {len(self.max_shape)}"
+                )
 
         if self.type == "add_slice":
             if self.index is None:
@@ -907,7 +896,7 @@ class DeviceMonitor2DMessage(BECMessage):
             v (np.ndarray): data array
         """
         if not isinstance(v, np.ndarray):
-            raise ValueError(f"Invalid array type: {type(v)}. Must be a numpy array.")
+            raise ValueError(f"Invalid array type: {type(v)}. Must be a numpy array.")  # noqa: TRY004 - Pydantic validators must raise ValueError to produce ValidationError.
         if v.ndim == 2:
             return v
         if v.ndim == 3 and v.shape[2] == 3:
@@ -948,7 +937,7 @@ class DeviceMonitor1DMessage(BECMessage):
             v (np.ndarray): data array
         """
         if not isinstance(v, np.ndarray):
-            raise ValueError(f"Invalid array type: {type(v)}. Must be a numpy array.")
+            raise ValueError(f"Invalid array type: {type(v)}. Must be a numpy array.")  # noqa: TRY004 - Pydantic validators must raise ValueError to produce ValidationError.
         if v.ndim == 1:
             return v
         raise ValueError(f"Invalid dimension {v.ndim} for numpy array. Must be a 1D array.")
@@ -1913,8 +1902,7 @@ class NotificationMessage(BECMessage):
 
 
 AvailableMessagingServices = Annotated[
-    Union[SignalServiceInfo, SciLogServiceInfo, TeamsServiceInfo],
-    Field(discriminator="service_type"),
+    SignalServiceInfo | SciLogServiceInfo | TeamsServiceInfo, Field(discriminator="service_type")
 ]
 
 
@@ -2090,7 +2078,7 @@ class MessagingServiceGiphyContent(BaseModel):
     giphy_url: str
 
 
-MessagingServiceContent = Union[
+MessagingServiceContent = Union[  # noqa: UP007 - Exercise and preserve the typing.Union representation in serialization.
     MessagingServiceTextContent,
     MessagingServiceFileContent,
     MessagingServiceTagsContent,

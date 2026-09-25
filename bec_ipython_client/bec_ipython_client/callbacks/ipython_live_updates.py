@@ -82,7 +82,8 @@ class IPythonLiveUpdates:
         Args:
             instr (dict): The instruction to process.
         """
-        scan_report_type = list(instr.keys())[0]
+        # Retain the existing IndexError for a malformed empty instruction.
+        scan_report_type = list(instr.keys())[0]  # noqa: RUF015
         if self._active_request is None:
             # Already checked in caller method. It is just for type checking purposes.
             return
@@ -149,11 +150,10 @@ class IPythonLiveUpdates:
 
     def process_request(self, request: messages.ScanQueueMessage, callbacks: Any) -> None:
         """Process the request and report instructions."""
-        # pylint: disable=protected-access
+
         context_token: Token | None = None
         try:
             with self.client._sighandler:
-                # pylint: disable=protected-access
                 self._active_request = request
                 self._user_callback = callbacks
                 request_id = request.metadata["RID"]
@@ -191,15 +191,15 @@ class IPythonLiveUpdates:
             if request.allow_restart:
                 self.process_request(request, callbacks)
             else:
-                raise scan_restart
+                raise
 
-        except ScanInterruption as scan_interr:
+        except ScanInterruption:
             self._stop_status_live()
             self._interrupted_request = (request,)
             if self._current_queue and self.client._service_config.abort_on_ctrl_c:
                 self._wait_for_cleanup()
             self._reset()
-            raise scan_interr
+            raise
         except KeyboardInterrupt as exc:
             self._stop_status_live()
             if self.client._service_config.abort_on_ctrl_c and self._abort_pending_request():
@@ -309,10 +309,7 @@ class IPythonLiveUpdates:
             return False
         self._process_report_instructions(report_instructions)
 
-        if not queue.active_request_block:
-            return True
-
-        return False
+        return not queue.active_request_block
 
     def _is_pending_queue_state(self, queue: QueueItem) -> bool:
         """
@@ -329,12 +326,10 @@ class IPythonLiveUpdates:
             return True
 
         active_request_block = queue.active_request_block
-        if active_request_block is not None and getattr(
-            active_request_block, "pending_device_locks", None
-        ):
-            return True
-
-        return False
+        return bool(
+            active_request_block is not None
+            and getattr(active_request_block, "pending_device_locks", None)
+        )
 
     def _process_pending_queue_element(self, queue: QueueItem) -> None:
         """

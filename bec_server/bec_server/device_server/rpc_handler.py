@@ -52,7 +52,7 @@ class RPCHandler:
                 # send result to client
                 self.send_rpc_result_to_client(instr, device, instr_params, res, result)
                 logger.trace(res)
-            except Exception as exc:  # pylint: disable=broad-except
+            except Exception as exc:  # noqa: BLE001 -- Return arbitrary device RPC exceptions to the requesting client.
                 # send error to client
                 self.send_rpc_exception(exc, instr)
 
@@ -150,7 +150,6 @@ class RPCHandler:
         diid = instr.metadata.get("device_instr_id", "")
         request = self.requests_handler.get_request(diid)
         if request and not request.get("status_objects"):
-
             self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
     ##################################################
@@ -279,7 +278,6 @@ class RPCHandler:
             if isinstance(res, ophyd.StatusBase):
                 return res
             if isinstance(res, list) and instr_params.get("func") in ["stage", "unstage"]:
-                # pylint: disable=protected-access
                 return [obj._staged for obj in res]
             res = None
             msg = f"Return value of rpc call {instr_params} is not serializable."

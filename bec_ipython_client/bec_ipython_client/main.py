@@ -6,7 +6,8 @@ import functools
 import os
 import sys
 import traceback
-from typing import Iterable, Literal, Tuple
+from collections.abc import Iterable
+from typing import Literal
 
 import IPython
 import redis
@@ -42,12 +43,11 @@ class CLIBECClient(BECClient):
         super()._wait_for_server()
 
         # NOTE: self._BECClient__init_params is a name mangling attribute of the parent class
-        # pylint: disable=no-member
+
         cmdline_args = self._BECClient__init_params["config"].config.get("cmdline_args")
         # set stderr logger level to SUCCESS (will not show messages <= INFO level)
         # (see issue #318), except if user explicitly asked for another level from cmd line
         if not cmdline_args or not cmdline_args.get("log_level"):
-            # pylint: disable=protected-access
             bec_logger._stderr_log_level = "SUCCESS"
             bec_logger._update_sinks()
 
@@ -56,7 +56,7 @@ class BECIPythonClient:
     # local_only_types is a container for objects that should not be resolved through
     # the CLIBECClient but directly through the BECIPythonClient. While this is not
     # needed for normal usage, it is required, e.g. for mocks.
-    _local_only_types: Tuple = ()
+    _local_only_types: tuple = ()
     _client: CLIBECClient | BECClient
 
     def __init__(
@@ -265,7 +265,7 @@ class BECIPythonClient:
         if tb_str:
             try:
                 console.print(tb_str)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Fall back if rich rendering rejects an alarm message.
                 # fallback in case msg is not a traceback
                 console.print(Panel(tb_str, title="Message", border_style="cyan"))
 
@@ -289,8 +289,8 @@ def _ip_exception_handler(
         print(f"\x1b[31m {evalue.__class__.__name__}:\x1b[0m {evalue}")
         return
     if issubclass(etype, redis.exceptions.NoPermissionError):
-        # pylint: disable=protected-access
-        msg = f"The current user ({bec._client.username}) does not have the required permissions.\n {evalue}"
+        # BECClient installs the active client in builtins for the interactive session.
+        msg = f"The current user ({bec._client.username}) does not have the required permissions.\n {evalue}"  # noqa: F821
         log_console_error(etype, evalue, tb, f"Unauthorized: {msg}")
         logger.info(f"Unauthorized: {msg}")
         print(f"\x1b[31m Unauthorized:\x1b[0m {msg}")
@@ -320,7 +320,7 @@ class BECClientPrompt(Prompts):
             status_led = Token.Prompt
         try:
             next_scan_number = str(self.client.queue.next_scan_number)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- The prompt must remain usable while services are unavailable.
             next_scan_number = "?"
 
         if self.client.active_account:
@@ -363,11 +363,6 @@ def log_console_error(etype, evalue, tb=None, message: str | None = None):
             message = f"{etype.__name__}: {evalue}"
     logger.log("CONSOLE_LOG_ERROR", message)
 
-
-# pylint: disable=wrong-import-position
-# pylint: disable=protected-access
-# pylint: disable=unused-import
-# pylint: disable=ungrouped-imports
 
 main_dict = {}
 

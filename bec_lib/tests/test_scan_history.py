@@ -10,9 +10,6 @@ from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
 
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-
 
 @pytest.fixture
 def scan_history_without_thread(connected_connector, file_history_messages):
@@ -110,7 +107,6 @@ def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_hist
         raise TimeoutError()
 
     with scan_history._scan_data_lock:
-
         assert scan_history.get_by_scan_number(1) is None
         assert scan_history.get_by_scan_number(4)._msg == msg[0]
 

@@ -111,7 +111,7 @@ class ConfigUpdateHandler:
 
             logger.info(f"Config request {active_request_id} has completed after cancellation")
             self.send_config_request_reply(accepted=True, error_msg="", metadata=msg.metadata)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
             logger.warning(f"Error waiting for cancellation of {active_request_id}: {exc}")
             self.send_config_request_reply(
                 accepted=False, error_msg=f"Error during cancellation: {exc}", metadata=msg.metadata
@@ -170,7 +170,7 @@ class ConfigUpdateHandler:
             )
             self._flush_config()
 
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
             error_msg = traceback.format_exc()
             accepted = False
             if original_devices is not None:
@@ -201,8 +201,8 @@ class ConfigUpdateHandler:
         """Best-effort cleanup that does not mask the initialization failure."""
         try:
             obj.destroy()
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
             logger.error(
                 f"Failed to destroy partially initialized device {obj.name}: "
                 f"{traceback.format_exc()}"
@@ -212,8 +212,8 @@ class ConfigUpdateHandler:
             return
         try:
             self.device_manager.reset_device(device)
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
             logger.error(
                 f"Failed to reset partially initialized device {device.name}: "
                 f"{traceback.format_exc()}"
@@ -238,7 +238,7 @@ class ConfigUpdateHandler:
                 # apply config
                 try:
                     self.device_manager.update_config(device.obj, new_config)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
                     self.device_manager.update_config(device.obj, old_config)
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
@@ -253,7 +253,6 @@ class ConfigUpdateHandler:
                     )
 
             if "enabled" in dev_config:
-                # pylint: disable=protected-access
                 was_enabled = device._config.get("enabled", True)
                 if was_enabled and not dev_config["enabled"]:
                     # It was enabled and we want to disable it. Disconnect and reset the device.
@@ -269,7 +268,7 @@ class ConfigUpdateHandler:
                             device._config, device_manager=self.device_manager
                         )
                         self.device_manager.initialize_device(device._config, config, obj)
-                    # pylint: disable=broad-except
+
                     except Exception:
                         device._config["enabled"] = was_enabled
                         failed_device = self.device_manager.devices.get(dev)
@@ -283,10 +282,10 @@ class ConfigUpdateHandler:
 
     def _flush_config(self) -> None:
         """Flush all devices from the device manager."""
-        for _, obj in self.device_manager.devices.items():
+        for obj in self.device_manager.devices.values():
             try:
                 obj.obj.destroy()
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
                 logger.warning(f"Failed to destroy {obj.obj.name}")
                 raise RuntimeError("Failed to flush config")
         self.device_manager.devices.flush()
@@ -307,7 +306,7 @@ class ConfigUpdateHandler:
             cancel_event: Event to check for cancellation
 
         """
-        # pylint:disable=protected-access
+
         self.device_manager.failed_devices = {}
         dm: DeviceManagerDS = self.device_manager
         for dev, dev_config in msg.content["config"].items():
@@ -320,7 +319,7 @@ class ConfigUpdateHandler:
             obj, config = dm.construct_device_obj(dev_config, device_manager=dm)
             try:
                 dm.initialize_device(dev_config, config, obj)
-            # pylint: disable=broad-except
+
             except Exception:
                 error = traceback.format_exc()
                 if name not in dm.devices:
@@ -362,8 +361,8 @@ class ConfigUpdateHandler:
                 ):
                     self.connector.delete(endpoint(name), pipe=pipe)
                 pipe.execute()
-            # pylint: disable=broad-except
-            except Exception:
+
+            except Exception:  # noqa: BLE001 -- Device plugins can fail arbitrarily during configuration or rollback.
                 logger.error(f"Failed to remove device data for {name}: {traceback.format_exc()}")
         dm.current_session["devices"][:] = original_session_devices
         dm.failed_devices = {}
@@ -437,7 +436,7 @@ class ConfigUpdateHandler:
             )
             for name in self.device_manager.failed_devices:
                 device = self.device_manager.devices[name]
-                # pylint: disable=protected-access
+
                 device._config["enabled"] = False
                 self._cleanup_failed_device_init(device.obj, device)
             self.update_session_config(msg)

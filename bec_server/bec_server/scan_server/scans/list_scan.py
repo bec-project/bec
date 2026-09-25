@@ -16,6 +16,8 @@ Scan procedure:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 
 from bec_lib.device import DeviceBase
@@ -39,9 +41,9 @@ class ListScan(ScanBase):
 
     # arg_input and arg_bundle_size are only relevant for scans that accept an arbitrary number of motor / position arguments (e.g. line scans, grid scans).
     # For scans with a fixed set of parameters (e.g. Fermat spiral), these can be simply removed.
-    arg_input = {"device": DeviceBase, "positions": list[float]}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {
+    arg_input: ClassVar[dict] = {"device": DeviceBase, "positions": list[float]}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config: ClassVar[dict] = {
         "Movement Parameters": ["relative"],
         "Acquisition Parameters": [
             "exp_time",

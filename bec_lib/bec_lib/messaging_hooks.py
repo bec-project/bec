@@ -130,7 +130,7 @@ class MessagingManager:
         Returns:
             MessagingServiceMessage: The converted message ready to be sent via the specified service.
         """
-        # pylint: disable=protected-access
+
         match service._SERVICE_NAME:
             case SciLogMessagingService._SERVICE_NAME:
                 scilog_message = service.new()

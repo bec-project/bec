@@ -1,13 +1,12 @@
 # Description: Launch the data processing server.
 # This script is the entry point for the Data Processing Server. It is called either
 # by the bec-dap entry point or directly from the command line.
-import argparse
 import threading
 
-import bec_server.data_processing as data_processing
 from bec_lib.bec_service import parse_cmdline_args
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
+from bec_server import data_processing
 from bec_server.data_processing.lmfit1d_service import LmfitService1D
 
 logger = bec_logger.logger

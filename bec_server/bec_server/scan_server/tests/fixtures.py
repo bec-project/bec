@@ -4,15 +4,15 @@ from unittest import mock
 import pytest
 
 from bec_lib.logger import bec_logger
-from bec_lib.tests.fixtures import dm_with_devices
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.tests.utils import DeviceMockType, DMMock
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.tests.utils import ScanServerMock
 
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
 @pytest.fixture
 def scan_server_mock(dm_with_devices):
     server = ScanServerMock(dm_with_devices)

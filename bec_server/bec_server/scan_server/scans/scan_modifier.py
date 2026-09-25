@@ -131,7 +131,6 @@ def scan_hook(func):
 
         return
 
-    # pylint: disable=protected-access
     wrapper._scan_hook_info = {"method_name": func.__name__}  # type: ignore
     wrapper._scan_hook_original = func  # type: ignore[attr-defined]
 
@@ -174,7 +173,6 @@ def scan_hook_impl(
         def wrapper(self, *args, **kwargs):
             return func(self, *args, **kwargs)
 
-        # pylint: disable=protected-access
         wrapper._scan_hook_impl_info = {
             "hook_name": hook_name,
             "hook_type": hook_type,
@@ -218,7 +216,6 @@ def get_scan_hooks_impl(cls) -> dict[str, ScanHookConfigMap]:
 
 
 class ScanModifier:
-
     def __init__(self, scan: ScanBase):
         self.scan = scan
         self.dev = scan.dev

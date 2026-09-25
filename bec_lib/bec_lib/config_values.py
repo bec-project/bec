@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from threading import Event
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 from weakref import ReferenceType
 
 from louie.saferef import BoundMethodWeakref, safe_ref
@@ -73,7 +74,7 @@ class RedisConfigValue(property, Generic[ValueT]):
                 if cb := cb_ref():
                     try:
                         cb(self._config.value)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - User callbacks must not prevent notification of other listeners.
                         logger.error(f"Exception in managed config value callback {cb}: {e}")
                 else:
                     self._cbs.discard(cb_ref)

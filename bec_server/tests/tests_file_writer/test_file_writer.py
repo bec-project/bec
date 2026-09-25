@@ -4,7 +4,9 @@ from unittest import mock
 import h5py
 import numpy as np
 import pytest
-from test_file_writer_manager import file_writer_manager_mock
+from test_file_writer_manager import (
+    file_writer_manager_mock as file_writer_manager_mock,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 
 from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
@@ -65,7 +67,7 @@ def hdf5_file_writer(file_writer_manager_mock_with_dm):
 
 @pytest.fixture(autouse=True)
 def no_file_writer_plugins(monkeypatch):
-    monkeypatch.setattr(plugin_helper, "get_file_writer_plugins", lambda: {})
+    monkeypatch.setattr(plugin_helper, "get_file_writer_plugins", dict)
 
 
 @pytest.fixture
@@ -400,9 +402,11 @@ def test_create_device_data_storage(hdf5_file_writer, scan_storage_mock):
                 "exp_time": 0.1,
                 "scan_report_devices": ["samx", "samy"],
                 "scan_msgs": [
-                    "ScanQueueMessage(({'scan_type': 'monitor_scan', 'parameter': {'args': {'samx':"
-                    " [-100, 100]}, 'kwargs': {'relative': False}}, 'queue': 'primary'}, {'RID':"
-                    " '5ee455b8-d0ef-452d-b54a-e7cea5cea19e'})))"
+                    (
+                        "ScanQueueMessage(({'scan_type': 'monitor_scan', 'parameter': {'args': {'samx':"
+                        " [-100, 100]}, 'kwargs': {'relative': False}}, 'queue': 'primary'}, {'RID':"
+                        " '5ee455b8-d0ef-452d-b54a-e7cea5cea19e'})))"
+                    )
                 ],
                 "readout_priority": {
                     "baseline": ["eyefoc", "field"],
@@ -443,28 +447,28 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
     with h5py.File(f"{tmp_path}/test.tmp", "r") as test_file:
         assert (
             test_file["entry"].attrs["start_time"]
-            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()
+            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
         )
 
         assert (
             test_file["entry"].attrs["end_time"]
-            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
+            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
         )
         assert (
             test_file["entry/start_time"].asstr()[()]
-            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()
+            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
         )
         assert (
             test_file["entry/end_time"].asstr()[()]
-            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
+            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
         )
         assert (
             test_file["entry/collection/metadata/start_time"].asstr()[()]
-            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()
+            == datetime.datetime.fromtimestamp(1679226971.564235).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
         )
         assert (
             test_file["entry/collection/metadata/end_time"].asstr()[()]
-            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()
+            == datetime.datetime.fromtimestamp(1679226971.580867).isoformat()  # noqa: DTZ006 -- Preserve the existing local-time timestamps stored in scan files.
         )
         assert (
             test_file["entry/entry_identifier_uuid"].asstr()[()]
@@ -474,7 +478,7 @@ def test_write_data_storage(segments, baseline, metadata, hdf5_file_writer, tmp_
             test_file["entry/entry_identifier_uuid"].attrs["description"]
             == "Scan identifier (scan_id) used by BEC"
         )
-        assert "non_existing_file" not in test_file["entry/collection/file_references"].keys()
+        assert "non_existing_file" not in test_file["entry/collection/file_references"]
         assert test_file["entry/data"].attrs["NX_class"] == "NXdata"
         assert test_file["entry/data"].attrs["signal"] == "samx"
         assert list(test_file["entry/data"].attrs["auxiliary_signals"]) == ["samy"]

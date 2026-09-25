@@ -7,8 +7,6 @@ from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import ScanAbortion
 from bec_lib.scan_report import ScanReport
 
-# pylint: skip-file
-
 
 @pytest.fixture
 def scan_report():
@@ -83,13 +81,15 @@ def test_scan_report_wait_for_scan(scan_report):
 
 def test_scan_report_wait_for_scan_file_pending(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(scan_type="mv", parameter={})
-    with mock.patch.object(scan_report, "_get_mv_status") as get_mv_status:
-        with mock.patch.object(scan_report, "_file_written") as file_written:
-            file_written.side_effect = [False, False, True]
-            get_mv_status.return_value = True
-            scan_report.queue_item.status = "COMPLETED"
-            scan_report._wait_scan(None, 0.1, num_points=False, file_written=True)
-            assert file_written.call_count == 3
+    with (
+        mock.patch.object(scan_report, "_get_mv_status") as get_mv_status,
+        mock.patch.object(scan_report, "_file_written") as file_written,
+    ):
+        file_written.side_effect = [False, False, True]
+        get_mv_status.return_value = True
+        scan_report.queue_item.status = "COMPLETED"
+        scan_report._wait_scan(None, 0.1, num_points=False, file_written=True)
+        assert file_written.call_count == 3
 
 
 def test_scan_report_wait_for_non_scan_without_scan_item(scan_report):

@@ -43,9 +43,22 @@ def test_operator_messages(info, out):
         with mock.patch.object(bl_call, "_get_console", return_value=console):
             mixin.bl_show_all()
             get_op_msgs.assert_called_once()
-            # pylint: disable=no-member
+
             output = console.file.getvalue()
             assert output == out
+
+
+def test_operator_message_reader_preserves_date_fields():
+    info = _get_operator_messages(6)
+    devices = mock.MagicMock()
+    devices.sls_operator.read.return_value = info
+
+    with mock.patch.dict("builtins.__dict__", {"dev": devices}):
+        result = OperatorInfo()._get_operator_messages()
+
+    assert result is info
+    assert "sls_operator_date_message1" in result
+    devices.sls_operator.read.assert_called_once_with(cached=True)
 
 
 @pytest.mark.parametrize(
@@ -79,6 +92,6 @@ def test_sls_info(info, out):
         with mock.patch.object(bl_call, "_get_console", return_value=console):
             mixin.bl_show_all()
             get_sls_info.assert_called_once()
-            # pylint: disable=no-member
+
             output = console.file.getvalue()
             assert output == out

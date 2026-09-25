@@ -148,7 +148,7 @@ class AsyncWriter(threading.Thread):
             poll_timeout (int, optional): The time to wait for new data before returning. Defaults to 500. If set to 0,
                 it waits indefinitely. If set to None, it returns immediately.
         """
-        # pylint: disable=protected-access
+
         out = self.connector.raw_xread(self.stream_keys, block=poll_timeout)
         return self._decode_stream_messages_xread(out)
 
@@ -157,7 +157,7 @@ class AsyncWriter(threading.Thread):
         for topic, msgs in msg:
             for index, record in msgs:
                 device_name = self._get_device_name_from_topic(topic.decode())
-                for _, msg_entry in record.items():
+                for msg_entry in record.values():
                     device_msg: messages.DeviceMessage = MsgpackSerialization.loads(msg_entry)
                     out[device_name].append(device_msg)
                 self.stream_keys[topic.decode()] = index
@@ -210,8 +210,8 @@ class AsyncWriter(threading.Thread):
             # run one last time to get any remaining data
             self.poll_and_write_data(final=True)
             logger.info(f"Finished writing async data file {self.tmp_file_path}")
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: BLE001 -- Report writer failures as alarms without terminating the worker.
             content = traceback.format_exc()
             # self.send_file_message(done=True, successful=False)
             logger.error(f"Error writing async data file {self.tmp_file_path}: {content}")

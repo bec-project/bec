@@ -20,7 +20,6 @@ Units = pint.UnitRegistry()
 
 
 class ScanArgument(BaseModel):
-
     display_name: Annotated[str | None, Field(description="Display name for the argument")] = None
     description: Annotated[str | None, Field(description="Description of the argument")] = None
     tooltip: Annotated[str | None, Field(description="Tooltip for the argument")] = None
@@ -193,7 +192,7 @@ class DefaultArgType:
         ),
     ]
     OptimizeTrajectory: TypeAlias = Annotated[
-        Literal["corridor", "shell", "nearest", None],
+        Literal["corridor", "shell", "nearest", None],  # noqa: PYI061 - Preserve the Literal representation used by signature and schema consumers.
         ScanArgument(
             display_name="Optimize Trajectory",
             description="Method for optimizing the scan trajectory.",

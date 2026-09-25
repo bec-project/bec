@@ -8,8 +8,8 @@ from __future__ import annotations
 import enum
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
-from typing import Annotated, Callable, Type
+from collections.abc import Callable, Sequence
+from typing import Annotated, ClassVar
 
 import numpy as np
 import pint
@@ -51,7 +51,6 @@ def bundle_args(args: tuple, bundle_size: int) -> dict:
 
 
 class ScanInfo(BaseModel):
-
     # General scan information
     scan_name: Annotated[str, Field(description="Name of the scan type, e.g. 'grid_scan'")]
     scan_id: Annotated[str | None, Field(description="Unique identifier for the scan")] = None
@@ -105,9 +104,9 @@ class ScanInfo(BaseModel):
         str | None,
         Field(description="Monitor synchronization mode for fly scans"),  # Will be removed!
     ] = None
-    additional_scan_parameters: Annotated[dict, Field(description="Additional scan parameters")] = (
-        {}
-    )
+    additional_scan_parameters: Annotated[
+        dict, Field(description="Additional scan parameters")
+    ] = {}
     user_metadata: Annotated[dict, Field(description="User-provided metadata for the scan")] = {}
     system_config: Annotated[dict, Field(description="System configuration for the scan")] = {}
     scan_queue: Annotated[str, Field(description="Name of the queue the scan belongs to")] = (
@@ -161,8 +160,8 @@ class ScanInfo(BaseModel):
 class ScanBase(ABC):
     scan_type = ScanType.SOFTWARE_TRIGGERED
     scan_name = "base_scan"
-    arg_input = {}
-    arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
+    arg_input: ClassVar[dict] = {}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": None, "max": None}
     is_scan = True
     is_internal = False
 
@@ -176,7 +175,7 @@ class ScanBase(ABC):
         system_config: dict,
         monitored: list[str] | None = None,
         on_request: list[str] | None = None,
-        scan_modifier: Type[ScanModifier] | None = None,
+        scan_modifier: type[ScanModifier] | None = None,
         user_metadata: dict | None = None,
         metadata: dict | None = None,
         scan_queue: str | None = None,

@@ -1,8 +1,10 @@
 import csv
 import os
+from typing import ClassVar
 from unittest import mock
 
 import pytest
+from typeguard import TypeCheckError
 
 from bec_lib import messages
 from bec_lib.live_scan_data import LiveScanData
@@ -57,7 +59,7 @@ def scanitem():
 
 
 class class_mock:
-    USER_ACCESS = []
+    USER_ACCESS: ClassVar[list[str]] = []
 
     @user_access
     def _func_decorated_not_in_user_access(self, *args, **kwargs):
@@ -126,11 +128,30 @@ def test_extract_scan_data(scanitem, scan_data):
 def test_scan_to_csv():
     """Test scan_to_csv function."""
     scanreport_mock = mock.MagicMock(spec=ScanReport)
-    with pytest.raises(Exception):
+    with pytest.raises(TypeCheckError, match="output_name"):
         scan_to_csv(
             scan_report=scanreport_mock,
             output_name=1234,
             delimiter=",",
+            dialect=None,
+            header=None,
+            write_metadata=True,
+        )
+
+    with pytest.raises(TypeError, match="unsupported format string"):
+        scan_to_csv(
+            scan_report=[scanreport_mock, scanreport_mock, scanreport_mock],
+            output_name="test.csv",
+            delimiter=",",
+            dialect=None,
+            header=None,
+            write_metadata=True,
+        )
+    with pytest.raises(TypeCheckError, match="delimiter"):
+        scan_to_csv(
+            scan_report=[scanreport_mock, scanreport_mock, scanreport_mock],
+            output_name="test.csv",
+            delimiter=123,
             dialect=None,
             header=None,
             write_metadata=True,
@@ -149,21 +170,3 @@ def test_scan_to_csv():
 )
 def test_render_scan_cli_value(value, expected):
     assert _render_scan_cli_value(value) == expected
-    with pytest.raises(Exception):
-        scan_to_csv(
-            scan_report=[scanreport_mock, scanreport_mock, scanreport_mock],
-            output_name="test.csv",
-            delimiter=",",
-            dialect=None,
-            header=None,
-            write_metadata=True,
-        )
-    with pytest.raises(Exception):
-        scan_to_csv(
-            scan_report=[scanreport_mock, scanreport_mock, scanreport_mock],
-            output_name="test.csv",
-            delimiter=123,
-            dialect=None,
-            header=None,
-            write_metadata=True,
-        )

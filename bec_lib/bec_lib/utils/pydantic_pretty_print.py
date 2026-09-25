@@ -84,7 +84,7 @@ def pretty_print_pydantic_validation_error(
     # Create a summary text
     error_count = exc.error_count()
     summary = Text()
-    summary.append(f"Found ", style="white")
+    summary.append("Found ", style="white")
     summary.append(f"{error_count}", style="bold red")
     summary.append(f" validation error{'s' if error_count != 1 else ''}", style="white")
     if context:

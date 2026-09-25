@@ -10,7 +10,9 @@ from bec_lib.device import ReadoutPriority
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
-from bec_lib.tests.fixtures import dm_with_devices  # noqa: F401
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_lib.tests.utils import ConnectorMock
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.scan_server.instruction_handler import InstructionHandler
@@ -167,9 +169,9 @@ def _set_readout_priority(ctx, **readout_groups):
     for priority, device_names in readout_groups.items():
         readout_priority = ReadoutPriority[priority.upper()]
         for device_name in device_names:
-            ctx.device_manager.devices[device_name].root._config[
-                "readoutPriority"
-            ] = readout_priority
+            ctx.device_manager.devices[device_name].root._config["readoutPriority"] = (
+                readout_priority
+            )
 
 
 def _set_software_triggered(ctx, *device_names):
@@ -1015,7 +1017,7 @@ def test_send_scan_status_publishes_message(action_context):
     event, notification = ctx.connector.notify.call_args.args
     assert event == MessagingEvent.SCAN_COMPLETED
     assert isinstance(notification, NotificationMessageObject)
-    assert notification._content == [  # pylint: disable=protected-access
+    assert notification._content == [
         messages.MessagingServiceTextContent(
             content='<p><mark class="pen-green">Scan completed: scan_number=1 (scans._v4_test_scan(), scan_id=scan-id-test)</mark></p>'
         ),
@@ -1046,7 +1048,7 @@ def test_send_scan_status_publishes_new_scan_notification(action_context):
     event, notification = ctx.connector.notify.call_args.args
     assert event == MessagingEvent.SCAN
     assert isinstance(notification, NotificationMessageObject)
-    assert notification._content == [  # pylint: disable=protected-access
+    assert notification._content == [
         messages.MessagingServiceTextContent(
             content="<p><mark class=\"pen-green\">Scan started: scan_number=1 (scans._v4_test_scan(device='samx'), scan_id=scan-id-test)</mark></p>"
         ),
@@ -1064,9 +1066,9 @@ def test_get_file_base_path_uses_account_and_templates(action_context):
 
     assert ctx.actions._get_file_base_path() == os.path.abspath("/tmp/data/test_account")
 
-    ctx.device_manager.parent._service_config.config["file_writer"][
-        "base_path"
-    ] = "/tmp/$account/raw"
+    ctx.device_manager.parent._service_config.config["file_writer"]["base_path"] = (
+        "/tmp/$account/raw"
+    )
     assert ctx.actions._get_file_base_path() == os.path.abspath("/tmp/test_account/raw")
 
 

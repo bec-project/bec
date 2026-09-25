@@ -1,5 +1,6 @@
 import inspect
 import os
+import sys
 import traceback
 from contextlib import redirect_stdout
 from typing import AnyStr, TextIO
@@ -100,7 +101,7 @@ def get_env() -> OopWorkerEnv:
         supplied_env = {k: os.environ[k] for k in needed_keys}
     except KeyError as e:
         logger.error(f"Missing environment variable needed by container worker: {e}")
-        exit(1)
+        sys.exit(1)
     return _default_env() | supplied_env  # type: ignore
 
 
@@ -149,7 +150,7 @@ def setup(env: OopWorkerEnv):
     logger.debug("starting client")
     client.start()
     if not client.started:
-        exit(1)
+        sys.exit(1)
 
     logger.success(f"Procedure worker started container for queue {env['queue']}")
     conn = RedisConnector(env["redis_server"])
@@ -163,10 +164,11 @@ def _run_task(client: BECClient | BECIPythonClient, item: ProcedureExecutionMess
     logger.success(f"Executing procedure {item.identifier}.")
     kwargs = item.args_kwargs[1]
     proc_func = procedure_registry.callable_from_execution_message(item)
-    if bec_arg := inspect.signature(proc_func).parameters.get("bec"):
-        if bec_arg.kind == bec_arg.KEYWORD_ONLY and bec_arg.annotation.__name__ == "BECClient":
-            logger.debug(f"Injecting BEC client argument for {item}")
-            kwargs["bec"] = client
+    if (bec_arg := inspect.signature(proc_func).parameters.get("bec")) and (
+        bec_arg.kind == bec_arg.KEYWORD_ONLY and bec_arg.annotation.__name__ == "BECClient"
+    ):
+        logger.debug(f"Injecting BEC client argument for {item}")
+        kwargs["bec"] = client
     proc_func(*item.args_kwargs[0], **kwargs)
 
 
@@ -205,7 +207,7 @@ def _main(
             logger.debug(f"running task {item!r}")
             try:
                 _run_task(client, item)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- Report arbitrary user-procedure failures through the execution status.
                 logger.error(f"Encountered error running procedure {item}")
                 helper.status_update(item.execution_id, "Finished", traceback.format_exc())
                 logger.error(e)
@@ -220,7 +222,7 @@ def _main(
             logger.error("Procedure cancelled by user")
             helper.status_update(item.execution_id, "Aborted", error="Aborted by user.")
             # The rest of cleanup is handled in 'finally'
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- Report arbitrary user-procedure failures through the execution status.
         logger.error(e)  # don't stop ProcedureManager.spawn from cleaning up
     finally:
         logger.success("Procedure runner shutting down")

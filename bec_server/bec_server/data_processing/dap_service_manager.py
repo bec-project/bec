@@ -66,9 +66,8 @@ class DAPServiceManager:
             else:
                 raise ValueError(f"Unknown dap type {dap_type}")
 
-        # pylint: disable=broad-except
         except Exception as e:
-            logger.exception(f"Failed to process dap request {dap_request_msg}: {e}")
+            logger.exception(f"Failed to process dap request {dap_request_msg}")
             self.send_dap_response(
                 dap_request_msg, success=False, error=str(e), metadata=dap_request_msg.metadata
             )
@@ -97,9 +96,7 @@ class DAPServiceManager:
         dap_instance.configure(**dap_config)
         self.continuous_dap = {
             "id": self.client.callbacks.register(
-                # pylint: disable=protected-access
-                event_type="scan_status",
-                callback=dap_instance._process_scan_status_update,
+                event_type="scan_status", callback=dap_instance._process_scan_status_update
             ),
             "instance": dap_instance,
         }
@@ -139,8 +136,8 @@ class DAPServiceManager:
         dap_request_msg: messages.DAPRequestMessage,
         success: bool,
         data=None,
-        error: str = None,
-        metadata: dict = None,
+        error: str | None = None,
+        metadata: dict | None = None,
     ) -> None:
         """
         Send a dap response.
@@ -229,7 +226,7 @@ class DAPServiceManager:
         """
         for service_name, service in provided_services.items():
             if not isinstance(service, dict):
-                raise ValueError(f"Invalid service {service_name}: {service}. Must be a dict.")
+                raise ValueError(f"Invalid service {service_name}: {service}. Must be a dict.")  # noqa: TRY004 -- Preserve the existing ValueError contract for invalid service or device results.
             self._check_service_keys_exists(
                 service,
                 [
@@ -264,7 +261,7 @@ class DAPServiceManager:
     def publish_available_services(self):
         """send all available dap services to the broker"""
         msg = messages.AvailableResourceMessage(resource=self.available_dap_services)
-        # pylint: disable=protected-access
+
         self.connector.set(
             MessageEndpoints.dap_available_plugins(f"DAPServer/{self.client._service_id}"), msg
         )

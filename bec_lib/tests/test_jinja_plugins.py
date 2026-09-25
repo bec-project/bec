@@ -1,7 +1,5 @@
 from bec_lib.utils.copier_jinja_filters import _snake_to_camel, _snake_to_pascal
 
-# pylint: disable=protected-access
-
 
 def test_camel_case():
     assert _snake_to_camel("test_string") == "testString"

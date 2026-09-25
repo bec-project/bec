@@ -97,7 +97,7 @@ def test_signature_serializer_merged_literals():
 
 
 def test_signature_serializer_with_unpack():
-    def test_func(a, b: Literal["test", None], *args, **kwargs):
+    def test_func(a, b: Literal["test", None], *args, **kwargs):  # noqa: PYI061 - Preserve the Literal representation used by signature and schema consumers.
         pass
 
     params = signature_to_dict(test_func)
@@ -117,7 +117,7 @@ def test_signature_serializer_with_unpack():
 def test_signature_serializer_with_literals():
     def test_func(
         a,
-        b: Literal["test", None],
+        b: Literal["test", None],  # noqa: PYI061 - Preserve the Literal representation used by signature and schema consumers.
         c: Literal[1, 2, 3] = 1,
         d: None | np.ndarray = None,
         e: None | np.ndarray | float = None,
@@ -320,8 +320,8 @@ def test_signature_serializer_with_optional_scan_argument_annotation():
         (bool, "bool"),
         (inspect._empty, "_empty"),
         (Literal[1, 2, 3], {"Literal": (1, 2, 3)}),
-        (Union[int, str], ["int", "str"]),
-        (Optional[str], ["str", "NoneType"]),
+        (Union[int, str], ["int", "str"]),  # noqa: UP007 - Exercise and preserve the typing.Union representation in serialization.
+        (Optional[str], ["str", "NoneType"]),  # noqa: UP045 - Exercise and preserve the typing.Union representation in serialization.
         (DeviceBase, "DeviceBase"),
         (ScanItem, "ScanItem"),
         (np.ndarray, "ndarray"),
@@ -398,8 +398,8 @@ def test_serialize_dtype(dtype_in, dtype_out):
         ("bool", bool),
         ("_empty", inspect._empty),
         ({"Literal": (1, 2, 3)}, Literal[1, 2, 3]),
-        (["int", "str"], Union[int, str]),
-        (["str", "NoneType"], Optional[str]),
+        (["int", "str"], Union[int, str]),  # noqa: UP007 - Exercise and preserve the typing.Union representation in serialization.
+        (["str", "NoneType"], Optional[str]),  # noqa: UP045 - Exercise and preserve the typing.Union representation in serialization.
         ("NoneType", None),
         ("DeviceBase", DeviceBase),
         ("ScanItem", ScanItem),

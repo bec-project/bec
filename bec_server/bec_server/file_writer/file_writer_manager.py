@@ -454,9 +454,8 @@ class FileWriterManager(BECService):
                 file_handle=file_handle,
                 written_async_signals=written_async_signals,
             )
-        # pylint: disable=broad-except
-        # pylint: disable=unused-variable
-        except Exception as exc:
+
+        except Exception as exc:  # noqa: BLE001 -- Report writer plugin failures and finalize the failed scan file.
             content = traceback.format_exc()
             logger.error(f"Failed to write to file {file_path}.")
             error_info = messages.ErrorInfo(

@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 from unittest import mock
 
 import pytest
@@ -15,16 +15,11 @@ from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnect
 from bec_lib.redis_connector.validation import validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
 
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=redefined-outer-name
-
 
 class TestMessage(BECMessage):
     __test__: ClassVar[bool] = False  # just for pytest to ignore this class
     msg_type: ClassVar[str] = "test_message"
-    msg: Optional[str] = None
+    msg: str | None = None
 
 
 # register at BEC messages module level, to be able to
@@ -405,7 +400,7 @@ def test_bundle_message_handled():
     )
 
     @validate_endpoint("endpoint")
-    def send(_, endpoint, messages): ...  # pylint: ignore=unused-argument
+    def send(_, endpoint, messages): ...
 
     send(None, endpoint, messages)
 

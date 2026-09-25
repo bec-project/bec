@@ -89,7 +89,7 @@ class ScanHistory:
                 self._scan_numbers.pop(0)
 
     def _on_scan_history_update(self, msg: dict) -> None:
-        # pylint: disable=protected-access
+
         with self._scan_data_lock:
             msg: messages.ScanHistoryMessage = msg["data"]
             if not os.access(msg.file_path, os.R_OK):

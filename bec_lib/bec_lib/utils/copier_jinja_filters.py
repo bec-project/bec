@@ -30,7 +30,7 @@ def _debug(value: _T) -> _T:
 class CopierFilters(Extension):
     identifier = "BEC copier jinja filters"
 
-    def __init__(self, env: "YieldEnvironment") -> None:
+    def __init__(self, env: YieldEnvironment) -> None:
         self._env = env
 
         self._env.filters["snake_to_pascal"] = _snake_to_pascal

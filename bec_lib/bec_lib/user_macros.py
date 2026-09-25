@@ -34,7 +34,7 @@ class UserMacros:
         """Load all user macros from the `macros` directory."""
         try:
             self._update_handler.load_all_user_macros()
-        except Exception:
+        except Exception:  # noqa: BLE001 - User macro failures must not prevent the client from starting.
             content = traceback.format_exc()
             logger.error(f"Error while loading user macros: \n {content}")
 

@@ -16,9 +16,6 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
-
 
 @pytest.fixture
 def dm_with_devices_and_status(dm_with_devices):
@@ -81,12 +78,10 @@ def test_device_init(dm_with_devices):
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_device_proxy_init(dm_with_devices):
     device_manager = dm_with_devices
-    assert "sim_proxy_test" in device_manager.devices.keys()
-    assert "proxy_cam_test" in device_manager.devices.keys()
+    assert "sim_proxy_test" in device_manager.devices
+    assert "proxy_cam_test" in device_manager.devices
     assert "image" in device_manager.devices["proxy_cam_test"].obj.registered_proxies.values()
-    assert (
-        "sim_proxy_test" in device_manager.devices["proxy_cam_test"].obj.registered_proxies.keys()
-    )
+    assert "sim_proxy_test" in device_manager.devices["proxy_cam_test"].obj.registered_proxies
 
 
 @pytest.mark.parametrize(
@@ -127,18 +122,18 @@ def test_disable_unreachable_devices(device_manager, session_from_test_config):
 
     config_reply = messages.RequestResponseMessage(accepted=True, message="")
 
-    with mock.patch.object(device_manager, "connect_device", wraps=mocked_failed_connection):
-        with mock.patch.object(device_manager, "_get_config", get_config_from_mock):
-            with mock.patch.object(
-                device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
-            ):
-                with mock.patch.object(device_manager.config_helper, "wait_for_service_response"):
-                    device_manager.initialize("")
-                    assert device_manager.config_update_handler is not None
-                    assert device_manager.devices.samx.enabled is False
-                    msg = messages.DeviceConfigMessage(
-                        action="update", config={"samx": {"enabled": False}}
-                    )
+    with (
+        mock.patch.object(device_manager, "connect_device", wraps=mocked_failed_connection),
+        mock.patch.object(device_manager, "_get_config", get_config_from_mock),
+        mock.patch.object(
+            device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
+        ),
+        mock.patch.object(device_manager.config_helper, "wait_for_service_response"),
+    ):
+        device_manager.initialize("")
+        assert device_manager.config_update_handler is not None
+        assert device_manager.devices.samx.enabled is False
+        _msg = messages.DeviceConfigMessage(action="update", config={"samx": {"enabled": False}})
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -340,24 +335,24 @@ def test_subscribe_to_device_events(dm_with_devices):
     obj = mock.MagicMock()
     # Test 2 event types together
     obj.event_types = ("file_event", "device_monitor_1d")
-    with mock.patch.object(dm_with_devices, "_obj_callback_file_event") as mock_callback_file_event:
-        with mock.patch.object(
+    with (
+        mock.patch.object(dm_with_devices, "_obj_callback_file_event") as mock_callback_file_event,
+        mock.patch.object(
             dm_with_devices, "_obj_callback_device_monitor_1d"
-        ) as mock_callback_device_monitor_1d:
-            dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
-            assert obj.subscribe.call_count == 0
-            dm_with_devices._subscribe_to_bec_device_events(obj=obj)
-            assert obj.subscribe.call_count == 2
-            assert (
-                mock.call(mock_callback_file_event, event_type="file_event", run=False)
-                in obj.subscribe.call_args_list
-            )
-            assert (
-                mock.call(
-                    mock_callback_device_monitor_1d, event_type="device_monitor_1d", run=False
-                )
-                in obj.subscribe.call_args_list
-            )
+        ) as mock_callback_device_monitor_1d,
+    ):
+        dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
+        assert obj.subscribe.call_count == 0
+        dm_with_devices._subscribe_to_bec_device_events(obj=obj)
+        assert obj.subscribe.call_count == 2
+        assert (
+            mock.call(mock_callback_file_event, event_type="file_event", run=False)
+            in obj.subscribe.call_args_list
+        )
+        assert (
+            mock.call(mock_callback_device_monitor_1d, event_type="device_monitor_1d", run=False)
+            in obj.subscribe.call_args_list
+        )
 
     # Test all event types
     for ii, event_type in enumerate(
@@ -580,33 +575,31 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
         mock.patch.object(
             dm_with_devices, "connect_device", return_value=None
         ) as mock_connect_device,
+        mock.patch.object(epics_motor.low_limit_travel, "subscribe") as mock_low_subscribe,
+        mock.patch.object(epics_motor.high_limit_travel, "subscribe") as mock_high_subscribe,
     ):
-        with (
-            mock.patch.object(epics_motor.low_limit_travel, "subscribe") as mock_low_subscribe,
-            mock.patch.object(epics_motor.high_limit_travel, "subscribe") as mock_high_subscribe,
-        ):
-            dm_with_devices.initialize_device(epics_motor_config, cfg, epics_motor)
+        dm_with_devices.initialize_device(epics_motor_config, cfg, epics_motor)
 
-            mock_publish_device_info.assert_called_once_with(
-                epics_motor, connect=enabled, pipe=mock.ANY
+        mock_publish_device_info.assert_called_once_with(
+            epics_motor, connect=enabled, pipe=mock.ANY
+        )
+        if enabled:
+            mock_initialize_enabled_device.assert_called_once()
+            mock_connect_device.assert_called_once_with(
+                epics_motor, wait_for_all=True, timeout=timeout
             )
-            if enabled:
-                mock_initialize_enabled_device.assert_called_once()
-                mock_connect_device.assert_called_once_with(
-                    epics_motor, wait_for_all=True, timeout=timeout
-                )
-                # Limit updates are queued through the auto-monitor thread callback.
-                mock_low_subscribe.assert_called_once_with(
-                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
-                )
-                mock_high_subscribe.assert_called_once_with(
-                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
-                )
-            else:
-                mock_initialize_enabled_device.assert_not_called()
-                mock_connect_device.assert_not_called()
-                mock_low_subscribe.assert_not_called()
-                mock_high_subscribe.assert_not_called()
+            # Limit updates are queued through the auto-monitor thread callback.
+            mock_low_subscribe.assert_called_once_with(
+                dm_with_devices._obj_callback_auto_monitor_limits, run=False
+            )
+            mock_high_subscribe.assert_called_once_with(
+                dm_with_devices._obj_callback_auto_monitor_limits, run=False
+            )
+        else:
+            mock_initialize_enabled_device.assert_not_called()
+            mock_connect_device.assert_not_called()
+            mock_low_subscribe.assert_not_called()
+            mock_high_subscribe.assert_not_called()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

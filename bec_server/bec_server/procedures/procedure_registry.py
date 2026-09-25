@@ -1,5 +1,5 @@
 import inspect
-from typing import Iterable
+from collections.abc import Iterable
 
 from bec_lib.messages import ProcedureExecutionMessage
 from bec_server.procedures.builtin_procedures import (

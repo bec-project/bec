@@ -1,8 +1,7 @@
 from bec_lib.device import DeviceBase
 from bec_lib.scan_report import ScanReport
 
-# pylint:disable=undefined-variable
-# pylint: disable=too-many-arguments
+# BECClient injects the active scans object into builtins when loading this interface.
 
 
 def dscan(
@@ -23,7 +22,7 @@ def dscan(
     Examples:
         >>> dscan(dev.motor1, -5, 5, 10, 0.1)
     """
-    return scans.line_scan(
+    return scans.line_scan(  # noqa: F821
         motor1, m1_from, m1_to, steps=steps, exp_time=exp_time, relative=True, **kwargs
     )
 
@@ -57,7 +56,7 @@ def d2scan(
     Examples:
         >>> d2scan(dev.motor1, -5, 5, dev.motor2, -8, 8, 10, 0.1)
     """
-    return scans.line_scan(
+    return scans.line_scan(  # noqa: F821
         motor1,
         m1_from,
         m1_to,
@@ -87,7 +86,7 @@ def ascan(motor1, m1_from, m1_to, steps, exp_time, **kwargs) -> ScanReport:
     Examples:
         >>> ascan(dev.motor1, -5, 5, 10, 0.1)
     """
-    return scans.line_scan(
+    return scans.line_scan(  # noqa: F821
         motor1, m1_from, m1_to, steps=steps, exp_time=exp_time, relative=False, **kwargs
     )
 
@@ -111,7 +110,7 @@ def a2scan(motor1, m1_from, m1_to, motor2, m2_from, m2_to, steps, exp_time, **kw
     Examples:
         >>> a2scan(dev.motor1, -5, 5, dev.motor2, -8, 8, 10, 0.1)
     """
-    return scans.line_scan(
+    return scans.line_scan(  # noqa: F821
         motor1,
         m1_from,
         m1_to,
@@ -147,7 +146,7 @@ def dmesh(
     Examples:
         >>> dmesh(dev.motor1, -5, 5, 10, dev.motor2, -8, 8, 10, 0.1)
     """
-    return scans.grid_scan(
+    return scans.grid_scan(  # noqa: F821
         motor1,
         m1_from,
         m1_to,
@@ -183,7 +182,7 @@ def amesh(
     Examples:
         >>> amesh(dev.motor1, -5, 5, 10, dev.motor2, -8, 8, 10, 0.1)
     """
-    return scans.grid_scan(
+    return scans.grid_scan(  # noqa: F821
         motor1,
         m1_from,
         m1_to,

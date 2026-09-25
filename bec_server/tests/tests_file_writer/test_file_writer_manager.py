@@ -1,4 +1,3 @@
-# pylint: skip-file
 import os
 import time
 from unittest import mock
@@ -16,9 +15,6 @@ from bec_lib.tests.utils import ConnectorMock
 from bec_server.file_writer import FileWriterManager
 from bec_server.file_writer.file_writer import HDF5FileWriter
 from bec_server.file_writer.file_writer_manager import ScanStorage
-
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
@@ -280,14 +276,16 @@ def test_write_file_invalid_scan_number(file_writer_manager_mock, scan_storage_m
 def test_write_file_raises_alarm_on_error(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
     file_manager.scan_storage["scan_id"] = scan_storage_mock
-    with mock.patch("bec_server.file_writer.file_writer_manager.get_full_path") as mock_filename:
-        with mock.patch.object(file_manager, "connector") as mock_connector:
-            mock_filename.return_value = "path"
-            # replace NexusFileWriter with MockWriter
-            file_manager.file_writer = MockWriter(file_manager)
-            file_manager.file_writer.write = mock.Mock(side_effect=Exception("error"))
-            file_manager.write_file("scan_id")
-            mock_connector.raise_alarm.assert_called_once()
+    with (
+        mock.patch("bec_server.file_writer.file_writer_manager.get_full_path") as mock_filename,
+        mock.patch.object(file_manager, "connector") as mock_connector,
+    ):
+        mock_filename.return_value = "path"
+        # replace NexusFileWriter with MockWriter
+        file_manager.file_writer = MockWriter(file_manager)
+        file_manager.file_writer.write = mock.Mock(side_effect=Exception("error"))
+        file_manager.write_file("scan_id")
+        mock_connector.raise_alarm.assert_called_once()
 
 
 def test_write_file_renames_tmp_file(file_writer_manager_mock, scan_storage_mock):
@@ -324,7 +322,7 @@ def test_write_file_renames_tmp_file_on_exception(file_writer_manager_mock, scan
             file_manager.file_writer.write = mock.Mock(side_effect=Exception("error"))
             try:
                 file_manager.write_file("scan_id")
-            except Exception:
+            except Exception:  # noqa: S110, BLE001 -- This test checks file finalization after the injected writer failure.
                 pass  # Ignore the exception for this test
             tmp_file_path = "test_scan.tmp"
             final_file_path = "test_scan.h5"

@@ -3,10 +3,11 @@ from __future__ import annotations
 import atexit
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Callable
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, Protocol, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypedDict, TypeVar
 
 from pydantic import ValidationError
 
@@ -58,7 +59,6 @@ class _ExecutionMsgProtocol(Protocol):
     env: dict[str, str] | None
 
 
-_T = TypeVar("_T", bound=BECMessage)
 _ReqMsgT = TypeVar("_ReqMsgT", bound=BECMessage)
 _ExecMsgT = TypeVar("_ExecMsgT", bound=_ExecutionMsgProtocol)
 
@@ -164,7 +164,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
 
     def _wait_for_all_futures(self):
         with self.lock:
-            futs = list(entry["future"] for entry in self._active_workers.values())
+            futs = [entry["future"] for entry in self._active_workers.values()]
         futures.wait(futs, timeout=PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S)
 
     def active_workers(self) -> list[str]:
@@ -197,11 +197,10 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         with self.lock:
             for entry in self._active_workers.values():
                 cancelled = entry["future"].cancel()
-                if not cancelled:
-                    # unblock any waiting workers and let them shutdown
-                    if worker := entry["worker"]:
-                        # redis unblock executor.client_id
-                        worker.abort()
+                # unblock any waiting workers and let them shutdown
+                # redis unblock executor.client_id
+                if (not cancelled) and (worker := entry["worker"]):
+                    worker.abort()
         self._wait_for_all_futures()
         self.executor.shutdown()
 

@@ -16,6 +16,8 @@ Scan procedure:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 
 from bec_lib.scan_args import DefaultArgType
@@ -36,7 +38,7 @@ class Acquire(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "acquire"
 
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Scan Parameters": [
             "exp_time",
             "frames_per_trigger",

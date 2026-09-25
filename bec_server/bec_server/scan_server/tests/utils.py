@@ -6,9 +6,6 @@ from bec_server.scan_server.scan_server import ScanServer
 from bec_server.scan_server.scan_worker import InstructionQueueStatus
 from bec_server.scan_server.scans.scan_base import ScanBase
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
-
 
 class NoopScan(ScanBase):
     __doc__ = None

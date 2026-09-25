@@ -8,7 +8,7 @@ import importlib.metadata
 import importlib.util
 import inspect
 import os
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal
 
 import slugify
 

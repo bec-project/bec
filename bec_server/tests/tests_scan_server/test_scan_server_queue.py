@@ -23,11 +23,11 @@ from bec_server.scan_server.scan_queue import (
 )
 from bec_server.scan_server.scan_worker import ScanWorker
 from bec_server.scan_server.scans.scan_base import ScanType
-from bec_server.scan_server.tests.fixtures import scan_server_mock
+from bec_server.scan_server.tests.fixtures import (
+    scan_server_mock as scan_server_mock,  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_server.scan_server.tests.utils import NoopScan
 
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
 ScanQueue.AUTO_SHUTDOWN_TIME = 1  # Reduce auto-shutdown time for testing
 
 
@@ -199,7 +199,7 @@ def test_queue_manager_does_not_auto_remove_queue_with_pending_insert(queuemanag
 
 @pytest.mark.timeout(10)
 def test_insert_reservation_does_not_deadlock_worker_status(dormant_queue_manager):
-    # pylint: disable=redefined-outer-name
+
     queue_manager = dormant_queue_manager
     queue = queue_manager.queues["secondary"]
     completed = mock.Mock(status=InstructionQueueStatus.COMPLETED)
@@ -237,7 +237,7 @@ def test_insert_reservation_does_not_deadlock_worker_status(dormant_queue_manage
     def advance_worker():
         try:
             queue._next_instruction_queue()
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001 -- Capture the worker failure so the test can inspect cleanup or propagate it.
             errors.append(exc)
 
     worker_thread = threading.Thread(target=advance_worker, name="queue-test-worker")
@@ -272,7 +272,7 @@ def test_insert_reservation_does_not_deadlock_worker_status(dormant_queue_manage
 @pytest.mark.timeout(10)
 @pytest.mark.parametrize("activity", ["insert", "direct_insert", "deferred", "replace", "cancel"])
 def test_expired_timer_rechecks_queue_before_removal(dormant_queue_manager, activity):
-    # pylint: disable=redefined-outer-name
+
     queue_manager = dormant_queue_manager
     queue = queue_manager.queues["secondary"]
     queue.AUTO_SHUTDOWN_TIME = 0
@@ -328,7 +328,7 @@ def test_expired_timer_rechecks_queue_before_removal(dormant_queue_manager, acti
 
 
 def test_reset_auto_shutdown_timer_joins_after_releasing_lock(dormant_queue_manager):
-    # pylint: disable=redefined-outer-name
+
     queue_manager = dormant_queue_manager
     secondary_queue = queue_manager.queues["secondary"]
 
@@ -369,16 +369,18 @@ def test_queuemanager_add_to_queue_restarts_queue_if_worker_is_dead(queuemanager
 def test_queuemanager_add_to_queue_error_send_alarm(queuemanager_mock):
     queue_manager = queuemanager_mock()
     msg = _queued_scan_message()
-    with mock.patch.object(queue_manager, "connector") as connector:
-        with mock.patch.object(
+    with (
+        mock.patch.object(queue_manager, "connector") as connector,
+        mock.patch.object(
             queue_manager, "add_queue", side_effect=KeyError("queue creation failed")
-        ):
-            queue_manager.add_to_queue(scan_queue="dummy", msg=msg)
-            connector.raise_alarm.assert_called_once_with(
-                severity=Alarms.MAJOR, info=mock.ANY, metadata={"RID": "something"}
-            )
-            error_info = connector.raise_alarm.call_args.kwargs["info"]
-            assert "queue creation failed" in error_info.error_message
+        ),
+    ):
+        queue_manager.add_to_queue(scan_queue="dummy", msg=msg)
+        connector.raise_alarm.assert_called_once_with(
+            severity=Alarms.MAJOR, info=mock.ANY, metadata={"RID": "something"}
+        )
+        error_info = connector.raise_alarm.call_args.kwargs["info"]
+        assert "queue creation failed" in error_info.error_message
 
 
 def test_queuemanager_scan_queue_callback(queuemanager_mock):
@@ -396,11 +398,13 @@ def test_scan_queue_modification_callback(queuemanager_mock):
         scan_id="dummy", action="halt", parameter={}, metadata={"RID": "something"}
     )
     obj = MessageObject("scan_queue_modification", msg)
-    with mock.patch.object(queue_manager, "scan_interception") as scan_interception:
-        with mock.patch.object(queue_manager, "send_queue_status") as send_queue_status:
-            queue_manager._scan_queue_modification_callback(obj)
-            scan_interception.assert_called_once_with(msg)
-            send_queue_status.assert_called_once()
+    with (
+        mock.patch.object(queue_manager, "scan_interception") as scan_interception,
+        mock.patch.object(queue_manager, "send_queue_status") as send_queue_status,
+    ):
+        queue_manager._scan_queue_modification_callback(obj)
+        scan_interception.assert_called_once_with(msg)
+        send_queue_status.assert_called_once()
 
 
 def test_scan_interception_halt(queuemanager_mock):
@@ -1000,8 +1004,7 @@ def test_set_clear_sends_message(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue_manager.connector.message_sent = []
     setter_mock = mock.Mock(wraps=ScanQueue.worker_status.fset)
-    # pylint: disable=assignment-from-no-return
-    # pylint: disable=too-many-function-args
+
     mock_property = ScanQueue.worker_status.setter(setter_mock)
     with mock.patch.object(ScanQueue, "worker_status", mock_property):
         queue_manager.set_clear(queue="primary")
@@ -1035,25 +1038,23 @@ def test_set_restart(dormant_scan_queue):
     iq.status = InstructionQueueStatus.RUNNING
 
     # Note: we mock the add_to_queue method to check if the scan will be re-added to the queue
-    with mock.patch.object(queue_manager, "add_to_queue") as add_new_scan_to_queue:
-        with mock.patch.object(queue_manager, "_get_active_scan_id", return_value=iq.scan_id[0]):
-            with mock.patch.object(
-                queue_manager, "_wait_for_queue_to_appear_in_history"
-            ) as scan_msg_wait:
-                with mock.patch.object(queue_manager.connector, "send") as connector_send:
-                    scan_msg_wait.return_value = iq
-                    queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
-                    scan_msg_wait.assert_not_called()
-                    add_new_scan_to_queue.assert_called_once_with("primary", mock.ANY, 1)
-                    restart_msg = connector_send.call_args_list[0].args[1]
-                    assert restart_msg.original_scan_id == iq.scan_id[0]
-                    assert restart_msg.scan_msg.metadata["RID"] == "something_new"
-                    assert iq.scan_msgs[0].metadata["RID"] == "something"
-                    assert iq.reason == "restart"
-                    assert iq.describe().reason == "restart"
-                    assert (
-                        add_new_scan_to_queue.call_args.args[1].metadata["RID"] == "something_new"
-                    )
+    with (
+        mock.patch.object(queue_manager, "add_to_queue") as add_new_scan_to_queue,
+        mock.patch.object(queue_manager, "_get_active_scan_id", return_value=iq.scan_id[0]),
+        mock.patch.object(queue_manager, "_wait_for_queue_to_appear_in_history") as scan_msg_wait,
+        mock.patch.object(queue_manager.connector, "send") as connector_send,
+    ):
+        scan_msg_wait.return_value = iq
+        queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
+        scan_msg_wait.assert_not_called()
+        add_new_scan_to_queue.assert_called_once_with("primary", mock.ANY, 1)
+        restart_msg = connector_send.call_args_list[0].args[1]
+        assert restart_msg.original_scan_id == iq.scan_id[0]
+        assert restart_msg.scan_msg.metadata["RID"] == "something_new"
+        assert iq.scan_msgs[0].metadata["RID"] == "something"
+        assert iq.reason == "restart"
+        assert iq.describe().reason == "restart"
+        assert add_new_scan_to_queue.call_args.args[1].metadata["RID"] == "something_new"
 
 
 @pytest.mark.timeout(5)
@@ -1061,7 +1062,7 @@ def test_set_restart(dormant_scan_queue):
 def test_restart_interception_releases_manager_and_only_stops_original(
     dormant_scan_queue, finish_original
 ):
-    # pylint: disable=redefined-outer-name,too-many-statements
+
     primary_queue = dormant_scan_queue
     queue_manager = primary_queue.queue_manager
 
@@ -1077,7 +1078,7 @@ def test_restart_interception_releases_manager_and_only_stops_original(
     def restart():
         try:
             queue_manager.scan_interception(restart_message)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001 -- Capture the worker failure so the test can inspect cleanup or propagate it.
             restart_errors.append(exc)
 
     queue_manager.add_to_queue("primary", _queued_scan_message())
@@ -1152,14 +1153,14 @@ def test_set_restart_no_active_scan(dormant_scan_queue):
     iq.status = InstructionQueueStatus.PENDING
 
     # Note: we mock the add_to_queue method to check if the scan will be re-added to the queue
-    with mock.patch.object(queue_manager, "add_to_queue") as add_new_scan_to_queue:
-        with mock.patch.object(queue_manager, "_get_active_scan_id", return_value=iq.scan_id[0]):
-            with mock.patch.object(
-                queue_manager, "_wait_for_queue_to_appear_in_history"
-            ) as scan_msg_wait:
-                queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
-                scan_msg_wait.assert_not_called()
-                add_new_scan_to_queue.assert_not_called()
+    with (
+        mock.patch.object(queue_manager, "add_to_queue") as add_new_scan_to_queue,
+        mock.patch.object(queue_manager, "_get_active_scan_id", return_value=iq.scan_id[0]),
+        mock.patch.object(queue_manager, "_wait_for_queue_to_appear_in_history") as scan_msg_wait,
+    ):
+        queue_manager.set_restart(queue="primary", parameter={"RID": "something_new"})
+        scan_msg_wait.assert_not_called()
+        add_new_scan_to_queue.assert_not_called()
 
 
 @pytest.mark.timeout(5)
@@ -1197,14 +1198,16 @@ def test_request_block_scan_number(queuemanager_mock, is_scan):
         assert instruction_queue.scan_number == [None]
         return
 
-    with mock.patch.object(
-        DirectInstructionQueueItem,
-        "_scan_server_scan_number",
-        new_callable=mock.PropertyMock,
-        return_value=5,
+    with (
+        mock.patch.object(
+            DirectInstructionQueueItem,
+            "_scan_server_scan_number",
+            new_callable=mock.PropertyMock,
+            return_value=5,
+        ),
+        mock.patch.object(DirectInstructionQueueItem, "scan_ids_head", return_value=0),
     ):
-        with mock.patch.object(DirectInstructionQueueItem, "scan_ids_head", return_value=0):
-            assert instruction_queue.scan_number == [5]
+        assert instruction_queue.scan_number == [5]
 
 
 def test_direct_instruction_queue_item_scan_number_projection_within_item(queuemanager_mock):
@@ -1245,7 +1248,7 @@ def test_direct_instruction_queue_item_scan_number_projection_across_queue_items
 
 @pytest.mark.parametrize("queue_item_cls", [InstructionQueueItem, DirectInstructionQueueItem])
 def test_scan_number_projection_during_concurrent_insert(queuemanager_mock, queue_item_cls):
-    # pylint: disable=redefined-outer-name
+
     queue_manager = queuemanager_mock()
     scan_queue = ScanQueue(queue_manager)
     assembler = mock.MagicMock()
@@ -1567,12 +1570,14 @@ def test_request_block_queue_append():
         queue="primary",
         metadata={"RID": "something"},
     )
-    with mock.patch("bec_server.scan_server.scan_queue.RequestBlock") as rb:
-        with mock.patch.object(req_block_queue, "_update_scan_def_id") as update_scan_def:
-            with mock.patch.object(req_block_queue, "append_request_block") as update_rb:
-                req_block_queue.append(msg)
-                update_scan_def.assert_called_once_with(rb())
-                update_rb.assert_called_once_with(rb())
+    with (
+        mock.patch("bec_server.scan_server.scan_queue.RequestBlock") as rb,
+        mock.patch.object(req_block_queue, "_update_scan_def_id") as update_scan_def,
+        mock.patch.object(req_block_queue, "append_request_block") as update_rb,
+    ):
+        req_block_queue.append(msg)
+        update_scan_def.assert_called_once_with(rb())
+        update_rb.assert_called_once_with(rb())
 
 
 @pytest.mark.parametrize(
@@ -1625,11 +1630,13 @@ def test_update_scan_def_id(scan_queue_msg, scan_id):
 def test_append_request_block():
     req_block_queue = RequestBlockQueue(mock.MagicMock(), mock.MagicMock())
     rbl = RequestBlockMock("", "")
-    with mock.patch.object(req_block_queue, "request_blocks_queue") as request_blocks_queue:
-        with mock.patch.object(req_block_queue, "request_blocks") as request_blocks:
-            req_block_queue.append_request_block(rbl)
-            request_blocks.append.assert_called_once_with(rbl)
-            request_blocks_queue.append.assert_called_once_with(rbl)
+    with (
+        mock.patch.object(req_block_queue, "request_blocks_queue") as request_blocks_queue,
+        mock.patch.object(req_block_queue, "request_blocks") as request_blocks,
+    ):
+        req_block_queue.append_request_block(rbl)
+        request_blocks.append.assert_called_once_with(rbl)
+        request_blocks_queue.append.assert_called_once_with(rbl)
 
 
 @pytest.mark.parametrize(

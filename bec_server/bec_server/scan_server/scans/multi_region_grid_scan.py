@@ -16,6 +16,8 @@ Scan procedure:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 
 from bec_lib.device import DeviceBase
@@ -38,7 +40,7 @@ class MultiRegionGridScan(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "multi_region_grid_scan"
 
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Motors": ["motor1", "motor2"],
         "Movement Parameters": ["regions", "relative", "snaked"],
         "Acquisition Parameters": ["exp_time", "settling_time", "burst_at_each_point"],

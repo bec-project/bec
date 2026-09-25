@@ -101,9 +101,12 @@ def _wait_for_v4_scan_registration(bec, scan_name: str, timeout: float = 60):
     deadline = time.time() + timeout
     while time.time() < deadline:
         available_scans = bec.connector.get(MessageEndpoints.available_scans())
-        if available_scans and scan_name in available_scans.resource:
-            if hasattr(bec.scans, scan_name):
-                return getattr(bec.scans, scan_name)
+        if (
+            available_scans
+            and scan_name in available_scans.resource
+            and hasattr(bec.scans, scan_name)
+        ):
+            return getattr(bec.scans, scan_name)
         time.sleep(1)
     available_scans = dir(bec.scans)
     raise TimeoutError(

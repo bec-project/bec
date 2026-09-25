@@ -1,7 +1,6 @@
 from unittest import mock
 
 from bec_lib import messages
-from bec_lib.endpoints import MessageEndpoints
 
 
 def create_status_message(

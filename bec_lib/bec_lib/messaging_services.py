@@ -351,7 +351,7 @@ class MessagingService(ABC, Generic[MessageObjectT]):
             message (dict[str, messages.AvailableMessagingServicesMessage]): The scope change message.
         """
         msg = message["data"]
-        # pylint: disable=protected-access
+
         self._service_config = msg
         self._update_messaging_services(msg)
 
@@ -449,10 +449,8 @@ class MessagingService(ABC, Generic[MessageObjectT]):
             raise RuntimeError(f"Messaging service '{self._SERVICE_NAME}' is not enabled.")
         bec_message = messages.MessagingServiceMessage(
             service_name=self._SERVICE_NAME,  # type: ignore
-            message=message._content,  # pylint: disable=protected-access
-            scope=(
-                scope if scope is not None else message._scope  # pylint: disable=protected-access
-            ),
+            message=message._content,
+            scope=(scope if scope is not None else message._scope),
         )
         self._redis_connector.xadd(
             MessageEndpoints.message_service_queue(),
@@ -661,7 +659,7 @@ class SciLogMessageServiceObject(MessageServiceObject):
             >>> msg.send()
         """
         table = SciLogTable(columns=columns, title=title)
-        self._content.append(table._content)  # pylint: disable=protected-access
+        self._content.append(table._content)
         self._tables.append(table)
         return table
 
@@ -694,11 +692,15 @@ class SciLogMessageServiceObject(MessageServiceObject):
             scope (str | list[str] | None): The scope or recipient for the message. If None, uses the default scope set for the service.
         """
         # If there are no tags in the content, add the default tags before sending
-        if not any(
-            isinstance(content, messages.MessagingServiceTagsContent) for content in self._content
+        if (
+            not any(
+                isinstance(content, messages.MessagingServiceTagsContent)
+                for content in self._content
+            )
+            and self._service
+            and hasattr(self._service, "get_default_tags")
         ):
-            if self._service and hasattr(self._service, "get_default_tags"):
-                self.add_tags(self._service.get_default_tags())  # type: ignore
+            self.add_tags(self._service.get_default_tags())  # type: ignore
         super().send(scope=scope)
 
 

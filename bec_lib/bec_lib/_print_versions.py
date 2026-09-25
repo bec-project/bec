@@ -17,7 +17,7 @@ def print_versions(output_json: bool = False):
         "bec_widgets": "BEC Widgets",
         "ophyd_devices": "Ophyd Devices",
     }
-    versions = {mod: _try_version(mod) for mod in packages.keys()}
+    versions = {mod: _try_version(mod) for mod in packages}
     if not output_json:
         for mod, ver in versions.items():
             print(f"{packages.get(mod)}: {ver}")

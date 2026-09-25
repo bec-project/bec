@@ -1,4 +1,3 @@
-# pylint: skip-file
 from collections import namedtuple
 from unittest import mock
 
@@ -305,7 +304,7 @@ def test_process_rpc_instruction_set_attribute(rpc_cls, dev_mock, instr):
     instr.content["parameter"]["func"] = "attr_value"
     rpc_cls.device_manager.devices = {"device": dev_mock}
     rpc_cls.process_rpc_instruction(instr)
-    rpc_cls.device_manager.devices["device"].obj.attr_value == 5
+    assert rpc_cls.device_manager.devices["device"].obj.attr_value == 5
 
 
 def test_process_rpc_instruction_set_attribute_on_sub_device(rpc_cls, dev_mock, instr):
@@ -314,7 +313,7 @@ def test_process_rpc_instruction_set_attribute_on_sub_device(rpc_cls, dev_mock, 
     instr.content["parameter"]["func"] = "user_setpoint.attr_value"
     rpc_cls.device_manager.devices = {"device": dev_mock}
     rpc_cls.process_rpc_instruction(instr)
-    rpc_cls.device_manager.devices["device"].obj.user_setpoint.attr_value == 5
+    assert rpc_cls.device_manager.devices["device"].obj.user_setpoint.attr_value == 5
 
 
 @pytest.mark.parametrize(
@@ -338,11 +337,13 @@ def test_process_rpc_instruction_rejects_write_calls_for_read_only_device(
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
 
-    with mock.patch.object(rpc_cls, "_execute_rpc_call") as mock_execute_rpc:
-        with pytest.raises(
+    with (
+        mock.patch.object(rpc_cls, "_execute_rpc_call") as mock_execute_rpc,
+        pytest.raises(
             DisabledDeviceError, match="Setting the device device is currently disabled."
-        ):
-            rpc_cls.process_rpc_instruction(instr)
+        ),
+    ):
+        rpc_cls.process_rpc_instruction(instr)
 
     mock_execute_rpc.assert_not_called()
 

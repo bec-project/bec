@@ -21,7 +21,6 @@ ActorType = TypeVar("ActorType", bound=ActorBase)
 
 
 class ActorDict(dict):
-
     def __setitem__(self, key: type[ActorType], value: tuple[ActorType, Thread, Event], /) -> None:
         return super().__setitem__(key, value)
 

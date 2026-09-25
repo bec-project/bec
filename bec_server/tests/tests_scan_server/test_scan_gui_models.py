@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import pytest
 from pydantic import ValidationError
@@ -9,14 +9,14 @@ from bec_server.scan_server.scans import ScanArgType, ScanBase
 
 class GoodScan(ScanBase):  # pragma: no cover
     scan_name = "good_scan"
-    required_kwargs = ["steps", "relative"]
-    arg_input = {
+    required_kwargs: ClassVar[list] = ["steps", "relative"]
+    arg_input: ClassVar[dict] = {
         "device": ScanArgType.DEVICE,
         "start": ScanArgType.FLOAT,
         "stop": ScanArgType.FLOAT,
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config: ClassVar[dict] = {
         "Scan Parameters": [
             "steps",
             "exp_time",
@@ -30,10 +30,10 @@ class GoodScan(ScanBase):  # pragma: no cover
         self,
         *args,
         exp_time: float = 0,
-        steps: int = None,
+        steps: int = None,  # noqa: RUF013 -- Preserve the published legacy scan argument schema.
         relative: bool = False,
         burst_at_each_point: int = 1,
-        optim_trajectory: Literal["path", None] = None,
+        optim_trajectory: Literal["path", None] = None,  # noqa: PYI061 -- Preserve the published legacy scan argument schema.
         **kwargs,
     ):
         """
@@ -62,9 +62,9 @@ class GoodScan(ScanBase):  # pragma: no cover
 
 class ExtraKwarg(ScanBase):  # pragma: no cover
     scan_name = "wrong_name"
-    required_kwargs = ["steps", "relative"]
+    required_kwargs: ClassVar[list] = ["steps", "relative"]
 
-    gui_config = {"Device 1": ["motor1", "start_motor1", "stop_motor1"]}
+    gui_config: ClassVar[dict] = {"Device 1": ["motor1", "start_motor1", "stop_motor1"]}
 
     def __init__(self, motor1: str, stop_motor1: float, **kwargs):
         """
@@ -84,9 +84,9 @@ class ExtraKwarg(ScanBase):  # pragma: no cover
 
 class WrongDocs(ScanBase):  # pragma: no cover
     scan_name = "wrong_name"
-    required_kwargs = ["steps", "relative"]
+    required_kwargs: ClassVar[list] = ["steps", "relative"]
 
-    gui_config = {"Device 1": ["motor1", "start_motor1", "stop_motor1"]}
+    gui_config: ClassVar[dict] = {"Device 1": ["motor1", "start_motor1", "stop_motor1"]}
 
     def __init__(self, motor1: str, start_motor1: float, stop_motor1: float, **kwargs):
         """
@@ -104,15 +104,15 @@ class WrongDocs(ScanBase):  # pragma: no cover
 
 class RichArgInputScan(ScanBase):  # pragma: no cover
     scan_name = "rich_arg_input_scan"
-    required_kwargs = []
-    arg_input = {
+    required_kwargs: ClassVar[list] = []
+    arg_input: ClassVar[dict] = {
         "device": ScanArgType.DEVICE,
         "start": Annotated[float, "device"],
         "stop": Annotated[float, "device"],
         "steps": int,
     }
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {"Scan Parameters": []}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config: ClassVar[dict] = {"Scan Parameters": []}
 
     def __init__(self, *args, **kwargs):
         """Scan with richer arg_input typing for GUI compatibility tests."""
@@ -121,10 +121,10 @@ class RichArgInputScan(ScanBase):  # pragma: no cover
 
 class GenericListArgInputScan(ScanBase):  # pragma: no cover
     scan_name = "generic_list_arg_input_scan"
-    required_kwargs = []
-    arg_input = {"device": ScanArgType.DEVICE, "positions": list[float]}
-    arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
-    gui_config = {"Scan Parameters": []}
+    required_kwargs: ClassVar[list] = []
+    arg_input: ClassVar[dict] = {"device": ScanArgType.DEVICE, "positions": list[float]}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": 1, "max": None}
+    gui_config: ClassVar[dict] = {"Scan Parameters": []}
 
     def __init__(self, *args, **kwargs):
         """Scan with generic list arg_input typing for GUI compatibility tests."""

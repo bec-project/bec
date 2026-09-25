@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import functools
 import os
-import time
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from string import Template
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import numpy as np
 
@@ -1335,9 +1334,7 @@ class ScanActions:
     @staticmethod
     def _signal_is_read_signal(signal_info: dict) -> bool:
         kind = signal_info.get("kind_str", "").lower()
-        if "config" in kind or "omitted" in kind:
-            return False
-        return True
+        return not ("config" in kind or "omitted" in kind)
 
     def _send_scan_status(
         self,

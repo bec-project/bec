@@ -1,7 +1,7 @@
 import os
 import sys
 
-import numpy as np  # not needed but always nice to have
+import numpy as np  # noqa: F401 -- Expose NumPy in the interactive startup namespace.
 
 from bec_ipython_client.main import BECIPythonClient as _BECIPythonClient
 from bec_ipython_client.main import main_dict as _main_dict
@@ -62,7 +62,7 @@ try:
 except (BECAuthenticationError, KeyboardInterrupt) as exc:
     logger.error(f"{exc} Exiting.")
     os._exit(0)
-except Exception:
+except Exception:  # noqa: BLE001 -- Keep the interactive shell alive after startup failures.
     sys.excepthook(*sys.exc_info())
 else:
     if bec.started:
@@ -72,7 +72,6 @@ else:
                 gui.show()
             except ImportError:
                 logger.warning("BEC Widgets is not available")
-                pass
 
     _available_plugins = plugin_helper.get_ipython_client_startup_plugins(state="post")
     if _available_plugins:
@@ -80,10 +79,9 @@ else:
             logger.success(f"Loading plugin: {plugin['source']}")
             base = os.path.dirname(plugin["module"].__file__)
             with open(os.path.join(base, "post_startup.py"), "r", encoding="utf-8") as file:
-                # pylint: disable=exec-used
                 try:
-                    exec(file.read())
-                except Exception as exc:
+                    exec(file.read())  # noqa: S102 -- Execute explicitly configured startup plugins.
+                except Exception as exc:  # noqa: BLE001 -- One plugin must not prevent shell startup.
                     logger.error(f"Error running `post startup` for plugin {name}: {exc}")
 
     else:
@@ -92,5 +90,4 @@ else:
 
 if _main_dict["startup_file"]:
     with open(_main_dict["startup_file"], "r", encoding="utf-8") as file:
-        # pylint: disable=exec-used
-        exec(file.read())
+        exec(file.read())  # noqa: S102 -- Execute the user's explicitly requested startup script.

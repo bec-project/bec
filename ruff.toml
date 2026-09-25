@@ -1,0 +1,13 @@
+required-version = "==0.16.6"
+line-length = 100
+target-version = "py311"
+
+[lint]
+extend-select = ["I"]
+
+[format]
+skip-magic-trailing-comma = true
+
+[lint.isort]
+known-first-party = ["bec_lib", "bec_server", "bec_ipython_client"]
+split-on-trailing-comma = false

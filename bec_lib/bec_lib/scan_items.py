@@ -63,7 +63,6 @@ class ScanItem:
         >>> print(scan_item.describe())
     """
 
-    # pylint: disable=too-many-arguments
     def __init__(
         self,
         queue_id: str,
@@ -196,17 +195,17 @@ class ScanItem:
             A formatted string describing the scan's key attributes.
         """
         start_time = (
-            f"\tStart time: {datetime.datetime.fromtimestamp(self.start_time).strftime('%c')}\n"
+            f"\tStart time: {datetime.datetime.fromtimestamp(self.start_time).strftime('%c')}\n"  # noqa: DTZ006 - Keep the established local-time display and filename format.
             if self.start_time
             else ""
         )
         end_time = (
-            f"\tEnd time: {datetime.datetime.fromtimestamp(self.end_time).strftime('%c')}\n"
+            f"\tEnd time: {datetime.datetime.fromtimestamp(self.end_time).strftime('%c')}\n"  # noqa: DTZ006 - Keep the established local-time display and filename format.
             if self.end_time
             else ""
         )
         elapsed_time = (
-            f"\tElapsed time: {(self.end_time-self.start_time):.1f} s\n"
+            f"\tElapsed time: {(self.end_time - self.start_time):.1f} s\n"
             if self.end_time and self.start_time
             else ""
         )
@@ -496,7 +495,6 @@ class ScanStorage:
         """
         for queue in queue_msg.queue.values():
             for ii, queue_item in enumerate(queue.info):
-
                 if not any(queue_item.is_scan):
                     continue
 

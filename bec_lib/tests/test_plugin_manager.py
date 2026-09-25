@@ -15,6 +15,7 @@ from bec_lib.utils.plugin_manager._util import (
     existing_data,
     git_stage_files,
     make_commit,
+    run_formatters,
 )
 
 # Too complicated for import mechanics - tests "without" BW present should run first, then with
@@ -108,7 +109,8 @@ def test_plugin_manager_create_subapp_wo_bw(runner, create_app, plugin_repo):
 
 
 @pytest.fixture
-def plugin_repo(tmp_path):
+def plugin_repo(tmp_path, monkeypatch):
+    monkeypatch.setattr("bec_lib.utils.plugin_manager.create.scan.get_scan_component_plugins", list)
     repo = tmp_path / "example_plugin"
     scans_dir = repo / repo.name / "scans"
     scans_dir.mkdir(parents=True)
@@ -263,7 +265,7 @@ def test_plugin_manager_create_scan_skips_units_for_device_argument(
         result = runner.invoke(
             create_app,
             ["scan", "device_scan"],
-            input=("Device scan description\n" "n\n" "y\n" "motor\n" "Motor device.\n" "n\n"),
+            input=("Device scan description\nn\ny\nmotor\nMotor device.\nn\n"),
         )
 
     assert result.exit_code == 0
@@ -313,15 +315,7 @@ def test_plugin_manager_create_scan_renders_builtin_arguments_after_custom_input
         result = runner.invoke(
             create_app,
             ["scan", "ordered_scan"],
-            input=(
-                "Ordered scan description\n"
-                "y\n"
-                "y\n"
-                "start_pos\n"
-                "None\n"
-                "Start position.\n"
-                "n\n"
-            ),
+            input=("Ordered scan description\ny\ny\nstart_pos\nNone\nStart position.\nn\n"),
         )
 
     assert result.exit_code == 0
@@ -366,7 +360,7 @@ def test_plugin_manager_create_scan_renders_imports_on_separate_lines(
         result = runner.invoke(
             create_app,
             ["scan", "text_scan"],
-            input=("Text scan description\n" "y\n" "y\n" "text\n" "Text.\n" "n\n"),
+            input=("Text scan description\ny\ny\ntext\nText.\nn\n"),
         )
 
     assert result.exit_code == 0
@@ -447,9 +441,7 @@ def test_plugin_manager_create_scan_accepts_compound_pint_unit(runner, create_ap
         result = runner.invoke(
             create_app,
             ["scan", "unit_scan"],
-            input=(
-                "Unit scan description\n" "n\n" "y\n" "ramp_rate\n" "T/min\n" "Ramp rate.\n" "n\n"
-            ),
+            input=("Unit scan description\nn\ny\nramp_rate\nT/min\nRamp rate.\nn\n"),
         )
 
     assert result.exit_code == 0
@@ -483,15 +475,7 @@ def test_plugin_manager_create_scan_accepts_compound_pint_unit_with_power(
         result = runner.invoke(
             create_app,
             ["scan", "unit_power_scan"],
-            input=(
-                "Unit power scan description\n"
-                "n\n"
-                "y\n"
-                "ramp_rate\n"
-                "T/min**2\n"
-                "Ramp rate.\n"
-                "n\n"
-            ),
+            input=("Unit power scan description\nn\ny\nramp_rate\nT/min**2\nRamp rate.\nn\n"),
         )
 
     assert result.exit_code == 0
@@ -555,6 +539,48 @@ def test_plugin_manager_create_scan_appends_export(plugin_repo):
     )
 
 
+def test_scan_creation_requires_ruff_before_prompting(runner, create_app):
+    with (
+        patch("bec_lib.utils.plugin_manager.create.scan.find_spec", return_value=None),
+        patch("bec_lib.utils.plugin_manager.create.scan.plugin_repo_path") as lookup_repo,
+    ):
+        result = runner.invoke(create_app, ["scan", "example_scan"])
+
+    assert result.exit_code == 1
+    lookup_repo.assert_not_called()
+
+
+def test_run_formatters_preserves_exports_and_limits_scope(tmp_path):
+    (tmp_path / "ruff.toml").write_text('[lint]\nselect = ["F", "I"]\n', encoding="utf-8")
+    init_file = tmp_path / "__init__.py"
+    init_file.write_text("from .z_scan import ZScan\nfrom .a_scan import AScan\n", encoding="utf-8")
+    scan_file = tmp_path / "a_scan.py"
+    scan_file.write_text("value= unknown_name\n", encoding="utf-8")
+    untouched_file = tmp_path / "unlisted.py"
+    untouched_file.write_text("value=1\n", encoding="utf-8")
+    original_directory = Path.cwd()
+
+    run_formatters(tmp_path, [init_file.name, scan_file.name])
+
+    assert init_file.read_text(encoding="utf-8") == (
+        "from .a_scan import AScan\nfrom .z_scan import ZScan\n"
+    )
+    assert scan_file.read_text(encoding="utf-8") == "value = unknown_name\n"
+    assert untouched_file.read_text(encoding="utf-8") == "value=1\n"
+    assert Path.cwd() == original_directory
+
+
+def test_run_formatters_reports_failure_and_restores_directory(tmp_path):
+    (tmp_path / "invalid.py").write_text("def broken(\n", encoding="utf-8")
+    original_directory = Path.cwd()
+
+    with pytest.raises(RuntimeError, match="invalid-syntax") as error:
+        run_formatters(tmp_path, ["invalid.py"])
+
+    assert "invalid.py" in str(error.value)
+    assert Path.cwd() == original_directory
+
+
 def test_plugin_manager_adds_found_command(runner, app_with_bw):
     app, mock_edit_ui = app_with_bw
     assert len(app.registered_commands) == 1
@@ -565,7 +591,8 @@ def test_plugin_manager_adds_found_command(runner, app_with_bw):
 
 def test_existing_data(tmp_path):
     with open(tmp_path / ".copier-answers.yml", "w") as f:
-        f.write(dedent("""
+        f.write(
+            dedent("""
                 # Do not edit this file!
                 # It is needed to track the repo template version, and editing may break things.
                 # This file will be overwritten by copier on template updates.
@@ -577,7 +604,8 @@ def test_existing_data(tmp_path):
                 widget_plugins_input:
                 -   name: example_widget_plugin
                     use_ui: true
-                """))
+                """)
+        )
     result = existing_data(tmp_path, [ANSWER_KEYS.WIDGETS])
     assert result == {"widget_plugins_input": [{"name": "example_widget_plugin", "use_ui": True}]}
 
@@ -593,9 +621,9 @@ def test_goto_dir(tmp_path):
 @pytest.fixture
 def git_repo(tmp_path):
     with _goto_dir(tmp_path):
-        subprocess.run(["git", "init", "-b", "main"])
-        subprocess.run(["git", "config", "user.email", "test"])
-        subprocess.run(["git", "config", "user.name", "test"])
+        subprocess.run(["git", "init", "-b", "main"], check=True)
+        subprocess.run(["git", "config", "user.email", "test"], check=True)
+        subprocess.run(["git", "config", "user.name", "test"], check=True)
         with open(tmp_path / "test.txt", "w") as f:
             f.write("test\n")
         with open(tmp_path / "test2.txt", "w") as f:
@@ -607,16 +635,20 @@ def test_git_stage_files(git_repo):
 
     git_stage_files(git_repo, ["test.txt"])
 
-    result = subprocess.run(["git", "diff", "--name-only", "--cached"], stdout=subprocess.PIPE)
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "--cached"], stdout=subprocess.PIPE, check=True
+    )
     assert result.stdout.decode() == "test.txt\n"
 
     git_stage_files(git_repo)
-    result = subprocess.run(["git", "diff", "--name-only", "--cached"], stdout=subprocess.PIPE)
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "--cached"], stdout=subprocess.PIPE, check=True
+    )
     assert result.stdout.decode() == "test.txt\ntest2.txt\n"
 
 
 def test_make_commit(git_repo):
     git_stage_files(git_repo)
     make_commit(git_repo, "test commit")
-    result = subprocess.run(["git", "log"], stdout=subprocess.PIPE)
+    result = subprocess.run(["git", "log"], stdout=subprocess.PIPE, check=True)
     assert "test commit" in result.stdout.decode()

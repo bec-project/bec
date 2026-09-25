@@ -10,8 +10,8 @@ input validation, and runtime construction behavior aligned.
 from __future__ import annotations
 
 import inspect
-from functools import lru_cache
-from typing import TYPE_CHECKING, Annotated, Any, Type, get_args, get_origin, get_type_hints
+from functools import cache
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin, get_type_hints
 
 from bec_lib.plugin_helper import get_scan_modifier_plugin
 from bec_lib.scan_args import ScanArgument
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from bec_server.scan_server.scans.scan_modifier import ScanModifier
 
 
-@lru_cache(maxsize=None)
-def get_scan_modifier() -> Type[ScanModifier] | None:
+@cache
+def get_scan_modifier() -> type[ScanModifier] | None:
     """
     Load the available scan argument modifier from the plugin.
 
@@ -74,7 +74,7 @@ def _convert_annotation(annotation: object) -> Annotated[Any, ScanArgument] | No
 
 
 def _get_annotations_and_defaults(
-    scan_cls: Type[ScanBase],
+    scan_cls: type[ScanBase],
 ) -> tuple[dict[str, Annotated[Any, ScanArgument] | None], dict[str, Any]]:
     """
     Collect normalized annotations and Python defaults from ``scan_cls.__init__``.
@@ -102,7 +102,7 @@ def _get_annotations_and_defaults(
 
 
 def _build_signature_from_arguments(
-    scan_cls: Type[ScanBase],
+    scan_cls: type[ScanBase],
     arguments: dict[str, Annotated[Any, ScanArgument] | None],
     defaults: dict[str, Any],
 ) -> inspect.Signature:
@@ -174,7 +174,7 @@ def _build_signature_from_arguments(
 
 
 def get_scan_argument_overrides(
-    scan_cls: Type[ScanBase],
+    scan_cls: type[ScanBase],
 ) -> tuple[dict[str, Annotated[Any, ScanArgument] | None], dict[str, Any]]:
     """
     Return the effective scan arguments and defaults after applying overrides.
@@ -205,7 +205,7 @@ def get_scan_argument_overrides(
     return override_func(scan_cls.scan_name, arguments, defaults)
 
 
-def scan_signature_with_modifiers(scan_cls: Type[ScanBase]) -> list[dict[str, Any]]:
+def scan_signature_with_modifiers(scan_cls: type[ScanBase]) -> list[dict[str, Any]]:
     """
     Build the published scan signature after applying modifier overrides.
 
@@ -222,7 +222,7 @@ def scan_signature_with_modifiers(scan_cls: Type[ScanBase]) -> list[dict[str, An
 
 
 def gui_config_with_modifiers(
-    scan_cls: Type[ScanBase], gui_config: dict[str, list[str]]
+    scan_cls: type[ScanBase], gui_config: dict[str, list[str]]
 ) -> dict[str, list[str]]:
     """
     Build the published GUI configuration after applying modifier overrides.
@@ -366,7 +366,7 @@ def _example_literal(name: str, annotation: object, bundle_index: int | None = N
 
 
 def _build_example_calls(
-    scan_cls: Type[ScanBase],
+    scan_cls: type[ScanBase],
     arguments: dict[str, Annotated[Any, ScanArgument] | None],
     defaults: dict[str, Any],
 ) -> tuple[str, str]:
@@ -423,7 +423,7 @@ def _build_example_calls(
     return minimum_call, full_call
 
 
-def _get_scan_raw_doc(scan_cls: Type[ScanBase]) -> str:
+def _get_scan_raw_doc(scan_cls: type[ScanBase]) -> str:
     """Return the scan-specific raw docstring, preferring non-generic class docs."""
     class_doc = inspect.getdoc(scan_cls)
     base_class_doc = inspect.getdoc(ScanBase)
@@ -435,7 +435,7 @@ def _get_scan_raw_doc(scan_cls: Type[ScanBase]) -> str:
     return inspect.getdoc(scan_cls.__init__) or class_doc or ""
 
 
-def scan_doc_with_modifiers(scan_cls: Type[ScanBase]) -> str:
+def scan_doc_with_modifiers(scan_cls: type[ScanBase]) -> str:
     """
     Build a published scan docstring from the effective scan inputs.
 
@@ -497,9 +497,7 @@ def scan_doc_with_modifiers(scan_cls: Type[ScanBase]) -> str:
         arg_lines.append(_argument_to_doc_line(name, annotation, defaults))
 
     minimum_example, full_example = _build_example_calls(scan_cls, arguments, defaults)
-    example_section = "\n".join(
-        ["Examples:", "    Minimum:", minimum_example, "    Full:", full_example]
-    )
+    example_section = f"Examples:\n    Minimum:\n{minimum_example}\n    Full:\n{full_example}"
     sections = [
         section
         for section in [prefix, "Args:\n" + "\n".join(arg_lines), suffix, example_section]
@@ -509,7 +507,7 @@ def scan_doc_with_modifiers(scan_cls: Type[ScanBase]) -> str:
 
 
 def apply_scan_argument_defaults(
-    scan_cls: Type[ScanBase],
+    scan_cls: type[ScanBase],
     signature: list[dict[str, Any]],
     args: tuple | list,
     kwargs: dict[str, Any],

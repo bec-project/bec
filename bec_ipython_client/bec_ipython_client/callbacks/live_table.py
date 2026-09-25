@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, SupportsFloat
+from typing import TYPE_CHECKING, ClassVar, SupportsFloat
 
 import numpy as np
 
@@ -45,15 +45,15 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     MAX_DEVICES = 10
     REPORT_TYPE = "scan_progress"
-    STEP_SCAN_TYPES = {"step", "software_triggered", "hardware_triggered"}
-    FLY_SCAN_TYPES = {"fly"}
+    STEP_SCAN_TYPES: ClassVar[set[str]] = {"step", "software_triggered", "hardware_triggered"}
+    FLY_SCAN_TYPES: ClassVar[set[str]] = {"fly"}
 
     def __init__(
         self,
         bec: BECClient,
-        report_instruction: dict = None,
+        report_instruction: dict | None = None,
         request: messages.ScanQueueMessage = None,
-        callbacks: list[Callable] = None,
+        callbacks: list[Callable] | None = None,
         print_table_data=None,
     ) -> None:
         super().__init__(
@@ -96,9 +96,8 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def wait_for_scan_item_to_finish(self):
         """wait for scan completion"""
         while True:
-            if self.scan_item.end_time:
-                if self.scan_item.queue.queue_position is None:
-                    break
+            if self.scan_item.end_time and self.scan_item.queue.queue_position is None:
+                break
             self.check_alarms()
             time.sleep(0.1)
             if self.scan_item.queue.status.lower() in ["stopped", "aborted"]:
@@ -193,7 +192,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
             return
         req_ID = self.scan_queue_request.requestID
         while True:
-            request_block = [
+            request_block = [  # noqa: RUF015 -- Preserve IndexError when the request block is absent.
                 req for req in self.scan_item.queue.request_blocks if req.RID == req_ID
             ][0]
             if not request_block.is_scan:
@@ -283,12 +282,11 @@ class LiveUpdatesTable(LiveUpdatesBase):
         if not self.__print_table_data:
             return False
         try:
-            # pylint: disable=protected-access
-            # pylint: disable=undefined-variable
-            if get_ipython().__class__.__name__ == "ZMQInteractiveShell":
+            # IPython installs this builtin only while an interactive shell is active.
+            if get_ipython().__class__.__name__ == "ZMQInteractiveShell":  # noqa: F821
                 self.__print_table_data = False
                 return False
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- Optional shell detection must not stop live updates.
             pass
         return self.__print_table_data
 
@@ -303,7 +301,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def print_table_data(self):
         """print the table data for the current point_id"""
-        # pylint: disable=protected-access
+
         self._print_client_msgs_asap()
         if not self._print_table_data:
             return

@@ -94,8 +94,6 @@ class OperatorInfo(BeamlineShowInfo):
     def _get_operator_messages(self) -> dict:
         dev = builtins.__dict__.get("dev")
         info = dev.sls_operator.read(cached=True)
-        if set(info.keys()) != {f"sls_operator_messages_message{i}" for i in range(1, 6)}:
-            ValueError("Unexpected data structure for sls operator messages.")
         return info
 
     def show(self):

@@ -1,6 +1,5 @@
 import os
 import threading
-from unittest import mock
 
 import pytest
 import yaml

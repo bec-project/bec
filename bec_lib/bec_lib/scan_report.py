@@ -121,9 +121,7 @@ class ScanReport:
                     severity=Alarms.MAJOR, info=status.metadata["error_info"]
                 )
                 raise AlarmBase(alarm=alarm_message, severity=Alarms.MAJOR)
-        if len(request_status) == len(motors):
-            return True
-        return False
+        return len(request_status) == len(motors)
 
     def wait(
         self, timeout: float | None = None, num_points: bool = False, file_written: bool = True
@@ -175,7 +173,7 @@ class ScanReport:
                     if not isinstance(motor, str):
                         motor = motor.name
                     self._client.device_manager.devices.get(motor).stop()
-                except Exception as e:  # pylint: disable=broad-except
+                except Exception as e:  # noqa: BLE001 - Continue attempting to stop the remaining motors after any device failure.
                     logger.warning(f"Failed to stop motor {motor} with error: {e}.")
                     logger.debug(
                         f"Stopping error details: {''.join(traceback.format_exception(e, limit=5)[:-1])}"

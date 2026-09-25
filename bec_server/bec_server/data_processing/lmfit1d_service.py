@@ -188,7 +188,7 @@ class LmfitService1D(DAPServiceBase):
         try:
             component_guess = guess_fn(y, x=x)
             params.update(component_guess)
-        except Exception as guess_exc:
+        except Exception as guess_exc:  # noqa: BLE001 -- User-selected fit models can raise arbitrary errors; report the failed fit.
             name = component_name or component.__class__.__name__
             logger.debug(f"lmfit guess failed for component={name}: {guess_exc}")
 
@@ -279,7 +279,7 @@ class LmfitService1D(DAPServiceBase):
         device_config = self.client.device_manager.devices.get(device)
         if not device_config:
             return device, signal
-        if len(device_config._hints) == 1:  # pylint: disable=protected-access
+        if len(device_config._hints) == 1:
             signal = device_config._hints[0]
         return device, signal
 
@@ -387,8 +387,8 @@ class LmfitService1D(DAPServiceBase):
         signal_y: DeviceBase | str = None,
         data_x: np.ndarray = None,
         data_y: np.ndarray = None,
-        x_min: float = None,
-        x_max: float = None,
+        x_min: float = None,  # noqa: RUF013 -- Preserve the published DAP signature.
+        x_max: float = None,  # noqa: RUF013 -- Preserve the published DAP signature.
         parameters: dict | list | None = None,
         oversample: int = 1,
         **kwargs,
@@ -472,7 +472,11 @@ class LmfitService1D(DAPServiceBase):
             )
 
     def get_data_from_current_scan(
-        self, scan_item: ScanItem, devices: dict = None, x_min: float = None, x_max: float = None
+        self,
+        scan_item: ScanItem,
+        devices: dict | None = None,
+        x_min: float | None = None,
+        x_max: float | None = None,
     ) -> dict | None:
         """
         Get the data from the current scan.
@@ -511,7 +515,7 @@ class LmfitService1D(DAPServiceBase):
             if not bec_device_x:
                 logger.warning(f"Failed to find device {device_x}")
                 return None
-            # pylint: disable=protected-access
+
             hints = bec_device_x._hints
             if not hints:
                 logger.warning(f"Failed to find hints for device {device_x}")
@@ -590,11 +594,11 @@ class LmfitService1D(DAPServiceBase):
                 if self.override_parameters is not None:
                     fit_params = self._apply_override_params(fit_params, self.override_parameters)
             result = self.model.fit(y, x=x, params=fit_params)
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001 -- User-selected fit models can raise arbitrary errors; report the failed fit.
             if self.parameters is not None:
                 try:
                     params_str = serialize_lmfit_params(self.parameters)
-                except Exception as ser_exc:
+                except Exception as ser_exc:  # noqa: BLE001 -- User-selected fit models can raise arbitrary errors; report the failed fit.
                     params_str = f"<serialization failed: {ser_exc}>"
             else:
                 params_str = "<None>"

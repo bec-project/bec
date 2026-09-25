@@ -8,8 +8,8 @@ import builtins
 import inspect
 import itertools
 import types
-from collections.abc import Callable
-from typing import Annotated, Generator, Literal, Union, get_args, get_origin, get_type_hints
+from collections.abc import Callable, Generator
+from typing import Annotated, Literal, Union, get_args, get_origin, get_type_hints
 
 import numpy as np
 from pydantic import ValidationError
@@ -33,9 +33,10 @@ def _serialize_dtype(dtype: object) -> Generator[str | dict, None, None]:
     """
     if dtype is None or dtype is types.NoneType:
         yield "NoneType"
-    if (name := getattr(dtype, "__name__", None)) and isinstance(dtype, type):
-        if name in builtins.__dict__ or name in np.__dict__ or dtype in _special_types:
-            yield name
+    if ((name := getattr(dtype, "__name__", None)) and isinstance(dtype, type)) and (
+        name in builtins.__dict__ or name in np.__dict__ or dtype in _special_types
+    ):
+        yield name
     if dtype.__class__.__name__ == "_UnionGenericAlias" or dtype.__class__ == types.UnionType:
         yield from itertools.chain.from_iterable(_serialize_union_arg(x) for x in dtype.__args__)  # type: ignore
     if dtype.__class__.__name__ == "_LiteralGenericAlias":
@@ -123,9 +124,7 @@ def _merge_literals(vals: Generator[str | dict, None, None]) -> Generator[str | 
         if val == "NoneType":
             _literal_args.append(None)
             continue
-        if not isinstance(val, dict):
-            yield val
-        elif "Literal" not in val:
+        if not isinstance(val, dict) or "Literal" not in val:
             yield val
         else:
             _literal_args.extend(val["Literal"])
@@ -182,7 +181,6 @@ def _deserialize_annotated_dtype(annotated_dtype: object) -> object:
         object: Annotated type for valid ScanArgument metadata, otherwise the base type.
     """
     if not isinstance(annotated_dtype, dict):
-        # pylint: disable=protected-access
         return inspect._empty
 
     base_dtype = deserialize_dtype(annotated_dtype.get("type", "_empty"))
@@ -226,7 +224,6 @@ def deserialize_dtype(dtype: list | dict | str) -> object:
             return origin[args] if args else origin
         return Literal[*dtype["Literal"]]
     if dtype == "_empty":
-        # pylint: disable=protected-access
         return inspect._empty
     if dtype == "NoneType":
         return None
@@ -263,7 +260,7 @@ def signature_to_dict(
     for param_name, param in params.items():
         if (not include_class_obj and param_name == "self") or param_name == "cls":
             continue
-        # pylint: disable=protected-access
+
         param_typehint = (resolved_type_hints or {}).get(param_name, param.annotation)
         out.append(
             {
@@ -292,7 +289,6 @@ def dict_to_signature(params: list[dict]) -> inspect.Signature:
     """
     out = []
     for param in params:
-        # pylint: disable=protected-access
         out.append(
             inspect.Parameter(
                 name=param["name"],

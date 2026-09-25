@@ -1,7 +1,6 @@
 from bec_lib.scan_report import ScanReport
 
-# pylint:disable=undefined-variable
-# pylint: disable=too-many-arguments
+# BECClient injects the active scans object into builtins when loading this interface.
 
 
 def umv(*args) -> ScanReport:
@@ -14,7 +13,7 @@ def umv(*args) -> ScanReport:
         >>> umv(dev.samx, 1)
         >>> umv(dev.samx, 1, dev.samy, 2)
     """
-    return scans.umv(*args, relative=False)
+    return scans.umv(*args, relative=False)  # noqa: F821
 
 
 def umvr(*args) -> ScanReport:
@@ -27,7 +26,7 @@ def umvr(*args) -> ScanReport:
         >>> umvr(dev.samx, 1)
         >>> umvr(dev.samx, 1, dev.samy, 2)
     """
-    return scans.umv(*args, relative=True)
+    return scans.umv(*args, relative=True)  # noqa: F821
 
 
 def mv(*args) -> ScanReport:
@@ -40,7 +39,7 @@ def mv(*args) -> ScanReport:
         >>> mv(dev.samx, 1)
         >>> mv(dev.samx, 1, dev.samy, 2)
     """
-    return scans.mv(*args, relative=False)
+    return scans.mv(*args, relative=False)  # noqa: F821
 
 
 def mvr(*args) -> ScanReport:
@@ -53,4 +52,4 @@ def mvr(*args) -> ScanReport:
         >>> mvr(dev.samx, 1)
         >>> mvr(dev.samx, 1, dev.samy, 2)
     """
-    return scans.mv(*args, relative=True)
+    return scans.mv(*args, relative=True)  # noqa: F821

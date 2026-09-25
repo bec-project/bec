@@ -2,8 +2,8 @@
 
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from threading import Event, RLock
-from typing import Callable
 
 from bec_lib.actors import ActorActionTable
 from bec_lib.client import BECClient
@@ -104,7 +104,7 @@ class SubscriptionActor(ActorBase):
             for cb in self.default_monitor_callbacks():
                 try:
                     self.client.connector.unregister(endpoint, cb=cb)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 -- Cleanup must continue when an actor callback cannot be unregistered.
                     logger.error(
                         f"{self.__class__} {self.__qualname__} failed to unregister {cb} from {endpoint}: {e}"
                     )

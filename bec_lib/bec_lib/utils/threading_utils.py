@@ -10,7 +10,7 @@ def threadlocked(fcn):
 
     @functools.wraps(fcn)
     def wrapper(self, *args, **kwargs):
-        # pylint: disable=protected-access
+
         with self._lock:
             return fcn(self, *args, **kwargs)
 

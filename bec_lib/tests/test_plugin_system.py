@@ -70,7 +70,7 @@ class TestPluginSystem:
                 },
                 unsafe=True,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - Optional test repository setup can fail in restricted environments.
             # If there are permission issues on the test runner with making git commits, it's not really important
             print(
                 f"Encountered error in setting up test repo: \n {traceback.format_exc()} \n Attempting to continue anyway..."
@@ -200,7 +200,7 @@ class TestPluginSystem:
         plugin_scans_modules = plugin_helper._get_available_plugins("bec.scans")
         assert len(plugin_scans_modules) > 0
         scan_plugins = plugin_helper.get_scan_plugins()
-        assert "ScanForTesting" in scan_plugins.keys()
+        assert "ScanForTesting" in scan_plugins
 
     def test_plugin_helper_for_metadata_schema(self):
         metadata_schema_plugin_module = plugin_helper._get_available_plugins(
@@ -208,7 +208,7 @@ class TestPluginSystem:
         )
         assert len(metadata_schema_plugin_module) > 0
         metadata_registry, default_schema = plugin_helper.get_metadata_schema_registry()
-        assert set(["test_scan_fail_on_type", "example_scan"]) == set(metadata_registry.keys())
+        assert {"test_scan_fail_on_type", "example_scan"} == set(metadata_registry.keys())
         assert default_schema is None
 
     def test_plugin_helper_finds_package_name(self):

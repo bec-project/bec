@@ -115,10 +115,9 @@ class ServiceConfigModel(BaseModel):
 
     @model_validator(mode="before")
     def apply_cmdline_args(self, data: Any) -> Self:
-        if isinstance(data, dict):
-            if cmdline_args := data.get("cmdline_args"):
-                for arg in cmdline_args.items():
-                    self._update_data_for_arg(arg, data)
+        if isinstance(data, dict) and (cmdline_args := data.get("cmdline_args")):
+            for arg in cmdline_args.items():
+                self._update_data_for_arg(arg, data)
         return self
 
     def _update_data_for_arg(self, arg: tuple[str, Any], data: dict):
@@ -174,12 +173,11 @@ class ServiceConfig:
         """
         if self.config_path:
             if not os.path.isfile(self.config_path):
-                raise FileNotFoundError(f"Config file {repr(self.config_path)} not found.")
+                raise FileNotFoundError(f"Config file {self.config_path!r} not found.")
             with open(self.config_path, "r", encoding="utf-8") as stream:
                 config = yaml.safe_load(stream)
                 logger.info(
-                    "Loaded new config from disk:"
-                    f" {json.dumps(config, sort_keys=True, indent=4)}"
+                    f"Loaded new config from disk: {json.dumps(config, sort_keys=True, indent=4)}"
                 )
             config = self._parse_config_from_file(config)
             return config
@@ -250,7 +248,7 @@ class ServiceConfig:
         """
         username = getuser()
 
-        for _, val in config.items():
+        for val in config.values():
             if not isinstance(val, dict):
                 continue
             if "base_path" not in val or not isinstance(val["base_path"], dict):

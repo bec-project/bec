@@ -16,7 +16,7 @@ Scan procedure:
 from __future__ import annotations
 
 import time
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -38,7 +38,9 @@ class TimeScan(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "time_scan"
 
-    gui_config = {"Scan Parameters": ["points", "interval", "exp_time", "settling_time"]}
+    gui_config: ClassVar[dict] = {
+        "Scan Parameters": ["points", "interval", "exp_time", "settling_time"]
+    }
 
     def __init__(
         self,

@@ -5,7 +5,7 @@ repeat logic during data acquisition.
 
 import contextvars
 import functools
-from typing import Callable
+from collections.abc import Callable
 
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 
@@ -75,13 +75,12 @@ def scan_repeat(
                     except ScanRestart:
                         attempt += 1
                         if attempt > max_repeats:
-                            # pylint: disable=raise-missing-from
                             raise TooManyScanRestarts(
                                 f"Maximum scan restart attempts ({max_repeats}) exceeded."
                             )
-                    except (KeyboardInterrupt, ScanInterruption) as exc:
+                    except (KeyboardInterrupt, ScanInterruption) as _exc:
                         # Do not retry on these exceptions
-                        raise exc
+                        raise
                     except Exception as exc:
                         attempt += 1
 
@@ -93,7 +92,6 @@ def scan_repeat(
                         if not should_retry:
                             raise
                         if attempt > max_repeats:
-                            # pylint: disable=raise-missing-from
                             raise TooManyScanRestarts(
                                 f"Maximum scan restart attempts ({max_repeats}) exceeded."
                             ) from exc

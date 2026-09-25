@@ -51,7 +51,7 @@ def get_actor_env():
 
 
 def main():
-    env, helper, client, conn = setup(get_env())
+    env, _helper, client, conn = setup(get_env())
     actor_env = get_actor_env()
     logger_connector = RedisConnector(env["redis_server"])
     output_diverter = RedisOutputDiverter(logger_connector, env["queue"])

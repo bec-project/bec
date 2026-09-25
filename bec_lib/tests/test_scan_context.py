@@ -5,11 +5,6 @@ import pytest
 
 from bec_lib.scans import DatasetIdOnHold, FileWriter, HideReport, Metadata, ScanExport
 
-# pylint: disable=no-member
-# pylint: disable=missing-function-docstring
-# pylint: disable=redefined-outer-name
-# pylint: disable=protected-access
-
 
 def test_filewriter_cm(bec_client_mock):
     client = bec_client_mock
@@ -49,9 +44,8 @@ def test_dataset_id_on_hold_cm(bec_client_mock):
     client = bec_client_mock
     client.scans._dataset_id_on_hold = None
     dataset_id_on_hold = DatasetIdOnHold(client.scans)
-    with mock.patch.object(client, "queue"):
-        with dataset_id_on_hold:
-            assert client.scans._dataset_id_on_hold is True
+    with mock.patch.object(client, "queue"), dataset_id_on_hold:
+        assert client.scans._dataset_id_on_hold is True
 
     assert client.scans._dataset_id_on_hold is None
 
@@ -60,12 +54,11 @@ def test_dataset_id_on_hold_cm_nested(bec_client_mock):
     client = bec_client_mock
     client.scans._dataset_id_on_hold = None
     dataset_id_on_hold = DatasetIdOnHold(client.scans)
-    with mock.patch.object(client, "queue"):
+    with mock.patch.object(client, "queue"), dataset_id_on_hold:
+        assert client.scans._dataset_id_on_hold is True
         with dataset_id_on_hold:
             assert client.scans._dataset_id_on_hold is True
-            with dataset_id_on_hold:
-                assert client.scans._dataset_id_on_hold is True
-            assert client.scans._dataset_id_on_hold is True
+        assert client.scans._dataset_id_on_hold is True
     assert client.scans._dataset_id_on_hold is None
 
 
@@ -73,13 +66,11 @@ def test_dataset_id_on_hold_cleanup_on_error(bec_client_mock):
     client = bec_client_mock
     client.scans._dataset_id_on_hold = None
     dataset_id_on_hold = DatasetIdOnHold(client.scans)
-    with pytest.raises(AttributeError):
-        with mock.patch.object(client, "queue"):
-            with dataset_id_on_hold:
-                assert client.scans._dataset_id_on_hold is True
-                with dataset_id_on_hold:
-                    assert client.scans._dataset_id_on_hold is True
-                    raise AttributeError()
+    with pytest.raises(AttributeError), mock.patch.object(client, "queue"), dataset_id_on_hold:
+        assert client.scans._dataset_id_on_hold is True
+        with dataset_id_on_hold:
+            assert client.scans._dataset_id_on_hold is True
+            raise AttributeError()
     assert client.scans._dataset_id_on_hold is None
 
 
@@ -92,9 +83,8 @@ def test_scan_export_cm(abort_on_ctrl_c):
         mock_abort.abort_on_ctrl_c = abort_on_ctrl_c
         scan_export._export_to_csv = mock_to_csv = mock.MagicMock()
         if not abort_on_ctrl_c:
-            with pytest.raises(RuntimeError):
-                with scan_export:
-                    ...  # Do nothing
+            with pytest.raises(RuntimeError), scan_export:
+                ...  # Do nothing
         else:
             with scan_export:
                 ...  # Do nothgin

@@ -121,18 +121,19 @@ class ScanInterlockActor(BlStateActor):
     def _unlock(self):
         if self.client.queue is None:
             return
-        if (q := self.client.queue) is not None:
-            if (curr_q := q.queue_storage.current_scan_queue) is not None:
-                if (primary := curr_q.get("primary")) is not None and primary.locks != []:
-                    logger.info(
-                        f"{self.name} removing queue lock if present; "
-                        f"queue_locks={primary.locks}; cache={self.state_cache}; table={self.state_table}"
-                    )
-                    notification = NotificationMessageObject()
-                    notification.add_text("Scan interlock cleared", color="green")
-                    notification.add_tags("scan_interlock")
-                    self.client.connector.notify(MessagingEvent.SCAN_INTERLOCK, notification)
-                    self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
+        if ((q := self.client.queue) is not None) and (
+            (curr_q := q.queue_storage.current_scan_queue) is not None
+            and ((primary := curr_q.get("primary")) is not None and primary.locks != [])
+        ):
+            logger.info(
+                f"{self.name} removing queue lock if present; "
+                f"queue_locks={primary.locks}; cache={self.state_cache}; table={self.state_table}"
+            )
+            notification = NotificationMessageObject()
+            notification.add_text("Scan interlock cleared", color="green")
+            notification.add_tags("scan_interlock")
+            self.client.connector.notify(MessagingEvent.SCAN_INTERLOCK, notification)
+            self.client.queue.remove_queue_lock(queue="primary", lock_id=self._LOCK_ID)
 
     def run(self):
         super().run()

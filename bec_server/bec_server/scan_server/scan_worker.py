@@ -81,8 +81,7 @@ class ScanWorker(threading.Thread):
                         continue
                     worker._handle_scan_abortion(queue, exc)
 
-        # pylint: disable=broad-except
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Any uncaught worker failure must abort the queue and reset the worker.
             content = traceback.format_exc()
             error_info = messages.ErrorInfo(
                 error_message=content,

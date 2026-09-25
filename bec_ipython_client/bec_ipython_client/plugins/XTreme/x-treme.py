@@ -1,3 +1,4 @@
+# ruff: noqa: N999 -- Preserve the established beamline plugin filename.
 import builtins
 import time
 

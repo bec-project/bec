@@ -62,9 +62,9 @@ finally:
     # we can therefore limit the output to lines that start with '[' and end with ']'
     output_lines = [out for out in output.split("\n") if out.startswith("[") and out.endswith("]")]
     assert "bec.device_manager" in output_lines[0], output
-    assert (
-        "BECIPythonClient" not in output_lines[1]
-    ), output  # just to ensure something we don't want is really not there
+    assert "BECIPythonClient" not in output_lines[1], (
+        output
+    )  # just to ensure something we don't want is really not there
     assert "test_gui_id" in output, output
 
 
@@ -165,15 +165,17 @@ def test_bec_ipython_client_start(service_config):
     )
     client._local_only_types = (mock.MagicMock,)
     try:
-        with mock.patch.object(client._client, "wait_for_service") as wait_for_service:
-            with mock.patch.object(client, "_configure_ipython") as configure_ipython:
-                with mock.patch.object(client, "_load_scans"):
-                    client.start()
-                    configure_ipython.assert_called_once()
-                    assert mock.call("ScanBundler", mock.ANY) in wait_for_service.call_args_list
-                    assert mock.call("ScanServer", mock.ANY) in wait_for_service.call_args_list
-                    assert mock.call("DeviceServer", mock.ANY) in wait_for_service.call_args_list
-                    assert client.started
+        with (
+            mock.patch.object(client._client, "wait_for_service") as wait_for_service,
+            mock.patch.object(client, "_configure_ipython") as configure_ipython,
+            mock.patch.object(client, "_load_scans"),
+        ):
+            client.start()
+            configure_ipython.assert_called_once()
+            assert mock.call("ScanBundler", mock.ANY) in wait_for_service.call_args_list
+            assert mock.call("ScanServer", mock.ANY) in wait_for_service.call_args_list
+            assert mock.call("DeviceServer", mock.ANY) in wait_for_service.call_args_list
+            assert client.started
     finally:
         client.shutdown()
         client._client._reset_singleton()
@@ -181,28 +183,32 @@ def test_bec_ipython_client_start(service_config):
 
 def test_bec_update_username_space(ipython_client):
     client = ipython_client
-    with mock.patch.object(client, "wait_for_service") as wait_for_service:
-        with mock.patch.object(client, "_configure_ipython") as configure_ipython:
-            with mock.patch.object(client, "_load_scans"):
-                with mock.patch.object(client, "_ip") as mock_ipy:
-                    client.start()
-                    mock_ipy.user_global_ns = {}
-                    my_object = object()
-                    client._update_namespace_callback(action="add", ns_objects={"mv": my_object})
-                    assert "mv" in mock_ipy.user_global_ns
-                    assert mock_ipy.user_global_ns["mv"] == my_object
-                    client._update_namespace_callback(action="remove", ns_objects={"mv": my_object})
-                    assert "mv" not in mock_ipy.user_global_ns
+    with (
+        mock.patch.object(client, "wait_for_service") as _wait_for_service,
+        mock.patch.object(client, "_configure_ipython") as _configure_ipython,
+        mock.patch.object(client, "_load_scans"),
+        mock.patch.object(client, "_ip") as mock_ipy,
+    ):
+        client.start()
+        mock_ipy.user_global_ns = {}
+        my_object = object()
+        client._update_namespace_callback(action="add", ns_objects={"mv": my_object})
+        assert "mv" in mock_ipy.user_global_ns
+        assert mock_ipy.user_global_ns["mv"] == my_object
+        client._update_namespace_callback(action="remove", ns_objects={"mv": my_object})
+        assert "mv" not in mock_ipy.user_global_ns
 
 
 def test_bec_ipython_client_start_without_bec_services(ipython_client):
     client = ipython_client
-    with mock.patch.object(client, "wait_for_service") as wait_for_service:
-        with mock.patch.object(client, "_configure_ipython") as configure_ipython:
-            with mock.patch.object(client, "_load_scans"):
-                client.start()
-                configure_ipython.assert_called_once()
-                wait_for_service.assert_not_called()
+    with (
+        mock.patch.object(client, "wait_for_service") as wait_for_service,
+        mock.patch.object(client, "_configure_ipython") as configure_ipython,
+        mock.patch.object(client, "_load_scans"),
+    ):
+        client.start()
+        configure_ipython.assert_called_once()
+        wait_for_service.assert_not_called()
 
 
 def test_bec_ipython_client_subscribes_to_client_restart(service_config):
@@ -250,19 +256,21 @@ def test_bec_ipython_client_property_access(ipython_client):
     assert client._client._name == "BECIPythonClient"  # name only exists on the client
     assert client._name == "BECIPythonClient"
 
-    with mock.patch.object(client, "wait_for_service") as wait_for_service:
-        with mock.patch.object(client, "_configure_ipython") as configure_ipython:
-            with mock.patch.object(client, "_load_scans"):
-                client.start()
+    with (
+        mock.patch.object(client, "wait_for_service") as _wait_for_service,
+        mock.patch.object(client, "_configure_ipython") as _configure_ipython,
+        mock.patch.object(client, "_load_scans"),
+    ):
+        client.start()
 
-                with mock.patch.object(client._client, "connector") as mock_connector:
-                    mock_connector.get_last.return_value = messages.VariableMessage(value="account")
-                    assert client._client.active_account == "account"
+        with mock.patch.object(client._client, "connector") as mock_connector:
+            mock_connector.get_last.return_value = messages.VariableMessage(value="account")
+            assert client._client.active_account == "account"
 
-                    with pytest.raises(AttributeError):
-                        client.active_account = "account"
-                    with pytest.raises(AttributeError):
-                        client._client.active_account = "account"
+            with pytest.raises(AttributeError):
+                client.active_account = "account"
+            with pytest.raises(AttributeError):
+                client._client.active_account = "account"
 
 
 def test_bec_ipython_client_show_last_alarm(ipython_client, capsys):

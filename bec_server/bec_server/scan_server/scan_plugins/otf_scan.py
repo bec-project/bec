@@ -1,4 +1,5 @@
 import time
+from typing import ClassVar
 
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.scans.legacy_scans import ScanArgType, ScanBase, SyncFlyScanBase
@@ -8,11 +9,11 @@ logger = bec_logger.logger
 
 class OTFScan(SyncFlyScanBase):
     scan_name = "otf_scan"
-    required_kwargs = ["e1", "e2", "time"]
-    arg_input = {}
-    arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
+    required_kwargs: ClassVar[list] = ["e1", "e2", "time"]
+    arg_input: ClassVar[dict] = {}
+    arg_bundle_size: ClassVar[dict] = {"bundle": len(arg_input), "min": None, "max": None}
 
-    def __init__(self, *args, parameter: dict = None, **kwargs):
+    def __init__(self, *args, parameter: dict = None, **kwargs):  # noqa: RUF013 -- Preserve the published scan signature.
         """Scans the energy from e1 to e2 in <time> minutes.
 
         Examples:
@@ -56,8 +57,8 @@ class OTFScan(SyncFlyScanBase):
 
 class HystScan(ScanBase):
     scan_name = "hyst_scan"
-    required_kwargs = []
-    arg_input = {
+    required_kwargs: ClassVar[list] = []
+    arg_input: ClassVar[dict] = {
         "field_motor": ScanArgType.DEVICE,
         "start_field": ScanArgType.FLOAT,
         "end_field": ScanArgType.FLOAT,
@@ -65,11 +66,11 @@ class HystScan(ScanBase):
         "energy1": ScanArgType.FLOAT,
         "energy2": ScanArgType.FLOAT,
     }
-    arg_bundle_size = {"bundle": 3, "min": 1, "max": 1}
+    arg_bundle_size: ClassVar[dict] = {"bundle": 3, "min": 1, "max": 1}
     scan_type = "step"
     default_ramp_rate = 2
 
-    def __init__(self, *args, parameter: dict = None, **kwargs):
+    def __init__(self, *args, parameter: dict = None, **kwargs):  # noqa: RUF013 -- Preserve the published scan signature.
         """
         A hysteresis scan.
 
@@ -81,8 +82,9 @@ class HystScan(ScanBase):
         """
         super().__init__(parameter=parameter, **kwargs)
         self.axis = []
-        self.flyer = list(self.caller_args.keys())[0]
-        self.energy_motor = list(self.caller_args.keys())[1]
+        device_names = list(self.caller_args)
+        self.flyer = device_names[0]
+        self.energy_motor = device_names[1]
         self.scan_motors = [self.energy_motor, self.flyer]
         self.flyer_positions = self.caller_args[self.flyer]
         self._current_scan_motor_index = 0

@@ -40,7 +40,7 @@ def login_info_available(func):
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        # pylint: disable=protected-access
+
         if self._info is None:
             raise BECAuthenticationError(
                 "Unable to login: Missing login information.\n"
@@ -108,7 +108,7 @@ class BECAccess:
         """
         Return the current Redis ACL credentials for forwarding to linked clients.
         """
-        # pylint: disable=protected-access
+
         conn_kwargs = (
             self.connector._managed_connection._redis_conn.connection_pool.connection_kwargs
         )
@@ -301,7 +301,7 @@ class BECAccess:
             username = acl_config.user
             password = acl_config.password
         else:
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004 - Preserve the public exception type used by callers.
                 "Invalid value for 'acl' in the service config. Must be an ACLConfig, dict, "
                 "or a path to a .env file."
             )
@@ -343,8 +343,8 @@ class BECAccess:
                 # We check an endpoint on level INFO to verify that the user has sufficient access to perform all user operations.
                 self.connector.get(MessageEndpoints.device_config())
                 return True
-            # pylint: disable=broad-except
-            except Exception:
+
+            except Exception:  # noqa: S110, BLE001 - Connection probes return failure for any connector error.
                 pass
         return False
 
@@ -385,6 +385,6 @@ class BECAccess:
             if user:
                 self.connector.authenticate(username=user, password=password)
             return self.connector.can_connect()
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: BLE001 - Connection probes return failure for any connector error.
             return False

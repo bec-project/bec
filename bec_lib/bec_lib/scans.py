@@ -45,7 +45,7 @@ class ScanObject:
         self.client = client
 
         # run must be an anonymous function to allow for multiple doc strings
-        # pylint: disable=unnecessary-lambda
+
         self.run = lambda *args, **kwargs: self._run(*args, **kwargs)
 
     def _run(
@@ -86,7 +86,6 @@ class ScanObject:
             self.client.clear_all_alarms()
         scans = self.client.scans
 
-        # pylint: disable=protected-access
         hide_report = hide_report or scans._hide_report
 
         user_metadata = deepcopy(self.client.metadata)
@@ -130,7 +129,7 @@ class ScanObject:
             kwargs["on_request"] = on_request
 
         sys_config = sys_config.model_dump()
-        # pylint: disable=protected-access
+
         if scans._dataset_id_on_hold:
             sys_config["dataset_id_on_hold"] = scans._dataset_id_on_hold
 
@@ -148,7 +147,6 @@ class ScanObject:
             "hostname": self.client._hostname,
         }
 
-        # pylint: disable=unsupported-assignment-operation
         request.metadata["RID"] = request_id
 
         self._send_scan_request(request)
@@ -231,13 +229,9 @@ class Scans:
             self._available_scans[scan_name] = scan_object
             updated_scans[scan_name] = scan_object.run
             setattr(self, scan_name, scan_object.run)
-            setattr(getattr(self, scan_name), "__doc__", scan_info.get("doc"))
-            setattr(
-                getattr(self, scan_name),
-                "__signature__",
-                dict_to_signature(
-                    self._strip_scan_signature_annotations(scan_info.get("signature"))
-                ),
+            getattr(self, scan_name).__doc__ = scan_info.get("doc")
+            getattr(self, scan_name).__signature__ = dict_to_signature(
+                self._strip_scan_signature_annotations(scan_info.get("signature"))
             )
 
         scans_namespace = getattr(self.parent, "scans_namespace", None)
@@ -422,7 +416,7 @@ class DatasetIdOnHold(ContextDecorator):
 
 class FileWriter:
     @typechecked
-    def __init__(self, file_suffix: str = None, file_directory: str = None) -> None:
+    def __init__(self, file_suffix: str = None, file_directory: str = None) -> None:  # noqa: RUF013 - Preserve the public signature used by client introspection.
         """Context manager for updating metadata
 
         Args:
@@ -486,7 +480,7 @@ class ScanExport:
 
     def _check_abort_on_ctrl_c(self):
         """Check if scan should be aborted on Ctrl-C"""
-        # pylint: disable=protected-access
+
         if not self.client._service_config.abort_on_ctrl_c:
             raise RuntimeError(
                 "ScanExport context manager can only be used if abort_on_ctrl_c is set to True"
@@ -510,8 +504,10 @@ class ScanExport:
             try:
                 self._export_to_csv()
                 self.scans = None
-            except Exception as exc:
-                logger.warning(f"Could not export scans to csv file, due to exception {exc}")
+            except Exception as export_error:  # noqa: BLE001 - CSV export failures must not mask an exception from the scan context.
+                logger.warning(
+                    f"Could not export scans to csv file, due to exception {export_error}"
+                )
 
 
 def _get_client():

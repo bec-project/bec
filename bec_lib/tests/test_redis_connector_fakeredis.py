@@ -1,7 +1,6 @@
 import gc
 import threading
 import time
-from typing import Generator
 from unittest import mock
 
 import fakeredis
@@ -9,26 +8,13 @@ import pytest
 import redis
 from redis.client import Pipeline
 
-import bec_lib.messages as bec_messages
 from bec_lib import messages
-from bec_lib.endpoints import EndpointInfo, EndpointType, MessageEndpoints, MessageOp
-from bec_lib.messages import ProcedureExecutionMessage
-from bec_lib.redis_connector import (
-    IncompatibleMessageForEndpoint,
-    IncompatibleRedisOperation,
-    MessageObject,
-)
+from bec_lib.endpoints import EndpointInfo, MessageEndpoints, MessageOp
+from bec_lib.redis_connector import MessageObject
 from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnection
 from bec_lib.serialization import MsgpackSerialization
 
 from .test_managed_redis_connection import TestMessage
-
-# pylint: disable=protected-access
-# pylint: disable=missing-function-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=redefined-outer-name
-# pylint: disable=unused-argument
-
 
 TestStreamEndpoint = EndpointInfo("test", TestMessage, MessageOp.STREAM)
 TestStreamEndpoint2 = EndpointInfo("test2", TestMessage, MessageOp.STREAM)
@@ -57,11 +43,11 @@ def test_redis_connector_register_threaded(connected_connector, threaded, topics
     connector = connected_connector
     if topics is None:
         with pytest.raises(ValueError):
-            ret = connector.register(
+            _ret = connector.register(
                 topics=topics, cb=lambda *args, **kwargs: ..., start_thread=threaded
             )
         return
-    ret = connector.register(topics=topics, cb=lambda *args, **kwargs: ..., start_thread=threaded)
+    _ret = connector.register(topics=topics, cb=lambda *args, **kwargs: ..., start_thread=threaded)
     if threaded:
         assert connector._events_listener_thread is not None
 
@@ -79,7 +65,7 @@ def test_redis_connector_register(
     connected_connector, subscribed_topics, subscribed_patterns, msgs
 ):
     connector = connected_connector
-    test_msg = TestMessage()
+    _test_msg = TestMessage()
     cb_mock = mock.Mock(spec=[])  # spec is here to remove all attributes
     if subscribed_topics:
         connector.register(

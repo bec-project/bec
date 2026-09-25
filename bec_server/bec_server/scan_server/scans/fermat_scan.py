@@ -16,7 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import numpy as np
 
@@ -32,7 +32,6 @@ logger = bec_logger.logger
 
 
 class FermatSpiralScan(ScanBase):
-
     # Scan Type: Hardware triggered or software triggered?
     # If the main trigger and readout logic is done within the at_each_point method in scan_core, choose SOFTWARE_TRIGGERED.
     # If the main trigger and readout logic is implemented on a device that is simply kicked off in this scan, choose HARDWARE_TRIGGERED.
@@ -45,7 +44,7 @@ class FermatSpiralScan(ScanBase):
     # It must be a valid Python identifier, that is, it can only contain letters, numbers, and underscores, and must not start with a number.
     scan_name = "fermat_scan"
 
-    gui_config = {
+    gui_config: ClassVar[dict] = {
         "Device 1": ["motor1", "start_motor1", "stop_motor1"],
         "Device 2": ["motor2", "start_motor2", "stop_motor2"],
         "Movement Parameters": ["step", "spiral_type", "relative", "optim_trajectory"],

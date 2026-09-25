@@ -19,14 +19,14 @@ def bec_emitter_mock(scan_bundler_mock):
 
 
 def test_on_scan_point_emit_BEC(bec_emitter_mock):
-    sb = bec_emitter_mock.scan_bundler
+    _sb = bec_emitter_mock.scan_bundler
     with mock.patch.object(bec_emitter_mock, "_send_bec_scan_point") as send:
         bec_emitter_mock.on_scan_point_emit("scan_id", 2)
         send.assert_called_once_with("scan_id", 2)
 
 
 def test_on_baseline_emit_BEC(bec_emitter_mock):
-    sb = bec_emitter_mock.scan_bundler
+    _sb = bec_emitter_mock.scan_bundler
     with mock.patch.object(bec_emitter_mock, "_send_baseline") as send:
         bec_emitter_mock.on_baseline_emit("scan_id")
         send.assert_called_once_with("scan_id")

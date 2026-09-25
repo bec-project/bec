@@ -15,7 +15,6 @@ def rgetattr(obj, attr, *args):
 
 
 class user_access:
-
     def __init__(self, meth):
         """
         Decorator to mark <device_class> methods to be accessible from the bec client

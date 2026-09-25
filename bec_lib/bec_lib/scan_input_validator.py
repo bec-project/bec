@@ -503,10 +503,7 @@ class ScanInputValidator:
         if origin in {Union, types.UnionType}:
             return all(self._supports_scalar_bounds(arg) for arg in get_args(annotation))
 
-        if origin in {list, dict, tuple, Sequence, Mapping, set, frozenset}:
-            return False
-
-        return True
+        return origin not in {list, dict, tuple, Sequence, Mapping, set, frozenset}
 
     def _raise_bound_error(
         self, arg_name: str, value: Any, operator_name: str, limit: float

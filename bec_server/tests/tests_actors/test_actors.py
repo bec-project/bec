@@ -1,5 +1,6 @@
 from threading import Thread
 from time import sleep
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -128,7 +129,7 @@ def test_polling_actor_inline(fakeredis_config):
     test_action = MagicMock()
 
     class PollTestActor(PollingActor):
-        action_table = {(lambda *_, **__: True): test_action}
+        action_table: ClassVar[dict] = {(lambda *_, **__: True): test_action}
 
     actor = PollTestActor(client, name="SubActorTest", exec_id="SubActorTest")
 
@@ -176,7 +177,7 @@ def test_actor_procedure_logs_error_not_actor():
 
 
 class BlStateTestActor(BlStateActor):
-    state_table = {"test_state": ["valid"], "test_state_2": ["valid"]}
+    state_table: ClassVar[dict] = {"test_state": ["valid"], "test_state_2": ["valid"]}
 
 
 def test_blstateactor_init_table_and_cache():

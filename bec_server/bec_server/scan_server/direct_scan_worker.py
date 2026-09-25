@@ -75,7 +75,6 @@ class DirectScanWorker:
         """
         self.scan = scan
 
-        # pylint: disable=protected-access
         scan.actions._interruption_callback = self.check_for_interruption
         scan.actions._update_queue_info_callback = self.update_queue_info
         queue = self.worker.current_instruction_queue_item
@@ -91,8 +90,8 @@ class DirectScanWorker:
         except ScanAbortion as exc:
             if not self._prepare_exception_cleanup(queue, exc):
                 return
-            raise exc
-        except Exception as exc:
+            raise
+        except Exception as exc:  # noqa: BLE001 -- All scan failures must run the existing cleanup and reporting.
             if not self._prepare_exception_cleanup(queue, exc):
                 return
             self._handle_exception(exc)
@@ -143,7 +142,7 @@ class DirectScanWorker:
             if self.scan is not None:
                 self.scan.actions._metadata_suffix = "__on-exception"
             self._run_on_exception_hook(exc)
-        except Exception as exc_cleanup:
+        except Exception as exc_cleanup:  # noqa: BLE001 -- All scan failures must run the existing cleanup and reporting.
             self.worker.connector.send_client_info("")
             self._handle_exception(exc_cleanup)
         return True
@@ -176,9 +175,8 @@ class DirectScanWorker:
         If the status is STOPPED, it raises a ScanAbortion or UserScanInterruption
         exception depending on the exit_info of the current queue item.
         """
-        if self.worker.status == InstructionQueueStatus.PAUSED:
-            if self.scan is not None:
-                self.scan.actions._send_scan_status("paused")
+        if self.worker.status == InstructionQueueStatus.PAUSED and self.scan is not None:
+            self.scan.actions._send_scan_status("paused")
         while self.worker.status == InstructionQueueStatus.PAUSED:
             time.sleep(0.1)
         if self.worker.status == InstructionQueueStatus.STOPPED:
@@ -192,7 +190,7 @@ class DirectScanWorker:
         Update the queue info for the current instruction queue item.
         This is used to propagate the queue status to the client during the scan execution.
         """
-        logger.info(f"Updating queue info")
+        logger.info("Updating queue info")
         self.worker.current_instruction_queue_item.parent.queue_manager.send_queue_status()
 
     def _propagate_error(self, content: str, exc: Exception):
@@ -240,7 +238,7 @@ class DirectScanWorker:
         if not self.worker.current_instruction_queue_item.run_on_exception_hook:
             return
         hook_exc = exc.__cause__ if exc.__cause__ is not None else exc
-        if not hasattr(scan, "on_exception") or not callable(getattr(scan, "on_exception")):
+        if not hasattr(scan, "on_exception") or not callable(scan.on_exception):
             return
         try:
             scan._shutdown_event.clear()

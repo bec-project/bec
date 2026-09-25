@@ -43,7 +43,7 @@ class DAPPluginObjectBase:
         plugin_info: dict,
         client: BECClient = None,
         auto_run_supported: bool = False,
-        service_info: dict = None,
+        service_info: dict = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
     ) -> None:
         """
         Args:
@@ -115,7 +115,7 @@ class DAPPluginObjectBase:
             return None
         if not callable(self._result_cls):
             return result.content["data"]
-        # pylint: disable=not-callable
+
         return self._result_cls(result, self._plugin_info["user_friendly_name"])
 
     def _wait_for_dap_response(self, request_id: str, timeout: float = 5.0):
@@ -137,7 +137,7 @@ class DAPPluginObjectBase:
                 return response
             raise RuntimeError(response.content["error"])
 
-    def _update_dap_config(self, request_id: str = None):
+    def _update_dap_config(self, request_id: str = None):  # noqa: RUF013 - Preserve the public signature used by client introspection.
         if not self._plugin_config.get("selected_device"):
             return
         self._plugin_config["class_args"] = self._plugin_info.get("class_args")
@@ -200,7 +200,7 @@ class LmfitService1DResult:
     def __init__(
         self,
         result: list[dict] | messages.ProcessedDataMessage,
-        model_name: str = None,
+        model_name: str = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
         client: BECClient = None,
     ):
         if isinstance(result, messages.ProcessedDataMessage):
@@ -310,7 +310,6 @@ class LmfitService1DResult:
         """
         # move this to BECWidgets once it's available
         try:
-            # pylint: disable=import-outside-toplevel
             import matplotlib.pyplot as plt
 
             plt.ion()
@@ -343,7 +342,7 @@ class LmfitService1D(DAPPluginObjectAutoRun):
         plugin_info: dict,
         client: BECClient = None,
         auto_run_supported: bool = False,
-        service_info: dict = None,
+        service_info: dict = None,  # noqa: RUF013 - Preserve the public signature used by client introspection.
     ) -> None:
         super().__init__(
             service_name,
@@ -354,7 +353,7 @@ class LmfitService1D(DAPPluginObjectAutoRun):
         )
         self._params = None
 
-    def select(self, device: DeviceBase | str, signal: str = None):
+    def select(self, device: DeviceBase | str, signal: str = None):  # noqa: RUF013 - Preserve the public signature used by client introspection.
         """
         Select the device and signal to use for fitting.
 
@@ -372,7 +371,6 @@ class LmfitService1D(DAPPluginObjectAutoRun):
         if signal:
             self._plugin_config["selected_device"] = [bec_device.name, signal]
         else:
-            # pylint: disable=protected-access
             hints = bec_device._hints
             if not hints:
                 raise AttributeError(

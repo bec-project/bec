@@ -103,13 +103,15 @@ def test_main_exits_without_env_variables(logger_mock):
 
 @patch("bec_server.procedures.oop_worker_base.logger")
 def test_main_continues_with_env_variables(logger_mock):
-    with pytest.raises(ValueError) as e:
-        with patch.dict(
+    with (
+        pytest.raises(ValueError) as e,
+        patch.dict(
             os.environ,
             values={"redis_server": "str", "queue": "str", "timeout_s": "int"},
             clear=True,
-        ):
-            container_worker_main()
+        ),
+    ):
+        container_worker_main()
     # should get stuck trying to open a redis connection to "str"
     assert e.match("not enough values to unpack")
     logger_mock.error.assert_not_called()
@@ -117,7 +119,9 @@ def test_main_continues_with_env_variables(logger_mock):
 
 
 class MockItem:
-    def __init__(self, name: str, args: tuple = (), kwargs: dict = {}):
+    def __init__(self, name: str, args: tuple = (), kwargs: dict | None = None):
+        if kwargs is None:
+            kwargs = {}
         self.identifier = name
         self.args = args
         self.kwargs = kwargs

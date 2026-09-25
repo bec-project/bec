@@ -1,4 +1,3 @@
-# pylint: skip-file
 import copy
 import os
 from collections import defaultdict
@@ -32,20 +31,22 @@ def test_device_manager_initialize(device_manager):
     ],
 )
 def test_parse_config_request(device_manager, msg):
-    with mock.patch.object(
-        device_manager, "_add_device", mock.MagicMock(return_value=("device", "type"))
-    ) as add_device:
-        with mock.patch.object(device_manager, "_get_device_info") as get_device_info:
-            device_manager.parse_config_message(msg)
-            if msg.action == "add":
-                get_device_info.assert_called_once()
-                add_device.assert_called_once()
+    with (
+        mock.patch.object(
+            device_manager, "_add_device", mock.MagicMock(return_value=("device", "type"))
+        ) as add_device,
+        mock.patch.object(device_manager, "_get_device_info") as get_device_info,
+    ):
+        device_manager.parse_config_message(msg)
+        if msg.action == "add":
+            get_device_info.assert_called_once()
+            add_device.assert_called_once()
 
 
 def test_config_request_update(dm_with_devices):
     device_manager = dm_with_devices
     msg = messages.DeviceConfigMessage(action="update", config={"samx": {}})
-    with mock.patch.object(device_manager, "_add_device") as add_device:
+    with mock.patch.object(device_manager, "_add_device") as _add_device:
         device_manager.parse_config_message(msg)
 
     msg = messages.DeviceConfigMessage(
@@ -89,13 +90,15 @@ def test_check_request_validity(device_manager, msg, raised):
 
 
 def test_get_config_calls_load(device_manager):
-    with mock.patch.object(
-        device_manager, "_get_redis_device_config", return_value={"devices": [{}]}
-    ) as get_redis_config:
-        with mock.patch.object(device_manager, "_load_session") as load_session:
-            device_manager._get_config()
-            get_redis_config.assert_called_once()
-            load_session.assert_called_once()
+    with (
+        mock.patch.object(
+            device_manager, "_get_redis_device_config", return_value={"devices": [{}]}
+        ) as get_redis_config,
+        mock.patch.object(device_manager, "_load_session") as load_session,
+    ):
+        device_manager._get_config()
+        get_redis_config.assert_called_once()
+        load_session.assert_called_once()
 
 
 def test_get_redis_device_config(device_manager):
@@ -108,7 +111,7 @@ def test_get_devices_with_tags(test_config_yaml, dm_with_devices):
     config_content = test_config_yaml
     device_manager = dm_with_devices
 
-    available_tags = defaultdict(lambda: [])
+    available_tags = defaultdict(list)
     for dev_name, dev in config_content.items():
         tags = dev.get("deviceTags")
         if tags is None:
@@ -143,7 +146,7 @@ def test_show_tags(test_config_yaml, dm_with_devices):
     config_content = test_config_yaml
     device_manager = dm_with_devices
 
-    available_tags = defaultdict(lambda: [])
+    available_tags = defaultdict(list)
     for dev_name, dev in config_content.items():
         tags = dev.get("deviceTags")
         if tags is None:
@@ -164,7 +167,7 @@ def test_monitored_devices_are_unique(dm_with_devices, scan_motors_in, readout_p
     devices = device_manager.devices.monitored_devices(
         scan_motors=scan_motors, readout_priority=readout_priority_in
     )
-    device_names = set(dev.name for dev in devices)
+    device_names = {dev.name for dev in devices}
     assert len(device_names) == len(devices)
 
 
@@ -188,8 +191,8 @@ def test_monitored_devices_with_readout_priority(
     baseline_devices = device_manager.devices.baseline_devices(
         scan_motors=scan_motors, readout_priority=readout_priority_in
     )
-    primary_device_names = set(dev.name for dev in monitored_devices)
-    baseline_devices_names = set(dev.name for dev in baseline_devices)
+    primary_device_names = {dev.name for dev in monitored_devices}
+    baseline_devices_names = {dev.name for dev in baseline_devices}
 
     assert len(primary_device_names & baseline_devices_names) == 0
 
@@ -252,25 +255,25 @@ def test_baseline_devices(dm_with_devices, scan_motors_in, readout_priority_in):
         readout_priority=readout_priority_in
     )
 
-    primary_device_names = set(dev.name for dev in monitored_devices)
-    baseline_devices_names = set(dev.name for dev in baseline_devices)
-    async_devices_names = set(dev.name for dev in async_devices)
-    continuous_devices_names = set(dev.name for dev in continuous_devices)
-    on_request_devices_names = set(dev.name for dev in on_request_devices)
+    primary_device_names = {dev.name for dev in monitored_devices}
+    baseline_devices_names = {dev.name for dev in baseline_devices}
+    async_devices_names = {dev.name for dev in async_devices}
+    continuous_devices_names = {dev.name for dev in continuous_devices}
+    on_request_devices_names = {dev.name for dev in on_request_devices}
 
-    primary_device_names.intersection(readout_priority_in.get("monitored", [])) == set(
+    assert primary_device_names.intersection(readout_priority_in.get("monitored", [])) == set(
         readout_priority_in.get("monitored", [])
     )
-    baseline_devices_names.intersection(readout_priority_in.get("baseline", [])) == set(
+    assert baseline_devices_names.intersection(readout_priority_in.get("baseline", [])) == set(
         readout_priority_in.get("baseline", [])
     )
-    async_devices_names.intersection(readout_priority_in.get("async", [])) == set(
+    assert async_devices_names.intersection(readout_priority_in.get("async", [])) == set(
         readout_priority_in.get("async", [])
     )
-    continuous_devices_names.intersection(readout_priority_in.get("continuous", [])) == set(
+    assert continuous_devices_names.intersection(readout_priority_in.get("continuous", [])) == set(
         readout_priority_in.get("continuous", [])
     )
-    on_request_devices_names.intersection(readout_priority_in.get("on_request", [])) == set(
+    assert on_request_devices_names.intersection(readout_priority_in.get("on_request", [])) == set(
         readout_priority_in.get("on_request", [])
     )
 
@@ -364,11 +367,11 @@ def test_readoutpriority_highest_priority_wins(
     continuous_devices = dm.devices.continuous_devices(readout_priority=readout_priority_in)
     on_request_devices = dm.devices.on_request_devices(readout_priority=readout_priority_in)
 
-    monitored_device_names = set(dev.name for dev in monitored_devices)
-    baseline_device_names = set(dev.name for dev in baseline_devices)
-    async_device_names = set(dev.name for dev in async_devices)
-    continuous_device_names = set(dev.name for dev in continuous_devices)
-    on_request_device_names = set(dev.name for dev in on_request_devices)
+    monitored_device_names = {dev.name for dev in monitored_devices}
+    baseline_device_names = {dev.name for dev in baseline_devices}
+    async_device_names = {dev.name for dev in async_devices}
+    continuous_device_names = {dev.name for dev in continuous_devices}
+    on_request_device_names = {dev.name for dev in on_request_devices}
 
     assert (
         monitored_device_names.intersection(
@@ -419,7 +422,7 @@ def test_get_bec_signals(dm_with_devices):
 
     preview_signals = device_manager.get_bec_signals("PreviewSignal")
     assert preview_signals
-    eiger = list(filter(lambda x: x[0] == "eiger", preview_signals))[0]
+    eiger = next(filter(lambda x: x[0] == "eiger", preview_signals))
     assert eiger[1] == "preview"
     assert isinstance(eiger[2], dict)
 
@@ -474,17 +477,19 @@ def test_get_device_config_with_signal_update(dm_with_devices, session_from_test
     }
 
     # Mock getattr to return our mock signal
-    with mock.patch("bec_lib.devicemanager.getattr", return_value=mock_signal):
-        with mock.patch.object(device_manager.connector, "get") as mock_get:
-            # Create config with a deviceConfig that has a signal
-            config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
-            for dev_conf in config_with_signal:
-                if dev_conf["name"] == "samx":
-                    dev_conf["deviceConfig"] = {"velocity": 0.0}
-                    break
+    with (
+        mock.patch("bec_lib.devicemanager.getattr", return_value=mock_signal),
+        mock.patch.object(device_manager.connector, "get") as mock_get,
+    ):
+        # Create config with a deviceConfig that has a signal
+        config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+        for dev_conf in config_with_signal:
+            if dev_conf["name"] == "samx":
+                dev_conf["deviceConfig"] = {"velocity": 0.0}
+                break
 
-            mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
-            samx_config = device_manager.get_device_config(update_signals=True).get("samx")
+        mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+        samx_config = device_manager.get_device_config(update_signals=True).get("samx")
 
     # Verify signal was updated with the read value
     assert samx_config["deviceConfig"]["velocity"] == 5.0
@@ -526,17 +531,19 @@ def test_get_device_config_with_signal_None(dm_with_devices, session_from_test_c
     }
 
     # Mock getattr to return our mock signal
-    with mock.patch("bec_lib.devicemanager.getattr", return_value=mock_signal):
-        with mock.patch.object(device_manager.connector, "get") as mock_get:
-            # Create config with a deviceConfig that has a signal
-            config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
-            for dev_conf in config_with_signal:
-                if dev_conf["name"] == "samx":
-                    dev_conf["deviceConfig"] = {"velocity": 0.0}
-                    break
+    with (
+        mock.patch("bec_lib.devicemanager.getattr", return_value=mock_signal),
+        mock.patch.object(device_manager.connector, "get") as mock_get,
+    ):
+        # Create config with a deviceConfig that has a signal
+        config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+        for dev_conf in config_with_signal:
+            if dev_conf["name"] == "samx":
+                dev_conf["deviceConfig"] = {"velocity": 0.0}
+                break
 
-            mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
-            samx_config = device_manager.get_device_config(update_signals=True).get("samx")
+        mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+        samx_config = device_manager.get_device_config(update_signals=True).get("samx")
 
     # Verify signal was NOT updated and retains original value
     assert samx_config["deviceConfig"]["velocity"] == 0.0
@@ -552,17 +559,19 @@ def test_get_device_config_signal_does_not_exist(dm_with_devices, session_from_t
     }
 
     # Mock getattr to return None
-    with mock.patch("bec_lib.devicemanager.getattr", return_value=None):
-        with mock.patch.object(device_manager.connector, "get") as mock_get:
-            # Create config with a deviceConfig that has a signal
-            config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
-            for dev_conf in config_with_signal:
-                if dev_conf["name"] == "samx":
-                    dev_conf["deviceConfig"] = {"velocity": 0.0}
-                    break
+    with (
+        mock.patch("bec_lib.devicemanager.getattr", return_value=None),
+        mock.patch.object(device_manager.connector, "get") as mock_get,
+    ):
+        # Create config with a deviceConfig that has a signal
+        config_with_signal = copy.deepcopy(session_from_test_config.get("devices"))
+        for dev_conf in config_with_signal:
+            if dev_conf["name"] == "samx":
+                dev_conf["deviceConfig"] = {"velocity": 0.0}
+                break
 
-            mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
-            samx_config = device_manager.get_device_config(update_signals=True).get("samx")
+        mock_get.return_value = messages.AvailableResourceMessage(resource=config_with_signal)
+        samx_config = device_manager.get_device_config(update_signals=True).get("samx")
 
     # Verify signal was NOT updated and retains original value
     assert samx_config["deviceConfig"]["velocity"] == 0.0

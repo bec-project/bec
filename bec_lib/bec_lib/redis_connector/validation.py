@@ -3,8 +3,9 @@ from __future__ import annotations
 import inspect
 import traceback
 import warnings
+from collections.abc import Callable, Iterable
 from functools import wraps
-from typing import Any, Callable, Concatenate, Iterable
+from typing import Any, Concatenate
 
 import redis.exceptions
 

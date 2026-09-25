@@ -16,7 +16,9 @@ from bec_lib.bl_state_manager import (
 )
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
-from bec_lib.tests.fixtures import dm_with_devices
+from bec_lib.tests.fixtures import (
+    dm_with_devices as dm_with_devices,  # noqa: PLC0414 - Re-export the pytest fixture for collection in this module.
+)
 
 
 @pytest.fixture
@@ -288,7 +290,7 @@ class TestBeamlineStateManager:
 
         assert manager.ready is True
         assert "sample_y_limits" in manager._states
-        assert isinstance(getattr(manager, "sample_y_limits"), BeamlineStateClientBase)
+        assert isinstance(manager.sample_y_limits, BeamlineStateClientBase)
 
     def test_manager_rejects_abstract_state_type_on_init(self, connected_connector):
         config = messages.BeamlineStateConfig(
@@ -326,7 +328,7 @@ class TestBeamlineStateManager:
         assert isinstance(
             state_manager._states["sample_y_limits"], bl_states.DeviceWithinLimitsStateConfig
         )
-        assert isinstance(getattr(state_manager, "sample_y_limits"), BeamlineStateClientBase)
+        assert isinstance(state_manager.sample_y_limits, BeamlineStateClientBase)
 
     def test_update_parameters_from_client_updates_state_and_publishes(self, state_manager):
         config = messages.BeamlineStateConfig(

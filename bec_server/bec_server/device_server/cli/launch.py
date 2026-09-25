@@ -2,8 +2,7 @@
 # launching the device server and handling command line arguments.
 # It is called either by the bec-device-server entry point or directly from the command line.
 
-# pylint: disable=wrong-import-position
-# pylint: disable=wrong-import-order
+
 # we need to run the startup script before we import anything else. This is
 # to ensure that the epics environment variables are set correctly.
 import importlib.metadata as imd

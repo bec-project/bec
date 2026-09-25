@@ -1,3 +1,4 @@
+from typing import ClassVar
 from unittest import mock
 
 import pytest
@@ -10,19 +11,16 @@ from bec_server.device_server.devices.device_serializer import get_device_info
 
 
 class LazySubDevice(Device):
-
     lazy_signal = Cpt(EpicsSignal, "sub_signal", lazy=True)
 
 
 class LazySubDeviceWithNoLazyLoading(LazySubDevice):
-
     lazy_wait_for_connection = False
 
     lazy_signal = Cpt(EpicsSignal, "sub_signal", lazy=True)
 
 
 class LazyDevice(Device):
-
     lazy_signal = Cpt(EpicsSignal, "signal", lazy=True)
     lazy_sub_device = Cpt(LazySubDevice, "test_device,", lazy=True)
     lazy_sub_device_no_lazy = Cpt(LazySubDeviceWithNoLazyLoading, "test_device_lazy", kind="normal")
@@ -45,7 +43,7 @@ class DummyDeviceWithConflictingName(Device):
 class DummyDeviceWithConflictingUserAccess(Device):
     """This device will be assigned a protected name"""
 
-    USER_ACCESS = ["enabled"]
+    USER_ACCESS: ClassVar[list] = ["enabled"]
 
     def enabled(self):
         pass
@@ -54,7 +52,7 @@ class DummyDeviceWithConflictingUserAccess(Device):
 class DummyDeviceWithConflictingUserAccessProperty(Device):
     """This device will be assigned a protected name"""
 
-    USER_ACCESS = ["enabled"]
+    USER_ACCESS: ClassVar[list] = ["enabled"]
 
     @property
     def enabled(self):

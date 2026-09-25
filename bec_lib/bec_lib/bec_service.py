@@ -93,7 +93,6 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
         print_versions(output_json=args.json)
         sys.exit(0)
 
-    # pylint: disable=protected-access
     bec_logger._stderr_log_level = (
         bec_logger.level.name if args.log_level is None else args.log_level
     )
@@ -234,9 +233,9 @@ class BECService:
                         f" {info.hostname}"
                     )
             return False
-        except RuntimeError as service_error:
+        except RuntimeError as _service_error:
             if elapsed_time > timeout_time:
-                raise service_error
+                raise
         return True
 
     def _initialize_logger(self) -> None:
@@ -268,7 +267,7 @@ class BECService:
         while not self._service_info_event.wait(timeout=3):
             try:
                 self._send_service_status()
-            except Exception:
+            except Exception:  # noqa: S110, BLE001 - Keep heartbeat and metrics workers alive after connector failures.
                 # exception is not explicitly specified,
                 # because it depends on the underlying connector
                 pass
@@ -343,8 +342,8 @@ class BECService:
                 self.connector.set_and_publish(
                     MessageEndpoints.metrics(self._service_name), msg, expire=30
                 )
-            # pylint: disable=broad-except
-            except Exception:
+
+            except Exception:  # noqa: S110, BLE001 - Keep heartbeat and metrics workers alive after connector failures.
                 # exception is not explicitly specified,
                 # because it depends on the underlying connector
                 pass

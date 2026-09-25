@@ -3,10 +3,10 @@ import time
 from bec_lib.logger import bec_logger
 from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates
 from bec_server.procedures.container_utils import get_backend
-from bec_server.procedures.oop_worker_base import (
-    main,  # temporarily needed before update of base image on release
-)
 from bec_server.procedures.oop_worker_base import PROCESS_TIMEOUT, OutOfProcessWorkerBase
+from bec_server.procedures.oop_worker_base import (
+    main as main,  # temporarily needed before update of base image on release  # noqa: PLC0414 -- Explicit re-export preserves the public API or pytest fixture registration.
+)
 from bec_server.procedures.protocol import ContainerCommandBackend
 
 logger = bec_logger.logger

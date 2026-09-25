@@ -95,7 +95,7 @@ class AtlasConnector:
             self.redis_atlas.authenticate(
                 username=f"ingestor_{self.deployment_name}", password=self.atlas_key
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Preserve connection fallback and error reporting for Atlas.
             logger.warning("Failed to connect to Atlas with SSL. Retrying without SSL.")
             self.use_tls = False
             self.redis_atlas = RedisConnector(host, ssl=False, socket_timeout=3)
@@ -118,11 +118,10 @@ class AtlasConnector:
             if self.redis_atlas is None:
                 self._connect_to_atlas_with_ssl(self.host, ssl=self.use_tls)
 
-            # pylint: disable=protected-access
             self.redis_atlas.ping()
             logger.success("Connected to Atlas")
-        # pylint: disable=broad-except
-        except Exception as exc:
+
+        except Exception as exc:  # noqa: BLE001 -- Preserve connection fallback and error reporting for Atlas.
             logger.error(f"Failed to connect to Atlas: {exc}")
         else:
             self.connected_to_atlas = True
@@ -247,7 +246,6 @@ class AtlasConnector:
         config = dotenv_values(env_file)
         self._update_config(**config)
 
-    # pylint: disable=invalid-name
     def _update_config(
         self,
         ATLAS_HOST: str | None = None,

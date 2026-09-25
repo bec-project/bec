@@ -1,1 +1,1 @@
-from .scihub import SciHub
+from .scihub import SciHub as SciHub

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, ClassVar
 from unittest import mock
 
 import pytest
@@ -56,9 +56,9 @@ def test_scan_manager_convert_arg_input_does_not_mutate(scan_manager):
 
 class _GuiConfigScan(NoopScan):
     scan_name = "gui_config_scan"
-    arg_input = {}
-    arg_bundle_size = {"bundle": 0, "min": None, "max": None}
-    gui_config = {"Timing": ["exp_time"]}
+    arg_input: ClassVar[dict] = {}
+    arg_bundle_size: ClassVar[dict] = {"bundle": 0, "min": None, "max": None}
+    gui_config: ClassVar[dict] = {"Timing": ["exp_time"]}
 
     def __init__(self, *, exp_time: float = 0.1, **kwargs):
         """

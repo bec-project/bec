@@ -18,8 +18,7 @@ def test_shell_optimization():
         optim_positions = optim.optimize_shell(positions_orig, 1, dr)
         assert optim.get_path_length(optim_positions) < optim.get_path_length(positions_orig)
         assert len(positions_orig) == len(optim_positions)
-        if min_length > len(optim_positions):
-            min_length = len(optim_positions)
+        min_length = min(min_length, len(optim_positions))
 
 
 @pytest.fixture(params=["shell", "corridor", "corridor_density", "nearest"])
@@ -239,7 +238,7 @@ def test_corridor_optimization(positions_orig, path_optimizer):
     assert optim.get_path_length(optim_positions) < optim.get_path_length(positions_orig)
     assert len(positions_orig) == len(optim_positions)
     print(
-        f"Reduced path for method {path_optimizer} by {optim.get_path_length(optim_positions)/optim.get_path_length(positions_orig)} %"
+        f"Reduced path for method {path_optimizer} by {optim.get_path_length(optim_positions) / optim.get_path_length(positions_orig)} %"
     )
 
     # from matplotlib import pyplot as plt

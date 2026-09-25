@@ -143,7 +143,7 @@ class AtlasPluginRepoEmitter:
         except FileNotFoundError:
             logger.warning("git is not available. Cannot inspect plugin repo status.")
             return None
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:  # noqa: BLE001 -- Repository operations are best-effort and report failures.
             logger.warning(f"{failure_message}: {exc}")
             return None
 

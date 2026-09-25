@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from typing import TYPE_CHECKING
@@ -36,5 +35,5 @@ class ServiceHandler:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
-            preexec_fn=os.setsid,
+            start_new_session=True,
         )

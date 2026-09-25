@@ -15,11 +15,11 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import MutableMapping, Sequence
+from collections.abc import Callable, Generator, MutableMapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from glob import fnmatch
-from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Generator, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import louie
 import redis.client
@@ -102,9 +102,9 @@ class ManagedRedisConnection:
         self._pubsub_conn = self._redis_conn.pubsub()
         self._pubsub_conn.ignore_subscribe_messages = True
         # keep track of topics and callbacks
-        self._topics_cb: DefaultDict[str, list[tuple[louie.saferef.BoundMethodWeakref, dict]]] = (
-            collections.defaultdict(list)
-        )
+        self._topics_cb: collections.defaultdict[
+            str, list[tuple[louie.saferef.BoundMethodWeakref, dict]]
+        ] = collections.defaultdict(list)
         self._topics_cb_lock = threading.Lock()
         self._stream_subs = StreamSubs()
 
@@ -135,14 +135,14 @@ class ManagedRedisConnection:
             self._redis_conn.connection_pool.connection_kwargs["password"] = password
             self._redis_conn.auth(password, username=username)
             self._restart_pubsub()
-        except redis.exceptions.RedisError as exc:
+        except redis.exceptions.RedisError as _exc:
             self._redis_conn.connection_pool.reset()
             for k in backup_keys:
                 if k in backup_kwargs:
                     conn_kwargs[k] = backup_kwargs[k]
                 else:
                     conn_kwargs.pop(k)
-            raise exc
+            raise
 
     @property
     def username(self) -> str:
@@ -164,7 +164,7 @@ class ManagedRedisConnection:
     def _restart_pubsub(self):
         self._pubsub_conn = self._redis_conn.pubsub()
         self._pubsub_conn.ignore_subscribe_messages = True
-        for topic in self._topics_cb.keys():
+        for topic in self._topics_cb:
             if "*" in topic:
                 self._pubsub_conn.psubscribe(topic)
             else:
@@ -237,7 +237,7 @@ class ManagedRedisConnection:
             "file_writer",
             "scihub",
             "dap",
-            None,
+            None,  # noqa: PYI061 - Preserve the Literal representation used by signature and schema consumers.
         ] = None,
         severity: int = 0,
         expire: float = 60,
@@ -364,7 +364,7 @@ class ManagedRedisConnection:
             if not all(isinstance(p, str) for p in patterns):
                 raise ValueError("register: patterns must be a string or a list of strings")
         else:
-            raise ValueError("register: patterns must be a string or a list of strings")
+            raise ValueError("register: patterns must be a string or a list of strings")  # noqa: TRY004 - Preserve the public exception type used by callers.
         return patterns
 
     def any_stream_is_registered(
@@ -496,8 +496,8 @@ class ManagedRedisConnection:
             logger.error(self.connection_error_str)
         except redis.exceptions.NoPermissionError:
             logger.error(f"Permission denied for stream topics: {set(topics_ids.keys())}")
-        # pylint: disable=broad-except
-        except Exception:
+
+        except Exception:  # noqa: BLE001 - Connector workers and probes isolate and report arbitrary callback errors.
             sys.excepthook(*sys.exc_info())  # type: ignore # inside except
 
     def _read_from_start_streams_and_migrate(self) -> bool:
@@ -650,7 +650,9 @@ class ManagedRedisConnection:
     def _unregister_stream(self, topics: list[str], cb: Callable | None = None) -> bool:
         """Unregister callbacks from a list of topics. Returns true if any were removed"""
         with self._stream_subs.lock:
-            return any([self._stream_subs.remove(topic, cb) for topic in topics])
+            # Remove every topic before checking whether any registration changed.
+            removed = [self._stream_subs.remove(topic, cb) for topic in topics]
+            return any(removed)
 
     def _garbage_collect_cb_refs(self):
         """Only handles normal subscriptions, for streams, see StreamSubs.gc_cb_refs()"""
@@ -679,8 +681,8 @@ class ManagedRedisConnection:
                     error = True
                     bec_logger.logger.error(self.connection_error_str)
                 self._stop_events_listener_thread.wait(timeout=1)
-            # pylint: disable=broad-except
-            except Exception:
+
+            except Exception:  # noqa: BLE001 - Connector workers and probes isolate and report arbitrary callback errors.
                 sys.excepthook(*sys.exc_info())  # type: ignore # inside except
             else:
                 error = False
@@ -690,8 +692,8 @@ class ManagedRedisConnection:
     def _execute_callback(self, cb, msg, kwargs):
         try:
             g = cb(msg, **kwargs)
-        # pylint: disable=broad-except
-        except Exception as e:
+
+        except Exception as e:  # noqa: BLE001 - Connector workers and probes isolate and report arbitrary callback errors.
             logger.error(e)
             sys.excepthook(*sys.exc_info())  # type: ignore # inside except
         else:
@@ -762,8 +764,8 @@ class ManagedRedisConnection:
 
             try:
                 self._handle_message(msg)
-            # pylint: disable=broad-except
-            except Exception:
+
+            except Exception:  # noqa: BLE001 - Connector workers and probes isolate and report arbitrary callback errors.
                 content = traceback.format_exc()
                 bec_logger.logger.error(f"Error handling message {msg}:\n{content}")
 
@@ -1058,20 +1060,19 @@ class ManagedRedisConnection:
         stream_key = topic if user_id is None else f"{topic}:{user_id}"
         if from_start:
             self.stream_keys[stream_key] = "0-0"
-        if stream_key not in self.stream_keys:
-            if id is None:
-                try:
-                    msg = client.xrevrange(topic, "+", "-", count=1)
-                    if msg:
-                        msg = cast(list, msg)  # known issue in redis-py; using sync client
-                        self.stream_keys[stream_key] = msg[0][0].decode()
-                        out = {}
-                        for key, val in msg[0][1].items():
-                            out[key.decode()] = MsgpackSerialization.loads(val)
-                        return [out]
-                    self.stream_keys[stream_key] = "0-0"
-                except redis.exceptions.ResponseError:
-                    self.stream_keys[stream_key] = "0-0"
+        if stream_key not in self.stream_keys and id is None:
+            try:
+                msg = client.xrevrange(topic, "+", "-", count=1)
+                if msg:
+                    msg = cast(list, msg)  # known issue in redis-py; using sync client
+                    self.stream_keys[stream_key] = msg[0][0].decode()
+                    out = {}
+                    for key, val in msg[0][1].items():
+                        out[key.decode()] = MsgpackSerialization.loads(val)
+                    return [out]
+                self.stream_keys[stream_key] = "0-0"
+            except redis.exceptions.ResponseError:
+                self.stream_keys[stream_key] = "0-0"
         if id is None:
             id = self.stream_keys[stream_key]
 
@@ -1137,9 +1138,9 @@ class ManagedRedisConnection:
 
     def get_set_members(self, topic: str, pipe: Pipeline | None = None) -> set:
         """fetch the items in the set as a set'"""
-        return set(
+        return {
             MsgpackSerialization.loads(msg) for msg in (pipe or self._redis_conn).smembers(topic)
-        )  # type: ignore
+        }  # type: ignore
 
     def blocking_list_pop(
         self, endpoint: str, side: Literal["LEFT", "RIGHT"] = "LEFT", timeout_s: float | None = None
@@ -1169,7 +1170,7 @@ class ManagedRedisConnection:
             self._redis_conn.ping()
         except (redis.exceptions.AuthenticationError, redis.exceptions.ResponseError):
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 - Connector workers and probes isolate and report arbitrary callback errors.
             return False
         finally:
             self._redis_conn.set_retry(retry)

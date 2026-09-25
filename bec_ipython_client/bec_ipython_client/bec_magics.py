@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 @magics_class
 class BECMagics(Magics):
     def __init__(self, shell, client: BECIPythonClient):
-        super(BECMagics, self).__init__(shell)
+        super().__init__(shell)
         self.client = client
 
     @line_magic
@@ -78,7 +78,7 @@ class BECMagics(Magics):
     @line_magic
     def su(self, line):
         "Switch user"
-        # pylint: disable=protected-access
+
         self.client._client.acl.login(line)
         self.client._client._update_username()
         self.client._refresh_ipython_username()

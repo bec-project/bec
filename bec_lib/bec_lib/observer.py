@@ -139,8 +139,8 @@ class ObserverManager:
 
     @typechecked
     def add_observer(self, observer: Observer, ignore_existing: bool = False):
-        if not hasattr(self.device_manager.devices, observer.device):
-            AttributeError(
+        if observer.device not in self.device_manager.devices:
+            raise AttributeError(
                 f"The specified observer uses device {observer.device} which is currently not"
                 " configured."
             )

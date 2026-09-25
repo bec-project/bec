@@ -1,4 +1,5 @@
-from typing import Any, Callable, Literal
+from collections.abc import Callable
+from typing import Any, Literal
 from unittest import mock
 
 import pytest
@@ -24,11 +25,10 @@ from bec_lib.device import (
 )
 from bec_lib.devicemanager import DeviceContainer, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
-from bec_lib.tests.fixtures import device_manager_class
+from bec_lib.tests.fixtures import (
+    device_manager_class as device_manager_class,  # noqa: PLC0414 - Re-export the pytest fixture for collection in this module.
+)
 from bec_lib.tests.utils import ClientMock, ConnectorMock, get_device_info_mock
-
-# pylint: disable=missing-function-docstring
-# pylint: disable=protected-access
 
 
 @pytest.fixture
@@ -121,9 +121,7 @@ def test_read_nested_device(dev: Any):
     "kind,cached", [("normal", True), ("hinted", True), ("config", False), ("omitted", False)]
 )
 def test_read_kind_hinted(
-    dev: Any,
-    kind: Literal["normal"] | Literal["hinted"] | Literal["config"] | Literal["omitted"],
-    cached: bool,
+    dev: Any, kind: Literal["normal", "hinted", "config", "omitted"], cached: bool
 ):
     with (
         mock.patch.object(dev.samx.readback, "_run") as mock_run,
@@ -157,10 +155,7 @@ def test_read_kind_hinted(
     ],
 )
 def test_read_configuration_not_cached(
-    dev: Any,
-    is_signal: bool,
-    is_config_signal: bool,
-    method: Literal["read"] | Literal["read_configuration"],
+    dev: Any, is_signal: bool, is_config_signal: bool, method: Literal["read", "read_configuration"]
 ):
     with (
         mock.patch.object(
@@ -179,7 +174,7 @@ def test_read_configuration_not_cached(
     [(True, False, "read"), (False, True, "redis"), (False, False, "redis")],
 )
 def test_read_configuration_cached(
-    dev: Any, is_signal: bool, is_config_signal: bool, method: Literal["read"] | Literal["redis"]
+    dev: Any, is_signal: bool, is_config_signal: bool, method: Literal["read", "redis"]
 ):
     with (
         mock.patch.object(
@@ -218,10 +213,12 @@ def test_read_configuration_cached(
 )
 def test_run_rpc_call(dev: Any, mock_rpc, method, args, kwargs, expected_call):
     dev.samx.root.parent.parent.queue.get_default_scan_queue.return_value = "primary"
-    with mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"):
-        with mock.patch.object(dev.samx.setpoint, mock_rpc) as mock_rpc:
-            getattr(dev.samx.setpoint, method)(*args, **kwargs)
-            mock_rpc.assert_called_once_with(*expected_call)
+    with (
+        mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"),
+        mock.patch.object(dev.samx.setpoint, mock_rpc) as rpc_call,
+    ):
+        getattr(dev.samx.setpoint, method)(*args, **kwargs)
+        rpc_call.assert_called_once_with(*expected_call)
 
 
 def test_get_rpc_func_name_read(dev: Any):
@@ -234,9 +231,7 @@ def test_get_rpc_func_name_read(dev: Any):
     "kind,cached", [("normal", True), ("hinted", True), ("config", False), ("omitted", False)]
 )
 def test_get_rpc_func_name_readback_get(
-    dev: Any,
-    kind: Literal["normal"] | Literal["hinted"] | Literal["config"] | Literal["omitted"],
-    cached: bool,
+    dev: Any, kind: Literal["normal", "hinted", "config", "omitted"], cached: bool
 ):
     with (
         mock.patch.object(dev.samx.readback, "_run") as mock_rpc,
@@ -329,26 +324,32 @@ def test_prepare_rpc_msg_uses_device_rpc_signature(dev: Any):
 
 
 def test_run_rpc_call_calls_stop_on_keyboardinterrupt(dev: Any):
-    with mock.patch.object(dev.samx.setpoint, "_prepare_rpc_msg") as mock_rpc:
-        with mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"):
-            mock_rpc.side_effect = [KeyboardInterrupt]
-            with pytest.raises(RPCError, match="User interruption during RPC call."):
-                with mock.patch.object(dev.samx, "stop") as mock_stop:
-                    dev.samx.setpoint.set(1)
-            mock_rpc.assert_called_once()
-            mock_stop.assert_called_once()
+    with (
+        mock.patch.object(dev.samx.setpoint, "_prepare_rpc_msg") as mock_rpc,
+        mock.patch.object(dev.samx.setpoint, "_validate_rpc_client"),
+    ):
+        mock_rpc.side_effect = [KeyboardInterrupt]
+        with (
+            pytest.raises(RPCError, match="User interruption during RPC call."),
+            mock.patch.object(dev.samx, "stop") as mock_stop,
+        ):
+            dev.samx.setpoint.set(1)
+        mock_rpc.assert_called_once()
+        mock_stop.assert_called_once()
 
 
 def test_run_rpc_call_keyboardinterrupt_on_top_level_signal_skips_stop(dm_with_override: Any):
     dm_with_override.parent = mock.MagicMock()
     signal = Signal(name="top_level_signal", config=BASIC_CONFIG, parent=dm_with_override)
 
-    with mock.patch.object(signal, "_prepare_rpc_msg") as mock_rpc:
-        with mock.patch.object(signal, "_validate_rpc_client"):
-            mock_rpc.side_effect = [KeyboardInterrupt]
-            with pytest.raises(RPCError, match="User interruption during RPC call."):
-                signal.read()
-            mock_rpc.assert_called_once()
+    with (
+        mock.patch.object(signal, "_prepare_rpc_msg") as mock_rpc,
+        mock.patch.object(signal, "_validate_rpc_client"),
+    ):
+        mock_rpc.side_effect = [KeyboardInterrupt]
+        with pytest.raises(RPCError, match="User interruption during RPC call."):
+            signal.read()
+        mock_rpc.assert_called_once()
 
 
 @pytest.fixture
@@ -376,10 +377,12 @@ BASIC_CONFIG = {
 
 @pytest.fixture
 def dev_w_config():
-    def _func(config: dict = {}):
+    def _func(config: dict | None = None):
         dm_base = DeviceManagerBase(mock.MagicMock())
         dm_base.config_helper = mock.MagicMock(spec=ConfigHelper)
-        return DeviceBaseWithConfig(name="test", config=BASIC_CONFIG | config, parent=dm_base)
+        return DeviceBaseWithConfig(
+            name="test", config=BASIC_CONFIG | (config or {}), parent=dm_base
+        )
 
     return _func
 
@@ -775,24 +778,30 @@ def test_methods(dev_w_config: Callable[..., DeviceBaseWithConfig], config, meth
 
 
 def test_existing_signal_attributes_cannot_be_overwritten(dev: Any):
-    with mock.patch.object(dev.samx.root.parent, "_allow_override", False):
-        with pytest.raises(
+    with (
+        mock.patch.object(dev.samx.root.parent, "_allow_override", False),
+        pytest.raises(
             AttributeError,
             match=r"Use 'readback\.set\(\.\.\.\)' or 'readback\.put\(\.\.\.\)' instead",
-        ):
-            dev.samx.readback = 5
+        ),
+    ):
+        dev.samx.readback = 5
 
 
 def test_existing_subdevice_attributes_cannot_be_overwritten(dev: Any):
-    with mock.patch.object(dev.dyn_signals.root.parent, "_allow_override", False):
-        with pytest.raises(AttributeError, match="Cannot overwrite 'messages'"):
-            dev.dyn_signals.messages = "shadowed"
+    with (
+        mock.patch.object(dev.dyn_signals.root.parent, "_allow_override", False),
+        pytest.raises(AttributeError, match="Cannot overwrite 'messages'"),
+    ):
+        dev.dyn_signals.messages = "shadowed"
 
 
 def test_existing_methods_cannot_be_overwritten(dev: Any):
-    with mock.patch.object(dev.samx.root.parent, "_allow_override", False):
-        with pytest.raises(AttributeError, match="Cannot overwrite 'read'"):
-            dev.samx.read = "shadowed"
+    with (
+        mock.patch.object(dev.samx.root.parent, "_allow_override", False),
+        pytest.raises(AttributeError, match="Cannot overwrite 'read'"),
+    ):
+        dev.samx.read = "shadowed"
 
 
 def test_new_public_attributes_can_still_be_assigned(dev: Any):
@@ -829,7 +838,9 @@ def dev_container(dm_with_override):
 
 
 def test_device_container_wm(dev_container, capsys):
-    with mock.patch.object(dev_container.test, "read", return_value={"test": {"value": 1}}) as read:
+    with mock.patch.object(
+        dev_container.test, "read", return_value={"test": {"value": 1}}
+    ) as _read:
         dev_container.wm("test")
         dev_container.wm("tes*")
         captured = capsys.readouterr()
@@ -844,7 +855,7 @@ def test_device_container_wm_raises_for_missing_device(dev_container):
 
 def test_device_container_getattr_raises_for_missing_single_underscore_device(dev_container):
     with pytest.raises(DeviceConfigError, match="Device _something does not exist\\."):
-        dev_container._something
+        _missing_device = dev_container._something
 
 
 def test_device_container_wm_raises_for_unmatched_glob(dev_container):
@@ -882,7 +893,7 @@ def test_device_container_wm_uses_glob_matching(dev_container, dm_with_override,
 def test_device_container_wm_read_contains_None(dev_container, capsys):
     with mock.patch.object(
         dev_container.test, "read", return_value={"test": {"value": None}}
-    ) as read:
+    ) as _read:
         dev_container.wm("test")
         captured = capsys.readouterr()
         assert "test" in captured.out
@@ -912,7 +923,7 @@ def test_device_container_position_rows(dev_container):
     ],
 )
 def test_device_container_wm_with_setpoint_names(dev_container, reading):
-    with mock.patch.object(dev_container.test, "read", return_value=reading) as read:
+    with mock.patch.object(dev_container.test, "read", return_value=reading) as _read:
         dev_container.wm("test")
 
 
@@ -1159,8 +1170,7 @@ def test_computed_signal_show_all(dm_with_override):
 
         cells = []
         for column in table.columns:
-            for cell in column.cells:
-                cells.append(cell)
+            cells.extend(column.cells)
 
         assert cells == [
             "Compute Method",
@@ -1219,43 +1229,45 @@ def test_device_summary(dev: Any):
 def test_device_summary_signal_grouping(dev: Any):
     """Test that signals are correctly grouped by kind in the summary table."""
 
-    with mock.patch("rich.console.Console.print"):
-        with mock.patch("rich.table.Table.add_row") as mock_add_row:
-            dev.samx.summary()
+    with (
+        mock.patch("rich.console.Console.print"),
+        mock.patch("rich.table.Table.add_row") as mock_add_row,
+    ):
+        dev.samx.summary()
 
-            num_rows = mock_add_row.call_count
-            assert num_rows == len(dev.samx._info["signals"]) + 3  # 3 extra rows for headers
+        num_rows = mock_add_row.call_count
+        assert num_rows == len(dev.samx._info["signals"]) + 3  # 3 extra rows for headers
 
-            assert mock_add_row.call_args_list[0][0] == (
-                "readback",
-                "samx",
-                "hinted",
-                "SIM:samx",
-                "integer",
-                "",
-                "readback doc string",
-            )
-            assert mock_add_row.call_args_list[1][0] == tuple()
-            assert mock_add_row.call_args_list[2][0] == (
-                "setpoint",
-                "samx_setpoint",
-                "normal",
-                "SIM:samx_setpoint",
-                "integer",
-                "",
-                "setpoint doc string",
-            )
-            devs = [row_call[0][0] for row_call in mock_add_row.call_args_list if row_call[0]]
-            assert devs == [
-                "readback",
-                "setpoint",
-                "motor_is_moving",
-                "velocity",
-                "acceleration",
-                "high_limit_travel",
-                "low_limit_travel",
-                "unused",
-            ]
+        assert mock_add_row.call_args_list[0][0] == (
+            "readback",
+            "samx",
+            "hinted",
+            "SIM:samx",
+            "integer",
+            "",
+            "readback doc string",
+        )
+        assert mock_add_row.call_args_list[1][0] == ()
+        assert mock_add_row.call_args_list[2][0] == (
+            "setpoint",
+            "samx_setpoint",
+            "normal",
+            "SIM:samx_setpoint",
+            "integer",
+            "",
+            "setpoint doc string",
+        )
+        devs = [row_call[0][0] for row_call in mock_add_row.call_args_list if row_call[0]]
+        assert devs == [
+            "readback",
+            "setpoint",
+            "motor_is_moving",
+            "velocity",
+            "acceleration",
+            "high_limit_travel",
+            "low_limit_travel",
+            "unused",
+        ]
 
 
 def test_device_summary_empty_signals(dev: Any):
@@ -1275,23 +1287,25 @@ def test_device_summary_empty_signals(dev: Any):
 def test_device_summary_bec_signals(dm_with_devices):
     """Test that BEC signals are correctly included in the summary."""
     dev = dm_with_devices.devices
-    with mock.patch("rich.console.Console.print") as mock_print:
-        with mock.patch("rich.table.Table.add_row") as mock_add_row:
-            dev.eiger.summary()
-            mock_add_row.assert_has_calls(
-                [
-                    mock.call(
-                        "preview",
-                        "eiger_preview",
-                        "hinted",
-                        "BECMessageSignal:eiger_preview",
-                        "DevicePreviewMessage",
-                        "",
-                        "",
-                    )
-                ]
-            )
-            assert mock_print.call_count == 1
+    with (
+        mock.patch("rich.console.Console.print") as mock_print,
+        mock.patch("rich.table.Table.add_row") as mock_add_row,
+    ):
+        dev.eiger.summary()
+        mock_add_row.assert_has_calls(
+            [
+                mock.call(
+                    "preview",
+                    "eiger_preview",
+                    "hinted",
+                    "BECMessageSignal:eiger_preview",
+                    "DevicePreviewMessage",
+                    "",
+                    "",
+                )
+            ]
+        )
+        assert mock_print.call_count == 1
 
 
 def test_device_str(dm_with_devices):
@@ -1430,9 +1444,11 @@ def test_rpc_call_without_alarm_handler_raises(dev):
             return True
         return original_isinstance(obj, classinfo)
 
-    with mock.patch.object(dev.samx.root.parent.parent, "alarm_handler", None):
-        with mock.patch("bec_lib.device.isinstance", side_effect=isinstance_side_effect):
-            with pytest.raises(
-                RPCError, match="RPC calls require an alarm handler to be set in the BECClient"
-            ):
-                dev.samx.read(cached=False)
+    with (
+        mock.patch.object(dev.samx.root.parent.parent, "alarm_handler", None),
+        mock.patch("bec_lib.device.isinstance", side_effect=isinstance_side_effect),
+        pytest.raises(
+            RPCError, match="RPC calls require an alarm handler to be set in the BECClient"
+        ),
+    ):
+        dev.samx.read(cached=False)

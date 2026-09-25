@@ -17,10 +17,10 @@ def lmfit_service():
 def test_LmfitService1D(model, exists):
     client = mock.MagicMock()
     if exists:
-        service = LmfitService1D(model=model, client=client)
+        _service = LmfitService1D(model=model, client=client)
         return
     with pytest.raises(ValueError):
-        service = LmfitService1D(model=model, client=client)
+        _service = LmfitService1D(model=model, client=client)
 
 
 def test_LmfitService1D_available_models(lmfit_service):
@@ -37,12 +37,27 @@ def test_LmfitService1D_get_provided_services(lmfit_service):
     services = lmfit_service.get_provided_services()
     assert isinstance(services, dict)
     assert len(services) > 0
-    for model, service in services.items():
+    for service in services.values():
         assert isinstance(service, dict)
         assert "class" in service
         assert "user_friendly_name" in service
         assert "class_doc" in service
         assert "run_doc" in service
+
+
+@pytest.mark.parametrize("parameter", ["x_min", "x_max"])
+def test_lmfit_published_range_signature(parameter):
+    with mock.patch.object(
+        LmfitService1D, "available_models", return_value={lmfit.models.GaussianModel}
+    ):
+        service = LmfitService1D.get_provided_services()["GaussianModel"]
+    entry = next(entry for entry in service["signature"] if entry["name"] == parameter)
+    assert entry == {
+        "name": parameter,
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "default": None,
+        "annotation": "float",
+    }
 
 
 def test_LmfitService1D_get_data_from_current_scan_without_devices(lmfit_service):
@@ -142,7 +157,7 @@ def test_LmfitService1D_process_and_publish_current_scan(lmfit_service):
         get_data.return_value = {"x": [1, 2, 3], "y": [4, 5, 6]}
         with mock.patch.object(lmfit_service, "process") as process:
             process.return_value = ({"result": "result"}, {"metadata": "metadata"})
-            lmfit_service._process_and_publish_current_scan()  # noqa: SLF001
+            lmfit_service._process_and_publish_current_scan()
             get_data.assert_called_once()
             process.assert_called_once()
             lmfit_service.client.connector.xadd.assert_called_once()
@@ -287,7 +302,7 @@ def test_LmfitService1D_expand_composite_list_length_mismatch():
         model=["GaussianModel", "GaussianModel"], client=client, continuous=False
     )
     with pytest.raises(DAPError):
-        service._expand_composite_parameters([{"center": 0.0}])  # noqa: SLF001
+        service._expand_composite_parameters([{"center": 0.0}])
 
 
 def test_LmfitService1D_expand_composite_dict_component_keys():
@@ -295,7 +310,7 @@ def test_LmfitService1D_expand_composite_dict_component_keys():
     service = LmfitService1D(
         model=["GaussianModel", "GaussianModel"], client=client, continuous=False
     )
-    expanded = service._expand_composite_parameters(  # noqa: SLF001
+    expanded = service._expand_composite_parameters(
         {
             "GaussianModel_0": {"center": {"value": -1.0}},
             "GaussianModel_1": {"center": {"value": 1.0}},
@@ -311,7 +326,7 @@ def test_LmfitService1D_resolve_model_name_map_rejects_duplicates():
         model=["GaussianModel", "GaussianModel"], client=client, continuous=False
     )
     with pytest.raises(DAPError):
-        service._expand_composite_parameters({"GaussianModel": {"center": 0.0}})  # noqa: SLF001
+        service._expand_composite_parameters({"GaussianModel": {"center": 0.0}})
 
 
 def test_LmfitService1D_process_uses_guess_when_parameters_are_not_configured(

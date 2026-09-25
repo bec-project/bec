@@ -8,7 +8,9 @@ from bec_lib import messages
 from bec_lib.client import SystemConfig
 from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.file_utils import sanitize_relative_subdir
-from bec_lib.tests.fixtures import bec_client_mock
+from bec_lib.tests.fixtures import (
+    bec_client_mock as bec_client_mock,  # noqa: PLC0414 - Re-export the pytest fixture for collection in this module.
+)
 
 
 def test_system_config():
@@ -112,9 +114,11 @@ def test_beamline_storage_copy_sanitizes_subdir(bec_client_mock):
 def test_beamline_storage_copy_requires_plugin(bec_client_mock):
     client = bec_client_mock
 
-    with mock.patch("bec_lib.client.get_file_writer_storage_copy_plugin", return_value=None):
-        with pytest.raises(RuntimeError, match="No file-writer storage copy plugin is installed."):
-            client.beamline_storage_copy("/tmp/test.h5", "flomni_alignment")
+    with (
+        mock.patch("bec_lib.client.get_file_writer_storage_copy_plugin", return_value=None),
+        pytest.raises(RuntimeError, match="No file-writer storage copy plugin is installed."),
+    ):
+        client.beamline_storage_copy("/tmp/test.h5", "flomni_alignment")
 
     client.connector.send.assert_not_called()
 

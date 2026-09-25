@@ -1,6 +1,6 @@
 from enum import Enum
 from threading import Event
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import EndpointInfo
@@ -96,10 +96,9 @@ class ProcedureStatus:
             if state == ProcedureState.SCHEDULED:
                 return
         # A scheduled procedure can be started
-        if self._state == ProcedureState.SCHEDULED:
-            if state == ProcedureState.RUNNING:
-                self._state = state
-                return
+        if self._state == ProcedureState.SCHEDULED and state == ProcedureState.RUNNING:
+            self._state = state
+            return
         # A scheduled or running procedure can be set to finished
         if self._state in [ProcedureState.RUNNING, ProcedureState.SCHEDULED]:
             if state in [ProcedureState.FAILED, ProcedureState.SUCCESS]:
@@ -130,7 +129,7 @@ class _HelperBase:
             return
         msg_: RespMsg = msg.value  # type: ignore
         if not isinstance(msg_.message, dict):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004 - Preserve the public exception type used by callers.
                 f"Malformed request response message: message should be a dict, got {msg_.message}"
             )
         if (_id := msg_.message.get("execution_id", "_")) in self._callback_ids:
@@ -304,11 +303,12 @@ class _Clear(_BackendHelperBase):
         """Remove a ProcedureExecutionMessage from its unhandled queue by its execution ID"""
         for queue in self._parent.get.queue_names("unhandled"):
             for msg in self._parent.get.unhandled_queue(queue):
-                if msg.execution_id == execution_id:
-                    if self._conn.lrem(ME.unhandled_procedure_execution(msg.queue), 0, msg) > 0:
-                        logger.debug(f"Removed execution {msg} from queue.")
-                        self._parent.notify_watchers(queue, "unhandled")
-                        return
+                if (msg.execution_id == execution_id) and (
+                    self._conn.lrem(ME.unhandled_procedure_execution(msg.queue), 0, msg) > 0
+                ):
+                    logger.debug(f"Removed execution {msg} from queue.")
+                    self._parent.notify_watchers(queue, "unhandled")
+                    return
         logger.debug(f"Execution {execution_id} not found in any unhandled queue.")
 
 

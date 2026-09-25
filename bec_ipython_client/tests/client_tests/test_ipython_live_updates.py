@@ -98,21 +98,23 @@ def test_live_updates_process_queue_pending(ipython_live_updates_with_mocked_liv
     client.queue.queue_storage.current_scan_queue = {
         "primary": messages.ScanQueueStatus(info=[], status="RUNNING")
     }
-    with mock.patch.object(queue, "_update_with_buffer"):
-        with mock.patch(
+    with (
+        mock.patch.object(queue, "_update_with_buffer"),
+        mock.patch(
             "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
-        ) as queue_pos:
-            queue_pos.return_value = 2
-            with mock.patch.object(
-                live_updates, "_available_req_blocks", return_value=[request_block]
-            ):
-                with mock.patch.object(live_updates, "_process_report_instructions") as process:
-                    res = live_updates._process_queue(queue, request_msg)
-                    # Verify Live panel was created for showing queue status
-                    mock_live.assert_called_once()
-                    mock_live.return_value.start.assert_called_once()
-                    process.assert_not_called()
-                    assert res is False
+        ) as queue_pos,
+    ):
+        queue_pos.return_value = 2
+        with (
+            mock.patch.object(live_updates, "_available_req_blocks", return_value=[request_block]),
+            mock.patch.object(live_updates, "_process_report_instructions") as process,
+        ):
+            res = live_updates._process_queue(queue, request_msg)
+            # Verify Live panel was created for showing queue status
+            mock_live.assert_called_once()
+            mock_live.return_value.start.assert_called_once()
+            process.assert_not_called()
+            assert res is False
 
 
 @pytest.mark.timeout(20)
@@ -133,18 +135,16 @@ def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_liv
     client.queue.queue_storage.current_scan_queue = {
         "primary": messages.ScanQueueStatus(info=[], status="RUNNING")
     }
-    with mock.patch.object(queue, "_update_with_buffer"):
-        with mock.patch(
-            "bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock
-        ):
-            with mock.patch.object(
-                live_updates, "_available_req_blocks", return_value=[request_block]
-            ):
-                with mock.patch.object(live_updates, "_process_instruction") as process:
-                    res = live_updates._process_queue(queue, request_msg)
-                    mock_live.assert_not_called()
-                    process.assert_called_once_with({"wait_table": 10})
-                    assert res is True
+    with (
+        mock.patch.object(queue, "_update_with_buffer"),
+        mock.patch("bec_lib.queue_items.QueueItem.queue_position", new_callable=mock.PropertyMock),
+        mock.patch.object(live_updates, "_available_req_blocks", return_value=[request_block]),
+        mock.patch.object(live_updates, "_process_instruction") as process,
+    ):
+        res = live_updates._process_queue(queue, request_msg)
+        mock_live.assert_not_called()
+        process.assert_called_once_with({"wait_table": 10})
+        assert res is True
 
 
 @pytest.mark.timeout(20)
@@ -479,9 +479,9 @@ def test_process_request_keyboard_interrupt_pending_request_raises_scan_interrup
         ) as abort_pending,
         mock.patch.object(live_updates, "_wait_for_cleanup") as wait_for_cleanup,
         mock.patch.object(live_updates, "_reset") as reset,
+        pytest.raises(ScanInterruption, match="User abort."),
     ):
-        with pytest.raises(ScanInterruption, match="User abort."):
-            live_updates.process_request(sample_request_msg, callbacks)
+        live_updates.process_request(sample_request_msg, callbacks)
 
     abort_pending.assert_called_once()
     wait_for_cleanup.assert_called_once()
@@ -509,9 +509,9 @@ def test_process_request_keyboard_interrupt_pending_request_aborts_local_request
         mock.patch.object(live_updates.client.queue, "request_scan_abortion") as request_abort,
         mock.patch.object(live_updates, "_wait_for_cleanup") as wait_for_cleanup,
         mock.patch.object(live_updates, "_reset") as reset,
+        pytest.raises(ScanInterruption, match="User abort."),
     ):
-        with pytest.raises(ScanInterruption, match="User abort."):
-            live_updates.process_request(sample_request_msg, callbacks)
+        live_updates.process_request(sample_request_msg, callbacks)
 
     request_abort.assert_called_once_with(request_id="something")
     wait_for_cleanup.assert_called_once()
@@ -537,9 +537,9 @@ def test_process_request_keyboard_interrupt_non_pending_re_raises(
         ) as abort_pending,
         mock.patch.object(live_updates, "_wait_for_cleanup") as wait_for_cleanup,
         mock.patch.object(live_updates, "_reset") as reset,
+        pytest.raises(KeyboardInterrupt),
     ):
-        with pytest.raises(KeyboardInterrupt):
-            live_updates.process_request(sample_request_msg, callbacks)
+        live_updates.process_request(sample_request_msg, callbacks)
 
     abort_pending.assert_called_once()
     wait_for_cleanup.assert_not_called()

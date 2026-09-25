@@ -1,4 +1,3 @@
-# pylint: disable=missing-function-docstring
 import threading
 import time
 from contextlib import redirect_stdout
@@ -16,8 +15,6 @@ from bec_lib.queue_items import QueueItem
 from bec_lib.scan_items import ScanItem
 from bec_lib.scan_manager import ScanManager
 from bec_lib.tests.utils import ConnectorMock
-
-# pylint: disable=missing-function-docstring
 
 
 class ScanItemMock:
@@ -370,7 +367,7 @@ class TestLiveTable:
 
         with (
             mock.patch.object(live_update, "table") as mocked_table,
-            mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs,
+            mock.patch.object(live_update, "_print_client_msgs_asap") as _mock_client_msgs,
         ):
             live_update.dev_values = (len(live_update._get_header()) - 1) * [0]
             live_update.print_table_data()
@@ -417,7 +414,7 @@ class TestLiveTable:
         )
         live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
 
-        with mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs:
+        with mock.patch.object(live_update, "_print_client_msgs_asap") as _mock_client_msgs:
             live_update.print_table_data()
             with mock.patch.object(live_update, "table") as mocked_table:
                 live_update.dev_values = (len(live_update._get_header()) - 1) * [value]
@@ -488,8 +485,8 @@ class TestLiveTable:
         live_update.scan_item = ScanItemMock(live_data=[live_update.point_data])
 
         with (
-            mock.patch.object(live_update, "table") as mocked_table,
-            mock.patch.object(live_update, "_print_client_msgs_asap") as mock_client_msgs,
+            mock.patch.object(live_update, "table") as _mocked_table,
+            mock.patch.object(live_update, "_print_client_msgs_asap") as _mock_client_msgs,
         ):
             live_update.dev_values = (len(live_update._get_header()) - 1) * [0]
             live_update.print_table_data()

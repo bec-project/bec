@@ -10,7 +10,7 @@ def identity(obj):
     return obj
 
 
-class _ProxyMethods(object):  # pragma: no cover
+class _ProxyMethods:  # pragma: no cover
     # We use properties to override the values of __module__ and
     # __doc__. If we add these in ObjectProxy, the derived class
     # __dict__ will still be setup to have string variants of these
@@ -77,14 +77,14 @@ class Proxy(with_metaclass(_ProxyMetaType)):  # pragma: no cover
       * calls ``__factory__``, saves result to ``__target__`` and returns said result.
     """
 
-    __slots__ = "__target__", "__factory__"
+    __slots__ = "__factory__", "__target__"
 
     def __init__(self, factory, init_once=False):
         object.__setattr__(self, "__factory__", factory)
         object.__setattr__(self, "__init_once__", init_once)
 
     @property
-    def __wrapped__(
+    def __wrapped__(  # noqa: PLR0206 - Bind object accessors locally to avoid recursive proxy attribute lookup.
         self,
         __getattr__=object.__getattribute__,
         __setattr__=object.__setattr__,
@@ -123,7 +123,7 @@ class Proxy(with_metaclass(_ProxyMetaType)):  # pragma: no cover
         return self.__wrapped__.__class__
 
     @__class__.setter
-    def __class__(self, value):  # noqa F811
+    def __class__(self, value):
         self.__wrapped__.__class__ = value
 
     def __instancecheck__(self, instance):
@@ -150,13 +150,9 @@ class Proxy(with_metaclass(_ProxyMetaType)):  # pragma: no cover
         try:
             target = __getattr__(self, "__target__")
         except AttributeError:
-            return "<{} at 0x{:x} with factory {!r}>".format(
-                type(self).__name__, id(self), self.__factory__
-            )
+            return f"<{type(self).__name__} at 0x{id(self):x} with factory {self.__factory__!r}>"
         else:
-            return "<{} at 0x{:x} wrapping {!r} at 0x{:x} with factory {!r}>".format(
-                type(self).__name__, id(self), target, id(target), self.__factory__
-            )
+            return f"<{type(self).__name__} at 0x{id(self):x} wrapping {target!r} at 0x{id(target):x} with factory {self.__factory__!r}>"
 
     def __reversed__(self):
         return reversed(self.__wrapped__)

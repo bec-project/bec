@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Callable, Type
 
 from bec_lib import codecs as bec_codecs
 from bec_lib.logger import bec_logger
@@ -15,7 +15,7 @@ class SerializationRegistry:
     use_json = False
 
     def __init__(self):
-        self._registry: dict[str, tuple[Type, Callable, Callable]] = {}
+        self._registry: dict[str, tuple[type, Callable, Callable]] = {}
         self._legacy_codecs = []  # can be removed in future versions, see issue #516
 
         self.register_codec(bec_codecs.BECMessageEncoder)
@@ -31,7 +31,7 @@ class SerializationRegistry:
         else:
             self.register_codec(bec_codecs.NumpyEncoder)
 
-    def register_codec(self, codec: Type[bec_codecs.BECCodec]):
+    def register_codec(self, codec: type[bec_codecs.BECCodec]):
         """
         Register a codec for a specific BECCodec subclass.
         This method allows for easy registration of custom encoders and decoders
@@ -48,7 +48,7 @@ class SerializationRegistry:
         else:
             self.register(codec.obj_type, codec.encode, codec.decode)
 
-    def register(self, cls: Type, encoder: Callable, decoder: Callable):
+    def register(self, cls: type, encoder: Callable, decoder: Callable):
         """Register a codec for a specific type."""
 
         if cls.__name__ in self._registry:
@@ -56,18 +56,18 @@ class SerializationRegistry:
         self._registry[cls.__name__] = (cls, encoder, decoder)
         self.get_codec.cache_clear()  # Clear the cache when a new codec is registered
 
-    @lru_cache(maxsize=2000)
-    def get_codec(self, cls: Type) -> tuple[Type, Callable, Callable] | None:
+    @lru_cache(maxsize=2000)  # noqa: B019 - The bounded cache is shared by the long-lived service instance.
+    def get_codec(self, cls: type) -> tuple[type, Callable, Callable] | None:
         """Get the codec for a specific type."""
         codec = self._registry.get(cls.__name__)
         if codec:
             return codec
-        for _, (registered_cls, encoder, decoder) in self._registry.items():
+        for registered_cls, encoder, decoder in self._registry.values():
             if issubclass(cls, registered_cls):
                 return registered_cls, encoder, decoder
         return None
 
-    def is_registered(self, cls: Type) -> bool:
+    def is_registered(self, cls: type) -> bool:
         """
         Check if a codec is registered for a specific type.
         Args:

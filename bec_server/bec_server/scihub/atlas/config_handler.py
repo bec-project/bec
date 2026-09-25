@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 import uuid
-from typing import TYPE_CHECKING, Tuple, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from bec_lib import messages
 from bec_lib.atlas_models import Device, DevicePartial
@@ -106,7 +106,7 @@ class ConfigHandler:
             error_msg = "Request was cancelled"
             accepted = False
             logger.info(f"Config request {msg.metadata.get('RID')} was cancelled.")
-        except Exception:
+        except Exception:  # noqa: BLE001 -- Convert arbitrary device-configuration failures into request replies.
             error_msg = traceback.format_exc()
             accepted = False
         finally:
@@ -353,7 +353,7 @@ class ConfigHandler:
                 )
         except TimeoutError:
             logger.warning("Timeout while attempting to cancel device server request")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Convert arbitrary device-configuration failures into request replies.
             logger.warning(f"Error canceling device server request: {exc}")
 
         # Wait for the local task to actually stop
@@ -365,7 +365,7 @@ class ConfigHandler:
             concurrent.futures.wait([future])
             logger.info(f"Config request {active_request_id} has completed after cancellation")
             self.send_config_request_reply(accepted=True, error_msg="", metadata=msg.metadata)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Convert arbitrary device-configuration failures into request replies.
             logger.warning(f"Error waiting for cancellation of {active_request_id}: {exc}")
             self.send_config_request_reply(
                 accepted=False, error_msg=f"Error during cancellation: {exc}", metadata=msg.metadata
@@ -381,7 +381,7 @@ class ConfigHandler:
 
     def _wait_for_device_server_update(
         self, RID: str, timeout_time=30
-    ) -> Tuple[bool, messages.RequestResponseMessage]:
+    ) -> tuple[bool, messages.RequestResponseMessage]:
         timeout = timeout_time
         time_step = 0.05
         elapsed_time = 0
@@ -469,7 +469,7 @@ class ConfigHandler:
         index = next(
             index for index, dev_conf in enumerate(config) if dev_conf["name"] == device.name
         )
-        # pylint: disable=protected-access
+
         config[index] = device._config
         self.set_config_in_redis(config)
 
@@ -481,7 +481,7 @@ class ConfigHandler:
             dev_configs (dict): Dictionary of device configs
         """
         config = self.get_config_from_redis()
-        for dev, dev_config in dev_configs.items():
+        for dev_config in dev_configs.values():
             config.append(dev_config)
         self.set_config_in_redis(config)
 

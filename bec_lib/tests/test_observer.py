@@ -79,10 +79,10 @@ dir_path = os.path.dirname(bec_lib.__file__)
 )
 def test_observer(kwargs, raised_error):
     if not raised_error:
-        observer = Observer(**kwargs)
+        _observer = Observer(**kwargs)
         return
     with pytest.raises(raised_error):
-        observer = Observer(**kwargs)
+        _observer = Observer(**kwargs)
 
 
 @pytest.fixture()
@@ -136,7 +136,7 @@ def test_observer_manager_msg(device_manager):
     ],
 )
 def test_add_observer(device_manager, observer, raises_error):
-    with mock.patch.object(device_manager.connector, "get", return_value=None) as connector_get:
+    with mock.patch.object(device_manager.connector, "get", return_value=None) as _connector_get:
         observer_manager = ObserverManager(device_manager=device_manager)
         observer_manager.add_observer(observer)
         with pytest.raises(AttributeError):
@@ -182,7 +182,7 @@ def test_add_observer_existing_device(device_manager, observer, raises_error):
             "limits": [380, None],
         }
     )
-    with mock.patch.object(device_manager.connector, "get", return_value=None) as connector_get:
+    with mock.patch.object(device_manager.connector, "get", return_value=None) as _connector_get:
         observer_manager = ObserverManager(device_manager=device_manager)
         observer_manager.add_observer(default_observer)
         if raises_error:
@@ -190,3 +190,21 @@ def test_add_observer_existing_device(device_manager, observer, raises_error):
                 observer_manager.add_observer(observer)
         else:
             observer_manager.add_observer(observer)
+
+
+@pytest.mark.parametrize("ignore_existing", [False, True])
+def test_add_observer_rejects_unknown_device(device_manager, ignore_existing):
+    observer = Observer(
+        name="unknown device",
+        device="unknown_device",
+        on_trigger="pause",
+        on_resume="restart",
+        limits=[380, None],
+    )
+    with mock.patch.object(device_manager.connector, "get", return_value=None):
+        observer_manager = ObserverManager(device_manager=device_manager)
+        with mock.patch.object(observer_manager, "update_observer") as update_observer:
+            with pytest.raises(AttributeError, match="unknown_device.*not configured"):
+                observer_manager.add_observer(observer, ignore_existing=ignore_existing)
+            assert observer_manager._observer == []
+            update_observer.assert_not_called()

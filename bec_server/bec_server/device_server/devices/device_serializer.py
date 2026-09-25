@@ -4,9 +4,10 @@ is used to create the device interface for proxy objects on other services.
 """
 
 import functools
+from collections.abc import Generator
 from contextlib import contextmanager
 from enum import Enum
-from typing import Any, Generator
+from typing import Any
 
 import msgpack
 from ophyd import Device, Kind, PositionerBase, Signal
@@ -204,7 +205,6 @@ def get_device_info(
         walk = obj.walk_components()
         for _ancestor, component_name, comp in walk:
             if get_device_base_class(getattr(obj, component_name)) == "signal":
-
                 if component_name in protected_names:
                     raise DeviceConfigError(
                         f"Signal name {component_name} is protected and cannot be used. Please rename the signal."
@@ -226,8 +226,8 @@ def get_device_info(
                             comp_name = component_name
                             storage_name = obj_name  # device + component name
                         else:
-                            obj_name = "_".join([signal_obj.name, signal_name])
-                            comp_name = ".".join([component_name, signal_name])
+                            obj_name = f"{signal_obj.name}_{signal_name}"
+                            comp_name = f"{component_name}.{signal_name}"
                             storage_name = (
                                 signal_obj.name
                             )  # device + component name; same for all sub-signals
@@ -242,7 +242,6 @@ def get_device_info(
                                     "kind_str": Kind(kind).name,
                                     "doc": doc,
                                     "describe": signal_obj.describe().get(signal_obj.name, {}),
-                                    # pylint: disable=protected-access
                                     "metadata": signal_obj._metadata,
                                     "labels": sorted(signal_obj._ophyd_labels_),
                                 }
@@ -260,7 +259,6 @@ def get_device_info(
                                 "kind_str": signal_obj.kind.name,
                                 "doc": doc,
                                 "describe": signal_obj.describe().get(signal_obj.name, {}),
-                                # pylint: disable=protected-access
                                 "metadata": signal_obj._metadata,
                                 "labels": sorted(signal_obj._ophyd_labels_),
                             }
@@ -346,7 +344,7 @@ def get_lazy_wait_for_connection(
     if hasattr(device, "lazy_wait_for_connection"):
         output[device.name] = (device, device.lazy_wait_for_connection)
     if hasattr(device, "_sig_attrs"):
-        for attr, cpt in device._sig_attrs.items():  # pylint: disable=protected-access
+        for attr, cpt in device._sig_attrs.items():
             if issubclass(cpt.cls, Device):
                 output.update(get_lazy_wait_for_connection(getattr(device, attr), output=output))
     return output

@@ -11,7 +11,8 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 import ophyd
@@ -164,9 +165,7 @@ class DeviceManagerDS(DeviceManagerBase):
         )
 
     def _ensure_auto_monitor_update_thread(self) -> None:
-        if self._auto_monitor_update_thread is None:
-            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
-        elif (
+        if self._auto_monitor_update_thread is None or (
             not self._auto_monitor_update_thread.is_alive()
             and self._auto_monitor_update_thread.ident is not None
         ):
@@ -217,7 +216,7 @@ class DeviceManagerDS(DeviceManagerBase):
                 self.initialize_delayed_devices(device_info, config, obj)
             else:
                 self.initialize_device(device_info, config, obj)
-        # pylint: disable=broad-except
+
         except Exception:
             if name not in self.devices:
                 raise
@@ -364,7 +363,7 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def _register_device_proxy(self, name: str) -> None:
         obj_lookup = self.devices.get(name).obj.lookup
-        for key in obj_lookup.keys():
+        for key in obj_lookup:
             signal_name = obj_lookup[key].get("signal_name")
             if key not in self.devices:
                 raise DeviceConfigError(
@@ -377,14 +376,12 @@ class DeviceManagerDS(DeviceManagerBase):
                     f"Failed to init DeviceProxy {name}, no signal {signal_name} found for device {key}."
                 )
             if key not in registered_proxies:
-                # pylint: disable=protected-access
                 self.devices[key].obj._registered_proxies.update({name: signal_name})
                 continue
             if key in registered_proxies and signal_name not in registered_proxies[key]:
-                # pylint: disable=protected-access
                 self.devices[key].obj._registered_proxies.update({name: signal_name})
                 continue
-            if key in registered_proxies.keys() and signal_name in registered_proxies[key]:
+            if key in registered_proxies and signal_name in registered_proxies[key]:
                 raise RuntimeError(
                     f"Failed to init DeviceProxy {name}, device {key} already has a registered DeviceProxy for {signal_name}. Only one DeviceProxy can be active per signal."
                 )
@@ -417,25 +414,26 @@ class DeviceManagerDS(DeviceManagerBase):
         """
         if hasattr(obj, "_update_device_config"):
             # If the device has implemented its own config update method, use it
-            # pylint: disable=protected-access
+
             obj._update_device_config(config)  # type: ignore
             return
 
         signal_updated = False
         for config_key, config_value in config.items():
             # first handle the ophyd exceptions...
-            if config_key == "limits":
-                if hasattr(obj, "low_limit_travel") and hasattr(obj, "high_limit_travel"):
-                    low_limit_status = obj.low_limit_travel.set(config_value[0])  # type: ignore
-                    high_limit_status = obj.high_limit_travel.set(config_value[1])  # type: ignore
-                    # Respect Timeout to avoid blocking the device server indefinitely
-                    low_limit_status.wait(timeout=2)
-                    high_limit_status.wait(timeout=2)
-                    continue
+            if (config_key == "limits") and (
+                hasattr(obj, "low_limit_travel") and hasattr(obj, "high_limit_travel")
+            ):
+                low_limit_status = obj.low_limit_travel.set(config_value[0])  # type: ignore
+                high_limit_status = obj.high_limit_travel.set(config_value[1])  # type: ignore
+                # Respect Timeout to avoid blocking the device server indefinitely
+                low_limit_status.wait(timeout=2)
+                high_limit_status.wait(timeout=2)
+                continue
             if config_key == "labels":
                 if not config_value:
                     config_value = set()
-                # pylint: disable=protected-access
+
                 obj._ophyd_labels_ = set(config_value)
                 continue
             if not hasattr(obj, config_key):
@@ -483,7 +481,6 @@ class DeviceManagerDS(DeviceManagerBase):
         config = device_config.copy()
         config["name"] = name
 
-        # pylint: disable=protected-access
         device_classes = [dev_cls]
         if issubclass(dev_cls, ophyd.Signal):
             device_classes.append(ophyd.Signal)
@@ -555,7 +552,6 @@ class DeviceManagerDS(DeviceManagerBase):
         # insert the created device obj into the device manager
         opaas_obj = DSDevice(name=name, obj=obj, config=dev, parent=self)
 
-        # pylint:disable=protected-access # this function is shared with clients and it is currently not foreseen that clients add new devices
         self.devices._add_device(name, opaas_obj)
 
         if raised_exc:
@@ -733,7 +729,7 @@ class DeviceManagerDS(DeviceManagerBase):
                 " wait_for_connection and cannot be turned on."
             )
             return ConnectionError(f"Failed to establish a connection to device {obj.name}")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Device plugin failures must not terminate service management.
             logger.error(f"Failed to connect for {obj.name}: {exc}")
             return exc
 
@@ -755,7 +751,7 @@ class DeviceManagerDS(DeviceManagerBase):
                 messages.DeviceInfoMessage(device=obj.name, info=interface),
                 pipe,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- Device plugin failures must not terminate service management.
             logger.error(f"Failed to publish device info for {obj.name}: {exc}")
             interface = get_device_info(obj, connect=False)
             self.connector.set(
@@ -880,7 +876,7 @@ class DeviceManagerDS(DeviceManagerBase):
                     self._obj_callback_limit_change(obj=obj, pipe=pipe)
 
                 pipe.execute()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- Device plugin failures must not terminate service management.
                 logger.error(f"Error in auto monitor update loop: {exc}")
                 logger.error(traceback.format_exc())
 
@@ -1114,7 +1110,7 @@ class DeviceManagerDS(DeviceManagerBase):
             try:
                 logger.info(f"Disconnecting device {device.name}")
                 self.disconnect_device(device.obj)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Device plugin failures must not terminate service management.
                 logger.error(f"Failed to disconnect device {device.name}: {traceback.format_exc()}")
         self.devices.flush()
         if self.config_update_handler:

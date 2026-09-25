@@ -79,7 +79,7 @@ class ProjectItemHandler:
             timeout=10,
         )
         if response.status_code != 200:
-            raise Exception(
+            raise RuntimeError(
                 f"Query failed with status code {response.status_code}: {response.text}"
             )
         return response.json()
@@ -215,7 +215,7 @@ class ProjectItemHandler:
         }
         return self.run_graphql(mutation, variables)
 
-    @functools.lru_cache(maxsize=1)
+    @functools.lru_cache(maxsize=1)  # noqa: B019 -- One API client lives for the entire CI script.
     def get_project_fields(self) -> list[dict]:
         """
         Get the available fields in the project.
