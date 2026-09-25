@@ -17,14 +17,15 @@ import time
 import traceback
 from collections.abc import MutableMapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from glob import fnmatch
-from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Generator, Literal, cast
+from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Generator, Literal, TypeVar, cast
 
 import louie
 import redis.client
 import redis.exceptions
-from redis.backoff import ExponentialBackoff
+from redis.backoff import AbstractBackoff, ExponentialBackoff
 from redis.client import Pipeline, Redis
 from redis.retry import Retry
 
@@ -45,6 +46,7 @@ from .streams import (
 )
 
 logger = bec_logger.logger
+_RetryResult = TypeVar("_RetryResult")
 if TYPE_CHECKING:  # pragma: no cover
     from concurrent.futures import Future
 
@@ -53,6 +55,55 @@ if TYPE_CHECKING:  # pragma: no cover
 class GeneratorExecution:
     fut: Future[Any]
     g: Generator
+
+
+class _CancellableRetry(Retry):
+    """Redis retry policy whose connection copies share an interruptible stop event."""
+
+    def __init__(
+        self,
+        backoff: AbstractBackoff,
+        retries: int,
+        supported_errors: tuple[type[Exception], ...],
+        stop_event: threading.Event,
+    ) -> None:
+        super().__init__(backoff, retries, supported_errors)
+        self._stop_event = stop_event
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _CancellableRetry:
+        # Redis copies policies for new connections. Keep their backoff state separate,
+        # but let shutdown cancel every copy, including one held by an active command.
+        return type(self)(
+            deepcopy(self._backoff, memo), self._retries, self._supported_errors, self._stop_event
+        )
+
+    def call_with_retry(
+        self,
+        do: Callable[[], _RetryResult],
+        fail: Callable[..., Any],
+        is_retryable: Callable[[Exception], bool] | None = None,
+        with_failure_count: bool = False,
+    ) -> _RetryResult:
+        """Run a Redis operation, waking pending retry delays when retries are disabled."""
+        self._backoff.reset()
+        failure_count = 0
+        while True:
+            try:
+                return do()
+            except self._supported_errors as error:  # pylint: disable=catching-non-exception
+                if is_retryable is not None and not is_retryable(error):
+                    raise
+                failure_count += 1
+                if with_failure_count:
+                    fail(error, failure_count)
+                else:
+                    fail(error)
+                if self._stop_event.is_set() or (
+                    self._retries >= 0 and failure_count > self._retries
+                ):
+                    raise
+                if self._stop_event.wait(max(0, self._backoff.compute(failure_count))):
+                    raise
 
 
 class ManagedRedisConnection:
@@ -79,6 +130,8 @@ class ManagedRedisConnection:
             bootstrap[0].split(":") if isinstance(bootstrap, list) else bootstrap.split(":")
         )
 
+        self._retry_stop_event = threading.Event()
+        self._retry_lock = threading.Lock()
         retry_policy = self._get_retry_policy()
 
         # patch for redis-py issue where pub/sub connections are not "retried" properly
@@ -183,9 +236,10 @@ class ManagedRedisConnection:
         Returns:
             Retry: The retry policy object.
         """
-        return Retry(
+        return _CancellableRetry(
             ExponentialBackoff(cap=30),
             retries=0,
+            stop_event=self._retry_stop_event,
             supported_errors=(
                 redis.exceptions.TimeoutError,
                 redis.exceptions.ConnectionError,
@@ -196,10 +250,21 @@ class ManagedRedisConnection:
             ),
         )
 
-    def set_retry_enabled(self, enabled: bool):
-        retry_policy = self._redis_conn.get_retry() or self._get_retry_policy()
-        retry_policy.update_retries(self.RETRY_ON_TIMEOUT if enabled else 0)
-        self._redis_conn.set_retry(retry_policy)
+    def set_retry_enabled(self, enabled: bool) -> None:
+        """Enable retries or cancel retry attempts and backoff waits already in progress.
+
+        Args:
+            enabled (bool): Whether new operations should retry supported connection errors.
+        """
+        with self._retry_lock:
+            if not enabled:
+                self._retry_stop_event.set()
+            elif self._retry_stop_event.is_set():
+                # Re-enabling must not revive an operation that was already cancelled.
+                self._retry_stop_event = threading.Event()
+            retry_policy = self._get_retry_policy()
+            retry_policy.update_retries(self.RETRY_ON_TIMEOUT if enabled else 0)
+            self._redis_conn.set_retry(retry_policy)
 
     def shutdown(self, per_thread_timeout_s: float | None = None):
         self.set_retry_enabled(False)

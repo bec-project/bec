@@ -1,8 +1,11 @@
+import threading
 from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
 from redis import Redis
+from redis.backoff import NoBackoff
+from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import RedisError
 
 import bec_lib.messages as bec_messages
@@ -39,6 +42,158 @@ def connector():
         yield _connector
     finally:
         _connector.shutdown()
+
+
+@pytest.mark.parametrize("toggle_retries", [False, True])
+def test_shutdown_cancels_in_flight_copied_retry(toggle_retries):
+    connection = ManagedRedisConnection("localhost:1")
+    connection.RETRY_ON_TIMEOUT = 2
+    connection.set_retry_enabled(True)
+    client = connection._redis_conn
+    pool = client.connection_pool
+    pooled_connection = pool.make_connection()
+    pool._in_use_connections.add(pooled_connection)
+    active_retry = pooled_connection.retry
+    assert active_retry is not client.get_retry()
+
+    def failed_command(*_args, **_kwargs):
+        if toggle_retries:
+            connection.set_retry_enabled(False)
+            connection.set_retry_enabled(True)
+        connection.shutdown()
+        raise RedisConnectionError("Connection closed during shutdown")
+
+    try:
+        with (
+            mock.patch.object(pool, "get_connection", return_value=pooled_connection),
+            mock.patch.object(
+                client, "_send_command_parse_response", side_effect=failed_command
+            ) as send,
+            mock.patch("redis.retry.sleep") as sleep,
+        ):
+            with pytest.raises(RedisConnectionError, match="Connection closed during shutdown"):
+                client.ping()
+
+            send.assert_called_once()
+            sleep.assert_not_called()
+    finally:
+        connection.shutdown()
+
+
+def test_shutdown_interrupts_retry_backoff():
+    connection = ManagedRedisConnection("localhost:1")
+    connection.RETRY_ON_TIMEOUT = 2
+    connection.set_retry_enabled(True)
+    client = connection._redis_conn
+    pool = client.connection_pool
+    pooled_connection = pool.make_connection()
+    pool._in_use_connections.add(pooled_connection)
+    retry = pooled_connection.retry
+    waiting = threading.Event()
+    errors = []
+    original_wait = retry._stop_event.wait
+
+    def wait_for_cancellation(delay):
+        waiting.set()
+        return original_wait(delay)
+
+    def run_command():
+        try:
+            client.ping()
+        except RedisConnectionError as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=run_command)
+    try:
+        with (
+            mock.patch.object(pool, "get_connection", return_value=pooled_connection),
+            mock.patch.object(
+                client, "_send_command_parse_response", side_effect=RedisConnectionError("offline")
+            ) as send,
+            mock.patch.object(retry._backoff, "compute", return_value=30),
+            mock.patch.object(retry._stop_event, "wait", side_effect=wait_for_cancellation),
+        ):
+            thread.start()
+            assert waiting.wait(2)
+
+            connection.shutdown()
+            thread.join(timeout=2)
+
+            assert not thread.is_alive()
+            send.assert_called_once()
+            assert len(errors) == 1
+    finally:
+        retry._stop_event.set()
+        thread.join(timeout=2)
+        connection.shutdown()
+
+
+def test_reenabling_retries_does_not_revive_cancelled_operation():
+    connection = ManagedRedisConnection("localhost:1")
+    connection.RETRY_ON_TIMEOUT = 2
+    connection.set_retry_enabled(True)
+    pool = connection._redis_conn.connection_pool
+    pooled_connection = pool.make_connection()
+    pool._in_use_connections.add(pooled_connection)
+    active_retry = pooled_connection.retry
+
+    def disable_and_reenable():
+        connection.set_retry_enabled(False)
+        connection.set_retry_enabled(True)
+        raise RedisConnectionError("cancelled")
+
+    operation = mock.Mock(side_effect=disable_and_reenable)
+    try:
+        with pytest.raises(RedisConnectionError, match="cancelled"):
+            active_retry.call_with_retry(operation, mock.Mock())
+        operation.assert_called_once()
+
+        new_retry = pool.make_connection().retry
+        new_retry._backoff = NoBackoff()
+        new_operation = mock.Mock(side_effect=[RedisConnectionError("offline"), "success"])
+        assert new_retry.call_with_retry(new_operation, mock.Mock()) == "success"
+        assert new_operation.call_count == 2
+    finally:
+        connection.shutdown()
+
+
+@pytest.mark.parametrize("with_failure_count", [False, True])
+def test_retry_preserves_failure_handler_and_retry_budget(with_failure_count):
+    connection = ManagedRedisConnection("localhost:1")
+    retry = connection._get_retry_policy()
+    retry.update_retries(1)
+    retry._backoff = NoBackoff()
+    error = RedisConnectionError("offline")
+    operation = mock.Mock(side_effect=error)
+    failure = mock.Mock()
+    try:
+        with pytest.raises(RedisConnectionError, match="offline"):
+            retry.call_with_retry(operation, failure, with_failure_count=with_failure_count)
+        assert operation.call_count == 2
+        assert failure.call_args_list == (
+            [mock.call(error, 1), mock.call(error, 2)]
+            if with_failure_count
+            else [mock.call(error), mock.call(error)]
+        )
+    finally:
+        connection.shutdown()
+
+
+def test_retry_preserves_non_retryable_error():
+    connection = ManagedRedisConnection("localhost:1")
+    retry = connection._get_retry_policy()
+    retry.update_retries(2)
+    failure = mock.Mock()
+    error = RedisConnectionError("not retryable")
+    operation = mock.Mock(side_effect=error)
+    try:
+        with pytest.raises(RedisConnectionError, match="not retryable") as exc:
+            retry.call_with_retry(operation, failure, is_retryable=lambda error: False)
+        assert exc.value is error
+        operation.assert_called_once()
+        failure.assert_not_called()
+    finally:
+        connection.shutdown()
 
 
 def test_redis_connector_send_client_info(connector: ManagedRedisConnection):
