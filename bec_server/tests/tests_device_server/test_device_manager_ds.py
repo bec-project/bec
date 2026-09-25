@@ -373,7 +373,9 @@ def test_subscribe_to_device_events(dm_with_devices):
     ):
         obj.event_types = (event_type,)
         callback_name = (
-            f"_obj_callback_{event_type}" if event_type != "value" else "_obj_callback_readback"
+            "_obj_callback_auto_monitor_readback"
+            if event_type in ("readback", "value")
+            else f"_obj_callback_{event_type}"
         )
         with mock.patch.object(dm_with_devices, callback_name) as mock_callback:
             dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
@@ -381,6 +383,38 @@ def test_subscribe_to_device_events(dm_with_devices):
             assert obj.subscribe.call_args == mock.call(
                 mock_callback, event_type=event_type, run=False
             )
+
+
+@pytest.mark.parametrize("event_types", [("readback",), ("value",), ("value", "readback")])
+@pytest.mark.parametrize("enabled", [False, True])
+def test_device_readback_events_queue_without_reading(event_types, enabled):
+    service = mock.MagicMock()
+    device_manager = DeviceManagerDS(service)
+    obj = SimpleNamespace(
+        name="test_device",
+        connected=True,
+        event_types=event_types,
+        subscribe=mock.Mock(),
+        read=mock.Mock(),
+    )
+    obj.root = obj
+    opaas_obj = SimpleNamespace(enabled=enabled)
+
+    with mock.patch.object(device_manager, "_ensure_auto_monitor_update_thread") as ensure_thread:
+        device_manager._subscribe_to_device_events(obj, opaas_obj)
+
+    ensure_thread.assert_called_once_with()
+    callback = obj.subscribe.call_args.args[0]
+    assert obj.subscribe.call_args.kwargs == {
+        "event_type": "readback" if "readback" in event_types else "value",
+        "run": enabled,
+    }
+    callback(obj=obj, value=1)
+    callback(obj=obj, value=2)
+
+    obj.read.assert_not_called()
+    service.connector.pipeline.assert_not_called()
+    assert device_manager._auto_monitor_readback_updates == {obj.name}
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

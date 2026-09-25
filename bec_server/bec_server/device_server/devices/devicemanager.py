@@ -601,10 +601,14 @@ class DeviceManagerDS(DeviceManagerBase):
     def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
         """Subscribe to device events"""
 
-        if "readback" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
-        elif "value" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
+        if "readback" in obj.event_types or "value" in obj.event_types:
+            self._ensure_auto_monitor_update_thread()
+            event_type = "readback" if "readback" in obj.event_types else "value"
+            obj.subscribe(
+                self._obj_callback_auto_monitor_readback,
+                event_type=event_type,
+                run=opaas_obj.enabled,
+            )
         if hasattr(obj, "motor_is_moving"):
             obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)  # type: ignore
 
