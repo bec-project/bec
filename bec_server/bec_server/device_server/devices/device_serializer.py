@@ -10,6 +10,7 @@ from typing import Any, Generator
 
 import msgpack
 from ophyd import Device, Kind, PositionerBase, Signal
+from ophyd.signal import EpicsSignalBase
 from ophyd_devices import BECDeviceBase, ComputedSignal, PSIDeviceBase
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 
@@ -175,19 +176,46 @@ def get_ownership_mode(
     return OwnershipMode.CLAIMABLE
 
 
+def _is_auto_published(signal: Signal, readback: dict, configuration: dict) -> bool:
+    """Whether an EPICS component is covered by BEC's auto-monitor subscriptions."""
+    if (
+        not isinstance(signal, EpicsSignalBase)
+        or getattr(signal, "_auto_monitor", False) is not True
+        or signal.parent is None
+    ):
+        return False
+
+    # These guards exclude signals that the auto-monitor path cannot publish to these caches.
+    if signal.kind in (Kind.normal, Kind.hinted):
+        return signal.name in readback
+    return signal.kind == Kind.config and signal.name in configuration
+
+
 def get_device_info(
-    obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, connect=True
+    obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase, connect: bool = True
 ) -> dict:
     """
     Get the device info from the object
 
     Args:
         obj (PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase): object to get the device info from
-        device_info (dict): device info
+        connect (bool): Whether to collect metadata that requires connected signals.
 
     Returns:
-        dict: updated device info
+        dict: Device info. Signal entries include auto_publish, indicating automatic updates
+            to the ordinary Redis readback/configuration caches for EpicsSignalBase-derived
+            components with auto_monitor enabled. Standalone signals are not advertised as
+            automatically published.
     """
+    return _get_device_info(obj, connect=connect, root_descriptions={})
+
+
+def _get_device_info(
+    obj: PositionerBase | ComputedSignal | Signal | Device | BECDeviceBase,
+    connect: bool,
+    root_descriptions: dict[str, dict],
+) -> dict:
+    """Serialize a device while sharing root descriptions within one request."""
     # Check if the object namespace is valid
 
     protected_names = get_protected_class_methods()
@@ -287,7 +315,9 @@ def get_device_info(
 
     if hasattr(obj, "walk_subdevices") and connect:
         for _, dev in obj.walk_subdevices():
-            sub_devices.append(get_device_info(dev, connect=connect))
+            sub_devices.append(
+                _get_device_info(dev, connect=connect, root_descriptions=root_descriptions)
+            )
     if obj.name in protected_names or getattr(obj, "dotted_name", None) in protected_names:
         raise DeviceConfigError(
             f"Device name {obj.name} is protected and cannot be used. Please rename the device."
@@ -302,12 +332,32 @@ def get_device_info(
         hints = {}
 
     if connect:
-        describe = obj.describe()
-        describe_configuration = obj.describe_configuration() | {"egu": getattr(obj, "egu", None)}
+        if obj.root is obj and root_descriptions:
+            describe = root_descriptions["readback"]
+            describe_configuration = root_descriptions["configuration"]
+        else:
+            describe = obj.describe()
+            describe_configuration = obj.describe_configuration()
+            if obj.root is obj:
+                root_descriptions.update(readback=describe, configuration=describe_configuration)
+        describe_configuration = describe_configuration | {"egu": getattr(obj, "egu", None)}
     else:
         describe = {}
         describe_configuration = {}
-    return {
+
+    if signals:
+        if not root_descriptions:
+            root_descriptions.update(
+                readback=obj.root.describe(), configuration=obj.root.describe_configuration()
+            )
+        for signal_info in signals.values():
+            signal_info["auto_publish"] = _is_auto_published(
+                getattr(obj, signal_info["component_name"]),
+                root_descriptions["readback"],
+                root_descriptions["configuration"],
+            )
+
+    device_info = {
         "device_attr_name": getattr(obj, "attr_name", ""),
         "device_base_class": get_device_base_class(obj),
         "device_class": obj.__class__.__name__,
@@ -321,6 +371,7 @@ def get_device_info(
         "sub_devices": sub_devices,
         "custom_user_access": user_access,
     }
+    return device_info
 
 
 def get_lazy_wait_for_connection(

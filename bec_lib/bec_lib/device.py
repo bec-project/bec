@@ -988,20 +988,24 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         """
 
     def read(
-        self, cached=False, use_readback=True, filter_to_hints=False
+        self, cached: bool | None = None, use_readback=True, filter_to_hints=False
     ) -> dict[str, dict[str, Any]] | None:
         """
         Reads the device.
 
         Args:
-            cached (bool, optional): If True, the cached value is returned. Defaults to False.
+            cached (bool | None, optional): If True, return the cached value. If False, use RPC.
+                Defaults to None, which uses Redis for auto-monitored component signals of
+                enabled devices when use_readback is True, and RPC otherwise.
             use_readback (bool, optional): If True, the readback value is returned, otherwise the read value. Defaults to True.
             filter_to_hints (bool, optional): If True, the readback value is filtered to the hinted values. Defaults to False.
 
         Returns:
             dict: The device signals.
         """
-        _, is_config_signal, cached = self._get_rpc_signal_info(cached)
+        _, is_config_signal, cached = self._get_rpc_signal_info(
+            False if cached is None and not use_readback else cached
+        )
 
         if not cached:
             signals = self._run(cached=cached, fcn=self.read)
@@ -1022,12 +1026,14 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
             signals = {key: val for key, val in signals.items() if key in self._hints}
         return self._filter_rpc_signals(signals)
 
-    def read_configuration(self, cached=False) -> dict[str, dict[str, Any]] | None:
+    def read_configuration(self, cached: bool | None = None) -> dict[str, dict[str, Any]] | None:
         """
         Reads the device configuration.
 
         Args:
-            cached (bool, optional): If True, the cached value is returned. Defaults to False.
+            cached (bool | None, optional): If True, return the cached value. If False, use RPC.
+                Defaults to None, which uses Redis for auto-monitored component signals of
+                enabled devices, and RPC otherwise.
         """
 
         is_signal, is_config_signal, cached = self._get_rpc_signal_info(cached)
@@ -1054,10 +1060,17 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
             return {obj_name: signals.get(obj_name, {})}
         return {key: val for key, val in signals.items() if key.startswith(self.full_name)}
 
-    def _get_rpc_signal_info(self, cached: bool):
+    def _get_rpc_signal_info(self, cached: bool | None) -> tuple[bool, bool, bool]:
         is_config_signal = False
-        is_signal = self._signal_info is not None
-        if is_signal:
+        is_signal = self._signal_info is not None or isinstance(self, Signal)
+        if cached is None:
+            cached = bool(
+                self._signal_info is not None
+                and self._signal_info.get("auto_publish") is True
+                and self.root._config is not None
+                and self.root.enabled
+            )
+        if self._signal_info is not None:
             kind = self._signal_info.get("kind_str")
             if kind == "config":
                 is_config_signal = True
@@ -1076,15 +1089,17 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         """Describes the device configuration."""
         return self._info.get("describe_configuration", {})
 
-    def get(self, cached=False) -> Any:
+    def get(self, cached: bool | None = None) -> Any:
         """
         Gets the device value.
 
         Args:
-            cached (bool, optional): If True, the cached value is returned. Defaults to False
+            cached (bool | None, optional): If True, return the cached value. If False, use RPC.
+                Defaults to None, which uses Redis for auto-monitored component signals of
+                enabled devices, and RPC otherwise.
         """
 
-        is_signal = self._signal_info is not None
+        is_signal, _, cached = self._get_rpc_signal_info(cached)
         if not cached or not is_signal:
             res = self._run(cached=False, fcn=self.get)
             if isinstance(res, dict) and res.get("type") == "namedtuple":
@@ -1095,7 +1110,8 @@ class OphydInterfaceBase(DeviceBaseWithConfig):
         ret = self.read(cached=cached)
         if ret is None:
             return None
-        return ret.get(self._signal_info.get("obj_name"), {}).get("value")
+        obj_name = self._signal_info.get("obj_name") if self._signal_info else self.name
+        return ret.get(obj_name, {}).get("value")
 
     def put(self, value: Any, wait=False):
         """
