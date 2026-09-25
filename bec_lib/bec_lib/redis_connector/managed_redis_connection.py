@@ -1016,11 +1016,10 @@ class ManagedRedisConnection:
 
         if count > 1:
             return ret
-        else:
-            return ret[0]
+        return ret[0]
 
     def raw_xread(self, stream_keys: dict[str, str], block: int | None = None):
-        return self._redis_conn.xread(stream_keys, block)
+        return self._redis_conn.xread(stream_keys, block=block)
 
     def xread(
         self,

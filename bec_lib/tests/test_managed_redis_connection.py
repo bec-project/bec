@@ -2,6 +2,7 @@ from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
+from redis import Redis
 from redis.exceptions import RedisError
 
 import bec_lib.messages as bec_messages
@@ -291,6 +292,24 @@ def test_redis_connector_get(connector: ManagedRedisConnection, topic, use_pipe)
 def test_redis_connector_xread(connector: ManagedRedisConnection):
     connector.xread("topic1", "id")
     connector._redis_conn.xread.assert_called_once_with({"topic1": "id"}, count=None, block=None)
+
+
+@pytest.mark.parametrize(
+    "block, expected_options", [(None, []), (0, [b"BLOCK", "0"]), (500, [b"BLOCK", "500"])]
+)
+def test_redis_connector_raw_xread_block(
+    connector: ManagedRedisConnection, block, expected_options
+):
+    topic = MessageEndpoints.device_async_readback(scan_id="scan_id", device="monitor").endpoint
+    with (
+        mock.patch.object(connector, "_redis_conn", Redis()) as redis_client,
+        mock.patch.object(redis_client, "execute_command", return_value=[]) as execute_command,
+    ):
+        assert connector.raw_xread({topic: "0-0"}, block=block) == []
+
+    execute_command.assert_called_once_with(
+        "XREAD", *expected_options, b"STREAMS", topic, "0-0", keys=(topic,)
+    )
 
 
 def test_redis_connector_xadd_with_maxlen(connector: ManagedRedisConnection):
