@@ -7,9 +7,10 @@ from unittest.mock import ANY, patch
 import numpy as np
 import pytest
 from loguru import logger
-from ophyd import Device, DeviceStatus, Kind, Staged
+from ophyd import Component as Cpt
+from ophyd import Device, DeviceStatus, Kind, Signal, Staged
 from ophyd.utils import errors as ophyd_errors
-from ophyd_devices import StatusBase
+from ophyd_devices import PreviewSignal, StatusBase
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -529,6 +530,162 @@ def test_handle_device_instructions_rpc(device_server_mock, instructions):
                     assert_device_is_valid_mock.assert_called_once_with(instructions)
                     assert_device_is_enabled_mock.assert_not_called()
                     update_device_metadata_mock.assert_called_once_with(instructions)
+
+
+@pytest.mark.parametrize("device", ["samx", []])
+def test_handle_device_instructions_broadcast_bec_signal_info(device_server_mock, device):
+    instructions = messages.DeviceInstructionMessage(
+        device=device,
+        action="broadcast_bec_signal_info",
+        parameter={"scan_id": "scan-id-1"},
+        metadata={"RID": "rid-1", "device_instr_id": "broadcast-diid"},
+    )
+
+    with mock.patch.object(
+        device_server_mock,
+        "assert_device_is_valid",
+        wraps=device_server_mock.assert_device_is_valid,
+    ) as valid_mock:
+        with mock.patch.object(
+            device_server_mock,
+            "assert_device_is_enabled",
+            wraps=device_server_mock.assert_device_is_enabled,
+        ) as enabled_mock:
+            with mock.patch.object(
+                device_server_mock, "_broadcast_bec_signal_info"
+            ) as broadcast_mock:
+                device_server_mock.handle_device_instructions(instructions)
+
+    broadcast_mock.assert_called_once_with(instructions)
+    if device:
+        valid_mock.assert_called_once_with(instructions)
+        enabled_mock.assert_called_once_with(instructions)
+    else:
+        valid_mock.assert_not_called()
+        enabled_mock.assert_not_called()
+
+
+def test_broadcast_bec_signal_info_publishes_bec_message_signal_info(device_server_mock):
+    class Detector(Device):
+        preview = Cpt(PreviewSignal, ndim=2)
+        plain = Cpt(Signal, value=0)
+
+    detector = Detector(name="eiger")
+    # BEC must merge before ophyd_devices can expose this attribute using messages.SignalInfo.
+    if not hasattr(detector.preview, "signal_info"):
+        detector.preview.signal_info = messages.SignalInfo(
+            saved=False,
+            ndim=2,
+            role="preview",
+            signals=[("eiger_preview", Kind.hinted.value)],
+            signal_metadata={"num_rotation_90": 0, "transpose": False},
+        )
+
+    legacy_detector = Detector(name="legacy")
+    if hasattr(legacy_detector.preview, "signal_info"):
+        del legacy_detector.preview.signal_info
+
+    device_server_mock.device_manager.devices = {
+        "eiger": SimpleNamespace(obj=detector),
+        "legacy": SimpleNamespace(obj=legacy_detector),
+    }
+    device_server_mock.connector.xadd = mock.MagicMock()
+    instructions = messages.DeviceInstructionMessage(
+        device=["eiger", "legacy"],
+        action="broadcast_bec_signal_info",
+        parameter={"scan_id": "scan-id-1"},
+        metadata={"RID": "rid-1", "device_instr_id": "broadcast-diid"},
+    )
+
+    with mock.patch.object(device_server_mock.connector, "send") as send_mock:
+        device_server_mock._broadcast_bec_signal_info(instructions)
+
+    device_server_mock.connector.xadd.assert_called_once()
+    endpoint, payload = device_server_mock.connector.xadd.call_args.args
+    msg = payload["data"]
+    assert endpoint == MessageEndpoints.bec_signal_info()
+    assert device_server_mock.connector.xadd.call_args.kwargs == {"max_size": 10}
+    assert msg == messages.BECSignalInfoMessage(
+        scan_id="scan-id-1",
+        info={
+            "eiger": {
+                "preview": messages.SignalInfo(
+                    saved=False,
+                    ndim=2,
+                    role="preview",
+                    signals=[("eiger_preview", Kind.hinted.value)],
+                    signal_metadata={"num_rotation_90": 0, "transpose": False},
+                )
+            }
+        },
+        metadata={"RID": "rid-1", "device_instr_id": "broadcast-diid"},
+    )
+    assert "legacy" not in msg.info
+    responses = [call.args[1] for call in send_mock.call_args_list]
+    assert [response.status for response in responses] == ["running", "completed"]
+    assert all(response.instruction_id == "broadcast-diid" for response in responses)
+    assert all(response.instruction == instructions for response in responses)
+    assert device_server_mock.requests_handler.get_request("broadcast-diid") is None
+
+
+def test_broadcast_bec_signal_info_publishes_empty_signal_info(device_server_mock):
+    device_server_mock.connector.xadd = mock.MagicMock()
+    instructions = messages.DeviceInstructionMessage(
+        device=[],
+        action="broadcast_bec_signal_info",
+        parameter={"scan_id": "scan-id-1"},
+        metadata={"RID": "rid-1", "device_instr_id": "broadcast-diid"},
+    )
+
+    with mock.patch.object(device_server_mock.connector, "send") as send_mock:
+        device_server_mock.handle_device_instructions(instructions)
+
+    device_server_mock.connector.xadd.assert_called_once()
+    endpoint, payload = device_server_mock.connector.xadd.call_args.args
+    assert endpoint == MessageEndpoints.bec_signal_info()
+    assert payload["data"] == messages.BECSignalInfoMessage(
+        scan_id="scan-id-1", info={}, metadata=instructions.metadata
+    )
+    assert [call.args[1].status for call in send_mock.call_args_list] == ["running", "completed"]
+    assert device_server_mock.requests_handler.get_request("broadcast-diid") is None
+
+
+def test_broadcast_bec_signal_info_resolves_failure_when_publish_raises(device_server_mock):
+    instructions = messages.DeviceInstructionMessage(
+        device=[],
+        action="broadcast_bec_signal_info",
+        parameter={"scan_id": "scan-id-1"},
+        metadata={"RID": "rid-1", "device_instr_id": "broadcast-diid"},
+    )
+    device_server_mock.connector.xadd = mock.MagicMock(side_effect=RuntimeError("publish failed"))
+
+    with mock.patch.object(device_server_mock.connector, "send") as send_mock:
+        device_server_mock.handle_device_instructions(instructions)
+
+    responses = [call.args[1] for call in send_mock.call_args_list]
+    assert [response.status for response in responses] == ["running", "error"]
+    assert responses[-1].error_info.exception_type == "RuntimeError"
+    assert device_server_mock.requests_handler.get_request("broadcast-diid") is None
+
+
+def test_broadcast_bec_signal_info_skips_without_scan_id(device_server_mock):
+    device_server_mock.connector.xadd = mock.MagicMock()
+    instructions = messages.DeviceInstructionMessage(
+        device="samx",
+        action="broadcast_bec_signal_info",
+        parameter={},
+        metadata={"RID": "rid-1", "device_instr_id": "broadcast-diid"},
+    )
+
+    with mock.patch.object(device_server_mock.connector, "send") as send_mock:
+        device_server_mock._broadcast_bec_signal_info(instructions)
+
+    device_server_mock.connector.xadd.assert_not_called()
+    responses = [call.args[1] for call in send_mock.call_args_list]
+    assert [response.status for response in responses] == ["running", "completed"]
+    assert all(response.instruction_id == "broadcast-diid" for response in responses)
+    assert all(response.instruction == instructions for response in responses)
+    assert device_server_mock.requests_handler.get_request("broadcast-diid") is None
 
 
 @pytest.mark.parametrize(
