@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 import inspect
+import sys
 import threading
 import time
 import traceback
@@ -29,6 +30,7 @@ from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import MessageObject, RedisConnector
+    from bec_lib.service_config import ServiceConfig
 
 
 logger = bec_logger.logger
@@ -327,8 +329,27 @@ class DeviceServer(BECService):
     This class is intended to provide a thin wrapper around ophyd and the devicemanager. It acts as the entry point for other services
     """
 
-    def __init__(self, config, connector_cls: type[RedisConnector]) -> None:
+    def __init__(
+        self,
+        config: str | ServiceConfig,
+        connector_cls: type[RedisConnector],
+        *,
+        ophyd_callback_queue_threshold: int = 1000,
+    ) -> None:
+        """Initialize the device server.
+
+        Args:
+            config (str | ServiceConfig): Service configuration or its file path.
+            connector_cls (type[RedisConnector]): Connector class used by the service.
+            ophyd_callback_queue_threshold (int): Warn every five seconds while the ophyd
+                monitor queue exceeds this size. Defaults to 1000.
+        """
+        if ophyd_callback_queue_threshold < 0:
+            raise ValueError("ophyd_callback_queue_threshold must be non-negative")
         super().__init__(config, connector_cls, unique_service=True)
+        self._ophyd_callback_queue_threshold = ophyd_callback_queue_threshold
+        self._ophyd_callback_monitor_stop = threading.Event()
+        self._ophyd_callback_monitor_thread: threading.Thread | None = None
         self._tasks = []
         self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
@@ -352,6 +373,44 @@ class DeviceServer(BECService):
         )
 
         self.status = BECStatus.RUNNING
+        self._start_ophyd_callback_monitor()
+
+    def _start_ophyd_callback_monitor(self) -> None:
+        if (
+            self._ophyd_callback_monitor_thread is not None
+            and self._ophyd_callback_monitor_thread.is_alive()
+        ):
+            return
+        self._ophyd_callback_monitor_stop.clear()
+        self._ophyd_callback_monitor_thread = threading.Thread(
+            target=self._monitor_ophyd_callbacks, name="ophyd_callback_monitor", daemon=True
+        )
+        self._ophyd_callback_monitor_thread.start()
+
+    def _monitor_ophyd_callbacks(self) -> None:
+        """Sample the ophyd monitor queue every five seconds until shutdown is requested."""
+        while not self._ophyd_callback_monitor_stop.wait(5):
+            dispatcher = ophyd.get_cl().get_dispatcher()
+            if dispatcher is None:
+                continue
+            monitor = dispatcher.threads.get("monitor")
+            if monitor is None:
+                continue
+            queue_size = monitor.queue.qsize()
+            if queue_size <= self._ophyd_callback_queue_threshold:
+                continue
+
+            frame = sys._current_frames().get(monitor.ident)  # pylint: disable=protected-access
+            stack = (
+                "".join(traceback.format_stack(frame, limit=20))
+                if frame is not None
+                else "<no stack>"
+            )
+            del frame
+            logger.warning(
+                f"Ophyd callback monitor queue exceeds {self._ophyd_callback_queue_threshold}: "
+                f"queued={queue_size}, last_started={monitor.current_callback}\n{stack}"
+            )
 
     def update_status(self, status: BECStatus):
         """update the status of the device server"""
@@ -364,7 +423,17 @@ class DeviceServer(BECService):
 
     def shutdown(self) -> None:
         """shutdown the device server"""
-        super().shutdown()
+        self._ophyd_callback_monitor_stop.set()
+        monitor_thread = self._ophyd_callback_monitor_thread
+        if monitor_thread is not None:
+            monitor_thread.join(timeout=1)
+        try:
+            # Closing the connector also interrupts a warning blocked in the Redis log sink.
+            super().shutdown()
+        finally:
+            if monitor_thread is not None:
+                monitor_thread.join()
+                self._ophyd_callback_monitor_thread = None
         self.stop()
         if self.device_manager:
             self.device_manager.shutdown()

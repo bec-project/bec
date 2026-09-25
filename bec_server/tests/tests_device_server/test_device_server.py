@@ -26,11 +26,11 @@ from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 
 class DeviceServerMock(DeviceServer):
-    def __init__(self, device_manager, connector_cls) -> None:
+    def __init__(self, device_manager, connector_cls, **kwargs) -> None:
         config = ServiceConfig(redis={"host": "dummy", "port": 6379})
         self.__test_device_manager = device_manager
         with patch("bec_server.device_server.device_server.DeviceManagerDS"):
-            super().__init__(config, connector_cls=ConnectorMock)
+            super().__init__(config, connector_cls=ConnectorMock, **kwargs)
 
     def _start_device_manager(self):
         self.device_manager = self.__test_device_manager
@@ -108,6 +108,194 @@ def test_start(device_server_mock):
     device_server.start()
 
     assert device_server.status == BECStatus.RUNNING
+    assert device_server._ophyd_callback_monitor_thread.is_alive()
+    assert device_server._ophyd_callback_queue_threshold == 1000
+
+
+def test_start_does_not_duplicate_ophyd_callback_monitor(device_server_mock):
+    device_server_mock.start()
+    thread = device_server_mock._ophyd_callback_monitor_thread
+
+    device_server_mock.start()
+
+    assert device_server_mock._ophyd_callback_monitor_thread is thread
+    assert thread.is_alive()
+
+
+@pytest.mark.parametrize("queue_size", [0, 999, 1000, 1001])
+def test_ophyd_callback_monitor_warning_threshold(device_server_mock, queue_size):
+    monitor = SimpleNamespace(
+        queue=mock.Mock(qsize=mock.Mock(return_value=queue_size)),
+        ident=42,
+        current_callback="slow_callback",
+    )
+    stop = mock.Mock()
+    stop.wait.side_effect = [False, True]
+    with (
+        mock.patch.object(device_server_mock, "_ophyd_callback_monitor_stop", stop),
+        mock.patch("bec_server.device_server.device_server.ophyd.get_cl") as get_cl,
+        mock.patch("bec_server.device_server.device_server.sys._current_frames") as frames,
+        mock.patch("bec_server.device_server.device_server.traceback.format_stack") as stack,
+        mock.patch("bec_server.device_server.device_server.logger.warning") as warning,
+    ):
+        get_cl.return_value.get_dispatcher.return_value = SimpleNamespace(
+            threads={"monitor": monitor}
+        )
+        frame = object()
+        frames.return_value = {42: frame}
+        stack.return_value = ["callback stack"]
+
+        device_server_mock._monitor_ophyd_callbacks()
+
+        assert stop.wait.call_args_list == [mock.call(5), mock.call(5)]
+        if queue_size > 1000:
+            warning.assert_called_once_with(
+                "Ophyd callback monitor queue exceeds 1000: "
+                "queued=1001, last_started=slow_callback\ncallback stack"
+            )
+            stack.assert_called_once_with(frame, limit=20)
+        else:
+            warning.assert_not_called()
+            frames.assert_not_called()
+            stack.assert_not_called()
+
+
+def test_ophyd_callback_monitor_custom_threshold_and_recovery(dm_with_devices):
+    device_server = DeviceServerMock(
+        dm_with_devices, dm_with_devices.connector, ophyd_callback_queue_threshold=2
+    )
+    monitor = SimpleNamespace(
+        queue=mock.Mock(qsize=mock.Mock(side_effect=[3, 4, 2])), ident=None, current_callback=None
+    )
+    stop = mock.Mock()
+    stop.wait.side_effect = [False, False, False, True]
+    try:
+        with (
+            mock.patch.object(device_server, "_ophyd_callback_monitor_stop", stop),
+            mock.patch("bec_server.device_server.device_server.ophyd.get_cl") as get_cl,
+            mock.patch(
+                "bec_server.device_server.device_server.sys._current_frames", return_value={}
+            ),
+            mock.patch("bec_server.device_server.device_server.logger.warning") as warning,
+        ):
+            get_cl.return_value.get_dispatcher.return_value = SimpleNamespace(
+                threads={"monitor": monitor}
+            )
+
+            device_server._monitor_ophyd_callbacks()
+
+            assert stop.wait.call_args_list == [mock.call(5)] * 4
+            assert warning.call_args_list == [
+                mock.call(
+                    "Ophyd callback monitor queue exceeds 2: "
+                    f"queued={size}, last_started=None\n<no stack>"
+                )
+                for size in (3, 4)
+            ]
+    finally:
+        device_server.shutdown()
+
+
+@pytest.mark.parametrize("dispatcher", [None, SimpleNamespace(threads={})])
+def test_ophyd_callback_monitor_without_monitor_thread(device_server_mock, dispatcher):
+    stop = mock.Mock()
+    stop.wait.side_effect = [False, True]
+    with (
+        mock.patch.object(device_server_mock, "_ophyd_callback_monitor_stop", stop),
+        mock.patch("bec_server.device_server.device_server.ophyd.get_cl") as get_cl,
+        mock.patch("bec_server.device_server.device_server.logger.warning") as warning,
+    ):
+        get_cl.return_value.get_dispatcher.return_value = dispatcher
+
+        device_server_mock._monitor_ophyd_callbacks()
+
+        warning.assert_not_called()
+        assert stop.wait.call_args_list == [mock.call(5), mock.call(5)]
+
+
+@pytest.mark.parametrize("shutdown_fails", [False, True])
+def test_shutdown_joins_ophyd_callback_monitor_first(device_server_mock, shutdown_fails):
+    device_server_mock.start()
+    thread = device_server_mock._ophyd_callback_monitor_thread
+
+    def shutdown_service():
+        assert device_server_mock._ophyd_callback_monitor_stop.is_set()
+        assert not thread.is_alive()
+        if shutdown_fails:
+            raise RuntimeError("Service shutdown failed")
+
+    with mock.patch(
+        "bec_server.device_server.device_server.BECService.shutdown", side_effect=shutdown_service
+    ):
+        if shutdown_fails:
+            with pytest.raises(RuntimeError, match="Service shutdown failed"):
+                device_server_mock.shutdown()
+        else:
+            device_server_mock.shutdown()
+
+    assert device_server_mock._ophyd_callback_monitor_thread is None
+
+
+def test_shutdown_without_starting_ophyd_callback_monitor(device_server_mock):
+    device_server_mock.shutdown()
+    device_server_mock.shutdown()
+
+    assert device_server_mock._ophyd_callback_monitor_stop.is_set()
+    assert device_server_mock._ophyd_callback_monitor_thread is None
+
+
+def test_shutdown_closes_connector_before_joining_blocked_warning(device_server_mock):
+    warning_started = threading.Event()
+    warning_released = threading.Event()
+    warning_wait_results = []
+    monitor = SimpleNamespace(
+        queue=mock.Mock(qsize=mock.Mock(return_value=1001)),
+        ident=None,
+        current_callback="slow_callback",
+    )
+
+    def blocked_warning(_message):
+        warning_started.set()
+        warning_wait_results.append(warning_released.wait(5))
+
+    def close_connector(**_kwargs):
+        assert device_server_mock._ophyd_callback_monitor_stop.is_set()
+        warning_released.set()
+
+    with (
+        mock.patch("bec_server.device_server.device_server.ophyd.get_cl") as get_cl,
+        mock.patch(
+            "bec_server.device_server.device_server.logger.warning", side_effect=blocked_warning
+        ),
+        mock.patch.object(
+            device_server_mock.connector, "shutdown", side_effect=close_connector
+        ) as close,
+    ):
+        get_cl.return_value.get_dispatcher.return_value = SimpleNamespace(
+            threads={"monitor": monitor}
+        )
+        device_server_mock.start()
+        thread = device_server_mock._ophyd_callback_monitor_thread
+        try:
+            assert warning_started.wait(8)
+
+            device_server_mock.shutdown()
+
+            close.assert_called_once()
+            assert warning_wait_results == [True]
+            assert not thread.is_alive()
+            assert device_server_mock._ophyd_callback_monitor_thread is None
+        finally:
+            warning_released.set()
+            device_server_mock._ophyd_callback_monitor_stop.set()
+            thread.join(timeout=3)
+
+
+def test_ophyd_callback_monitor_rejects_negative_threshold():
+    with mock.patch("bec_server.device_server.device_server.BECService.__init__") as init:
+        with pytest.raises(ValueError, match="ophyd_callback_queue_threshold must be non-negative"):
+            DeviceServer(ServiceConfig(), ConnectorMock, ophyd_callback_queue_threshold=-1)
+        init.assert_not_called()
 
 
 @pytest.mark.parametrize("status", [BECStatus.ERROR, BECStatus.RUNNING, BECStatus.IDLE])
