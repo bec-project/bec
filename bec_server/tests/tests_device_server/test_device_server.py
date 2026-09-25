@@ -21,6 +21,7 @@ from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.ophyd_callback_monitor import OphydCallbackMonitor
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -129,6 +130,8 @@ def test_start(device_server_mock):
         ),
         mock.call.status(),
     ]
+    assert device_server.ophyd_callback_monitor._thread.is_alive()
+    assert device_server.ophyd_callback_monitor.queue_threshold == 1000
 
 
 @pytest.mark.parametrize("remove_device", [False, True])
@@ -168,6 +171,98 @@ def test_start_refreshes_existing_device_manager(
             assert not manager.devices.samx.enabled
     finally:
         manager.shutdown()
+
+
+def test_start_does_not_duplicate_ophyd_callback_monitor(device_server_mock):
+    device_server_mock.start()
+    thread = device_server_mock.ophyd_callback_monitor._thread
+
+    device_server_mock.start()
+
+    assert device_server_mock.ophyd_callback_monitor._thread is thread
+    assert thread.is_alive()
+
+
+@pytest.mark.parametrize("shutdown_fails", [False, True])
+def test_shutdown_joins_ophyd_callback_monitor_first(device_server_mock, shutdown_fails):
+    device_server_mock.start()
+    monitor = device_server_mock.ophyd_callback_monitor
+    thread = monitor._thread
+
+    def shutdown_service():
+        assert monitor._stop_event.is_set()
+        assert not thread.is_alive()
+        if shutdown_fails:
+            raise RuntimeError("Service shutdown failed")
+
+    with mock.patch(
+        "bec_server.device_server.device_server.BECService.shutdown", side_effect=shutdown_service
+    ):
+        if shutdown_fails:
+            with pytest.raises(RuntimeError, match="Service shutdown failed"):
+                device_server_mock.shutdown()
+        else:
+            device_server_mock.shutdown()
+
+    assert monitor._thread is None
+
+
+def test_shutdown_without_starting_ophyd_callback_monitor(device_server_mock):
+    device_server_mock.shutdown()
+    device_server_mock.shutdown()
+
+    assert device_server_mock.ophyd_callback_monitor._stop_event.is_set()
+    assert device_server_mock.ophyd_callback_monitor._thread is None
+
+
+def test_shutdown_closes_connector_before_joining_blocked_warning(device_server_mock):
+    device_server_mock.ophyd_callback_monitor = OphydCallbackMonitor(sample_interval=0.01)
+    callback_monitor = device_server_mock.ophyd_callback_monitor
+    warning_started = threading.Event()
+    warning_released = threading.Event()
+    warning_wait_results = []
+    monitor = SimpleNamespace(
+        queue=mock.Mock(qsize=mock.Mock(return_value=1001)),
+        ident=None,
+        current_callback="slow_callback",
+    )
+
+    def blocked_warning(_message):
+        warning_started.set()
+        warning_wait_results.append(warning_released.wait(5))
+
+    def close_connector(**_kwargs):
+        assert callback_monitor._stop_event.is_set()
+        warning_released.set()
+
+    with (
+        mock.patch("bec_server.device_server.ophyd_callback_monitor.ophyd.get_cl") as get_cl,
+        mock.patch(
+            "bec_server.device_server.ophyd_callback_monitor.logger.warning",
+            side_effect=blocked_warning,
+        ),
+        mock.patch.object(
+            device_server_mock.connector, "shutdown", side_effect=close_connector
+        ) as close,
+    ):
+        get_cl.return_value.get_dispatcher.return_value = SimpleNamespace(
+            threads={"monitor": monitor}
+        )
+        device_server_mock.start()
+        thread = callback_monitor._thread
+        try:
+            assert warning_started.wait(2)
+
+            device_server_mock.shutdown()
+
+            close.assert_called_once()
+            assert warning_wait_results == [True]
+            assert not thread.is_alive()
+            assert callback_monitor._thread is None
+        finally:
+            warning_released.set()
+            callback_monitor.request_stop()
+            thread.join(timeout=3)
 
 
 @pytest.mark.parametrize("status", [BECStatus.ERROR, BECStatus.RUNNING, BECStatus.IDLE])
