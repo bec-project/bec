@@ -1,6 +1,7 @@
 from unittest import mock
 
 import pytest
+from pydantic import ValidationError
 
 from bec_lib import messages
 from bec_lib.callback_handler import EventType
@@ -310,13 +311,13 @@ def test_macro_update_message_validation():
     assert valid_reload_all.update_type == "reload_all"
 
     # Invalid messages should raise ValidationError
-    with pytest.raises(Exception):  # ValidationError from pydantic
+    with pytest.raises(ValidationError):
         messages.MacroUpdateMessage(update_type="add")  # Missing macro_name and file_path
 
-    with pytest.raises(Exception):  # ValidationError from pydantic
+    with pytest.raises(ValidationError):
         messages.MacroUpdateMessage(update_type="remove")  # Missing macro_name
 
-    with pytest.raises(Exception):  # ValidationError from pydantic
+    with pytest.raises(ValidationError):
         messages.MacroUpdateMessage(
             update_type="add", macro_name="test_macro"
         )  # Missing file_path for add action

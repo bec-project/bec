@@ -89,7 +89,10 @@ TEST_CONTAINER_JSON = b"""[{
 
 @pytest.fixture
 def api_utils():
-    with patch("bec_server.procedures.container_utils.PodmanClient") as client:
+    with (
+        patch("bec_server.procedures.container_utils.PodmanClient") as client,
+        patch("bec_server.procedures.container_utils.podman_available", return_value=True),
+    ):
         yield PodmanApiUtils(), client
 
 
@@ -147,6 +150,12 @@ def test_api_utils_image_exists(api_utils: tuple[PodmanApiUtils, MagicMock]):
     utils, client = api_utils
     utils.image_exists("test")
     client().__enter__().images.exists.assert_called_once_with("test")
+
+
+def test_api_utils_interrupt_is_not_implemented(api_utils: tuple[PodmanApiUtils, MagicMock]):
+    utils, _client = api_utils
+    with pytest.raises(NotImplementedError):
+        utils.interrupt("container-id")
 
 
 def test_build_args_from_dict():

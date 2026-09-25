@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -30,7 +31,7 @@ def _goto_dir(path: Path):
         os.chdir(current)
 
 
-def git_stage_files(directory: Path, filenames: list[str] = []):
+def git_stage_files(directory: Path, filenames: list[str] | None = None) -> int:
     "`git add` all the files in `filenames` in the given directory or all files if filenames is empty"
     logger.info(f"Adding {filenames if filenames else 'all files'} in {directory} to git...")
     with _goto_dir(directory):
@@ -43,9 +44,14 @@ def make_commit(repo: Path, message: str):
 
 
 def run_formatters(directory: Path, filenames: list[str]) -> None:
-    """Run isort and black on the given files relative to `directory`."""
+    """Sort imports and format the given files with Ruff relative to `directory`."""
+    if not filenames:
+        return
     with _goto_dir(directory):
-        for command in (["isort", *filenames], ["black", *filenames]):
+        for command in (
+            [sys.executable, "-m", "ruff", "check", "--select", "I", "--fix", "--", *filenames],
+            [sys.executable, "-m", "ruff", "format", "--", *filenames],
+        ):
             result = subprocess.run(command, capture_output=True, text=True, check=False)
             if result.returncode != 0:
                 raise RuntimeError(

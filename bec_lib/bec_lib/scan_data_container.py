@@ -11,7 +11,7 @@ import importlib
 import time
 from _collections_abc import dict_items, dict_keys
 from collections import deque, namedtuple
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
@@ -397,7 +397,7 @@ class LazyAttributeDict(AttributeDict):
     This class is a lazy attribute dictionary that loads the data using a load function when the data is accessed.
     """
 
-    def __init__(self, load_function: callable = None):
+    def __init__(self, load_function: Callable | None = None):
         self._load_function = load_function
         self._loaded = False
 

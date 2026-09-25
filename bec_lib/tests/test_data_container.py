@@ -1,9 +1,20 @@
+import subprocess
+import sys
+from collections.abc import Callable
+from typing import get_type_hints
 from unittest import mock
 
+import h5py
+import hdf5plugin
 import numpy as np
 import pytest
 
-from bec_lib.scan_data_container import FileReference, ScanDataContainer, _file_cache
+from bec_lib.scan_data_container import (
+    FileReference,
+    LazyAttributeDict,
+    ScanDataContainer,
+    _file_cache,
+)
 
 
 @pytest.fixture
@@ -11,6 +22,37 @@ def file_cache():
     _file_cache.clear_cache()
     yield _file_cache
     _file_cache.clear_cache()
+
+
+def test_compressed_file_read_registers_filters_in_fresh_process(tmp_path, monkeypatch):
+    file_path = tmp_path / "compressed.h5"
+    values = np.arange(64)
+    with h5py.File(file_path, "w") as file:
+        file.create_dataset("data", data=values, **hdf5plugin.Blosc(cname="zstd"))
+
+    # Filter registration must come from the data reader, not another test or a system plugin path.
+    monkeypatch.delenv("HDF5_PLUGIN_PATH", raising=False)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; from bec_lib.scan_data_container import FileReference; "
+                "print(FileReference(sys.argv[1]).read('data', cached=False).tolist())"
+            ),
+            str(file_path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == str(values.tolist())
+
+
+def test_lazy_attribute_dict_annotations_can_be_resolved():
+    assert get_type_hints(LazyAttributeDict.__init__)["load_function"] == Callable | None
 
 
 def test_file_cache(mock_file, file_cache):
@@ -44,8 +86,9 @@ def test_file_read_groups(mock_file):
 def test_data_container(mock_file):
 
     container = ScanDataContainer(file_path=mock_file)
-    assert "samx" in container.devices.keys()
+    # Attribute discovery loads the lazy device mapping before membership is checked.
     assert "samx" in dir(container.devices)
+    assert "samx" in container.devices
 
     assert all(container.devices.samx.read()["samx"]["value"] == np.array([1, 2, 3]))
     assert all(container.devices.samx["samx"].read()["timestamp"] == np.array([1, 2, 3]))

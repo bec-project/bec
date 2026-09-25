@@ -279,7 +279,7 @@ class ScanBundler(BECService):
                 return
 
             logger.info(f"Sending baseline readings for scan_id {scan_id}.")
-            logger.debug("Baseline: ", self.sync_storage[scan_id]["baseline"])
+            logger.debug(f"Baseline: {self.sync_storage[scan_id]['baseline']}")
             self.run_emitter("on_baseline_emit", scan_id)
             self.baseline_devices[scan_id]["done"] = {
                 dev.name: False

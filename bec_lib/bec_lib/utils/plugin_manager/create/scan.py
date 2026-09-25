@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import traceback
 from dataclasses import dataclass
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Annotated, Any, get_args, get_origin
 
@@ -405,7 +405,7 @@ def _normalize_unit(unit: str) -> str | None:
 
     try:
         parsed_unit = Units.parse_units(stripped)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- Convert unit parser failures into CLI validation errors.
         logger.error(f"{unit} is not a valid unit.")
         raise typer.Exit(code=1) from None
 
@@ -530,13 +530,9 @@ def verify_dependencies() -> None:
     We verify the dependencies manually to avoid that the user writes the
     scan and only finds out at the end that they forgot to install one of the required packages.
     """
-    try:
-        # pylint: disable=import-outside-toplevel,unused-import
-        import black
-        import isort
-    except ImportError as e:
-        logger.error(f"Missing dependency: {e.name}. Please install it to use this command.")
-        raise typer.Exit(code=1) from None
+    if find_spec("ruff") is None:
+        logger.error("Missing dependency: ruff. Please install it to use this command.")
+        raise typer.Exit(code=1)
 
 
 @_app.command()
@@ -563,9 +559,10 @@ def scan(
         scans_dir = repo / repo.name / "scans"
         scan_file = scans_dir / f"{scan_name}.py"
         init_file = scans_dir / "__init__.py"
-        if scan_file.exists():
-            if not typer.confirm(f"Scan {scan_name} already exists. Override it?", default=False):
-                raise typer.Exit(code=1)
+        if scan_file.exists() and not typer.confirm(
+            f"Scan {scan_name} already exists. Override it?", default=False
+        ):
+            raise typer.Exit(code=1)
 
         description = typer.prompt("Scan description", default="Scan implementation.")
         scan_type = _select_option("Scan type", _SCAN_TYPES)
@@ -588,8 +585,7 @@ def scan(
     except typer.Exit:
         raise
     except Exception:
-        logger.error(traceback.format_exc())
-        logger.error("exiting...")
+        logger.exception("Failed to create scan.")
         raise typer.Exit(code=1) from None
 
     logger.success(f"Added scan {config.name}!")

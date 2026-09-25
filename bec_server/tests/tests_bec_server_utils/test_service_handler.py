@@ -2,6 +2,18 @@ import copy
 from unittest import mock
 
 from bec_server.bec_server_utils.service_handler import ServiceHandler
+from bec_server.scihub.service_handler.service_handler import ServiceHandler as SciHubServiceHandler
+
+
+def test_scihub_restart_starts_new_session():
+    handler = SciHubServiceHandler(mock.MagicMock())
+
+    with mock.patch("bec_server.scihub.service_handler.service_handler.subprocess.Popen") as popen:
+        handler.on_restart()
+
+    popen.assert_called_once()
+    assert popen.call_args.kwargs["start_new_session"] is True
+    assert "preexec_fn" not in popen.call_args.kwargs
 
 
 def test_service_handler():

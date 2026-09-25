@@ -23,28 +23,27 @@ Afterwards, you may follow this step-by-step guide to suggest your code improvem
 
 2. Make your changes.
 
-3. Use Black to format your code:
+3. Use Ruff to fix lint issues, sort imports, and format your code from the repository root:
 
    ```bash
-   black --line-length=100 --skip-magic-trailing-comma .
+   ruff check --fix . && ruff format .
    ```
 
-4. Use isort to sort your imports:
+   Ruff is included in the package development dependencies. Use the pinned version so local
+   formatting agrees with CI. The configuration enables Ruff's default lint rules and import sorting.
+   Review the changes and resolve any remaining diagnostics; unsafe fixes are not applied automatically.
+
+4. Run the same checks as CI:
 
    ```bash
-   isort --line-length=100 --profile=black --multi-line=3 --trailing-comma .
+   ruff check .
+   ruff format --check .
    ```
 
-5. Run Pylint on your code to ensure it meets coding standards:
-
-   ```bash
-   pylint your_module_or_package
-   ```
-
-6. Write tests for new features or fixed bugs, and add them to the test folder.
+5. Write tests for new features or fixed bugs, and add them to the test folder.
    We use [pytest](https://github.com/pytest-dev/pytest) within our team to test code.
 
-7. Follow [Conventional Commit Messages](https://www.conventionalcommits.org/en/v1.0.0/) when writing commit messages. This helps us automatically generate a changelog. For example:
+6. Follow [Conventional Commit Messages](https://www.conventionalcommits.org/en/v1.0.0/) when writing commit messages. This helps us automatically generate a changelog. For example:
 
    ```bash
    git commit -m "feat: add new feature"
@@ -62,13 +61,13 @@ Afterwards, you may follow this step-by-step guide to suggest your code improvem
    git commit -m "docs: update documentation"
    ```
 
-8. Push your commits to the remote branch:
+7. Push your commits to the remote branch:
 
    ```bash
    git push origin feature/your-feature
    ```
 
-9. Open a pull request on GitHub. Include a clear title and description of your changes. If your pull request fixes an issue, include `closes #123` in the description to automatically close the issue when the pull request is merged.
+8. Open a pull request on GitHub. Include a clear title and description of your changes. If your pull request fixes an issue, include `closes #123` in the description to automatically close the issue when the pull request is merged.
 
 ## Contributing Documentation
 

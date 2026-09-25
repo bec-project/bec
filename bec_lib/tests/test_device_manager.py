@@ -255,25 +255,25 @@ def test_baseline_devices(dm_with_devices, scan_motors_in, readout_priority_in):
         readout_priority=readout_priority_in
     )
 
-    primary_device_names = set(dev.name for dev in monitored_devices)
-    baseline_devices_names = set(dev.name for dev in baseline_devices)
-    async_devices_names = set(dev.name for dev in async_devices)
-    continuous_devices_names = set(dev.name for dev in continuous_devices)
-    on_request_devices_names = set(dev.name for dev in on_request_devices)
+    primary_device_names = {dev.name for dev in monitored_devices}
+    baseline_devices_names = {dev.name for dev in baseline_devices}
+    async_devices_names = {dev.name for dev in async_devices}
+    continuous_devices_names = {dev.name for dev in continuous_devices}
+    on_request_devices_names = {dev.name for dev in on_request_devices}
 
-    primary_device_names.intersection(readout_priority_in.get("monitored", [])) == set(
+    assert primary_device_names.intersection(readout_priority_in.get("monitored", [])) == set(
         readout_priority_in.get("monitored", [])
     )
-    baseline_devices_names.intersection(readout_priority_in.get("baseline", [])) == set(
+    assert baseline_devices_names.intersection(readout_priority_in.get("baseline", [])) == set(
         readout_priority_in.get("baseline", [])
     )
-    async_devices_names.intersection(readout_priority_in.get("async", [])) == set(
+    assert async_devices_names.intersection(readout_priority_in.get("async", [])) == set(
         readout_priority_in.get("async", [])
     )
-    continuous_devices_names.intersection(readout_priority_in.get("continuous", [])) == set(
+    assert continuous_devices_names.intersection(readout_priority_in.get("continuous", [])) == set(
         readout_priority_in.get("continuous", [])
     )
-    on_request_devices_names.intersection(readout_priority_in.get("on_request", [])) == set(
+    assert on_request_devices_names.intersection(readout_priority_in.get("on_request", [])) == set(
         readout_priority_in.get("on_request", [])
     )
 

@@ -420,7 +420,7 @@ def test_dap_plugin_fit_input(dap, input, file_history_messages, mock_file):
 
 def test_dap_auto_run(dap):
     with mock.patch.object(dap.GaussianModel, "_update_dap_config") as mock_update_dap_config:
-        dap.GaussianModel.auto_run == False
+        assert dap.GaussianModel.auto_run is False
         dap.GaussianModel.auto_run = True
         mock_update_dap_config.assert_called_once()
         dap.GaussianModel.auto_run = True

@@ -45,6 +45,21 @@ def test_LmfitService1D_get_provided_services(lmfit_service):
         assert "run_doc" in service
 
 
+@pytest.mark.parametrize("parameter", ["x_min", "x_max"])
+def test_lmfit_published_range_signature(parameter):
+    with mock.patch.object(
+        LmfitService1D, "available_models", return_value={lmfit.models.GaussianModel}
+    ):
+        service = LmfitService1D.get_provided_services()["GaussianModel"]
+    entry = next(entry for entry in service["signature"] if entry["name"] == parameter)
+    assert entry == {
+        "name": parameter,
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "default": None,
+        "annotation": "float",
+    }
+
+
 def test_LmfitService1D_get_data_from_current_scan_without_devices(lmfit_service):
     scan_item = mock.MagicMock()
     scan_item.live_data = mock.MagicMock()
