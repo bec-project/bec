@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.171.2 (2026-09-25)
+
+### Bug Fixes
+
+- **redis connector**: Forward kwarg to raw xread
+  ([`012ad28`](https://github.com/bec-project/bec/commit/012ad28f671f6f262af30afff6b685eb163bec91))
+
+
 ## v3.171.1 (2026-09-25)
 
 ### Bug Fixes
