@@ -19,7 +19,9 @@ class DAPServer(BECClient):
         provided_services: list,
         forced=True,
     ) -> None:
-        super().__init__(config=config, connector_cls=connector_cls, forced=forced)
+        super().__init__(
+            config=config, connector_cls=connector_cls, forced=forced, wait_for_server=True
+        )
         self.config = config
         self.connector_cls = connector_cls
         self._provided_services = (
@@ -35,6 +37,10 @@ class DAPServer(BECClient):
         if not self._provided_services:
             raise ValueError("No services provided")
         super().start()
+
+    def _start_services(self) -> None:
+        """Publish DAP plugins before client startup announces the service as running."""
+        super()._start_services()
         self._start_dap_service()
 
     def _start_dap_service(self):

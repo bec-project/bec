@@ -518,6 +518,7 @@ class DeviceManagerBase:
 
         # flag to allow overriding device attributes without raising an error - primarily used in tests
         self._allow_override = False
+        self._config_lock = threading.RLock()
 
         self._service = service
         self.parent = service  # for backwards compatibility; will be removed in the future
@@ -554,11 +555,13 @@ class DeviceManagerBase:
         Returns:
 
         """
-        self._start_connectors(bootstrap_server)
-        try:
-            self._get_config()
-        except DeviceConfigError as dev_conf_error:
-            logger.error(f"Failed to initialize DeviceManager. {dev_conf_error}")
+        # Subscribe before loading, but defer config callbacks until the initial load finishes.
+        with self._config_lock:
+            self._start_connectors(bootstrap_server)
+            try:
+                self._get_config()
+            except DeviceConfigError as dev_conf_error:
+                logger.error(f"Failed to initialize DeviceManager. {dev_conf_error}")
 
     def update_status(self, status: BECStatus):
         """Update the status of the device manager
@@ -650,11 +653,13 @@ class DeviceManagerBase:
         )
 
     def _reload_action(self) -> None:
+        """Reload proxy devices from Redis after any ongoing configuration change."""
         if not self._use_proxy_objects:
             return
-        logger.info("Reloading config.")
-        self.devices.flush()
-        self._get_config()
+        with self._config_lock:
+            logger.info("Reloading config.")
+            self.devices.flush()
+            self._get_config()
 
     def _remove_action(self, config) -> None:
         if not self._use_proxy_objects:
@@ -700,12 +705,13 @@ class DeviceManagerBase:
 
         """
         logger.info(f"Received new config: {str(msg)}")
-        allow_override = self._allow_override
-        try:
-            self._allow_override = True
-            self.parse_config_message(msg.value)
-        finally:
-            self._allow_override = allow_override
+        with self._config_lock:
+            allow_override = self._allow_override
+            try:
+                self._allow_override = True
+                self.parse_config_message(msg.value)
+            finally:
+                self._allow_override = allow_override
 
     def _update_scan_info(self, msg, **kwargs) -> None:
         msg = msg.value

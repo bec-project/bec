@@ -1,7 +1,9 @@
 # pylint: skip-file
 import copy
 import os
+import threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import pydantic
@@ -21,6 +23,81 @@ def test_device_manager_initialize(device_manager):
     with mock.patch.object(device_manager, "_get_config") as get_config:
         device_manager.initialize("")
         get_config.assert_called_once()
+
+
+@pytest.mark.parametrize("initial_load_fails", [False, True])
+@pytest.mark.parametrize("pause_during", ["subscription", "device_load"])
+def test_reload_waits_for_initial_device_load(
+    device_manager, session_from_test_config, initial_load_fails, pause_during
+):
+    device_manager._allow_override = False
+    config = copy.deepcopy(
+        next(dev for dev in session_from_test_config["devices"] if dev["name"] == "samx")
+    )
+    initialization_paused = threading.Event()
+    finish_initial_load = threading.Event()
+    callback_started = threading.Event()
+    reload_started = threading.Event()
+    initial_device_read = threading.Event()
+    start_connectors = device_manager._start_connectors
+    get_device_info = device_manager._get_device_info
+    parse_config_message = device_manager.parse_config_message
+
+    def pause_initialization():
+        initialization_paused.set()
+        assert finish_initial_load.wait(timeout=5)
+
+    def subscribe(bootstrap_server):
+        start_connectors(bootstrap_server)
+        if pause_during == "subscription":
+            pause_initialization()
+
+    def load_device_info(name):
+        if not initial_device_read.is_set():
+            initial_device_read.set()
+            if pause_during == "device_load":
+                pause_initialization()
+            if initial_load_fails:
+                raise DeviceConfigError("Initial loading failed")
+        return get_device_info(name)
+
+    def parse_reload(msg):
+        reload_started.set()
+        parse_config_message(msg)
+
+    def reload_config():
+        callback_started.set()
+        device_manager._device_config_update_callback(
+            MessageObject(value=messages.DeviceConfigMessage(action="reload", config={}), topic="")
+        )
+
+    with (
+        mock.patch.object(
+            device_manager,
+            "_get_redis_device_config",
+            side_effect=[[config], [{**config, "enabled": False}]],
+        ),
+        mock.patch.object(device_manager, "_start_connectors", side_effect=subscribe),
+        mock.patch.object(device_manager, "_get_device_info", side_effect=load_device_info),
+        mock.patch.object(device_manager, "parse_config_message", side_effect=parse_reload),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        initial_load = executor.submit(device_manager.initialize, "")
+        try:
+            assert initialization_paused.wait(timeout=5)
+            reload = executor.submit(reload_config)
+            assert callback_started.wait(timeout=5)
+            assert not reload_started.wait(timeout=0.1), "Reload overlapped initial loading"
+        finally:
+            finish_initial_load.set()
+        initial_load.result(timeout=5)
+        reload.result(timeout=5)
+
+    assert reload_started.is_set()
+    assert not device_manager.devices.samx.enabled
+    assert device_manager._allow_override is False
+    with pytest.raises(AttributeError, match="Cannot overwrite 'read'"):
+        device_manager.devices.samx.read = "overwritten"
 
 
 @pytest.mark.parametrize(

@@ -445,7 +445,7 @@ class BECClient(BECService):
             self.wait_for_service(service, BECStatus.RUNNING)
         print("Updating client...")
         self._load_scans()
-        self.device_manager._load_session()
+        self.device_manager._reload_action()
         print("Server restarted successfully.")
 
     def _request_scan_reload(self):
