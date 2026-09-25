@@ -74,31 +74,6 @@ bec_lib_fixtures = "bec_lib.tests.fixtures"
 Homepage = "https://github.com/bec-project/bec"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 [tool.hatch.build.targets.wheel]
 include = ["*"]
 
@@ -124,3 +99,4 @@ skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["bec_lib", "bec_server", "bec_ipython_client"]
+split-on-trailing-comma = false

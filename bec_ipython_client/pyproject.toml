@@ -43,88 +43,6 @@ bec = "bec_ipython_client.main:main"
 Homepage = "https://github.com/bec-project/bec"
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 [tool.hatch.build.targets.wheel]
 include = ["*"]
 
@@ -146,8 +64,5 @@ line-length = 100
 skip-magic-trailing-comma = true
 
 [tool.ruff.lint.isort]
-known-first-party = [
-  "bec_lib",
-  "bec_server",
-  "bec_ipython_client",
-]
+known-first-party = ["bec_lib", "bec_server", "bec_ipython_client"]
+split-on-trailing-comma = false
