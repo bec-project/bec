@@ -1,12 +1,21 @@
 <!--
-Copy this template into a PR review body; GitHub does not load it automatically.
+Copy this template into a top-level PR conversation comment; GitHub does not load it automatically.
 Replace placeholders and remove these instructions and unused optional sections.
 Record only checks actually performed. The review applies to the reviewed commit;
 check for newer commits before submitting and state any unreviewed changes.
 
-Agents must submit reviews only as COMMENT, regardless of whether findings remain.
-Use `gh pr review --comment` or the API review event `COMMENT`. Never submit
-APPROVE or REQUEST_CHANGES, or use `--approve` or `--request-changes`.
+The verdict expresses the reviewer's assessment:
+- APPROVE: no required fixes remain. Optional improvements do not prevent approval.
+- REQUEST CHANGES: required fixes remain; describe them in the findings.
+
+Agents must publish the assessment as a top-level PR conversation comment using
+`gh pr comment --body-file <path>` or the issue-comments API. The freshness workflow
+updates these comments; it does not manage review submissions or inline comments.
+Do not use `gh pr review` or the GitHub Reviews API to publish this summary, and
+never submit a formal `APPROVE` or `REQUEST_CHANGES` event.
+Do not use COMMENT as the verdict: it describes how the review is posted,
+not whether the change is acceptable.
+
 Summarize required fixes or the absence of findings in the visible review summary.
 Include the full model designation supplied by the review environment: model
 family/version, variant, and reasoning effort, for example "GPT-6 Astra Ultra".
@@ -19,9 +28,22 @@ updating its summary, reviewed commit, findings, and validation. Keep reviews
 from different full model designations separate.
 Use immutable commit and source links. If local changes were also reviewed,
 describe them explicitly: the commit alone does not identify that review scope.
+
+Keep the `bec-review` HTML marker below and the exact `**Reviewed commit:**`
+field, with the full 40-character PR head SHA as both the link text and the commit
+URL suffix. Do not replace it with a branch name or the PR's test merge commit.
+The Review comment freshness workflow compares this SHA with the live PR head on
+pushes and comment creation/edits. It adds a STALE REVIEW warning when they differ
+and removes it when they match again, without changing the verdict or review text.
+Only update the referenced SHA after reviewing that revision. Leave any generated
+`bec-review-stale:start` / `bec-review-stale:end` warning block to the workflow.
+The workflow also recognizes older comments with the Reviewer and Reviewed commit
+fields. It becomes active after reaching the default branch; workflow_dispatch
+can check an existing PR without waiting for another push or comment edit.
 -->
 
-**Review:** COMMENT — {{brief summary of findings or absence of findings}}.
+<!-- bec-review -->
+**Verdict:** {{APPROVE / REQUEST CHANGES}} — {{brief summary of findings or absence of findings}}.
 
 **Reviewer:** {{reviewer or agent name}}
 **Model:** {{full model name, variant, and reasoning effort, e.g. GPT-6 Astra Ultra}}
