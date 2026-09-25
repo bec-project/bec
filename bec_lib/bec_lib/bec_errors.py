@@ -7,8 +7,25 @@ from __future__ import annotations
 import traceback
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
+from bec_lib.utils.error_pretty_print import ErrorInfoPrettyPrinter
+
+if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
+
+
+class BECError(Exception):
+    """Base class for all BEC exceptions"""
+
+    def __init__(self, message: str, error_info: messages.ErrorInfo) -> None:
+        super().__init__(message)
+        self.error_info = error_info
+        self._pretty_printer = ErrorInfoPrettyPrinter(error_info)
+
+    def pretty_print(self) -> None:
+        self._pretty_printer.pretty_print()
+
+    def print_details(self) -> None:
+        self._pretty_printer.print_details()
 
 
 class ScanAbortion(Exception):
@@ -41,38 +58,17 @@ class ExceptionWithErrorInfo(Exception):
     def __init__(self, error_info: messages.ErrorInfo):
         super().__init__(error_info.error_message)
         self.error_info = error_info
+        self._pretty_printer = ErrorInfoPrettyPrinter(error_info)
 
     def __str__(self) -> str:
         msg = self.error_info.compact_error_message
         return f"{self.__class__.__name__}: {msg}" if msg else super().__str__()
 
     def pretty_print(self) -> None:
-        """
-        Use Rich to pretty print the error message,
-        following the same logic used in __str__().
-        """
-        from rich.console import Console, Group
-        from rich.panel import Panel
-        from rich.syntax import Syntax
-        from rich.text import Text
+        self._pretty_printer.pretty_print()
 
-        console = Console()
-        msg = self.error_info.compact_error_message or self.error_info.error_message
-
-        text = Text()
-        text.append(f"{self.__class__.__name__}", style="bold")
-        text.append("\n")
-
-        renderables = []
-        # Format message inside a syntax box if it looks like traceback
-        if "Traceback (most recent call last):" in msg:
-            renderables.append(Syntax(msg.strip(), "python", word_wrap=True))
-        else:
-            renderables.append(Text(msg.strip()))
-
-        body = Group(*renderables)
-
-        console.print(Panel(body, title=text, border_style="red", expand=True))
+    def print_details(self) -> None:
+        self._pretty_printer.print_details()
 
 
 class ScanInputValidationError(ExceptionWithErrorInfo):
@@ -80,7 +76,6 @@ class ScanInputValidationError(ExceptionWithErrorInfo):
 
     def __init__(self, error_info: messages.ErrorInfo):
         super().__init__(error_info)
-        self.error_info = error_info
 
     @classmethod
     def with_error_info(cls, message: str) -> ScanInputValidationError:

@@ -9,14 +9,10 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING
 
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.text import Text
-
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.utils import threadlocked
+from bec_lib.utils.error_pretty_print import AlarmPrettyPrinter
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
@@ -42,6 +38,7 @@ class AlarmBase(Exception):
         self.severity = severity
         self.handled = handled
         self.alarm_type = alarm.info.exception_type
+        self._pretty_printer = AlarmPrettyPrinter(alarm.info, severity)
         super().__init__(self.alarm.content)
 
     def __str__(self) -> str:
@@ -52,38 +49,10 @@ class AlarmBase(Exception):
         )
 
     def pretty_print(self) -> None:
-        """
-        Use Rich to pretty print the alarm message,
-        following the same logic used in __str__().
-        """
-        console = Console()
+        self._pretty_printer.pretty_print()
 
-        msg = self.alarm.info.compact_error_message or self.alarm.info.error_message
-
-        text = Text()
-        text.append(f"{self.alarm_type} | ", style="bold")
-        text.append(f"Severity {self.severity.name}", style="bold yellow")
-        if self.alarm.info.device:
-            text.append(f" | Device {self.alarm.info.device}\n", style="bold")
-        text.append("\n")
-
-        renderables = []
-        # Format message inside a syntax box if it looks like traceback
-        if "Traceback (most recent call last):" in msg:
-            renderables.append(Syntax(msg.strip(), "python", word_wrap=True))
-        else:
-            renderables.append(Text(msg.strip()))
-
-        if self.alarm.info.device:
-            renderables.append(
-                Text(
-                    f"\n\nThe error is likely unrelated to BEC. Please check the device '{self.alarm.info.device}'.",
-                    style="bold",
-                )
-            )
-        body = Group(*renderables)
-
-        console.print(Panel(body, title=text, border_style="red", expand=True))
+    def print_details(self) -> None:
+        self._pretty_printer.print_details()
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, AlarmBase):
