@@ -316,5 +316,7 @@ class DeviceProgressBar(ProgressBarBase):
         Args:
             device (str): device name
         """
+        if device not in self.devices:
+            return
         device_index = self.devices.index(device)
         self._progress.advance(self._tasks[device_index], self.NUM_STEPS)
