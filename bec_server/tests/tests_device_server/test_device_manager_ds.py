@@ -9,6 +9,7 @@ import ophyd
 import pytest
 from ophyd_devices.devices.psi_motor import EpicsMotor
 from ophyd_devices.tests.utils import patched_device
+from ophyd_devices.utils.socket import SocketSignal
 
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
@@ -829,6 +830,191 @@ def test_auto_monitor_update_loop_batches_updates_and_skips_missing_devices(dm_w
         assert not device_manager._auto_monitor_readback_updates
         assert not device_manager._auto_monitor_configuration_updates
         assert not device_manager._limit_change_updates
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize(
+    "callback_name,reader_name,endpoint",
+    [
+        ("_obj_callback_readback", "read", MessageEndpoints.device_readback),
+        (
+            "_obj_callback_configuration",
+            "read_configuration",
+            MessageEndpoints.device_read_configuration,
+        ),
+        ("_obj_callback_limit_change", "low_limit_travel.get", MessageEndpoints.device_limits),
+    ],
+)
+def test_direct_device_callbacks_guard_cross_device_recursion(
+    device_manager, connected_connector, callback_name, reader_name, endpoint
+):
+    device = ophyd.Device(name="first")
+    device.low_limit_travel = ophyd.Signal(name="low_limit", value=-10)
+    device.high_limit_travel = ophyd.Signal(name="high_limit", value=10)
+    other = ophyd.Signal(name="second", value=2)
+    for obj in (device, other):
+        device_manager.devices[obj.name] = SimpleNamespace(name=obj.name, obj=obj, metadata={})
+    device_manager.connector = connected_connector
+    callback = getattr(device_manager, callback_name)
+    recursive_reads = []
+
+    def read():
+        recursive_reads.append(device.name)
+        if len(recursive_reads) > 1:
+            raise RuntimeError("Circular device callback read")
+        # A read notifies another device whose read would notify the first device again.
+        device_manager._obj_callback_readback(obj=other)
+        device_manager._obj_callback_auto_monitor_readback(obj=other)
+        device_manager._obj_callback_auto_monitor_configuration(obj=other)
+        device_manager._obj_callback_auto_monitor_limits(obj=other)
+        if reader_name == "low_limit_travel.get":
+            return -10
+        return {device.name: {"value": 1, "timestamp": time.time()}}
+
+    owner, method = (
+        (device.low_limit_travel, "get") if "." in reader_name else (device, reader_name)
+    )
+    with (
+        mock.patch.object(owner, method, side_effect=read),
+        mock.patch.object(other, "read", side_effect=lambda: callback(obj=device)) as other_read,
+    ):
+        callback(obj=device)
+
+    assert recursive_reads == [device.name]
+    other_read.assert_not_called()
+    assert connected_connector.get(endpoint(device.name)) is not None
+    assert connected_connector.get(MessageEndpoints.device_readback(other.name)) is None
+    assert not device_manager._auto_monitor_readback_updates
+    assert not device_manager._auto_monitor_configuration_updates
+    assert not device_manager._limit_change_updates
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_auto_monitor_read_does_not_requeue_socket_signal(device_manager, connected_connector):
+    class ReadEmittingSignal(SocketSignal):
+        """Socket signal with a constant local readback and real subscription behavior."""
+
+        def _socket_get(self):
+            return 42
+
+        def _socket_set(self, val):
+            pass
+
+    signal = ReadEmittingSignal(name="socket_signal")
+    device_manager.devices[signal.name] = SimpleNamespace(name=signal.name, obj=signal, metadata={})
+    device_manager.connector = connected_connector
+    with mock.patch.object(device_manager, "_ensure_auto_monitor_update_thread"):
+        device_manager._subscribe_to_device_events(signal, SimpleNamespace(enabled=False))
+    signal.get()
+
+    with (
+        mock.patch.object(signal, "read", wraps=signal.read) as read,
+        mock.patch.object(device_manager._shutdown_event, "wait", side_effect=[False, False, True]),
+    ):
+        device_manager._auto_monitor_update_loop()
+
+    read.assert_called_once_with()
+    assert not device_manager._auto_monitor_readback_updates
+    msg = connected_connector.get(MessageEndpoints.device_readback(signal.name))
+    assert msg.signals[signal.name]["value"] == 42
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("failing_read", ["read", "read_configuration", "low_limit_travel.get"])
+def test_auto_monitor_update_isolates_device_errors(
+    device_manager, connected_connector, failing_read
+):
+    class MonitoredDevice(ophyd.Device):
+        """Device with independent readback, configuration, and limit signals."""
+
+        readback = ophyd.Component(ophyd.Signal, value=42)
+        configuration = ophyd.Component(ophyd.Signal, value=7, kind=ophyd.Kind.config)
+        low_limit_travel = ophyd.Component(ophyd.Signal, value=-10, kind=ophyd.Kind.omitted)
+        high_limit_travel = ophyd.Component(ophyd.Signal, value=10, kind=ophyd.Kind.omitted)
+
+    for name in ("healthy", "broken"):
+        device_manager.devices[name] = SimpleNamespace(
+            name=name, obj=MonitoredDevice(name=name), metadata={}
+        )
+    device_manager.connector = connected_connector
+    device_manager._auto_monitor_readback_updates.update(("healthy", "broken"))
+    device_manager._auto_monitor_configuration_updates.update(("healthy", "broken"))
+    device_manager._limit_change_updates.update(("healthy", "broken"))
+    broken = device_manager.devices["broken"].obj
+    owner, method = (
+        (broken.low_limit_travel, "get") if "." in failing_read else (broken, failing_read)
+    )
+
+    with (
+        mock.patch.object(owner, method, side_effect=TimeoutError("device read failed")),
+        mock.patch.object(device_manager._shutdown_event, "wait", side_effect=[False, True]),
+    ):
+        device_manager._auto_monitor_update_loop()
+
+    readback = connected_connector.get(MessageEndpoints.device_readback("healthy"))
+    assert readback.signals["healthy_readback"]["value"] == 42
+    configuration = connected_connector.get(MessageEndpoints.device_read_configuration("healthy"))
+    assert configuration.signals["healthy_configuration"]["value"] == 7
+    limits = connected_connector.get(MessageEndpoints.device_limits("healthy"))
+    assert limits.signals == {"low": {"value": -10}, "high": {"value": 10}}
+    # An exception must restore the context so later external events can still be queued.
+    device_manager._obj_callback_auto_monitor_readback(obj=broken)
+    assert device_manager._auto_monitor_readback_updates == {"broken"}
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("use_worker", [False, True])
+def test_auto_monitor_guard_preserves_events_from_other_threads(device_manager, use_worker):
+    signal = ophyd.Signal(name="monitored")
+    device_manager.devices[signal.name] = SimpleNamespace(name=signal.name, obj=signal, metadata={})
+    callbacks = (
+        device_manager._obj_callback_auto_monitor_readback,
+        device_manager._obj_callback_auto_monitor_configuration,
+        device_manager._obj_callback_auto_monitor_limits,
+    )
+    queues = (
+        device_manager._auto_monitor_readback_updates,
+        device_manager._auto_monitor_configuration_updates,
+        device_manager._limit_change_updates,
+    )
+    read_started = threading.Event()
+    external_event_done = threading.Event()
+    recursive_updates = []
+
+    def external_event():
+        if read_started.wait(timeout=2):
+            for callback in callbacks:
+                callback(obj=signal)
+            external_event_done.set()
+
+    def read():
+        for callback in callbacks:
+            callback(obj=signal)
+        recursive_updates.extend(queue.copy() for queue in queues)
+        read_started.set()
+        external_event_done.wait(timeout=2)
+        return {signal.name: {"value": 1, "timestamp": time.time()}}
+
+    thread = threading.Thread(target=external_event)
+    thread.start()
+    try:
+        with (
+            mock.patch.object(signal, "read", side_effect=read),
+            mock.patch.object(device_manager._shutdown_event, "wait", side_effect=[False, True]),
+        ):
+            if use_worker:
+                device_manager._obj_callback_auto_monitor_readback(obj=signal)
+                device_manager._auto_monitor_update_loop()
+            else:
+                device_manager._obj_callback_readback(obj=signal)
+    finally:
+        read_started.set()
+        thread.join(timeout=3)
+
+    assert not thread.is_alive()
+    assert recursive_updates == [set(), set(), set()]
+    assert external_event_done.is_set()
+    assert all(queue == {signal.name} for queue in queues)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
