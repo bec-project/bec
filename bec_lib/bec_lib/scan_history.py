@@ -95,11 +95,13 @@ class ScanHistory:
             if not os.access(msg.file_path, os.R_OK):
                 # If the file is not readable, we skip adding it to the history
                 return
-            self._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
+            # Store first: consumers of the SCAN_HISTORY_UPDATE event may read
+            # the registry (e.g. get_by_scan_id) from the callback.
             self._scan_data[msg.scan_id] = msg
             self._scan_ids.append(msg.scan_id)
             self._scan_numbers.append(msg.scan_number)
             self._remove_oldest_scan()
+            self._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
 
     def get_by_scan_id(self, scan_id: str) -> ScanDataContainer | None:
         """Get the scan data by scan ID."""
