@@ -1,6 +1,36 @@
 # CHANGELOG
 
 
+## v3.171.1 (2026-09-25)
+
+### Bug Fixes
+
+- **device**: Validate property value before emitting config update
+  ([`1bdcbec`](https://github.com/bec-project/bec/commit/1bdcbecff171425d32a2db3e55768558f90dea8c))
+
+- **test**: Run update through updating the device manager instead of broadcasting a new update
+  ([`e2feadc`](https://github.com/bec-project/bec/commit/e2feadc025af5b279d350a6a1d240a39c2ff435c))
+
+### Chores
+
+- Add improvement template
+  ([`176785b`](https://github.com/bec-project/bec/commit/176785b1d3e3b3bb13936431f0d2f9ac68515e35))
+
+- Add pr review template
+  ([`7c9c29e`](https://github.com/bec-project/bec/commit/7c9c29ee24c3b0c199cd4309794d9dba10082287))
+
+- Point agents to gh templates
+  ([`18bfc5d`](https://github.com/bec-project/bec/commit/18bfc5df782a0e94b6e14ca7e788994ab96f99db))
+
+- Update pr template with instructions
+  ([`367cdb7`](https://github.com/bec-project/bec/commit/367cdb7bb2d5c00b636ed4c83d20a1801f015af1))
+
+### Continuous Integration
+
+- Add Python 3.14 to the test matrix
+  ([`33d0816`](https://github.com/bec-project/bec/commit/33d0816423e15a85af498116bb03975247443078))
+
+
 ## v3.171.0 (2026-09-24)
 
 ### Bug Fixes
