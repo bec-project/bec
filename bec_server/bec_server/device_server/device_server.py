@@ -25,10 +25,12 @@ from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 from bec_server.device_server.friendly_device_exceptions import reformat_known_device_exceptions
+from bec_server.device_server.ophyd_callback_monitor import OphydCallbackMonitor
 from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import MessageObject, RedisConnector
+    from bec_lib.service_config import ServiceConfig
 
 
 logger = bec_logger.logger
@@ -327,8 +329,16 @@ class DeviceServer(BECService):
     This class is intended to provide a thin wrapper around ophyd and the devicemanager. It acts as the entry point for other services
     """
 
-    def __init__(self, config, connector_cls: type[RedisConnector]) -> None:
+    def __init__(self, config: str | ServiceConfig, connector_cls: type[RedisConnector]) -> None:
+        """Initialize the device server.
+
+        Args:
+            config (str | ServiceConfig): Service configuration or its file path.
+            connector_cls (type[RedisConnector]): Connector class used by the service.
+        """
+        callback_monitor = OphydCallbackMonitor(queue_threshold=1000)
         super().__init__(config, connector_cls, unique_service=True)
+        self.ophyd_callback_monitor = callback_monitor
         self._tasks = []
         self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
@@ -357,6 +367,7 @@ class DeviceServer(BECService):
             messages.DeviceConfigMessage(action="reload", config={}),
         )
         self.status = BECStatus.RUNNING
+        self.ophyd_callback_monitor.start()
 
     def update_status(self, status: BECStatus):
         """update the status of the device server"""
@@ -369,7 +380,13 @@ class DeviceServer(BECService):
 
     def shutdown(self) -> None:
         """shutdown the device server"""
-        super().shutdown()
+        self.ophyd_callback_monitor.request_stop()
+        self.ophyd_callback_monitor.join(timeout=1)
+        try:
+            # Closing the connector also interrupts a warning blocked in the Redis log sink.
+            super().shutdown()
+        finally:
+            self.ophyd_callback_monitor.join()
         self.stop()
         if self.device_manager:
             self.device_manager.shutdown()
