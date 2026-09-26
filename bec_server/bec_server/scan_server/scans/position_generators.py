@@ -403,21 +403,41 @@ def round_scan_positions(
     """
     Calculate positions for a circular shell scan.
 
+    Generate exactly ``number_of_rings`` evenly spaced rings, excluding the inner
+    boundary and including the outer boundary. Ring ``k`` (starting at 1) has
+    radius ``inner_radius + k * (outer_radius - inner_radius) / number_of_rings``
+    and ``k * points_in_first_ring`` points. A single ring lies at ``outer_radius``;
+    no separate center point is generated.
+
     Args:
-        inner_radius (float): inner radius
-        outer_radius (float): outer radius
-        number_of_rings (int): number of radii
-        points_in_first_ring (int): number of angles in the inner ring
+        inner_radius (float): excluded inner boundary, finite and nonnegative
+        outer_radius (float): included outer boundary, finite and greater than inner_radius
+        number_of_rings (int): positive number of rings
+        points_in_first_ring (int): positive number of angles in the first ring
         center_1 (float, optional): center position for axis 1. Defaults to 0.
         center_2 (float, optional): center position for axis 2. Defaults to 0.
 
     Returns:
         np.ndarray: calculated positions in the form [[x, y], ...]
+
+    Raises:
+        ValueError: If the radii are not finite with ``0 <= inner_radius < outer_radius``,
+            or either count is not a positive integer.
     """
+    if not (np.isfinite(inner_radius) and np.isfinite(outer_radius)) or not (
+        0 <= inner_radius < outer_radius
+    ):
+        raise ValueError("radii must be finite and satisfy 0 <= inner_radius < outer_radius")
+    for name, value in (
+        ("number_of_rings", number_of_rings),
+        ("points_in_first_ring", points_in_first_ring),
+    ):
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+
     positions = []
-    radius_step = (inner_radius - outer_radius) / number_of_rings
-    for ring_index in range(1, number_of_rings + 2):
-        radius = inner_radius + ring_index * radius_step
+    radii = np.linspace(inner_radius, outer_radius, number_of_rings + 1)[1:]
+    for ring_index, radius in enumerate(radii, start=1):
         points_on_ring = points_in_first_ring * ring_index
         angular_step = 2 * np.pi / points_on_ring
         positions.extend(
