@@ -306,16 +306,18 @@ def test_async_writer_add_slice_fixed_size_preserves_later_rows(
 
 @pytest.mark.parametrize("max_rows", [None, 4])
 @pytest.mark.parametrize("initial_values", [[7, 8], [7, 8, 9, 10, 11], []])
+@pytest.mark.parametrize("strided", [False, True])
 def test_async_writer_add_slice_fixed_size_starts_at_requested_row(
-    async_writer, tmp_path, max_rows, initial_values
+    async_writer, tmp_path, max_rows, initial_values, strided
 ):
     """A nonzero first row keeps its data and cursor when earlier rows arrive later."""
     with h5py.File(tmp_path / "initial_row.h5", "w") as file:
         signal_group = file.create_group("signal")
+        values = np.asarray(initial_values, dtype=np.int16)
+        if strided:
+            values = np.repeat(values, 2)[::2]
         async_writer.write_value_data(
-            signal_group,
-            np.asarray(initial_values, dtype=np.int16),
-            {"type": "add_slice", "index": 3, "max_shape": [max_rows, 4]},
+            signal_group, values, {"type": "add_slice", "index": 3, "max_shape": [max_rows, 4]}
         )
         expected_initial = np.zeros((4, min(len(initial_values), 4)), dtype=np.int16)
         expected_initial[3] = initial_values[:4]
@@ -351,24 +353,25 @@ def test_async_writer_add_slice_fixed_size_nonzero_first_row_preserves_string_dt
         assert h5py.check_string_dtype(dataset.dtype).length is None
 
 
+@pytest.mark.parametrize("cells", [[[1, 2], [3]], [[1, 2], [3, 4]], [[1, 2]], [[], []], [[]]])
 def test_async_writer_add_slice_fixed_size_nonzero_first_row_preserves_vlen_dtype(
-    async_writer, tmp_path
+    async_writer, tmp_path, cells
 ):
     """HDF5 initializes skipped rows correctly for variable-length numeric values."""
-    values = np.empty(2, dtype=h5py.vlen_dtype(np.dtype(np.int32)))
-    values[0] = np.array([1, 2], dtype=np.int32)
-    values[1] = np.array([3], dtype=np.int32)
+    values = np.empty(len(cells), dtype=h5py.vlen_dtype(np.dtype(np.int32)))
+    for index, cell in enumerate(cells):
+        values[index] = np.array(cell, dtype=np.int32)
     with h5py.File(tmp_path / "initial_vlen_row.h5", "w") as file:
         signal_group = file.create_group("signal")
         async_writer.write_value_data(
             signal_group, values, {"type": "add_slice", "index": 2, "max_shape": [None, 4]}
         )
         dataset = signal_group["value"]
-        assert dataset.shape == (3, 2)
+        assert dataset.shape == (3, len(cells))
         assert h5py.check_vlen_dtype(dataset.dtype) == np.dtype(np.int32)
         assert all(cell.size == 0 for row in dataset[:2] for cell in row)
-        np.testing.assert_array_equal(dataset[2, 0], values[0])
-        np.testing.assert_array_equal(dataset[2, 1], values[1])
+        for index, value in enumerate(values):
+            np.testing.assert_array_equal(dataset[2, index], value)
 
 
 @pytest.mark.parametrize("populated", [False, True])
