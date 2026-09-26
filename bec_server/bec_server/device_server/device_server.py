@@ -195,8 +195,18 @@ class RequestHandler:
         Args:
             status_obj(ophyd.StatusBase): The status object that was updated.
         """
-        self.parent.status_callback(status_obj)
         instr_id = status_obj.instruction.metadata["device_instr_id"]
+        try:
+            self.parent.status_callback(status_obj)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception(f"Status callback failed for instruction {instr_id}")
+            error = status_obj.exception() or exc
+            error_info = self.get_error_info(error, status_obj)
+            self.set_finished(instr_id, success=False, error_info=error_info)
+            self.parent.dispatch_status_response(
+                status_obj, status_obj.instruction.device, error_info=error_info
+            )
+            return
         self._update_instruction(instr_id, is_status_obj=True)
 
     def _update_instruction(self, instr_id: str, is_status_obj: bool = False) -> None:
@@ -840,9 +850,6 @@ class DeviceServer(BECService):
         device_name = (
             ".".join([obj.root.name, obj.dotted_name]) if obj.dotted_name else obj.root.name
         )
-        metadata = {"action": status.instruction.content["action"]}
-        metadata.update(status.instruction.metadata)
-
         content = status.instruction.content
         is_config_set = content["action"] == "set"
         rpc_func = content["parameter"].get("func", "")
@@ -855,27 +862,49 @@ class DeviceServer(BECService):
                 # Refresh readback without replacing the request tracking this status.
                 self._read_device(status.instruction, new_status=False)
 
-        if status.instruction.metadata.get("response"):
-            # if the user requested a response on a single status object, we need to send it
-            # to the device_req_status_container
-            request_id = status.instruction.metadata["RID"]
-            metadata["error_info"] = (
-                self.requests_handler.get_error_info(status.exception(), status)
-                if status.exception()
-                else None
-            )
-            dev_msg = messages.DeviceReqStatusMessage(
-                device=device_name, success=status.success, request_id=request_id, metadata=metadata
-            )
-            logger.trace(f"req status for device {device_name}: {status.success}")
-
-            self.connector.xadd(
-                MessageEndpoints.device_req_status(request_id),
-                {"data": dev_msg},
-                pipe=pipe,
-                expire=3600,
-            )
+        self.dispatch_status_response(status, device_name, pipe=pipe)
         pipe.execute()
+
+    def dispatch_status_response(
+        self,
+        status: StatusBase,
+        device_name: str,
+        error_info: messages.ErrorInfo | None = None,
+        pipe: Any = None,
+    ) -> None:
+        """Publish a requested client status response, including callback failures.
+
+        Args:
+            status (StatusBase): Completed status carrying the original instruction.
+            device_name (str): Device name to include in the response.
+            error_info (messages.ErrorInfo | None): Callback error overriding successful
+                motion, if present. Otherwise, use the status exception. Defaults to None.
+            pipe (Any): Optional pipeline used to queue the response. Defaults to None.
+
+        Returns:
+            None: The response is published or queued when requested.
+        """
+        instruction = status.instruction
+        if not instruction.metadata.get("response"):
+            return
+        request_id = instruction.metadata["RID"]
+        if error_info is None:
+            error = status.exception()
+            if error is not None:
+                error_info = self.requests_handler.get_error_info(error, status)
+        metadata = {"action": instruction.action, **instruction.metadata}
+        metadata["error_info"] = error_info
+        success = status.success if error_info is None else False
+        dev_msg = messages.DeviceReqStatusMessage(
+            device=device_name, success=success, request_id=request_id, metadata=metadata
+        )
+        logger.trace(f"req status for device {device_name}: {success}")
+        self.connector.xadd(
+            MessageEndpoints.device_req_status(request_id),
+            {"data": dev_msg},
+            pipe=pipe,
+            expire=3600,
+        )
 
     def _update_read_configuration(self, obj: OphydObject, metadata: dict, pipe) -> None:
         dev_config_msg = messages.DeviceMessage(
