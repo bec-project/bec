@@ -508,27 +508,7 @@ class AsyncWriter(threading.Thread):
                 )
                 signal_group["value"][row_index] = value
             else:
-                value = value.reshape((1,) + value.shape)
-                if value.shape[1] > max_shape[1]:
-                    msg = f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated."
-                    self.connector.raise_alarm(
-                        severity=Alarms.WARNING,
-                        info=messages.ErrorInfo(
-                            error_message=msg,
-                            compact_error_message=msg,
-                            exception_type="ValueError",
-                            device=signal_group.name,
-                        ),
-                        metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
-                    )
-                    value = value[:, : max_shape[1]]
-                dataset = create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
-                if row_index > 0:
-                    # Keep dtype inference from the data and let HDF5 fill the skipped rows.
-                    dataset.resize((0, value.shape[1]))
-                    dataset.resize((row_index + 1, value.shape[1]))
-                    dataset[row_index, :] = value[0]
-                self.cursor[signal_group.name][row_index] = value.shape[1]
+                self._write_initial_fixed_slice(signal_group, value, max_shape, row_index)
             return
 
         # add a slice to the already existing dataset
@@ -562,6 +542,42 @@ class AsyncWriter(threading.Thread):
             )
             signal_group["value"][row_index, col_index : col_index + len(value)] = value
             self.cursor[signal_group.name][row_index] = col_index + len(value)
+
+    def _write_initial_fixed_slice(
+        self,
+        signal_group: h5py.Group,
+        value: np.ndarray,
+        max_shape: list[int | None],
+        row_index: int,
+    ) -> None:
+        """Create a fixed-width slice dataset at the validated initial row index."""
+        value = value.reshape((1,) + value.shape)
+        if value.shape[1] > max_shape[1]:
+            msg = (
+                f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. "
+                "Data will be truncated."
+            )
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                info=messages.ErrorInfo(
+                    error_message=msg,
+                    compact_error_message=msg,
+                    exception_type="ValueError",
+                    device=signal_group.name,
+                ),
+                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
+            )
+            value = value[:, : max_shape[1]]
+        dataset = create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
+        if row_index > 0:
+            # Keep dtype inference from the data and let HDF5 fill the skipped rows.
+            dataset.resize((0, value.shape[1]))
+            dataset.resize((row_index + 1, value.shape[1]))
+            if value.size:
+                dataset.write_direct(
+                    np.ascontiguousarray(value), dest_sel=np.s_[row_index : row_index + 1, :]
+                )
+        self.cursor[signal_group.name][row_index] = value.shape[1]
 
     def write_timestamp_data(self, signal_group, value):
         """
