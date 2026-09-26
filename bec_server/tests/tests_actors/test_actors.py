@@ -1,4 +1,4 @@
-from threading import Thread
+from threading import Event, Thread
 from time import sleep
 from unittest.mock import MagicMock, patch
 
@@ -176,7 +176,9 @@ def test_actor_procedure_logs_error_not_actor():
 
 
 class BlStateTestActor(BlStateActor):
-    state_table = {"test_state": ["valid"], "test_state_2": ["valid"]}
+    def __init__(self, *args, **kwargs):
+        self.state_table = {"test_state": ["valid"], "test_state_2": ["valid"]}
+        super().__init__(*args, **kwargs)
 
 
 def test_blstateactor_init_table_and_cache():
@@ -188,27 +190,76 @@ def test_blstateactor_init_table_and_cache():
 
     mock_client.beamline_states.get_status_by_name.side_effect = get_status_by_name
     actor = BlStateTestActor(mock_client, "Test", "Test")
-    actor.stop_event.set()
-    actor.run()
+    actor._update_cache()
 
     assert actor.state_table == {"test_state": ["valid"]}
     assert actor.state_cache == {"test_state": "valid"}
 
 
-def test_bl_state_actor_waits_for_states():
+def test_bl_state_actor_waits_for_states(threads_check):
     mock_client = MagicMock()
-
     mock_client.beamline_states.ready = False
     actor = BlStateTestActor(mock_client, "Test", "Test")
     actor.evaluate = MagicMock()
+    waiting = Event()
+    running = Event()
+    actor.push_status = MagicMock(side_effect=lambda _: running.set())
     with patch("bec_server.actors.actor.logger") as mock_logger:
+        mock_logger.warning.side_effect = lambda _: waiting.set()
         t = Thread(target=actor.run)
         t.start()
-        sleep(0.1)
-        mock_logger.warning.assert_called()
-        actor.evaluate.assert_not_called()
-        mock_client.beamline_states.ready = True
-        sleep(0.2)
+        try:
+            assert waiting.wait(timeout=2)
+            assert not actor.stop_event.is_set()
+            mock_client.beamline_states.get_status_by_name.assert_not_called()
+            actor.evaluate.assert_not_called()
+
+            mock_client.beamline_states.ready = True
+            assert running.wait(timeout=2)
+            actor.evaluate.assert_called_once_with()
+            actor.push_status.assert_called_once_with(ProcedureWorkerStatus.RUNNING)
+            assert t.is_alive()
+            assert not actor._stopped
+            mock_client.connector.unregister.assert_not_called()
+        finally:
+            mock_client.beamline_states.ready = True
+            actor.stop_event.set()
+            t.join(timeout=2)
+        assert not t.is_alive()
+    assert actor._stopped
+    for endpoint in actor.default_monitor_endpoints():
+        mock_client.connector.unregister.assert_any_call(endpoint, cb=actor.evaluate)
+
+
+@pytest.mark.parametrize("ready, stop_before_run", [(False, False), (False, True), (True, True)])
+def test_bl_state_actor_cancelled_startup(ready, stop_before_run, threads_check):
+    mock_client = MagicMock()
+    mock_client.beamline_states.ready = ready
+    actor = BlStateTestActor(mock_client, "Test", "Test")
+    actor.evaluate = MagicMock()
+    actor.push_status = MagicMock()
+    waiting = Event()
+    if stop_before_run:
         actor.stop_event.set()
-        t.join()
-    actor.evaluate.assert_called()
+    with patch("bec_server.actors.actor.logger") as mock_logger:
+        mock_logger.warning.side_effect = lambda _: waiting.set()
+        t = Thread(target=actor.run)
+        t.start()
+        try:
+            if not stop_before_run:
+                assert waiting.wait(timeout=2)
+                actor.stop_event.set()
+            t.join(timeout=2)
+            assert not t.is_alive()
+            mock_client.beamline_states.get_status_by_name.assert_not_called()
+            actor.evaluate.assert_not_called()
+            actor.push_status.assert_not_called()
+            assert actor.state_table == {"test_state": ["valid"], "test_state_2": ["valid"]}
+            assert actor.state_cache == {}
+            assert actor._stopped
+            for endpoint in actor.default_monitor_endpoints():
+                mock_client.connector.unregister.assert_any_call(endpoint, cb=actor.evaluate)
+        finally:
+            mock_client.beamline_states.ready = True
+            actor.stop_event.set()
+            t.join(timeout=2)
