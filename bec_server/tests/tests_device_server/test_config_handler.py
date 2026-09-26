@@ -1,6 +1,8 @@
 import copy
 import os
 import threading
+from concurrent.futures import Future
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -8,8 +10,8 @@ import pytest
 import bec_lib
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
+from bec_server.device_server.ophyd.configuration import ConfigUpdateHandler
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
@@ -47,17 +49,17 @@ def test_request_response(session_from_test_config, device_manager):
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_config_handler_update_config(dm_with_devices):
     device_manager = dm_with_devices
-    handler = ConfigUpdateHandler(device_manager)
+    configuration = device_manager.configuration
 
     # bpm4i doesn't have a controller, so it should be destroyed
     msg = messages.DeviceConfigMessage(action="update", config={"bpm4i": {"enabled": False}})
-    handler._update_config(msg, cancel_event=threading.Event())
+    configuration.parse_config_request(msg, cancel_event=threading.Event())
     assert device_manager.devices.bpm4i.enabled is False
     assert device_manager.devices.bpm4i.initialized is False
     assert device_manager.devices.bpm4i.obj._destroyed is True
 
     msg = messages.DeviceConfigMessage(action="update", config={"bpm4i": {"enabled": True}})
-    handler._update_config(msg, cancel_event=threading.Event())
+    configuration.parse_config_request(msg, cancel_event=threading.Event())
     assert device_manager.devices.bpm4i.enabled is True
     assert device_manager.devices.bpm4i.initialized is True
     assert device_manager.devices.bpm4i.obj._destroyed is False
@@ -101,7 +103,7 @@ def test_config_handler_failed_disable_preserves_state_and_can_retry(dm_with_dev
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_config_handler_disable_destroys_disconnected_device(dm_with_devices):
-    handler = ConfigUpdateHandler(dm_with_devices)
+    configuration = dm_with_devices.configuration
     device = dm_with_devices.devices.bpm4i
     msg = messages.DeviceConfigMessage(action="update", config={device.name: {"enabled": False}})
 
@@ -112,7 +114,7 @@ def test_config_handler_disable_destroys_disconnected_device(dm_with_devices):
         mock.patch.object(device.obj, "destroy", wraps=device.obj.destroy) as destroy,
     ):
         connected.return_value = False
-        handler._update_config(msg, cancel_event=threading.Event())
+        configuration.parse_config_request(msg, cancel_event=threading.Event())
 
     destroy.assert_called_once_with()
     assert device.obj._destroyed is True
@@ -122,19 +124,19 @@ def test_config_handler_disable_destroys_disconnected_device(dm_with_devices):
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_cleanup_failed_device_init_destroys_disconnected_object(dm_with_devices):
-    handler = ConfigUpdateHandler(dm_with_devices)
+    configuration = dm_with_devices.configuration
     obj = mock.MagicMock(name="failed_device")
     obj.name = "failed_device"
     obj.connected = False
 
-    handler._cleanup_failed_device_init(obj)
+    configuration._cleanup_failed_device_init(obj)
 
     obj.destroy.assert_called_once_with()
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_devices):
-    handler = ConfigUpdateHandler(dm_with_devices)
+    configuration = dm_with_devices.configuration
     obj = mock.MagicMock(name="failed_device")
     obj.name = "failed_device"
     obj.destroy.side_effect = RuntimeError("destroy failed")
@@ -144,7 +146,7 @@ def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_dev
     with mock.patch.object(
         dm_with_devices, "reset_device", side_effect=RuntimeError("reset failed")
     ) as reset_device:
-        handler._cleanup_failed_device_init(obj, device)
+        configuration._cleanup_failed_device_init(obj, device)
 
     obj.destroy.assert_called_once_with()
     reset_device.assert_called_once_with(device)
@@ -194,7 +196,7 @@ def test_config_handler_failed_enable_remains_disabled(dm_with_devices):
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_config_handler_failed_enable_cleans_and_restores_old_device(dm_with_devices):
-    handler = ConfigUpdateHandler(dm_with_devices)
+    configuration = dm_with_devices.configuration
     device_name = "motor1_disabled"
     old_device = dm_with_devices.devices[device_name]
     replacement_devices = []
@@ -214,7 +216,7 @@ def test_config_handler_failed_enable_cleans_and_restores_old_device(dm_with_dev
                 action="update", config={device_name: {"enabled": True}}
             )
             with pytest.raises(RuntimeError, match="post-connect initialization failure"):
-                handler._update_config(msg, cancel_event=threading.Event())
+                configuration.parse_config_request(msg, cancel_event=threading.Event())
 
             replacement = replacement_devices[-1]
             assert replacement is not old_device
@@ -230,25 +232,27 @@ def test_config_handler_failed_enable_cleans_and_restores_old_device(dm_with_dev
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_config_handler_update_config_raises(dm_with_devices):
     device_manager = dm_with_devices
-    handler = ConfigUpdateHandler(device_manager)
+    configuration = device_manager.configuration
 
     msg = messages.DeviceConfigMessage(
         action="update", config={"samx": {"deviceConfig": {"doesntexist": True}}}
     )
     old_config = device_manager.devices.samx._config["deviceConfig"].copy()
     with pytest.raises(DeviceConfigError):
-        handler._update_config(msg, cancel_event=threading.Event())
+        configuration.parse_config_request(msg, cancel_event=threading.Event())
     assert device_manager.devices.samx._config["deviceConfig"] == old_config
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_reload_action(dm_with_devices):
     device_manager = dm_with_devices
-    handler = ConfigUpdateHandler(device_manager)
-    dm = handler.device_manager
+    configuration = device_manager.configuration
+    dm = device_manager
     with mock.patch.object(dm.devices.samx.obj, "destroy") as obj_destroy:
         with mock.patch.object(dm, "_get_config") as get_config:
-            handler._reload_config(cancel_event=threading.Event())
+            configuration.parse_config_request(
+                messages.DeviceConfigMessage(action="reload", config={}), threading.Event()
+            )
             obj_destroy.assert_called_once()
             get_config.assert_called_once()
 
@@ -257,24 +261,29 @@ def test_reload_action(dm_with_devices):
 def test_parse_config_request_update(dm_with_devices):
     handler = ConfigUpdateHandler(dm_with_devices)
     msg = messages.DeviceConfigMessage(
-        action="update", config={"samx": {"deviceConfig": {"doesntexist": True}}}
+        action="update", config={"samx": {"deviceConfig": {"labels": ["updated"]}}}
     )
-    cancel_event = threading.Event()
-    with mock.patch.object(handler, "_update_config") as update_config:
-        handler.parse_config_request(msg, cancel_event=cancel_event)
-        update_config.assert_called_once_with(msg, cancel_event)
+    with mock.patch.object(handler, "send_config_request_reply") as reply:
+        handler.parse_config_request(msg, cancel_event=threading.Event())
+    assert dm_with_devices.devices.samx.obj._ophyd_labels_ == {"updated"}
+    reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_parse_config_request_reload(device_manager):
     handler = ConfigUpdateHandler(device_manager)
-    dm = handler.device_manager
-    dm.failed_devices = ["samx"]
+    device_manager.failed_devices = {"samx": "connection failed"}
+    device_manager.current_session["devices"] = []
     msg = messages.DeviceConfigMessage(action="reload", config={})
-    with mock.patch.object(handler, "_reload_config") as reload_config:
+    with (
+        mock.patch.object(device_manager, "_get_config") as get_config,
+        mock.patch("bec_server.device_server.ophyd.configuration.reload_plugin_modules"),
+        mock.patch.object(handler, "send_config_request_reply") as reply,
+    ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
-        reload_config.assert_called_once()
-        assert msg.metadata["failed_devices"] == ["samx"]
+    get_config.assert_called_once()
+    assert msg.metadata["failed_devices"] == {"samx": "connection failed"}
+    reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -530,24 +539,26 @@ def test_parse_config_request_rejected_add_survives_redis_cleanup_failure(dm_wit
 
     def construct(dev_config, **kwargs):
         if dev_config["name"] == "second_added":
+            # Simulate Redis becoming unavailable when the rejected batch is rolled back.
+            cleanup_pipeline.return_value = failed_pipeline
             raise RuntimeError("constructor failed")
         obj, device_config = construct_device_obj(dev_config, **kwargs)
         created_objects.append(obj)
         return obj, device_config
 
     with (
-        mock.patch.object(handler, "connector", wraps=dm.connector) as cleanup_connector,
+        mock.patch.object(
+            dm.connector, "pipeline", wraps=dm.connector.pipeline
+        ) as cleanup_pipeline,
         mock.patch.object(dm, "construct_device_obj", side_effect=construct),
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
-        # Keep the failure injection separate from the background monitor's connector.
-        cleanup_connector.pipeline.return_value = failed_pipeline
         handler.parse_config_request(msg, cancel_event=threading.Event())
 
     assert send_reply.call_args.kwargs["accepted"] is False
     assert "constructor failed" in send_reply.call_args.kwargs["error_msg"]
     assert "Redis cleanup failed" not in send_reply.call_args.kwargs["error_msg"]
-    assert failed_pipeline.execute.call_count == len(config)
+    assert failed_pipeline.execute.call_count >= len(config)
     assert dict(dm.devices) == original_devices
     assert dm.current_session == original_session
     assert all(name not in dm.devices.__dict__ for name in config)
@@ -567,220 +578,185 @@ def test_parse_config_request_remove_device_not_in_config(dm_with_devices):
     assert "new_device" not in dm_with_devices.devices
 
 
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_device_config_callback_normal_request(dm_with_devices):
-    """Test _device_config_callback with a normal (non-cancel) request."""
+@pytest.fixture
+def config_handler(dm_with_devices):
+    """Close the handler after exercising configuration scheduling."""
     handler = ConfigUpdateHandler(dm_with_devices)
-
-    msg_mock = mock.MagicMock()
-    msg_mock.value = messages.DeviceConfigMessage(
-        action="update", config={"samx": {"enabled": True}}, metadata={"RID": "12345"}
-    )
-
-    with mock.patch.object(handler.executor, "submit") as submit:
-        mock_future = mock.MagicMock()
-        submit.return_value = mock_future
-
-        handler._device_config_callback(msg_mock)
-
-        # Verify executor.submit was called with parse_config_request
-        submit.assert_called_once()
-        call_args = submit.call_args
-        assert call_args[0][0] == handler.parse_config_request
-        assert call_args[0][1] == msg_mock.value
-        # Check that a cancel_event was passed
-        assert isinstance(call_args[0][2], threading.Event)
-
-        # Verify active request was set
-        assert handler._active_request is not None
-        assert handler._active_request["future"] == mock_future
-        assert handler._active_request["request_id"] == "12345"
-        assert isinstance(handler._active_request["cancel_event"], threading.Event)
+    try:
+        yield handler
+    finally:
+        handler.shutdown()
 
 
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_device_config_callback_cancel_request(dm_with_devices):
-    """Test _device_config_callback with a cancel request."""
-    handler = ConfigUpdateHandler(dm_with_devices)
-
-    msg_mock = mock.MagicMock()
-    msg_mock.value = messages.DeviceConfigMessage(
-        action="cancel", config={}, metadata={"RID": "12345"}
-    )
-
-    with mock.patch.object(handler, "_cancel_config_request") as cancel_request:
-        handler._device_config_callback(msg_mock)
-
-        # Verify _cancel_config_request was called
-        cancel_request.assert_called_once_with(msg_mock.value)
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_remove_active_request(dm_with_devices):
-    """Test _remove_active_request clears the active request."""
-    handler = ConfigUpdateHandler(dm_with_devices)
-
-    # Set up an active request
-    handler._active_request = {
-        "future": mock.MagicMock(),
-        "cancel_event": threading.Event(),
-        "request_id": "test_id",
-    }
-
-    # Call _remove_active_request
-    handler._remove_active_request()
-
-    # Verify it was cleared
-    assert handler._active_request is None
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_cancel_config_request_with_active_request(dm_with_devices):
-    """Test _cancel_config_request when there is an active request."""
-    handler = ConfigUpdateHandler(dm_with_devices)
-    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "12345"})
-
-    # Set up an active request
-    cancel_event = threading.Event()
-    mock_future = mock.MagicMock()
-    handler._active_request = {
-        "future": mock_future,
-        "cancel_event": cancel_event,
-        "request_id": "active_request_id",
-    }
-
-    with mock.patch.object(handler, "send_config_request_reply") as req_reply:
-        with mock.patch("concurrent.futures.wait") as cf_wait:
-            handler._cancel_config_request(msg)
-
-            # Verify cancel_event was set
-            assert cancel_event.is_set()
-
-            # Verify we waited for the future
-            cf_wait.assert_called_once_with([mock_future], timeout=30)
-
-            # Verify success reply was sent
-            req_reply.assert_called_once_with(
-                accepted=True, error_msg="", metadata={"RID": "12345"}
-            )
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_cancel_config_request_without_active_request(dm_with_devices):
-    """Test _cancel_config_request when there is no active request."""
-    handler = ConfigUpdateHandler(dm_with_devices)
-    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "12345"})
-
-    # No active request
-    handler._active_request = None
-
-    with mock.patch.object(handler, "send_config_request_reply") as req_reply:
-        handler._cancel_config_request(msg)
-
-        # Verify error reply was sent
-        req_reply.assert_called_once_with(
-            accepted=False, error_msg="No active request found to cancel", metadata={"RID": "12345"}
-        )
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_cancel_config_request_with_exception(dm_with_devices):
-    """Test _cancel_config_request when waiting for future raises exception."""
-    handler = ConfigUpdateHandler(dm_with_devices)
-    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "12345"})
-
-    # Set up an active request
-    cancel_event = threading.Event()
-    mock_future = mock.MagicMock()
-    handler._active_request = {
-        "future": mock_future,
-        "cancel_event": cancel_event,
-        "request_id": "active_request_id",
-    }
-
-    with mock.patch.object(handler, "send_config_request_reply") as req_reply:
-        with mock.patch("concurrent.futures.wait", side_effect=RuntimeError("Test error")):
-            handler._cancel_config_request(msg)
-
-            # Verify cancel_event was set
-            assert cancel_event.is_set()
-
-            # Verify error reply was sent
-            req_reply.assert_called_once_with(
-                accepted=False,
-                error_msg="Error during cancellation: Test error",
-                metadata={"RID": "12345"},
-            )
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_parse_config_request_flushes_on_cancelled_error(dm_with_devices):
-    """Test parse_config_request flushes the config when CancelledError is raised."""
-    handler = ConfigUpdateHandler(dm_with_devices)
+def schedule_request(handler, future):
+    """Submit a request with a controlled executor result and capture its cancellation signal."""
     msg = messages.DeviceConfigMessage(
-        action="update", config={"samx": {"enabled": True}}, metadata={"RID": "12345"}
+        action="update", config={"samx": {"enabled": True}}, metadata={"RID": "active"}
     )
-    cancel_event = threading.Event()
-    # Set the cancel event to trigger CancelledError
-    cancel_event.set()
-
-    with mock.patch.object(handler, "_flush_config") as flush_config:
-        with mock.patch.object(handler, "send_config_request_reply") as req_reply:
-            handler.parse_config_request(msg, cancel_event)
-
-            # Verify _flush_config was called
-            flush_config.assert_called_once()
-
-            # Verify error reply was sent with accepted=False
-            req_reply.assert_called_once()
-            call_args = req_reply.call_args
-            assert call_args[1]["accepted"] is False
-            assert call_args[1]["error_msg"] == "Request was cancelled"
-            assert call_args[1]["metadata"] == {"RID": "12345"}
+    with mock.patch.object(handler.executor, "submit", return_value=future) as submit:
+        handler._device_config_callback(SimpleNamespace(value=msg))
+    return submit.call_args.args[2]
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_cancel_config_request_timeout_sends_alarm_and_flushes(dm_with_devices):
-    """Test _cancel_config_request sends alarm and flushes config when future doesn't resolve within timeout."""
+def test_device_config_callback_normal_request(dm_with_devices, connected_connector):
+    """A scheduled request changes the device and publishes a matching reply."""
+    dm_with_devices.connector = connected_connector
     handler = ConfigUpdateHandler(dm_with_devices)
-    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "12345"})
+    completed = threading.Event()
+    original_send = handler.send_config_request_reply
 
-    # Set up an active request
+    def send_reply(**kwargs):
+        original_send(**kwargs)
+        completed.set()
+
+    msg = messages.DeviceConfigMessage(
+        action="update", config={"bpm4i": {"enabled": False}}, metadata={"RID": "update"}
+    )
+    try:
+        with mock.patch.object(handler, "send_config_request_reply", side_effect=send_reply):
+            handler._device_config_callback(SimpleNamespace(value=msg))
+            assert completed.wait(timeout=5)
+        reply = connected_connector.get(MessageEndpoints.device_config_request_response("update"))
+        assert reply.accepted is True
+        assert dm_with_devices.devices.bpm4i.enabled is False
+        assert dm_with_devices.devices.bpm4i.obj._destroyed is True
+    finally:
+        handler.shutdown()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_config_callback_cancel_request(config_handler):
+    """Cancellation signals the scheduled work and acknowledges its completion."""
+    future = Future()
+    cancel_event = schedule_request(config_handler, future)
+    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "cancel"})
+
+    def finish_when_cancelled(futures, timeout):
+        assert cancel_event.is_set()
+        future.set_result(None)
+        return SimpleNamespace(not_done=set())
+
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as reply,
+        mock.patch("concurrent.futures.wait", side_effect=finish_when_cancelled),
+    ):
+        config_handler._device_config_callback(SimpleNamespace(value=msg))
+    reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)
+    assert config_handler._active_request is None
+    assert config_handler._requests == {}
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_completed_request_cannot_be_cancelled(config_handler):
+    """Completing a scheduled future removes it from cancellation tracking."""
+    future = Future()
+    schedule_request(config_handler, future)
+    future.set_result(None)
+    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "cancel"})
+    with mock.patch.object(config_handler, "send_config_request_reply") as reply:
+        config_handler._device_config_callback(SimpleNamespace(value=msg))
+    reply.assert_called_once_with(
+        accepted=False, error_msg="No active request found to cancel", metadata=msg.metadata
+    )
+    assert config_handler._requests == {}
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_cancel_config_request_without_active_request(config_handler):
+    """Cancellation without scheduled work receives a rejected reply."""
+    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "cancel"})
+    with mock.patch.object(config_handler, "send_config_request_reply") as reply:
+        config_handler._device_config_callback(SimpleNamespace(value=msg))
+    reply.assert_called_once_with(
+        accepted=False, error_msg="No active request found to cancel", metadata=msg.metadata
+    )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_cancel_config_request_with_exception(config_handler):
+    """A cancellation wait error is returned to the requester."""
+    future = Future()
+    cancel_event = schedule_request(config_handler, future)
+    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "cancel"})
+    with (
+        mock.patch.object(config_handler, "send_config_request_reply") as reply,
+        mock.patch("concurrent.futures.wait", side_effect=RuntimeError("Test error")),
+    ):
+        config_handler._device_config_callback(SimpleNamespace(value=msg))
+    assert cancel_event.is_set()
+    reply.assert_called_once_with(
+        accepted=False, error_msg="Error during cancellation: Test error", metadata=msg.metadata
+    )
+    future.set_result(None)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_parse_config_request_flushes_on_cancelled_error(config_handler):
+    """Cancelled updates flush devices and publish a rejected reply."""
+    handler = config_handler
+    msg = messages.DeviceConfigMessage(
+        action="update", config={"samx": {"enabled": True}}, metadata={"RID": "update"}
+    )
     cancel_event = threading.Event()
-    mock_future = mock.MagicMock()
-    handler._active_request = {
-        "future": mock_future,
-        "cancel_event": cancel_event,
-        "request_id": "active_request_id",
-    }
+    cancel_event.set()
+    devices = [device.obj for device in handler.device_manager.devices.values()]
+    with mock.patch.object(handler, "send_config_request_reply") as reply:
+        handler.parse_config_request(msg, cancel_event)
+    assert not handler.device_manager.devices
+    assert all(device._destroyed for device in devices)
+    reply.assert_called_once_with(
+        accepted=False, error_msg="Request was cancelled", metadata=msg.metadata
+    )
 
-    # Create a mock WaitResult with future in not_done set
-    class WaitResult:
-        def __init__(self, done=None, not_done=None):
-            self.done = done or set()
-            self.not_done = not_done or set()
 
-    wait_result = WaitResult(done=set(), not_done={mock_future})
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_cancelled_config_reports_cleanup_failure(config_handler):
+    """A failed cancellation cleanup is reported to the requester."""
+    msg = messages.DeviceConfigMessage(
+        action="update", config={"samx": {"enabled": True}}, metadata={"RID": "update"}
+    )
+    cancelled = threading.Event()
+    cancelled.set()
+    with (
+        mock.patch.object(
+            config_handler.device_manager.configuration,
+            "destroy_device",
+            side_effect=RuntimeError("cleanup failed"),
+        ),
+        mock.patch.object(config_handler.connector, "set") as publish,
+    ):
+        config_handler.parse_config_request(msg, cancelled)
+    reply = publish.call_args.args[1]
+    assert reply.accepted is False
+    assert "cleanup failed" in reply.message
+    assert reply.metadata["RID"] == "update"
 
-    with mock.patch.object(handler, "send_config_request_reply") as req_reply:
-        with mock.patch.object(handler.connector, "raise_alarm") as raise_alarm:
-            with mock.patch.object(handler, "_flush_config") as flush_config:
-                with mock.patch("concurrent.futures.wait", return_value=wait_result):
-                    handler._cancel_config_request(msg, timeout=30.0)
 
-                    # Verify cancel_event was set
-                    assert cancel_event.is_set()
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_cancel_config_request_timeout_sends_alarm_and_flushes(config_handler):
+    """Timed-out cancellation warns, flushes devices and waits for completion."""
+    handler = config_handler
+    future = Future()
+    cancel_event = schedule_request(handler, future)
+    msg = messages.DeviceConfigMessage(action="cancel", config={}, metadata={"RID": "cancel"})
 
-                    # Verify alarm was raised
-                    raise_alarm.assert_called_once()
-                    alarm_call = raise_alarm.call_args
-                    assert alarm_call[1]["severity"] == bec_lib.alarm_handler.Alarms.WARNING
-                    assert "ConfigCancellationTimeout" in str(alarm_call)
+    def wait_for_completion(futures, timeout=None):
+        assert futures == [future]
+        assert cancel_event.is_set()
+        if timeout is not None:
+            return SimpleNamespace(not_done={future})
+        assert not handler.device_manager.devices
+        future.set_result(None)
+        return SimpleNamespace(not_done=set())
 
-                    # Verify _flush_config was called
-                    flush_config.assert_called_once()
-
-                    # Verify success reply was still sent after completion
-                    req_reply.assert_called_once_with(
-                        accepted=True, error_msg="", metadata={"RID": "12345"}
-                    )
+    with (
+        mock.patch.object(handler, "send_config_request_reply") as reply,
+        mock.patch.object(handler.connector, "raise_alarm") as raise_alarm,
+        mock.patch("concurrent.futures.wait", side_effect=wait_for_completion),
+    ):
+        handler._cancel_config_request(msg, timeout=0)
+    raise_alarm.assert_called_once()
+    assert raise_alarm.call_args.kwargs["severity"] == bec_lib.alarm_handler.Alarms.WARNING
+    assert raise_alarm.call_args.kwargs["info"].id == "ConfigCancellationTimeout"
+    reply.assert_called_once_with(accepted=True, error_msg="", metadata=msg.metadata)

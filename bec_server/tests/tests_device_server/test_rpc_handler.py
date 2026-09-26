@@ -8,19 +8,22 @@ from ophyd import Device, DeviceStatus, Kind, Signal, Staged, StatusBase
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.device_server.device_server import DeviceServer, DisabledDeviceError, RequestHandler
-from bec_server.device_server.rpc_handler import RPCHandler
+from bec_server.device_server.device_server import DisabledDeviceError, RequestHandler
+from bec_server.device_server.ophyd.instructions import OphydInstructions
+from bec_server.device_server.ophyd.rpc import RPCHandler
+from bec_server.device_server.ophyd.status import OphydStatus
 
 
 @pytest.fixture
 def rpc_cls() -> RPCHandler:  # type: ignore
-    device_server_mock = mock.MagicMock(spec=DeviceServer)
-    device_server_mock.device_manager = mock.MagicMock()
-    device_server_mock.connector = mock.MagicMock()
-    device_server_mock.requests_handler = mock.MagicMock(spec=RequestHandler)
-    rpc_handler = RPCHandler(device_server=device_server_mock)
-
-    return rpc_handler
+    instructions = mock.MagicMock(spec=OphydInstructions)
+    instructions.device_manager = mock.MagicMock()
+    instructions.connector = mock.MagicMock()
+    instructions.requests_handler = mock.MagicMock(spec=RequestHandler)
+    instructions.register_status.side_effect = lambda native, instruction, obj: OphydStatus(
+        native, instruction, obj
+    )
+    return RPCHandler(instructions, assert_device_is_enabled=mock.Mock())
 
 
 @pytest.fixture()
@@ -144,7 +147,7 @@ def test_execute_rpc_call_list_from_stage(rpc_cls: RPCHandler):
 
 def test_send_rpc_exception(rpc_cls: RPCHandler, instr: messages.DeviceInstructionMessage):
     with mock.patch.object(
-        rpc_cls.device_server, "get_device_from_exception", return_value="device"
+        rpc_cls.instructions, "get_device_from_exception", return_value="device"
     ):
         rpc_cls.send_rpc_exception(Exception(), instr)
     error_info = rpc_cls.connector.set.call_args[0][1].out
@@ -184,7 +187,7 @@ def test_run_rpc(rpc_cls: RPCHandler, instr: messages.DeviceInstructionMessage):
     ):
         _process_rpc_instruction.return_value = 1
         rpc_cls.run_rpc(instr)
-        rpc_cls.device_server.assert_device_is_enabled.assert_called_once_with(instr)
+        rpc_cls._assert_device_is_enabled.assert_called_once_with(instr)
         _process_rpc_instruction.assert_called_once_with(instr)
         _send_rpc_result_to_client.assert_called_once_with(
             instr, "device", {"rpc_id": "rpc_id", "func": "trigger"}, 1, mock.ANY
@@ -198,7 +201,7 @@ def test_run_rpc_sends_rpc_exception(rpc_cls, instr):
     ):
         _process_rpc_instruction.side_effect = Exception
         rpc_cls.run_rpc(instr)
-        rpc_cls.device_server.assert_device_is_enabled.assert_called_once_with(instr)
+        rpc_cls._assert_device_is_enabled.assert_called_once_with(instr)
         _process_rpc_instruction.assert_called_once_with(instr)
         _send_rpc_exception.assert_called_once_with(mock.ANY, instr)
 
@@ -238,18 +241,18 @@ def dev_mock():
 def test_process_rpc_instruction_read(rpc_cls, dev_mock, instr, func, read_called):
     instr.content["parameter"]["func"] = func
     rpc_cls.device_manager.devices = {"device": dev_mock}
-    rpc_cls.device_server._read_and_update_devices = mock.MagicMock()
-    rpc_cls.device_server._read_config_and_update_devices = mock.MagicMock()
+    rpc_cls.instructions.read_and_update_devices = mock.MagicMock()
+    rpc_cls.instructions.read_config_and_update_devices = mock.MagicMock()
     rpc_cls.process_rpc_instruction(instr)
     if read_called:
-        rpc_cls.device_server._read_and_update_devices.assert_called_once_with(
+        rpc_cls.instructions.read_and_update_devices.assert_called_once_with(
             ["device"], instr.metadata
         )
-        rpc_cls.device_server._read_config_and_update_devices.assert_not_called()
+        rpc_cls.instructions.read_config_and_update_devices.assert_not_called()
     else:
-        rpc_cls.device_server._read_and_update_devices.assert_not_called()
+        rpc_cls.instructions.read_and_update_devices.assert_not_called()
         if "notused" not in func:
-            rpc_cls.device_server._read_config_and_update_devices.assert_called_once_with(
+            rpc_cls.instructions.read_config_and_update_devices.assert_called_once_with(
                 ["device"], instr.metadata
             )
 
@@ -362,7 +365,10 @@ def test_set_config_signal_updates_cache(rpc_cls, dev_mock, instr):
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
     rpc_cls.process_rpc_instruction(instr=instr)
-    rpc_cls._update_cache.assert_called_once_with(dev_mock.obj.velocity, instr)
+    rpc_cls.instructions.register_status.assert_called_once_with(
+        rpc_cls._execute_rpc_call.return_value, instr, dev_mock.obj.velocity
+    )
+    rpc_cls._update_cache.assert_not_called()
 
 
 def test_update_cache_config_kind(rpc_cls, instr, mock_rpc_methods):

@@ -13,8 +13,8 @@ from ophyd_devices.tests.utils import patched_device
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.ophyd.configuration import ConfigUpdateHandler
+from bec_server.device_server.ophyd.device_manager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -158,7 +158,7 @@ def test_load_unreachable_device_cleans_up_and_disables_config(
     handler = ConfigUpdateHandler(device_manager)
     device_manager.config_update_handler = handler
     # Other suites can override the shared fixture with a manager that already has devices.
-    handler._flush_config()
+    device_manager.configuration.flush_config()
     connected_connector.set(
         MessageEndpoints.device_config(), messages.AvailableResourceMessage(resource=[config])
     )
@@ -180,7 +180,7 @@ def test_load_unreachable_device_cleans_up_and_disables_config(
             wraps=obj.destroy,
             side_effect=RuntimeError("cleanup failure") if cleanup_error else None,
         ) as destroy,
-        mock.patch("bec_server.device_server.devices.config_update_handler.reload_plugin_modules"),
+        mock.patch("bec_server.device_server.ophyd.configuration.reload_plugin_modules"),
     ):
         if reload_config:
             handler.parse_config_request(reload_msg, cancel_event=threading.Event())

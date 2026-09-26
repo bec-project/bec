@@ -6,7 +6,7 @@ from ophyd import Device, EpicsSignal, Signal
 from ophyd_devices import PSIDeviceBase
 
 from bec_lib.bec_errors import DeviceConfigError
-from bec_server.device_server.devices.device_serializer import get_device_info
+from bec_server.device_server.ophyd.serialization import get_device_info
 
 
 class LazySubDevice(Device):
