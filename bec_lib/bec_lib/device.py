@@ -528,10 +528,8 @@ class DeviceBase:
         max_depth = _MAX_RECURSION_DEPTH
         func_call = []
 
-        while not isinstance(parent.parent, DeviceManagerBase):
+        while parent.parent is not None and not isinstance(parent.parent, DeviceManagerBase):
             func_call.append(parent.name)
-            if parent.parent is None:
-                return (parent, func_call)
             parent = parent.parent
             max_depth -= 1
             if max_depth == 0:
@@ -605,13 +603,15 @@ class DeviceBase:
                 )
                 setattr(self, user_access_name, self._custom_rpc_methods[user_access_name])
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        """Compare device proxies by their full dotted paths."""
         if isinstance(other, DeviceBase):
-            return other.name == self.name
+            return other._compile_function_path() == self._compile_function_path()
         return False
 
-    def __hash__(self):
-        return self.name.__hash__()
+    def __hash__(self) -> int:
+        """Hash the same full dotted path used for equality and serialization."""
+        return hash(self._compile_function_path())
 
     def __str__(self):
         """Simple string representation for non-IPython contexts"""

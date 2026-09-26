@@ -3,7 +3,9 @@ from unittest import mock
 
 import pytest
 
+from bec_lib.device import Device, Positioner
 from bec_lib.scans import DatasetIdOnHold, FileWriter, HideReport, Metadata, ScanExport
+from bec_lib.serialization import msgpack
 
 # pylint: disable=no-member
 # pylint: disable=missing-function-docstring
@@ -112,6 +114,25 @@ def test_parameter_bundler(bec_client_mock):
 
     res = client.scans._parameter_bundler((-5, 5, 5), 0)
     assert res == (-5, 5, 5)
+
+
+def test_scan_request_preserves_same_named_nested_motors(bec_client_mock):
+    device_manager = bec_client_mock.device_manager
+    stage1 = Device(name="stage1", parent=device_manager)
+    stage2 = Device(name="stage2", parent=device_manager)
+    axis1 = Positioner(name="x", parent=stage1)
+    axis2 = Positioner(name="x", parent=stage2)
+    scan_info = {
+        "arg_input": {"device": "DeviceBase", "position": "float"},
+        "arg_bundle_size": {"bundle": 2, "min": 1},
+    }
+
+    request = bec_client_mock.scans.prepare_scan_request(
+        "mv", scan_info, axis1, 1, axis2, 2, system_config={}
+    )
+    decoded = msgpack.loads(msgpack.dumps(request))
+
+    assert decoded.parameter["args"] == {"stage1.x": [1], "stage2.x": [2]}
 
 
 @pytest.mark.parametrize(

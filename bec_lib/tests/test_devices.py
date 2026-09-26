@@ -12,6 +12,7 @@ from bec_lib.device import (
     AdjustableMixin,
     ComputedSignal,
     Device,
+    DeviceBase,
     DeviceBaseWithConfig,
     NotImplementedOnSubdeviceError,
     OnFailure,
@@ -49,6 +50,53 @@ def test_nested_device_root(dev: Any):
     assert dev.dyn_signals.messages.name == "messages"
     assert dev.dyn_signals.root == dev.dyn_signals
     assert dev.dyn_signals.messages.root == dev.dyn_signals
+
+
+@pytest.mark.parametrize("device_class", [DeviceBase, Positioner, Signal])
+@pytest.mark.parametrize("managed", [True, False])
+@pytest.mark.parametrize(
+    "paths, equal",
+    [
+        (("stage1", "stage1"), True),
+        (("stage1", "stage2"), False),
+        (("stage1.x", "stage1.x"), True),
+        (("stage1.x", "stage2.x"), False),
+        (("stage.left.x", "stage.right.x"), False),
+        (("x", "stage.x"), False),
+        (("stage_x", "stage.x"), False),
+    ],
+)
+def test_device_equality_uses_full_path(device_class, managed, paths, equal):
+    devices = []
+    for path in paths:
+        parent = mock.MagicMock(spec=DeviceManagerBase) if managed else None
+        for name in path.split("."):
+            parent = device_class(name=name, parent=parent)
+        devices.append(parent)
+
+    first, second = devices[0], devices[1]
+    assert (first == second) is equal
+    assert (second == first) is equal
+    assert (first != second) is not equal
+    assert len(set(devices)) == (1 if equal else 2)
+    if equal:
+        assert hash(first) == hash(second)
+        assert {first: "target"}[second] == "target"
+    assert first != paths[0]
+
+
+@pytest.mark.parametrize("path", ["stage", "stage.x", "stage.left.x"])
+def test_device_identity_without_manager(path):
+    managed = mock.MagicMock(spec=DeviceManagerBase)
+    standalone = None
+    for name in path.split("."):
+        managed = DeviceBase(name=name, parent=managed)
+        standalone = DeviceBase(name=name, parent=standalone)
+
+    assert managed._compile_function_path() == path
+    assert standalone._compile_function_path() == path
+    assert managed == standalone
+    assert hash(managed) == hash(standalone)
 
 
 def test_read(dev: Any):
