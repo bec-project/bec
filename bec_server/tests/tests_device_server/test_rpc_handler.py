@@ -142,7 +142,19 @@ def test_execute_rpc_call_list_from_stage(rpc_cls: RPCHandler):
     assert out == [True, False]
 
 
-def test_send_rpc_exception(rpc_cls: RPCHandler, instr: messages.DeviceInstructionMessage):
+@pytest.mark.parametrize(
+    "statuses_done, finishes_instruction",
+    [([], True), ([True], True), ([False], False), ([True, False], False)],
+)
+def test_send_rpc_exception(
+    rpc_cls: RPCHandler,
+    instr: messages.DeviceInstructionMessage,
+    statuses_done,
+    finishes_instruction,
+):
+    rpc_cls.requests_handler.get_request.return_value = {
+        "status_objects": [mock.Mock(done=done) for done in statuses_done]
+    }
     with mock.patch.object(
         rpc_cls.device_server, "get_device_from_exception", return_value="device"
     ):
@@ -164,6 +176,12 @@ def test_send_rpc_exception(rpc_cls: RPCHandler, instr: messages.DeviceInstructi
         ),
         expire=1800,
     )
+    if finishes_instruction:
+        rpc_cls.requests_handler.set_finished.assert_called_once_with(
+            "diid", success=False, error_info=error_info
+        )
+    else:
+        rpc_cls.requests_handler.set_finished.assert_not_called()
 
 
 def test_send_rpc_result_to_client(rpc_cls: RPCHandler):

@@ -830,7 +830,8 @@ class DeviceServer(BECService):
             if obj.kind == Kind.config:
                 self._update_read_configuration(obj, status.instruction.metadata, pipe)
             elif obj.kind in [Kind.normal, Kind.hinted]:
-                self._read_device(status.instruction)
+                # Refresh readback without replacing the request tracking this status.
+                self._read_device(status.instruction, new_status=False)
 
         if status.instruction.metadata.get("response"):
             # if the user requested a response on a single status object, we need to send it
