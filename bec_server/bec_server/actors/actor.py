@@ -1,6 +1,5 @@
 """Actors can autonomously respond to changes in beamline states."""
 
-import time
 from abc import ABC, abstractmethod
 from threading import Event, RLock
 from typing import Callable
@@ -166,12 +165,15 @@ class BlStateActor(SubscriptionActor):
         pass
 
     def run(self):
-        while not self.client.beamline_states.ready and not self.stop_event.set():
+        while not self.client.beamline_states.ready and not self.stop_event.is_set():
             logger.warning(f"{self.__class__.__name__} waiting for beamline states to become ready")
-            time.sleep(0.1)
+            self.stop_event.wait(timeout=0.1)
+        if self.stop_event.is_set():
+            self.stop()
+            return
         self._update_cache()
         self.evaluate()
-        return super().run()
+        super().run()
 
     def default_monitor_endpoints(self) -> set[EndpointInfo]:
         return {MessageEndpoints.beamline_state(state) for state in self.state_table}
