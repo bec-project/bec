@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import BeamlineStateMessage, ScanInterlockStateTableContent
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_server.actors.scan_interlock import ScanInterlockActor
@@ -33,6 +35,62 @@ def actor(mock_client):
 
 
 class TestScanInterlockActor:
+    def test_cold_start_keeps_monitoring_invalid_state(self, mock_client):
+        mock_client.beamline_states.ready = False
+        mock_client.beamline_states.get_status_by_name.return_value = "invalid"
+        mock_client.connector.get.return_value = ScanInterlockStateTableContent(
+            states_watched={"beam_ok": ["valid"]}
+        )
+        actor = ScanInterlockActor(mock_client, "ScanInterlockActor", "ScanInterlockActor")
+        callback = next(
+            call.kwargs["cb"]
+            for call in mock_client.connector.register.call_args_list
+            if call.args[0] == MessageEndpoints.beamline_state("beam_ok")
+        )
+        waiting = threading.Event()
+        running = threading.Event()
+        actor.push_status = MagicMock(side_effect=lambda _: running.set())
+        with patch("bec_server.actors.actor.logger") as mock_logger:
+            mock_logger.warning.side_effect = lambda _: waiting.set()
+            thread = threading.Thread(target=actor.run)
+            thread.start()
+            try:
+                assert waiting.wait(timeout=2)
+                assert not actor.stop_event.is_set()
+                mock_client.queue.remove_queue_lock.assert_not_called()
+
+                mock_client.beamline_states.ready = True
+                assert running.wait(timeout=2)
+                assert thread.is_alive()
+                assert not actor._stopped
+                mock_client.connector.unregister.assert_not_called()
+                mock_client.queue.add_queue_lock.assert_called_once_with(
+                    queue="primary",
+                    reason="Interlock for beamline states: ['beam_ok']",
+                    lock_id="ScanInterlockActor",
+                )
+                mock_client.queue.remove_queue_lock.assert_not_called()
+
+                callback({"data": BeamlineStateMessage(name="beam_ok", status="valid", label="")})
+                mock_client.queue.remove_queue_lock.assert_called_once_with(
+                    queue="primary", lock_id="ScanInterlockActor"
+                )
+                callback({"data": BeamlineStateMessage(name="beam_ok", status="invalid", label="")})
+                assert mock_client.queue.add_queue_lock.call_count == 2
+                assert mock_client.queue.remove_queue_lock.call_count == 1
+            finally:
+                mock_client.beamline_states.ready = True
+                actor.stop_event.set()
+                thread.join(timeout=2)
+            assert not thread.is_alive()
+        mock_client.connector.unregister.assert_any_call(
+            MessageEndpoints.beamline_state("beam_ok"), cb=callback
+        )
+        mock_client.connector.unregister.assert_any_call(
+            MessageEndpoints.scan_interlock_trigger_setting(),
+            cb=actor._restart_scan_on_lock._update_cb,
+        )
+
     def test_update_watched_states_in_redis(self, actor, mock_client):
         mock_client.connector.set.reset_mock()
         with patch(
