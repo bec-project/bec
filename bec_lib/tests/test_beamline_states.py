@@ -5,6 +5,7 @@ import threading
 import time
 from unittest import mock
 
+import numpy as np
 import pytest
 from pydantic import BaseModel
 
@@ -169,6 +170,122 @@ class TestDeviceBeamlineState:
 
 
 class TestConcreteStates:
+    @pytest.mark.parametrize(
+        "low_limit, high_limit", [(1.0, 10.0), (1.0, None), (None, 10.0), (None, None)]
+    )
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param(float("nan"), id="nan"),
+            pytest.param(float("inf"), id="positive-infinity"),
+            pytest.param(float("-inf"), id="negative-infinity"),
+            pytest.param(np.float32("nan"), id="numpy-nan"),
+            pytest.param(np.float64("inf"), id="numpy-infinity"),
+            pytest.param(None, id="none"),
+            pytest.param("5.0", id="numeric-string"),
+            pytest.param("unavailable", id="nonnumeric-string"),
+            pytest.param(5 + 0j, id="complex"),
+            pytest.param(np.complex64(5), id="numpy-complex"),
+            pytest.param({}, id="dict"),
+            pytest.param([5.0], id="list"),
+            pytest.param(np.array(5.0), id="zero-dimensional-array"),
+            pytest.param(np.array([5.0]), id="single-value-array"),
+            pytest.param(np.array([5.0, 6.0]), id="array"),
+        ],
+    )
+    def test_device_within_limits_rejects_invalid_readbacks(
+        self, dm_with_devices, low_limit, high_limit, value
+    ):
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
+            device="samx",
+            low_limit=low_limit,
+            high_limit=high_limit,
+            device_manager=dm_with_devices,
+        )
+        state.update_device_signal_info()
+        msg = messages.DeviceMessage(signals={"samx": {"value": value}})
+
+        result = state.evaluate(msg)
+
+        assert result.status == "invalid"
+        assert result.name == "sample_x_limits"
+        assert "samx" in result.label
+
+    @pytest.mark.parametrize("signals", [{}, {"samx": {}}, {"samx": {"value": None}}])
+    def test_device_within_limits_rejects_missing_readbacks(self, dm_with_devices, signals):
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits", device="samx", device_manager=dm_with_devices
+        )
+        state.update_device_signal_info()
+
+        result = state.evaluate(messages.DeviceMessage(signals=signals))
+
+        assert result.status == "invalid"
+        assert "not found" in result.label
+
+    @pytest.mark.parametrize(
+        "value, expected_status",
+        [
+            (-0.01, "invalid"),
+            (0.0, "warning"),
+            (0.05, "warning"),
+            (0.1, "valid"),
+            (5, "valid"),
+            (np.int64(5), "valid"),
+            (np.float32(5.0), "valid"),
+            (np.float64(5.0), "valid"),
+            (True, "valid"),
+            (False, "warning"),
+            (np.bool_(True), "valid"),
+            (np.bool_(False), "warning"),
+            (9.9, "valid"),
+            (9.95, "warning"),
+            (10.0, "warning"),
+            (10.01, "invalid"),
+        ],
+    )
+    def test_device_within_limits_preserves_finite_readbacks(
+        self, dm_with_devices, value, expected_status
+    ):
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
+            device="samx",
+            low_limit=0.0,
+            high_limit=10.0,
+            tolerance=0.1,
+            device_manager=dm_with_devices,
+        )
+        state.update_device_signal_info()
+
+        result = state.evaluate(messages.DeviceMessage(signals={"samx": {"value": value}}))
+
+        assert result.status == expected_status
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), "unavailable"])
+    def test_invalid_readback_replaces_valid_state_and_recovers(
+        self, connected_connector, dm_with_devices, value
+    ):
+        state = bl_states.DeviceWithinLimitsState(
+            name="sample_x_limits",
+            device="samx",
+            low_limit=0.0,
+            high_limit=10.0,
+            redis_connector=connected_connector,
+            device_manager=dm_with_devices,
+        )
+        for readback, expected_status in [(5.0, "valid"), (value, "invalid"), (5.0, "valid")]:
+            msg = messages.DeviceMessage(signals={"samx": {"value": readback}})
+            state._update_device_state(
+                MessageObject(topic=MessageEndpoints.device_readback("samx").endpoint, value=msg)
+            )
+
+            out = connected_connector.xread(
+                MessageEndpoints.beamline_state("sample_x_limits"), from_start=True
+            )
+            assert out is not None
+            assert out[0]["data"].status == expected_status
+
     def test_device_within_limits_state_valid_and_invalid(
         self, connected_connector, dm_with_devices
     ):
