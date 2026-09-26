@@ -1,17 +1,29 @@
 """
 This module contains the numpy encoder and decoder functions for serializing and deserializing numpy objects.
 Modified from https://github.com/lebedov/msgpack-numpy
+
+Object-containing dtypes are unsupported in both MessagePack and JSON. Legacy
+pickle-backed arrays are rejected without unpickling their contents.
 """
 
-import pickle
 import sys
 
 import numpy as np
 
+_OBJECT_DTYPE_ERROR = (
+    "NumPy object arrays are not supported. "
+    "Use a non-object dtype or lists/dicts of supported values."
+)
+
+
+def _reject_object_dtype(dtype: np.dtype) -> None:
+    """Reject object references, including those nested in structured dtypes."""
+    if dtype.hasobject:
+        raise TypeError(_OBJECT_DTYPE_ERROR)
+
 
 def ndarray_to_bytes(obj):
-    if obj.dtype == "O":
-        return obj.dumps()
+    _reject_object_dtype(obj.dtype)
     if sys.platform == "darwin":
         return obj.tobytes()
     return obj.data if obj.flags["C_CONTIGUOUS"] else obj.tobytes()
@@ -31,7 +43,7 @@ def numpy_encode(obj, chain=None):
     if isinstance(obj, np.ndarray):
         # If the dtype is structured, store the interface description;
         # otherwise, store the corresponding array protocol type string:
-        if obj.dtype.kind in ("V", "O"):
+        if obj.dtype.kind == "V":
             kind = bytes(obj.dtype.kind, "ascii")
             descr = obj.dtype.descr
         else:
@@ -60,24 +72,22 @@ def numpy_decode(obj, chain=None):
 
     try:
         if b"nd" in obj:
+            if obj.get(b"kind") == b"O":
+                raise TypeError(_OBJECT_DTYPE_ERROR)
             if obj[b"nd"] is True:
                 # Check if b'kind' is in obj to enable decoding of data
-                # serialized with older versions (#20) or data
-                # that had dtype == 'O' (#46):
+                # serialized with older versions (#20):
                 if b"kind" in obj and obj[b"kind"] == b"V":
                     descr = [
                         tuple(tostr(t) if type(t) is bytes else t for t in d) for d in obj[b"type"]
                     ]
-                elif b"kind" in obj and obj[b"kind"] == b"O":
-                    return pickle.loads(obj[b"data"])
                 else:
                     descr = obj[b"type"]
-                return np.ndarray(
-                    buffer=obj[b"data"], dtype=_unpack_dtype(descr), shape=obj[b"shape"]
-                )
+                dtype = _unpack_dtype(descr)
+                return np.ndarray(buffer=obj[b"data"], dtype=dtype, shape=obj[b"shape"])
             else:
-                descr = obj[b"type"]
-                return np.frombuffer(obj[b"data"], dtype=_unpack_dtype(descr))[0]
+                dtype = _unpack_dtype(obj[b"type"])
+                return np.frombuffer(obj[b"data"], dtype=dtype)[0]
         elif b"complex" in obj:
             return complex(tostr(obj[b"data"]))
         else:
@@ -92,9 +102,10 @@ def numpy_encode_list(obj, chain=None):
     """
 
     if isinstance(obj, np.ndarray):
+        _reject_object_dtype(obj.dtype)
         # If the dtype is structured, store the interface description;
         # otherwise, store the corresponding array protocol type string:
-        if obj.dtype.kind in ("V", "O"):
+        if obj.dtype.kind == "V":
             kind = bytes(obj.dtype.kind, "ascii")
             descr = obj.dtype.descr
         else:
@@ -117,20 +128,22 @@ def numpy_decode_list(obj, chain=None):
 
     try:
         if "nd" in obj:
+            if obj.get("kind") == "O":
+                raise TypeError(_OBJECT_DTYPE_ERROR)
             if obj["nd"] is True:
                 # Check if 'kind' is in obj to enable decoding of data
-                # serialized with older versions or data that had dtype == 'O':
+                # serialized with older versions:
                 if "kind" in obj and obj["kind"] == "V":
                     descr = [
                         tuple(tostr(t) if type(t) is bytes else t for t in d) for d in obj["type"]
                     ]
-                elif "kind" in obj and obj["kind"] == "O":
-                    return np.array(obj["data"])
                 else:
                     descr = obj["type"]
-                return np.array(obj["data"], dtype=_unpack_dtype(descr)).reshape(obj["shape"])
+                dtype = _unpack_dtype(descr)
+                return np.array(obj["data"], dtype=dtype).reshape(obj["shape"])
             descr = obj["type"]
             numpy_dtype = getattr(np, descr)
+            _reject_object_dtype(np.dtype(numpy_dtype))
             return numpy_dtype(obj["data"])
         if "complex" in obj:
             return complex(tostr(obj["data"]))
@@ -149,4 +162,6 @@ def _unpack_dtype(dtype):
         dtype = [
             (subdtype[0], _unpack_dtype(subdtype[1])) + tuple(subdtype[2:]) for subdtype in dtype
         ]
-    return np.dtype(dtype)
+    dtype = np.dtype(dtype)
+    _reject_object_dtype(dtype)
+    return dtype

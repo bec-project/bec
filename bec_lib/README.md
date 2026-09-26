@@ -36,6 +36,20 @@ bec.callbacks.register(event_type="scan_segment", callback=dummy_callback, sync=
 
 ```
 
+## NumPy serialization
+
+BEC MessagePack and JSON serialization reject NumPy arrays whose dtype contains Python
+objects (`dtype.hasobject`), including object fields nested in structured arrays. Legacy
+pickle-backed array payloads are also rejected on decoding, without loading the pickle.
+This is an intentional compatibility break for producers or stored messages using those arrays.
+Redis stream listeners log and skip records that cannot be decoded, then continue delivering
+valid records. Rejected records are not retried by that listener.
+
+Use a non-object dtype for numeric or fixed-width string arrays. For heterogeneous or ragged
+data, explicitly use lists or dictionaries containing supported values, such as numeric arrays.
+Arrays are not automatically converted. Local use of object arrays, including HDF5 data handling,
+is unaffected until those arrays are passed to BEC serialization.
+
 ## Contributing
 
 Merge requests are very welcome! For major changes, please open an issue first to discuss what you would like to change.
