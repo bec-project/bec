@@ -13,6 +13,7 @@ from ophyd_devices import StatusBase
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.device import OnFailure
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import MessageObject
@@ -337,6 +338,39 @@ def test_motion_readback_waits_for_all_statuses(device_server_mock, first_succes
         assert responses[-1].error_info.device == failed_device
         assert responses[-1].error_info.exception_type == "RuntimeError"
     assert handler.get_request("diid") is None
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("kind", [Kind.normal, Kind.hinted])
+def test_finished_rpc_status_readback_error_finishes_instruction(device_server_mock, kind):
+    device_server = device_server_mock
+    device = device_server.device_manager.devices.samx
+    device.obj._kind = kind
+    device._config["onFailure"] = OnFailure.RAISE
+    status = DeviceStatus(device.obj)
+    status.set_finished()
+    instr = messages.DeviceInstructionMessage(
+        device=device.name,
+        action="rpc",
+        parameter={"func": "set", "args": [5], "rpc_id": "rpc-id"},
+        metadata={"device_instr_id": "diid", "RID": "test"},
+    )
+
+    with (
+        mock.patch.object(device.obj, "set", return_value=status),
+        mock.patch.object(device.obj, "read", side_effect=[{}, RuntimeError("readback lost")]),
+    ):
+        device_server.rpc_handler.run_rpc(instr)
+
+    responses = [
+        sent["msg"]
+        for sent in device_server.connector.message_sent
+        if sent["queue"] == MessageEndpoints.device_instructions_response()
+    ]
+    assert responses[-1].status == "error"
+    assert responses[-1].error_info.exception_type == "RuntimeError"
+    assert "readback lost" in responses[-1].error_info.error_message
+    assert device_server.requests_handler.get_request("diid") is None
 
 
 @pytest.mark.parametrize(

@@ -149,8 +149,8 @@ class RPCHandler:
         )
         diid = instr.metadata.get("device_instr_id", "")
         request = self.requests_handler.get_request(diid)
-        if request and not request.get("status_objects"):
-
+        # A callback on an already-finished status may fail before completing the request.
+        if request and all(status.done for status in request["status_objects"]):
             self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
     ##################################################
