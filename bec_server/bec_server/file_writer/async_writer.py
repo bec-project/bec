@@ -66,6 +66,7 @@ class AsyncWriter(threading.Thread):
     }
 
     "index" is only required for the 'add_slice' type and specifies the row index to append the data to.
+    Fixed-width datasets require nonnegative row indices and allow revisiting earlier rows.
     "max_shape" is required for the 'add' and 'add_slice' types and specifies the maximum shape of the dataset. If the dataset is 1D, 'max_shape' should be [None].
 
     """
@@ -474,6 +475,26 @@ class AsyncWriter(threading.Thread):
         # if max_shape contains more than one None, we have to use a vlen_dtype
         num_undefined = sum(1 for i in max_shape if i is None)
         row_index = async_update["index"]
+        if num_undefined <= 1 and (
+            row_index < 0 or (max_shape[0] is not None and row_index >= max_shape[0])
+        ):
+            msg = (
+                f"Invalid row index {row_index} for signal group {signal_group.name}: "
+                "fixed-width 'add_slice' updates require a nonnegative row index "
+                f"within max_shape {max_shape}. "
+                "Data will not be written."
+            )
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                info=messages.ErrorInfo(
+                    error_message=msg,
+                    compact_error_message=msg,
+                    exception_type="ValueError",
+                    device=signal_group.name,
+                ),
+                metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
+            )
+            return
 
         if "value" not in signal_group:
             if num_undefined > 1:
@@ -487,8 +508,7 @@ class AsyncWriter(threading.Thread):
                 )
                 signal_group["value"][row_index] = value
             else:
-                if value.ndim < len(max_shape):
-                    value = value.reshape((1,) + value.shape)
+                value = value.reshape((1,) + value.shape)
                 if value.shape[1] > max_shape[1]:
                     msg = f"Data for {signal_group.name} exceeds the defined max_shape {max_shape}. Data will be truncated."
                     self.connector.raise_alarm(
@@ -502,7 +522,12 @@ class AsyncWriter(threading.Thread):
                         metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                     )
                     value = value[:, : max_shape[1]]
-                create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
+                dataset = create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
+                if row_index > 0:
+                    # Keep dtype inference from the data and let HDF5 fill the skipped rows.
+                    dataset.resize((0, value.shape[1]))
+                    dataset.resize((row_index + 1, value.shape[1]))
+                    dataset[row_index, :] = value[0]
                 self.cursor[signal_group.name][row_index] = value.shape[1]
             return
 
@@ -532,7 +557,9 @@ class AsyncWriter(threading.Thread):
                     metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
                 value = value[: max_shape[1] - col_index]
-            signal_group["value"].resize((row_index + 1, max_shape[1]))
+            signal_group["value"].resize(
+                (max(signal_group["value"].shape[0], row_index + 1), max_shape[1])
+            )
             signal_group["value"][row_index, col_index : col_index + len(value)] = value
             self.cursor[signal_group.name][row_index] = col_index + len(value)
 
