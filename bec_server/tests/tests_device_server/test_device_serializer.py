@@ -1,12 +1,26 @@
 from unittest import mock
 
+import numpy as np
 import pytest
 from ophyd import Component as Cpt
 from ophyd import Device, EpicsSignal, Signal
 from ophyd_devices import PSIDeviceBase
 
 from bec_lib.bec_errors import DeviceConfigError
-from bec_server.device_server.devices.device_serializer import get_device_info
+from bec_server.device_server.devices.device_serializer import get_device_info, is_serializable
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (np.array([1, 2]), True),
+        (np.array(["one", "two"]), True),
+        (np.array([1, "text"], dtype=object), False),
+        (np.zeros(1, dtype=[("value", object)]), False),
+    ],
+)
+def test_is_serializable_numpy_arrays(value, expected):
+    assert is_serializable(value) is expected
 
 
 class LazySubDevice(Device):

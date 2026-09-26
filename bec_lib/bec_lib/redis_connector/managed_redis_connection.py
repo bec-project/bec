@@ -464,10 +464,14 @@ class ManagedRedisConnection:
             redis_id, msg_dict = response[0]  # type: ignore : we are using Redis synchronously
             timestamp, _, ind = redis_id.partition(b"-")
             read_id = f"{timestamp.decode()}-{int(ind.decode()) + 1}"
-            stream_msg = StreamMessage(
-                {key.decode(): MsgpackSerialization.loads(val) for key, val in msg_dict.items()},
-                ((cb_ref, kwargs),),
-            )
+            try:
+                decoded = {
+                    key.decode(): MsgpackSerialization.loads(val) for key, val in msg_dict.items()
+                }
+            except RuntimeError as exc:
+                logger.error(f"Skipping undecodable stream record {redis_id!r} on {topic}: {exc}")
+                continue
+            stream_msg = StreamMessage(decoded, ((cb_ref, kwargs),))
             self._message_callbacks_queue.put(stream_msg)
 
     def _handle_stream_msg_list(
@@ -477,13 +481,20 @@ class ManagedRedisConnection:
         for btopic, msgs in redis_response:
             for read_id, record in msgs:
                 topic: str = btopic.decode() if isinstance(btopic, bytes) else btopic  # type: ignore
+                # Advance past rejected records so they cannot block subsequent delivery.
+                new_ids[topic] = read_id.decode()
                 if callbacks := subs.get(topic):
-                    msg_dict = {
-                        k.decode(): MsgpackSerialization.loads(msg) for k, msg in record.items()
-                    }
+                    try:
+                        msg_dict = {
+                            k.decode(): MsgpackSerialization.loads(msg) for k, msg in record.items()
+                        }
+                    except RuntimeError as exc:
+                        logger.error(
+                            f"Skipping undecodable stream record {read_id!r} on {topic}: {exc}"
+                        )
+                        continue
                     msg = StreamMessage(msg_dict, [(cb.cb_ref, cb.kwargs) for cb in callbacks])
                     self._message_callbacks_queue.put(msg)
-                new_ids[topic] = read_id.decode()
         return new_ids
 
     def _try_read_streams(self, topics_ids: dict[str, str], from_start: bool = False):

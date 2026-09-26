@@ -1,6 +1,8 @@
 from typing import Any, ClassVar, Optional
 from unittest import mock
 
+import msgpack
+import numpy as np
 import pytest
 from redis import Redis
 from redis.exceptions import RedisError
@@ -12,6 +14,7 @@ from bec_lib.messages import BECMessage, BECStatus, BundleMessage, ClientInfoMes
 from bec_lib.redis_connector import IncompatibleRedisOperation
 from bec_lib.redis_connector.constants import WrongArguments
 from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnection
+from bec_lib.redis_connector.streams import StreamSubInfo
 from bec_lib.redis_connector.validation import validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
 
@@ -39,6 +42,94 @@ def connector():
         yield _connector
     finally:
         _connector.shutdown()
+
+
+@pytest.fixture
+def legacy_object_array_payload():
+    return msgpack.packb(
+        {
+            "__bec_codec__": {
+                "encoder_name": "ndarray",
+                "type_name": "ndarray",
+                "data": {
+                    b"nd": True,
+                    b"kind": b"O",
+                    b"type": [("", "|O")],
+                    b"shape": [1],
+                    b"data": np.array([1], dtype=object).dumps(),
+                },
+            }
+        }
+    )
+
+
+@pytest.mark.parametrize("from_start", [True, False])
+def test_stream_listener_skips_rejected_object_arrays(
+    connector, legacy_object_array_payload, from_start
+):
+    topic = MessageEndpoints.processed_data("legacy").endpoint
+    other_topic = MessageEndpoints.processed_data("valid").endpoint
+    callback = mock.Mock()
+    subscription = StreamSubInfo(lambda: callback, {})
+    for stream_topic in (topic, other_topic):
+        connector._stream_subs.add(from_start, "0-0", stream_topic, subscription)
+    valid = messages.RawMessage(data="valid")
+    response = [
+        (
+            topic.encode(),
+            [
+                (b"1-0", {b"data": legacy_object_array_payload}),
+                (b"2-0", {b"data": MsgpackSerialization.dumps(valid)}),
+                (b"3-0", {b"data": legacy_object_array_payload}),
+            ],
+        ),
+        (other_topic.encode(), [(b"1-0", {b"data": MsgpackSerialization.dumps(valid)})]),
+    ]
+    connector._redis_conn.xread.return_value = [] if from_start else response
+    connector._redis_conn.xrange.side_effect = lambda topic, *_: dict(response)[topic.encode()]
+
+    with (
+        mock.patch.object(
+            connector._stop_stream_events_listener_thread, "is_set", side_effect=[False, True]
+        ),
+        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
+    ):
+        connector._get_stream_messages_loop()
+
+    assert connector._stream_subs.topic_ids() == {topic: "3-0", other_topic: "1-0"}
+    assert connector._stream_subs.from_start_subs == {}
+    assert connector._message_callbacks_queue.qsize() == 2
+    for _ in range(2):
+        message = connector._message_callbacks_queue.get_nowait()
+        assert message.msg == {"data": valid}
+        assert list(message.callbacks) == [(subscription.cb_ref, {})]
+    assert log_error.call_count == 2
+
+
+def test_direct_stream_listener_skips_rejected_object_arrays(
+    connector, legacy_object_array_payload
+):
+    topic = MessageEndpoints.processed_data("legacy").endpoint
+    valid = messages.RawMessage(data="valid")
+    connector._redis_conn.xrevrange.side_effect = [
+        [(b"1-0", {b"data": legacy_object_array_payload})],
+        [(b"2-0", {b"data": MsgpackSerialization.dumps(valid)})],
+    ]
+    stop_event = mock.Mock()
+    stop_event.is_set.side_effect = [False, False, True]
+    callback = mock.Mock()
+    with mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error:
+        connector._direct_stream_listener(topic, stop_event, callback, {})
+
+    assert connector._redis_conn.xrevrange.call_args_list == [
+        mock.call(topic, "+", "-", count=1),
+        mock.call(topic, "+", "1-1", count=1),
+    ]
+    assert connector._message_callbacks_queue.qsize() == 1
+    message = connector._message_callbacks_queue.get_nowait()
+    assert message.msg == {"data": valid}
+    assert list(message.callbacks) == [(callback, {})]
+    log_error.assert_called_once()
 
 
 def test_redis_connector_send_client_info(connector: ManagedRedisConnection):
