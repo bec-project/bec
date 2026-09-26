@@ -4,8 +4,11 @@ import functools
 import keyword
 import traceback
 from abc import ABC, abstractmethod
+from math import inf
+from numbers import Real
 from typing import Annotated, Callable, ClassVar, Generic, Type, TypeVar, cast
 
+import numpy as np
 from pydantic import BaseModel, field_validator, model_validator
 
 from bec_lib import messages
@@ -433,6 +436,10 @@ class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]
         Evaluate if the device signal is within the defined limits. If it is outside the limits,
         return an invalid state. Otherwise, return a valid state. If it is close to the limits,
         return a warning state.
+
+        Readbacks must be finite real scalars, even when limits are disabled. Missing values,
+        NaN, and infinities return an invalid state. Boolean readings retain their numeric
+        0/1 meaning.
         """
 
         if self.config.low_limit is None:
@@ -446,6 +453,16 @@ class DeviceWithinLimitsState(DeviceBeamlineState[DeviceWithinLimitsStateConfig]
                 name=self.config.name,
                 status="invalid",
                 label=f"Device {self.device_obj.name}: Value {self.signal_name} not found.",
+            )
+
+        if not isinstance(val, (Real, np.bool_)) or not -inf < val < inf:
+            return messages.BeamlineStateMessage(
+                name=self.config.name,
+                status="invalid",
+                label=(
+                    f"Device {self.device_obj.dotted_name}: Value {self.signal_name} "
+                    "is not a finite real scalar."
+                ),
             )
 
         if val < self.config.low_limit or val > self.config.high_limit:
