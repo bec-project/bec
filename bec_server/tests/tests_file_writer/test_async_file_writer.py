@@ -271,6 +271,149 @@ def test_async_writer_add_slice_fixed_size(async_writer, data):
     assert out.shape == (2, 20)
 
 
+@pytest.mark.parametrize("max_rows", [None, 4])
+@pytest.mark.parametrize("later_row", [1, 3])
+@pytest.mark.parametrize("earlier_slice", [[3], [3, 4, 5]])
+def test_async_writer_add_slice_fixed_size_preserves_later_rows(
+    async_writer, tmp_path, max_rows, later_row, earlier_slice
+):
+    """Interleaved slices preserve rows and append positions, including after truncation."""
+    with h5py.File(tmp_path / "interleaved.h5", "w") as file:
+        signal_group = file.create_group("signal")
+        with mock.patch.object(async_writer.connector, "raise_alarm") as raise_alarm:
+            for row_index, values in [(0, [1, 2]), (later_row, [10, 11]), (0, earlier_slice)]:
+                async_writer.write_value_data(
+                    signal_group,
+                    values,
+                    {"type": "add_slice", "index": row_index, "max_shape": [max_rows, 4]},
+                )
+
+            expected = np.zeros((later_row + 1, 4), dtype=int)
+            row_values = [1, 2] + earlier_slice[:2]
+            expected[0, : len(row_values)] = row_values
+            expected[later_row, :2] = [10, 11]
+            np.testing.assert_array_equal(signal_group["value"][:], expected)
+            assert raise_alarm.call_count == (len(earlier_slice) > 2)
+
+            async_writer.write_value_data(
+                signal_group,
+                [12, 13],
+                {"type": "add_slice", "index": later_row, "max_shape": [max_rows, 4]},
+            )
+            expected[later_row] = [10, 11, 12, 13]
+            np.testing.assert_array_equal(signal_group["value"][:], expected)
+
+
+@pytest.mark.parametrize("max_rows", [None, 4])
+@pytest.mark.parametrize("initial_values", [[7, 8], [7, 8, 9, 10, 11], []])
+@pytest.mark.parametrize("strided", [False, True])
+def test_async_writer_add_slice_fixed_size_starts_at_requested_row(
+    async_writer, tmp_path, max_rows, initial_values, strided
+):
+    """A nonzero first row keeps its data and cursor when earlier rows arrive later."""
+    with h5py.File(tmp_path / "initial_row.h5", "w") as file:
+        signal_group = file.create_group("signal")
+        values = np.asarray(initial_values, dtype=np.int16)
+        if strided:
+            values = np.repeat(values, 2)[::2]
+        async_writer.write_value_data(
+            signal_group, values, {"type": "add_slice", "index": 3, "max_shape": [max_rows, 4]}
+        )
+        expected_initial = np.zeros((4, min(len(initial_values), 4)), dtype=np.int16)
+        expected_initial[3] = initial_values[:4]
+        np.testing.assert_array_equal(signal_group["value"][:], expected_initial)
+        assert signal_group["value"].dtype == np.dtype(np.int16)
+
+        for row_index, values in [(0, [1, 2]), (3, [12, 13])]:
+            async_writer.write_value_data(
+                signal_group,
+                values,
+                {"type": "add_slice", "index": row_index, "max_shape": [max_rows, 4]},
+            )
+        expected = np.zeros((4, 4), dtype=np.int16)
+        expected[0, :2] = [1, 2]
+        row_values = (initial_values + [12, 13])[:4]
+        expected[3, : len(row_values)] = row_values
+        np.testing.assert_array_equal(signal_group["value"][:], expected)
+
+
+def test_async_writer_add_slice_fixed_size_nonzero_first_row_preserves_string_dtype(
+    async_writer, tmp_path
+):
+    """Moving the initial row preserves HDF5's inference of variable-length strings."""
+    with h5py.File(tmp_path / "initial_string_row.h5", "w") as file:
+        signal_group = file.create_group("signal")
+        async_writer.write_value_data(
+            signal_group,
+            np.array(["a", "bb"], dtype=object),
+            {"type": "add_slice", "index": 2, "max_shape": [None, 4]},
+        )
+        dataset = signal_group["value"]
+        np.testing.assert_array_equal(dataset.asstr()[:], [["", ""], ["", ""], ["a", "bb"]])
+        assert h5py.check_string_dtype(dataset.dtype).length is None
+
+
+@pytest.mark.parametrize("cells", [[[1, 2], [3]], [[1, 2], [3, 4]], [[1, 2]], [[], []], [[]]])
+def test_async_writer_add_slice_fixed_size_nonzero_first_row_preserves_vlen_dtype(
+    async_writer, tmp_path, cells
+):
+    """HDF5 initializes skipped rows correctly for variable-length numeric values."""
+    values = np.empty(len(cells), dtype=h5py.vlen_dtype(np.dtype(np.int32)))
+    for index, cell in enumerate(cells):
+        values[index] = np.array(cell, dtype=np.int32)
+    with h5py.File(tmp_path / "initial_vlen_row.h5", "w") as file:
+        signal_group = file.create_group("signal")
+        async_writer.write_value_data(
+            signal_group, values, {"type": "add_slice", "index": 2, "max_shape": [None, 4]}
+        )
+        dataset = signal_group["value"]
+        assert dataset.shape == (3, len(cells))
+        assert h5py.check_vlen_dtype(dataset.dtype) == np.dtype(np.int32)
+        assert all(cell.size == 0 for row in dataset[:2] for cell in row)
+        for index, value in enumerate(values):
+            np.testing.assert_array_equal(dataset[2, index], value)
+
+
+@pytest.mark.parametrize("populated", [False, True])
+@pytest.mark.parametrize("index, max_rows", [(-1, None), (4, 4)])
+def test_async_writer_add_slice_fixed_size_rejects_invalid_index(
+    async_writer, tmp_path, populated, index, max_rows
+):
+    """An invalid row index cannot overwrite existing rows or initialize an invalid cursor."""
+    with h5py.File(tmp_path / "invalid_index.h5", "w") as file:
+        signal_group = file.create_group("signal")
+        if populated:
+            for row_index, values in [(0, [1, 2]), (1, [10, 11])]:
+                async_writer.write_value_data(
+                    signal_group,
+                    values,
+                    {"type": "add_slice", "index": row_index, "max_shape": [max_rows, 4]},
+                )
+            expected = signal_group["value"][:]
+        cursor_before = dict(async_writer.cursor.get(signal_group.name, {}))
+
+        with mock.patch.object(async_writer.connector, "raise_alarm") as raise_alarm:
+            async_writer.write_value_data(
+                signal_group,
+                [99],
+                {"type": "add_slice", "index": index, "max_shape": [max_rows, 4]},
+            )
+        raise_alarm.assert_called_once()
+        assert raise_alarm.call_args.kwargs["severity"] == Alarms.WARNING
+        assert "nonnegative row index" in raise_alarm.call_args.kwargs["info"].error_message
+        assert async_writer.cursor.get(signal_group.name, {}) == cursor_before
+        if populated:
+            np.testing.assert_array_equal(signal_group["value"][:], expected)
+        else:
+            assert "value" not in signal_group
+
+        async_writer.write_value_data(
+            signal_group, [3], {"type": "add_slice", "index": 0, "max_shape": [max_rows, 4]}
+        )
+        expected_row = [1, 2, 3, 0] if populated else [3]
+        np.testing.assert_array_equal(signal_group["value"][0], expected_row)
+
+
 def test_async_writer_add_slice_fixed_size_data_consistency(async_writer):
     endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
     data = [
