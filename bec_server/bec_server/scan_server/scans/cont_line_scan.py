@@ -199,19 +199,35 @@ class ContLineScan(ScanBase):
         self.actions.set(self.device, self.positions[0][0] - self.offset, wait=True)
         status = self.actions.set(self.device, self.positions[-1][0], wait=False)
 
+        readback_retried = False
         while self._point_index < len(self.positions):
+            if self._shutdown_event.is_set():
+                raise ScanAbortion("Continuous scan interrupted during motion.")
+            # Sample completion before reading; the final readback may still be pending.
+            motion_done = status.done
+            if motion_done:
+                status.wait()
             cont_motor_positions = self.device.read(cached=True)
-            if not cont_motor_positions:
-                continue
-            cont_motor_position = cont_motor_positions[self.device.full_name].get("value")
-            target_position = self.positions[self._point_index][0]
-            if np.isclose(cont_motor_position, target_position, atol=self.atol):
-                self.at_each_point()
-                self._point_index += 1
-                continue
-            if cont_motor_position > target_position:
+            if cont_motor_positions:
+                cont_motor_position = cont_motor_positions[self.device.full_name].get("value")
+                target_position = self.positions[self._point_index][0]
+                if np.isclose(cont_motor_position, target_position, atol=self.atol):
+                    self.at_each_point()
+                    self._point_index += 1
+                    readback_retried = False
+                    continue
+                if cont_motor_position > target_position:
+                    raise ScanAbortion(
+                        f"Skipped point {self._point_index + 1}: Consider reducing speed {self.motor_velocity}, increasing the atol {self.atol}, or increasing the offset {self.offset}"
+                    )
+            if motion_done:
+                if not readback_retried:
+                    if self._shutdown_event.wait(0.1):
+                        raise ScanAbortion("Continuous scan interrupted during motion.")
+                    readback_retried = True
+                    continue
                 raise ScanAbortion(
-                    f"Skipped point {self._point_index + 1}: Consider reducing speed {self.motor_velocity}, increasing the atol {self.atol}, or increasing the offset {self.offset}"
+                    f"Motion finished before point {self._point_index + 1} was reached."
                 )
         status.wait()
 
