@@ -418,8 +418,9 @@ class ScanBundler(BECService):
             logger.warning(f"Resubmitting existing point_id {point_id} for scan_id {scan_id}")
 
     def shutdown(self):
+        # Flush the owned logger before the device manager closes our shared connector.
+        super().shutdown()
         self.device_manager.shutdown()
-        self.connector.shutdown()
         self.executor.shutdown()
         for emi in self._emitter:
             emi.shutdown()
