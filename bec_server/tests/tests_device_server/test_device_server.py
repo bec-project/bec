@@ -141,14 +141,14 @@ def test_device_server_status_callback(
     device_server._add_status_object_info(status_obj_None, instruction=instr, device=dev)
     with mock.patch.object(device_server, "_read_device") as mock_read_device:
         device_server.status_callback(status_obj_None)
-        mock_read_device.assert_called_once_with(instr)
+        mock_read_device.assert_called_once_with(instr, new_status=False)
 
     # Status object with obj set
     status = StatusBase(obj=dev)
     device_server._add_status_object_info(status, instruction=instr, device=dev)
     with mock.patch.object(device_server, "_read_device") as mock_read_device:
         device_server.status_callback(status)
-        mock_read_device.assert_called_once_with(instr)
+        mock_read_device.assert_called_once_with(instr, new_status=False)
 
     # Status object, but missing object_info. This should log an error and likely raises
     status_no_info = StatusBase()
@@ -197,7 +197,7 @@ def test_device_server_status_callback_response_includes_error_info(
         with mock.patch.object(device_server.connector, "xadd") as xadd_mock:
             device_server.status_callback(status)
 
-    mock_read_device.assert_called_once_with(instr)
+    mock_read_device.assert_called_once_with(instr, new_status=False)
     xadd_mock.assert_called_once()
     dev_msg = xadd_mock.call_args.args[1]["data"]
     assert isinstance(dev_msg, messages.DeviceReqStatusMessage)
@@ -208,6 +208,135 @@ def test_device_server_status_callback_response_includes_error_info(
         assert dev_msg.metadata["error_info"] is not None
         assert dev_msg.metadata["error_info"].exception_type == "RuntimeError"
         assert "motor failed" in dev_msg.metadata["error_info"].error_message
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("kind", [Kind.normal, Kind.hinted])
+@pytest.mark.parametrize("success", [True, False])
+@pytest.mark.parametrize(
+    "action, parameter",
+    [("set", {"value": 5}), ("rpc", {"func": "set"}), ("rpc", {"func": "readback.set"})],
+)
+def test_motion_readback_preserves_instruction_result(
+    device_server_mock, kind, success, action, parameter
+):
+    device_server = device_server_mock
+    device = device_server.device_manager.devices.samx.obj
+    device._kind = kind
+    instr = messages.DeviceInstructionMessage(
+        device=device.name,
+        action=action,
+        parameter=parameter,
+        metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
+    )
+    status = DeviceStatus(device)
+    device_server._add_status_object_info(status, instruction=instr, device=device)
+    if success:
+        status.set_finished()
+    else:
+        status.set_exception(RuntimeError("motor failed"))
+
+    handler = device_server.requests_handler
+    handler.add_request(instr, num_status_objects=1)
+    signals = {device.name: {"value": 5, "timestamp": 1234}}
+    with mock.patch.object(device, "read", return_value=signals):
+        handler.add_status_object("diid", status)
+
+    responses = [
+        sent["msg"]
+        for sent in device_server.connector.message_sent
+        if sent["queue"] == MessageEndpoints.device_instructions_response()
+    ]
+    final_status = "completed" if success else "error"
+    assert responses[-1].status == final_status
+    assert [response.status for response in responses] == ["running", "running", final_status]
+    assert responses[-1].result_is_status is True
+    assert responses[-1].instruction == instr
+    assert responses[-1].metadata == instr.metadata
+    if success:
+        assert responses[-1].error_info is None
+    else:
+        assert responses[-1].error_info.exception_type == "RuntimeError"
+        assert "motor failed" in responses[-1].error_info.error_message
+    assert handler.get_request("diid") is None
+
+    for endpoint in (
+        MessageEndpoints.device_read(device.name),
+        MessageEndpoints.device_readback(device.name),
+    ):
+        readings = [
+            sent["msg"]
+            for sent in device_server.connector.message_sent
+            if sent["queue"] == endpoint.endpoint
+        ]
+        assert readings[-1].signals == signals
+        assert readings[-1].metadata == instr.metadata
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize(
+    "first_success, second_success", [(True, True), (False, True), (True, False)]
+)
+def test_motion_readback_waits_for_all_statuses(device_server_mock, first_success, second_success):
+    device_server = device_server_mock
+    instr = messages.DeviceInstructionMessage(
+        device=["samx", "samy"],
+        action="set",
+        parameter={"value": 5},
+        metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
+    )
+    handler = device_server.requests_handler
+    handler.add_request(instr, num_status_objects=2)
+    request = handler.get_request("diid")
+    statuses = []
+    callbacks_finished = []
+    for name in instr.device:
+        device = device_server.device_manager.devices[name].obj
+        device._kind = Kind.normal
+        status = DeviceStatus(device)
+        device_server._add_status_object_info(status, instruction=instr, device=device)
+        handler.add_status_object("diid", status)
+        callback_finished = threading.Event()
+        status.add_callback(lambda _, event=callback_finished: event.set())
+        statuses.append(status)
+        callbacks_finished.append(callback_finished)
+
+    try:
+        if first_success:
+            statuses[0].set_finished()
+        else:
+            statuses[0].set_exception(RuntimeError("first motor failed"))
+        assert callbacks_finished[0].wait(timeout=2)
+
+        assert handler.get_request("diid") is request
+        assert request["status_objects"] == statuses
+        assert request["num_status_objects"] == 2
+        responses = [
+            sent["msg"]
+            for sent in device_server.connector.message_sent
+            if sent["queue"] == MessageEndpoints.device_instructions_response()
+        ]
+        assert [response.status for response in responses] == ["running", "running"]
+    finally:
+        if second_success:
+            statuses[1].set_finished()
+        else:
+            statuses[1].set_exception(RuntimeError("second motor failed"))
+        assert callbacks_finished[1].wait(timeout=2)
+
+    responses = [
+        sent["msg"]
+        for sent in device_server.connector.message_sent
+        if sent["queue"] == MessageEndpoints.device_instructions_response()
+    ]
+    final_status = "completed" if first_success and second_success else "error"
+    assert [response.status for response in responses] == ["running", "running", final_status]
+    assert responses[-1].result_is_status is True
+    if not first_success or not second_success:
+        failed_device = "samx" if not first_success else "samy"
+        assert responses[-1].error_info.device == failed_device
+        assert responses[-1].error_info.exception_type == "RuntimeError"
+    assert handler.get_request("diid") is None
 
 
 @pytest.mark.parametrize(
