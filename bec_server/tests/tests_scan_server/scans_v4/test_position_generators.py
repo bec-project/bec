@@ -1,6 +1,62 @@
 import numpy as np
+import pytest
 
 from bec_server.scan_server.scans import position_generators
+
+
+@pytest.mark.parametrize(
+    "inner_radius, outer_radius, number_of_rings, points_in_first_ring, expected_radii, ring_counts",
+    [
+        (0, 2, 2, 3, [1, 2], [3, 6]),
+        (1, 4, 3, 4, [2, 3, 4], [4, 8, 12]),
+        (1, 3, 1, 1, [3], [1]),
+        (0, 0.3, np.int64(3), np.int64(2), [0.1, 0.2, 0.3], [2, 4, 6]),
+    ],
+)
+@pytest.mark.parametrize("center", [(0, 0), (5, -7)])
+def test_round_scan_positions_obey_ring_radii_and_counts(
+    inner_radius,
+    outer_radius,
+    number_of_rings,
+    points_in_first_ring,
+    expected_radii,
+    ring_counts,
+    center,
+):
+    positions = position_generators.round_scan_positions(
+        inner_radius, outer_radius, number_of_rings, points_in_first_ring, *center
+    )
+
+    radii = np.linalg.norm(positions - center, axis=1)
+    assert positions.shape == (sum(ring_counts), 2)
+    np.testing.assert_allclose(radii, np.repeat(expected_radii, ring_counts))
+    assert len(np.unique(np.round(radii, 12))) == number_of_rings
+    assert np.all(radii > inner_radius)
+    assert np.all(radii <= outer_radius + 1e-12)
+
+
+def test_round_scan_positions_preserve_angular_order():
+    positions = position_generators.round_scan_positions(0, 2, 1, 4, 5, -7)
+
+    np.testing.assert_allclose(positions, [[5, -5], [7, -7], [5, -9], [3, -7]])
+
+
+@pytest.mark.parametrize(
+    "inner_radius, outer_radius",
+    [(-1, 2), (2, 1), (1, 1), (0, 0), (np.nan, 2), (0, np.nan), (0, np.inf), (-np.inf, 2)],
+)
+def test_round_scan_positions_reject_invalid_radii(inner_radius, outer_radius):
+    with pytest.raises(ValueError, match="0 <= inner_radius < outer_radius"):
+        position_generators.round_scan_positions(inner_radius, outer_radius, 2, 3)
+
+
+@pytest.mark.parametrize("parameter", ["number_of_rings", "points_in_first_ring"])
+@pytest.mark.parametrize("value", [0, -1, 1.5, 2.0, True, np.bool_(True)])
+def test_round_scan_positions_reject_invalid_counts(parameter, value):
+    kwargs = {"number_of_rings": 2, "points_in_first_ring": 3, parameter: value}
+
+    with pytest.raises(ValueError, match=f"{parameter} must be a positive integer"):
+        position_generators.round_scan_positions(0, 2, **kwargs)
 
 
 def test_rotate_points_rotates_2d_positions():
