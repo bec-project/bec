@@ -94,13 +94,20 @@ class RoundScan(ScanBase):
         A scan following a round shell-like pattern with increasing number of points in each ring. The scan starts at the inner ring and moves outwards.
         The user defines the inner and outer radius, the number of rings and the number of positions in the first ring.
 
+        Exactly ``number_of_rings`` evenly spaced rings span the region outside
+        ``inner_radius`` up to and including ``outer_radius``. A single ring lies
+        at ``outer_radius``. Ring ``k`` (starting at 1) contains
+        ``k * pos_in_first_ring`` positions; no separate center point is generated.
+        For example, radii 0 and 2 with two rings and three positions in the first
+        ring produce nine positions at radii 1 and 2.
+
         Args:
             motor_1 (DeviceBase): first motor
             motor_2 (DeviceBase): second motor
-            inner_radius (float): inner radius
-            outer_radius (float): outer radius
-            number_of_rings (int): number of rings
-            pos_in_first_ring (int): number of positions in the first ring
+            inner_radius (float): excluded inner boundary, finite and nonnegative
+            outer_radius (float): included outer boundary, finite and greater than inner_radius
+            number_of_rings (int): positive number of rings
+            pos_in_first_ring (int): positive number of positions in the first ring
             relative (bool): If True, the motors will be moved relative to their
                 current position.
             exp_time (float): exposure time in seconds. Default is 0.
@@ -278,6 +285,6 @@ class RoundScan(ScanBase):
         This is a good place to implement any cleanup logic that needs to be executed in case of an exception,
         such as returning the devices to a safe state or moving the motors back to their starting position.
         """
-        if self.relative:
+        if self.relative and self.start_positions:
             # Move the motors back to their starting position
             self.components.move_and_wait(self.motors, self.start_positions)
