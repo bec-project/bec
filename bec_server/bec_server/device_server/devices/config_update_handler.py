@@ -198,9 +198,14 @@ class ConfigUpdateHandler:
         )
 
     def _cleanup_failed_device_init(self, obj: OphydObject, device: DSDevice | None = None) -> None:
-        """Best-effort cleanup that does not mask the initialization failure."""
+        """Clean up a failed initialization without masking its original error.
+
+        Args:
+            obj (OphydObject): Partially initialized object whose callbacks must be retired.
+            device (DSDevice | None): Managed device to reset, if one was already registered.
+        """
         try:
-            obj.destroy()
+            self.device_manager.disconnect_device(obj)
         # pylint: disable=broad-except
         except Exception:
             logger.error(
@@ -222,6 +227,12 @@ class ConfigUpdateHandler:
     def _update_config(
         self, msg: messages.DeviceConfigMessage, cancel_event: threading.Event
     ) -> None:
+        """Apply device configuration and restore event subscriptions on rollback.
+
+        Args:
+            msg (messages.DeviceConfigMessage): Requested device configuration updates.
+            cancel_event (threading.Event): Cancellation flag checked before each device update.
+        """
         for dev, dev_config in msg.content["config"].items():
             if cancel_event.is_set():
                 raise CancelledError("Config update cancelled")
@@ -239,7 +250,9 @@ class ConfigUpdateHandler:
                 try:
                     self.device_manager.update_config(device.obj, new_config)
                 except Exception as exc:
-                    self.device_manager.update_config(device.obj, old_config)
+                    self.device_manager.update_config(
+                        device.obj, old_config, refresh_subscriptions=True
+                    )
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
                 if "limits" in dev_config["deviceConfig"]:
@@ -282,10 +295,14 @@ class ConfigUpdateHandler:
                         raise
 
     def _flush_config(self) -> None:
-        """Flush all devices from the device manager."""
+        """Retire and disconnect all devices before removing them from the manager.
+
+        Raises:
+            RuntimeError: A device could not be disconnected.
+        """
         for _, obj in self.device_manager.devices.items():
             try:
-                obj.obj.destroy()
+                self.device_manager.disconnect_device(obj.obj)
             except Exception:
                 logger.warning(f"Failed to destroy {obj.obj.name}")
                 raise RuntimeError("Failed to flush config")

@@ -6,7 +6,9 @@ import threading
 import time
 import traceback
 from collections import deque
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any
 
 import ophyd
@@ -23,12 +25,18 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.serialization import json_ext
 from bec_lib.utils.rpc_utils import rgetattr
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
 from bec_server.device_server.friendly_device_exceptions import reformat_known_device_exceptions
 from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import MessageObject, RedisConnector
+    from bec_server.device_server.devices.event_dispatcher import (
+        Domain,
+        Metadata,
+        Readings,
+        ReadToken,
+    )
 
 
 logger = bec_logger.logger
@@ -234,16 +242,18 @@ class RequestHandler:
             else:
                 self.set_finished(instr_id, success=True)
 
-    def get_error_info(self, error: Exception, obj: StatusBase) -> messages.ErrorInfo:
-        """
-        Get basic error information from an ophyd object.
+    def get_error_info(
+        self, error: Exception | type[Exception], obj: StatusBase
+    ) -> messages.ErrorInfo:
+        """Get basic error information from an ophyd object.
 
         Args:
-            error(Exception): The error that occurred.
-            obj(StatusBase): The ophyd status object that caused the error.
+            error (Exception | type[Exception]): Error instance or exception class
+                reported by ophyd.
+            obj (StatusBase): Ophyd status object that caused the error.
 
         Returns:
-            messages.ErrorInfo: A dictionary containing basic error information.
+            messages.ErrorInfo: Error details and the device and instruction context.
         """
         if isinstance(error, ExceptionWithErrorInfo):
             return error.error_info
@@ -255,8 +265,9 @@ class RequestHandler:
         else:
             device_name = None
 
+        exception_type = type(error).__name__
         msg = (
-            f"{error.__class__.__name__}: {error}\n"
+            f"{exception_type}: {error}\n"
             f"The status {obj.__class__.__name__} from device {device_name} failed during the execution "
             f"of the following instruction:\n"
             f"{json_ext.dumps(obj.instruction, indent=2)}\n"
@@ -264,14 +275,14 @@ class RequestHandler:
         if obj.instruction.action:
             compact_msg = (
                 f"An error occurred during '{obj.instruction.action}' on device '{device_name}'.\n\n"
-                f"{error.__class__.__name__}: {str(error)}"
+                f"{exception_type}: {error}"
             )
         else:
-            compact_msg = f"{error.__class__.__name__}: {str(error)}"
+            compact_msg = f"{exception_type}: {error}"
         error_info = messages.ErrorInfo(
             error_message=msg,
             compact_error_message=compact_msg,
-            exception_type=error.__class__.__name__,
+            exception_type=exception_type,
             device=device_name,
         )
         return error_info
@@ -362,12 +373,17 @@ class DeviceServer(BECService):
         register_stop.set()
         self.status = BECStatus.IDLE
 
-    def shutdown(self) -> None:
-        """shutdown the device server"""
-        super().shutdown()
+    def shutdown(self, per_thread_timeout_s: float | None = None) -> None:
+        """Shut down devices before the service connector and worker threads.
+
+        Args:
+            per_thread_timeout_s (float | None): Maximum seconds to join each service
+                thread, or None to use the service default.
+        """
         self.stop()
         if self.device_manager:
             self.device_manager.shutdown()
+        super().shutdown(per_thread_timeout_s=per_thread_timeout_s)
 
     def _update_device_metadata(self, instr) -> None:
         devices = instr.content["device"]
@@ -793,53 +809,65 @@ class DeviceServer(BECService):
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
 
-    def status_callback(self, status):
+    def status_callback(self, status: StatusBase) -> None:
+        """Publish completed device status and refresh affected device readings.
+
+        Args:
+            status (StatusBase): Completed ophyd status carrying the instruction and
+                device references installed by ``_add_status_object_info``.
+
+        Raises:
+            AttributeError: The status has no associated device reference.
+        """
         pipe = self.connector.pipeline()
-        obj = None
-        if hasattr(status, "device"):
-            obj = status.device
-        elif hasattr(status, "obj"):
-            obj = status.obj
+        obj: OphydObject | None = None
+        for attribute in ("device", "obj"):
+            if hasattr(status, attribute):
+                obj = getattr(status, attribute)
+                break
         if obj is None:
             obj = status.__dict__.get("obj_ref", None)
-
-        # if we've started a subscription, we need to unsubscribe now
-        # this is typically the case for operations on nested devices.
-        # For normal devices, we don't need to unsubscribe, as the
-        # subscription is handled by the device manager
-        if getattr(status, "sub_id", None):
-            obj.unsubscribe(status.sub_id)
 
         if obj is None:
             logger.error(
                 f"Could not find device object for status: {status}."
                 f"The status object has not received the metadata through the `_add_status_object_info` method properly."
             )
+            raise AttributeError("The status object has no device reference")
+
+        # if we've started a subscription, we need to unsubscribe now
+        # this is typically the case for operations on nested devices.
+        # For normal devices, we don't need to unsubscribe, as the
+        # subscription is handled by the device manager
+        sub_id = getattr(status, "sub_id", None)
+        if sub_id:
+            obj.unsubscribe(sub_id)
+
         device_name = (
             ".".join([obj.root.name, obj.dotted_name]) if obj.dotted_name else obj.root.name
         )
-        metadata = {"action": status.instruction.content["action"]}
-        metadata.update(status.instruction.metadata)
+        instruction: messages.DeviceInstructionMessage = status.__dict__["instruction"]
+        metadata = {"action": instruction.content["action"]}
+        metadata.update(instruction.metadata)
 
-        content = status.instruction.content
+        content = instruction.content
         is_config_set = content["action"] == "set"
         rpc_func = content["parameter"].get("func", "")
         is_rpc_set = content["action"] == "rpc" and (rpc_func == "set" or ".set" in rpc_func)
 
         if is_config_set or is_rpc_set:
             if obj.kind == Kind.config:
-                self._update_read_configuration(obj, status.instruction.metadata, pipe)
+                self._update_read_configuration(obj, instruction.metadata)
             elif obj.kind in [Kind.normal, Kind.hinted]:
-                self._read_device(status.instruction)
+                self._read_device(instruction)
 
-        if status.instruction.metadata.get("response"):
+        if instruction.metadata.get("response"):
             # if the user requested a response on a single status object, we need to send it
             # to the device_req_status_container
-            request_id = status.instruction.metadata["RID"]
+            request_id = instruction.metadata["RID"]
+            error = status.exception()
             metadata["error_info"] = (
-                self.requests_handler.get_error_info(status.exception(), status)
-                if status.exception()
-                else None
+                self.requests_handler.get_error_info(error, status) if error else None
             )
             dev_msg = messages.DeviceReqStatusMessage(
                 device=device_name, success=status.success, request_id=request_id, metadata=metadata
@@ -854,13 +882,76 @@ class DeviceServer(BECService):
             )
         pipe.execute()
 
-    def _update_read_configuration(self, obj: OphydObject, metadata: dict, pipe) -> None:
-        dev_config_msg = messages.DeviceMessage(
-            signals=obj.root.read_configuration(), metadata=metadata
-        )
-        self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(obj.root.name), dev_config_msg, pipe
-        )
+    def _reading_context(
+        self, obj: OphydObject, domain: Domain
+    ) -> AbstractContextManager[ReadToken | None]:
+        """Create a context that orders explicit reads against event publication.
+
+        Args:
+            obj (OphydObject): Device or signal whose root is being read.
+            domain (Domain): Snapshot domain updated by the explicit read.
+
+        Returns:
+            AbstractContextManager[ReadToken | None]: Context yielding a snapshot
+                token, or None when the manager has no event dispatcher.
+        """
+        dispatcher = getattr(self.device_manager, "event_dispatcher", None)
+        return dispatcher.read_context(obj, domain) if dispatcher else nullcontext()
+
+    @contextmanager
+    def _reading_contexts(
+        self, devices: dict[str, DSDevice], domain: Domain
+    ) -> Generator[dict[str, ReadToken | None], None, None]:
+        """Acquire each root once in a stable order before a batched explicit read.
+
+        Args:
+            devices (dict[str, DSDevice]): Device names mapped to their managed devices.
+            domain (Domain): Snapshot domain updated by the explicit reads.
+
+        Yields:
+            dict[str, ReadToken | None]: Snapshot tokens keyed by the supplied device
+                names. Names sharing a root also share a token.
+        """
+        roots = {
+            name: getattr(device.obj, "root", None) or device.obj
+            for name, device in devices.items()
+        }
+        unique = {id(obj): obj for obj in roots.values()}
+        with ExitStack() as stack:
+            snapshots = {
+                id(obj): stack.enter_context(self._reading_context(obj, domain))
+                for obj in sorted(unique.values(), key=lambda obj: (obj.name, id(obj)))
+            }
+            yield {name: snapshots[id(obj)] for name, obj in roots.items()}
+
+    def _update_read_configuration(self, obj: OphydObject, metadata: Metadata) -> None:
+        """Publish a root configuration reading and merge it into its snapshot.
+
+        Args:
+            obj (OphydObject): Device or signal whose root configuration changed.
+            metadata (Metadata): Instruction metadata attached to the publication.
+
+        Raises:
+            InvalidDeviceError: The root cannot read configuration or returns a
+                value other than a reading dictionary.
+        """
+        root = obj.root
+        read_configuration = getattr(root, "read_configuration", None)
+        if not callable(read_configuration):
+            raise InvalidDeviceError(f"Device {root.name} does not support configuration reads")
+        with self._reading_context(root, "configuration") as snapshot:
+            signals = read_configuration()
+            if not isinstance(signals, dict):
+                raise InvalidDeviceError(f"Device {root.name} returned invalid configuration data")
+            pipe = self.connector.pipeline()
+            self.connector.set_and_publish(
+                MessageEndpoints.device_read_configuration(obj.root.name),
+                messages.DeviceMessage(signals=signals, metadata=metadata),
+                pipe,
+            )
+            pipe.execute()
+            if snapshot is not None:
+                snapshot.update(signals, metadata)
 
     def _read_device(self, instr: messages.DeviceInstructionMessage, new_status=True) -> None:
         # check performance -- we might have to change it to a background thread
@@ -881,58 +972,110 @@ class DeviceServer(BECService):
             instr.metadata["device_instr_id"], success=True, result=response_result
         )
 
-    def _read_and_update_devices(self, devices: list[str], metadata: dict) -> list:
+    def _read_and_update_devices(self, devices: list[str], metadata: Metadata) -> list[Readings]:
+        """Read devices and publish their read and readback buffers in one batch.
+
+        Args:
+            devices (list[str]): Device names, optionally including dotted component
+                paths. Each entry reads its root device in configured order.
+            metadata (Metadata): Instruction metadata attached to each reading.
+
+        Returns:
+            list[Readings]: Readings from successful initial reads, in device order.
+                Retry and buffered fallback results are published but not returned.
+
+        Raises:
+            InvalidDeviceError: A requested root device is not registered.
+        """
         start = time.time()
         pipe = self.connector.pipeline()
         signal_container = []
         devices = self.device_manager.get_device_order(devices)
-        for dev in devices:
-            device_root = dev.split(".")[0]
-            self.device_manager.devices.get(device_root).metadata = metadata
-            obj = self.device_manager.devices.get(device_root).obj
-            try:
-                signals = obj.read()
-                signal_container.append(signals)
-            # pylint: disable=broad-except
-            except Exception as exc:
-                signals = self._retry_obj_method(dev, obj, "read", exc)
-
-            self.connector.set_and_publish(
-                MessageEndpoints.device_read(device_root),
-                messages.DeviceMessage(signals=signals, metadata=metadata),
-                pipe,
-            )
-            self.connector.set_and_publish(
-                MessageEndpoints.device_readback(device_root),
-                messages.DeviceMessage(signals=signals, metadata=metadata),
-                pipe,
-            )
-        pipe.execute()
+        roots: dict[str, DSDevice] = {}
+        for device_name in dict.fromkeys(dev.split(".")[0] for dev in devices):
+            device = self.device_manager.devices.get(device_name)
+            if device is None:
+                raise InvalidDeviceError(f"Device {device_name} does not exist")
+            roots[device_name] = device
+        updates = []
+        with self._reading_contexts(roots, "readback") as snapshots:
+            for dev in devices:
+                device_root = dev.split(".")[0]
+                device = roots[device_root]
+                device.metadata = metadata
+                obj = device.obj
+                live = True
+                try:
+                    signals = obj.read()
+                    signal_container.append(signals)
+                except Exception as exc:  # pylint: disable=broad-except
+                    signals = self._retry_obj_method(dev, obj, "read", exc)
+                    live = device.on_failure != OnFailure.BUFFER
+                for endpoint in (MessageEndpoints.device_read, MessageEndpoints.device_readback):
+                    self.connector.set_and_publish(
+                        endpoint(device_root),
+                        messages.DeviceMessage(signals=signals, metadata=metadata),
+                        pipe,
+                    )
+                updates.append((snapshots[device_root], signals, live))
+            pipe.execute()
+            for snapshot, signals, live in updates:
+                if snapshot is not None:
+                    snapshot.update(signals, metadata, live=live)
         logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
         return signal_container
 
-    def _read_config_and_update_devices(self, devices: list[str], metadata: dict) -> list:
+    def _read_config_and_update_devices(
+        self, devices: list[str], metadata: Metadata
+    ) -> list[Readings]:
+        """Read device configurations and publish their buffers in one batch.
+
+        Args:
+            devices (list[str]): Registered root device names to read in configured order.
+            metadata (Metadata): Instruction metadata attached to each configuration.
+
+        Returns:
+            list[Readings]: Configurations from successful initial reads, in device
+                order. Retry and buffered fallback results are published but not returned.
+
+        Raises:
+            InvalidDeviceError: A requested device is not registered.
+        """
         start = time.time()
         pipe = self.connector.pipeline()
         signal_container = []
         devices = self.device_manager.get_device_order(devices)
-        for dev in devices:
-            self.device_manager.devices.get(dev).metadata = metadata
-            obj = self.device_manager.devices.get(dev).obj
-            try:
-                signals = obj.read_configuration()
-                signal_container.append(signals)
-            # pylint: disable=broad-except
-            except Exception as exc:
-                signals = self._retry_obj_method(dev, obj, "read_configuration", exc)
-            self.connector.set_and_publish(
-                MessageEndpoints.device_read_configuration(dev),
-                messages.DeviceMessage(signals=signals, metadata=metadata),
-                pipe,
-            )
-        pipe.execute()
+        roots: dict[str, DSDevice] = {}
+        for device_name in dict.fromkeys(devices):
+            device = self.device_manager.devices.get(device_name)
+            if device is None:
+                raise InvalidDeviceError(f"Device {device_name} does not exist")
+            roots[device_name] = device
+        updates = []
+        with self._reading_contexts(roots, "configuration") as snapshots:
+            for dev in devices:
+                device = roots[dev]
+                device.metadata = metadata
+                obj = device.obj
+                live = True
+                try:
+                    signals = obj.read_configuration()
+                    signal_container.append(signals)
+                except Exception as exc:  # pylint: disable=broad-except
+                    signals = self._retry_obj_method(dev, obj, "read_configuration", exc)
+                    live = device.on_failure != OnFailure.BUFFER
+                self.connector.set_and_publish(
+                    MessageEndpoints.device_read_configuration(dev),
+                    messages.DeviceMessage(signals=signals, metadata=metadata),
+                    pipe,
+                )
+                updates.append((snapshots[dev], signals, live))
+            pipe.execute()
+            for snapshot, signals, live in updates:
+                if snapshot is not None:
+                    snapshot.update(signals, metadata, live=live)
         logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )

@@ -1,20 +1,28 @@
+from __future__ import annotations
+
 import copy
+import logging
 import threading
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
+from typing import Any, Literal, cast
 from unittest import mock
 
 import numpy as np
 import ophyd
 import pytest
+from ophyd.device import OrderedDictType
 from ophyd_devices.devices.psi_motor import EpicsMotor
 from ophyd_devices.tests.utils import patched_device
+from redis.client import Pipeline
 
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.redis_connector import RedisConnector
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -246,19 +254,138 @@ def test_obj_callback_progress(dm_with_devices):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_callback_configuration(dm_with_devices, connected_connector):
+def test_obj_callback_configuration(
+    dm_with_devices: DeviceManagerDS, connected_connector: RedisConnector
+) -> None:
+    """Verify obj callback configuration.
+
+    Args:
+        dm_with_devices (DeviceManagerDS): Device manager with initialized simulated devices.
+        connected_connector (RedisConnector): Redis connector backed by the test server.
+    """
     device_manager = dm_with_devices
     samx = device_manager.devices.samx
     samx.metadata = {"scan_id": "12345"}
     device_manager.connector = connected_connector
 
     device_manager._obj_callback_configuration(obj=samx.obj)
+    assert device_manager.event_dispatcher.wait_idle(timeout=5, obj=samx.obj)
 
     msg = connected_connector.get(MessageEndpoints.device_read_configuration("samx"))
     expected = messages.DeviceMessage(
         signals=samx.obj.read_configuration(), metadata={"scan_id": "12345"}
     )
     assert msg == expected
+
+
+@pytest.mark.parametrize("blocked_operation", ["redis", "read"])
+def test_root_callbacks_leave_ophyd_monitor_thread_free(
+    connected_connector: RedisConnector, blocked_operation: Literal["redis", "read"]
+) -> None:
+    """Verify root callbacks leave ophyd monitor thread free.
+
+    Args:
+        connected_connector (RedisConnector): Redis connector backed by the test server.
+        blocked_operation (Literal["redis", "read"]): Worker operation to hold while callbacks run.
+    """
+    from ophyd._dispatch import EventDispatcher  # pylint: disable=import-outside-toplevel
+
+    class Motor(ophyd.Device):
+        """Provide monitored readback and moving-state signals."""
+
+        readback = ophyd.Component(ophyd.Signal, value=0)
+        motor_is_moving = ophyd.Component(ophyd.Signal, value=0, kind=ophyd.Kind.omitted)
+
+    service = mock.Mock(connector=connected_connector, _service_name="device_server")
+    manager = DeviceManagerDS(service)
+    obj = Motor(name="monitor_motor")
+    cast(SimpleNamespace, obj.readback)._auto_monitor = blocked_operation != "read"
+    device = DSDevice(
+        obj.name,
+        obj,
+        {"enabled": True, "deviceClass": "Motor", "readoutPriority": "monitored"},
+        parent=manager,
+    )
+    manager.devices._add_device(obj.name, device)
+    manager.initialize_enabled_device(device)
+    monitor = EventDispatcher(context=None, logger=logging.getLogger(__name__), utility_threads=0)
+    context = monitor.get_thread_context("monitor")
+    entered = threading.Event()
+    release = threading.Event()
+    unrelated_complete = threading.Event()
+    unrelated_status = ophyd.StatusBase()
+    original_read = obj.read
+    original_pipeline = connected_connector.pipeline
+
+    def slow_read() -> OrderedDictType:
+        """Block a device read while unrelated monitor callbacks run.
+
+        Returns:
+            OrderedDictType: Values returned by the device reader.
+        """
+        entered.set()
+        assert release.wait(5)
+        return original_read()
+
+    def slow_pipeline() -> Pipeline:
+        """Wrap a real pipeline with a controllably blocked execution.
+
+        Returns:
+            Pipeline: Real pipeline with a blocked execution callback.
+        """
+        pipeline = original_pipeline()
+        execute = pipeline.execute
+
+        def slow_execute(raise_on_error: bool = True) -> list[Any]:
+            """Block Redis execution until the test releases it.
+
+            Args:
+                raise_on_error (bool): Whether Redis command errors should raise.
+
+            Returns:
+                list[Any]: Redis responses after the execution barrier is released.
+            """
+            entered.set()
+            assert release.wait(5)
+            return execute(raise_on_error=raise_on_error)
+
+        pipeline.execute = slow_execute
+        return pipeline
+
+    def finish_unrelated_move() -> None:
+        """Complete an unrelated move on the shared monitor thread."""
+        assert threading.current_thread().name == "monitor"
+        unrelated_status.set_finished()
+        unrelated_complete.set()
+
+    target, method, replacement = (
+        (connected_connector, "pipeline", slow_pipeline)
+        if blocked_operation == "redis"
+        else (obj, "read", slow_read)
+    )
+    try:
+        with mock.patch.object(target, method, side_effect=replacement):
+            context.run(manager._obj_callback_readback, obj=obj)
+            assert entered.wait(2)
+            # Both root callback paths used to do I/O on this shared monitor thread.
+            for value in range(100):
+                context.run(manager._obj_callback_readback, obj=obj)
+                context.run(
+                    manager._obj_callback_is_moving, obj=obj.motor_is_moving, value=value % 2
+                )
+            context.run(manager._obj_callback_is_moving, obj=obj.motor_is_moving, value=0)
+            context.run(finish_unrelated_move)
+            assert unrelated_complete.wait(2)
+            assert unrelated_status.done
+            assert monitor.threads["monitor"].queue.empty()
+            release.set()
+            assert manager.event_dispatcher.wait_idle(timeout=5, obj=obj)
+        status = connected_connector.get(MessageEndpoints.device_status(obj.name))
+        assert status.status == 0
+    finally:
+        release.set()
+        monitor.stop()
+        manager.shutdown()
 
 
 @pytest.mark.parametrize(
@@ -333,8 +460,43 @@ def test_obj_callback_file_event(dm_with_devices, connected_connector):
     assert msg.content["is_master_file"] is False
 
 
+def subscribe_directly(
+    obj: ophyd.OphydObject,
+    callback: Callable[..., None],
+    *,
+    event_type: str | None = None,
+    run: bool = False,
+    domain: str | None = None,
+) -> int:
+    """Exercise callback routing independently of registered dispatcher state.
+
+    Args:
+        obj (ophyd.OphydObject): Object or test double receiving the subscription.
+        callback (Callable[..., None]): Selected event handler.
+        event_type (str | None): Explicit event type, or None for the default event.
+        run (bool): Whether to replay the cached event.
+        domain (str | None): Dispatcher domain, unused by this routing double.
+
+    Returns:
+        int: Subscription identifier returned by the object.
+    """
+    del domain
+    if event_type is None:
+        return obj.subscribe(callback, run=run)
+    return obj.subscribe(callback, event_type=event_type, run=run)
+
+
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_subscribe_to_device_events(dm_with_devices):
+def test_subscribe_to_device_events(
+    dm_with_devices: DeviceManagerDS, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Route each advertised event to its existing callback.
+
+    Args:
+        dm_with_devices (DeviceManagerDS): Manager with simulated devices.
+        monkeypatch (pytest.MonkeyPatch): Fixture restoring the subscription test double.
+    """
+    monkeypatch.setattr(dm_with_devices.event_dispatcher, "subscribe", subscribe_directly)
     opaas_obj = mock.MagicMock()
     opaas_obj.enabled = False
     obj = mock.MagicMock()
@@ -562,8 +724,22 @@ def epics_motor():
         (DeviceManagerDS, 5, False),
     ],
 )
-def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, timeout, enabled):
-    """Test to initialize an EpicsMotor device, check if all necessary subscriptions are made."""
+def test_initialize_device(
+    dm_with_devices: DeviceManagerDS,
+    epics_motor: EpicsMotor,
+    epics_motor_config: dict[str, Any],
+    timeout: int | None,
+    enabled: bool,
+) -> None:
+    """Verify initialize device.
+
+    Args:
+        dm_with_devices (DeviceManagerDS): Device manager with initialized simulated devices.
+        epics_motor (EpicsMotor): Motor with patched EPICS connections.
+        epics_motor_config (dict[str, Any]): Mutable configuration for the motor.
+        timeout (int | None): Connection timeout override, or the default when absent.
+        enabled (bool): Whether initialization should connect and subscribe the motor.
+    """
     cfg = {"name": "test_motor", "prefix": "TEST:MOTOR"}
     epics_motor_config["enabled"] = enabled
     if timeout is not None:
@@ -595,13 +771,6 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
                 mock_connect_device.assert_called_once_with(
                     epics_motor, wait_for_all=True, timeout=timeout
                 )
-                # Limit updates are queued through the auto-monitor thread callback.
-                mock_low_subscribe.assert_called_once_with(
-                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
-                )
-                mock_high_subscribe.assert_called_once_with(
-                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
-                )
             else:
                 mock_initialize_enabled_device.assert_not_called()
                 mock_connect_device.assert_not_called()
@@ -610,34 +779,20 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_callback_auto_monitor_limits_queues_root_device(dm_with_devices):
-    samx = dm_with_devices.devices.samx
-    dm_with_devices._limit_change_updates.clear()
+def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind(
+    dm_with_devices: DeviceManagerDS, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify subscribe to auto monitors recurses and subscribes by kind.
 
-    dm_with_devices._obj_callback_auto_monitor_limits(obj=samx.obj.low_limit_travel)
-
-    assert samx.name in dm_with_devices._limit_change_updates
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_callback_auto_monitor_queueing(dm_with_devices):
-    samx = dm_with_devices.devices.samx
-    dm_with_devices._auto_monitor_readback_updates.clear()
-    dm_with_devices._auto_monitor_configuration_updates.clear()
-
-    dm_with_devices._obj_callback_auto_monitor_readback(obj=samx.obj.readback)
-    dm_with_devices._obj_callback_auto_monitor_configuration(obj=samx.obj.velocity)
-
-    assert samx.name in dm_with_devices._auto_monitor_readback_updates
-    assert samx.name in dm_with_devices._auto_monitor_configuration_updates
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind(dm_with_devices):
+    Args:
+        dm_with_devices (DeviceManagerDS): Device manager with initialized simulated devices.
+        monkeypatch (pytest.MonkeyPatch): Fixture restoring the subscription test double.
+    """
     service = mock.MagicMock()
     service.connector = mock.MagicMock()
     service._service_name = "device_server"
     device_manager = DeviceManagerDS(service)
+    monkeypatch.setattr(device_manager.event_dispatcher, "subscribe", subscribe_directly)
 
     normal_component = SimpleNamespace(
         _auto_monitor=True, kind=ophyd.Kind.normal, subscribe=mock.MagicMock()
@@ -663,17 +818,8 @@ def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind(dm_with_devi
         nested=nested,
     )
 
-    device_manager._auto_monitor_update_thread = mock.MagicMock()
-    device_manager._auto_monitor_update_thread.ident = None
-    thread_state = {"alive": False}
-    device_manager._auto_monitor_update_thread.is_alive.side_effect = lambda: thread_state["alive"]
-    device_manager._auto_monitor_update_thread.start.side_effect = lambda: thread_state.__setitem__(
-        "alive", True
-    )
+    device_manager._subscribe_to_auto_monitors(cast(ophyd.OphydObject, obj))
 
-    device_manager._subscribe_to_auto_monitors(obj)
-
-    device_manager._auto_monitor_update_thread.start.assert_called_once_with()
     normal_component.subscribe.assert_called_once_with(
         device_manager._obj_callback_auto_monitor_readback, run=False
     )
@@ -684,117 +830,6 @@ def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind(dm_with_devi
         device_manager._obj_callback_auto_monitor_configuration, run=False
     )
     ignored_component.subscribe.assert_not_called()
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_subscribe_to_limit_updates_starts_thread_and_handles_missing_signals(dm_with_devices):
-    service = mock.MagicMock()
-    service.connector = mock.MagicMock()
-    service._service_name = "device_server"
-    device_manager = DeviceManagerDS(service)
-
-    low_limit = mock.MagicMock()
-    high_limit = mock.MagicMock()
-    obj = SimpleNamespace(low_limit_travel=low_limit, high_limit_travel=high_limit)
-
-    device_manager._auto_monitor_update_thread = mock.MagicMock()
-    device_manager._auto_monitor_update_thread.ident = None
-    thread_state = {"alive": False}
-    device_manager._auto_monitor_update_thread.is_alive.side_effect = lambda: thread_state["alive"]
-    device_manager._auto_monitor_update_thread.start.side_effect = lambda: thread_state.__setitem__(
-        "alive", True
-    )
-
-    device_manager._subscribe_to_limit_updates(obj)
-
-    device_manager._auto_monitor_update_thread.start.assert_called_once_with()
-    low_limit.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_limits, run=False
-    )
-    high_limit.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_limits, run=False
-    )
-
-    device_manager._auto_monitor_update_thread.start.reset_mock()
-    device_manager._subscribe_to_limit_updates(SimpleNamespace())
-    device_manager._auto_monitor_update_thread.start.assert_not_called()
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_ensure_auto_monitor_update_thread_recreates_dead_thread(dm_with_devices):
-    service = mock.MagicMock()
-    service.connector = mock.MagicMock()
-    service._service_name = "device_server"
-    device_manager = DeviceManagerDS(service)
-
-    dead_thread = mock.MagicMock()
-    dead_thread.is_alive.return_value = False
-    dead_thread.ident = 123
-
-    replacement_thread = mock.MagicMock()
-    replacement_thread.is_alive.side_effect = [False, True]
-
-    device_manager._auto_monitor_update_thread = dead_thread
-    with mock.patch.object(
-        device_manager, "_create_auto_monitor_update_thread", return_value=replacement_thread
-    ) as mock_create_thread:
-        device_manager._ensure_auto_monitor_update_thread()
-
-    mock_create_thread.assert_called_once_with()
-    replacement_thread.start.assert_called_once_with()
-    assert device_manager._auto_monitor_update_thread is replacement_thread
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_auto_monitor_callbacks_ignore_disconnected_objects(dm_with_devices):
-    disconnected_root = SimpleNamespace(name="samx")
-    disconnected_obj = SimpleNamespace(connected=False, root=disconnected_root)
-    dm_with_devices._auto_monitor_readback_updates.clear()
-    dm_with_devices._auto_monitor_configuration_updates.clear()
-    dm_with_devices._limit_change_updates.clear()
-
-    dm_with_devices._obj_callback_auto_monitor_readback(obj=disconnected_obj)
-    dm_with_devices._obj_callback_auto_monitor_configuration(obj=disconnected_obj)
-    dm_with_devices._obj_callback_auto_monitor_limits(obj=disconnected_obj)
-
-    assert not dm_with_devices._auto_monitor_readback_updates
-    assert not dm_with_devices._auto_monitor_configuration_updates
-    assert not dm_with_devices._limit_change_updates
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_auto_monitor_update_loop_batches_updates_and_skips_missing_devices(dm_with_devices):
-    service = mock.MagicMock()
-    service.connector = mock.MagicMock()
-    service._service_name = "device_server"
-    device_manager = DeviceManagerDS(service)
-    samx_obj = mock.MagicMock()
-    samx_obj.connected = False
-    device_manager.devices["samx"] = SimpleNamespace(name="samx", obj=samx_obj)
-    device_manager._auto_monitor_readback_updates = {"samx", "missing"}
-    device_manager._auto_monitor_configuration_updates = {"samx"}
-    device_manager._limit_change_updates = {"samx"}
-    device_manager._shutdown_event = mock.MagicMock()
-    device_manager._shutdown_event.wait.side_effect = [False, True]
-
-    pipe = mock.MagicMock()
-    device_manager.connector = mock.MagicMock()
-    device_manager.connector.pipeline.return_value = pipe
-
-    with (
-        mock.patch.object(device_manager, "_obj_callback_readback") as mock_readback,
-        mock.patch.object(device_manager, "_obj_callback_configuration") as mock_configuration,
-        mock.patch.object(device_manager, "_obj_callback_limit_change") as mock_limit_change,
-    ):
-        device_manager._auto_monitor_update_loop()
-
-        mock_readback.assert_called_once_with(obj=samx_obj, pipe=pipe)
-        mock_configuration.assert_called_once_with(obj=samx_obj, pipe=pipe)
-        mock_limit_change.assert_called_once_with(obj=samx_obj, pipe=pipe)
-        pipe.execute.assert_called_once()
-        assert not device_manager._auto_monitor_readback_updates
-        assert not device_manager._auto_monitor_configuration_updates
-        assert not device_manager._limit_change_updates
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -890,3 +925,395 @@ def test_get_device_order_without_order_map(dm_with_devices):
     devices = ["samx", "eiger"]
     with pytest.raises(RuntimeError, match="Device order map is not initialized"):
         device_manager.get_device_order(devices)
+
+
+class SnapshotRecoveryDevice(ophyd.Device):
+    """Provide monitored reading and configuration fields for lifecycle regressions.
+
+    Attributes:
+        readback (ophyd.Signal): Monitored value included in ordinary readings.
+        setting (ophyd.Signal): Monitored value included in configuration readings.
+        SUB_FILE_EVENT (str): Legacy file event used to verify subscription continuity.
+    """
+
+    readback = ophyd.Component(ophyd.Signal, value=0, kind=ophyd.Kind.normal)
+    setting = ophyd.Component(ophyd.Signal, value=1, kind=ophyd.Kind.config)
+    SUB_FILE_EVENT = "file_event"
+
+
+def add_snapshot_recovery_device(
+    device_manager: DeviceManagerDS, name: str, *, initialize: bool = True
+) -> DSDevice:
+    """Register a real ophyd device with the supplied test manager.
+
+    Args:
+        device_manager (DeviceManagerDS): Manager that owns the device and its subscriptions.
+        name (str): Unique root device name.
+        initialize (bool): Whether to subscribe and publish the initial baseline.
+
+    Returns:
+        DSDevice: Managed wrapper retained by the manager for teardown.
+    """
+    obj = SnapshotRecoveryDevice(name=name)
+    for signal in (obj.readback, obj.setting):
+        cast(SimpleNamespace, signal)._auto_monitor = True
+    device = DSDevice(
+        name,
+        obj,
+        {
+            "enabled": True,
+            "deviceClass": "SnapshotRecoveryDevice",
+            "readoutPriority": "monitored",
+            "deviceConfig": {},
+        },
+        parent=device_manager,
+    )
+    device_manager.devices._add_device(name, device)
+    if initialize:
+        device_manager.initialize_enabled_device(device)
+    return device
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("old_config", [{}, {"labels": ["old"]}], ids=["empty", "nonempty"])
+@pytest.mark.parametrize("failure", ["read", "read_configuration", "redis"])
+def test_config_rebind_recovers_after_apply_and_rollback_baselines_fail(
+    device_manager: DeviceManagerDS,
+    connected_connector: RedisConnector,
+    old_config: dict[str, list[str]],
+    failure: Literal["read", "read_configuration", "redis"],
+) -> None:
+    """Recover pending final values after both configuration baselines fail.
+
+    Args:
+        device_manager (DeviceManagerDS): Manager using the device-server implementation.
+        connected_connector (RedisConnector): Connector backed by a fake Redis server.
+        old_config (dict[str, list[str]]): Configuration restored by the rejected request.
+        failure (Literal["read", "read_configuration", "redis"]): Baseline operation to fail.
+    """
+    device_manager.connector = connected_connector
+    device = add_snapshot_recovery_device(device_manager, "recovery")
+    obj = cast(SnapshotRecoveryDevice, device.obj)
+    device._config["deviceConfig"] = copy.deepcopy(old_config)
+    handler = ConfigUpdateHandler(device_manager)
+    device_manager.config_update_handler = handler
+    available = threading.Event()
+    original_read = getattr(obj, failure) if failure != "redis" else obj.read
+    original_pipeline = connected_connector.pipeline
+
+    def unavailable_read() -> OrderedDictType:
+        """Reject baseline reads until the simulated hardware recovers.
+
+        Returns:
+            OrderedDictType: Current device readings after recovery.
+
+        Raises:
+            RuntimeError: The simulated hardware remains unavailable.
+        """
+        if not available.is_set():
+            raise RuntimeError("baseline unavailable")
+        return original_read()
+
+    def unavailable_pipeline() -> Pipeline:
+        """Create a pipeline that remains unavailable through configuration rollback.
+
+        Returns:
+            Pipeline: Pipeline with a recoverable execution failure.
+        """
+        pipeline = original_pipeline()
+        execute = pipeline.execute
+
+        def execute_when_available(raise_on_error: bool = True) -> list[Any]:
+            """Execute only once the simulated Redis service recovers.
+
+            Args:
+                raise_on_error (bool): Whether individual Redis failures should raise.
+
+            Returns:
+                list[Any]: Results returned by the restored Redis connection.
+
+            Raises:
+                RuntimeError: The simulated Redis connection remains unavailable.
+            """
+            if not available.is_set():
+                raise RuntimeError("baseline unavailable")
+            return execute(raise_on_error=raise_on_error)
+
+        pipeline.execute = execute_when_available
+        return pipeline
+
+    # Hardware may change while bindings are replaced; supply no rescuing callback.
+    obj.readback._readback = 7
+    obj.setting._readback = 9
+    request = messages.DeviceConfigMessage(
+        action="update", config={obj.name: {"deviceConfig": {"labels": ["new"]}}}
+    )
+    target, attribute, replacement = (
+        (connected_connector, "pipeline", unavailable_pipeline)
+        if failure == "redis"
+        else (obj, failure, unavailable_read)
+    )
+    with mock.patch.object(target, attribute, side_effect=replacement):
+        with pytest.raises(RuntimeError, match="baseline unavailable"):
+            handler._update_config(request, threading.Event())
+        assert device.enabled and device.initialized
+        assert device_manager.event_dispatcher._states[id(obj)].active
+        available.set()
+        assert device_manager.event_dispatcher.wait_idle(timeout=5, obj=obj)
+
+        readback = connected_connector.get(MessageEndpoints.device_readback(obj.name))
+        configuration = connected_connector.get(
+            MessageEndpoints.device_read_configuration(obj.name)
+        )
+        assert readback.signals[obj.readback.name]["value"] == 7
+        assert configuration.signals[obj.setting.name]["value"] == 9
+
+        obj.readback.put(11)
+        obj.setting.put(13)
+        assert device_manager.event_dispatcher.wait_idle(timeout=5, obj=obj)
+        readback = connected_connector.get(MessageEndpoints.device_readback(obj.name))
+        configuration = connected_connector.get(
+            MessageEndpoints.device_read_configuration(obj.name)
+        )
+        assert readback.signals[obj.readback.name]["value"] == 11
+        assert configuration.signals[obj.setting.name]["value"] == 13
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_empty_config_rollback_rebinds_after_subscription_failure(
+    device_manager: DeviceManagerDS, connected_connector: RedisConnector
+) -> None:
+    """Restore subscriptions when binding fails before baseline initialization.
+
+    Args:
+        device_manager (DeviceManagerDS): Empty manager using the device-server implementation.
+        connected_connector (RedisConnector): Connector backed by a fake Redis server.
+    """
+    device_manager.connector = connected_connector
+    device = add_snapshot_recovery_device(device_manager, "subscription_recovery")
+    obj = cast(SnapshotRecoveryDevice, device.obj)
+    handler = ConfigUpdateHandler(device_manager)
+    device_manager.config_update_handler = handler
+    subscribe = device_manager._subscribe_to_auto_monitors
+    failed = False
+
+    def fail_first_subscription(root: ophyd.OphydObject) -> None:
+        """Fail once, then install the real component subscriptions during rollback.
+
+        Args:
+            root (ophyd.OphydObject): Root whose monitored components need subscriptions.
+
+        Raises:
+            RuntimeError: The first binding attempt encounters the injected driver failure.
+        """
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise RuntimeError("subscription unavailable")
+        subscribe(root)
+
+    request = messages.DeviceConfigMessage(
+        action="update", config={obj.name: {"deviceConfig": {"labels": ["new"]}}}
+    )
+    with (
+        mock.patch.object(
+            device_manager, "_subscribe_to_auto_monitors", side_effect=fail_first_subscription
+        ) as subscribe_mock,
+        pytest.raises(DeviceConfigError, match="subscription unavailable"),
+    ):
+        handler._update_config(request, threading.Event())
+    assert subscribe_mock.call_count == 2
+    assert device.enabled and device.initialized
+    obj.readback.put(17)
+    obj.setting.put(19)
+    assert device_manager.event_dispatcher.wait_idle(timeout=5, obj=obj)
+    readback = connected_connector.get(MessageEndpoints.device_readback(obj.name))
+    configuration = connected_connector.get(MessageEndpoints.device_read_configuration(obj.name))
+    assert readback.signals[obj.readback.name]["value"] == 17
+    assert configuration.signals[obj.setting.name]["value"] == 19
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_failed_first_baseline_does_not_activate_device(device_manager: DeviceManagerDS) -> None:
+    """Keep a device inactive when its first baseline could not be initialized.
+
+    Args:
+        device_manager (DeviceManagerDS): Empty manager using the device-server implementation.
+    """
+    device = add_snapshot_recovery_device(device_manager, "failed_initialization", initialize=False)
+    obj = cast(SnapshotRecoveryDevice, device.obj)
+    with mock.patch.object(obj, "read", side_effect=RuntimeError("first baseline failed")) as read:
+        with pytest.raises(RuntimeError, match="first baseline failed"):
+            device_manager.initialize_enabled_device(device)
+        obj.readback.put(23)
+        assert not device.initialized
+        assert not device_manager.event_dispatcher._states[id(obj)].active
+        read.assert_called_once_with()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_manager_shutdown_skips_busy_roots_without_per_device_wait(
+    device_manager: DeviceManagerDS,
+) -> None:
+    """Destroy free roots promptly while leaving devices with active operations intact.
+
+    Args:
+        device_manager (DeviceManagerDS): Empty manager using the device-server implementation.
+    """
+    busy_devices = [
+        add_snapshot_recovery_device(device_manager, f"busy_{index}") for index in range(2)
+    ]
+    free_device = add_snapshot_recovery_device(device_manager, "free_root")
+    dispatcher = device_manager.event_dispatcher
+    release = threading.Event()
+    entered = [threading.Event() for _device in busy_devices]
+
+    def hold_operation(index: int) -> None:
+        """Hold a root gate to simulate an explicit hardware operation.
+
+        Args:
+            index (int): Index of the busy device and its synchronization event.
+        """
+        with dispatcher.read_context(busy_devices[index].obj):
+            entered[index].set()
+            release.wait(4)
+
+    threads = [threading.Thread(target=hold_operation, args=(index,)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    try:
+        assert all(event.wait(1) for event in entered)
+        started = time.monotonic()
+        device_manager.shutdown()
+        elapsed = time.monotonic() - started
+        assert elapsed < 2
+        assert free_device.obj._destroyed
+        assert all(not device.obj._destroyed for device in busy_devices)
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(1)
+            assert not thread.is_alive()
+        for device in busy_devices:
+            assert dispatcher.remove(device.obj, timeout=0)
+            device.obj.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_refresh_keeps_one_shot_events_and_existing_subscription_ids(
+    device_manager: DeviceManagerDS,
+) -> None:
+    """Keep file callbacks continuously installed while updating the same root.
+
+    Args:
+        device_manager (DeviceManagerDS): Manager using the device-server implementation.
+    """
+    with mock.patch.object(device_manager, "_obj_callback_file_event") as received:
+        device = add_snapshot_recovery_device(device_manager, "continuous_events")
+        obj = cast(SnapshotRecoveryDevice, device.obj)
+        dispatcher = device_manager.event_dispatcher
+        state = dispatcher._states[id(obj)]
+        bindings = state.subscriptions.copy()
+        bind = device_manager._bind_event_subscriptions
+
+        def bind_while_emitting(managed: DSDevice) -> None:
+            """Emit a one-shot event at the former remove/rebind boundary.
+
+            Args:
+                managed (DSDevice): Existing root whose subscriptions are refreshed.
+            """
+            obj._run_subs(sub_type=obj.SUB_FILE_EVENT, value="during-refresh.h5")
+            bind(managed)
+
+        with mock.patch.object(
+            device_manager, "_bind_event_subscriptions", side_effect=bind_while_emitting
+        ):
+            device_manager.update_config(obj, {"labels": ["changed"]})
+        assert received.call_count == 1
+        assert received.call_args.kwargs["value"] == "during-refresh.h5"
+        assert dispatcher._states[id(obj)] is state
+        assert state.subscriptions == bindings
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_existing_monitors_survive_subscription_failure_during_apply_and_rollback(
+    device_manager: DeviceManagerDS, connected_connector: RedisConnector
+) -> None:
+    """Retain working monitors even when both attempts to refresh bindings fail.
+
+    Args:
+        device_manager (DeviceManagerDS): Manager using the device-server implementation.
+        connected_connector (RedisConnector): Connector backed by a fake Redis server.
+    """
+    device_manager.connector = connected_connector
+    device = add_snapshot_recovery_device(device_manager, "retained_monitors")
+    obj = cast(SnapshotRecoveryDevice, device.obj)
+    dispatcher = device_manager.event_dispatcher
+    state = dispatcher._states[id(obj)]
+    bindings = state.subscriptions.copy()
+    handler = ConfigUpdateHandler(device_manager)
+    device_manager.config_update_handler = handler
+    request = messages.DeviceConfigMessage(
+        action="update", config={obj.name: {"deviceConfig": {"labels": ["changed"]}}}
+    )
+    with mock.patch.object(
+        device_manager,
+        "_subscribe_to_auto_monitors",
+        side_effect=RuntimeError("subscription unavailable"),
+    ) as subscribe:
+        with pytest.raises(RuntimeError, match="subscription unavailable"):
+            handler._update_config(request, threading.Event())
+        assert subscribe.call_count == 2
+        assert dispatcher._states[id(obj)] is state
+        assert state.subscriptions == bindings
+        obj.readback.put(17)
+        obj.setting.put(19)
+        assert dispatcher.wait_idle(timeout=5, obj=obj)
+    assert (
+        connected_connector.get(MessageEndpoints.device_readback(obj.name)).signals[
+            obj.readback.name
+        ]["value"]
+        == 17
+    )
+    assert (
+        connected_connector.get(MessageEndpoints.device_read_configuration(obj.name)).signals[
+            obj.setting.name
+        ]["value"]
+        == 19
+    )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_refresh_reconciles_kind_and_monitor_changes(
+    device_manager: DeviceManagerDS, connected_connector: RedisConnector
+) -> None:
+    """Move fields between domains and restore dirty reads when monitoring is disabled.
+
+    Args:
+        device_manager (DeviceManagerDS): Manager using the device-server implementation.
+        connected_connector (RedisConnector): Connector backed by a fake Redis server.
+    """
+    device_manager.connector = connected_connector
+    device = add_snapshot_recovery_device(device_manager, "changed_coverage")
+    obj = cast(SnapshotRecoveryDevice, device.obj)
+    dispatcher = device_manager.event_dispatcher
+    obj.readback.kind = ophyd.Kind.config
+    device_manager._refresh_event_subscriptions(obj)
+    obj.readback.put(23)
+    assert dispatcher.wait_idle(obj=obj)
+    configuration = connected_connector.get(MessageEndpoints.device_read_configuration(obj.name))
+    assert configuration.signals[obj.readback.name]["value"] == 23
+    assert (
+        obj.readback.name
+        not in connected_connector.get(MessageEndpoints.device_readback(obj.name)).signals
+    )
+    obj.readback.kind = ophyd.Kind.normal | ophyd.Kind.config
+    obj.setting._auto_monitor = False
+    device_manager._refresh_event_subscriptions(obj)
+    obj.setting.put(27)
+    obj.readback.put(29)
+    assert dispatcher.wait_idle(obj=obj)
+    configuration = connected_connector.get(MessageEndpoints.device_read_configuration(obj.name))
+    assert configuration.signals[obj.setting.name]["value"] == 27
+    assert configuration.signals[obj.readback.name]["value"] == 29
+    assert not dispatcher._states[id(obj)].domains["configuration"].callback_only

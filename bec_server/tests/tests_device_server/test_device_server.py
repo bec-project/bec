@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from io import StringIO
 from types import SimpleNamespace
+from typing import cast
 from unittest import mock
 from unittest.mock import ANY, patch
 
@@ -18,8 +23,9 @@ from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import MessageObject
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
-from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError
+from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError, RequestHandler
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.event_dispatcher import Domain, Readings
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -165,6 +171,78 @@ def test_device_server_status_callback(
     finally:
         if sink_id:
             logger.remove(sink_id)
+
+
+def test_root_completion_does_not_add_configuration_reads(
+    device_server_mock: DeviceServerMock,
+    ophyd_device_mock: Device,
+    device_instruction_message_mock: messages.DeviceInstructionMessage,
+) -> None:
+    """Verify root completion does not add configuration reads.
+
+    Args:
+        device_server_mock (DeviceServerMock): Server with isolated service dependencies.
+        ophyd_device_mock (Device): Device used to construct the completed status.
+        device_instruction_message_mock (messages.DeviceInstructionMessage):
+            Instruction associated with the completed status.
+    """
+    device = ophyd_device_mock
+    assert device.kind == Kind.normal | Kind.config
+    status = DeviceStatus(device)
+    status.set_finished()
+    device_server_mock._add_status_object_info(status, device_instruction_message_mock, device)
+    with (
+        mock.patch.object(device, "read_configuration", side_effect=TimeoutError) as read_config,
+        mock.patch.object(device_server_mock, "_read_device") as read,
+    ):
+        device_server_mock.status_callback(status)
+    read_config.assert_not_called()
+    read.assert_not_called()
+
+
+def test_independent_status_callbacks_complete_while_another_is_blocked() -> None:
+    """Verify independent status callbacks complete while another is blocked."""
+    parent = mock.Mock()
+    handler = RequestHandler(parent)
+    slow_started = threading.Event()
+    release = threading.Event()
+    healthy_finished = threading.Event()
+
+    def process(status: DeviceStatus) -> None:
+        """Hold the slow request while another status callback completes.
+
+        Args:
+            status (DeviceStatus): Status whose instruction selects the blocked request.
+        """
+        if cast(SimpleNamespace, status).instruction.metadata["device_instr_id"] == "slow":
+            slow_started.set()
+            assert release.wait(5)
+
+    parent.status_callback.side_effect = process
+    statuses = []
+    for name in ("slow", "healthy"):
+        instruction = messages.DeviceInstructionMessage(
+            device=name, action="set", parameter={}, metadata={"device_instr_id": name}
+        )
+        status = DeviceStatus(Device(name=name), timeout=5)
+        cast(SimpleNamespace, status).instruction = instruction
+        handler.add_request(instruction, num_status_objects=1)
+        handler.add_status_object(name, status)
+        statuses.append(status)
+    statuses[1].add_callback(lambda _: healthy_finished.set())
+    try:
+        statuses[0].set_finished()
+        assert slow_started.wait(2)
+        statuses[1].set_finished()
+        assert healthy_finished.wait(2)
+        assert handler.get_request("healthy") is None
+        assert handler.get_request("slow") is not None
+    finally:
+        release.set()
+        for status in statuses:
+            if not status.done:
+                status.set_finished()
+            status._callback_thread.join(timeout=2)
 
 
 @pytest.mark.parametrize("status_success", [True, False])
@@ -925,6 +1003,111 @@ def test_read_config_and_update_devices(device_server_mock, devices):
         msg = res[-1]["msg"]
         assert msg.content["signals"].keys() == config.keys()
         assert res[-1]["queue"] == MessageEndpoints.device_read_configuration(device).endpoint
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize(
+    "method, read_method, domain, publications",
+    [
+        ("_read_and_update_devices", "read", "readback", 6),
+        ("_read_config_and_update_devices", "read_configuration", "configuration", 3),
+    ],
+)
+@pytest.mark.parametrize("publish_fails", [False, True])
+def test_explicit_reads_share_pipeline_and_commit_after_publication(
+    device_server_mock: DeviceServerMock,
+    method: str,
+    read_method: str,
+    domain: Domain,
+    publications: int,
+    publish_fails: bool,
+) -> None:
+    """Verify explicit reads share pipeline and commit after publication.
+
+    Args:
+        device_server_mock (DeviceServerMock): Server with isolated service dependencies.
+        method (str): Server method that performs the explicit batch read.
+        read_method (str): Server method that performs the explicit batch read.
+        domain (Domain): Snapshot domain shared by the explicit read contexts.
+        publications (int): Expected number of queued endpoint publications.
+        publish_fails (bool): Whether pipeline execution should raise a connection error.
+    """
+    server = device_server_mock
+    metadata = {"RID": "batched-read"}
+    events = []
+
+    @contextmanager
+    def reading_context(obj: Device, requested_domain: Domain) -> Generator[mock.Mock, None, None]:
+        """Record entry, update, and exit of an explicit read context.
+
+        Args:
+            obj (Device): Root device whose operation gate is entered.
+            requested_domain (Domain): Snapshot domain shared by the explicit read contexts.
+
+        Yields:
+            mock.Mock: Token recording publication acknowledgements.
+        """
+        assert requested_domain == domain
+        events.append(("enter", obj.name))
+        token = mock.Mock()
+        token.update.side_effect = lambda *_args, **_kwargs: events.append(("update", obj.name))
+        try:
+            yield token
+        finally:
+            events.append(("exit", obj.name))
+
+    def read(name: str) -> Readings:
+        """Record and return one device reading.
+
+        Args:
+            name (str): Device name used in Redis endpoints.
+
+        Returns:
+            Readings: Values returned by the device reader.
+        """
+        events.append(("read", name))
+        return {name: {"value": 1, "timestamp": 2}}
+
+    def execute() -> None:
+        """Record pipeline execution and optionally fail publication."""
+        events.append(("execute", None))
+        if publish_fails:
+            raise ConnectionError("Redis unavailable")
+
+    pipe = mock.Mock()
+    pipe.execute.side_effect = execute
+    with (
+        mock.patch.object(server, "_reading_context", side_effect=reading_context),
+        mock.patch.object(server.connector, "pipeline", return_value=pipe) as pipeline,
+        mock.patch.object(server.connector, "set_and_publish") as publish,
+        mock.patch.object(
+            server.device_manager, "get_device_order", return_value=["samy", "samx", "samx"]
+        ),
+        mock.patch.object(
+            server.device_manager.devices.samy.obj, read_method, side_effect=lambda: read("samy")
+        ),
+        mock.patch.object(
+            server.device_manager.devices.samx.obj, read_method, side_effect=lambda: read("samx")
+        ),
+    ):
+        if publish_fails:
+            with pytest.raises(ConnectionError, match="Redis unavailable"):
+                getattr(server, method)(["samx", "samy"], metadata)
+        else:
+            result = getattr(server, method)(["samx", "samy"], metadata)
+            assert [next(iter(signals)) for signals in result] == ["samy", "samx", "samx"]
+
+    pipeline.assert_called_once_with()
+    pipe.execute.assert_called_once_with()
+    assert publish.call_count == publications
+    assert all(call.args[2] is pipe for call in publish.call_args_list)
+    assert all(call.args[1].metadata == metadata for call in publish.call_args_list)
+    assert events[:2] == [("enter", "samx"), ("enter", "samy")]
+    assert [name for event, name in events if event == "read"] == ["samy", "samx", "samx"]
+    assert events[-2:] == [("exit", "samy"), ("exit", "samx")]
+    updates = [index for index, (event, _) in enumerate(events) if event == "update"]
+    assert len(updates) == (0 if publish_fails else 3)
+    assert all(index > events.index(("execute", None)) for index in updates)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

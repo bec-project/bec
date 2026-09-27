@@ -11,7 +11,9 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from contextlib import ExitStack, nullcontext
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import ophyd
@@ -36,14 +38,15 @@ from bec_server.device_server.devices.device_serializer import (
     disable_lazy_wait_for_connection,
     get_device_info,
 )
+from bec_server.device_server.devices.event_dispatcher import DeviceEventDispatcher
 
 if TYPE_CHECKING:  # pragma: no cover
-    from redis.client import Pipeline
-
     from bec_lib.redis_connector import RedisConnector
+    from bec_server.device_server.devices.event_dispatcher import Domain, Readings, ReadToken
 
 
 logger = bec_logger.logger
+StatusCallback = Callable[[messages.BECStatus], None]
 
 
 class DeviceProgress:
@@ -101,37 +104,52 @@ class DSDevice(DeviceBaseWithConfig):
             return rgetattr(self.obj, name)
         return super().__getattr__(name)
 
-    def initialize_device_buffer(self, connector):
-        """initialize the device read and readback buffer on redis with a new reading"""
-        dev_msg = messages.DeviceMessage(signals=self.obj.read(), metadata={})
+    def initialize_device_buffer(
+        self, connector: RedisConnector, dispatcher: DeviceEventDispatcher | None = None
+    ) -> None:
+        """Seed Redis and event snapshots together from the same baseline reads.
 
-        if hasattr(self.obj, "low_limit_travel") and hasattr(self.obj, "high_limit_travel"):
-            limits = {
-                "low": {"value": self.obj.low_limit_travel.get()},
-                "high": {"value": self.obj.high_limit_travel.get()},
-            }
-        else:
-            limits = None
-        pipe = connector.pipeline()
-        connector.set_and_publish(MessageEndpoints.device_readback(self.name), dev_msg, pipe=pipe)
-        connector.set_and_publish(
-            topic=MessageEndpoints.device_read(self.name), msg=dev_msg, pipe=pipe
-        )
+        Args:
+            connector (RedisConnector): Connector used to publish the initial readings.
+            dispatcher (DeviceEventDispatcher | None): Dispatcher whose snapshots are seeded
+                after the Redis pipeline succeeds. Defaults to None.
+        """
+        readers: dict[Domain, Callable[[], Readings]] = {"readback": self.obj.read}
         if not isinstance(self.obj, ophyd.Signal):
-            # signals have the same read and read_configuration values; no need to publish twice
-            dev_config_msg = messages.DeviceMessage(
-                signals=self.obj.read_configuration(), metadata={}
-            )
-            connector.set_and_publish(
-                MessageEndpoints.device_read_configuration(self.name), dev_config_msg, pipe=pipe
-            )
-        if limits is not None:
-            connector.set_and_publish(
-                MessageEndpoints.device_limits(self.name),
-                messages.DeviceMessage(signals=limits),
-                pipe=pipe,
-            )
-        pipe.execute()
+            readers["configuration"] = self.obj.read_configuration
+        low_limit = getattr(self.obj, "low_limit_travel", None)
+        high_limit = getattr(self.obj, "high_limit_travel", None)
+        if low_limit is not None and high_limit is not None:
+            readers["limits"] = lambda: {
+                "low": {"value": low_limit.get()},
+                "high": {"value": high_limit.get()},
+            }
+        endpoints = {
+            "readback": MessageEndpoints.device_readback,
+            "configuration": MessageEndpoints.device_read_configuration,
+            "limits": MessageEndpoints.device_limits,
+        }
+        with ExitStack() as stack:
+            snapshots: dict[Domain, ReadToken | None] = {
+                domain: stack.enter_context(
+                    dispatcher.read_context(self.obj, domain) if dispatcher else nullcontext()
+                )
+                for domain in readers
+            }
+            pipe = connector.pipeline()
+            readings: dict[Domain, Readings] = {}
+            for domain, read in readers.items():
+                readings[domain] = read()
+                msg = messages.DeviceMessage(signals=readings[domain], metadata={})
+                connector.set_and_publish(endpoints[domain](self.name), msg, pipe=pipe)
+                if domain == "readback":
+                    connector.set_and_publish(
+                        MessageEndpoints.device_read(self.name), msg, pipe=pipe
+                    )
+            pipe.execute()
+            for domain, snapshot in snapshots.items():
+                if snapshot is not None:
+                    snapshot.update(readings[domain], {})
         self.initialized = True
 
 
@@ -140,8 +158,17 @@ class DeviceManagerDS(DeviceManagerBase):
         self,
         service: BECService,
         config_update_handler: ConfigUpdateHandler | None = None,
-        status_cb: list[Callable] | Callable | None = None,
-    ):
+        status_cb: list[StatusCallback] | StatusCallback | None = None,
+    ) -> None:
+        """Initialize the device manager and its event dispatcher.
+
+        Args:
+            service (BECService): Service that owns this device manager.
+            config_update_handler (ConfigUpdateHandler | None): Optional existing handler
+                for device configuration requests. Defaults to None.
+            status_cb (list[StatusCallback] | StatusCallback | None): Callbacks receiving each new
+                BECStatus. Defaults to None.
+        """
         super().__init__(service, status_cb)
         self._use_proxy_objects = False
         self._config_request_connector = None
@@ -151,29 +178,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
-        self._auto_monitor_readback_updates = set()
-        self._auto_monitor_configuration_updates = set()
-        self._limit_change_updates = set()
-        self._auto_monitor_update_lock = threading.Lock()
-        self._shutdown_event = threading.Event()
-        self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
-
-    def _create_auto_monitor_update_thread(self) -> threading.Thread:
-        return threading.Thread(
-            target=self._auto_monitor_update_loop, daemon=True, name="AutoMonitorUpdateThread"
-        )
-
-    def _ensure_auto_monitor_update_thread(self) -> None:
-        if self._auto_monitor_update_thread is None:
-            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
-        elif (
-            not self._auto_monitor_update_thread.is_alive()
-            and self._auto_monitor_update_thread.ident is not None
-        ):
-            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
-
-        if not self._auto_monitor_update_thread.is_alive():
-            self._auto_monitor_update_thread.start()
+        self.event_dispatcher = DeviceEventDispatcher(lambda: self.connector)
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -407,21 +412,28 @@ class DeviceManagerDS(DeviceManagerBase):
         reload_msg = messages.DeviceConfigMessage(action="reload", config={})
         self.connector.send(MessageEndpoints.device_config_update(), reload_msg)
 
-    def update_config(self, obj: OphydObject, config: dict) -> None:
-        """Update an ophyd device's config
+    def update_config(
+        self, obj: OphydObject, config: dict, *, refresh_subscriptions: bool = False
+    ) -> None:
+        """Update a device's configuration and refresh its event subscriptions.
 
         Args:
-            obj (Ophydobj): Ophyd object that should be updated
-            config (dict): Config dictionary
+            obj (OphydObject): Device whose configuration should be updated.
+            config (dict): Device-specific configuration values to apply.
+            refresh_subscriptions (bool): Rebuild subscriptions even for an empty rollback
+                configuration. Defaults to False.
 
+        Raises:
+            DeviceConfigError: A configuration key does not exist on the device.
+            TimeoutError: A signal update or event-subscription retirement times out.
         """
         if hasattr(obj, "_update_device_config"):
             # If the device has implemented its own config update method, use it
             # pylint: disable=protected-access
             obj._update_device_config(config)  # type: ignore
+            self._refresh_event_subscriptions(obj)
             return
 
-        signal_updated = False
         for config_key, config_value in config.items():
             # first handle the ophyd exceptions...
             if config_key == "limits":
@@ -447,18 +459,13 @@ class DeviceManagerDS(DeviceManagerBase):
             config_attr = getattr(obj, config_key)
             if isinstance(config_attr, ophyd.Signal):
                 config_attr.set(config_value).wait(timeout=2)
-                if not hasattr(config_attr, "_auto_monitor"):
-                    # only signal values that are not auto monitored need
-                    # to trigger a manual buffer update
-                    signal_updated = True
             elif callable(config_attr):
                 config_attr(config_value)
             else:
                 setattr(obj, config_key, config_value)
 
-        if signal_updated:
-            # re-initialize the device buffer to reflect the updated signal values
-            self.devices[obj.name].initialize_device_buffer(self.connector)
+        if config or refresh_subscriptions:
+            self._refresh_event_subscriptions(obj)
 
         self.connector.publish_metrics("device_server", {"num_devices": len(self.devices)})
 
@@ -516,22 +523,28 @@ class DeviceManagerDS(DeviceManagerBase):
         return obj, config
 
     def initialize_device(self, dev: dict, config: dict, obj: OphydObject) -> DSDevice:
-        """
-        Prepares a device for later usage.
-        This includes inspecting the device class signature,
-        initializing the object, refreshing the device info and buffer,
-        as well as adding subscriptions.
+        """Prepare a device and its subscriptions for later use.
+
+        Register the device, refresh its information and buffers, then apply its
+        initial settings after enabling it.
 
         Args:
-            dev (dict): device config dictionary
-            config (dict): device config dictionary
-            obj (OphydObject): device object
+            dev (dict): Device configuration record, including its name and enabled state.
+            config (dict): Initial device attributes and signal values.
+            obj (OphydObject): Constructed device object to register.
 
         Returns:
-            DSDevice: initialized device object
+            DSDevice: Initialized device-server wrapper.
+
+        Raises:
+            TimeoutError: The previous device instance still has an active event operation.
         """
         name = dev.get("name")
         enabled = dev.get("enabled")
+
+        previous = self.devices.get(name)
+        if previous is not None and not self.event_dispatcher.remove(previous.obj):
+            raise TimeoutError(f"Device {name} still has an active event operation")
 
         # refresh the device info
         pipe = self.connector.pipeline()
@@ -569,83 +582,77 @@ class DeviceManagerDS(DeviceManagerBase):
 
         self.initialize_enabled_device(opaas_obj)
 
-        obj = opaas_obj.obj
-
-        # Add subscriptions to device events and signal if supported by the device
-        if hasattr(obj, "event_types"):
-            self._subscribe_to_device_events(obj, opaas_obj)
-            self._subscribe_to_bec_device_events(obj)
-            self._subscribe_to_auto_monitors(obj)
-            self._subscribe_to_limit_updates(obj)
-            self._subscribe_to_bec_signals(obj)
-
         # Update the config at last as this may also set signals
         self.update_config(obj, config)
 
         return opaas_obj
 
-    def _subscribe_to_limit_updates(self, obj: OphydObject):
-        """
-        Subscribe to limit updates if the device has low_limit_travel and high_limit_travel signals.
+    def _subscribe_to_limit_updates(self, obj: OphydObject) -> None:
+        """Subscribe to each available low and high travel-limit signal.
 
         Args:
-            obj (OphydObject): Ophyd object to subscribe to limit updates
+            obj (OphydObject): Device whose travel-limit signals should be monitored.
         """
-        if hasattr(obj, "low_limit_travel") and hasattr(obj.low_limit_travel, "subscribe"):
-            self._ensure_auto_monitor_update_thread()
-            obj.low_limit_travel.subscribe(self._obj_callback_auto_monitor_limits, run=False)
-        if hasattr(obj, "high_limit_travel") and hasattr(obj.high_limit_travel, "subscribe"):
-            self._ensure_auto_monitor_update_thread()
-            obj.high_limit_travel.subscribe(self._obj_callback_auto_monitor_limits, run=False)
+        for attr in ("low_limit_travel", "high_limit_travel"):
+            signal = getattr(obj, attr, None)
+            if signal is not None and hasattr(signal, "subscribe"):
+                self._subscribe(signal, self._obj_callback_auto_monitor_limits, run=False)
 
-    def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
-        """Subscribe to device events"""
+    def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice) -> None:
+        """Subscribe to the device's readback and moving-state events.
 
+        Args:
+            obj (OphydObject): Device that emits the events.
+            opaas_obj (DSDevice): Managed device whose enabled state controls initial callbacks.
+        """
         if "readback" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
+            self._subscribe(
+                obj, self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled
+            )
         elif "value" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
-        if hasattr(obj, "motor_is_moving"):
-            obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)  # type: ignore
+            self._subscribe(
+                obj, self._obj_callback_readback, event_type="value", run=opaas_obj.enabled
+            )
+        moving_signal = getattr(obj, "motor_is_moving", None)
+        if moving_signal is not None:
+            self._subscribe(moving_signal, self._obj_callback_is_moving, run=opaas_obj.enabled)
 
-    def _subscribe_to_bec_device_events(self, obj: OphydObject):
-        """
-        Subscribe to BEC device events, such as device_monitor_2d, device_monitor_1d,
-        file_event, done_moving, flyer, and progress.
+    def _subscribe_to_bec_device_events(self, obj: OphydObject) -> None:
+        """Subscribe to legacy BEC device events.
 
-        These events are deprecated and will be removed in the future. Use the
-        _subscribe_to_bec_signals method instead.
+        Monitor, file, movement, flyer, and progress events are deprecated in favor
+        of the signals handled by ``_subscribe_to_bec_signals``.
 
         Args:
-            obj (OphydObject): Ophyd object to subscribe to BEC device events
-
+            obj (OphydObject): Device whose supported legacy events should be subscribed.
         """
         if "device_monitor_2d" in obj.event_types:
-            obj.subscribe(
-                self._obj_callback_device_monitor_2d, event_type="device_monitor_2d", run=False
+            self._subscribe(
+                obj, self._obj_callback_device_monitor_2d, event_type="device_monitor_2d", run=False
             )
         if "device_monitor_1d" in obj.event_types:
-            obj.subscribe(
-                self._obj_callback_device_monitor_1d, event_type="device_monitor_1d", run=False
+            self._subscribe(
+                obj, self._obj_callback_device_monitor_1d, event_type="device_monitor_1d", run=False
             )
         if "file_event" in obj.event_types:
-            obj.subscribe(self._obj_callback_file_event, event_type="file_event", run=False)
+            self._subscribe(obj, self._obj_callback_file_event, event_type="file_event", run=False)
         if "done_moving" in obj.event_types:
-            obj.subscribe(self._obj_callback_done_moving, event_type="done_moving", run=False)
+            self._subscribe(
+                obj, self._obj_callback_done_moving, event_type="done_moving", run=False
+            )
         if "flyer" in obj.event_types:
-            obj.subscribe(self._obj_flyer_callback, event_type="flyer", run=False)
+            self._subscribe(obj, self._obj_flyer_callback, event_type="flyer", run=False)
         if "progress" in obj.event_types:
-            obj.subscribe(self._obj_callback_progress, event_type="progress", run=False)
+            self._subscribe(obj, self._obj_callback_progress, event_type="progress", run=False)
 
-    def _subscribe_to_auto_monitors(self, obj: OphydObject):
-        """
-        If the component has set the _auto_monitor attribute to True,
-        subscribe to the readback or configuration signals.
+    def _subscribe_to_auto_monitors(self, obj: OphydObject) -> None:
+        """Subscribe to components that enable automatic monitoring.
+
+        Use each component's kind to select readback and configuration callbacks.
 
         Args:
-            obj (OphydObject): Ophyd object to subscribe to auto monitors
+            obj (OphydObject): Device whose components should be inspected recursively.
         """
-
         if not hasattr(obj, "component_names"):
             return
 
@@ -656,19 +663,16 @@ class DeviceManagerDS(DeviceManagerBase):
                 continue
             if not getattr(component, "_auto_monitor", False):
                 continue
-            self._ensure_auto_monitor_update_thread()
-            if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
-                component.subscribe(self._obj_callback_auto_monitor_readback, run=False)
-            elif component.kind == ophyd.Kind.config:
-                component.subscribe(self._obj_callback_auto_monitor_configuration, run=False)
+            if component.kind & ophyd.Kind.normal:
+                self._subscribe(component, self._obj_callback_auto_monitor_readback, run=False)
+            if component.kind & ophyd.Kind.config:
+                self._subscribe(component, self._obj_callback_auto_monitor_configuration, run=False)
 
-    def _subscribe_to_bec_signals(self, obj: OphydObject):
-        """
-        Subscribe to BEC signals, such as PreviewSignal, ProgressSignal, FileEventSignal, etc.
+    def _subscribe_to_bec_signals(self, obj: OphydObject) -> None:
+        """Subscribe to BEC preview, progress, file, and other message signals.
 
         Args:
-            obj (OphydObject): Ophyd object to subscribe to BEC signals
-
+            obj (OphydObject): Device whose BEC message signals should be subscribed.
         """
         if not hasattr(obj, "walk_signals"):
             # If the object does not have walk_components, it is likely a simple signal
@@ -676,21 +680,114 @@ class DeviceManagerDS(DeviceManagerBase):
         signal_walk = obj.walk_signals()  # type: ignore
         for _ancestor, _signal_name, signal in signal_walk:
             if isinstance(signal, BECMessageSignal):
-                signal.subscribe(callback=self._obj_callback_bec_message_signal, run=False)
+                self._subscribe(signal, callback=self._obj_callback_bec_message_signal, run=False)
 
-    def initialize_enabled_device(self, opaas_obj):
-        """connect to an enabled device and initialize the device buffer"""
-        if hasattr(opaas_obj.obj, "on_connected"):
-            opaas_obj.obj.on_connected()
-        opaas_obj.initialize_device_buffer(self.connector)
+    def _subscribe(
+        self,
+        obj: OphydObject,
+        callback: Callable[..., None],
+        *,
+        event_type: str | None = None,
+        run: bool = True,
+    ) -> int:
+        """Track a subscription so retired device instances cannot dispatch again.
 
-    @staticmethod
-    def disconnect_device(obj):
-        """disconnect from a device"""
-        obj.destroy()
+        Args:
+            obj (OphydObject): Device or signal that emits the event.
+            callback (Callable[..., None]): Callback registered with the object.
+            event_type (str | None): Event name, or None to use the object's default event.
+            run (bool): Whether to immediately replay the object's cached event.
 
-    def reset_device(self, obj: DSDevice):
-        """reset a device"""
+        Returns:
+            int: Subscription identifier retained for cleanup.
+        """
+        domain: Domain = "status"
+        domain_handlers: tuple[tuple[Domain, tuple[Callable[..., None], ...]], ...] = (
+            ("readback", (self._obj_callback_readback, self._obj_callback_auto_monitor_readback)),
+            (
+                "configuration",
+                (self._obj_callback_configuration, self._obj_callback_auto_monitor_configuration),
+            ),
+            ("limits", (self._obj_callback_limit_change, self._obj_callback_auto_monitor_limits)),
+        )
+        for event_domain, handlers in domain_handlers:
+            if callback in handlers:
+                domain = event_domain
+                break
+        return self.event_dispatcher.subscribe(
+            obj, callback, event_type=event_type, run=run, domain=domain
+        )
+
+    def initialize_enabled_device(self, opaas_obj: DSDevice) -> None:
+        """Subscribe before seeding snapshots to retain racing monitor updates.
+
+        Args:
+            opaas_obj (DSDevice): Enabled device to connect and initialize.
+        """
+        obj = opaas_obj.obj
+        if hasattr(obj, "on_connected"):
+            obj.on_connected()
+        self._bind_event_subscriptions(opaas_obj)
+
+    def _refresh_event_subscriptions(self, obj: OphydObject) -> None:
+        """Refresh snapshots and reconcile bindings without removing unchanged callbacks.
+
+        Args:
+            obj (OphydObject): Device or component whose initialized root should be refreshed.
+
+        Raises:
+            TimeoutError: The root still has an active event operation.
+        """
+        device = self.devices.get(obj.root.name)
+        if device is not None and device.obj is obj.root and device.initialized:
+            with self.event_dispatcher.reconfigure(obj.root):
+                self._bind_event_subscriptions(device)
+
+    def _bind_event_subscriptions(self, opaas_obj: DSDevice) -> None:
+        """Reuse existing callbacks and seed snapshots, retaining failed baselines for retry.
+
+        Args:
+            opaas_obj (DSDevice): Managed device to register with the dispatcher.
+        """
+        obj = opaas_obj.obj
+        self.event_dispatcher.register(opaas_obj)
+        try:
+            if hasattr(obj, "event_types"):
+                self._subscribe_to_device_events(obj, opaas_obj)
+                self._subscribe_to_bec_device_events(obj)
+                self._subscribe_to_auto_monitors(obj)
+                self._subscribe_to_limit_updates(obj)
+                self._subscribe_to_bec_signals(obj)
+            opaas_obj.initialize_device_buffer(self.connector, self.event_dispatcher)
+        finally:
+            # A failed first initialization stays inactive. Existing devices recover
+            # missing baselines through the dispatcher's ordinary refresh retries.
+            if opaas_obj.initialized:
+                self.event_dispatcher.activate(obj)
+
+    def disconnect_device(self, obj: OphydObject | DSDevice) -> None:
+        """Retire callbacks before destroying a device.
+
+        Args:
+            obj (OphydObject | DSDevice): Device object or managed device to disconnect.
+
+        Raises:
+            TimeoutError: The device still has an active event operation.
+        """
+        device_obj: OphydObject = obj.obj if isinstance(obj, DSDevice) else obj
+        if not self.event_dispatcher.remove(device_obj):
+            raise TimeoutError(
+                f"Cannot destroy {device_obj.name} during an active device operation"
+            )
+        device_obj.destroy()
+
+    def reset_device(self, obj: DSDevice) -> None:
+        """Reset a device and discard its event state.
+
+        Args:
+            obj (DSDevice): Managed device to mark as uninitialized.
+        """
+        self.event_dispatcher.remove(obj.obj)
         obj.initialized = False
 
     @staticmethod
@@ -772,117 +869,72 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.delete(MessageEndpoints.device_read_configuration(obj.name), pipe)
         self.connector.delete(MessageEndpoints.device_info(obj.name), pipe)
 
-    def _obj_callback_limit_change(
-        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
-    ):
-        """Callback for limit changes"""
-        if not obj.connected:
-            return
-        name = obj.root.name
-        limits = {
-            "low": {"value": obj.root.low_limit_travel.get()},
-            "high": {"value": obj.root.high_limit_travel.get()},
-        }
-        dev_msg = messages.DeviceMessage(signals=limits)
-        _pipe = pipe if pipe is not None else self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=_pipe)
-        if pipe is None:
-            _pipe.execute()
+    def _obj_callback_limit_change(self, *_args: Any, obj: OphydObject, **kwargs: Any) -> None:
+        """Queue a limit snapshot update from a device event.
 
-    def _obj_callback_readback(
-        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
-    ):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        signals = obj.root.read()
-        metadata = self.devices.get(obj.root.name).metadata
-        dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        _pipe = pipe if pipe is not None else self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, pipe=_pipe)
-        if pipe is None:
-            _pipe.execute()
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Device or signal that emitted the event.
+            **kwargs (Any): Event payload forwarded to the dispatcher.
+        """
+        self.event_dispatcher.enqueue(obj, "limits", **kwargs)
 
-    def _obj_callback_configuration(
-        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
-    ):
-        if not obj.connected:
-            return
-        if isinstance(obj.root, ophyd.Signal):
-            # we don't need to publish the configuration of a signal
-            return
-        name = obj.root.name
-        signals = obj.root.read_configuration()
-        metadata = self.devices.get(obj.root.name).metadata
-        dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        _pipe = pipe if pipe is not None else self.connector.pipeline()
-        self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(name), dev_msg, pipe=_pipe
-        )
-        if pipe is None:
-            _pipe.execute()
+    def _obj_callback_readback(self, *_args: Any, obj: OphydObject, **kwargs: Any) -> None:
+        """Queue a readback snapshot update from a device event.
 
-    def _obj_callback_auto_monitor_readback(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._auto_monitor_readback_updates.add(name)
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Device or signal that emitted the event.
+            **kwargs (Any): Event payload forwarded to the dispatcher.
+        """
+        self.event_dispatcher.enqueue(obj, "readback", **kwargs)
 
-    def _obj_callback_auto_monitor_configuration(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._auto_monitor_configuration_updates.add(name)
+    def _obj_callback_configuration(self, *_args: Any, obj: OphydObject, **kwargs: Any) -> None:
+        """Queue a configuration snapshot update for a root device.
 
-    def _obj_callback_auto_monitor_limits(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._limit_change_updates.add(name)
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Device or signal that emitted the event.
+            **kwargs (Any): Event payload forwarded to the dispatcher.
+        """
+        if not isinstance(obj.root, ophyd.Signal):
+            self.event_dispatcher.enqueue(obj, "configuration", **kwargs)
 
-    def _auto_monitor_update_loop(self):
-        while not self._shutdown_event.wait(0.01):
-            try:
-                if (
-                    not self._auto_monitor_readback_updates
-                    and not self._auto_monitor_configuration_updates
-                    and not self._limit_change_updates
-                ):
-                    continue
-                with self._auto_monitor_update_lock:
-                    readback_updates = list(self._auto_monitor_readback_updates)
-                    configuration_updates = list(self._auto_monitor_configuration_updates)
-                    limits_updates = list(self._limit_change_updates)
-                    self._auto_monitor_readback_updates.clear()
-                    self._auto_monitor_configuration_updates.clear()
-                    self._limit_change_updates.clear()
+    def _obj_callback_auto_monitor_readback(
+        self, *_args: Any, obj: OphydObject, **kwargs: Any
+    ) -> None:
+        """Queue a readback snapshot update from a monitored component.
 
-                pipe = self.connector.pipeline()
-                for name in readback_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_readback(obj=obj, pipe=pipe)
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Signal that emitted the monitor update.
+            **kwargs (Any): Event payload forwarded to the dispatcher.
+        """
+        self.event_dispatcher.enqueue(obj, "readback", **kwargs)
 
-                for name in configuration_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_configuration(obj=obj, pipe=pipe)
+    def _obj_callback_auto_monitor_configuration(
+        self, *_args: Any, obj: OphydObject, **kwargs: Any
+    ) -> None:
+        """Queue a configuration snapshot update from a monitored component.
 
-                for name in limits_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_limit_change(obj=obj, pipe=pipe)
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Signal that emitted the monitor update.
+            **kwargs (Any): Event payload forwarded to the dispatcher.
+        """
+        self.event_dispatcher.enqueue(obj, "configuration", **kwargs)
 
-                pipe.execute()
-            except Exception as exc:
-                logger.error(f"Error in auto monitor update loop: {exc}")
-                logger.error(traceback.format_exc())
+    def _obj_callback_auto_monitor_limits(
+        self, *_args: Any, obj: OphydObject, **kwargs: Any
+    ) -> None:
+        """Queue a limit snapshot update from a monitored limit signal.
+
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Limit signal that emitted the monitor update.
+            **kwargs (Any): Event payload forwarded to the dispatcher.
+        """
+        self.event_dispatcher.enqueue(obj, "limits", **kwargs)
 
     @typechecked
     def _obj_callback_device_monitor_2d(
@@ -972,18 +1024,28 @@ class DeviceManagerDS(DeviceManagerBase):
             messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
         )
 
-    def _obj_callback_done_moving(self, *args, **kwargs):
-        self._obj_callback_readback(*args, **kwargs)
-        # self._obj_callback_acq_done(*args, **kwargs)
+    def _obj_callback_done_moving(self, *_args: Any, obj: OphydObject, **_kwargs: Any) -> None:
+        """Queue the final readback after a device finishes moving.
 
-    def _obj_callback_is_moving(self, *_args, **kwargs):
-        device = kwargs["obj"].root.name
-        status = int(kwargs.get("value"))
-        metadata = self.devices[device].metadata
-        self.connector.set(
-            MessageEndpoints.device_status(device),
-            messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
-        )
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Device that completed its motion.
+            **_kwargs (Any): Unused event payload; this event requests a snapshot refresh.
+        """
+        self.event_dispatcher.enqueue(obj, "readback")
+
+    def _obj_callback_is_moving(
+        self, *_args: Any, obj: OphydObject, value: Any, **_kwargs: Any
+    ) -> None:
+        """Queue a moving-state update without publishing on the monitor thread.
+
+        Args:
+            *_args (Any): Unused positional callback arguments.
+            obj (OphydObject): Signal that emitted the moving-state update.
+            value (Any): Moving-state value supplied by the signal callback.
+            **_kwargs (Any): Unused additional callback payload.
+        """
+        self.event_dispatcher.enqueue(obj, "status", value=value)
 
     def _obj_flyer_callback(self, *_args, **kwargs):
         obj = kwargs["obj"]
@@ -1105,11 +1167,11 @@ class DeviceManagerDS(DeviceManagerBase):
             return
         self._bec_message_handler.emit(obj, value)
 
-    def shutdown(self):
-        """Shutdown the device manager and disconnect all devices"""
-        self._shutdown_event.set()
-        if self._auto_monitor_update_thread.is_alive():
-            self._auto_monitor_update_thread.join(timeout=5)
+    def shutdown(self) -> None:
+        """Stop configuration and event workers, then disconnect all devices."""
+        if self.config_update_handler:
+            self.config_update_handler.shutdown()
+        self.event_dispatcher.shutdown()
         for device in self.devices.values():
             try:
                 logger.info(f"Disconnecting device {device.name}")
@@ -1117,6 +1179,4 @@ class DeviceManagerDS(DeviceManagerBase):
             except Exception:
                 logger.error(f"Failed to disconnect device {device.name}: {traceback.format_exc()}")
         self.devices.flush()
-        if self.config_update_handler:
-            self.config_update_handler.shutdown()
         super().shutdown()

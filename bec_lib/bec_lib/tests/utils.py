@@ -3,8 +3,9 @@ from __future__ import annotations
 import builtins
 import os
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from unittest.mock import MagicMock
 
 import bec_lib
@@ -452,21 +453,73 @@ class DMClientMock(DeviceManagerBase):
                 return dev
 
 
+_PipelineCommand = tuple[str, tuple[Any, ...], dict[str, Any]]
+
+
 class PipelineMock:  # pragma: no cover
-    def __init__(self, connector) -> None:
-        self._pipe_buffer = []
+    """Collect connector calls and return their results in command order."""
+
+    def __init__(self, connector: ConnectorMock) -> None:
+        """Create an empty pipeline for the supplied connector.
+
+        Args:
+            connector (ConnectorMock): Connector that executes the queued calls.
+        """
+        self._pipe_buffer: list[_PipelineCommand] = []
         self._connector = connector
 
-    def execute(self):
+    @property
+    def command_stack(self) -> list[_PipelineCommand]:
+        """Expose queued commands like redis-py's Pipeline.
+
+        Returns:
+            list[_PipelineCommand]: Mutable queue of method names, positional
+                arguments, and keyword arguments.
+        """
+        return self._pipe_buffer
+
+    def watch(self, *names: str) -> None:
+        """Accept transaction setup in connector-level tests without Redis semantics.
+
+        Use fakeredis for tests that require actual write-conflict detection.
+
+        Args:
+            *names (str): Endpoint keys requested by the caller.
+        """
+
+    def multi(self) -> None:
+        """Accept transaction setup; connector calls are already buffered."""
+
+    def reset(self) -> None:
+        """Discard commands retained by an abandoned transaction."""
+        self._pipe_buffer.clear()
+
+    def execute(self, raise_on_error: bool = True) -> list[Any]:
+        """Execute queued calls and clear the pipeline before returning results.
+
+        Args:
+            raise_on_error (bool): Raise the first command failure when True; include
+                exceptions in the result list and continue when False.
+
+        Returns:
+            list[Any]: Ordered command results or exceptions. A connector with
+                storage disabled returns None for each queued command.
+
+        Raises:
+            Exception: A queued connector call failed and raise_on_error is True.
+        """
+        commands, self._pipe_buffer = self._pipe_buffer, []
         if not self._connector.store_data:
-            self._pipe_buffer = []
-            return []
-        res = [
-            getattr(self._connector, method)(*args, **kwargs)
-            for method, args, kwargs in self._pipe_buffer
-        ]
-        self._pipe_buffer = []
-        return res
+            return [None] * len(commands)
+        results = []
+        for method, args, kwargs in commands:
+            try:
+                results.append(getattr(self._connector, method)(*args, **kwargs))
+            except Exception as exc:
+                if raise_on_error:
+                    raise
+                results.append(exc)
+        return results
 
 
 class SignalMock:  # pragma: no cover
