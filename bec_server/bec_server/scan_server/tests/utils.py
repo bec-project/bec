@@ -2,8 +2,8 @@ from bec_lib.messages import BECStatus
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.device_server.tests.utils import DMMock
+from bec_server.scan_server.queue_channels import InstructionQueueStatus
 from bec_server.scan_server.scan_server import ScanServer
-from bec_server.scan_server.scan_worker import InstructionQueueStatus
 from bec_server.scan_server.scans.scan_base import ScanBase
 
 # pylint: disable=missing-function-docstring

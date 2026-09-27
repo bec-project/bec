@@ -19,6 +19,8 @@ class DeviceLockRegistry:
     def __init__(self) -> None:
         """Initialize the device lock registry."""
         self._condition: threading.Condition = threading.Condition()
+        self._stopped_requests: set[str] = set()
+        self._stops_in_flight: dict[str, int] = defaultdict(int)
 
         # Maps device names to the request ID that currently owns the lock.
         self._device_owners: dict[str, str] = {}
@@ -58,12 +60,15 @@ class DeviceLockRegistry:
 
         next_log_time = 0.0
         while True:
-            should_wait = False
             should_queue_update = False
             blocked_owners: dict[str, str] = {}
             waiting_devices = sorted(self._pending_device_locks.get(request_id, set()))
 
+            if interruption_callback is not None:
+                interruption_callback()
             with self._condition:
+                if request_id in self._stopped_requests:
+                    raise RuntimeError(f"Request {request_id} was stopped")
                 acquirable_devices: list[str] = []
                 blocked_devices: list[str] = []
 
@@ -87,7 +92,6 @@ class DeviceLockRegistry:
 
                 self._pending_device_locks[request_id] = set(blocked_devices)
                 if blocked_devices:
-                    should_wait = True
                     next_log_time = self._log_waiting_for_device_lock(
                         request_id=request_id,
                         blocked_owners=blocked_owners,
@@ -103,7 +107,7 @@ class DeviceLockRegistry:
             if should_queue_update and queue_update_callback is not None:
                 queue_update_callback()
 
-            if not should_wait:
+            if not blocked_devices:
                 return device_names
 
             if interruption_callback is not None:
@@ -137,6 +141,32 @@ class DeviceLockRegistry:
             queue_update_callback=queue_update_callback,
         )
 
+    def stop_request(self, request_id: str, send_stop: Callable[[list[str]], None]) -> None:
+        """Freeze acquisition and send stop before the caller releases device ownership.
+
+        The worker waits for the queue's stop receipt before cleanup or release. The
+        registry lock is only needed to capture ownership, never for network I/O.
+        """
+        with self._condition:
+            self._stopped_requests.add(request_id)
+            self._stops_in_flight[request_id] += 1
+            devices = sorted(self._owner_devices.get(request_id, set()))
+            self._condition.notify_all()
+        try:
+            send_stop(devices)
+        finally:
+            with self._condition:
+                self._stops_in_flight[request_id] -= 1
+                if not self._stops_in_flight[request_id]:
+                    self._stops_in_flight.pop(request_id)
+                self._condition.notify_all()
+
+    def allow_request(self, request_id: str) -> None:
+        """Allow a stopped request to acquire locks during its exception hook."""
+        with self._condition:
+            self._stopped_requests.discard(request_id)
+            self._condition.notify_all()
+
     def release_all(self, request_id: str) -> list[str]:
         """
         Release all device locks held by a request.
@@ -148,6 +178,8 @@ class DeviceLockRegistry:
             list[str]: sorted device names whose locks were released.
         """
         with self._condition:
+            self._condition.wait_for(lambda: not self._stops_in_flight.get(request_id))
+            self._pending_device_locks.pop(request_id, None)
             devices = sorted(self._owner_devices.pop(request_id, set()))
             for device in devices:
                 if self._device_owners.get(device) == request_id:

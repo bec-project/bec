@@ -282,7 +282,10 @@ class ScanStorage:
         if not scan_queue.info:
             return None
 
-        return scan_queue.info[0]
+        return next(
+            (item for item in scan_queue.info if item.active_request_block is not None),
+            scan_queue.info[0],
+        )
 
     @property
     def current_scan(self) -> ScanItem | None:

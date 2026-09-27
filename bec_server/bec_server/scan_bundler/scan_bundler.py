@@ -109,23 +109,21 @@ class ScanBundler(BECService):
         """
         status_msg = cast(messages.ScanQueueStatusMessage, msg_obj.value)
         for scan_queue_status in status_msg.queue.values():
-            if not scan_queue_status.info:
-                continue
-            info = scan_queue_status.info[0]
-            active_request_block = info.active_request_block
-            if not active_request_block:
-                continue
-            scan_id = active_request_block.scan_id
-            if scan_id is None:
-                continue
-            report_instructions = active_request_block.report_instructions
-            if not report_instructions:
-                continue
+            for info in scan_queue_status.info:
+                active_request_block = info.active_request_block
+                if not active_request_block:
+                    continue
+                scan_id = active_request_block.scan_id
+                if scan_id is None:
+                    continue
+                report_instructions = active_request_block.report_instructions
+                if not report_instructions:
+                    continue
 
-            self.scan_report_instructions[scan_id] = report_instructions
-            logger.debug(
-                f"Updated report instructions for scan_id {scan_id}: {report_instructions}"
-            )
+                self.scan_report_instructions[scan_id] = report_instructions
+                logger.debug(
+                    f"Updated report instructions for scan_id {scan_id}: {report_instructions}"
+                )
 
     def _scan_status_modification(self, msg: messages.ScanStatusMessage):
         status = msg.content.get("status")

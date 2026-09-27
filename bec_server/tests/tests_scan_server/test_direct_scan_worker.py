@@ -1,3 +1,5 @@
+import threading
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest import mock
 
@@ -7,10 +9,11 @@ from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_server.scan_server.direct_scan_worker import DirectScanWorker
 from bec_server.scan_server.errors import DeviceInstructionError, ScanAbortion, UserScanInterruption
-from bec_server.scan_server.scan_queue import (
-    DirectInstructionQueueItem,
+from bec_server.scan_server.queue_channels import (
+    ExecutionControl,
+    ExecutionToken,
     InstructionQueueStatus,
-    ScanQueue,
+    ScanAssignment,
 )
 from bec_server.scan_server.scans.scan_base import ScanBase
 from bec_server.scan_server.scans.scan_modifier import ScanModifier, scan_hook, scan_hook_impl
@@ -126,166 +129,64 @@ class _HookRecordingModifier(ScanModifier):
 
 @pytest.fixture
 def direct_worker_context(dm_with_devices):
-    scan_server = ScanServerMock(dm_with_devices)
-    queue_manager = scan_server.queue_manager
-    queue_manager.shutdown()
-    queue_manager.send_queue_status = mock.MagicMock()
-    scan_queue = ScanQueue(queue_manager, queue_name="primary")
-    queue_manager.queues["primary"] = scan_queue
-    scan_server.connector.raise_alarm = mock.MagicMock()
-    scan_server.connector.send_client_info = mock.MagicMock()
-    scan_queue.abort = mock.MagicMock()
-
-    queue = DirectInstructionQueueItem(scan_queue, mock.MagicMock(), scan_queue.scan_worker)
-    queue.append_to_queue_history = mock.MagicMock()
-    scan_queue.queue.append(queue)
-    scan_queue.active_instruction_queue = queue
-
-    yield SimpleNamespace(
-        connector=scan_server.connector,
-        device_manager=scan_server.device_manager,
-        direct_worker=DirectScanWorker(worker=scan_queue.scan_worker),
-        instruction_handler=queue_manager.instruction_handler,
-        queue=queue,
-        queue_manager=queue_manager,
-        queue_state=scan_queue,
-        scan_worker=scan_queue.scan_worker,
-        scan_server=scan_server,
+    server = ScanServerMock(dm_with_devices)
+    server.connector.raise_alarm = mock.Mock()
+    server.device_manager._rpc_method = mock.Mock(side_effect=lambda _: nullcontext())
+    worker = SimpleNamespace(
+        parent=server,
+        connector=server.connector,
+        device_manager=server.device_manager,
+        queue_name="secondary",
+        report=mock.Mock(),
     )
-
-    scan_server.shutdown()
+    yield SimpleNamespace(
+        scan_server=server, worker=worker, executor=DirectScanWorker(worker=worker)
+    )
+    server.shutdown()
 
 
 @pytest.fixture
-def make_scan(direct_worker_context):
-    def _build(*, called_steps=None, fail_step=None):
+def make_assignment(direct_worker_context):
+    def build(fail_step=None):
+        server = direct_worker_context.scan_server
         scan = _TestDirectScan(
             scan_id="scan-id",
-            redis_connector=direct_worker_context.connector,
-            device_manager=direct_worker_context.device_manager,
-            instruction_handler=direct_worker_context.instruction_handler,
+            redis_connector=server.connector,
+            device_manager=server.device_manager,
+            instruction_handler=server.queue_manager.instruction_handler,
             scan_modifier=None,
             request_inputs={},
             system_config={},
-            called_steps=called_steps,
             fail_step=fail_step,
         )
         scan.scan_info.metadata["RID"] = "rid-1"
-        scan.actions._send_scan_status = mock.MagicMock()
-        scan.actions.send_client_info = mock.MagicMock()
-        scan._shutdown_event = mock.MagicMock()
-        return scan
-
-    return _build
-
-
-def _append_scan(queue: DirectInstructionQueueItem, scan: _TestDirectScan):
-    queue.scans.append(scan)
-    queue.scan_msgs.append(
-        messages.ScanQueueMessage(
-            scan_type=scan.scan_info.scan_name,
+        scan.actions._initialize_scan = mock.Mock()
+        scan.actions._send_scan_status = mock.Mock()
+        scan.actions.send_client_info = mock.Mock()
+        msg = messages.ScanQueueMessage(
+            scan_type="test",
             parameter={"args": {}, "kwargs": {}},
-            queue="primary",
+            queue="secondary",
             metadata={"RID": "rid-1"},
         )
-    )
+        return ScanAssignment(
+            ExecutionToken("generation", "queue-id", 1),
+            "secondary",
+            scan,
+            msg,
+            ExecutionControl(),
+            7,
+            8,
+        )
+
+    return build
 
 
-def test_check_for_interruption_sends_paused_status_via_scan_actions(
-    direct_worker_context, make_scan
-):
-    scan = make_scan()
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.status = InstructionQueueStatus.PAUSED
-
-    def _resume(_seconds):
-        direct_worker_context.scan_worker.status = InstructionQueueStatus.RUNNING
-
-    with mock.patch("bec_server.scan_server.direct_scan_worker.time.sleep", side_effect=_resume):
-        direct_worker_context.direct_worker.check_for_interruption()
-
-    scan.actions._send_scan_status.assert_called_once_with("paused")
-
-
-def test_check_for_interruption_raises_user_interruption_on_stop(direct_worker_context):
-    direct_worker_context.scan_worker.status = InstructionQueueStatus.STOPPED
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.exit_info = ("user_completed", "user")
-
-    with pytest.raises(UserScanInterruption) as exc:
-        direct_worker_context.direct_worker.check_for_interruption()
-
-    assert exc.value.exit_info == ("user_completed", "user")
-
-
-def test_check_for_interruption_raises_scan_abortion_without_exit_info(direct_worker_context):
-    direct_worker_context.scan_worker.status = InstructionQueueStatus.STOPPED
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.exit_info = None
-
-    with pytest.raises(ScanAbortion):
-        direct_worker_context.direct_worker.check_for_interruption()
-
-
-def test_check_for_interruption_does_not_send_paused_without_scan(direct_worker_context):
-    direct_worker_context.scan_worker.status = InstructionQueueStatus.PAUSED
-
-    def _resume(_seconds):
-        direct_worker_context.scan_worker.status = InstructionQueueStatus.RUNNING
-
-    with mock.patch("bec_server.scan_server.direct_scan_worker.time.sleep", side_effect=_resume):
-        direct_worker_context.direct_worker.check_for_interruption()
-
-
-def test_process_instructions_runs_scan_and_resets_state(direct_worker_context, make_scan):
-    scan = make_scan()
-    _append_scan(direct_worker_context.queue, scan)
-
-    with mock.patch.object(direct_worker_context.direct_worker, "run") as run_mock:
-        with mock.patch.object(direct_worker_context.direct_worker, "reset") as reset_mock:
-            direct_worker_context.direct_worker.process_instructions(direct_worker_context.queue)
-
-    run_mock.assert_called_once_with(scan)
-    assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
-    assert direct_worker_context.scan_worker.current_instruction_queue_item is None
-    reset_mock.assert_called_once_with()
-
-
-def test_process_instructions_returns_when_queue_has_no_scan(direct_worker_context):
-    direct_worker_context.queue.move_to_next_scan = mock.MagicMock(return_value=None)
-
-    with mock.patch("bec_server.scan_server.direct_scan_worker.logger.error") as log_error:
-        direct_worker_context.direct_worker.process_instructions(direct_worker_context.queue)
-
-    log_error.assert_called_once_with("No scan found in the queue item to process.")
-    assert (
-        direct_worker_context.scan_worker.current_instruction_queue_item
-        is direct_worker_context.queue
-    )
-
-
-def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_scan):
-    called_steps = []
-    scan = make_scan(called_steps=called_steps)
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    rpc_cm = mock.MagicMock()
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=rpc_cm)
-    scan.actions._initialize_scan = mock.MagicMock()
-
-    direct_worker_context.direct_worker.run(scan)
-
-    assert (
-        scan.actions._interruption_callback
-        == direct_worker_context.direct_worker.check_for_interruption
-    )
-    assert (
-        scan.actions._update_queue_info_callback
-        == direct_worker_context.direct_worker.update_queue_info
-    )
-    scan.actions._initialize_scan.assert_called_once_with()
-    direct_worker_context.device_manager._rpc_method.assert_called_once_with(scan.actions.rpc_call)
-    assert called_steps == [
+def test_run_full_lifecycle_and_copied_report(direct_worker_context, make_assignment):
+    assignment = make_assignment()
+    scan = assignment.scan
+    report = direct_worker_context.executor.run(assignment)
+    assert scan.called_steps == [
         "prepare_scan",
         "open_scan",
         "stage",
@@ -296,34 +197,28 @@ def test_run_executes_full_scan_sequence_in_order(direct_worker_context, make_sc
         "unstage",
         "close_scan",
     ]
-    assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
-    assert direct_worker_context.scan_worker.current_instruction_queue_item is None
-    assert direct_worker_context.direct_worker.scan is None
+    scan.actions._initialize_scan.assert_called_once_with()
+    assert report.terminal and report.status == InstructionQueueStatus.COMPLETED
+    assert report.token == assignment.token
+    assert scan.scan_info.dataset_number == 8
+    assert scan.scan_info.scan_queue == "secondary"
+    assert scan.scan_info.metadata["queue_id"] == "queue-id"
+    assert direct_worker_context.executor.scan is None
+    scan.scan_info.scan_report_instructions.append({"changed": True})
+    assert report.request.report_instructions == []
 
 
-def test_run_initializes_scan_before_scan_sequence(direct_worker_context, make_scan):
-    called_steps = []
-    scan = make_scan(called_steps=called_steps)
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-
-    def initialize_scan():
-        called_steps.append("_initialize_scan")
-
-    scan.actions._initialize_scan = mock.MagicMock(side_effect=initialize_scan)
-
-    direct_worker_context.direct_worker.run(scan)
-
-    assert called_steps[:2] == ["_initialize_scan", "prepare_scan"]
+def test_initialization_precedes_hooks(direct_worker_context, make_assignment):
+    assignment = make_assignment()
+    scan = assignment.scan
+    scan.actions._initialize_scan.side_effect = lambda: scan.called_steps.append("init")
+    direct_worker_context.executor.run(assignment)
+    assert scan.called_steps[:2] == ["init", "prepare_scan"]
 
 
-def test_run_executes_modifier_hooks_in_order(direct_worker_context, make_scan):
-    called_steps = []
-    scan = make_scan(called_steps=called_steps)
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
+def test_modifier_hooks_keep_their_order(direct_worker_context, make_assignment):
+    assignment = make_assignment()
+    scan = assignment.scan
     scan._scan_modifier = _HookRecordingModifier(scan)
     scan._scan_modifier_hooks = {
         "stage": {"before": "before_stage"},
@@ -333,22 +228,10 @@ def test_run_executes_modifier_hooks_in_order(direct_worker_context, make_scan):
             "replace": "replace_scan_core",
             "after": "after_scan_core",
         },
-        "at_each_point": {
-            "before": "before_at_each_point",
-            "replace": "replace_at_each_point",
-            "after": "after_at_each_point",
-        },
         "close_scan": {"after": "after_close_scan"},
-        "on_exception": {
-            "before": "before_on_exception",
-            "replace": "replace_on_exception",
-            "after": "after_on_exception",
-        },
     }
-
-    direct_worker_context.direct_worker.run(scan)
-
-    assert called_steps == [
+    direct_worker_context.executor.run(assignment)
+    assert scan.called_steps == [
         "prepare_scan",
         "open_scan",
         "modifier:before_stage",
@@ -364,383 +247,143 @@ def test_run_executes_modifier_hooks_in_order(direct_worker_context, make_scan):
     ]
 
 
-def test_run_releases_scan_locks_on_success(direct_worker_context, make_scan):
-    scan = make_scan()
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.scan_server.device_lock_registry.release_all = mock.MagicMock()
-
-    direct_worker_context.direct_worker.run(scan)
-
-    direct_worker_context.scan_server.device_lock_registry.release_all.assert_called_once_with(
-        "rid-1"
+@pytest.mark.parametrize("fail_step", [None, "prepare_scan", "scan_core", "close_scan"])
+def test_release_locks_on_every_exit(direct_worker_context, make_assignment, fail_step):
+    assignment = make_assignment(fail_step=fail_step)
+    registry = direct_worker_context.scan_server.device_lock_registry
+    registry.acquire_many("rid-1", ["samx"])
+    report = direct_worker_context.executor.run(assignment)
+    assert registry.get_owned_devices("rid-1") == []
+    assert report.status == (
+        InstructionQueueStatus.STOPPED if fail_step else InstructionQueueStatus.COMPLETED
     )
 
 
-def test_run_returns_early_when_signal_event_is_set(direct_worker_context, make_scan):
-    scan = make_scan(fail_step="scan_core")
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.scan_worker.signal_event.set()
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._handle_exception = mock.MagicMock()
-
-    direct_worker_context.direct_worker.run(scan)
-
-    direct_worker_context.direct_worker._handle_exception.assert_not_called()
-    assert direct_worker_context.queue.status == InstructionQueueStatus.PENDING
-    direct_worker_context.scan_worker.signal_event.clear()
-
-
-def test_run_returns_early_when_current_queue_is_none(direct_worker_context, make_scan):
-    scan = make_scan(fail_step="scan_core")
-    direct_worker_context.scan_worker.current_instruction_queue_item = None
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._handle_exception = mock.MagicMock()
-
-    direct_worker_context.direct_worker.run(scan)
-
-    direct_worker_context.direct_worker._handle_exception.assert_not_called()
-
-
-def test_run_reraises_when_queue_is_already_stopped(direct_worker_context, make_scan):
-    scan = make_scan(fail_step="scan_core")
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.queue.stopped = True
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-
-    with pytest.raises(RuntimeError, match="scan_core failed"):
-        direct_worker_context.direct_worker.run(scan)
-
-    direct_worker_context.queue.stopped = False
-
-
-def test_run_reraises_when_queue_has_no_active_request_block(direct_worker_context, make_scan):
-    scan = make_scan(fail_step="scan_core")
-    direct_worker_context.queue.active_scan = None
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-
-    with pytest.raises(RuntimeError, match="scan_core failed"):
-        direct_worker_context.direct_worker.run(scan)
-
-
-def test_run_uses_on_exception_cleanup_before_handling_error(direct_worker_context, make_scan):
-    scan = make_scan(fail_step="scan_core")
-    scan.on_exception = mock.MagicMock()
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._handle_exception = mock.MagicMock(
-        side_effect=ScanAbortion()
-    )
-
-    with pytest.raises(ScanAbortion):
-        direct_worker_context.direct_worker.run(scan)
-
-    assert direct_worker_context.queue.stopped is True
-    assert direct_worker_context.scan_worker.status == InstructionQueueStatus.RUNNING
-    assert scan.actions._metadata_suffix == "__on-exception"
-    scan.on_exception.assert_called_once()
-    assert isinstance(scan.on_exception.call_args.args[0], RuntimeError)
-    assert isinstance(
-        direct_worker_context.direct_worker._handle_exception.call_args.args[0], RuntimeError
-    )
-    direct_worker_context.direct_worker._handle_exception.assert_called_once()
-
-
-def test_run_uses_on_exception_cleanup_for_scan_abortion(direct_worker_context, make_scan):
-    scan = make_scan()
-    scan.on_exception = mock.MagicMock()
-    scan.scan_core = mock.MagicMock(side_effect=ScanAbortion())
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._handle_exception = mock.MagicMock()
-
-    with pytest.raises(ScanAbortion):
-        direct_worker_context.direct_worker.run(scan)
-
-    assert direct_worker_context.queue.stopped is True
-    assert direct_worker_context.scan_worker.status == InstructionQueueStatus.RUNNING
-    assert scan.actions._metadata_suffix == "__on-exception"
-    scan.on_exception.assert_called_once()
-    direct_worker_context.direct_worker._handle_exception.assert_not_called()
-
-
-def test_run_handles_cleanup_exception_before_original_error(direct_worker_context, make_scan):
-    scan = make_scan(fail_step="scan_core")
-    cleanup_exc = UserScanInterruption(exit_info=("halted", "user"))
-    scan.on_exception = mock.MagicMock(side_effect=cleanup_exc)
-    direct_worker_context.queue.active_scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    direct_worker_context.direct_worker._handle_exception = mock.MagicMock(
-        side_effect=ScanAbortion()
-    )
-
-    with pytest.raises(ScanAbortion):
-        direct_worker_context.direct_worker.run(scan)
-
-    scan.actions.send_client_info.assert_called_once_with("")
-    assert isinstance(
-        direct_worker_context.direct_worker._handle_exception.call_args.args[0], RuntimeError
-    )
-    direct_worker_context.queue.stopped = False
-
-
-def test_handle_exception_raises_alarm_for_device_instruction_error(
-    direct_worker_context, make_scan
+def test_error_cleanup_precedes_alarm_and_preserves_root_cause(
+    direct_worker_context, make_assignment
 ):
-    scan = make_scan()
-    direct_worker_context.direct_worker.scan = scan
-    error_info = messages.ErrorInfo(
-        error_message="device failed",
-        compact_error_message="DeviceInstructionError",
-        exception_type="DeviceInstructionError",
+    assignment = make_assignment()
+    cause = ValueError("root")
+
+    def fail():
+        raise ScanAbortion("wrapper") from cause
+
+    assignment.scan.scan_core = fail
+    report = direct_worker_context.executor.run(assignment)
+    assert assignment.scan.called_steps[-1] == ("on_exception", cause)
+    assert report.status == InstructionQueueStatus.STOPPED
+    direct_worker_context.worker.connector.raise_alarm.assert_not_called()
+
+
+def test_error_alarm_contains_request_and_queue_identity(direct_worker_context, make_assignment):
+    assignment = make_assignment(fail_step="scan_core")
+    direct_worker_context.executor.run(assignment)
+    call = direct_worker_context.worker.connector.raise_alarm.call_args
+    assert call.kwargs["severity"] == Alarms.MAJOR
+    assert call.kwargs["metadata"]["RID"] == "rid-1"
+    assert call.kwargs["metadata"]["queue"] == "secondary"
+    assert call.kwargs["metadata"]["queue_id"] == "queue-id"
+    assert call.kwargs["info"].exception_type == "RuntimeError"
+
+
+def test_device_error_preserves_error_info(direct_worker_context, make_assignment):
+    assignment = make_assignment()
+    info = messages.ErrorInfo(
+        error_message="full",
+        compact_error_message="failure",
+        exception_type="DeviceError",
         device="samx",
     )
-    exc = DeviceInstructionError(error_info)
-
-    with pytest.raises(ScanAbortion):
-        direct_worker_context.direct_worker._handle_exception(exc)
-
-    direct_worker_context.connector.raise_alarm.assert_called_once_with(
-        severity=Alarms.MAJOR, info=error_info, metadata={"scan_id": "scan-id", "scan_number": 7}
-    )
-
-
-def test_handle_exception_raises_alarm_for_generic_exception(direct_worker_context, make_scan):
-    scan = make_scan()
-    direct_worker_context.direct_worker.scan = scan
-
-    try:
-        raise RuntimeError("boom")
-    except RuntimeError as exc:
-        with pytest.raises(ScanAbortion):
-            direct_worker_context.direct_worker._handle_exception(exc)
-
-    direct_worker_context.connector.raise_alarm.assert_called_once()
-    assert (
-        direct_worker_context.connector.raise_alarm.call_args.kwargs["info"].exception_type
-        == "RuntimeError"
-    )
-
-
-def test_propagate_error_raises_major_alarm_with_scan_metadata(direct_worker_context, make_scan):
-    scan = make_scan()
-    direct_worker_context.direct_worker.scan = scan
-
-    direct_worker_context.direct_worker._propagate_error("traceback", RuntimeError("boom"))
-
-    direct_worker_context.connector.raise_alarm.assert_called_once()
-    assert direct_worker_context.connector.raise_alarm.call_args.kwargs["severity"] == Alarms.MAJOR
-    assert direct_worker_context.connector.raise_alarm.call_args.kwargs["metadata"] == {
-        "scan_id": "scan-id",
-        "scan_number": 7,
-    }
-    assert (
-        direct_worker_context.connector.raise_alarm.call_args.kwargs["info"].exception_type
-        == "RuntimeError"
-    )
+    assignment.scan.scan_core = mock.Mock(side_effect=DeviceInstructionError(info))
+    direct_worker_context.executor.run(assignment)
+    assert direct_worker_context.worker.connector.raise_alarm.call_args.kwargs["info"] == info
 
 
 @pytest.mark.parametrize(
-    ("scan_id", "scan_number", "expected"),
-    [
-        (None, None, {}),
-        ("scan-id", None, {"scan_id": "scan-id"}),
-        (None, 7, {"scan_number": 7}),
-        ("scan-id", 7, {"scan_id": "scan-id", "scan_number": 7}),
-    ],
+    "action, expected, cleanup",
+    [("abort", "aborted", True), ("halt", "halted", False), ("complete", "user_completed", True)],
 )
-def test_get_metadata_for_alarm(direct_worker_context, make_scan, scan_id, scan_number, expected):
-    direct_worker_context.direct_worker.scan = SimpleNamespace(
-        scan_info=SimpleNamespace(scan_id=scan_id, scan_number=scan_number)
-    )
-
-    assert direct_worker_context.direct_worker.get_metadata_for_alarm() == expected
-
-
-def test_run_on_exception_hook_invokes_scan_hook_when_enabled(direct_worker_context, make_scan):
-    scan = make_scan()
-    scan.on_exception = mock.MagicMock()
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.run_on_exception_hook = True
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    exc = ScanAbortion()
-
-    direct_worker_context.direct_worker._run_on_exception_hook(exc)
-
-    scan._shutdown_event.clear.assert_called_once_with()
-    scan.on_exception.assert_called_once_with(exc)
-
-
-def test_run_on_exception_hook_uses_root_cause(direct_worker_context, make_scan):
-    scan = make_scan()
-    scan.on_exception = mock.MagicMock()
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.run_on_exception_hook = True
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    root_cause = RuntimeError("root cause")
-
-    try:
-        raise root_cause
-    except RuntimeError as cause:
-        exc = ScanAbortion()
-        exc.__cause__ = cause
-        direct_worker_context.direct_worker._run_on_exception_hook(exc)
-
-    scan.on_exception.assert_called_once_with(root_cause)
-
-
-def test_run_on_exception_hook_runs_modifier_with_root_cause(direct_worker_context, make_scan):
-    called_steps = []
-    scan = make_scan(called_steps=called_steps)
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.run_on_exception_hook = True
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-    scan._scan_modifier = _HookRecordingModifier(scan)
-    scan._scan_modifier_hooks = {
-        "on_exception": {
-            "before": "before_on_exception",
-            "replace": "replace_on_exception",
-            "after": "after_on_exception",
-        }
-    }
-    root_cause = RuntimeError("root cause")
-
-    try:
-        raise root_cause
-    except RuntimeError as cause:
-        exc = ScanAbortion()
-        exc.__cause__ = cause
-        direct_worker_context.direct_worker._run_on_exception_hook(exc)
-
-    assert called_steps == [
-        ("modifier:before_on_exception", root_cause),
-        ("modifier:replace_on_exception", root_cause),
-        ("modifier:after_on_exception", root_cause),
-    ]
-    assert ("on_exception", root_cause) not in called_steps
-
-
-def test_run_on_exception_hook_returns_when_scan_is_none(direct_worker_context):
-    direct_worker_context.direct_worker.scan = None
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-
-    direct_worker_context.direct_worker._run_on_exception_hook(ScanAbortion())
-
-
-def test_run_on_exception_hook_returns_when_on_exception_is_missing(
-    direct_worker_context, make_scan
+def test_interruptions_preserve_status_and_cleanup(
+    direct_worker_context, make_assignment, action, expected, cleanup
 ):
-    scan = make_scan()
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.run_on_exception_hook = True
+    assignment = make_assignment()
 
-    direct_worker_context.direct_worker._run_on_exception_hook(ScanAbortion())
+    def interrupt():
+        receipt = assignment.control.stop((expected, "user"), cleanup=cleanup)
+        receipt.set()
+        assignment.scan.actions._interruption_callback()
 
-
-def test_run_on_exception_hook_sends_client_info_when_hook_fails(direct_worker_context, make_scan):
-    scan = make_scan()
-
-    def _fail():
-        raise RuntimeError("cleanup failed")
-
-    scan.on_exception = _fail
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.run_on_exception_hook = True
-    direct_worker_context.device_manager._rpc_method = mock.MagicMock(return_value=mock.MagicMock())
-
-    direct_worker_context.direct_worker._run_on_exception_hook(ScanAbortion())
-
-    scan.actions.send_client_info.assert_called_once_with("")
-
-
-def test_run_on_exception_hook_skips_when_disabled(direct_worker_context, make_scan):
-    scan = make_scan()
-    scan.on_exception = mock.MagicMock()
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-    direct_worker_context.queue.run_on_exception_hook = False
-
-    direct_worker_context.direct_worker._run_on_exception_hook(ScanAbortion())
-
-    scan.on_exception.assert_not_called()
-
-
-def test_handle_scan_abortion_sends_abort_status_via_scan_actions(direct_worker_context, make_scan):
-    scan = make_scan()
-    direct_worker_context.queue.exit_info = None
-    direct_worker_context.queue.run_on_exception_hook = True
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.direct_worker.reset = mock.MagicMock()
-    direct_worker_context.scan_server.device_lock_registry.release_all = mock.MagicMock()
-
-    direct_worker_context.direct_worker._handle_scan_abortion(
-        direct_worker_context.queue, ScanAbortion()
+    assignment.scan.scan_core = interrupt
+    report = direct_worker_context.executor.run(assignment)
+    assert (
+        any(
+            isinstance(step, tuple) and step[0] == "on_exception"
+            for step in assignment.scan.called_steps
+        )
+        == cleanup
     )
+    assert report.exit_info == (expected, "user")
+    assignment.scan.actions._send_scan_status.assert_called_with(expected, reason="user")
+    direct_worker_context.worker.connector.raise_alarm.assert_not_called()
 
-    scan.actions._send_scan_status.assert_called_once_with("aborted", reason="alarm")
-    assert direct_worker_context.queue.status == InstructionQueueStatus.STOPPED
-    direct_worker_context.queue.append_to_queue_history.assert_called_once_with()
-    direct_worker_context.queue_state.abort.assert_called_once_with()
-    direct_worker_context.scan_server.device_lock_registry.release_all.assert_called_once_with(
-        "rid-1"
+
+def test_shutdown_before_dispatch_runs_no_hooks(direct_worker_context, make_assignment):
+    assignment = make_assignment()
+    assignment.control.shutdown()
+    report = direct_worker_context.executor.run(assignment)
+    assert assignment.scan.called_steps == []
+    assert report.status == InstructionQueueStatus.STOPPED
+    assignment.scan.actions._send_scan_status.assert_not_called()
+
+
+def test_disabled_cleanup_halts_on_error(direct_worker_context, make_assignment):
+    assignment = make_assignment(fail_step="scan_core")
+    assignment.scan.scan_info.run_on_exception_hook = False
+    direct_worker_context.executor.run(assignment)
+    assert not any(
+        isinstance(step, tuple) and step[0] == "on_exception"
+        for step in assignment.scan.called_steps
     )
-    direct_worker_context.direct_worker.reset.assert_called_once_with()
-    assert direct_worker_context.scan_worker.status == InstructionQueueStatus.RUNNING
+    assignment.scan.actions._send_scan_status.assert_called_with("halted", reason="alarm")
 
 
-def test_handle_scan_abortion_returns_when_scan_is_none(direct_worker_context):
-    direct_worker_context.direct_worker.scan = None
-
-    direct_worker_context.direct_worker._handle_scan_abortion(
-        direct_worker_context.queue, ScanAbortion()
-    )
-
-    direct_worker_context.queue.append_to_queue_history.assert_not_called()
-
-
-def test_handle_scan_abortion_sends_user_status_via_scan_actions(direct_worker_context, make_scan):
-    scan = make_scan()
-    direct_worker_context.queue.exit_info = None
-    direct_worker_context.direct_worker.scan = scan
-
-    direct_worker_context.direct_worker._handle_scan_abortion(
-        direct_worker_context.queue, UserScanInterruption(exit_info=("user_completed", "user"))
-    )
-
-    scan.actions._send_scan_status.assert_called_once_with("user_completed", reason="user")
-
-
-def test_handle_scan_abortion_halts_when_exception_hook_is_disabled(
-    direct_worker_context, make_scan
+def test_cleanup_uses_distinct_event_and_repeat_stop_is_not_lost(
+    direct_worker_context, make_assignment
 ):
-    scan = make_scan()
-    direct_worker_context.queue.exit_info = None
-    direct_worker_context.queue.run_on_exception_hook = False
-    direct_worker_context.direct_worker.scan = scan
-    direct_worker_context.direct_worker.reset = mock.MagicMock()
+    assignment = make_assignment()
+    observed = []
 
-    direct_worker_context.direct_worker._handle_scan_abortion(
-        direct_worker_context.queue, ScanAbortion()
+    def interrupt():
+        assignment.control.stop(("aborted", "user")).set()
+        assignment.control.checkpoint()
+
+    def cleanup(exc):
+        observed.append(assignment.scan._shutdown_event)
+        assignment.control.stop(("halted", "user"), cleanup=False).set()
+        assignment.control.checkpoint()
+
+    assignment.scan.scan_core = interrupt
+    assignment.scan.on_exception = cleanup
+    report = direct_worker_context.executor.run(assignment)
+    assert observed == [assignment.control.cleanup_event]
+    assert assignment.control.execution_event.is_set()
+    assert assignment.control.cleanup_event.is_set()
+    assert report.exit_info == ("aborted", "user")
+
+
+def test_pause_is_woken_by_continue(direct_worker_context, make_assignment):
+    assignment = make_assignment()
+    executor = direct_worker_context.executor
+    executor.assignment, executor.scan = assignment, assignment.scan
+    paused = threading.Event()
+    assignment.scan.actions._send_scan_status.side_effect = lambda status: (
+        paused.set() if status == "paused" else None
     )
-
-    scan.actions._send_scan_status.assert_called_once_with("halted", reason="alarm")
-
-
-def test_update_queue_info_forwards_to_queue_manager(direct_worker_context):
-    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
-
-    direct_worker_context.direct_worker.update_queue_info()
-
-    direct_worker_context.queue_manager.send_queue_status.assert_called_once_with()
+    assignment.control.set_status(InstructionQueueStatus.PAUSED)
+    thread = threading.Thread(target=executor.check_for_interruption)
+    thread.start()
+    assert paused.wait(1)
+    assignment.control.set_status(InstructionQueueStatus.RUNNING)
+    thread.join(1)
+    assert not thread.is_alive()
+    assert assignment.scan.actions._send_scan_status.call_args_list == [mock.call("paused")]

@@ -304,11 +304,12 @@ class ScanGuard:
         logger.info("Handling scan queue order change")
         sqoc = MessageEndpoints.scan_queue_order_change()
         target_queue = msg.queue
-        if target_queue not in self.parent.queue_manager.queues:
+        queues = self.parent.queue_manager.export_queue()
+        if target_queue not in queues:
             logger.error(f"Invalid queue: {target_queue}")
             self._send_scan_queue_order_change_response(False, f"Invalid queue: {target_queue}")
             return
-        if self.parent.queue_manager.queues[target_queue].status != ScanQueueStatus.PAUSED:
+        if queues[target_queue]["status"] != ScanQueueStatus.PAUSED.name:
             logger.error(f"Queue {target_queue} is not paused.")
             self._send_scan_queue_order_change_response(
                 False, f"Queue {target_queue} is not paused. Cannot move scans."
@@ -321,8 +322,8 @@ class ScanGuard:
             )
             return
 
-        queue = self.parent.queue_manager.queues[target_queue]
-        for scan in queue.queue:
+        queue = queues[target_queue]
+        for scan in queue["info"]:
             if msg.scan_id in scan.scan_id:
                 break
         else:

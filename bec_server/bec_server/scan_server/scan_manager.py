@@ -25,7 +25,7 @@ from bec_server.scan_server.scans.scan_argument_modifier import (
 )
 
 from . import scans as scans_v4_module
-from .scans import legacy_scans as scans_module
+from .scans.scan_arguments import ScanArgType
 from .scans.scan_base import ScanBase as ScanBaseV4
 
 if TYPE_CHECKING:
@@ -43,13 +43,13 @@ INTERNAL_SCAN_CLASSES = {
 }
 
 _SCAN_ARG_TYPE_TO_DTYPE = {
-    scans_module.ScanArgType.DEVICE: DeviceBase,
-    scans_module.ScanArgType.FLOAT: float,
-    scans_module.ScanArgType.INT: int,
-    scans_module.ScanArgType.BOOL: bool,
-    scans_module.ScanArgType.STR: str,
-    scans_module.ScanArgType.LIST: list,
-    scans_module.ScanArgType.DICT: dict,
+    ScanArgType.DEVICE: DeviceBase,
+    ScanArgType.FLOAT: float,
+    ScanArgType.INT: int,
+    ScanArgType.BOOL: bool,
+    ScanArgType.STR: str,
+    ScanArgType.LIST: list,
+    ScanArgType.DICT: dict,
 }
 
 
@@ -64,7 +64,7 @@ class ScanManager:
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
+        self.scan_dict: dict[str, type[ScanBaseV4]] = {}
         self._plugins = {}
         self.parent.connector.register(
             MessageEndpoints.service_request(), cb=self.handle_reload_scans_request
@@ -76,7 +76,7 @@ class ScanManager:
     @staticmethod
     def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, Type]]:
         """
-        Get all available scans, including legacy scans, v4 scans and plugin scans.
+        Get available direct scans, including supported plugin scans.
 
         Args:
             allow_duplicates (bool): If True, allow duplicate scan names. Default is False.
@@ -106,13 +106,6 @@ class ScanManager:
         # internal, v4 scans
         members: list[tuple[str, Type]] = ScanManager._get_v4_scan_members()
 
-        # internal, legacy scans. We skip duplicates here because we want to prioritize v4 scans over legacy scans.
-        _append_new_scan_members(
-            members,
-            inspect.getmembers(scans_module, predicate=inspect.isclass),
-            skip_duplicates=True,
-        )
-
         # plugin scans
         _append_new_scan_members(
             members,
@@ -122,12 +115,8 @@ class ScanManager:
 
         to_remove = []
         for name, scan_cls in members:
-            is_scan = issubclass(scan_cls, (scans_module.RequestBase, ScanBaseV4))
-            if (
-                not is_scan
-                or not scan_cls.scan_name
-                or scan_cls in (scans_module.RequestBase, ScanBaseV4)
-            ):
+            is_scan = issubclass(scan_cls, ScanBaseV4)
+            if not is_scan or not scan_cls.scan_name or scan_cls is ScanBaseV4:
                 logger.debug(f"Ignoring {name}")
                 to_remove.append((name, scan_cls))
         for item in to_remove:
@@ -176,19 +165,7 @@ class ScanManager:
                 )
                 continue
 
-            report_classes = [
-                scans_module.ScanBase,
-                scans_module.AsyncFlyScanBase,
-                scans_module.SyncFlyScanBase,
-                scans_module.ScanStubs,
-                scans_module.ScanComponent,
-            ]
-            base_cls = scans_module.RequestBase.__name__
-            for report_cls in report_classes:
-                if issubclass(scan_cls, report_cls):
-                    base_cls = report_cls.__name__
-            if issubclass(scan_cls, ScanBaseV4):
-                base_cls = "ScanBaseV4"
+            base_cls = "ScanBaseV4"
 
             self.scan_dict[scan_cls.scan_name] = scan_cls
             gui_config = (
@@ -278,6 +255,7 @@ class ScanManager:
         return converted_arg_input
 
     def handle_reload_scans_request(self, msg):
+        """Reload and publish direct scans when requested by the client."""
         message: messages.ServiceRequestMessage = msg.value
         if message.action == "reload_scans":
             self.update_available_scans(reload=True)
@@ -290,7 +268,7 @@ class ScanManager:
         if not plugins:
             return verified_plugins
         for name, cls in plugins.items():
-            if not issubclass(cls, (scans_module.RequestBase, ScanBaseV4)):
+            if not issubclass(cls, ScanBaseV4):
                 continue
             verified_plugins[name] = cls
             logger.info(f"Loading scan plugin {name}")
@@ -304,8 +282,6 @@ class ScanManager:
         for module_info in pkgutil.iter_modules(
             scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."
         ):
-            if module_info.name == f"{scans_v4_module.__name__}.legacy_scans":
-                continue
             module = importlib.import_module(module_info.name)
             members.extend(
                 (name, cls)

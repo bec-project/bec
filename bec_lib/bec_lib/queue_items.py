@@ -340,7 +340,10 @@ class QueueStorage:
         queue_info = self.current_scan_queue[target_queue].info
         if not queue_info:
             return
-        queue_item = self.find_queue_item_by_ID(queue_info[0].queue_id)
+        active = next(
+            (item for item in queue_info if item.active_request_block is not None), queue_info[0]
+        )
+        queue_item = self.find_queue_item_by_ID(active.queue_id)
         if not queue_item:
             return
         queue_item.update_with_client_message(client_message)

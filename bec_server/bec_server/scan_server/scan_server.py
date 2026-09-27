@@ -37,10 +37,11 @@ class ScanServer(BECService):
         self._start_scan_manager()
         self._start_device_manager()
         self._start_queue_manager()
-        self._start_scan_guard()
         self._start_scan_assembler()
-        self._start_alarm_handler()
         self._reset_scan_number()
+        self.queue_manager.start()
+        self._start_scan_guard()
+        self._start_alarm_handler()
         self._start_procedure_manager(
             use_subprocess_proc_worker=config.model.procedures.use_subprocess_worker
         )
@@ -58,8 +59,7 @@ class ScanServer(BECService):
         self.scan_manager = ScanManager(parent=self)
 
     def _start_queue_manager(self):
-        self.queue_manager = QueueManager(parent=self)
-        self.queue_manager.add_queue("primary")
+        self.queue_manager = QueueManager(parent=self, activate=False)
 
     def _start_scan_assembler(self):
         self.scan_assembler = ScanAssembler(parent=self)
@@ -103,7 +103,11 @@ class ScanServer(BECService):
             logger.info(f"Received alarm: {msg}")
             scan_id = msg.metadata.get("scan_id")
             self.queue_manager.set_abort(
-                scan_id=scan_id, queue=queue, exit_info=("aborted", "alarm")
+                scan_id=scan_id,
+                request_id=msg.metadata.get("RID"),
+                queue=queue,
+                exit_info=("aborted", "alarm"),
+                parameter={"queue_id": msg.metadata.get("queue_id")},
             )
 
     @property
@@ -131,5 +135,5 @@ class ScanServer(BECService):
         self.builtin_actor_manager.shutdown()
         self.actor_manager.shutdown()
         self.proc_manager.shutdown()
+        self.queue_manager.shutdown(timeout=per_thread_timeout_s)
         self.device_manager.shutdown()
-        self.queue_manager.shutdown()

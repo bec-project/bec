@@ -605,3 +605,34 @@ def test_get_last_device_readback(scan_bundler_mock):
             mock.call(MessageEndpoints.device_readback("samx"), connector_mock.pipeline())
         ]
         assert ret == [dev_msg.content["signals"]]
+
+
+def test_queue_reports_follow_active_item_after_reordering(scan_bundler_mock):
+    request = messages.RequestBlock(
+        msg=messages.ScanQueueMessage(scan_type="line_scan", parameter={}, queue="primary"),
+        RID="rid",
+        is_scan=True,
+        scan_id="scan",
+        scan_number=1,
+        readout_priority={},
+        report_instructions=[{"readback": {"devices": ["samx"]}}],
+    )
+    pending = messages.QueueInfoEntry(
+        queue_id="pending",
+        request_blocks=[],
+        status="PENDING",
+        active_request_block=None,
+        scan_id=[],
+        is_scan=[],
+        scan_number=[],
+    )
+    active = pending.model_copy(deep=True)
+    active.queue_id = "active"
+    active.active_request_block = request
+    message = messages.ScanQueueStatusMessage(
+        queue={"primary": {"status": "PAUSED", "info": [pending, active]}}
+    )
+    scan_bundler_mock.on_scan_queue_status_update(
+        MessageObject(MessageEndpoints.scan_queue_status().endpoint, message)
+    )
+    assert scan_bundler_mock.scan_report_instructions["scan"] == request.report_instructions

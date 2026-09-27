@@ -10,12 +10,12 @@ from bec_lib.logger import bec_logger
 from bec_lib.scan_input_validator import ScanInputValidator
 from bec_lib.signature_serializer import serialize_dtype
 
-from .scans.legacy_scans import RequestBase, ScanArgType, ScanBase, unpack_scan_args
 from .scans.scan_argument_modifier import (
     apply_scan_argument_defaults,
     get_scan_modifier,
     scan_signature_with_modifiers,
 )
+from .scans.scan_arguments import ScanArgType, unpack_scan_args
 from .scans.scan_base import ScanBase as ScanBaseV4
 
 logger = bec_logger.logger
@@ -36,19 +36,6 @@ class ScanAssembler:
         self.scan_manager = self.parent.scan_manager
         self.input_validator = ScanInputValidator(device_manager=self.device_manager)
 
-    def is_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
-        """Check if the scan queue message would construct a new scan.
-
-        Args:
-            msg (messages.ScanQueueMessage): message to be checked
-
-        Returns:
-            bool: True if the message is a scan message, False otherwise
-        """
-        scan = msg.content.get("scan_type")
-        scan_cls = self.scan_manager.scan_dict[scan]
-        return issubclass(scan_cls, ScanBase)
-
     def is_direct_scan_message(self, msg: messages.ScanQueueMessage) -> bool:
         """Check if the scan queue message would construct a new direct scan.
 
@@ -60,43 +47,6 @@ class ScanAssembler:
         scan = msg.content.get("scan_type")
         scan_cls = self.scan_manager.scan_dict[scan]
         return issubclass(scan_cls, ScanBaseV4)
-
-    def assemble_device_instructions(
-        self, msg: messages.ScanQueueMessage, scan_id: str
-    ) -> RequestBase:
-        """Assemble the device instructions for a given ScanQueueMessage.
-        This will be achieved by calling the specified class (must be a derived class of RequestBase)
-
-        Args:
-            msg (messages.ScanQueueMessage): scan queue message for which the instruction should be assembled
-            scan_id (str): scan id of the scan
-
-        Raises:
-            ScanAbortion: Raised if the scan initialization fails.
-
-        Returns:
-            RequestBase: Scan instance of the initialized scan class
-        """
-        scan = msg.content.get("scan_type")
-        scan_cls = self.scan_manager.scan_dict[scan]
-
-        logger.info(f"Preparing instructions of request of type {scan} / {scan_cls.__name__}")
-        args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
-        kwargs = msg.content.get("parameter", {}).get("kwargs", {})
-
-        request_inputs = self._assemble_request_inputs(scan_cls, args, kwargs)
-
-        scan_instance = scan_cls(
-            *args,
-            device_manager=self.device_manager,
-            parameter=msg.content.get("parameter"),
-            metadata=msg.metadata,
-            instruction_handler=self.parent.queue_manager.instruction_handler,
-            scan_id=scan_id,
-            request_inputs=request_inputs,
-            **kwargs,
-        )
-        return scan_instance
 
     def assemble_direct_scan(
         self, msg: messages.ScanQueueMessage, scan_id: str | None

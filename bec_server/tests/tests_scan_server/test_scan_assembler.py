@@ -11,8 +11,10 @@ from bec_lib.tests.fixtures import dm_with_devices
 from bec_server.scan_server.scan_assembler import ScanAssembler
 from bec_server.scan_server.scans import ScanArgType
 from bec_server.scan_server.scans.acquire import Acquire
-from bec_server.scan_server.scans.legacy_scans import FermatSpiralScan, LineScan, RequestBase
+from bec_server.scan_server.scans.fermat_scan import FermatSpiralScan
+from bec_server.scan_server.scans.line_scan import LineScan
 from bec_server.scan_server.scans.scan_argument_modifier import scan_signature_with_modifiers
+from bec_server.scan_server.scans.scan_arguments import unpack_scan_args
 from bec_server.scan_server.tests.utils import NoopScan
 
 
@@ -21,7 +23,7 @@ def scan_assembler():
     return ScanAssembler(parent=mock.MagicMock())
 
 
-class CustomScan(RequestBase):
+class CustomScan(NoopScan):
     scan_name = "custom_scan"
 
     def __init__(self, *args, **kwargs):
@@ -31,7 +33,7 @@ class CustomScan(RequestBase):
         pass
 
 
-class CustomScan2(RequestBase):
+class CustomScan2(NoopScan):
     scan_name = "custom_scan2"
 
     def __init__(self, arg1, *args, **kwargs):
@@ -294,8 +296,11 @@ def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assemb
         }
 
     with mock.patch.object(scan_assembler, "scan_manager", MockScanManager()):
-        request = scan_assembler.assemble_device_instructions(msg, "scan_id")
-        assert request.request_inputs == request_inputs_expected
+        scan_cls = MockScanManager.scan_dict[msg.scan_type]
+        request_inputs = scan_assembler._assemble_request_inputs(
+            scan_cls, unpack_scan_args(msg.parameter["args"]), msg.parameter["kwargs"]
+        )
+        assert request_inputs == request_inputs_expected
 
 
 def test_scan_assembler_assemble_direct_scan_resolves_device_args(dm_with_devices):

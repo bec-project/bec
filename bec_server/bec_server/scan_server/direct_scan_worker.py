@@ -1,23 +1,23 @@
+"""Direct scan execution on the worker side of the queue channels."""
+
 from __future__ import annotations
 
-import time
 import traceback
 from typing import TYPE_CHECKING
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.errors import DeviceInstructionError, ScanAbortion, UserScanInterruption
-from bec_server.scan_server.scan_queue import InstructionQueueStatus
-from bec_server.scan_server.scans.scan_base import ScanBase
 
-logger = bec_logger.logger
+from .errors import DeviceInstructionError, ScanAbortion, UserScanInterruption
+from .queue_channels import InstructionQueueStatus, ScanAssignment, ScanReport
 
 if TYPE_CHECKING:
-    from bec_server.scan_server.scan_queue import DirectInstructionQueueItem
-    from bec_server.scan_server.scan_worker import ScanWorker
+    from .scan_worker import ScanWorker
+    from .scans.scan_base import ScanBase
 
-SCAN_SEQUENCE = [
+logger = bec_logger.logger
+SCAN_SEQUENCE = (
     "prepare_scan",
     "open_scan",
     "stage",
@@ -26,253 +26,192 @@ SCAN_SEQUENCE = [
     "post_scan",
     "unstage",
     "close_scan",
-]
+)
+
+
+def describe_scan(scan: ScanBase, msg: messages.ScanQueueMessage) -> messages.RequestBlock:
+    """Capture a direct scan description on the thread that owns the scan.
+
+    Args:
+        scan (ScanBase): Prepared or executing direct scan owned by the caller.
+        msg (messages.ScanQueueMessage): Original request.
+
+    Returns:
+        messages.RequestBlock: Independent queue-visible metadata.
+    """
+    info = scan.scan_info
+    return messages.RequestBlock(
+        msg=msg.model_copy(deep=True),
+        RID=msg.metadata["RID"],
+        readout_priority=info.readout_priority_modification,
+        is_scan=bool(scan.is_scan),
+        scan_number=info.scan_number,
+        scan_id=info.scan_id,
+        report_instructions=info.scan_report_instructions,
+        owned_device_locks=scan.actions.get_owned_device_locks(),
+        pending_device_locks=scan.actions.get_pending_device_locks(),
+    ).model_copy(deep=True)
 
 
 class DirectScanWorker:
-    """
-    DirectScanWorker runs scan lifecycle methods directly.
-    Unlike GeneratorScanWorker, it does not interpret instructions.
-    Instructions are sent directly to Redis by the scan itself.
-    """
+    # Direct execution binds the ScanActions callbacks and its cancellation event.
+    # pylint: disable=protected-access
+    """Run direct lifecycle hooks without accessing mutable queue or item state."""
 
-    def __init__(self, *, worker: ScanWorker):
+    def __init__(self, *, worker: ScanWorker) -> None:
         self.worker = worker
-        self.scan = None
+        self.scan: ScanBase | None = None
+        self.assignment: ScanAssignment | None = None
 
-    def reset(self):
-        """
-        Reset the state of the scan worker after a scan is completed or aborted.
-        """
-        self.scan = None
-
-    def process_instructions(self, queue: DirectInstructionQueueItem) -> None:
-        """
-        Process the instructions in the given queue item. It runs the scan and handles any exceptions that may occur during the scan execution.
+    def run(self, assignment: ScanAssignment) -> ScanReport:
+        """Execute a transferred scan and return its copied terminal report.
 
         Args:
-            queue (DirectInstructionQueueItem): The queue item containing the scan instructions to process.
+            assignment (ScanAssignment): Scan, identity and cancellation capability.
+
+        Returns:
+            ScanReport: Terminal outcome after exception cleanup and lock release.
         """
-        self.worker.current_instruction_queue_item = queue
+        self.assignment = assignment
+        scan = self.scan = assignment.scan
+        control = assignment.control
+        status = InstructionQueueStatus.COMPLETED
+        error = None
+        exit_info = None
+        entered = False
+        self._bind_scan(scan, assignment)
+        try:
+            self.check_for_interruption()
+            with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
+                entered = True
+                scan.actions._initialize_scan()
+                self.update_queue_info()
+                for step in SCAN_SEQUENCE:
+                    self.check_for_interruption()
+                    getattr(scan, step)()
+                self.check_for_interruption()
+        except Exception as exc:  # pylint: disable=broad-except
+            status = InstructionQueueStatus.STOPPED
+            error = str(exc)
+            if entered and scan.scan_info.run_on_exception_hook and control.begin_cleanup():
+                self._run_on_exception_hook(exc)
+            if not control.shutdown_event.is_set():
+                exit_info = control.exit_info
+                if exit_info is None and isinstance(exc, UserScanInterruption):
+                    exit_info = exc.exit_info  # pylint: disable=no-member
+                terminal, reason = exit_info or (
+                    "aborted" if scan.scan_info.run_on_exception_hook else "halted",
+                    "alarm",
+                )
+                exit_info = (terminal, reason)
+                scan.actions._send_scan_status(terminal, reason=reason)
+                if not isinstance(exc, ScanAbortion):
+                    self._raise_alarm(exc)
+        finally:
+            # Stop-device scope must be captured/sent before ownership is released.
+            control.finish()
+            if control.execution_event.is_set():
+                status = InstructionQueueStatus.STOPPED
+            try:
+                self._release_scan_locks()
+            except Exception as exc:  # pylint: disable=broad-except
+                status, error = InstructionQueueStatus.STOPPED, str(exc)
+                self._raise_alarm(exc)
+        report = ScanReport(
+            assignment.token,
+            describe_scan(scan, assignment.msg),
+            terminal=True,
+            status=status,
+            exit_info=control.exit_info or exit_info,
+            error=error,
+        )
+        self.scan = None
+        self.assignment = None
+        return report
 
-        scan = queue.move_to_next_scan()
-        if scan is None:
-            logger.error("No scan found in the queue item to process.")
-            return
-
-        self.run(scan)
-
-        queue.status = InstructionQueueStatus.COMPLETED
-        self.worker.current_instruction_queue_item = None
-        self.reset()
-
-    def run(self, scan: ScanBase):
-        """
-        Run the scan.
-
-        Args:
-            scan (ScanBase): Scan to run
-        """
-        self.scan = scan
-
-        # pylint: disable=protected-access
+    def _bind_scan(self, scan: ScanBase, assignment: ScanAssignment) -> None:
+        """Bind the assignment's identity and cancellation capability before any hook."""
+        control = assignment.control
+        scan.scan_info.metadata["queue_id"] = assignment.token.queue_id
+        scan.scan_info.scan_queue = assignment.queue_name
+        if assignment.scan_number is not None:
+            scan.scan_info.scan_number = assignment.scan_number
+            scan.scan_info.dataset_number = assignment.dataset_number
+        scan._shutdown_event = control.execution_event
+        scan.actions._shutdown_event = control.execution_event
         scan.actions._interruption_callback = self.check_for_interruption
         scan.actions._update_queue_info_callback = self.update_queue_info
-        queue = self.worker.current_instruction_queue_item
+
+    def check_for_interruption(self) -> None:
+        """Pause cooperatively or interrupt a scan/device wait by assignment identity."""
+        if self.assignment is None:
+            return
+        control = self.assignment.control
+        if control.status == InstructionQueueStatus.PAUSED and self.scan is not None:
+            self.scan.actions._send_scan_status("paused")
+        control.checkpoint()
+
+    def update_queue_info(self) -> None:
+        """Send copied progress through the worker's report channel."""
+        if self.scan is None or self.assignment is None:
+            return
+        self.worker.report(
+            ScanReport(self.assignment.token, describe_scan(self.scan, self.assignment.msg))
+        )
+
+    def _run_on_exception_hook(self, exc: Exception) -> None:
+        scan, assignment = self.scan, self.assignment
+        if scan is None or assignment is None:
+            return
+        control = assignment.control
+        # The old execution event stays set. Cleanup gets its own event and cannot
+        # erase a newer interruption by clearing a shared shutdown signal.
+        scan._shutdown_event = control.cleanup_event
+        scan.actions._shutdown_event = control.cleanup_event
+        scan.actions._metadata_suffix = "__on-exception"
+        registry = getattr(self.worker.parent, "device_lock_registry", None)
+        rid = assignment.msg.metadata.get("RID")
+        if registry is not None and rid is not None:
+            registry.allow_request(rid)
         try:
+            self.check_for_interruption()
             with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
-                scan.actions._initialize_scan()
-                for step in SCAN_SEQUENCE:
-                    method = getattr(scan, step, None)
-                    if not method:
-                        raise ScanAbortion(f"Scan is missing required method: {step}")
-                    self.check_for_interruption()
-                    method()
-        except ScanAbortion as exc:
-            if not self._prepare_exception_cleanup(queue, exc):
-                return
-            raise exc
-        except Exception as exc:
-            if not self._prepare_exception_cleanup(queue, exc):
-                return
-            self._handle_exception(exc)
-        finally:
-            self._release_scan_locks(scan)
+                scan.on_exception(exc.__cause__ or exc)
+        except Exception as cleanup_error:  # pylint: disable=broad-except
+            if not isinstance(cleanup_error, UserScanInterruption):
+                self._raise_alarm(cleanup_error)
+            logger.warning(f"Exception cleanup stopped: {cleanup_error}")
 
-        if queue is None:
-            return
-
-        queue.status = InstructionQueueStatus.COMPLETED
-        self.worker.current_instruction_queue_item = None
-        self.reset()
-
-    def _release_scan_locks(self, scan: ScanBase | None) -> None:
-        if scan is None:
-            return
-        request_id = scan.scan_info.metadata.get("RID")
-        if request_id is None:
+    def _release_scan_locks(self) -> None:
+        if self.assignment is None:
             return
         registry = getattr(self.worker.parent, "device_lock_registry", None)
-        if registry is None:
-            return
-        registry.release_all(request_id)
+        request_id = self.assignment.msg.metadata.get("RID")
+        if registry is not None and request_id is not None:
+            registry.release_all(request_id)
+            registry.allow_request(request_id)
 
-    def _prepare_exception_cleanup(
-        self, queue: DirectInstructionQueueItem | None, exc: Exception
-    ) -> bool:
-        """Prepare exception cleanup for a failed direct scan run.
-
-        Returns True when the caller should continue propagating/handling the
-        original exception, or False when shutdown/no-queue means the run can
-        exit early.
-        """
-        if self.worker.signal_event.is_set():
-            # If the signal event is set, the worker is shutting down and does
-            # not need additional exception handling.
-            return False
-        if queue is None:
-            return False
-        if queue.stopped or not queue.active_request_block:
-            raise exc
-
-        queue.stopped = True
-        try:
-            # We reset the worker to RUNNING to allow for cleanup tasks during
-            # the on_exception hook.
-            self.worker.status = InstructionQueueStatus.RUNNING
-            if self.scan is not None:
-                self.scan.actions._metadata_suffix = "__on-exception"
-            self._run_on_exception_hook(exc)
-        except Exception as exc_cleanup:
-            self.worker.connector.send_client_info("")
-            self._handle_exception(exc_cleanup)
-        return True
-
-    def _handle_exception(self, exc: Exception):
-        content = traceback.format_exc()
-        logger.error(content)
-
-        def _raise_alarm(error_info: messages.ErrorInfo):
-            self.worker.connector.raise_alarm(
-                severity=Alarms.MAJOR, info=error_info, metadata=self.get_metadata_for_alarm()
-            )
-
+    def _raise_alarm(self, exc: Exception) -> None:
+        metadata = self.get_metadata_for_alarm()
         if isinstance(exc, DeviceInstructionError):
-            _raise_alarm(error_info=exc.error_info)
-            raise ScanAbortion from exc
-        error_info = messages.ErrorInfo(
-            error_message=content,
-            compact_error_message=traceback.format_exc(limit=0),
-            exception_type=exc.__class__.__name__,
-            device=None,
-        )
-        _raise_alarm(error_info=error_info)
-        raise ScanAbortion from exc
-
-    def check_for_interruption(self):
-        """
-        Check if the scan has been interrupted by checking the worker's status.
-        If the status is PAUSED, it waits until the status changes to RUNNING.
-        If the status is STOPPED, it raises a ScanAbortion or UserScanInterruption
-        exception depending on the exit_info of the current queue item.
-        """
-        if self.worker.status == InstructionQueueStatus.PAUSED:
-            if self.scan is not None:
-                self.scan.actions._send_scan_status("paused")
-        while self.worker.status == InstructionQueueStatus.PAUSED:
-            time.sleep(0.1)
-        if self.worker.status == InstructionQueueStatus.STOPPED:
-            item = self.worker.current_instruction_queue_item
-            if item is None or item.exit_info is None:
-                raise ScanAbortion()
-            raise UserScanInterruption(exit_info=item.exit_info)
-
-    def update_queue_info(self):
-        """
-        Update the queue info for the current instruction queue item.
-        This is used to propagate the queue status to the client during the scan execution.
-        """
-        logger.info(f"Updating queue info")
-        self.worker.current_instruction_queue_item.parent.queue_manager.send_queue_status()
-
-    def _propagate_error(self, content: str, exc: Exception):
-        """
-        Propagate the error to the client by sending a client info message and raising an alarm with the error information.
-
-        Args:
-            content (str): The error message content to send to the client and include in the alarm information.
-            exc (Exception): The exception that was raised, which will be included in the alarm information.
-        """
-
-        error_info = messages.ErrorInfo(
-            error_message=content,
-            compact_error_message=traceback.format_exc(limit=0),
-            exception_type=exc.__class__.__name__,
-            device=None,
-        )
-        self.worker.connector.raise_alarm(
-            severity=Alarms.MAJOR, info=error_info, metadata=self.get_metadata_for_alarm()
-        )
+            info = exc.error_info
+        else:
+            info = messages.ErrorInfo(
+                error_message=traceback.format_exc(),
+                compact_error_message=str(exc),
+                exception_type=type(exc).__name__,
+                device=None,
+            )
+        self.worker.connector.raise_alarm(severity=Alarms.MAJOR, info=info, metadata=metadata)
 
     def get_metadata_for_alarm(self) -> dict:
-        """
-        Get metadata for the alarm based on the current scan information.
-        This can include details such as the scan ID and scan number,
-        which can help with debugging and identifying the context of the error.
-        """
-        if self.scan is None:
-            return {}
-        metadata = {}
-        if self.scan.scan_info.scan_id is not None:
+        """Return captured request identity even when lifecycle initialization failed."""
+        if self.assignment is None:
+            return {"queue": self.worker.queue_name}
+        metadata = dict(self.assignment.msg.metadata)
+        metadata["queue"] = self.assignment.queue_name
+        metadata["queue_id"] = self.assignment.token.queue_id
+        if self.scan is not None:
             metadata["scan_id"] = self.scan.scan_info.scan_id
-        if self.scan.scan_info.scan_number is not None:
             metadata["scan_number"] = self.scan.scan_info.scan_number
         return metadata
-
-    def _run_on_exception_hook(self, exc: Exception):
-        """
-        Run the on_exception hook implemented by the scan if the current queue item has run_on_exception_hook set to True.
-        The on_exception hook allows the scan to perform cleanup tasks or other actions when an exception occurs
-        """
-        scan = self.scan
-        if scan is None:
-            return
-        if not self.worker.current_instruction_queue_item.run_on_exception_hook:
-            return
-        hook_exc = exc.__cause__ if exc.__cause__ is not None else exc
-        if not hasattr(scan, "on_exception") or not callable(getattr(scan, "on_exception")):
-            return
-        try:
-            scan._shutdown_event.clear()
-            with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
-                scan.on_exception(hook_exc)
-
-        except Exception:
-            scan.actions.send_client_info("")
-            logger.exception("Failed to run direct scan on_exception hook")
-
-    def _handle_scan_abortion(self, queue: DirectInstructionQueueItem, exc: ScanAbortion):
-        # TODO: We currently access the method from the scan worker for being backwards compatible with
-        # the generator-based worker. Once we have fully switched to the direct worker, we should move
-        # the method to the run method of the direct worker and remove it from the scan worker.
-        content = traceback.format_exc()
-        logger.error(content)
-        if self.scan is None:
-            return
-
-        exit_info = exc.exit_info if isinstance(exc, UserScanInterruption) else queue.exit_info
-        if exit_info:
-            self.scan.actions._send_scan_status(exit_info[0], reason=exit_info[1])
-        else:
-            reason = "alarm"
-            if queue.run_on_exception_hook:
-                self.scan.actions._send_scan_status("aborted", reason=reason)
-            else:
-                self.scan.actions._send_scan_status("halted", reason=reason)
-
-        self._release_scan_locks(self.scan)
-        queue.status = InstructionQueueStatus.STOPPED
-        queue.append_to_queue_history()
-        self.worker.parent.queue_manager.queues[self.worker.queue_name].abort()
-        self.reset()
-        self.worker.status = InstructionQueueStatus.RUNNING

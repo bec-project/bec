@@ -2,10 +2,10 @@ import numpy as np
 import pytest
 
 from bec_server.scan_server.path_optimization import PathOptimizerMixin
-from bec_server.scan_server.scans.legacy_scans import (
-    get_fermat_spiral_pos,
-    get_round_roi_scan_positions,
+from bec_server.scan_server.scans.position_generators import (
+    fermat_spiral_pos as get_fermat_spiral_pos,
 )
+from bec_server.scan_server.scans.position_generators import get_round_roi_scan_positions
 
 
 def test_shell_optimization():
@@ -31,7 +31,7 @@ def path_optimizer(request):
     "positions_orig",
     [
         (get_fermat_spiral_pos(-5, 5, -5, 5, 0.5)),
-        (get_round_roi_scan_positions(10, 10, 1, 3)),
+        (get_round_roi_scan_positions(-5, 5, -5, 5, 1, 3)),
         (get_fermat_spiral_pos(5, 15, -5, 5, 1.5)),
         np.asarray(
             [

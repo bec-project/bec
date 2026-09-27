@@ -8,7 +8,7 @@ from bec_lib.device import Device, DeviceBase, Positioner
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import MessageObject
 from bec_lib.scan_args import ScanArgument
-from bec_server.scan_server.scan_manager import ScanManager, scans_module
+from bec_server.scan_server.scan_manager import ScanManager
 from bec_server.scan_server.scans import ScanArgType
 from bec_server.scan_server.tests.utils import NoopScan
 
@@ -141,11 +141,6 @@ def test_scan_manager_get_available_scans_only_appends_new_scan_names():
         with (
             mock.patch.object(
                 ScanManager, "_get_v4_scan_members", return_value=[("preferred", _PreferredV4Scan)]
-            ),
-            mock.patch.object(scans_module.LineScan, "scan_name", "shared_scan"),
-            mock.patch(
-                "bec_server.scan_server.scan_manager.inspect.getmembers",
-                return_value=[("legacy", scans_module.LineScan)],
             ),
             mock.patch.object(
                 ScanManager, "_get_scan_plugins", return_value={"plugin": _PluginDuplicateScan}

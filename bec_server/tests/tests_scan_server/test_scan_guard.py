@@ -487,30 +487,14 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
 )
 def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, response_message):
     sg = scan_guard_mock
-    # shut down the queue manager as we are going to mock its queues
-    if sg.parent.queue_manager:
-        sg.parent.queue_manager.shutdown()
-
-    class MockQueue:
-        def __init__(self):
-            self.signal_event = threading.Event()
-            self.queue = [MockInstructionItem()]
-            self.status = ScanQueueStatus.PAUSED if queue_paused else ScanQueueStatus.RUNNING
-            self._cancel_auto_shutdown_timer_locked = mock.Mock()
-
-        def stop_worker(self):
-            pass
-
-    class MockInstructionItem:
-        def __init__(self):
-            self.queue = MockRequestBlockQueue()
-            self.scan_id = ["scan_id"]
-
-    class MockRequestBlockQueue:
-        def __init__(self):
-            self.scan_id = "scan_id"
-
-    sg.parent.queue_manager.queues = {"primary": MockQueue()}
+    sg.parent.queue_manager.export_queue = mock.Mock(
+        return_value={
+            "primary": {
+                "status": "PAUSED" if queue_paused else "RUNNING",
+                "info": [mock.Mock(scan_id=["scan_id"])],
+            }
+        }
+    )
     msg_obj = MessageObject(MessageEndpoints.scan_queue_order_change_request(), msg)
     sg._scan_queue_order_callback(msg_obj)
     success_call = mock.call(MessageEndpoints.scan_queue_order_change(), msg)

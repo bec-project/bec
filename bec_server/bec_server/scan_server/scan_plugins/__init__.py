@@ -1,1 +1,1 @@
-from .otf_scan import OTFScan
+"""Scan plugins are discovered from installed BEC plugin packages."""

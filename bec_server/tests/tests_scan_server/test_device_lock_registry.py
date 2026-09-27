@@ -2,6 +2,8 @@ import threading
 import time
 from unittest import mock
 
+import pytest
+
 from bec_server.scan_server.device_lock_registry import DeviceLockRegistry
 
 
@@ -156,3 +158,51 @@ def test_device_lock_registry_acquire_many_bundles_queue_update_callback():
 
     assert acquired == ["samx", "samy", "samz"]
     assert wait_states == [["samx", "samy"], []]
+
+
+def test_stop_delivery_fences_release_without_blocking_unrelated_devices():
+    registry = DeviceLockRegistry()
+    registry.acquire("scan", "samx")
+    sending, release_send, released = threading.Event(), threading.Event(), threading.Event()
+    stopped_devices = []
+
+    def send(devices):
+        stopped_devices.extend(devices)
+        sending.set()
+        assert release_send.wait(2)
+
+    stop = threading.Thread(target=lambda: registry.stop_request("scan", send))
+    release = threading.Thread(target=lambda: (registry.release_all("scan"), released.set()))
+    stop.start()
+    try:
+        assert sending.wait(1)
+        release.start()
+        assert not released.wait(0.02)
+        assert registry.get_owned_devices("scan") == ["samx"]
+        assert registry.acquire_many("other", ["samy"]) == ["samy"]
+    finally:
+        release_send.set()
+        stop.join(1)
+        release.join(1)
+    assert released.is_set()
+    assert stopped_devices == ["samx"]
+    assert registry.acquire_many("other", ["samx"]) == ["samx"]
+
+
+def test_stop_rejects_new_acquisition_until_cleanup():
+    registry = DeviceLockRegistry()
+    registry.stop_request("scan", lambda devices: None)
+
+    with pytest.raises(RuntimeError, match="was stopped"):
+        registry.acquire_many("scan", ["samx"])
+    registry.allow_request("scan")
+    assert registry.acquire_many("scan", ["samx"]) == ["samx"]
+
+
+def test_failed_stop_delivery_still_unblocks_release():
+    registry = DeviceLockRegistry()
+    registry.acquire("scan", "samx")
+
+    with pytest.raises(RuntimeError, match="transport"):
+        registry.stop_request("scan", mock.Mock(side_effect=RuntimeError("transport")))
+    assert registry.release_all("scan") == ["samx"]

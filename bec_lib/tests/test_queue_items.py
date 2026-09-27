@@ -642,3 +642,26 @@ def test_queue_item_requests_property(queue_item):
 
     assert len(requests) == 1
     assert requests[0].requestID == "rid_1"
+
+
+def test_client_message_follows_active_item_after_reordering(
+    queue_storage, scan_queue_status_message
+):
+    info = scan_queue_status_message.queue["primary"].info
+    active = info[0].model_copy(deep=True)
+    active.queue_id = "active"
+    active.active_request_block = messages.RequestBlock(
+        msg=messages.ScanQueueMessage(scan_type="line_scan", parameter={}, queue="primary"),
+        RID="rid",
+        is_scan=True,
+        scan_id="scan",
+        scan_number=1,
+        readout_priority={},
+    )
+    info.append(active)
+    queue_storage.update_with_status(scan_queue_status_message)
+    queue_storage.update_with_client_message(
+        messages.ClientInfoMessage(message="active scan", source="scan_server")
+    )
+    assert queue_storage.find_queue_item_by_ID("active").client_messages[0].message == "active scan"
+    assert not queue_storage.find_queue_item_by_ID("queue_id_1").client_messages

@@ -358,3 +358,16 @@ def test_add_scan_segment_emits_data():
     scan_manager.scan_storage.add_scan_segment(msg)
     scan_item.emit_data.assert_called_once_with(msg)
     assert scan_item.live_data.messages == {0: msg}
+
+
+def test_current_scan_info_follows_active_item_after_reordering(scan_queue_status_msg):
+    manager = ScanManager(ConnectorMock(""))
+    info = scan_queue_status_msg.queue["primary"].info
+    active = info[0]
+    active.active_request_block = active.request_blocks[0]
+    pending = active.model_copy(deep=True)
+    pending.queue_id = "pending"
+    pending.active_request_block = None
+    info.insert(0, pending)
+    manager.queue_storage.current_scan_queue = scan_queue_status_msg.queue
+    assert manager.scan_storage.current_scan_info.queue_id == active.queue_id
