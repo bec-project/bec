@@ -137,15 +137,11 @@ def test_queuemanager_add_to_queue(queuemanager_mock, queue):
     assert queue_manager.queues[queue].queue.popleft().scan_msgs[0] == msg
 
 
-@pytest.mark.parametrize("group_metadata", [{}, {"scan_def_id": "old"}, {"queue_group": "old"}])
-def test_queue_insert_creates_independent_current_scan_items(queuemanager_mock, group_metadata):
+def test_queue_insert_creates_independent_current_scan_items(queuemanager_mock):
     queue_manager = queuemanager_mock()
     queue = ScanQueue(queue_manager)
     first = _queued_scan_message(rid="first")
     second = _queued_scan_message(rid="second")
-    first.metadata.update(group_metadata)
-    second.metadata.update(group_metadata)
-
     queue.insert(first)
     queue.insert(second)
 

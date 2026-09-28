@@ -331,9 +331,8 @@ class ScanStorage:
         """Update a scan item with new status information.
 
         This method is thread-safe and updates various scan attributes based on the
-        status message, including timestamps, scan number, number of points, and
-        scan definition IDs. If the scan item doesn't exist yet, the update is queued
-        for later processing.
+        status message, including timestamps, scan number, and number of points.
+        If the scan item doesn't exist yet, the update is queued for later processing.
 
         Args:
             scan_status: The status message containing updated scan information.

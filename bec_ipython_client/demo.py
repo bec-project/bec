@@ -171,9 +171,6 @@ scans.umv(dev.samx, 5, dev.samy, 20, relative=False)
 # scans.umv(dev.samx, 1000)
 
 
-# scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02, md={"queue_group": queue_group})
-# scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.02, md={"queue_group": queue_group})
-
 # scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=1)
 
 # event = threading.Event()
