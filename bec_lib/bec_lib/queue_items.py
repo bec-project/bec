@@ -161,10 +161,10 @@ class QueueItem:
         current_queue = self.scan_manager.queue_storage.current_scan_queue
         if not current_queue:
             return None
-        for queue_group in current_queue.values():
-            if not isinstance(queue_group, messages.ScanQueueStatus):
+        for queue_status in current_queue.values():
+            if not isinstance(queue_status, messages.ScanQueueStatus):
                 continue
-            for queue_position, queue in enumerate(queue_group.info):
+            for queue_position, queue in enumerate(queue_status.info):
                 if self.queue_id == queue.queue_id:
                     return queue_position
         return None

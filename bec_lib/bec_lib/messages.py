@@ -605,10 +605,7 @@ DeviceInstructionAction = Literal[
     "open_scan",
     "baseline_reading",
     "close_scan",
-    "open_scan_def",
-    "close_scan_def",
     "publish_data_as_read",
-    "close_scan_group",
 ]
 
 
@@ -631,10 +628,7 @@ class DeviceInstructionMessage(BECMessage):
                         "open_scan",
                         "baseline_reading",
                         "close_scan",
-                        "open_scan_def",
-                        "close_scan_def",
                         "publish_data_as_read",
-                        "close_scan_group",
                         ]) : Device action, note rpc calls can run any method of the device. The function name needs to be specified in parameters['func']
         parameter (dict): Parameters required for the device action
         metadata (dict, optional): Metadata to describe the conditions of the device instruction
