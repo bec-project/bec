@@ -730,12 +730,24 @@ class DeviceManagerBase:
             return []
         return devices.content["resource"]
 
-    def _add_multiple_devices_with_log(self, devices: Iterable[tuple[dict, DeviceInfoMessage]]):
+    def _add_multiple_devices_with_log(
+        self, devices: Iterable[tuple[dict, DeviceInfoMessage | None]]
+    ):
         try:
             override = self._allow_override
             self._allow_override = True
-            logs = (self._add_device(*conf_msg) for conf_msg in devices if conf_msg is not None)
-            logger.info(f"Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))  # type: ignore # filtered
+            logs = []
+            for dev, info in devices:
+                if info is None:
+                    logger.warning(
+                        f"Skipping configured device '{dev.get('name')}': "
+                        "no device info is available from the device server."
+                    )
+                    continue
+                if result := self._add_device(dev, info):
+                    logs.append(result)
+            if logs:
+                logger.info("Adding new devices:\n" + ", ".join(f"{name}: {t}" for name, t in logs))
         finally:
             self._allow_override = override
 
@@ -778,7 +790,7 @@ class DeviceManagerBase:
                 (dev, self._get_device_info(dev.get("name"))) for dev in self._session["devices"]
             )
 
-    def _get_device_info(self, device_name) -> DeviceInfoMessage:
+    def _get_device_info(self, device_name) -> DeviceInfoMessage | None:
         return self.connector.get(MessageEndpoints.device_info(device_name))
 
     def check_request_validity(self, msg: DeviceConfigMessage) -> None:
