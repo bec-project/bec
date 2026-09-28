@@ -104,6 +104,29 @@ def test_get_redis_device_config(device_manager):
         assert device_manager._get_redis_device_config() == {"devices": [{}]}
 
 
+def test_load_session_skips_device_without_info(device_manager):
+    missing = {"name": "missing"}
+    available = {"name": "available"}
+    info = mock.sentinel.device_info
+    device_manager._session["devices"] = [missing, available]
+
+    with mock.patch.object(
+        device_manager, "_get_device_info", side_effect=[None, info]
+    ) as get_info:
+        with mock.patch.object(
+            device_manager, "_add_device", return_value=("available", "positioner")
+        ) as add_device:
+            with mock.patch("bec_lib.devicemanager.logger") as logger:
+                device_manager._load_session()
+
+    assert get_info.call_args_list == [mock.call("missing"), mock.call("available")]
+    add_device.assert_called_once_with(available, info)
+    logger.warning.assert_called_once_with(
+        "Skipping configured device 'missing': no device info is available from the device server."
+    )
+    logger.info.assert_called_once_with("Adding new devices:\navailable: positioner")
+
+
 def test_get_devices_with_tags(test_config_yaml, dm_with_devices):
     config_content = test_config_yaml
     device_manager = dm_with_devices
