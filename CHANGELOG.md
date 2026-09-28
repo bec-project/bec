@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v3.171.6 (2026-09-28)
+
+### Bug Fixes
+
+- **serialization**: Reject NumPy object arrays
+  ([`d50d62e`](https://github.com/bec-project/bec/commit/d50d62eac6765fcd8da472e756b74f0f2d56e006))
+
+Remove pickle-backed NumPy decoding and reject object-containing dtypes in MessagePack and JSON.
+  Keep Redis stream listeners alive when legacy records are rejected.
+
+Producers must use non-object dtypes or supported lists and dictionaries; legacy object-array
+  payloads are rejected.
+
+
 ## v3.171.5 (2026-09-28)
 
 ### Bug Fixes
