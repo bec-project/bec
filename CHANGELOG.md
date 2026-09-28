@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v3.171.9 (2026-09-28)
+
+### Bug Fixes
+
+- Set_continue should not be applied to stopped scans
+  ([`2168f83`](https://github.com/bec-project/bec/commit/2168f83af2dea886d255dee79967ee96870004f8))
+
+- Stop devices on restart request
+  ([`bb14a27`](https://github.com/bec-project/bec/commit/bb14a27aa1b3af2adaf3b879be121c4789c7d481))
+
+
 ## v3.171.8 (2026-09-28)
 
 ### Bug Fixes
