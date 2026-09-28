@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.171.4 (2026-09-28)
+
+### Bug Fixes
+
+- Keep round scan rings within requested radii
+  ([`01babc5`](https://github.com/bec-project/bec/commit/01babc50146f9af30282d5012f8a66ac581bb34f))
+
+
 ## v3.171.3 (2026-09-28)
 
 ### Bug Fixes
