@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.171.8 (2026-09-28)
+
+### Bug Fixes
+
+- **devicemanager**: Skip add on missing device info
+  ([`8f1aaaa`](https://github.com/bec-project/bec/commit/8f1aaaae7e1f38c4cef232862f43d3bc9932c3cb))
+
+
 ## v3.171.7 (2026-09-28)
 
 ### Bug Fixes
