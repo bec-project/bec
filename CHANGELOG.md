@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v3.171.7 (2026-09-28)
+
+### Bug Fixes
+
+- Add dap service to the list of required services; skip self
+  ([`65a2e0a`](https://github.com/bec-project/bec/commit/65a2e0a6b35b8605b7588d2713cb9c5110ef9ca4))
+
+- Dap service must wait for other services
+  ([`8c25ec5`](https://github.com/bec-project/bec/commit/8c25ec51ee2ce11512f2cfa36f5c4752520ef5b2))
+
+- Device server must emit reload after restart
+  ([`4c15d6a`](https://github.com/bec-project/bec/commit/4c15d6a819afa82b492ec607d280e2a792221df8))
+
+- Reload should lock the device update
+  ([`66f2bed`](https://github.com/bec-project/bec/commit/66f2bede2440bd931fd734ae0d60bc14cb90d2af))
+
+- **device manager**: Prevent simultaneous config loads
+  ([`ffc62bc`](https://github.com/bec-project/bec/commit/ffc62bcc37399922a7e9aef752954f155cf5378d))
+
+
 ## v3.171.6 (2026-09-28)
 
 ### Bug Fixes
