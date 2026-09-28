@@ -487,6 +487,12 @@ def test_DeviceInstructionMessage():
     assert res_loaded.metadata == {}
 
 
+@pytest.mark.parametrize("action", ["close_scan_group", "open_scan_def", "close_scan_def"])
+def test_DeviceInstructionMessage_rejects_removed_scan_actions(action):
+    with pytest.raises(pydantic.ValidationError):
+        messages.DeviceInstructionMessage(device=None, action=action, parameter={})
+
+
 def test_DeviceMonitor2DMessage():
     # Test 2D data
     msg = messages.DeviceMonitor2DMessage(
