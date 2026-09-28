@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v3.171.3 (2026-09-28)
+
+### Bug Fixes
+
+- Reject non-finite beamline limit readbacks
+  ([`c14f8c6`](https://github.com/bec-project/bec/commit/c14f8c6e2ba2ab9b2e2dd1e6cb3adffed2ef5d22))
+
+- **devices**: Preserve distinct nested motor targets
+  ([`cd35e07`](https://github.com/bec-project/bec/commit/cd35e07b44fc411fb206b55928343d29b30cc7de))
+
+### Chores
+
+- Improve gh pr comment instructions
+  ([`1aef9ef`](https://github.com/bec-project/bec/commit/1aef9ef4ac334758f5251a0dee190b6d55ba3e86))
+
+
 ## v3.171.2 (2026-09-25)
 
 ### Bug Fixes
