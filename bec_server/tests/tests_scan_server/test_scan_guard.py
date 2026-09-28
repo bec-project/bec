@@ -1,4 +1,6 @@
 import threading
+from collections.abc import Iterator
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -9,11 +11,18 @@ from bec_lib.redis_connector import MessageObject
 from bec_server.scan_server.scan_guard import ScanGuard, ScanRejection, ScanStatus
 from bec_server.scan_server.scan_queue import ScanQueueStatus
 from bec_server.scan_server.tests.fixtures import scan_server_mock
+from bec_server.scan_server.tests.utils import ScanServerMock
 
 
 def _device_rpc_scan_queue_message(
-    device, *, func="read", func_args=None, func_kwargs=None, metadata=None, queue="primary"
-):
+    device: str | list[str],
+    *,
+    func: str = "read",
+    func_args: list[Any] | None = None,
+    func_kwargs: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    queue: str = "primary",
+) -> messages.ScanQueueMessage:
     return messages.ScanQueueMessage(
         scan_type="device_rpc",
         parameter={
@@ -32,7 +41,7 @@ def _device_rpc_scan_queue_message(
 
 
 @pytest.fixture
-def scan_guard_mock(scan_server_mock):
+def scan_guard_mock(scan_server_mock: ScanServerMock) -> Iterator[ScanGuard]:
     sg = ScanGuard(parent=scan_server_mock)
     sg.device_manager.connector = mock.MagicMock()
     yield sg
@@ -53,7 +62,9 @@ def scan_guard_mock(scan_server_mock):
         (_device_rpc_scan_queue_message("samy", func="set", func_args=[1])),
     ],
 )
-def test_check_motors_movable_enabled(scan_server_mock, scan_queue_msg):
+def test_check_motors_movable_enabled(
+    scan_server_mock: ScanServerMock, scan_queue_msg: messages.ScanQueueMessage
+) -> None:
     k = scan_server_mock
 
     sg = ScanGuard(parent=k)
@@ -69,7 +80,9 @@ def test_check_motors_movable_enabled(scan_server_mock, scan_queue_msg):
 
 
 @pytest.mark.parametrize("device,func,is_valid", [("samx", "read", True)])
-def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
+def test_device_rpc_is_valid(
+    scan_guard_mock: ScanGuard, device: str, func: str, is_valid: bool
+) -> None:
     sg = scan_guard_mock
     assert sg._device_rpc_is_valid(device, func) == is_valid
 
@@ -109,7 +122,9 @@ def test_device_rpc_is_valid(scan_guard_mock, device, func, is_valid):
         ),
     ],
 )
-def test_valid_request(scan_server_mock, scan_queue_msg, valid):
+def test_valid_request(
+    scan_server_mock: ScanServerMock, scan_queue_msg: messages.ScanQueueMessage, valid: bool
+) -> None:
     k = scan_server_mock
 
     sg = ScanGuard(parent=k)
@@ -124,7 +139,7 @@ def test_valid_request(scan_server_mock, scan_queue_msg, valid):
         assert status.accepted == valid
 
 
-def test_check_valid_scan_raises_for_unknown_scan(scan_guard_mock):
+def test_check_valid_scan_raises_for_unknown_scan(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     sg.connector = mock.MagicMock()
     sg.connector.get.return_value = messages.AvailableResourceMessage(
@@ -141,7 +156,7 @@ def test_check_valid_scan_raises_for_unknown_scan(scan_guard_mock):
         sg._check_valid_scan(request)
 
 
-def test_check_valid_scan_accepts_known_scan(scan_guard_mock):
+def test_check_valid_scan_accepts_known_scan(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     sg.connector = mock.MagicMock()
     sg.connector.get.return_value = messages.AvailableResourceMessage(
@@ -157,7 +172,7 @@ def test_check_valid_scan_accepts_known_scan(scan_guard_mock):
     sg._check_valid_scan(request)
 
 
-def test_check_valid_scan_device_rpc(scan_guard_mock):
+def test_check_valid_scan_device_rpc(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     sg.connector = mock.MagicMock()
     sg.connector.get.return_value = messages.AvailableResourceMessage(
@@ -169,7 +184,7 @@ def test_check_valid_scan_device_rpc(scan_guard_mock):
         rpc_valid.assert_called_once_with(device="samy", func="read")
 
 
-def test_check_valid_scan_device_rpc_raises(scan_guard_mock):
+def test_check_valid_scan_device_rpc_raises(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     sg.connector = mock.MagicMock()
     sg.connector.get.return_value = messages.AvailableResourceMessage(
@@ -184,7 +199,7 @@ def test_check_valid_scan_device_rpc_raises(scan_guard_mock):
         assert "Rejected rpc: " in scan_rejection.value.args
 
 
-def test_handle_scan_modification_request(scan_guard_mock):
+def test_handle_scan_modification_request(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueModificationMessage(
         scan_id="scan_id", action="abort", parameter={}, metadata={"RID": "RID"}
@@ -194,7 +209,7 @@ def test_handle_scan_modification_request(scan_guard_mock):
         send.assert_called_once_with(MessageEndpoints.scan_queue_modification(), msg)
 
 
-def test_handle_scan_modification_request_restart(scan_guard_mock):
+def test_handle_scan_modification_request_restart(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueModificationMessage(
         scan_id="scan_id", action="restart", parameter={"RID": "RID"}, metadata={"RID": "new_RID"}
@@ -205,7 +220,7 @@ def test_handle_scan_modification_request_restart(scan_guard_mock):
             send_response.assert_called_once_with(scan_status(), {"RID": "RID"})
 
 
-def test_append_to_scan_queue(scan_guard_mock):
+def test_append_to_scan_queue(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -217,7 +232,7 @@ def test_append_to_scan_queue(scan_guard_mock):
         send.assert_called_once_with(MessageEndpoints.scan_queue_insert(), msg)
 
 
-def test_scan_queue_request_callback(scan_guard_mock):
+def test_scan_queue_request_callback(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -230,7 +245,7 @@ def test_scan_queue_request_callback(scan_guard_mock):
         handle.assert_called_once_with(msg, username="default")
 
 
-def test_scan_queue_modification_request_callback(scan_guard_mock):
+def test_scan_queue_modification_request_callback(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueModificationMessage(
         scan_id="scan_id", action="abort", parameter={}, metadata={"RID": "RID"}
@@ -241,7 +256,7 @@ def test_scan_queue_modification_request_callback(scan_guard_mock):
         handle.assert_called_once_with(msg)
 
 
-def test_send_scan_request_response(scan_guard_mock):
+def test_send_scan_request_response(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     with mock.patch.object(sg.device_manager.connector, "send") as send:
         sg._send_scan_request_response(ScanStatus(), {"RID": "RID"})
@@ -251,7 +266,7 @@ def test_send_scan_request_response(scan_guard_mock):
         )
 
 
-def test_handle_scan_request(scan_guard_mock):
+def test_handle_scan_request(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -360,7 +375,9 @@ def test_handle_scan_request(scan_guard_mock):
         ),
     ],
 )
-def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
+def test_handle_scan_request_bypassed_for_read(
+    scan_guard_mock: ScanGuard, msg: messages.ScanQueueMessage
+) -> None:
     """
     Ensure that the .read and .get RPCs are bypassed in the scan guard.
     """
@@ -384,7 +401,7 @@ def test_handle_scan_request_bypassed_for_read(scan_guard_mock, msg):
                 }
 
 
-def test_handle_scan_request_rejected(scan_guard_mock):
+def test_handle_scan_request_rejected(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -398,7 +415,7 @@ def test_handle_scan_request_rejected(scan_guard_mock):
             append.assert_not_called()
 
 
-def test_is_valid_scan_request_returns_scan_status_on_error(scan_guard_mock):
+def test_is_valid_scan_request_returns_scan_status_on_error(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -413,7 +430,7 @@ def test_is_valid_scan_request_returns_scan_status_on_error(scan_guard_mock):
         assert "Test exception" in status.message
 
 
-def test_check_valid_request_raises_for_missing_client_info(scan_guard_mock):
+def test_check_valid_request_raises_for_missing_client_info(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -425,7 +442,7 @@ def test_check_valid_request_raises_for_missing_client_info(scan_guard_mock):
         sg._check_valid_request(msg, username="default")
 
 
-def test_check_valid_request_raises_for_username_mismatch(scan_guard_mock):
+def test_check_valid_request_raises_for_username_mismatch(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     msg = messages.ScanQueueMessage(
         scan_type="fermat_scan",
@@ -437,7 +454,7 @@ def test_check_valid_request_raises_for_username_mismatch(scan_guard_mock):
         sg._check_valid_request(msg, username="default")
 
 
-def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
+def test_check_valid_request_raises_for_empty_request(scan_guard_mock: ScanGuard) -> None:
     sg = scan_guard_mock
     with pytest.raises(ScanRejection) as scan_rejection:
         sg._check_valid_request(None, username="default")
@@ -485,30 +502,32 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
         ),
     ],
 )
-def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, response_message):
+def test_check_queue_order_callback(
+    scan_guard_mock: ScanGuard,
+    msg: messages.ScanQueueOrderMessage,
+    queue_paused: bool,
+    valid: bool,
+    response_message: str,
+) -> None:
     sg = scan_guard_mock
     # shut down the queue manager as we are going to mock its queues
     if sg.parent.queue_manager:
         sg.parent.queue_manager.shutdown()
 
     class MockQueue:
-        def __init__(self):
+        def __init__(self) -> None:
             self.signal_event = threading.Event()
             self.queue = [MockInstructionItem()]
+            self.active_task = None
             self.status = ScanQueueStatus.PAUSED if queue_paused else ScanQueueStatus.RUNNING
             self._cancel_auto_shutdown_timer_locked = mock.Mock()
 
-        def stop_worker(self):
+        def stop_active(self) -> None:
             pass
 
     class MockInstructionItem:
-        def __init__(self):
-            self.queue = MockRequestBlockQueue()
+        def __init__(self) -> None:
             self.scan_id = ["scan_id"]
-
-    class MockRequestBlockQueue:
-        def __init__(self):
-            self.scan_id = "scan_id"
 
     sg.parent.queue_manager.queues = {"primary": MockQueue()}
     msg_obj = MessageObject(MessageEndpoints.scan_queue_order_change_request(), msg)

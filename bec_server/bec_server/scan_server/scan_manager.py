@@ -8,10 +8,11 @@ import functools
 import importlib
 import inspect
 import pkgutil
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Any, cast
 
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
+from bec_lib.connector import MessageObject
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -58,13 +59,13 @@ class ScanManager:
     Scan Manager loads the available scans and publishes them to redis.
     """
 
-    def __init__(self, *, parent: ScanServer):
+    def __init__(self, *, parent: ScanServer) -> None:
         """
         Scan Manager loads and manages the available scans.
         """
         self.parent = parent
         self.available_scans = {}
-        self.scan_dict: dict[str, type[scans_module.RequestBase] | type[ScanBaseV4]] = {}
+        self.scan_dict: dict[str, type[ScanBaseV4]] = {}
         self._plugins = {}
         self.parent.connector.register(
             MessageEndpoints.service_request(), cb=self.handle_reload_scans_request
@@ -74,20 +75,20 @@ class ScanManager:
 
     @functools.lru_cache(maxsize=2)
     @staticmethod
-    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, Type]]:
+    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, type[ScanBaseV4]]]:
         """
-        Get all available scans, including legacy scans, v4 scans and plugin scans.
+        Get available v4 scans and v4 plugin scans.
 
         Args:
             allow_duplicates (bool): If True, allow duplicate scan names. Default is False.
 
         Returns:
-            list[tuple[str, Type]]: list of scan name and scan class tuples
+            list[tuple[str, type[ScanBaseV4]]]: scan name and scan class tuples
         """
 
         def _append_new_scan_members(
-            members: list[tuple[str, Type]],
-            candidates: list[tuple[str, Type]],
+            members: list[tuple[str, type[ScanBaseV4]]],
+            candidates: list[tuple[str, type[ScanBaseV4]]],
             skip_duplicates: bool = False,
         ) -> None:
             seen_scan_names = {
@@ -104,14 +105,7 @@ class ScanManager:
                     seen_scan_names.add(scan_name)
 
         # internal, v4 scans
-        members: list[tuple[str, Type]] = ScanManager._get_v4_scan_members()
-
-        # internal, legacy scans. We skip duplicates here because we want to prioritize v4 scans over legacy scans.
-        _append_new_scan_members(
-            members,
-            inspect.getmembers(scans_module, predicate=inspect.isclass),
-            skip_duplicates=True,
-        )
+        members: list[tuple[str, type[ScanBaseV4]]] = ScanManager._get_v4_scan_members()
 
         # plugin scans
         _append_new_scan_members(
@@ -122,12 +116,7 @@ class ScanManager:
 
         to_remove = []
         for name, scan_cls in members:
-            is_scan = issubclass(scan_cls, (scans_module.RequestBase, ScanBaseV4))
-            if (
-                not is_scan
-                or not scan_cls.scan_name
-                or scan_cls in (scans_module.RequestBase, ScanBaseV4)
-            ):
+            if not scan_cls.scan_name or scan_cls is ScanBaseV4:
                 logger.debug(f"Ignoring {name}")
                 to_remove.append((name, scan_cls))
         for item in to_remove:
@@ -141,7 +130,7 @@ class ScanManager:
         cls.get_available_scans.cache_clear()
         plugin_helper.reload_plugin_modules()
 
-    def update_available_scans(self, reload: bool = False):
+    def update_available_scans(self, reload: bool = False) -> None:
         """load all scans and plugin scans"""
         if reload:
             self._reload_scan_discovery()
@@ -176,19 +165,7 @@ class ScanManager:
                 )
                 continue
 
-            report_classes = [
-                scans_module.ScanBase,
-                scans_module.AsyncFlyScanBase,
-                scans_module.SyncFlyScanBase,
-                scans_module.ScanStubs,
-                scans_module.ScanComponent,
-            ]
-            base_cls = scans_module.RequestBase.__name__
-            for report_cls in report_classes:
-                if issubclass(scan_cls, report_cls):
-                    base_cls = report_cls.__name__
-            if issubclass(scan_cls, ScanBaseV4):
-                base_cls = "ScanBaseV4"
+            base_cls = "ScanBaseV4"
 
             self.scan_dict[scan_cls.scan_name] = scan_cls
             gui_config = (
@@ -215,7 +192,7 @@ class ScanManager:
             }
 
     @staticmethod
-    def scan_is_internal(scan_cls) -> bool:
+    def scan_is_internal(scan_cls: type[ScanBaseV4]) -> bool:
         """
         Determine if a scan class is internal.
 
@@ -229,7 +206,9 @@ class ScanManager:
             return True
         return getattr(scan_cls, "is_internal", False)
 
-    def validate_gui_config(self, scan_cls, gui_config_override: dict | None = None) -> dict:
+    def validate_gui_config(
+        self, scan_cls: type[ScanBaseV4], gui_config_override: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Validate the gui_config of the scan class
 
@@ -244,7 +223,9 @@ class ScanManager:
 
         if gui_config_override is None and not hasattr(scan_cls, "gui_config"):
             return {}
-        gui_config = scan_cls.gui_config if gui_config_override is None else gui_config_override
+        gui_config = (
+            getattr(scan_cls, "gui_config") if gui_config_override is None else gui_config_override
+        )
         if not isinstance(gui_config, GUIConfig) and not isinstance(gui_config, dict):
             logger.error(
                 f"Invalid gui_config for {scan_cls.scan_name}. gui_config must be of type GUIConfig or dict."
@@ -253,13 +234,13 @@ class ScanManager:
         if isinstance(gui_config, dict):
             original_gui_config = getattr(scan_cls, "gui_config", None)
             try:
-                scan_cls.gui_config = gui_config
-                gui_config = GUIConfig.from_dict(scan_cls)
+                setattr(scan_cls, "gui_config", gui_config)
+                gui_config = GUIConfig.from_dict(cast(Any, scan_cls))
             finally:
-                scan_cls.gui_config = original_gui_config
+                setattr(scan_cls, "gui_config", original_gui_config)
         return gui_config.model_dump()
 
-    def convert_arg_input(self, arg_input) -> dict:
+    def convert_arg_input(self, arg_input: dict[str, Any]) -> dict[str, Any]:
         """
         Convert the arg_input to supported data types
 
@@ -277,20 +258,22 @@ class ScanManager:
             converted_arg_input[key] = serialize_dtype(dtype)
         return converted_arg_input
 
-    def handle_reload_scans_request(self, msg):
-        message: messages.ServiceRequestMessage = msg.value
+    def handle_reload_scans_request(
+        self, msg: MessageObject[messages.ServiceRequestMessage]
+    ) -> None:
+        message = cast(messages.ServiceRequestMessage, msg.value)
         if message.action == "reload_scans":
             self.update_available_scans(reload=True)
             self.publish_available_scans()
 
     @staticmethod
-    def _get_scan_plugins() -> dict[str, type]:
-        verified_plugins = {}
+    def _get_scan_plugins() -> dict[str, type[ScanBaseV4]]:
+        verified_plugins: dict[str, type[ScanBaseV4]] = {}
         plugins = plugin_helper.get_scan_plugins()
         if not plugins:
             return verified_plugins
         for name, cls in plugins.items():
-            if not issubclass(cls, (scans_module.RequestBase, ScanBaseV4)):
+            if not issubclass(cls, ScanBaseV4):
                 continue
             verified_plugins[name] = cls
             logger.info(f"Loading scan plugin {name}")
@@ -298,9 +281,9 @@ class ScanManager:
         return verified_plugins
 
     @staticmethod
-    def _get_v4_scan_members() -> list[tuple[str, Type[ScanBaseV4]]]:
+    def _get_v4_scan_members() -> list[tuple[str, type[ScanBaseV4]]]:
         """Collect classes from all modules in the scans package."""
-        members: list[tuple[str, Type[ScanBaseV4]]] = []
+        members: list[tuple[str, type[ScanBaseV4]]] = []
         for module_info in pkgutil.iter_modules(
             scans_v4_module.__path__, prefix=f"{scans_v4_module.__name__}."
         ):
@@ -310,11 +293,11 @@ class ScanManager:
             members.extend(
                 (name, cls)
                 for name, cls in inspect.getmembers(module, predicate=inspect.isclass)
-                if cls.__module__ == module.__name__
+                if cls.__module__ == module.__name__ and issubclass(cls, ScanBaseV4)
             )
         return members
 
-    def publish_available_scans(self):
+    def publish_available_scans(self) -> None:
         """send all available scans to the broker"""
         self.parent.connector.set_and_publish(
             MessageEndpoints.available_scans(),

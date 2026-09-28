@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 import traceback
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from bec_lib import messages
+from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.scan_queue import ScanQueueStatus
@@ -27,7 +28,7 @@ class ScanStatus:
     Container for scan status.
     """
 
-    def __init__(self, accepted: bool = True, message: str = ""):
+    def __init__(self, accepted: bool = True, message: str = "") -> None:
         self.accepted = accepted
         self.message = message
 
@@ -38,7 +39,7 @@ class ScanGuard:
     accepted, it enqueues a new scan message.
     """
 
-    def __init__(self, *, parent: ScanServer):
+    def __init__(self, *, parent: ScanServer) -> None:
         self.parent = parent
         self.device_manager = self.parent.device_manager
         self.connector = self.parent.connector
@@ -121,7 +122,7 @@ class ScanGuard:
             if not self._device_rpc_is_valid(device=device, func=func):
                 raise ScanRejection(f"Rejected rpc: {request.content}")
 
-    def _device_rpc_is_valid(self, device: str, func: str) -> bool:
+    def _device_rpc_is_valid(self, device: str | list[str] | None, func: str) -> bool:
         # pylint: disable=unused-argument
         # TODO: make sure the device rpc is valid and not exceeding the scope
         if not device:
@@ -164,8 +165,9 @@ class ScanGuard:
             if not self.device_manager.devices[motor].enabled:
                 raise ScanRejection(f"Device {motor} is not enabled.")
 
-    def _scan_queue_request_callback(self, msg):
-        content = msg.value.content
+    def _scan_queue_request_callback(self, msg: MessageObject[messages.ScanQueueMessage]) -> None:
+        scan_msg = cast(messages.ScanQueueMessage, msg.value)
+        content = scan_msg.content
         username_regex = f"^{MessageEndpoints.scan_queue_request('([^/]+)').endpoint}$"
         result = re.match(username_regex, msg.topic)
         if not result:
@@ -174,19 +176,23 @@ class ScanGuard:
 
         logger.info(f"Receiving scan request: {content} from user {username}")
         # pylint: disable=protected-access
-        self._handle_scan_request(msg.value, username=username)
+        self._handle_scan_request(scan_msg, username=username)
 
-    def _scan_queue_modification_request_callback(self, msg):
-        mod_msg = msg.value
+    def _scan_queue_modification_request_callback(
+        self, msg: MessageObject[messages.ScanQueueModificationMessage]
+    ) -> None:
+        mod_msg = cast(messages.ScanQueueModificationMessage | None, msg.value)
         if mod_msg is None:
             logger.warning("Failed to parse scan queue modification message.")
             return
         content = mod_msg.content
         logger.info(f"Receiving scan modification request: {content}")
         # pylint: disable=protected-access
-        self._handle_scan_modification_request(msg.value)
+        self._handle_scan_modification_request(mod_msg)
 
-    def _send_scan_request_response(self, scan_status: ScanStatus, metadata: dict):
+    def _send_scan_request_response(
+        self, scan_status: ScanStatus, metadata: dict[str, Any]
+    ) -> None:
         """
         Send a scan request response message.
         Args:
@@ -199,7 +205,7 @@ class ScanGuard:
         )
         self.device_manager.connector.send(sqrr, rrm)
 
-    def _handle_scan_request(self, msg: messages.ScanQueueMessage, username: str):
+    def _handle_scan_request(self, msg: messages.ScanQueueMessage, username: str) -> None:
         """
         Perform validity checks on the scan request and reply with a 'scan_request_response'.
         If the scan is accepted it will be enqueued.
@@ -230,7 +236,7 @@ class ScanGuard:
         rpc_kwargs = params.get("kwargs", {})
         return rpc_kwargs.get("device"), rpc_kwargs.get("func", "")
 
-    def _direct_device_rpc(self, msg: messages.ScanQueueMessage):
+    def _direct_device_rpc(self, msg: messages.ScanQueueMessage) -> None:
         """
         Directly send a device RPC request without enqueuing.
         Args:
@@ -263,7 +269,7 @@ class ScanGuard:
 
         self.connector.send(MessageEndpoints.device_instructions(), instr)
 
-    def _handle_scan_modification_request(self, msg: messages.ScanQueueModificationMessage):
+    def _handle_scan_modification_request(self, msg: messages.ScanQueueModificationMessage) -> None:
         """
         Perform validity checks on the scan modification request and reply
         with a 'scan_queue_modification_request_response'.
@@ -285,16 +291,17 @@ class ScanGuard:
         sqm = MessageEndpoints.scan_queue_modification()
         self.device_manager.connector.send(sqm, mod_msg)
 
-    def _append_to_scan_queue(self, msg):
+    def _append_to_scan_queue(self, msg: messages.ScanQueueMessage) -> None:
         logger.info("Appending new scan to queue")
-        msg = msg
         sqi = MessageEndpoints.scan_queue_insert()
         self.device_manager.connector.send(sqi, msg)
 
-    def _scan_queue_order_callback(self, msg):
-        self._handle_scan_order_change(msg.value)
+    def _scan_queue_order_callback(
+        self, msg: MessageObject[messages.ScanQueueOrderMessage]
+    ) -> None:
+        self._handle_scan_order_change(cast(messages.ScanQueueOrderMessage, msg.value))
 
-    def _handle_scan_order_change(self, msg: messages.ScanQueueOrderMessage):
+    def _handle_scan_order_change(self, msg: messages.ScanQueueOrderMessage) -> None:
         """
         Handle the scan queue order change request.
         Args:
@@ -304,11 +311,21 @@ class ScanGuard:
         logger.info("Handling scan queue order change")
         sqoc = MessageEndpoints.scan_queue_order_change()
         target_queue = msg.queue
-        if target_queue not in self.parent.queue_manager.queues:
+        queue_manager = self.parent.queue_manager
+        with queue_manager._lock:  # pylint: disable=protected-access
+            queue = queue_manager.queues.get(target_queue)
+            queue_exists = queue is not None
+            queue_paused = queue_exists and queue.status == ScanQueueStatus.PAUSED
+            scan_found = (
+                queue is not None
+                and queue_paused
+                and any(msg.scan_id in scan.scan_id for scan in queue.queue)
+            )
+        if not queue_exists:
             logger.error(f"Invalid queue: {target_queue}")
             self._send_scan_queue_order_change_response(False, f"Invalid queue: {target_queue}")
             return
-        if self.parent.queue_manager.queues[target_queue].status != ScanQueueStatus.PAUSED:
+        if not queue_paused:
             logger.error(f"Queue {target_queue} is not paused.")
             self._send_scan_queue_order_change_response(
                 False, f"Queue {target_queue} is not paused. Cannot move scans."
@@ -321,11 +338,7 @@ class ScanGuard:
             )
             return
 
-        queue = self.parent.queue_manager.queues[target_queue]
-        for scan in queue.queue:
-            if msg.scan_id in scan.scan_id:
-                break
-        else:
+        if not scan_found:
             logger.error(f"Scan {msg.scan_id} not found in queue {target_queue}")
             self._send_scan_queue_order_change_response(
                 False, f"Scan {msg.scan_id} not found in queue {target_queue}"
@@ -334,7 +347,7 @@ class ScanGuard:
         self.device_manager.connector.send(sqoc, msg)
         self._send_scan_queue_order_change_response(True, "Order change accepted")
 
-    def _send_scan_queue_order_change_response(self, accepted: bool, message: str):
+    def _send_scan_queue_order_change_response(self, accepted: bool, message: str) -> None:
         """
         Send a response to the scan queue order change request.
         Args:
