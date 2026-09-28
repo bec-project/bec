@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.171.5 (2026-09-28)
+
+### Bug Fixes
+
+- **actors**: Keep scan interlock active after cold startup
+  ([`b54008b`](https://github.com/bec-project/bec/commit/b54008bf56917241157c57bba220075b782ff195))
+
+
 ## v3.171.4 (2026-09-28)
 
 ### Bug Fixes
