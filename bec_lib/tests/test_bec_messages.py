@@ -77,6 +77,31 @@ def test_device_async_signal_index_message():
     assert res_loaded == msg
 
 
+def test_signal_info_defaults_and_roundtrip():
+    info = messages.SignalInfo()
+    assert info.signals is None
+    assert info.signal_metadata is None
+    assert info.use_alias is False
+
+    configured = messages.SignalInfo(
+        data_type="processed",
+        saved=False,
+        ndim=2,
+        scope="continuous",
+        role="preview",
+        signals=[("image", 1)],
+        signal_metadata={"units": "counts"},
+        acquisition_group="monitored",
+        use_alias=True,
+    )
+    assert messages.SignalInfo.model_validate(configured.model_dump()) == configured
+
+
+def test_signal_info_rejects_invalid_dimensions():
+    with pytest.raises(pydantic.ValidationError):
+        messages.SignalInfo(ndim=3)
+
+
 def test_bundled_message():
     sub_msg = messages.DeviceMessage(signals={"samx": {"value": 5.2}}, metadata={"RID": "1234"})
     msg = messages.BundleMessage()

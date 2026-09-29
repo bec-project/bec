@@ -876,6 +876,58 @@ class DeviceInfoMessage(BECMessage):
     info: dict
 
 
+class SignalInfo(BaseModel):
+    """
+    Base class for signal information.
+    This is used to store metadata about the signal.
+    """
+
+    data_type: Literal["raw", "processed"] = Field(
+        default="raw",
+        description="The data type of the signal indicates whether the signal is raw data or processed data.",
+    )
+    saved: bool = Field(default=True, description="Indicates whether the signal is saved to disk.")
+    ndim: Literal[0, 1, 2] | None = Field(
+        default=None,
+        description="The number of dimensions of the signal. If None, the signal is not expected to have a shape. "
+        "If set to 0, the signal is expected to be a scalar. For signals with multiple sub-signals, "
+        "ndim is expected to be valid for all sub-signals.",
+    )
+    scope: Literal["scan", "continuous"] = Field(
+        default="scan",
+        description="The scope of the signal indicates whether it is relevant for a specific "
+        "scan or provides continuous updates, independent of a scan.",
+    )
+    role: Literal["main", "preview", "diagnostic", "file_event", "progress"] = Field(
+        default="main",
+        description="The role of the signal provides context for its usage and allows other components to filter"
+        " or prioritize signals based on their intended function.",
+    )
+    enabled: bool = True
+    rpc_access: bool = Field(
+        default=False,
+        description="Indicates whether the signal is accessible via RPC. If False, the signal is not shown in the RPC interface.",
+    )
+    signals: list[tuple[str, int]] | None = Field(
+        default=None, description="List of sub-signals with their kinds."
+    )
+    signal_metadata: dict | None = Field(
+        default=None,
+        description="Metadata for the signal, which can include additional information about the signal's properties.",
+    )
+    acquisition_group: Literal["baseline", "monitored"] | str | None = Field(
+        default=None,
+        description="""Specifies the acquisition group of the signal.
+        It can be in sync with 'baseline' or 'monitored' groups mapping readoutPriority.
+        Or mapped to a custom tag that allows grouping signals for acquisition and plotting.
+        If None, the signal does not belong to any specific acquisition group.
+        """,
+    )
+    use_alias: bool = Field(
+        default=False, description="Whether the signal aliases one or more EPICS signals."
+    )
+
+
 class DeviceMonitor2DMessage(BECMessage):
     """Message type for sending device monitor updates from the device server.
 
