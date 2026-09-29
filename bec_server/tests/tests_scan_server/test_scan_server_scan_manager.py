@@ -93,7 +93,7 @@ class _PluginDuplicateScan(NoopScan):
     scan_name = "shared_scan"
 
 
-def test_scan_manager_does_not_apply_gui_config_overrides_to_legacy_gui_config(scan_manager):
+def test_scan_manager_publishes_gui_visibility_without_legacy_gui_config(scan_manager):
     with (
         mock.patch.object(
             ScanManager, "get_available_scans", return_value=[("gui", _GuiConfigScan)]
@@ -107,13 +107,9 @@ def test_scan_manager_does_not_apply_gui_config_overrides_to_legacy_gui_config(s
         scan_manager.scan_dict = {}
         scan_manager.update_available_scans()
 
-    gui_config = scan_manager.available_scans[_GuiConfigScan.scan_name]["gui_config"]
-    groups = {
-        group["name"]: [entry["name"] for entry in group["inputs"]]
-        for group in gui_config["kwarg_groups"]
-    }
-    assert groups["Timing"] == ["exp_time"]
-    assert "Advanced" not in groups
+    scan_info = scan_manager.available_scans[_GuiConfigScan.scan_name]
+    assert scan_info["gui_visibility"] == {"Timing": ["exp_time"]}
+    assert "gui_config" not in scan_info
 
 
 def test_scan_manager_update_available_scans_resets_existing_entries(scan_manager):
