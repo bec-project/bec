@@ -1,5 +1,6 @@
 import copy
 import inspect
+import warnings
 from collections.abc import Iterator
 from contextlib import nullcontext
 from types import SimpleNamespace, UnionType
@@ -299,7 +300,7 @@ class _MockDeviceContainer(dict):
         return []
 
 
-def _infer_v4_device_names(scan_cls, scan_args: tuple, scan_kwargs: dict) -> list[str]:
+def _infer_device_names(scan_cls, scan_args: tuple, scan_kwargs: dict) -> list[str]:
     arg_input = getattr(scan_cls, "arg_input", {}) or {}
     if not arg_input:
         type_hints = get_type_hints(scan_cls.__init__)
@@ -361,7 +362,7 @@ def _infer_v4_device_names(scan_cls, scan_args: tuple, scan_kwargs: dict) -> lis
 
 
 @pytest.fixture
-def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager, tmpdir):
+def scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager, tmpdir):
     scan_classes = {cls.scan_name: cls for _, cls in ScanManager.get_available_scans()}
 
     def _assemble_scan(scan_type, *scan_args, **scan_kwargs):
@@ -376,7 +377,7 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
         connector = ConnectorMock("")
         instruction_handler = InstructionHandler(connector)
         device_names = sorted(
-            set(_infer_v4_device_names(scan_cls, scan_args, scan_kwargs))
+            set(_infer_device_names(scan_cls, scan_args, scan_kwargs))
             | set(readout_priority.monitored_devices)
             | set(readout_priority.baseline_devices)
             | set(readout_priority.continuous_devices)
@@ -434,3 +435,14 @@ def v4_scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager
         return scan
 
     return _assemble_scan
+
+
+@pytest.fixture
+def v4_scan_assembler(scan_assembler):
+    """Return the scan assembler fixture under its deprecated name."""
+    warnings.warn(
+        "v4_scan_assembler is deprecated; use scan_assembler instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return scan_assembler

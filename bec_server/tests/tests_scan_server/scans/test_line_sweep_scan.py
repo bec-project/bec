@@ -37,16 +37,14 @@ def _device_readback_message(device_name: str, value: float) -> MessageObject:
 
 
 @pytest.mark.parametrize(("hook_name", "hook_tests"), LINE_SWEEP_DEFAULT_HOOK_TESTS)
-def test_line_sweep_scan_default_hooks(
-    v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests
-):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=True)
+def test_line_sweep_scan_default_hooks(scan_assembler, nth_done_status_mock, hook_name, hook_tests):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=True)
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
 
 
-def test_line_sweep_scan_prepare_scan_updates_scan_info(v4_scan_assembler):
-    scan = v4_scan_assembler(
+def test_line_sweep_scan_prepare_scan_updates_scan_info(scan_assembler):
+    scan = scan_assembler(
         "line_sweep_scan",
         "samx",
         -5.0,
@@ -69,8 +67,8 @@ def test_line_sweep_scan_prepare_scan_updates_scan_info(v4_scan_assembler):
     ]
 
 
-def test_line_sweep_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
+def test_line_sweep_scan_at_each_point_triggers_and_reads(scan_assembler):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     scan.components.trigger_and_read = mock.MagicMock()
 
     scan.at_each_point()
@@ -78,10 +76,8 @@ def test_line_sweep_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
     scan.components.trigger_and_read.assert_called_once_with()
 
 
-def test_line_sweep_scan_scan_core_moves_and_reads_until_done(
-    v4_scan_assembler, nth_done_status_mock
-):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, min_update=0.1, relative=False)
+def test_line_sweep_scan_scan_core_moves_and_reads_until_done(scan_assembler, nth_done_status_mock):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, min_update=0.1, relative=False)
     scan.prepare_scan()
     done_status = nth_done_status_mock(resolve_after=4)
     scan.device.set = mock.MagicMock(return_value=done_status)
@@ -108,9 +104,9 @@ def test_line_sweep_scan_scan_core_moves_and_reads_until_done(
 
 
 def test_line_sweep_scan_scan_core_coalesces_multiple_readback_updates(
-    v4_scan_assembler, nth_done_status_mock
+    scan_assembler, nth_done_status_mock
 ):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     scan.prepare_scan()
     done_status = nth_done_status_mock(resolve_after=2)
     scan.device.set = mock.MagicMock(return_value=done_status)
@@ -129,10 +125,8 @@ def test_line_sweep_scan_scan_core_coalesces_multiple_readback_updates(
     scan.at_each_point.assert_called_once_with()
 
 
-def test_line_sweep_scan_scan_core_reads_final_pending_update(
-    v4_scan_assembler, nth_done_status_mock
-):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
+def test_line_sweep_scan_scan_core_reads_final_pending_update(scan_assembler, nth_done_status_mock):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     scan.prepare_scan()
     done_status = nth_done_status_mock(resolve_after=2)
     scan.device.set = mock.MagicMock(return_value=done_status)
@@ -151,9 +145,9 @@ def test_line_sweep_scan_scan_core_reads_final_pending_update(
 
 
 def test_line_sweep_scan_scan_core_waits_for_event_when_no_update(
-    v4_scan_assembler, nth_done_status_mock
+    scan_assembler, nth_done_status_mock
 ):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     scan.prepare_scan()
     done_status = nth_done_status_mock(resolve_after=2)
     scan.device.set = mock.MagicMock(return_value=done_status)
@@ -176,9 +170,9 @@ def test_line_sweep_scan_scan_core_waits_for_event_when_no_update(
 
 
 def test_line_sweep_scan_scan_core_triggers_read_when_max_update_expires(
-    v4_scan_assembler, nth_done_status_mock
+    scan_assembler, nth_done_status_mock
 ):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, max_update=0.1, relative=False)
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, max_update=0.1, relative=False)
     scan.prepare_scan()
     done_status = nth_done_status_mock(resolve_after=3)
     scan.device.set = mock.MagicMock(return_value=done_status)
@@ -200,8 +194,8 @@ def test_line_sweep_scan_scan_core_triggers_read_when_max_update_expires(
     scan.at_each_point.assert_called_once_with()
 
 
-def test_line_sweep_scan_device_readback_callback_sets_update_event(v4_scan_assembler):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
+def test_line_sweep_scan_device_readback_callback_sets_update_event(scan_assembler):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=False)
     assert scan._readback_update_event.is_set() is False
 
     scan._device_readback_callback(_device_readback_message("samx", 2.0))
@@ -209,10 +203,8 @@ def test_line_sweep_scan_device_readback_callback_sets_update_event(v4_scan_asse
     assert scan._readback_update_event.is_set() is True
 
 
-def test_line_sweep_scan_post_scan_moves_back_when_relative(
-    v4_scan_assembler, nth_done_status_mock
-):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=True)
+def test_line_sweep_scan_post_scan_moves_back_when_relative(scan_assembler, nth_done_status_mock):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=True)
     completion_status = nth_done_status_mock(resolve_after=2)
     scan.start_positions = [1.0]
     scan.actions.complete_all_devices = mock.MagicMock(return_value=completion_status)
@@ -225,8 +217,8 @@ def test_line_sweep_scan_post_scan_moves_back_when_relative(
     assert completion_status.wait_calls == 1
 
 
-def test_line_sweep_scan_on_exception_moves_back_when_relative(v4_scan_assembler):
-    scan = v4_scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=True)
+def test_line_sweep_scan_on_exception_moves_back_when_relative(scan_assembler):
+    scan = scan_assembler("line_sweep_scan", "samx", -5.0, 5.0, relative=True)
     scan.start_positions = [1.0]
     scan.components.move_and_wait = mock.MagicMock()
 

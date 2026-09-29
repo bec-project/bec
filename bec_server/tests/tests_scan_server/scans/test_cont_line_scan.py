@@ -29,7 +29,7 @@ CONT_LINE_DEFAULT_HOOK_TESTS = [
 
 
 def _assemble_cont_line_scan(
-    v4_scan_assembler,
+    scan_assembler,
     device_manager,
     *,
     start=-1.0,
@@ -67,37 +67,25 @@ def _assemble_cont_line_scan(
         precision=precision,
     )
     device_manager.add_device(custom_samx, replace=True)
-    return v4_scan_assembler(
+    return scan_assembler(
         "cont_line_scan", "samx", start, stop, steps=steps, exp_time=exp_time, relative=relative
     )
 
 
 @pytest.mark.parametrize(("hook_name", "hook_tests"), CONT_LINE_DEFAULT_HOOK_TESTS)
 def test_cont_line_scan_default_hooks(
-    v4_scan_assembler, device_manager, nth_done_status_mock, hook_name, hook_tests
+    scan_assembler, device_manager, nth_done_status_mock, hook_name, hook_tests
 ):
     scan = _assemble_cont_line_scan(
-        v4_scan_assembler,
-        device_manager,
-        start=-1.0,
-        stop=1.0,
-        steps=3,
-        exp_time=0.1,
-        relative=False,
+        scan_assembler, device_manager, start=-1.0, stop=1.0, steps=3, exp_time=0.1, relative=False
     )
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
 
 
-def test_cont_line_scan_prepare_scan_updates_scan_info(v4_scan_assembler, device_manager):
+def test_cont_line_scan_prepare_scan_updates_scan_info(scan_assembler, device_manager):
     scan = _assemble_cont_line_scan(
-        v4_scan_assembler,
-        device_manager,
-        start=-1.0,
-        stop=1.0,
-        steps=3,
-        exp_time=0.1,
-        relative=False,
+        scan_assembler, device_manager, start=-1.0, stop=1.0, steps=3, exp_time=0.1, relative=False
     )
 
     scan.prepare_scan()
@@ -107,9 +95,7 @@ def test_cont_line_scan_prepare_scan_updates_scan_info(v4_scan_assembler, device
     assert scan.offset == 1.0
 
 
-def test_cont_line_scan_example_custom_device_manager_integration(
-    v4_scan_assembler, device_manager
-):
+def test_cont_line_scan_example_custom_device_manager_integration(scan_assembler, device_manager):
     custom_samx = MockCustomDevice(
         "samx",
         device_info={
@@ -135,7 +121,7 @@ def test_cont_line_scan_example_custom_device_manager_integration(
     )
     device_manager.add_device(custom_samx, replace=True)
 
-    scan = v4_scan_assembler(
+    scan = scan_assembler(
         "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=False
     )
 
@@ -172,8 +158,8 @@ def test_mock_custom_device_supports_generated_signal_values():
     assert custom_samx.velocity.get() == 5.0
 
 
-def test_cont_line_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
-    scan = v4_scan_assembler(
+def test_cont_line_scan_at_each_point_triggers_and_reads(scan_assembler):
+    scan = scan_assembler(
         "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=False
     )
     scan.components.trigger_and_read = mock.MagicMock()
@@ -184,16 +170,10 @@ def test_cont_line_scan_at_each_point_triggers_and_reads(v4_scan_assembler):
 
 
 def test_cont_line_scan_scan_core_moves_and_reads_at_matching_positions(
-    v4_scan_assembler, device_manager
+    scan_assembler, device_manager
 ):
     scan = _assemble_cont_line_scan(
-        v4_scan_assembler,
-        device_manager,
-        start=-1.0,
-        stop=1.0,
-        steps=3,
-        exp_time=0.1,
-        relative=False,
+        scan_assembler, device_manager, start=-1.0, stop=1.0, steps=3, exp_time=0.1, relative=False
     )
     scan.prepare_scan()
     start_status = SimpleNamespace(wait=mock.MagicMock())
@@ -215,9 +195,9 @@ def test_cont_line_scan_scan_core_moves_and_reads_at_matching_positions(
     assert scan.at_each_point.call_count == 3
 
 
-def test_cont_line_scan_prepare_scan_raises_when_motor_too_fast(v4_scan_assembler, device_manager):
+def test_cont_line_scan_prepare_scan_raises_when_motor_too_fast(scan_assembler, device_manager):
     scan = _assemble_cont_line_scan(
-        v4_scan_assembler,
+        scan_assembler,
         device_manager,
         start=-1.0,
         stop=1.0,
@@ -232,10 +212,8 @@ def test_cont_line_scan_prepare_scan_raises_when_motor_too_fast(v4_scan_assemble
         scan.prepare_scan()
 
 
-def test_cont_line_scan_post_scan_moves_back_when_relative(v4_scan_assembler, nth_done_status_mock):
-    scan = v4_scan_assembler(
-        "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True
-    )
+def test_cont_line_scan_post_scan_moves_back_when_relative(scan_assembler, nth_done_status_mock):
+    scan = scan_assembler("cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True)
     completion_status = nth_done_status_mock(resolve_after=2)
     scan.start_positions = [1.5]
     scan.actions.complete_all_devices = mock.MagicMock(return_value=completion_status)
@@ -248,10 +226,8 @@ def test_cont_line_scan_post_scan_moves_back_when_relative(v4_scan_assembler, nt
     assert completion_status.wait_calls == 1
 
 
-def test_cont_line_scan_on_exception_moves_back_when_relative(v4_scan_assembler):
-    scan = v4_scan_assembler(
-        "cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True
-    )
+def test_cont_line_scan_on_exception_moves_back_when_relative(scan_assembler):
+    scan = scan_assembler("cont_line_scan", "samx", -1.0, 1.0, steps=3, exp_time=0.1, relative=True)
     scan.start_positions = [1.5]
     scan.components.move_and_wait = mock.MagicMock()
 
