@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.173.0 (2026-09-29)
+
+### Features
+
+- **bec-lib**: Add shared SignalInfo model
+  ([`65fdf6c`](https://github.com/bec-project/bec/commit/65fdf6c51dc4c7d41c9979a3c838cbab0df8a308))
+
+
 ## v3.172.0 (2026-09-29)
 
 ### Features
