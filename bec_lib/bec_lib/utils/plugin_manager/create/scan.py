@@ -254,7 +254,7 @@ class ScanConfig:
     Args:
         name (str): Snake-case scan name used for the file, class, and scan identifier.
         description (str): Module docstring description for the generated scan.
-        scan_type (str): Selected v4 scan type enum member name.
+        scan_type (str): Selected scan type enum member name.
         template_arguments (list[BaseArgumentSpec]): Arguments rendered into the template.
         plugin_components_class (str | None): Optional plugin-local ScanComponents subclass.
         plugin_components_import (str | None): Import path for the plugin-local ScanComponents subclass.
@@ -269,14 +269,14 @@ class ScanConfig:
 
 
 def _render_scan(template_dir: Path, config: ScanConfig) -> str:
-    """Render the v4 scan template for the provided configuration."""
+    """Render the scan template for the provided configuration."""
     environment = jinja2.Environment(
         loader=jinja2.FileSystemLoader(template_dir),
         extensions=[CopierFilters],
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    template = environment.get_template("v4_scan.py.jinja")
+    template = environment.get_template("scan.py.jinja")
     return (
         template.render(
             name=config.name,
@@ -545,7 +545,7 @@ def scan(
         str | None, typer.Argument(help="Enter a name for your scan in snake_case")
     ] = None,
 ):
-    """Create a new v4 scan plugin.
+    """Create a new scan plugin.
 
     Args:
         name (str | None): Optional scan name in snake_case. If omitted, the command

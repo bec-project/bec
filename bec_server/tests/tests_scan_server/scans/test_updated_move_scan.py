@@ -15,14 +15,14 @@ import pytest
         ("close_scan",),
     ],
 )
-def test_updated_move_scan_default_noop_hooks_do_not_raise(v4_scan_assembler, hook_name):
-    scan = v4_scan_assembler("umv", "samx", 1.5, "samy", -2.0, relative=False)
+def test_updated_move_scan_default_noop_hooks_do_not_raise(scan_assembler, hook_name):
+    scan = scan_assembler("umv", "samx", 1.5, "samy", -2.0, relative=False)
 
     getattr(scan, hook_name)()
 
 
-def test_updated_move_scan_scan_core_adds_readback_and_moves_to_absolute_targets(v4_scan_assembler):
-    scan = v4_scan_assembler("umv", "samx", 1.5, "samy", -2.0, relative=False)
+def test_updated_move_scan_scan_core_adds_readback_and_moves_to_absolute_targets(scan_assembler):
+    scan = scan_assembler("umv", "samx", 1.5, "samy", -2.0, relative=False)
     scan.scan_info.metadata["RID"] = "rid-123"
     scan.components.get_start_positions = mock.MagicMock(return_value=[0.5, 3.0])
     scan.actions.add_scan_report_instruction_readback = mock.MagicMock()
@@ -37,8 +37,8 @@ def test_updated_move_scan_scan_core_adds_readback_and_moves_to_absolute_targets
     scan.components.move_and_wait.assert_called_once_with(scan.motors, [1.5, -2.0])
 
 
-def test_updated_move_scan_scan_core_adds_readback_and_moves_to_relative_targets(v4_scan_assembler):
-    scan = v4_scan_assembler("umv", "samx", 1.5, "samy", -2.0, relative=True)
+def test_updated_move_scan_scan_core_adds_readback_and_moves_to_relative_targets(scan_assembler):
+    scan = scan_assembler("umv", "samx", 1.5, "samy", -2.0, relative=True)
     scan.scan_info.metadata["RID"] = "rid-123"
     scan.components.get_start_positions = mock.MagicMock(return_value=[0.5, 3.0])
     scan.actions.add_scan_report_instruction_readback = mock.MagicMock()

@@ -15,15 +15,15 @@ from bec_lib.utils.plugin_manager import create as plugin_create
 from bec_server.scan_server.scans import position_generators
 
 
-def _get_v4_scan_runner(bec, scan_name: str):
+def _get_scan_runner(bec, scan_name: str):
     return getattr(bec.scans, scan_name)
 
 
-def _run_v4_scan(
+def _run_scan(
     bec, scan_name: str, *args, timeout: float = 60, wait_for_num_points: bool = True, **kwargs
 ):
-    bec.metadata.update({"unit_test": f"test_v4_{scan_name}_lib"})
-    status = _get_v4_scan_runner(bec, scan_name)(*args, **kwargs)
+    bec.metadata.update({"unit_test": f"test_{scan_name}_lib"})
+    status = _get_scan_runner(bec, scan_name)(*args, **kwargs)
     status.wait(timeout=timeout, num_points=wait_for_num_points, file_written=False)
     return status
 
@@ -97,7 +97,7 @@ def _remove_scan_export(init_file: Path, scan_name: str):
     init_file.write_text(content.replace(import_line, ""), encoding="utf-8")
 
 
-def _wait_for_v4_scan_registration(bec, scan_name: str, timeout: float = 60):
+def _wait_for_scan_registration(bec, scan_name: str, timeout: float = 60):
     deadline = time.time() + timeout
     while time.time() < deadline:
         available_scans = bec.connector.get(MessageEndpoints.available_scans())
@@ -215,14 +215,14 @@ def _wait_for_v4_scan_registration(bec, scan_name: str, timeout: float = 60):
         ("time_scan", (), {"points": 3, "interval": 0.05, "exp_time": 0.01}, 3, 3),
     ],
 )
-def test_v4_fixed_point_scans_lib(
+def test_fixed_point_scans_lib(
     bec_client_lib, scan_name, scan_args, scan_kwargs, expected_num_points, expected_num_readouts
 ):
     bec = bec_client_lib
     dev = bec.device_manager.devices
     resolved_args = _resolve_scan_args(scan_args, dev)
 
-    status = _run_v4_scan(bec, scan_name, *resolved_args, **scan_kwargs)
+    status = _run_scan(bec, scan_name, *resolved_args, **scan_kwargs)
 
     assert status.scan is not None
     assert status.scan.num_points == expected_num_points
@@ -235,7 +235,7 @@ def test_mv_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
 
-    status = _run_v4_scan(bec, "mv", dev.samx, 1.5, dev.samy, -1.5, relative=False)
+    status = _run_scan(bec, "mv", dev.samx, 1.5, dev.samy, -1.5, relative=False)
     status.wait(timeout=30)
 
     _assert_device_position(dev.samx, 1.5, timeout=5)
@@ -247,7 +247,7 @@ def test_umv_scan_lib(bec_client_lib):
     bec = bec_client_lib
     dev = bec.device_manager.devices
 
-    status = _run_v4_scan(bec, "umv", dev.samx, -1.0, dev.samy, 1.0, relative=False)
+    status = _run_scan(bec, "umv", dev.samx, -1.0, dev.samy, 1.0, relative=False)
     status.wait(timeout=30)
 
     _assert_device_position(dev.samx, -1.0, timeout=5)
@@ -261,7 +261,7 @@ def test_cont_line_scan_lib(bec_client_lib):
     original_velocity = dev.samx.velocity.get()
     try:
         dev.samx.velocity.set(1).wait()
-        status = _run_v4_scan(
+        status = _run_scan(
             bec, "cont_line_scan", dev.samx, 0.0, 0.2, steps=3, exp_time=0.01, relative=False
         )
     finally:
@@ -282,7 +282,7 @@ def test_line_sweep_scan_lib(bec_client_lib):
         scans.umv(dev.samx, -5.0, relative=False).wait()
         dev.samx.velocity.set(5).wait()
         dev.samx.limits = [-50, 50]
-        status = _run_v4_scan(
+        status = _run_scan(
             bec,
             "line_sweep_scan",
             dev.samx,
@@ -301,9 +301,9 @@ def test_line_sweep_scan_lib(bec_client_lib):
 
 
 @pytest.mark.timeout(120)
-def test_v4_scan_lib_stop_resolves_cleanly(bec_client_lib):
+def test_scan_lib_stop_resolves_cleanly(bec_client_lib):
     bec = bec_client_lib
-    status = _get_v4_scan_runner(bec, "time_scan")(points=100, interval=0.2, exp_time=0.01)
+    status = _get_scan_runner(bec, "time_scan")(points=100, interval=0.2, exp_time=0.01)
 
     time.sleep(0.5)
     status.cancel()
@@ -312,7 +312,7 @@ def test_v4_scan_lib_stop_resolves_cleanly(bec_client_lib):
 
 
 @pytest.mark.timeout(180)
-def test_v4_generated_scan_e2e(bec_client_lib):
+def test_generated_scan_e2e(bec_client_lib):
     bec = bec_client_lib
     scan_name = f"e2e_generated_scan_{uuid.uuid4().hex[:8]}"
     try:
@@ -338,9 +338,9 @@ def test_v4_generated_scan_e2e(bec_client_lib):
         assert scan_file.exists()
 
         bec._request_scan_reload()
-        scan_runner = _wait_for_v4_scan_registration(bec, scan_name)
+        scan_runner = _wait_for_scan_registration(bec, scan_name)
 
-        bec.metadata.update({"unit_test": "test_v4_generated_scan_e2e"})
+        bec.metadata.update({"unit_test": "test_generated_scan_e2e"})
         status = scan_runner()
         status.wait(timeout=60, num_points=False, file_written=True)
 
