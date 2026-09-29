@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.172.0 (2026-09-29)
+
+### Features
+
+- **device-server**: Monitor ophyd callback queue backlog
+  ([`2d9cc76`](https://github.com/bec-project/bec/commit/2d9cc765e268ab48aac3c7857e11e0047b4dedf2))
+
+
 ## v3.171.9 (2026-09-28)
 
 ### Bug Fixes
