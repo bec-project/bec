@@ -12,7 +12,7 @@ from bec_server.scan_server.tests.scan_hook_tests import (
     run_scan_tests,
 )
 
-ACQUIRE_DEFAULT_HOOK_TESTS = [
+TIME_SCAN_DEFAULT_HOOK_TESTS = [
     ("prepare_scan", [assert_prepare_scan_reads_baseline_devices]),
     ("open_scan", [assert_scan_open_called]),
     ("stage", [assert_stage_all_devices_called]),
@@ -22,37 +22,38 @@ ACQUIRE_DEFAULT_HOOK_TESTS = [
 ]
 
 
-@pytest.mark.parametrize(("hook_name", "hook_tests"), ACQUIRE_DEFAULT_HOOK_TESTS)
-def test_acquire_default_hooks(v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests):
-    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
+@pytest.mark.parametrize(("hook_name", "hook_tests"), TIME_SCAN_DEFAULT_HOOK_TESTS)
+def test_time_scan_default_hooks(scan_assembler, nth_done_status_mock, hook_name, hook_tests):
+    scan = scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
 
 
-def test_acquire_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
-    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
+def test_time_scan_prepare_scan_updates_scan_info_and_queue(scan_assembler):
+    scan = scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
 
     scan.prepare_scan()
 
-    assert scan.scan_info.num_points == 1
-    assert scan.scan_info.num_monitored_readouts == 3
+    assert scan.scan_info.num_points == 3
     assert scan.scan_info.positions.size == 0
     assert scan.scan_info.scan_report_instructions == [
         {"scan_progress": {"points": 3, "show_table": True}}
     ]
 
 
-def test_acquire_scan_core_triggers_and_reads_for_each_burst(v4_scan_assembler):
-    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
+def test_time_scan_scan_core_triggers_reads_and_waits_between_points(scan_assembler):
+    scan = scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
     scan.at_each_point = mock.MagicMock()
 
-    scan.scan_core()
+    with mock.patch("bec_server.scan_server.scans.time_scan.time.sleep") as sleep_mock:
+        scan.scan_core()
 
     assert scan.at_each_point.call_count == 3
+    assert sleep_mock.call_args_list == [mock.call(1.3), mock.call(1.3)]
 
 
-def test_acquire_at_each_point_triggers_and_reads(v4_scan_assembler):
-    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
+def test_time_scan_at_each_point_triggers_and_reads(scan_assembler):
+    scan = scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
     scan.components.trigger_and_read = mock.MagicMock()
 
     scan.at_each_point()
@@ -60,8 +61,8 @@ def test_acquire_at_each_point_triggers_and_reads(v4_scan_assembler):
     scan.components.trigger_and_read.assert_called_once_with()
 
 
-def test_acquire_post_scan_completes_all_devices(v4_scan_assembler):
-    scan = v4_scan_assembler("acquire", exp_time=0.2, burst_at_each_point=3)
+def test_time_scan_post_scan_completes_all_devices(scan_assembler):
+    scan = scan_assembler("time_scan", 3, 1.5, exp_time=0.2)
     scan.actions.complete_all_devices = mock.MagicMock()
 
     scan.post_scan()

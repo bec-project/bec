@@ -36,9 +36,9 @@ RELATIVE_SCAN_CASES = [
 
 @pytest.mark.parametrize(("scan_type", "scan_args", "scan_kwargs"), RELATIVE_SCAN_CASES)
 def test_relative_v4_scan_on_exception_moves_back_to_start(
-    v4_scan_assembler, scan_type, scan_args, scan_kwargs
+    scan_assembler, scan_type, scan_args, scan_kwargs
 ):
-    scan = v4_scan_assembler(scan_type, *scan_args, **scan_kwargs)
+    scan = scan_assembler(scan_type, *scan_args, **scan_kwargs)
     scan.start_positions = [float(index + 1) for index, _motor in enumerate(scan.motors)]
     scan.components.move_and_wait = mock.MagicMock()
 

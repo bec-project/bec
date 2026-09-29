@@ -98,7 +98,7 @@ def test_plugin_manager_create_subapp_wo_bw(runner, create_app, plugin_repo):
         result = runner.invoke(
             create_app,
             ["scan", "test"],
-            input="V4 scan implementation.\nDescribe the scan here.\nn\nn\n",
+            input="Scan implementation.\nDescribe the scan here.\nn\nn\n",
         )
     assert result.exit_code == 0
 

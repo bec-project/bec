@@ -15,16 +15,16 @@ from bec_server.scan_server.tests.scan_hook_tests import (
     ("hook_name", "hook_tests"),
     [*DEFAULT_HOOK_TESTS, *PREMOVE_HOOK_TESTS, *STANDARD_STEP_SCAN_TESTS],
 )
-def test_fermat_scan_default_hooks(v4_scan_assembler, nth_done_status_mock, hook_name, hook_tests):
-    scan = v4_scan_assembler(
+def test_fermat_scan_default_hooks(scan_assembler, nth_done_status_mock, hook_name, hook_tests):
+    scan = scan_assembler(
         "fermat_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, step=0.5, relative=False
     )
 
     run_scan_tests(scan, [(hook_name, hook_tests)], nth_done_status_mock=nth_done_status_mock)
 
 
-def test_fermat_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler):
-    scan = v4_scan_assembler(
+def test_fermat_scan_prepare_scan_updates_scan_info_and_queue(scan_assembler):
+    scan = scan_assembler(
         "fermat_scan", "samx", -1.0, 1.0, "samy", -2.0, 2.0, step=0.5, relative=False
     )
 
@@ -48,8 +48,8 @@ def test_fermat_scan_prepare_scan_updates_scan_info_and_queue(v4_scan_assembler)
     assert read_messages[0].metadata["readout_priority"] == "baseline"
 
 
-def test_fermat_scan_prepare_scan_uses_first_axis_as_corridor_axis(v4_scan_assembler):
-    scan = v4_scan_assembler(
+def test_fermat_scan_prepare_scan_uses_first_axis_as_corridor_axis(scan_assembler):
+    scan = scan_assembler(
         "fermat_scan",
         "samx",
         -1.0,
@@ -74,8 +74,8 @@ def test_fermat_scan_prepare_scan_uses_first_axis_as_corridor_axis(v4_scan_assem
     np.testing.assert_allclose(scan.positions, optimized)
 
 
-def test_fermat_scan_prepare_scan_uses_first_axis_range_for_preferred_direction(v4_scan_assembler):
-    scan = v4_scan_assembler(
+def test_fermat_scan_prepare_scan_uses_first_axis_range_for_preferred_direction(scan_assembler):
+    scan = scan_assembler(
         "fermat_scan",
         "samx",
         1.0,
