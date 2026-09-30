@@ -11,7 +11,10 @@ import threading
 import time
 import traceback
 from collections import deque
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from contextvars import ContextVar, copy_context
+from functools import wraps
+from typing import TYPE_CHECKING
 
 import numpy as np
 import ophyd
@@ -44,6 +47,28 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 logger = bec_logger.logger
+
+_active_device_callbacks: ContextVar[frozenset[str]] = ContextVar(
+    "active_device_callbacks", default=frozenset()
+)
+
+
+def _guard_device_callback(callback: Callable[..., None]) -> Callable[..., None]:
+    """Prevent a callback chain from reading the same root device again."""
+
+    @wraps(callback)
+    def wrapper(*args, obj: OphydObject, **kwargs) -> None:
+        name = obj.root.name
+        active = _active_device_callbacks.get()
+        if name in active:
+            return
+        token = _active_device_callbacks.set(active | {name})
+        try:
+            return callback(*args, obj=obj, **kwargs)
+        finally:
+            _active_device_callbacks.reset(token)
+
+    return wrapper
 
 
 class DeviceProgress:
@@ -151,9 +176,9 @@ class DeviceManagerDS(DeviceManagerBase):
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
-        self._auto_monitor_readback_updates = set()
-        self._auto_monitor_configuration_updates = set()
-        self._limit_change_updates = set()
+        self._auto_monitor_readback_updates: dict[str, frozenset[str]] = {}
+        self._auto_monitor_configuration_updates: dict[str, frozenset[str]] = {}
+        self._limit_change_updates: dict[str, frozenset[str]] = {}
         self._auto_monitor_update_lock = threading.Lock()
         self._shutdown_event = threading.Event()
         self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
@@ -601,10 +626,14 @@ class DeviceManagerDS(DeviceManagerBase):
     def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
         """Subscribe to device events"""
 
-        if "readback" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
-        elif "value" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
+        if "readback" in obj.event_types or "value" in obj.event_types:
+            self._ensure_auto_monitor_update_thread()
+            event_type = "readback" if "readback" in obj.event_types else "value"
+            obj.subscribe(
+                self._obj_callback_auto_monitor_readback,
+                event_type=event_type,
+                run=opaas_obj.enabled,
+            )
         if hasattr(obj, "motor_is_moving"):
             obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)  # type: ignore
 
@@ -772,6 +801,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.delete(MessageEndpoints.device_read_configuration(obj.name), pipe)
         self.connector.delete(MessageEndpoints.device_info(obj.name), pipe)
 
+    @_guard_device_callback
     def _obj_callback_limit_change(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
     ):
@@ -789,6 +819,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if pipe is None:
             _pipe.execute()
 
+    @_guard_device_callback
     def _obj_callback_readback(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
     ):
@@ -803,6 +834,7 @@ class DeviceManagerDS(DeviceManagerBase):
         if pipe is None:
             _pipe.execute()
 
+    @_guard_device_callback
     def _obj_callback_configuration(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
     ):
@@ -822,26 +854,35 @@ class DeviceManagerDS(DeviceManagerBase):
         if pipe is None:
             _pipe.execute()
 
+    @_guard_device_callback
     def _obj_callback_auto_monitor_readback(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._auto_monitor_readback_updates.add(name)
+        self._queue_auto_monitor_update(obj, self._auto_monitor_readback_updates)
 
+    @_guard_device_callback
     def _obj_callback_auto_monitor_configuration(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._auto_monitor_configuration_updates.add(name)
+        self._queue_auto_monitor_update(obj, self._auto_monitor_configuration_updates)
 
+    @_guard_device_callback
     def _obj_callback_auto_monitor_limits(self, *_args, obj: OphydObject, **kwargs):
+        self._queue_auto_monitor_update(obj, self._limit_change_updates)
+
+    def _queue_auto_monitor_update(
+        self, obj: OphydObject, updates: dict[str, frozenset[str]]
+    ) -> None:
+        """Coalesce updates while retaining their callback ancestors across worker iterations."""
         if not obj.connected:
             return
         name = obj.root.name
+        # The decorator added this root, but the worker still needs to read it once.
+        ancestors = _active_device_callbacks.get() - {name}
         with self._auto_monitor_update_lock:
-            self._limit_change_updates.add(name)
+            if name in updates:
+                # An independent event starts a fresh chain. Otherwise retain all ancestors
+                # so coalescing different paths cannot reopen a cycle.
+                ancestors = (
+                    updates[name] | ancestors if updates[name] and ancestors else frozenset()
+                )
+            updates[name] = ancestors
 
     def _auto_monitor_update_loop(self):
         while not self._shutdown_event.wait(0.01):
@@ -853,31 +894,29 @@ class DeviceManagerDS(DeviceManagerBase):
                 ):
                     continue
                 with self._auto_monitor_update_lock:
-                    readback_updates = list(self._auto_monitor_readback_updates)
-                    configuration_updates = list(self._auto_monitor_configuration_updates)
-                    limits_updates = list(self._limit_change_updates)
+                    readback_updates = self._auto_monitor_readback_updates.copy()
+                    configuration_updates = self._auto_monitor_configuration_updates.copy()
+                    limits_updates = self._limit_change_updates.copy()
                     self._auto_monitor_readback_updates.clear()
                     self._auto_monitor_configuration_updates.clear()
                     self._limit_change_updates.clear()
 
                 pipe = self.connector.pipeline()
-                for name in readback_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_readback(obj=obj, pipe=pipe)
-
-                for name in configuration_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_configuration(obj=obj, pipe=pipe)
-
-                for name in limits_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_limit_change(obj=obj, pipe=pipe)
+                for updates, callback in (
+                    (readback_updates, self._obj_callback_readback),
+                    (configuration_updates, self._obj_callback_configuration),
+                    (limits_updates, self._obj_callback_limit_change),
+                ):
+                    for name, ancestors in updates.items():
+                        try:
+                            device = self.devices.get(name)
+                            if device is not None:
+                                context = copy_context()
+                                context.run(_active_device_callbacks.set, ancestors)
+                                context.run(callback, obj=device.obj, pipe=pipe)
+                        except Exception as exc:
+                            logger.error(f"Error in auto monitor update for {name}: {exc}")
+                            logger.error(traceback.format_exc())
 
                 pipe.execute()
             except Exception as exc:
