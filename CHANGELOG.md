@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v3.173.1 (2026-09-30)
+
+### Bug Fixes
+
+- **signal info**: Enable assignment validation
+  ([`108c752`](https://github.com/bec-project/bec/commit/108c752db73b9a24f76e659292fcf30a502c744b))
+
+
 ## v3.173.0 (2026-09-29)
 
 ### Features
