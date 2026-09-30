@@ -777,7 +777,7 @@ def test_device_preview(bec_ipython_client_fixture):
 
 @pytest.mark.timeout(100)
 def test_async_data(bec_ipython_client_fixture):
-    """Test "extend" and "append" for async data and their expected return values"""
+    """Test "add_slice" and "add" async signal data written to disk."""
     bec = bec_ipython_client_fixture
     bec.metadata.update({"unit_test": "test_async_data"})
     dev = bec.device_manager.devices
@@ -787,21 +787,15 @@ def test_async_data(bec_ipython_client_fixture):
     dev.waveform.sim.select_model("ConstantModel")
     dev.waveform.sim.params = {"noise": "none", "c": amplitude}
     dev.waveform.waveform_shape.set(10)
-    dev.waveform.async_update.set("append")
+    dev.waveform.async_update.set("add_slice")
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
-    while True:
-        waveform_data = s1.scan.data.devices.waveform.waveform_waveform.read()
-        if len(waveform_data["value"]) == 10:
-            break
+    waveform_data = s1.scan.data.devices.waveform.waveform_data.read()
     np.testing.assert_array_equal(waveform_data["value"], amplitude * np.ones((10, 10)))
-    dev.waveform.async_update.set("extend")
+    dev.waveform.async_update.set("add")
     s1 = scans.line_scan(dev.samx, 0, 1, steps=10, relative=False)
     s1.wait()
-    while True:
-        waveform_data = s1.scan.data.devices.waveform.waveform_waveform.read()
-        if len(waveform_data["value"]) == 100:
-            break
+    waveform_data = s1.scan.data.devices.waveform.waveform_data.read()
     np.testing.assert_array_equal(waveform_data["value"], amplitude * np.ones(100))
 
 
