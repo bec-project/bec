@@ -927,6 +927,8 @@ class SignalInfo(BaseModel):
         default=False, description="Whether the signal aliases one or more EPICS signals."
     )
 
+    model_config = ConfigDict(validate_assignment=True)
+
 
 class DeviceMonitor2DMessage(BECMessage):
     """Message type for sending device monitor updates from the device server.

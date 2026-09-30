@@ -102,6 +102,16 @@ def test_signal_info_rejects_invalid_dimensions():
         messages.SignalInfo(ndim=3)
 
 
+def test_signal_info_rejects_invalid_dimension_assignment():
+    info = messages.SignalInfo(ndim=1)
+    info.ndim = 2
+
+    with pytest.raises(pydantic.ValidationError):
+        info.ndim = 3
+
+    assert info.ndim == 2
+
+
 def test_bundled_message():
     sub_msg = messages.DeviceMessage(signals={"samx": {"value": 5.2}}, metadata={"RID": "1234"})
     msg = messages.BundleMessage()
