@@ -303,7 +303,12 @@ class AsyncWriter(threading.Thread):
                         if key == "value":
                             self.write_value_data(signal_group, value, async_update)
                         elif key == "timestamp":
-                            self.write_timestamp_data(signal_group, value)
+                            self.write_timestamp_data(
+                                signal_group,
+                                value,
+                                replace=isinstance(async_update, dict)
+                                and async_update.get("type") == "replace",
+                            )
                         else:  # pragma: no cover
                             # this should never happen as the keys are fixed in the pydantic model
                             msg = f"Unknown key: {key}. Data will not be written."
@@ -578,19 +583,26 @@ class AsyncWriter(threading.Thread):
                 )
         self.cursor[signal_group.name][row_index] = value.shape[1]
 
-    def write_timestamp_data(self, signal_group, value):
+    def write_timestamp_data(
+        self, signal_group: h5py.Group, value: Any, replace: bool = False
+    ) -> None:
         """
         Write the timestamp data to the file.
         Timestamp data is always written as a 1D array, irrespective of the async update type.
+        Replacement updates retain only the latest timestamps.
 
         Args:
             signal_group (h5py.Group): The group to write the data to
-            value (list): The timestamp data to write
+            value (Any): The timestamp data to write
+            replace (bool): Whether to replace existing timestamps instead of appending
         """
         if not isinstance(value, (list, np.ndarray)):
             value = [value]
         if "timestamp" not in signal_group:
             create_dataset_safe(signal_group, "timestamp", data=value, maxshape=(None,))
+        elif replace:
+            signal_group["timestamp"].resize((len(value),))
+            signal_group["timestamp"][:] = value
         else:
             signal_group["timestamp"].resize((len(signal_group["timestamp"]) + len(value),))
             signal_group["timestamp"][-len(value) :] = value
