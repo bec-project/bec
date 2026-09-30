@@ -1,3 +1,4 @@
+import inspect
 from typing import Any, Callable, Literal
 from unittest import mock
 
@@ -25,6 +26,7 @@ from bec_lib.device import (
 )
 from bec_lib.devicemanager import DeviceContainer, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.signature_serializer import signature_to_dict
 from bec_lib.tests.fixtures import device_manager_class
 from bec_lib.tests.utils import ClientMock, ConnectorMock, get_device_info_mock
 
@@ -43,6 +45,49 @@ def dm_with_override():
 def fixture_dev(bec_client_mock: ClientMock | BECClient):
     bec_client_mock.device_manager._allow_override = True
     yield bec_client_mock.device_manager.devices
+
+
+@pytest.mark.parametrize("device_cls", [DeviceBase, Device, Signal, ComputedSignal, Positioner])
+def test_device_does_not_expose_internal_run(device_cls):
+    device = device_cls(name="test")
+    assert "run" not in dir(device)
+    with pytest.raises(AttributeError):
+        getattr(device, "run")
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_custom_rpc_methods_preserve_metadata_and_dispatch(nested, dm_with_override):
+    def run(value: int, *, wait: bool = True) -> str:
+        """Run the hardware operation."""
+
+    def other() -> int:
+        """Another hardware operation."""
+
+    methods = {
+        method.__name__: {
+            "type": "func",
+            "doc": method.__doc__,
+            "signature": signature_to_dict(method),
+        }
+        for method in (run, other)
+    }
+    access = {"controller": {"device_class": "Controller", "info": methods}} if nested else methods
+    device = Device(name="test", info={"custom_user_access": access}, parent=dm_with_override)
+    target = device.controller if nested else device
+    prefix = "controller." if nested else ""
+
+    for method in (run, other):
+        proxy_method = getattr(target, method.__name__)
+        assert proxy_method.__doc__ == method.__doc__
+        assert inspect.signature(proxy_method) == inspect.signature(method).replace(
+            return_annotation=inspect.Signature.empty
+        )
+        method_device = target._custom_rpc_methods[method.__name__]
+        assert not hasattr(method_device, "run")
+        with mock.patch.object(method_device, "_run_rpc_call", return_value="result") as rpc_call:
+            args, kwargs = ((3,), {"wait": False}) if method is run else ((), {})
+            assert proxy_method(*args, **kwargs) == "result"
+            rpc_call.assert_called_once_with("test", f"{prefix}{method.__name__}", *args, **kwargs)
 
 
 def test_nested_device_root(dev: Any):
