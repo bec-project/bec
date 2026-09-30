@@ -685,9 +685,16 @@ class DeviceManagerDS(DeviceManagerBase):
         opaas_obj.initialize_device_buffer(self.connector)
 
     @staticmethod
-    def disconnect_device(obj):
-        """disconnect from a device"""
-        obj.destroy()
+    def disconnect_device(obj: OphydObject) -> None:
+        """Cancel pending sets and destroy a device, including disconnected devices."""
+        root = obj.root
+        with opd.set_registry.stopping(root):
+            try:
+                obj.destroy()
+            finally:
+                # Unlike stop(), teardown must also cancel sets started by
+                # destroy hooks; their device is being discarded.
+                opd.set_registry.cancel(root)
 
     def reset_device(self, obj: DSDevice):
         """reset a device"""
