@@ -410,6 +410,9 @@ class BECService:
     def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the BECService"""
         try:
+            if bec_logger.connector is self.connector:
+                # shutdown the logger if it is using the same connector as this service
+                bec_logger.shutdown()
             self.connector.shutdown(per_thread_timeout_s=per_thread_timeout_s)
             self._service_info_event.set()
             if self._service_info_thread:
