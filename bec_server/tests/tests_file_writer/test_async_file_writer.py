@@ -591,9 +591,35 @@ def test_async_writer_replace(async_writer, data):
     # read the data back
     with h5py.File(async_writer.file_path, "r") as f:
         out = f[async_writer.BASE_PATH]["monitor_async"]["monitor_async"]["value"][:]
+        timestamps = f[async_writer.BASE_PATH]["monitor_async"]["monitor_async"]["timestamp"][:]
 
     assert out.shape == (10,)
     assert np.allclose(out, data[-1].signals["monitor_async"]["value"])
+    assert np.array_equal(timestamps, [data[-1].signals["monitor_async"]["timestamp"]])
+
+
+@pytest.mark.parametrize("update_type", ["replace", "add", "add_slice"])
+@pytest.mark.parametrize("timestamps", [[1, 2, 3], [1]])
+def test_async_writer_timestamp_aggregation(async_writer, update_type, timestamps):
+    """Keep replacement timestamps together and preserve append behavior for other updates."""
+    metadata = {"type": update_type}
+    if update_type == "add":
+        metadata["max_shape"] = [None]
+    elif update_type == "add_slice":
+        metadata.update(max_shape=[None, None], index=0)
+
+    for timestamp in (timestamps, [4, 5]):
+        message = messages.DeviceMessage(
+            signals={"monitor_async": {"value": np.array([6, 7]), "timestamp": timestamp}},
+            metadata={"async_update": metadata},
+        )
+        async_writer.write_data({"monitor_async": [message]})
+    async_writer.write_data({}, write_replace=True)
+
+    group = async_writer.file_handle[f"{async_writer.BASE_PATH}/monitor_async/monitor_async"]
+    expected = [4, 5] if update_type == "replace" else timestamps + [4, 5]
+    assert np.array_equal(group["timestamp"][:], expected)
+    async_writer.file_handle.close()
 
 
 def test_async_writer_async_signal(async_writer):
