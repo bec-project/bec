@@ -16,6 +16,7 @@ Scan procedure:
 
 from __future__ import annotations
 
+import time
 from typing import Annotated
 
 import numpy as np
@@ -23,6 +24,7 @@ import numpy as np
 from bec_lib.device import DeviceBase
 from bec_lib.scan_args import DefaultArgType, ScanArgument
 from bec_server.scan_server.errors import LimitError, ScanAbortion
+from bec_server.scan_server.scan_stubs import ScanStubStatus
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -193,26 +195,15 @@ class ContLineScan(ScanBase):
     @scan_hook
     def scan_core(self):
         """
-        Core scan logic to be executed during the scan.
-        This is where the main scan logic should be implemented.
+        Acquire at each target while checking for interruption and failed motion.
         """
         self.actions.set(self.device, self.positions[0][0] - self.offset, wait=True)
         status = self.actions.set(self.device, self.positions[-1][0], wait=False)
 
         while self._point_index < len(self.positions):
-            cont_motor_positions = self.device.read(cached=True)
-            if not cont_motor_positions:
-                continue
-            cont_motor_position = cont_motor_positions[self.device.full_name].get("value")
-            target_position = self.positions[self._point_index][0]
-            if np.isclose(cont_motor_position, target_position, atol=self.atol):
-                self.at_each_point()
-                self._point_index += 1
-                continue
-            if cont_motor_position > target_position:
-                raise ScanAbortion(
-                    f"Skipped point {self._point_index + 1}: Consider reducing speed {self.motor_velocity}, increasing the atol {self.atol}, or increasing the offset {self.offset}"
-                )
+            self._wait_for_position(status)
+            self.at_each_point()
+            self._point_index += 1
         status.wait()
 
     @scan_hook
@@ -262,6 +253,64 @@ class ContLineScan(ScanBase):
     #######################################################
     ######### Helper methods for the scan logic ###########
     #######################################################
+
+    def _check_for_interruption(self) -> None:
+        # The direct worker installs this callback for pause/abort handling.
+        # pylint: disable=protected-access
+        if self.actions._interruption_callback is not None:
+            self.actions._interruption_callback()
+        if self._shutdown_event.is_set():
+            raise ScanAbortion("Continuous scan interrupted during motion.")
+
+    def _wait_for_position(self, status: ScanStubStatus) -> None:
+        """Wait for the next acquisition position without indefinitely polling stale data."""
+        target_position = self.positions[self._point_index][0]
+        previous_position = (
+            self.positions[self._point_index - 1][0]
+            if self._point_index
+            else self.positions[0][0] - self.offset
+        )
+        # Allow for slow motors and the initial offset/acceleration, with a floor
+        # for delayed readbacks. Reset this budget at each acquisition point.
+        motor_speed = abs(self.motor_velocity)
+        travel_time = abs(target_position - previous_position) / motor_speed
+        timeout = max(5.0, 2 * (travel_time + self.motor_acceleration))
+        deadline = time.monotonic() + timeout
+
+        while True:
+            self._check_for_interruption()
+            motion_done = status.done
+            if motion_done:
+                # A failed status is also done. Propagate its device error before
+                # interpreting the cached readback or declaring an early finish.
+                status.wait()
+            readings = self.device.read(cached=True)
+            self._check_for_interruption()
+            position = (readings or {}).get(self.device.full_name, {}).get("value")
+            poll_interval = 0.001
+            if position is not None and np.isfinite(position):
+                if np.isclose(position, target_position, atol=self.atol):
+                    return
+                if position > target_position:
+                    raise ScanAbortion(
+                        f"Skipped point {self._point_index + 1}: Consider reducing speed {self.motor_velocity}, increasing the atol {self.atol}, or increasing the offset {self.offset}"
+                    )
+                # Reduce the delay near the target so a narrow explicit tolerance
+                # is not skipped just because of the polling interval.
+                poll_interval = min(
+                    poll_interval, abs(target_position - position) / (2 * motor_speed)
+                )
+            if motion_done:
+                raise ScanAbortion(
+                    f"Motor {self.device.full_name} completed before reaching acquisition "
+                    f"point {self._point_index + 1} at {target_position}."
+                )
+            if time.monotonic() >= deadline:
+                raise ScanAbortion(
+                    f"Timed out waiting for motor {self.device.full_name} to reach acquisition "
+                    f"point {self._point_index + 1} at {target_position}."
+                )
+            self._shutdown_event.wait(poll_interval)
 
     def _get_motor_attributes(self):
         if not hasattr(self.device, "velocity"):
