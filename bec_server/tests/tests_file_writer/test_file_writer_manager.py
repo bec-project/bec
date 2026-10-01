@@ -2,6 +2,7 @@
 import os
 import threading
 import time
+from pathlib import Path
 from unittest import mock
 
 import numpy as np
@@ -15,6 +16,7 @@ from bec_lib.redis_connector import MessageObject
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.file_writer import FileWriterManager
+from bec_server.file_writer.async_writer import AsyncWriter
 from bec_server.file_writer.file_writer import HDF5FileWriter
 from bec_server.file_writer.file_writer_manager import ScanStorage
 
@@ -242,7 +244,7 @@ def test_write_file(file_writer_manager_mock, scan_storage_mock):
 def test_write_file_forwards_written_async_signals(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
     scan_storage_mock.async_writer = mock.Mock(
-        written_signals={"waveform": ["waveform_data"]}, file_handle=None
+        written_signals={"waveform": ["waveform_data"]}, file_handle=None, error_info=None
     )
     file_manager.scan_storage["scan_id"] = scan_storage_mock
 
@@ -839,3 +841,95 @@ def test_subscriptions_buffer_early_notifications(file_writer_manager_mock, conn
     assert manager.scan_storage["scan_id"].file_references == {"eiger": file_msg}
     assert manager._pending_baseline_writes == {}
     assert manager._pending_file_references == {}
+
+
+@pytest.mark.parametrize("failure_stage", ["poll", "write", "final_poll", None])
+@pytest.mark.parametrize("finalization_fails", [False, True])
+def test_async_failure_survives_finalization(
+    file_writer_manager_mock,
+    scan_storage_mock,
+    tmp_path,
+    failure_stage,
+    finalization_fails,
+    request,
+):
+    manager = file_writer_manager_mock
+    path = str(tmp_path / "master.h5")
+    writer = AsyncWriter(path, "scan_id", 10, manager.connector, ["det"], [])
+
+    def close_file():
+        if writer.file_handle is not None:
+            writer.file_handle.close()
+
+    request.addfinalizer(close_file)
+    scan_storage_mock.async_writer = writer
+    manager.scan_storage["scan_id"] = scan_storage_mock
+    data = {
+        "det": [
+            messages.DeviceMessage(
+                signals={"det": {"value": [1], "timestamp": 1}},
+                metadata={"async_update": {"type": "add", "max_shape": [None]}},
+            )
+        ]
+    }
+    failure = RuntimeError("async acquisition failed")
+
+    def poll(poll_timeout=500):
+        if writer.written_signals:
+            if failure_stage in ("poll", "final_poll"):
+                raise failure
+            writer.stop()
+            return None
+        return data
+
+    original_write = writer.write_data
+
+    def write(*args, **kwargs):
+        original_write(*args, **kwargs)
+        if failure_stage == "write":
+            raise failure
+        if failure_stage == "final_poll":
+            writer.stop()
+
+    with (
+        mock.patch.object(writer, "poll_data", side_effect=poll),
+        mock.patch.object(writer, "write_data", side_effect=write),
+        mock.patch.object(manager.connector, "raise_alarm"),
+    ):
+        # Error propagation does not require a background thread or a timing deadline.
+        writer.run()
+    assert writer.written_signals == {"det": ["det"]}
+    assert writer.file_handle["/entry/collection/devices/det/det/value"][:].tolist() == [1]
+    if failure_stage:
+        assert "async acquisition failed" in writer.error_info.compact_error_message
+    else:
+        assert writer.error_info is None
+    with (
+        mock.patch("bec_server.file_writer.file_writer_manager.get_full_path", return_value=path),
+        mock.patch.object(
+            manager.file_writer,
+            "write",
+            side_effect=RuntimeError("metadata failed") if finalization_fails else None,
+        ) as finalize,
+        mock.patch.object(manager.connector, "set_and_publish") as publish,
+        mock.patch.object(manager.connector, "xadd") as xadd,
+        mock.patch.object(manager.connector, "raise_alarm"),
+    ):
+        manager.write_file("scan_id")
+    finalize.assert_called_once()
+    outcome = publish.call_args.args[1]
+    assert outcome.done is True
+    assert outcome.successful is (failure_stage is None and not finalization_fails)
+    # The logger may also publish through this connector, depending on test order.
+    history_calls = [
+        call
+        for call in xadd.call_args_list
+        if call.kwargs.get("topic") == MessageEndpoints.scan_history()
+    ]
+    if outcome.successful:
+        assert len(history_calls) == 1
+        assert history_calls[0].kwargs["msg_dict"]["data"].file_path == path
+    else:
+        assert not history_calls
+    assert not writer.file_handle.id.valid
+    assert Path(path).exists()

@@ -422,6 +422,8 @@ class FileWriterManager(BECService):
         file_suffix = "master"
 
         start_time = time.time()
+        successful = storage.async_writer is None or storage.async_writer.error_info is None
+        file_handle = None
 
         try:
             file_path = get_full_path(
@@ -429,7 +431,6 @@ class FileWriterManager(BECService):
                 name=file_suffix,
                 log_if_dir_does_not_exist=False,
             )
-            successful = True
             written_async_signals = (
                 storage.async_writer.written_signals if storage.async_writer else None
             )
@@ -491,6 +492,9 @@ class FileWriterManager(BECService):
             expire=3600,
         )
 
+        if not successful:
+            return
+
         history_msg = messages.ScanHistoryMessage(
             scan_id=scan_id,
             scan_number=storage.scan_number,
@@ -509,6 +513,4 @@ class FileWriterManager(BECService):
         self.connector.xadd(
             topic=MessageEndpoints.scan_history(), msg_dict={"data": history_msg}, max_size=10000
         )
-        if successful:
-            logger.success(f"Finished writing file {file_path}.")
-            return
+        logger.success(f"Finished writing file {file_path}.")
