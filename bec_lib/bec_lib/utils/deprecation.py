@@ -6,8 +6,6 @@ import inspect
 from functools import wraps
 from typing import Any, Callable
 
-from bec_lib.logger import bec_logger
-
 
 def deprecated(
     remove_in_version: str | None = None, recommendation: str | None = None, stack: int = 0
@@ -40,6 +38,8 @@ def deprecated(
 
         @wraps(func)
         def wrapper(*args, **kwargs):
+            from bec_lib.logger import bec_logger
+
             message = f"{func.__name__} is deprecated"
             if remove_in_version:
                 message += f" and will be removed in version {remove_in_version}"
