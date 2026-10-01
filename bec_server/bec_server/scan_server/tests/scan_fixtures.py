@@ -1,7 +1,7 @@
 import copy
 import inspect
 import warnings
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import nullcontext
 from types import SimpleNamespace, UnionType
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
@@ -361,8 +361,10 @@ def _infer_device_names(scan_cls, scan_args: tuple, scan_kwargs: dict) -> list[s
     return [name for name in device_names if isinstance(name, str)]
 
 
-@pytest.fixture
-def scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager, tmpdir):
+def _make_scan_assembler(
+    readout_priority: ReadoutPriorityContainer, device_manager, tmpdir
+) -> Callable[..., Any]:
+    """Build the scan assembler shared by the current and deprecated fixtures."""
     scan_classes = {cls.scan_name: cls for _, cls in ScanManager.get_available_scans()}
 
     def _assemble_scan(scan_type, *scan_args, **scan_kwargs):
@@ -438,11 +440,21 @@ def scan_assembler(readout_priority: ReadoutPriorityContainer, device_manager, t
 
 
 @pytest.fixture
-def v4_scan_assembler(scan_assembler):
+def scan_assembler(
+    readout_priority: ReadoutPriorityContainer, device_manager, tmpdir
+) -> Callable[..., Any]:
+    """Return a factory for assembling scans in tests."""
+    return _make_scan_assembler(readout_priority, device_manager, tmpdir)
+
+
+@pytest.fixture
+def v4_scan_assembler(
+    readout_priority: ReadoutPriorityContainer, device_manager, tmpdir
+) -> Callable[..., Any]:
     """Return the scan assembler fixture under its deprecated name."""
     warnings.warn(
         "v4_scan_assembler is deprecated; use scan_assembler instead.",
         DeprecationWarning,
         stacklevel=2,
     )
-    return scan_assembler
+    return _make_scan_assembler(readout_priority, device_manager, tmpdir)
