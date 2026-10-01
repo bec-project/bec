@@ -111,6 +111,7 @@ class AsyncWriter(threading.Thread):
         self._written_signals = defaultdict(set)
         self.file_handle = None
         self.cursor = defaultdict(dict)
+        self.error_info: messages.ErrorInfo | None = None
 
     @property
     def written_signals(self) -> dict[str, list[str]]:
@@ -215,13 +216,13 @@ class AsyncWriter(threading.Thread):
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()
-            # self.send_file_message(done=True, successful=False)
             logger.error(f"Error writing async data file {self.tmp_file_path}: {content}")
             error_info = messages.ErrorInfo(
                 error_message=f"Error writing async data file {self.tmp_file_path}",
                 compact_error_message=traceback.format_exc(limit=0),
                 exception_type="AsyncWriterError",
             )
+            self.error_info = error_info
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 info=error_info,
