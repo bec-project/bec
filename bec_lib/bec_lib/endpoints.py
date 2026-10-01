@@ -8,6 +8,7 @@ import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from bec_lib.utils.deprecation import deprecated
 from bec_lib.utils.import_utils import lazy_import
 
 # pylint: disable=too-many-public-methods
@@ -450,37 +451,11 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def device_monitor_2d(device: str):
-        """
-        Endpoint for device monitoring of 2D detectors.
-        This endpoint is used to publish image data from a 2D area detector.
-        The purpose is to be able to monitor the detector data in real-time
-        at reduced frequency/volumes. The data will most likely be made available
-        from the the data backend of the detector. Details on shape and type of data
-        should be specified in dtype/dshape of the dev.<device>.describe() method.
-
-        Args:
-            device (str): Device name, e.g. "eiger".
-
-        Returns:
-            EndpointInfo: Endpoint for device monitoring.
-        """
-        endpoint = f"{EndpointType.INFO.value}/devices/monitor2d/{device}"
-        return EndpointInfo(
-            endpoint=endpoint,
-            message_type=messages.DeviceMonitor2DMessage,
-            message_op=MessageOp.STREAM,
-        )
-
-    @staticmethod
+    @deprecated(recommendation="Use Preview signals instead.")
     def device_monitor_1d(device: str):
         """
         Endpoint for device monitoring of 1D detectors.
-        This endpoint is used to publish image data from a 1D waveform detector.
-        The purpose is to be able to monitor the detector data in real-time
-        at reduced frequency/volumes. The data will most likely be made available
-        from the the data backend of the detector. Details on shape and type of data
-        should be specified in dtype/dshape of the dev.<device>.describe() method.
+        This endpoint is deprecated; use Preview signals instead.
 
         Args:
             device (str): Device name, e.g. "wave".

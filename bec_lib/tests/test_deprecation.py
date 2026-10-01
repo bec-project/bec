@@ -7,6 +7,8 @@ from unittest import mock
 
 import pytest
 
+from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.logger import bec_logger
 from bec_lib.utils.deprecation import deprecated
 
@@ -70,3 +72,18 @@ def test_deprecated_stack_can_skip_an_intermediate_wrapper(monkeypatch):
 def test_deprecated_rejects_negative_stack():
     with pytest.raises(ValueError, match="stack must be non-negative"):
         deprecated(stack=-1)
+
+
+def test_device_monitor_1d_endpoint_is_deprecated(monkeypatch):
+    logger = mock.Mock()
+    monkeypatch.setattr(bec_logger, "logger", logger)
+
+    endpoint = MessageEndpoints.device_monitor_1d("wave")
+
+    assert endpoint.endpoint == "info/devices/monitor1d/wave"
+    assert endpoint.message_type is messages.DeviceMonitor1DMessage
+    assert endpoint.message_op is MessageOp.STREAM
+    logger.bind.assert_called_once_with(deprecation=True)
+    logger.bind.return_value.warning.assert_called_once_with(
+        "device_monitor_1d is deprecated. Use Preview signals instead."
+    )
