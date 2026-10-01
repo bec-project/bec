@@ -1,6 +1,7 @@
 **/*_venv
 **/.idea
 *.log
+*.log.gz
 **/__pycache__
 **/.DS_Store
 **/out
