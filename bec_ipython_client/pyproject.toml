@@ -27,7 +27,7 @@ dev = [
     "coverage~=7.0",
     "isort~=5.13, >=5.13.2",
     "pylint>=3,<5",
-    "pytest-bec-e2e~=3.0",
+    "pytest-bec-e2e>=3.0",
     "pytest-random-order~=1.1",
     "pytest-redis>=3.1,<6.0",
     "pytest-retry~=1.1",
