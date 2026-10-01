@@ -13,7 +13,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "bec-lib~=3.0",
+    "bec-lib>=3.0",
     "h5py~=3.10",
     "libtmux~=0.37",
     "lmfit~=1.3",
