@@ -227,4 +227,12 @@ def test_v4_scan_assembler_alias_warns(request, scan_assembler):
     with pytest.warns(DeprecationWarning, match="use scan_assembler instead"):
         deprecated_assembler = request.getfixturevalue("v4_scan_assembler")
 
-    assert deprecated_assembler is scan_assembler
+    current_scan = scan_assembler("mv", "samx", 1.5, "samy", -2.0, relative=False)
+    deprecated_scan = deprecated_assembler("mv", "samx", 1.5, "samy", -2.0, relative=False)
+
+    assert type(deprecated_scan) is type(current_scan)
+    assert deprecated_scan.motors == current_scan.motors
+    for scan in (current_scan, deprecated_scan):
+        scan.actions.set = mock.MagicMock()
+        scan.scan_core()
+        scan.actions.set.assert_called_once_with(scan.motors, [1.5, -2.0], wait=False)
