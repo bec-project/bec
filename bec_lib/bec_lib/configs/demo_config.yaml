@@ -2129,6 +2129,16 @@ monitor_async:
   readOnly: false
   softwareTrigger: true
 
+gauss_async:
+  readoutPriority: async
+  deviceClass: ophyd_devices.sim.sim_async_gauss.SimAsyncGauss2D
+  deviceConfig: {}
+  deviceTags:
+    - detector
+  enabled: true
+  readOnly: false
+  softwareTrigger: false
+
 rt_controller:
   readoutPriority: baseline
   deviceClass: ophyd_devices.sim.SimPositionerWithController
