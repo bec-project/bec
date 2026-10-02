@@ -470,7 +470,8 @@ class QueueManager:
                 )
             finally:
                 # Attempt publication before cleanup, but still interrupt on publish failure.
-                que.worker_status = InstructionQueueStatus.STOPPED
+                if instruction_queue.status != InstructionQueueStatus.COMPLETED:
+                    instruction_queue.status = InstructionQueueStatus.STOPPED
 
     def _cancel_queue_item(self, target_queue_item: DirectInstructionQueueItem, queue: str) -> None:
         """

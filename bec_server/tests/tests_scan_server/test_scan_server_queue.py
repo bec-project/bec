@@ -1083,6 +1083,49 @@ def test_device_stop_precedes_worker_shutdown(
         assert queue.active_instruction_queue is None
 
 
+@pytest.mark.parametrize("retire_target", [False, True])
+@pytest.mark.parametrize("publish_fails", [False, True])
+def test_abort_preserves_completed_target_and_following_item(
+    dormant_scan_queue, retire_target, publish_fails
+):
+    # pylint: disable=redefined-outer-name
+    queue = dormant_scan_queue
+    manager = queue.queue_manager
+    manager.add_to_queue("primary", _queued_scan_message(rid="original"))
+    manager.add_to_queue("primary", _queued_scan_message(rid="following"))
+    original, following = queue.queue
+    original.active_scan = original.scans[0]
+    original.status = InstructionQueueStatus.RUNNING
+    queue.active_instruction_queue = original
+    queue.scan_worker.current_instruction_queue_item = original
+    send = manager.connector.send
+
+    def complete_during_publication(endpoint, msg):
+        assert endpoint == MessageEndpoints.stop_devices()
+        # Model the worker completing and optionally retiring the original during publication.
+        original.status = InstructionQueueStatus.COMPLETED
+        queue.scan_worker.current_instruction_queue_item = None
+        if retire_target:
+            assert queue.queue.popleft() is original
+        if publish_fails:
+            raise RuntimeError("Stop publication failed")
+        send(endpoint, msg)
+
+    expected_error = (
+        pytest.raises(RuntimeError, match="Stop publication failed")
+        if publish_fails
+        else nullcontext()
+    )
+    with mock.patch.object(manager.connector, "send", side_effect=complete_during_publication):
+        with expected_error:
+            manager.set_abort(request_id="original")
+
+    assert original.status == InstructionQueueStatus.COMPLETED
+    assert following.status == InstructionQueueStatus.PENDING
+    assert not following.scans[0]._shutdown_event.is_set()
+    assert queue.status == ScanQueueStatus.PAUSED
+
+
 def test_clear_pending_queue_does_not_stop_devices(dormant_scan_queue):
     queue = dormant_scan_queue
     manager = queue.queue_manager
