@@ -254,11 +254,6 @@ class DeviceBase:
         if self._info:
             self._parse_info()
 
-        # the following lambda is needed to support customized RPC methods with
-        # doc strings and function signatures.
-        # pylint: disable=unnecessary-lambda
-        self.run = lambda *args, **kwargs: self._run(*args, **kwargs)
-
     def _run(self, *args, fcn=None, cached=False, **kwargs):
         device, func_call = self._get_rpc_func_name(fcn=fcn)
 
@@ -582,7 +577,12 @@ class DeviceBase:
                     self._custom_rpc_methods[user_access_name] = DeviceBase(
                         name=user_access_name, info=descr, parent=self
                     )
-                    setattr(self, user_access_name, self._custom_rpc_methods[user_access_name].run)
+                    # Use a separate callable so RPC metadata stays local to each method.
+                    setattr(
+                        self,
+                        user_access_name,
+                        functools.partial(self._custom_rpc_methods[user_access_name]._run),
+                    )
                     setattr(getattr(self, user_access_name), "__doc__", descr.get("doc"))
                     setattr(
                         getattr(self, user_access_name),
