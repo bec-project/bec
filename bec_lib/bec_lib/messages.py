@@ -731,8 +731,8 @@ class DeviceAsyncUpdate(BaseModel):
     """Model for validating async update metadata sent with device data.
 
     The async update metadata controls how data is aggregated into datasets during a scan:
-    - add: Appends data to the existing dataset along the first axis
-    - add_slice: Appends a slice of data at a specific index (max 2D datasets)
+    - add: Appends data to the existing dataset along the first axis; ignores index
+    - add_slice: Extends the contents of the row selected by a nonnegative index (2D datasets only)
     - replace: Replaces the existing dataset (written after scan completion)
 
     Args:
@@ -741,8 +741,10 @@ class DeviceAsyncUpdate(BaseModel):
                                                  Use None for unlimited dimensions. E.g., [None] for 1D unlimited.
                                                  None values must only appear at the beginning (e.g., [None, 1024] is valid, [1024, None] is not).
                                                  When all dimensions are None, maximum is 2 dimensions (e.g., [None, None] is valid, [None, None, None] is not).
-                                                 For 'add_slice' type, max_shape cannot exceed two dimensions.
-        index (int, optional): Row index for 'add_slice' operations. Required only for 'add_slice' type.
+                                                 For 'add_slice' type, max_shape must have exactly two dimensions.
+        index (int, optional): Required nonnegative row index for 'add_slice' operations.
+                              Must be smaller than max_shape[0] when the first axis is bounded.
+                              Ignored by 'add' and 'replace'. Use 'add' to append new rows.
 
     Examples:
         >>> DeviceAsyncUpdate(type="add", max_shape=[None])
@@ -783,23 +785,31 @@ class DeviceAsyncUpdate(BaseModel):
                     )
 
             # If all dimensions are None, maximum is 2 dimensions
-            if all(dim is None for dim in self.max_shape):
-                if len(self.max_shape) > 2:
-                    raise ValueError(
-                        f"Invalid max_shape {self.max_shape}: when all dimensions are None, "
-                        f"maximum number of dimensions is 2, got {len(self.max_shape)}"
-                    )
+            if all(dim is None for dim in self.max_shape) and len(self.max_shape) > 2:
+                raise ValueError(
+                    f"Invalid max_shape {self.max_shape}: when all dimensions are None, "
+                    f"maximum number of dimensions is 2, got {len(self.max_shape)}"
+                )
 
         if self.type == "add_slice":
+            max_shape = self.max_shape
             if self.index is None:
                 raise ValueError("index is required for async update type 'add_slice'")
-            if not isinstance(self.index, int) or (self.index < -1):
+            if not isinstance(self.index, int) or (self.index < 0):
                 raise ValueError(
-                    f"index must be an integer >= -1 for async update type 'add_slice', got {self.index}"
+                    f"index must be an integer >= 0 for async update type 'add_slice', got {self.index}"
                 )
-            if self.max_shape is not None and len(self.max_shape) > 2:
+            if max_shape is not None and len(max_shape) != 2:
                 raise ValueError(
-                    f"max_shape for async update type 'add_slice' cannot exceed two dimensions, got {len(self.max_shape)} dimensions"
+                    "max_shape for async update type 'add_slice' must have exactly two dimensions, "
+                    f"got {len(max_shape)} dimensions"
+                )
+            # max_shape is required for add_slice and has been validated above.
+            # pylint: disable-next=unsubscriptable-object
+            if max_shape is not None and max_shape[0] is not None and self.index >= max_shape[0]:
+                raise ValueError(
+                    "index must be smaller than max_shape[0] for async update type 'add_slice', "
+                    f"got index {self.index} with max_shape {max_shape}"
                 )
         return self
 

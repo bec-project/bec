@@ -630,12 +630,11 @@ class TestDeviceAsyncUpdate:
         assert update.max_shape == [None, 1024]
         assert update.index == 5
 
-    def test_valid_add_slice_type_with_1d_max_shape(self):
-        """Test add_slice type with 1D max_shape"""
-        update = messages.DeviceAsyncUpdate(type="add_slice", max_shape=[None], index=0)
-        assert update.type == "add_slice"
-        assert update.max_shape == [None]
-        assert update.index == 0
+    @pytest.mark.parametrize("max_shape", [[None], [100]])
+    def test_invalid_add_slice_type_with_1d_max_shape(self, max_shape):
+        """Test that add_slice rejects one-dimensional target datasets."""
+        with pytest.raises(pydantic.ValidationError, match="must have exactly two dimensions"):
+            messages.DeviceAsyncUpdate(type="add_slice", max_shape=max_shape, index=0)
 
     def test_valid_add_slice_type_with_variable_size(self):
         """Test add_slice type with variable size in second dimension"""
@@ -673,7 +672,7 @@ class TestDeviceAsyncUpdate:
         """Test that add_slice type cannot have more than 2D max_shape"""
         with pytest.raises(pydantic.ValidationError) as exc_info:
             messages.DeviceAsyncUpdate(type="add_slice", max_shape=[None, 1024, 1024], index=0)
-        assert "cannot exceed two dimensions" in str(exc_info.value)
+        assert "must have exactly two dimensions" in str(exc_info.value)
 
     def test_invalid_max_shape_none_in_middle(self):
         """Test that None values cannot appear in the middle of max_shape"""
@@ -713,8 +712,7 @@ class TestDeviceAsyncUpdate:
         assert update.max_shape == max_shape
 
     @pytest.mark.parametrize(
-        "max_shape,index",
-        [([None], 0), ([None, 100], 5), ([None, None], 10), ([100], 2), ([100, 200], 15)],
+        "max_shape,index", [([None, 100], 5), ([None, None], 10), ([100, 200], 15)]
     )
     def test_valid_max_shape_patterns_for_add_slice(self, max_shape, index):
         """Test various valid max_shape patterns for add_slice type"""
@@ -768,13 +766,37 @@ class TestDeviceAsyncUpdate:
             messages.DeviceAsyncUpdate(type="add", max_shape=[None, bad_value])
         assert "all non-None dimensions must be positive integers" in str(exc_info.value)
 
-    def test_invalid_add_slice_negative_index(self):
-        """Test that negative index less than -1 is rejected for add_slice"""
+    @pytest.mark.parametrize("index", [-1, -2])
+    @pytest.mark.parametrize("max_shape", [[None, 1024], [None, None], [100, 1024]])
+    def test_invalid_add_slice_negative_index(self, index, max_shape):
+        """Test that all negative row indices are rejected for add_slice"""
         with pytest.raises(pydantic.ValidationError) as exc_info:
-            messages.DeviceAsyncUpdate(type="add_slice", max_shape=[None, 1024], index=-2)
-        assert "index must be an integer >= -1" in str(exc_info.value)
+            messages.DeviceAsyncUpdate(type="add_slice", max_shape=max_shape, index=index)
+        assert "index must be an integer >= 0" in str(exc_info.value)
 
-    @pytest.mark.parametrize("index", [0, 1, 10, 100, -1])
+    @pytest.mark.parametrize("max_shape", [[4, 4], [4, 1024]])
+    @pytest.mark.parametrize("index", [4, 5])
+    def test_invalid_add_slice_index_exceeds_row_limit(self, max_shape, index):
+        """Reject indices at or beyond the finite first-axis limit."""
+        with pytest.raises(
+            pydantic.ValidationError, match=r"index must be smaller than max_shape\[0\]"
+        ):
+            messages.DeviceAsyncUpdate(type="add_slice", max_shape=max_shape, index=index)
+
+    @pytest.mark.parametrize("max_shape", [[4, 4], [4, 1024]])
+    @pytest.mark.parametrize("index", [0, 3])
+    def test_valid_add_slice_index_within_row_limit(self, max_shape, index):
+        """Both the first and last row within the finite limit are valid."""
+        update = messages.DeviceAsyncUpdate(type="add_slice", max_shape=max_shape, index=index)
+        assert update.index == index
+
+    @pytest.mark.parametrize("update_type", ["add", "replace"])
+    def test_other_update_types_ignore_index_row_limit(self, update_type):
+        """The row-index bound applies only to add_slice."""
+        update = messages.DeviceAsyncUpdate(type=update_type, max_shape=[4, 1024], index=4)
+        assert update.index == 4
+
+    @pytest.mark.parametrize("index", [0, 1, 10, 100])
     def test_valid_add_slice_various_indices(self, index):
         """Test various valid index values for add_slice type"""
         update = messages.DeviceAsyncUpdate(type="add_slice", max_shape=[None, 1024], index=index)

@@ -210,6 +210,37 @@ def test_async_writer_add_slice_var_size(async_writer, data):
     assert out[1].shape == (10,)
 
 
+@pytest.mark.parametrize("initial_row", [1, 3])
+@pytest.mark.parametrize("dtype", [np.int16, np.float64])
+def test_async_writer_add_slice_var_size_starts_at_requested_row(
+    async_writer, tmp_path, initial_row, dtype
+):
+    """A sparse first vlen row retains its data when earlier rows and more slices arrive."""
+    with h5py.File(tmp_path / "initial_vlen_row.h5", "w") as file:
+        signal_group = file.create_group("signal")
+        async_writer.write_value_data(
+            signal_group,
+            np.array([7, 8], dtype=dtype),
+            {"type": "add_slice", "index": initial_row, "max_shape": [None, None]},
+        )
+        dataset = signal_group["value"]
+        assert dataset.shape == (initial_row + 1,)
+        assert h5py.check_vlen_dtype(dataset.dtype) == np.dtype(dtype)
+        assert all(row.size == 0 for row in dataset[:initial_row])
+        np.testing.assert_array_equal(dataset[initial_row], [7, 8])
+
+        for row_index, values in [(0, [1, 2]), (initial_row, [9]), (0, [3])]:
+            async_writer.write_value_data(
+                signal_group,
+                np.array(values, dtype=dtype),
+                {"type": "add_slice", "index": row_index, "max_shape": [None, None]},
+            )
+        assert dataset.shape == (initial_row + 1,)
+        np.testing.assert_array_equal(dataset[0], [1, 2, 3])
+        np.testing.assert_array_equal(dataset[initial_row], [7, 8, 9])
+        assert all(row.size == 0 for row in dataset[1:initial_row])
+
+
 def test_async_writer_add_slice_var_size_2D_data_warns(async_writer):
     """
     Test that adding a slice with 2D data when max_shape is [None, None] raises a warning and skips writing the data.
@@ -375,9 +406,9 @@ def test_async_writer_add_slice_fixed_size_nonzero_first_row_preserves_vlen_dtyp
 
 
 @pytest.mark.parametrize("populated", [False, True])
-@pytest.mark.parametrize("index, max_rows", [(-1, None), (4, 4)])
-def test_async_writer_add_slice_fixed_size_rejects_invalid_index(
-    async_writer, tmp_path, populated, index, max_rows
+@pytest.mark.parametrize("index, max_rows, row_width", [(-1, None, 4), (4, 4, 4), (-1, None, None)])
+def test_async_writer_add_slice_rejects_invalid_index(
+    async_writer, tmp_path, populated, index, max_rows, row_width
 ):
     """An invalid row index cannot overwrite existing rows or initialize an invalid cursor."""
     with h5py.File(tmp_path / "invalid_index.h5", "w") as file:
@@ -387,7 +418,7 @@ def test_async_writer_add_slice_fixed_size_rejects_invalid_index(
                 async_writer.write_value_data(
                     signal_group,
                     values,
-                    {"type": "add_slice", "index": row_index, "max_shape": [max_rows, 4]},
+                    {"type": "add_slice", "index": row_index, "max_shape": [max_rows, row_width]},
                 )
             expected = signal_group["value"][:]
         cursor_before = dict(async_writer.cursor.get(signal_group.name, {}))
@@ -396,21 +427,25 @@ def test_async_writer_add_slice_fixed_size_rejects_invalid_index(
             async_writer.write_value_data(
                 signal_group,
                 [99],
-                {"type": "add_slice", "index": index, "max_shape": [max_rows, 4]},
+                {"type": "add_slice", "index": index, "max_shape": [max_rows, row_width]},
             )
         raise_alarm.assert_called_once()
         assert raise_alarm.call_args.kwargs["severity"] == Alarms.WARNING
         assert "nonnegative row index" in raise_alarm.call_args.kwargs["info"].error_message
         assert async_writer.cursor.get(signal_group.name, {}) == cursor_before
         if populated:
-            np.testing.assert_array_equal(signal_group["value"][:], expected)
+            assert signal_group["value"].shape == expected.shape
+            for actual_row, expected_row in zip(signal_group["value"][:], expected):
+                np.testing.assert_array_equal(actual_row, expected_row)
         else:
             assert "value" not in signal_group
 
         async_writer.write_value_data(
-            signal_group, [3], {"type": "add_slice", "index": 0, "max_shape": [max_rows, 4]}
+            signal_group, [3], {"type": "add_slice", "index": 0, "max_shape": [max_rows, row_width]}
         )
-        expected_row = [1, 2, 3, 0] if populated else [3]
+        expected_row = [1, 2, 3] if populated else [3]
+        if populated and row_width is not None:
+            expected_row.append(0)
         np.testing.assert_array_equal(signal_group["value"][0], expected_row)
 
 

@@ -65,8 +65,9 @@ class AsyncWriter(threading.Thread):
         "index": int
     }
 
-    "index" is only required for the 'add_slice' type and specifies the row index to append the data to.
-    Fixed-width datasets require nonnegative row indices and allow revisiting earlier rows.
+    "index" is required for 'add_slice' and must be nonnegative. It selects the row whose
+    contents are extended and allows revisiting earlier rows. Use 'add' to append new rows
+    along the first axis; 'add' ignores "index".
     "max_shape" is required for the 'add' and 'add_slice' types and specifies the maximum shape of the dataset. If the dataset is 1D, 'max_shape' should be [None].
 
     """
@@ -445,7 +446,11 @@ class AsyncWriter(threading.Thread):
 
         if len(max_shape) != 2:
             # We currently only support 2D datasets for the 'add_slice' async update type
-            msg = f"Invalid max_shape for signal group {signal_group.name} async update type 'add_slice': {max_shape}. max_shape cannot exceed two dimensions. Data will not be written."
+            msg = (
+                f"Invalid max_shape for signal group {signal_group.name} async update type "
+                f"'add_slice': {max_shape}. max_shape must have exactly two dimensions. "
+                "Data will not be written."
+            )
             self.connector.raise_alarm(
                 severity=Alarms.WARNING,
                 info=messages.ErrorInfo(
@@ -475,12 +480,10 @@ class AsyncWriter(threading.Thread):
         # if max_shape contains more than one None, we have to use a vlen_dtype
         num_undefined = sum(1 for i in max_shape if i is None)
         row_index = async_update["index"]
-        if num_undefined <= 1 and (
-            row_index < 0 or (max_shape[0] is not None and row_index >= max_shape[0])
-        ):
+        if row_index < 0 or (max_shape[0] is not None and row_index >= max_shape[0]):
             msg = (
                 f"Invalid row index {row_index} for signal group {signal_group.name}: "
-                "fixed-width 'add_slice' updates require a nonnegative row index "
+                "'add_slice' updates require a nonnegative row index "
                 f"within max_shape {max_shape}. "
                 "Data will not be written."
             )
@@ -498,11 +501,9 @@ class AsyncWriter(threading.Thread):
 
         if "value" not in signal_group:
             if num_undefined > 1:
-                row_index = 0
-                shape = (1,) if value.ndim < len(max_shape) else (value.shape[0],)
                 signal_group.create_dataset(
                     "value",
-                    shape=shape,
+                    shape=(row_index + 1,),
                     maxshape=(None,),
                     dtype=h5py.vlen_dtype(np.dtype(value[0].dtype)),
                 )
@@ -514,8 +515,6 @@ class AsyncWriter(threading.Thread):
         # add a slice to the already existing dataset
         if num_undefined > 1:
             max_index = signal_group["value"].shape[0]
-            if row_index == -1:
-                row_index = max_index + 1
             if row_index >= max_index:
                 signal_group["value"].resize((row_index + 1,))
                 signal_group["value"][row_index] = value
