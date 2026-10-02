@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v4.0.1 (2026-10-02)
+
+### Bug Fixes
+
+- **file-writer**: Preserve indexed async slice rows
+  ([`b09eb92`](https://github.com/bec-project/bec/commit/b09eb928d63b6b64dac9c9cb62a47954afcbbcca))
+
+- **file-writer**: Retain variable-length slice cell shapes
+  ([`0d6d8d1`](https://github.com/bec-project/bec/commit/0d6d8d196614cd0e6ae7708ac9e978f1ede64955))
+
+- **file-writer**: Validate async slice rows
+  ([`e197f06`](https://github.com/bec-project/bec/commit/e197f067f1cc8b26160c76dac0c804e41721e94e))
+
+Preserve the requested first row for variable-length slices and align DeviceAsyncUpdate validation
+  with the writer's supported target shapes and row limits. Cover sparse initialization, continued
+  slice appends, and index boundaries with regression tests.
+
+
 ## v4.0.0 (2026-10-02)
 
 ### Bug Fixes
