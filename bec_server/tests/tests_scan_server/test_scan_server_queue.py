@@ -1,5 +1,6 @@
 import threading
 import time
+from contextlib import nullcontext
 from unittest import mock
 
 import pytest
@@ -1015,6 +1016,85 @@ def test_set_abort_with_no_owned_devices_sends_stop_none(queuemanager_mock):
         "queue": MessageEndpoints.stop_devices(),
         "msg": messages.VariableMessage(value=[], metadata={"stop_id": stop_id}),
     } in queue_manager.connector.message_sent
+
+
+@pytest.mark.parametrize("action", ["abort", "clear"])
+@pytest.mark.parametrize("has_scan_id", [False, True])
+@pytest.mark.parametrize("publish_fails", [False, True])
+def test_device_stop_precedes_worker_shutdown(
+    dormant_scan_queue, action, has_scan_id, publish_fails
+):
+    queue = dormant_scan_queue
+    manager = queue.queue_manager
+    registry = manager.parent.device_lock_registry
+    item = DirectInstructionQueueItem(queue, mock.Mock(), queue.scan_worker)
+    scan = _build_dummy_v4_scan("scan-id" if has_scan_id else None)
+    scan.scan_info.metadata["RID"] = "stop-rid"
+    item.scans = [scan]
+    item.scan_msgs = [_queued_scan_message(rid="stop-rid")]
+    item.active_scan = scan
+    queue.queue.append(item)
+    queue.active_instruction_queue = item
+    queue.scan_worker.current_instruction_queue_item = item
+    item.status = InstructionQueueStatus.RUNNING
+    registry.get_owned_devices = mock.Mock(return_value=["samx"])
+    manager.connector.message_sent = []
+    original_stop = item.stop
+
+    def release_on_shutdown():
+        # Model the direct worker releasing ownership immediately on interruption.
+        registry.get_owned_devices.return_value = []
+        stops = [
+            sent["msg"]
+            for sent in manager.connector.message_sent
+            if sent["queue"] == MessageEndpoints.stop_devices()
+        ]
+        if publish_fails:
+            assert not stops
+        else:
+            assert len(stops) == 1
+            assert stops[0].value == ["samx"]
+            expected_stop_id = item.scan_id if has_scan_id else item.queue_id
+            assert stops[0].metadata["stop_id"] == expected_stop_id
+        original_stop()
+
+    def fail_stop_publication(endpoint, msg):
+        assert endpoint == MessageEndpoints.stop_devices()
+        assert msg.value == ["samx"]
+        raise RuntimeError("Stop publication failed")
+
+    publication = (
+        mock.patch.object(manager.connector, "send", side_effect=fail_stop_publication)
+        if publish_fails
+        else nullcontext()
+    )
+    expected_error = (
+        pytest.raises(RuntimeError, match="Stop publication failed")
+        if publish_fails
+        else nullcontext()
+    )
+    with publication, mock.patch.object(item, "stop", side_effect=release_on_shutdown):
+        with expected_error:
+            getattr(manager, f"set_{action}")(queue="primary")
+    assert item.status == InstructionQueueStatus.STOPPED
+    assert queue.status == ScanQueueStatus.PAUSED
+    if action == "clear":
+        assert not queue.queue
+        assert queue.active_instruction_queue is None
+
+
+def test_clear_pending_queue_does_not_stop_devices(dormant_scan_queue):
+    queue = dormant_scan_queue
+    manager = queue.queue_manager
+    manager.add_to_queue("primary", _queued_scan_message())
+    manager.connector.message_sent = []
+
+    manager.set_clear(queue="primary")
+
+    assert not queue.queue
+    assert not any(
+        sent["queue"] == MessageEndpoints.stop_devices() for sent in manager.connector.message_sent
+    )
 
 
 @pytest.mark.timeout(5)

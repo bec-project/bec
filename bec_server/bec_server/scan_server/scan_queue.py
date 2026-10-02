@@ -459,15 +459,18 @@ class QueueManager:
                           Expected: {instruction_queue}, actual: {instruction_queue.worker.current_instruction_queue_item}. Skipping abort."
                 )
                 return
-            que.worker_status = InstructionQueueStatus.STOPPED
             if instruction_queue.scan_id and instruction_queue.scan_id[-1] is None:
                 stop_id = instruction_queue.queue_id
             else:
                 stop_id = instruction_queue.scan_id
-            self.stop_all_devices(
-                stop_id=stop_id,
-                devices=self._get_owned_devices_for_instruction_queue(instruction_queue),
-            )
+            try:
+                self.stop_all_devices(
+                    stop_id=stop_id,
+                    devices=self._get_owned_devices_for_instruction_queue(instruction_queue),
+                )
+            finally:
+                # Attempt publication before cleanup, but still interrupt on publish failure.
+                que.worker_status = InstructionQueueStatus.STOPPED
 
     def _cancel_queue_item(self, target_queue_item: DirectInstructionQueueItem, queue: str) -> None:
         """
@@ -528,8 +531,26 @@ class QueueManager:
         que = self.queues[queue]
         with AutoResetCM(que):
             que.status = ScanQueueStatus.PAUSED
-            que.worker_status = InstructionQueueStatus.STOPPED
-            que.clear()
+            instruction_queue = que.scan_worker.current_instruction_queue_item
+            if (
+                instruction_queue is not None
+                and instruction_queue.status != InstructionQueueStatus.COMPLETED
+            ):
+                scan_ids = instruction_queue.scan_id
+                stop_id = (
+                    instruction_queue.queue_id if scan_ids and scan_ids[-1] is None else scan_ids
+                )
+                try:
+                    self.stop_all_devices(
+                        stop_id=stop_id,
+                        devices=self._get_owned_devices_for_instruction_queue(instruction_queue),
+                    )
+                finally:
+                    instruction_queue.status = InstructionQueueStatus.STOPPED
+                    que.clear()
+            else:
+                que.worker_status = InstructionQueueStatus.STOPPED
+                que.clear()
 
     @requires_queue
     def set_restart(
