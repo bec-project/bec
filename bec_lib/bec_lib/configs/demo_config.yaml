@@ -2129,6 +2129,19 @@ monitor_async:
   readOnly: false
   softwareTrigger: true
 
+gauss_async:
+  description: >-
+    Async 2D Gaussian scan: x, y and intensity streamed together through one
+    AsyncMultiSignal (gauss_async_data_x / _y / _intensity), independent of scan points.
+  readoutPriority: async
+  deviceClass: ophyd_devices.sim.sim_async_gauss.SimAsyncGauss2D
+  deviceConfig: {}
+  deviceTags:
+    - detector
+  enabled: true
+  readOnly: false
+  softwareTrigger: false
+
 rt_controller:
   readoutPriority: baseline
   deviceClass: ophyd_devices.sim.SimPositionerWithController
