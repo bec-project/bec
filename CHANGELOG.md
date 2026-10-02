@@ -1,6 +1,110 @@
 # CHANGELOG
 
 
+## v4.0.0 (2026-10-02)
+
+### Bug Fixes
+
+- Preserve named imports of deprecated scan assembler fixture
+  ([`214edae`](https://github.com/bec-project/bec/commit/214edae4a03c6dfa8ab7c12bc23ed2bbe12bd6e9))
+
+- **ci**: Check out BEC refs for widget e2e tests
+  ([`11b1659`](https://github.com/bec-project/bec/commit/11b16592047f7b6149a37add1a34bde0d6a7f7d2))
+
+### Build System
+
+- Allow major releases of bec-lib
+  ([`a6dcdb0`](https://github.com/bec-project/bec/commit/a6dcdb0e7283c35f2ab4650aae72a2ce4ee12112))
+
+- Allow major releases of pytest-bec-e2e
+  ([`90d38d0`](https://github.com/bec-project/bec/commit/90d38d05998ef1ed36d4d76081742f015a9bba69))
+
+- Bump min version of ophyd_devices
+  ([`57c4b7d`](https://github.com/bec-project/bec/commit/57c4b7dee671a2eac5442af3ad76bed14c3721f7))
+
+- Require lmfit 1.3.3 for parameter user data
+  ([`3fb9a67`](https://github.com/bec-project/bec/commit/3fb9a675d56751c94bdfcd940eeb830fd4afd37c))
+
+### Chores
+
+- Ignore compressed log files
+  ([`5995844`](https://github.com/bec-project/bec/commit/59958445c3d4c9bfb4f71d7f84de9654c40683a5))
+
+- Ignore Redis dump files
+  ([`e1effb6`](https://github.com/bec-project/bec/commit/e1effb60e6e5783e808835d4b4d86d50e6ee8151))
+
+- Ignore Ruff cache directories
+  ([`d80b61a`](https://github.com/bec-project/bec/commit/d80b61aa2a3bf4d4aafd23219ecdf106b90017dd))
+
+- **deprecation decorator**: Cleanup imports
+  ([`3d3f6a0`](https://github.com/bec-project/bec/commit/3d3f6a059b9591c6ad4fef28b18d4055f0fb25cc))
+
+- **deprecation decorator**: Lazy-load bec logger
+  ([`883bc41`](https://github.com/bec-project/bec/commit/883bc41fa34b609dec486e1e39ea40114ccf06f6))
+
+- **device**: Mark positioner methods for removal in v5.0
+  ([`3ce40f0`](https://github.com/bec-project/bec/commit/3ce40f0022c72d438123b4a9eeb157dcb3f03583))
+
+### Continuous Integration
+
+- Bec widgets e2e tests
+  ([`caa48f9`](https://github.com/bec-project/bec/commit/caa48f9d43b4a5ee26b607442a658f5ef33b47c2))
+
+### Documentation
+
+- **demo**: Remove obsolete monitor scan example
+  ([`04981e3`](https://github.com/bec-project/bec/commit/04981e33affe935ba7b24d82d3b8d164ef36fb6e))
+
+### Refactoring
+
+- **devicemanager**: Remove legacy event subscriptions
+  ([`4c23e5f`](https://github.com/bec-project/bec/commit/4c23e5fcb38a5c2aaf3b90c1b5b4ee3c1f8ef7b1))
+
+- **endpoints**: Remove unused device monitor2d; mark 1d as deprecated
+  ([`84ccbe2`](https://github.com/bec-project/bec/commit/84ccbe24aa3f4118989a562dcb481085c5ac8a33))
+
+- **scan**: Drop v4 naming from scan helpers
+  ([`84811ac`](https://github.com/bec-project/bec/commit/84811ac2fe0f88d14b0e474243dbc4a71bc31dd6))
+
+- **scan**: Remove legacy scan groups and definitions
+  ([`dae3337`](https://github.com/bec-project/bec/commit/dae33370ebf75280b946d8560eb49d3d8cb86695))
+
+Remove the obsolete scan group and scan definition actions from the shared device instruction
+  contract, along with stale examples and descriptions.
+
+BREAKING CHANGE: DeviceInstructionMessage no longer accepts the close_scan_group, open_scan_def, or
+  close_scan_def actions.
+
+- **scan**: Remove legacy scan GUI models
+  ([`6e1f479`](https://github.com/bec-project/bec/commit/6e1f4798216eb4bcad707a26c79b7c0f5aa1a28b))
+
+Publish gui_visibility and signature metadata without the deprecated gui_config payload.
+
+BREAKING CHANGE: available_scans no longer includes gui_config. Scan controls should use
+  gui_visibility and signature metadata.
+
+- **scan**: Remove legacy scans
+  ([`99dec37`](https://github.com/bec-project/bec/commit/99dec37f991f47e554620ca349c3ce01d5d38402))
+
+Remove the generator-based scan worker, legacy scan and stub classes, and legacy queue paths. Load
+  and run scans through the direct ScanBase API.
+
+BREAKING CHANGE: Legacy scan classes and generator-based scan workers are removed. The scan server
+  now accepts only direct ScanBase subclasses as scan plugins. Imports from the removed legacy
+  modules are no longer available.
+
+### Testing
+
+- Verify deprecated scan assembler behavior instead of identity
+  ([`d26f23f`](https://github.com/bec-project/bec/commit/d26f23f96098d36f281ede72458af0465e4fb87c))
+
+- **e2e**: Migrate from legacy updates to BECMessageSignal updates
+  ([`384588e`](https://github.com/bec-project/bec/commit/384588e2aee68cc9266dbaf04377ee24f329edc5))
+
+- **scan**: Cover ScanStatus lifecycle
+  ([`0cb0ecd`](https://github.com/bec-project/bec/commit/0cb0ecdfe28d3564bdf8faceeab6d7ba1b5b4938))
+
+
 ## v3.173.1 (2026-09-30)
 
 ### Bug Fixes
