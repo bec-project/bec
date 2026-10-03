@@ -55,6 +55,14 @@ class GeneratorExecution:
     g: Generator
 
 
+@dataclass
+class RetainedMessage:
+    """Retained topic state delivered only to opted-in subscription callbacks."""
+
+    msg: MessageObject
+    callbacks: list[tuple[Any, dict[str, Any]]]
+
+
 class ManagedRedisConnection:
     RETRY_ON_TIMEOUT: int = 20
 
@@ -100,12 +108,15 @@ class ManagedRedisConnection:
 
         # main pubsub connection
         self._pubsub_conn = self._redis_conn.pubsub()
-        self._pubsub_conn.ignore_subscribe_messages = True
+        self._pubsub_conn.ignore_subscribe_messages = False
         # keep track of topics and callbacks
         self._topics_cb: DefaultDict[str, list[tuple[louie.saferef.BoundMethodWeakref, dict]]] = (
             collections.defaultdict(list)
         )
         self._topics_cb_lock = threading.Lock()
+        self._pubsub_registration_lock = threading.Lock()
+        self._replay_callbacks: dict[str, list[tuple[Any, dict[str, Any]]]] = {}
+        self._pending_replays: dict[str, None] = {}
         self._stream_subs = StreamSubs()
 
         self._events_listener_thread: threading.Thread | None = None
@@ -163,7 +174,7 @@ class ManagedRedisConnection:
 
     def _restart_pubsub(self):
         self._pubsub_conn = self._redis_conn.pubsub()
-        self._pubsub_conn.ignore_subscribe_messages = True
+        self._pubsub_conn.ignore_subscribe_messages = False
         for topic in self._topics_cb.keys():
             if "*" in topic:
                 self._pubsub_conn.psubscribe(topic)
@@ -388,13 +399,24 @@ class ManagedRedisConnection:
         start_thread: bool = True,
         from_start: bool = False,
         newest_only: bool = False,
-        **kwargs,
-    ):
+        replay_last: bool = False,
+        **kwargs: Any,
+    ) -> None:
         if cb is None:
             raise ValueError("Callback cb cannot be None")
 
         if topics is None and patterns is None:
             raise ValueError("topics and patterns cannot be both None")
+
+        if replay_last:
+            if patterns is not None:
+                raise ValueError(
+                    "Retained replay requires SET_PUBLISH or STREAM topics, not patterns"
+                )
+            if self._convert_endpointinfo(topics)[1] not in {"SET_PUBLISH", "STREAM"}:
+                raise ValueError("Retained replay requires SET_PUBLISH or STREAM topics")
+            if from_start:
+                raise ValueError("replay_last and from_start cannot be both True")
 
         # make a weakref from the callable, using louie;
         # it can create safe refs for simple functions as well as methods
@@ -403,37 +425,44 @@ class ManagedRedisConnection:
         )
         item = (cb_ref, kwargs)
 
-        if self._events_listener_thread is None:
-            # create the thread that will get all messages for this connector;
-            self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
-            self._events_listener_thread.name += f" ({self.name})"
-            self._events_listener_thread.start()
-
         if patterns is not None:
             patterns = self._normalize_patterns(patterns)
 
-            self._pubsub_conn.psubscribe(patterns)
-            with self._topics_cb_lock:
-                for pattern in patterns:
-                    if item not in self._topics_cb[pattern]:
-                        self._topics_cb[pattern].append(item)
+            with self._pubsub_registration_lock:
+                self._pubsub_conn.psubscribe(patterns)
+                with self._topics_cb_lock:
+                    for pattern in patterns:
+                        if item not in self._topics_cb[pattern]:
+                            self._topics_cb[pattern].append(item)
         else:
             topics, message_op = self._convert_endpointinfo(topics)
             if message_op == "STREAM":
-                return self._register_stream(
+                self._register_stream(
                     topics=topics,
                     cb=cb,
                     from_start=from_start,
                     newest_only=newest_only,
+                    replay_last=replay_last,
                     start_thread=start_thread,
                     **kwargs,
                 )
-
-            self._pubsub_conn.subscribe(topics)
-            with self._topics_cb_lock:
-                for topic in topics:
-                    if item not in self._topics_cb[topic]:
-                        self._topics_cb[topic].append(item)
+            else:
+                with self._pubsub_registration_lock:
+                    self._pubsub_conn.subscribe(topics)
+                    with self._topics_cb_lock:
+                        for topic in topics:
+                            if item not in self._topics_cb[topic]:
+                                self._topics_cb[topic].append(item)
+                            if replay_last and item not in self._replay_callbacks.setdefault(
+                                topic, []
+                            ):
+                                self._replay_callbacks[topic].append(item)
+        with self._pubsub_registration_lock:
+            if self._events_listener_thread is None:
+                # create the thread that will get all messages for this connector;
+                self._events_listener_thread = threading.Thread(target=self._get_messages_loop)
+                self._events_listener_thread.name += f" ({self.name})"
+                self._events_listener_thread.start()
         self._start_events_dispatcher_thread(start_thread)
 
     def _create_direct_stream_listener(self, topic, cb_ref, kwargs):
@@ -483,7 +512,9 @@ class ManagedRedisConnection:
                 topic: str = btopic.decode() if isinstance(btopic, bytes) else btopic  # type: ignore
                 # Advance past rejected records so they cannot block subsequent delivery.
                 new_ids[topic] = read_id.decode()
-                if callbacks := subs.get(topic):
+                with self._stream_subs.lock:
+                    callbacks = list(subs.get(topic, ()))
+                if callbacks:
                     try:
                         msg_dict = {
                             k.decode(): MsgpackSerialization.loads(msg) for k, msg in record.items()
@@ -559,6 +590,7 @@ class ManagedRedisConnection:
         cb: Callable,
         from_start: bool = False,
         newest_only: bool = False,
+        replay_last: bool = False,
         start_thread: bool = True,
         **kwargs,
     ) -> None:
@@ -571,6 +603,7 @@ class ManagedRedisConnection:
             from_start (bool, optional): read from start. Defaults to False.
             newest_only (bool, optional): read newest only. Defaults to False.
             start_thread (bool, optional): start the dispatcher thread. Defaults to True.
+            replay_last (bool): Deliver the latest retained entry alongside normal stream updates.
             **kwargs: additional keyword arguments to be transmitted to the callback
 
         """
@@ -581,7 +614,6 @@ class ManagedRedisConnection:
         # it can create safe refs for simple functions as well as methods
         cb_ref = louie.saferef.safe_ref(cb)
 
-        self._start_events_dispatcher_thread(start_thread)
         with self._stream_subs.lock:
             for topic in topics:
                 if newest_only:
@@ -594,9 +626,23 @@ class ManagedRedisConnection:
                     except redis.exceptions.ResponseError:
                         last_id = "0-0"  # no such key
                     else:
-                        last_id = stream_info["last-entry"][0].decode()  # type: ignore # we are using the sync Redis client
+                        entry = stream_info["last-entry"]
+                        last_id = (
+                            entry[0] if entry is not None else stream_info["last-generated-id"]
+                        ).decode()
                     self._stream_subs.add(from_start, last_id, topic, new_sub)
+                    if replay_last:
+                        try:
+                            value = self.get_last(topic)
+                        except Exception as exc:
+                            logger.warning(f"Failed to replay retained state for {topic}: {exc}")
+                        else:
+                            if value is not None:
+                                self._message_callbacks_queue.put(
+                                    StreamMessage(value, [(cb_ref, kwargs)])
+                                )
 
+        self._start_events_dispatcher_thread(start_thread)
         if self._stream_events_listener_thread is None:
             # create the thread that will get all messages for this connector
             self._stream_events_listener_thread = threading.Thread(
@@ -616,6 +662,12 @@ class ManagedRedisConnection:
                 self._topics_cb[topic] = list(
                     filter(lambda item: cb and item[0]() != cb, topics_cb)
                 )
+                replay = self._replay_callbacks.get(topic, [])
+                replay = [item for item in replay if cb and item[0]() != cb]
+                if replay:
+                    self._replay_callbacks[topic] = replay
+                else:
+                    self._replay_callbacks.pop(topic, None)
                 if not self._topics_cb[topic]:
                     # no callbacks left, unsubscribe
                     unsubscribe_list.append(topic)
@@ -625,8 +677,6 @@ class ManagedRedisConnection:
         return unsubscribe_list
 
     def unregister(self, topics=None, patterns=None, cb=None):
-        if self._events_listener_thread is None:
-            return
         if topics and patterns:
             error_log_with_context(
                 f"Unsubscribe called with both {topics=} and {patterns=}. Topics will be ignored in favour of patterns."
@@ -671,6 +721,11 @@ class ManagedRedisConnection:
                     if not cb_ref():
                         idx = self._topics_cb[topic].index((cb_ref, kwargs))
                         self._topics_cb[topic].pop(idx)
+                        replay = self._replay_callbacks.get(topic, [])
+                        if (cb_ref, kwargs) in replay:
+                            replay.remove((cb_ref, kwargs))
+                        if not replay:
+                            self._replay_callbacks.pop(topic, None)
 
     def _get_messages_loop(self) -> None:
         """
@@ -684,7 +739,25 @@ class ManagedRedisConnection:
         while not self._stop_events_listener_thread.is_set():
             self._garbage_collect_cb_refs()
             try:
-                msg = self._pubsub_conn.get_message(timeout=0.2)
+                replay_due = (
+                    bool(self._pending_replays) and not self._pubsub_registration_lock.locked()
+                )
+                msg = self._pubsub_conn.get_message(timeout=0 if replay_due else 0.2)
+                if msg is StopIteration:
+                    self._message_callbacks_queue.put(msg)
+                    continue
+                msg_type = msg.get("type", "message") if msg is not None else None
+                if msg_type in {"subscribe", "psubscribe", "unsubscribe", "punsubscribe"}:
+                    if msg_type == "subscribe":
+                        topic = msg["channel"].decode()
+                        self._pending_replays[topic] = None
+                    # Give the next poll a chance to supply a live update instead of replay.
+                    continue
+                if msg is not None:
+                    if msg_type == "message" and not self._pubsub_registration_lock.locked():
+                        self._pending_replays.pop(msg["channel"].decode(), None)
+                    self._message_callbacks_queue.put(msg)
+                self._replay_retained_values()
             except redis.exceptions.ConnectionError:
                 if not error:
                     error = True
@@ -695,8 +768,47 @@ class ManagedRedisConnection:
                 sys.excepthook(*sys.exc_info())  # type: ignore # inside except
             else:
                 error = False
-                if msg is not None:
-                    self._message_callbacks_queue.put(msg)
+
+    def _replay_retained_values(self) -> None:
+        """Attempt one best-effort replay per poll, dropping failed reads."""
+        # Admission follows SUBSCRIBE; defer replay while registration is still in flight.
+        if self._pubsub_registration_lock.locked():
+            return
+        while self._pending_replays and not self._stop_events_listener_thread.is_set():
+            topic = next(iter(self._pending_replays))
+            with self._topics_cb_lock:
+                callbacks = list(self._replay_callbacks.get(topic, []))
+            self._pending_replays.pop(topic, None)
+            if not callbacks:
+                continue
+            try:
+                value = self._get_retained_value(topic)
+            except Exception as exc:
+                logger.warning(f"Failed to replay retained state for {topic}: {exc}")
+                return
+            self._message_callbacks_queue.put(
+                RetainedMessage(MessageObject(topic, value), callbacks)
+            )
+            return
+
+    def _get_retained_value(self, topic: str) -> Any:
+        """Read retained state with bounded I/O and no retries on the listener thread."""
+        connection_kwargs = dict(self._redis_conn.connection_pool.connection_kwargs)
+        for option in ("socket_timeout", "socket_connect_timeout"):
+            timeout = connection_kwargs.get(option)
+            connection_kwargs[option] = min(timeout, 1.0) if timeout is not None else 1.0
+        connection_kwargs["retry"] = self._get_retry_policy()
+        connection_kwargs["retry_on_timeout"] = False
+        # A separate pool preserves command timeouts and current authentication on the main client.
+        pool = type(self._redis_conn.connection_pool)(
+            connection_class=self._redis_conn.connection_pool.connection_class, **connection_kwargs
+        )
+        with Redis.from_pool(pool) as client:
+            data = client.get(topic)
+        try:
+            return MsgpackSerialization.loads(data)
+        except RuntimeError:
+            return data
 
     def _execute_callback(self, cb, msg, kwargs):
         try:
@@ -710,13 +822,23 @@ class ManagedRedisConnection:
                 # reschedule execution to delineate the generator
                 self._message_callbacks_queue.put(g)
 
-    def _handle_message(self, msg: StreamMessage | GeneratorExecution | PubSubMessage):
+    def _handle_message(
+        self, msg: StreamMessage | RetainedMessage | GeneratorExecution | PubSubMessage
+    ) -> None:
         if inspect.isgenerator(msg):
             g = msg
             fut = self._generator_executor.submit(next, g)
             self._message_callbacks_queue.put(GeneratorExecution(fut, g))
-        elif isinstance(msg, StreamMessage):
-            for cb_ref, kwargs in msg.callbacks:
+        elif isinstance(msg, (StreamMessage, RetainedMessage)):
+            callbacks = msg.callbacks
+            if isinstance(msg, RetainedMessage):
+                # Re-registering the same callable must not revive an old queued snapshot.
+                with self._topics_cb_lock:
+                    registered_ids = {
+                        id(item) for item in self._replay_callbacks.get(msg.msg.topic, [])
+                    }
+                    callbacks = [item for item in callbacks if id(item) in registered_ids]
+            for cb_ref, kwargs in callbacks:
                 if cb := cb_ref():
                     self._execute_callback(cb, msg.msg, kwargs)
         elif isinstance(msg, GeneratorExecution):
