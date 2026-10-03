@@ -1,8 +1,10 @@
+"""Validate scan requests and assemble their scan instances."""
+
 from __future__ import annotations
 
 import inspect
 from functools import partial
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from bec_lib import messages
 from bec_lib.device import DeviceBase
@@ -45,11 +47,14 @@ def unpack_scan_args(scan_args: dict[str, Any] | list | tuple | None) -> list:
 
 
 class ScanAssembler:
-    """
-    ScanAssembler validates scan messages and constructs scan instances.
-    """
+    """Validate scan request messages and construct scan instances."""
 
-    def __init__(self, *, parent: ScanServer):
+    def __init__(self, *, parent: ScanServer) -> None:
+        """Initialize scan validation and assembly.
+
+        Args:
+            parent (ScanServer): Owning scan server.
+        """
         self.parent = parent
         self.device_manager = self.parent.device_manager
         self.connector = self.parent.connector
@@ -66,7 +71,7 @@ class ScanAssembler:
         Returns:
             ScanBase: Scan instance of the initialized scan class
         """
-        scan = msg.content.get("scan_type")
+        scan = msg.scan_type
         scan_cls = self.scan_manager.scan_dict[scan]
 
         logger.info(f"Preparing scan of type {scan} / {scan_cls.__name__}")
@@ -99,7 +104,13 @@ class ScanAssembler:
             )
             return scan_instance
 
-    def _raise_on_rpc_call(self, scan_cls, device: str, func_call: str, *args, **kwargs):
+    #############################################
+    ############### Helper Methods ##############
+    #############################################
+
+    def _raise_on_rpc_call(
+        self, scan_cls: type[ScanBase], device: str, func_call: str, *args: Any, **kwargs: Any
+    ) -> NoReturn:
         # This function is used to raise an error if a runtime RPC call is made during scan initialization as it
         # can lead to unpredictable behavior
         raise RuntimeError(
@@ -108,7 +119,9 @@ class ScanAssembler:
             f"If you want to set up a device before the scan starts, move the RPC call to the `prepare_scan` hook of the scan class."
         )
 
-    def _assemble_request_inputs(self, scan_cls, args, kwargs) -> dict:
+    def _assemble_request_inputs(
+        self, scan_cls: type[ScanBase], args: list[Any], kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
         request_inputs = {}
         if scan_cls.arg_bundle_size["bundle"] > 0:
             request_inputs["arg_bundle"] = args
@@ -129,6 +142,9 @@ class ScanAssembler:
             ),
             None,
         )
+        var_keyword_arguments = (
+            bound.arguments.get(var_keyword_name, {}) if var_keyword_name is not None else {}
+        )
 
         for name, parameter in signature.parameters.items():
             if name not in bound.arguments:
@@ -145,13 +161,11 @@ class ScanAssembler:
                 request_inputs["kwargs"][name] = value
 
         for key, val in kwargs.items():
-            if key not in signature.parameters and key not in (
-                bound.arguments.get(var_keyword_name) or {}
-            ):
+            if key not in signature.parameters and key not in var_keyword_arguments:
                 request_inputs["kwargs"][key] = val
         return request_inputs
 
-    def _get_scan_info(self, scan_name: str, scan_cls) -> dict:
+    def _get_scan_info(self, scan_name: str, scan_cls: type[ScanBase]) -> dict[str, Any]:
         available_scans = getattr(self.scan_manager, "available_scans", {})
         if scan_name in available_scans:
             return available_scans[scan_name]

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 from unittest import mock
 
 import pytest
@@ -6,6 +6,7 @@ import pytest
 from bec_lib import messages
 from bec_lib.bec_errors import ScanInputValidationError
 from bec_lib.device import DeviceBase
+from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.scan_args import ScanArgument
 from bec_lib.tests.fixtures import dm_with_devices
 from bec_server.scan_server.scan_assembler import ScanAssembler, unpack_scan_args
@@ -17,27 +18,27 @@ from bec_server.scan_server.tests.utils import NoopScan
 
 
 @pytest.fixture
-def scan_assembler():
+def scan_assembler() -> ScanAssembler:
     return ScanAssembler(parent=mock.MagicMock())
 
 
 class CustomScan(NoopScan):
     scan_name = "custom_scan"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-    def run(self):
+    def run(self) -> None:
         pass
 
 
 class CustomScan2(NoopScan):
     scan_name = "custom_scan2"
 
-    def __init__(self, arg1, *args, **kwargs):
+    def __init__(self, arg1: bool, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-    def run(self):
+    def run(self) -> None:
         pass
 
 
@@ -47,7 +48,7 @@ class CustomDirectScan(NoopScan):
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
     is_scan = False
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.received_args = args
 
@@ -56,7 +57,7 @@ class CustomFixedDirectScan(NoopScan):
     scan_name = "custom_fixed_direct_scan"
     is_scan = False
 
-    def __init__(self, device: DeviceBase, target: float, **kwargs):
+    def __init__(self, device: DeviceBase, target: float, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.device = device
         self.target = target
@@ -69,8 +70,8 @@ class CustomBoundedDirectScan(NoopScan):
     def __init__(
         self,
         value: Annotated[float, ScanArgument(display_name="Value", gt=0, ge=1, lt=10, le=9)],
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.value = value
 
@@ -86,10 +87,10 @@ class CustomBundledBoundedDirectScan(NoopScan):
 
     def __init__(
         self,
-        *args,
+        *args: Any,
         scale: Annotated[float, ScanArgument(display_name="Scale", le=10)] = 1,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self.received_args = args
         self.scale = scale
@@ -101,7 +102,7 @@ class CustomBundledScanWithDeviceKwarg(NoopScan):
     arg_bundle_size = {"bundle": len(arg_input), "min": 1, "max": None}
     is_scan = False
 
-    def __init__(self, *args, monitor: DeviceBase, **kwargs):
+    def __init__(self, *args: Any, monitor: DeviceBase, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.received_args = args
         self.monitor = monitor
@@ -111,7 +112,7 @@ class DefaultOverrideDirectScan(NoopScan):
     scan_name = "default_override_direct_scan"
     is_scan = False
 
-    def __init__(self, target: float, dwell: float = 0.1, **kwargs):
+    def __init__(self, target: float, dwell: float = 0.1, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.target = target
         self.dwell = dwell
@@ -119,7 +120,9 @@ class DefaultOverrideDirectScan(NoopScan):
 
 class DefaultOverrideModifier:
     @staticmethod
-    def scan_argument_overrides(scan_name, arguments, defaults):
+    def scan_argument_overrides(
+        scan_name: str, arguments: dict[str, Any], defaults: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if scan_name == "default_override_direct_scan":
             defaults["dwell"] = 0.25
         return arguments, defaults
@@ -129,7 +132,7 @@ class RelativeHiddenDirectScan(NoopScan):
     scan_name = "relative_hidden_direct_scan"
     is_scan = False
 
-    def __init__(self, target: float, *, relative: bool, **kwargs):
+    def __init__(self, target: float, *, relative: bool, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.target = target
         self.relative = relative
@@ -137,7 +140,9 @@ class RelativeHiddenDirectScan(NoopScan):
 
 class RelativeHiddenModifier:
     @staticmethod
-    def scan_argument_overrides(scan_name, arguments, defaults):
+    def scan_argument_overrides(
+        scan_name: str, arguments: dict[str, Any], defaults: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if scan_name == "relative_hidden_direct_scan":
             arguments.pop("relative", None)
             defaults["relative"] = False
@@ -148,14 +153,16 @@ class AdditionalParamsDirectScan(NoopScan):
     scan_name = "additional_params_direct_scan"
     is_scan = False
 
-    def __init__(self, target: float, **kwargs):
+    def __init__(self, target: float, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.target = target
 
 
 class AdditionalParamsModifier:
     @staticmethod
-    def scan_argument_overrides(scan_name, arguments, defaults):
+    def scan_argument_overrides(
+        scan_name: str, arguments: dict[str, Any], defaults: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         if scan_name == "additional_params_direct_scan":
             arguments["integ_time"] = Annotated[
                 float | None, ScanArgument(display_name="Integration Time", ge=0)
@@ -280,7 +287,11 @@ class AdditionalParamsModifier:
         ),
     ],
 )
-def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assembler):
+def test_scan_assembler_request_inputs(
+    msg: messages.ScanQueueMessage,
+    request_inputs_expected: dict[str, Any],
+    scan_assembler: ScanAssembler,
+) -> None:
 
     scan_classes = {
         "fermat_scan": FermatSpiralScan,
@@ -296,7 +307,9 @@ def test_scan_assembler_request_inputs(msg, request_inputs_expected, scan_assemb
     assert request_inputs == request_inputs_expected
 
 
-def test_scan_assembler_assemble_scan_resolves_device_args(dm_with_devices):
+def test_scan_assembler_assemble_scan_resolves_device_args(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -327,7 +340,9 @@ def test_scan_assembler_assemble_scan_resolves_device_args(dm_with_devices):
     assert request.scan_info.request_inputs["arg_bundle"] == ["samx", 1, "samy", 2]
 
 
-def test_scan_assembler_assemble_scan_propagates_monitored_kwarg(dm_with_devices):
+def test_scan_assembler_assemble_scan_propagates_monitored_kwarg(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -361,7 +376,9 @@ def test_scan_assembler_assemble_scan_propagates_monitored_kwarg(dm_with_devices
     assert request.scan_info.readout_priority_modification["monitored"] == ["bpm4i"]
 
 
-def test_scan_assembler_assemble_scan_resolves_annotated_device_args(dm_with_devices):
+def test_scan_assembler_assemble_scan_resolves_annotated_device_args(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -397,7 +414,9 @@ def test_scan_assembler_assemble_scan_resolves_annotated_device_args(dm_with_dev
         (9.5, "less than or equal to"),
     ],
 )
-def test_scan_assembler_validates_fixed_direct_scan_input_bounds(dm_with_devices, value, message):
+def test_scan_assembler_validates_fixed_direct_scan_input_bounds(
+    dm_with_devices: DeviceManagerBase, value: float, message: str
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -418,7 +437,9 @@ def test_scan_assembler_validates_fixed_direct_scan_input_bounds(dm_with_devices
             assembler.assemble_scan(msg, "scan_id")
 
 
-def test_scan_assembler_validates_fixed_direct_scan_input_type(dm_with_devices):
+def test_scan_assembler_validates_fixed_direct_scan_input_type(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -445,7 +466,9 @@ def test_scan_assembler_validates_fixed_direct_scan_input_type(dm_with_devices):
     assert exc.value.error_info.exception_type == "ScanInputValidationError"
 
 
-def test_scan_assembler_validates_bundled_direct_scan_input_bounds(dm_with_devices):
+def test_scan_assembler_validates_bundled_direct_scan_input_bounds(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -469,7 +492,9 @@ def test_scan_assembler_validates_bundled_direct_scan_input_bounds(dm_with_devic
             assembler.assemble_scan(msg, "scan_id")
 
 
-def test_scan_assembler_validates_bundled_direct_scan_input_type(dm_with_devices):
+def test_scan_assembler_validates_bundled_direct_scan_input_type(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -493,7 +518,9 @@ def test_scan_assembler_validates_bundled_direct_scan_input_type(dm_with_devices
             assembler.assemble_scan(msg, "scan_id")
 
 
-def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_devices):
+def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -517,7 +544,9 @@ def test_scan_assembler_validates_signature_kwargs_for_arg_input_scan(dm_with_de
             assembler.assemble_scan(msg, "scan_id")
 
 
-def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(dm_with_devices):
+def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -541,7 +570,9 @@ def test_scan_assembler_validates_signature_kwargs_type_for_arg_input_scan(dm_wi
             assembler.assemble_scan(msg, "scan_id")
 
 
-def test_scan_assembler_resolves_signature_device_kwargs_for_arg_input_scan(dm_with_devices):
+def test_scan_assembler_resolves_signature_device_kwargs_for_arg_input_scan(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -567,7 +598,9 @@ def test_scan_assembler_resolves_signature_device_kwargs_for_arg_input_scan(dm_w
     assert request.monitor is dm_with_devices.devices["samy"]
 
 
-def test_scan_assembler_applies_modified_defaults_before_scan_construction(dm_with_devices):
+def test_scan_assembler_applies_modified_defaults_before_scan_construction(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -594,7 +627,9 @@ def test_scan_assembler_applies_modified_defaults_before_scan_construction(dm_wi
     assert request.dwell == 0.25
 
 
-def test_scan_assembler_applies_defaults_for_removed_signature_arguments(dm_with_devices):
+def test_scan_assembler_applies_defaults_for_removed_signature_arguments(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -622,8 +657,8 @@ def test_scan_assembler_applies_defaults_for_removed_signature_arguments(dm_with
 
 
 def test_scan_assembler_moves_defaulted_added_parameters_to_additional_scan_parameters(
-    dm_with_devices,
-):
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -651,8 +686,8 @@ def test_scan_assembler_moves_defaulted_added_parameters_to_additional_scan_para
 
 
 def test_scan_assembler_moves_provided_added_parameters_to_additional_scan_parameters(
-    dm_with_devices,
-):
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -682,8 +717,8 @@ def test_scan_assembler_moves_provided_added_parameters_to_additional_scan_param
 
 
 def test_scan_assembler_maps_optional_positional_direct_scan_args_to_request_kwargs(
-    dm_with_devices,
-):
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -721,7 +756,9 @@ def test_scan_assembler_maps_optional_positional_direct_scan_args_to_request_kwa
     }
 
 
-def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(dm_with_devices):
+def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -761,7 +798,9 @@ def test_scan_assembler_maps_mixed_direct_scan_args_and_kwargs_for_acquire(dm_wi
     }
 
 
-def test_scan_assembler_extracts_user_metadata_for_direct_scans(dm_with_devices):
+def test_scan_assembler_extracts_user_metadata_for_direct_scans(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     parent.connector = mock.MagicMock()
@@ -797,11 +836,15 @@ def test_scan_assembler_extracts_user_metadata_for_direct_scans(dm_with_devices)
         ({"samx": [1, 2], "samy": [3, 4]}, ["samx", 1, 2, "samy", 3, 4]),
     ],
 )
-def test_unpack_scan_args(scan_args, expected):
+def test_unpack_scan_args(
+    scan_args: dict[str, Any] | list | tuple | None, expected: list[Any]
+) -> None:
     assert unpack_scan_args(scan_args) == expected
 
 
-def test_scan_assembler_validates_unknown_kwargs_without_published_metadata(dm_with_devices):
+def test_scan_assembler_validates_unknown_kwargs_without_published_metadata(
+    dm_with_devices: DeviceManagerBase,
+) -> None:
     parent = mock.MagicMock()
     parent.device_manager = dm_with_devices
     assembler = ScanAssembler(parent=parent)
