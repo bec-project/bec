@@ -598,6 +598,36 @@ def test_async_writer_replace(async_writer, data):
     assert np.array_equal(timestamps, [data[-1].signals["monitor_async"]["timestamp"]])
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        (0, 7),
+        (0.0, 1.2),
+        (False, True),
+        (np.int64(0), np.int64(7)),
+        (np.float64(0.0), np.float64(1.2)),
+    ],
+)
+def test_async_writer_replace_scalar(async_writer, values):
+    """Write only the latest scalar value and timestamp after scan completion."""
+    for timestamp, value in enumerate(values, start=1):
+        message = messages.DeviceMessage(
+            signals={"monitor_async": {"value": value, "timestamp": float(timestamp)}},
+            metadata={"async_update": {"type": "replace"}},
+        )
+        async_writer.write_data({"monitor_async": [message]})
+
+    group = async_writer.file_handle[f"{async_writer.BASE_PATH}/monitor_async/monitor_async"]
+    try:
+        assert "value" not in group
+        async_writer.write_data({}, write_replace=True)
+        assert group["value"].shape == ()
+        assert group["value"][()] == values[-1]
+        assert np.array_equal(group["timestamp"][:], [2.0])
+    finally:
+        async_writer.file_handle.close()
+
+
 @pytest.mark.parametrize("update_type", ["replace", "add", "add_slice"])
 @pytest.mark.parametrize("timestamps", [[1, 2, 3], [1]])
 def test_async_writer_timestamp_aggregation(async_writer, update_type, timestamps):

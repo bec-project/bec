@@ -359,7 +359,7 @@ class AsyncWriter(threading.Thread):
 
         elif update_type == "replace":
             # store the data to be written after the scan is complete
-            self.device_data_replace[signal_group.name] = value
+            self.device_data_replace[signal_group.name] = np.asarray(value)
         else:
             msg = f"Unknown async update type: {update_type}. Data will not be written."
             self.connector.raise_alarm(
