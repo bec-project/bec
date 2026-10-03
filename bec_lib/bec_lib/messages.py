@@ -487,11 +487,14 @@ class ScanQueueStatus(BaseModel):
         info (list[QueueInfoEntry]): List of QueueInfoEntry objects representing the current queue status
         status (Literal["PAUSED", "RUNNING", "LOCKED"]): Current status of the scan queue
         locks (list[ScanQueueLock], optional): List of ScanQueueLock objects representing the locks applied to the queue
+        queue_instance_id (str | None, optional): Identity of this queue instance, used to reject
+            controls for a removed and recreated queue. Older servers omit this field.
     """
 
     info: list[QueueInfoEntry]
     status: Literal["PAUSED", "RUNNING", "LOCKED"]
     locks: list[ScanQueueLock] = Field(default_factory=list)
+    queue_instance_id: str | None = None
 
 
 class ScanQueueStatusMessage(BECMessage):
