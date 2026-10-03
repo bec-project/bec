@@ -1,6 +1,4 @@
-"""
-Scan Manager loads the available scans and publishes them to redis.
-"""
+"""Discover built-in and plugin scans and publish their definitions."""
 
 from __future__ import annotations
 
@@ -8,10 +6,11 @@ import functools
 import importlib
 import inspect
 import pkgutil
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Any, cast
 
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
+from bec_lib.connector import MessageObject
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -35,13 +34,13 @@ INTERNAL_SCAN_CLASSES = {"ScanBase", "DeviceRpc"}
 
 
 class ScanManager:
-    """
-    Scan Manager loads the available scans and publishes them to redis.
-    """
+    """Discover scan classes and publish their definitions."""
 
-    def __init__(self, *, parent: ScanServer):
-        """
-        Scan Manager loads and manages the available scans.
+    def __init__(self, *, parent: ScanServer) -> None:
+        """Initialize scan discovery and its request subscriptions.
+
+        Args:
+            parent (ScanServer): Owning scan server.
         """
         self.parent = parent
         self.available_scans = {}
@@ -55,20 +54,19 @@ class ScanManager:
 
     @functools.lru_cache(maxsize=2)
     @staticmethod
-    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, Type]]:
-        """
-        Get all available built-in scans and plugin scans.
+    def get_available_scans(allow_duplicates: bool = False) -> list[tuple[str, type[ScanBase]]]:
+        """Get all available built-in scans and plugin scans.
 
         Args:
             allow_duplicates (bool): If True, allow duplicate scan names. Default is False.
 
         Returns:
-            list[tuple[str, Type]]: list of scan name and scan class tuples
+            list[tuple[str, type[ScanBase]]]: scan name and scan class tuples
         """
 
         def _append_new_scan_members(
-            members: list[tuple[str, Type]],
-            candidates: list[tuple[str, Type]],
+            members: list[tuple[str, type[ScanBase]]],
+            candidates: list[tuple[str, type[ScanBase]]],
             skip_duplicates: bool = False,
         ) -> None:
             seen_scan_names = {
@@ -84,7 +82,7 @@ class ScanManager:
                 if scan_name:
                     seen_scan_names.add(scan_name)
 
-        members: list[tuple[str, Type]] = ScanManager._get_scan_members()
+        members: list[tuple[str, type[ScanBase]]] = ScanManager._get_scan_members()
 
         # plugin scans
         _append_new_scan_members(
@@ -104,14 +102,12 @@ class ScanManager:
 
         return members
 
-    @classmethod
-    def _reload_scan_discovery(cls) -> None:
-        get_scan_modifier.cache_clear()
-        cls.get_available_scans.cache_clear()
-        plugin_helper.reload_plugin_modules()
+    def update_available_scans(self, reload: bool = False) -> None:
+        """Load built-in and plugin scan definitions.
 
-    def update_available_scans(self, reload: bool = False):
-        """load all scans and plugin scans"""
+        Args:
+            reload (bool): Whether to invalidate cached discovery and reload plugin modules.
+        """
         if reload:
             self._reload_scan_discovery()
 
@@ -167,29 +163,27 @@ class ScanManager:
             }
 
     @staticmethod
-    def scan_is_internal(scan_cls) -> bool:
-        """
-        Determine if a scan class is internal.
+    def scan_is_internal(scan_cls: type[ScanBase]) -> bool:
+        """Determine whether a scan definition is internal.
 
         Args:
-            scan_cls: class
+            scan_cls (type[ScanBase]): Scan class to inspect.
 
         Returns:
-            bool: True if the scan class is internal, False otherwise.
+            bool: Whether the class is marked internal or has a reserved internal class name.
         """
         if scan_cls.__name__ in INTERNAL_SCAN_CLASSES:
             return True
         return getattr(scan_cls, "is_internal", False)
 
-    def convert_arg_input(self, arg_input) -> dict:
-        """
-        Convert the arg_input to supported data types
+    def convert_arg_input(self, arg_input: dict[str, Any]) -> dict[str, Any]:
+        """Serialize declared scan argument types.
 
         Args:
-            arg_input: dict
+            arg_input (dict[str, Any]): Argument names and their declared types.
 
         Returns:
-            dict: converted arg_input
+            dict[str, Any]: Argument names mapped to serialized type descriptions.
         """
         converted_arg_input = {}
         for key, value in arg_input.items():
@@ -199,15 +193,40 @@ class ScanManager:
             converted_arg_input[key] = serialize_dtype(dtype)
         return converted_arg_input
 
-    def handle_reload_scans_request(self, msg):
-        message: messages.ServiceRequestMessage = msg.value
+    def handle_reload_scans_request(
+        self, msg: MessageObject[messages.ServiceRequestMessage]
+    ) -> None:
+        """Reload and publish scan definitions when requested.
+
+        Args:
+            msg (MessageObject[messages.ServiceRequestMessage]): Service request to handle.
+        """
+        message = cast(messages.ServiceRequestMessage, msg.value)
         if message.action == "reload_scans":
             self.update_available_scans(reload=True)
             self.publish_available_scans()
 
+    def publish_available_scans(self) -> None:
+        """Publish the discovered scan definitions to Redis."""
+        self.parent.connector.set_and_publish(
+            MessageEndpoints.available_scans(),
+            AvailableResourceMessage(resource=self.available_scans),
+        )
+
+    #############################################
+    ############### Helper Methods ##############
+    #############################################
+
+    @classmethod
+    def _reload_scan_discovery(cls) -> None:
+        """Invalidate cached discovery and reload plugin modules."""
+        get_scan_modifier.cache_clear()
+        cls.get_available_scans.cache_clear()
+        plugin_helper.reload_plugin_modules()
+
     @staticmethod
-    def _get_scan_plugins() -> dict[str, type]:
-        verified_plugins = {}
+    def _get_scan_plugins() -> dict[str, type[ScanBase]]:
+        verified_plugins: dict[str, type[ScanBase]] = {}
         plugins = plugin_helper.get_scan_plugins()
         if not plugins:
             return verified_plugins
@@ -220,9 +239,9 @@ class ScanManager:
         return verified_plugins
 
     @staticmethod
-    def _get_scan_members() -> list[tuple[str, Type[ScanBase]]]:
+    def _get_scan_members() -> list[tuple[str, type[ScanBase]]]:
         """Collect classes from all modules in the scans package."""
-        members: list[tuple[str, Type[ScanBase]]] = []
+        members: list[tuple[str, type[ScanBase]]] = []
         for module_info in pkgutil.iter_modules(
             scans_module.__path__, prefix=f"{scans_module.__name__}."
         ):
@@ -230,13 +249,6 @@ class ScanManager:
             members.extend(
                 (name, cls)
                 for name, cls in inspect.getmembers(module, predicate=inspect.isclass)
-                if cls.__module__ == module.__name__
+                if cls.__module__ == module.__name__ and issubclass(cls, ScanBase)
             )
         return members
-
-    def publish_available_scans(self):
-        """send all available scans to the broker"""
-        self.parent.connector.set_and_publish(
-            MessageEndpoints.available_scans(),
-            AvailableResourceMessage(resource=self.available_scans),
-        )
