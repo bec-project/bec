@@ -8,8 +8,6 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from bec_lib import messages
 from bec_lib.logger import bec_logger
 from bec_server.scan_server.errors import DeviceInstructionError
@@ -185,28 +183,39 @@ class ScanStatus:
     def wait(
         self,
         min_wait: float | None = None,
-        timeout: float = np.inf,
+        timeout: float | None = None,
         logger_wait=5,
         resolve_on_known_type: bool = False,
-    ) -> ScanStatus:
+    ) -> bool:
         """
         Wait for the completion of the status object.
 
         Args:
             min_wait (float, optional): Minimum wait time in seconds. Defaults to None.
-            timeout (float, optional): Timeout in seconds. Defaults to None.
+            timeout (float, optional): Maximum wait time in seconds after min_wait.
+                Defaults to None (no timeout). A timeout returns False; the instruction
+                keeps running.
             logger_wait (int, optional): Time in seconds before logging the remaining status objects. Defaults to 5.
             resolve_on_known_type (bool, optional): Whether to exit early once the return type of the rpc method is known.
                 It is used to discriminate status objects from normal return values. It is mostly for internal use and
                 should be used with caution. Defaults to False.
 
         Raises:
-            TimeoutError: Raised if the timeout is reached.
             DeviceInstructionError: Raised if the instruction failed.
             ValueError: Raised if resolve_on_known_type is True but the status object has sub status objects.
 
         Returns:
-            ScanStatus: Status object
+            bool: True if the instruction completed. False if it is still pending when
+                the timeout expires, shutdown interrupts the wait, or
+                resolve_on_known_type resolves the return type early.
+
+        Example:
+            >>> while not status.wait(timeout=0.1):
+            ...     report_progress()
+
+        Note:
+            This method returns a bool instead of the status object and no longer raises
+            TimeoutError. Read the instruction result from status.result.
         """
         if resolve_on_known_type and self._sub_status_objects:
             # Something is wrong if we have multiple status objects and the caller expects to resolve to a single type.
@@ -227,35 +236,41 @@ class ScanStatus:
             for st in self._sub_status_objects:
                 st._done_checked = True
                 self._raise_if_failed(st._future)
-            return self
+            return True
 
         # pylint: disable=protected-access
         futures = [st._future for st in self._sub_status_objects]
         futures.append(self._future)
 
         increment = 0.5
-        wait_time = 0
+        start = time.monotonic()
+        self.set_done_checked()
 
-        while not all(e.done() for e in futures):
-            if resolve_on_known_type and self._result_is_status is not None:
-                break
-            done, _ = concurrent.futures.wait(
-                futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
-            )
-            for future in done:
+        while True:
+            completed = [future for future in futures if future.done()]
+            for future in completed:
                 self._raise_if_failed(future)
-            wait_time += increment
-            if wait_time >= timeout:
-                raise TimeoutError("The wait operation timed out.")
+            if len(completed) == len(futures):
+                return True
+            if resolve_on_known_type and self._result_is_status is not None:
+                return False
             if self._shutdown_event.is_set():
-                break
-            if wait_time > logger_wait:
+                return False
+
+            elapsed = time.monotonic() - start
+            remaining = timeout - elapsed if timeout is not None else increment
+            if remaining <= 0:
+                return False
+            if elapsed > logger_wait:
                 objs = []
                 objs.extend([str(st) for st in self._sub_status_objects if not st.done])
                 objs.append(str(self))
                 logger.info(f"Waiting for the completion of the following status objects: {objs}")
-
-        return self
+            concurrent.futures.wait(
+                futures,
+                timeout=min(increment, remaining),
+                return_when=concurrent.futures.FIRST_EXCEPTION,
+            )
 
     def __repr__(self):
         name = f"{self._name}, " if self._name else ""

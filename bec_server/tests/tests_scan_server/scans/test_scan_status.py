@@ -51,7 +51,7 @@ def test_status_registers_callback_and_completes_from_response(instruction_handl
     assert status._result_is_status is True
 
     status._update_future(_response("completed", result=12))
-    assert status.wait() is status
+    assert status.wait() is True
     assert status.done is True
     assert status.result == 12
     assert status._done_checked is True
@@ -90,7 +90,7 @@ def test_container_waits_for_children_and_collects_results(instruction_handler):
 
     first.set_done(1)
     second.set_done(2)
-    assert container.wait() is container
+    assert container.wait() is True
     assert container.done is True
     assert container.result == [1, 2]
     assert container._done_checked and first._done_checked and second._done_checked
@@ -117,8 +117,11 @@ def test_wait_times_out_and_rejects_early_resolution_for_container(instruction_h
     status = ScanStatus(instruction_handler)
     with mock.patch("bec_server.scan_server.scans.scan_status.concurrent.futures.wait") as wait:
         wait.return_value = (set(), set())
-        with pytest.raises(TimeoutError, match="wait operation timed out"):
-            status.wait(timeout=0.1)
+        with mock.patch(
+            "bec_server.scan_server.scans.scan_status.time.monotonic", side_effect=[0, 0, 0.1]
+        ):
+            assert status.wait(timeout=0.1) is False
+        assert wait.call_args.kwargs["timeout"] == 0.1
 
     container = ScanStatus(instruction_handler, is_container=True)
     container.add_status(status)
@@ -132,7 +135,7 @@ def test_wait_can_resolve_when_result_type_is_known(instruction_handler):
     status = ScanStatus(instruction_handler)
     status._update_future(_response("running", result_is_status=True))
 
-    assert status.wait(resolve_on_known_type=True) is status
+    assert status.wait(resolve_on_known_type=True) is False
     assert status.done is False
 
 
@@ -144,3 +147,109 @@ def test_shutdown_marks_status_checked(instruction_handler):
     assert status.done is True
     assert status._done_checked is True
     assert repr(status).startswith("ScanStatus(move, ")
+
+
+@pytest.mark.parametrize("timeout", [0, -1, 0.01])
+def test_timeout_leaves_instruction_pending_and_can_be_retried(instruction_handler, timeout):
+    status = ScanStatus(instruction_handler)
+    assert status.wait(timeout=timeout) is False
+    assert not status._future.done()
+    assert status._done_checked
+    status.set_done(42)
+    assert status.wait(timeout=0) is True
+    assert status.result == 42
+
+
+def test_completion_during_short_wait_wins_over_timeout(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=lambda *args, **kwargs: status.set_done(42),
+    ) as wait:
+        assert status.wait(timeout=0.01) is True
+    assert 0 < wait.call_args.kwargs["timeout"] <= 0.01
+
+
+def test_container_timeout_waits_for_every_child(instruction_handler):
+    container = ScanStatus(instruction_handler, is_container=True)
+    child = ScanStatus(instruction_handler)
+    container.add_status(child)
+    assert container.wait(timeout=0) is False
+    child.set_done(1)
+    assert container.wait(timeout=0) is True
+
+
+def test_pending_failure_is_propagated_during_wait(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    error = messages.ErrorInfo(
+        error_message="Move failed",
+        compact_error_message="Move failed",
+        exception_type="RuntimeError",
+    )
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=lambda *args, **kwargs: status.set_failed(error),
+    ):
+        with pytest.raises(DeviceInstructionError, match="Move failed"):
+            status.wait(timeout=0.01)
+
+
+def test_shutdown_returns_false_for_pending_instruction(instruction_handler):
+    event = threading.Event()
+    status = ScanStatus(instruction_handler, shutdown_event=event)
+    event.set()
+    assert status.wait(timeout=0) is False
+    assert not status._future.done()
+    assert status._done_checked
+
+
+def test_wait_uses_elapsed_time_and_remaining_budget(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    module = "bec_server.scan_server.scans.scan_status"
+    with (
+        mock.patch(f"{module}.time.monotonic", side_effect=[10, 10, 10.4, 10.7]),
+        mock.patch(f"{module}.concurrent.futures.wait") as wait,
+    ):
+        assert status.wait(timeout=0.6) is False
+    assert wait.call_count == 2
+    assert wait.call_args_list[0].kwargs["timeout"] == 0.5
+    assert wait.call_args_list[1].kwargs["timeout"] == pytest.approx(0.2)
+
+
+def test_polling_loop_completes(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    polls = 0
+    while not status.wait(timeout=0):
+        polls += 1
+        status.set_done()
+    assert polls == 1
+
+
+@pytest.mark.parametrize("timeout", [None, float("inf")])
+def test_unbounded_wait_completes(instruction_handler, timeout):
+    status = ScanStatus(instruction_handler)
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=lambda *args, **kwargs: status.set_done(),
+    ):
+        assert status.wait(timeout=timeout) is True
+
+
+def test_completion_check_does_not_miss_concurrent_failure(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    error = messages.ErrorInfo(
+        error_message="Concurrent failure",
+        compact_error_message="Concurrent failure",
+        exception_type="RuntimeError",
+    )
+    original_done = status._future.done
+
+    def complete_after_pending_check():
+        pending = not original_done()
+        if pending:
+            status.set_failed(error)
+        return not pending
+
+    with mock.patch.object(status._future, "done", side_effect=complete_after_pending_check):
+        with pytest.raises(DeviceInstructionError, match="Concurrent failure"):
+            status.wait(timeout=0.01)
