@@ -16,6 +16,7 @@ import pint
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from toolz import partition
 
+from bec_lib import messages
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
 from bec_lib.redis_connector import RedisConnector
@@ -189,6 +190,10 @@ class ScanBase(ABC):
         self._instruction_handler = instruction_handler
         self.dev = self.device_manager.devices
         self._shutdown_event = threading.Event()
+        # Reserved for scan-defined composition in __init__ or prepare_scan.
+        # Execution of these acquisition phases is not implemented yet.
+        self._pre_scans: list[messages.ScanQueueMessage] = []
+        self._post_scans: list[messages.ScanQueueMessage] = []
         self.actions = ScanActions(scan=self)
         self.components = ScanComponents(scan=self)
 
