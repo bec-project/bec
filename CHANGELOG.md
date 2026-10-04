@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.0.3 (2026-10-04)
+
+### Bug Fixes
+
+- Stop exposing internal run method on device proxies
+  ([`f6ddc32`](https://github.com/bec-project/bec/commit/f6ddc3238c1ddb2963a67934a51f15ffdefc7a43))
+
+
 ## v4.0.2 (2026-10-04)
 
 ### Bug Fixes
