@@ -305,9 +305,26 @@ def test_scan_lib_stop_resolves_cleanly(bec_client_lib):
     bec = bec_client_lib
     status = _get_scan_runner(bec, "time_scan")(points=100, interval=0.2, exp_time=0.01)
 
-    time.sleep(0.5)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if status.status == "RUNNING" and status.scan is not None and status.scan.live_data:
+            break
+        time.sleep(0.02)
+    else:
+        raise TimeoutError("Time scan did not start acquiring before cancellation")
     status.cancel()
 
+    deadline = time.monotonic() + 15
+    while status.status != "STOPPED" and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert status.status == "STOPPED"
+    _wait_for_queue_status(bec, "primary", "PAUSED", timeout=15)
+    deadline = time.monotonic() + 15
+    while bec.queue.queue_storage.current_scan_queue["primary"].info:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Cancelled scan was not retired from the queue")
+        time.sleep(0.02)
+    bec.queue.request_queue_continuation()
     _wait_for_queue_status(bec, "primary", "RUNNING", timeout=15)
 
 

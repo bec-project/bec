@@ -236,7 +236,7 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
                 break
         while True:
             queue = bec.queue.queue_storage.current_scan_queue
-            if queue["primary"].info[0].status == "DEFERRED_PAUSE":
+            if queue["primary"].status == "PAUSED":
                 break
             time.sleep(0.5)
         _thread.interrupt_main()
@@ -260,9 +260,12 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
         time.sleep(0.5)
 
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue.info or current_queue.status != "RUNNING":
+    while current_queue.info:
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
+
+    assert current_queue.status == "PAUSED"
+    bec.queue.request_queue_continuation()
 
     assert len(bec.queue.scan_storage.storage[-1].live_data) < 200
 
@@ -304,6 +307,7 @@ def test_umv_ctrl_c_stops_motion(bec_ipython_client_fixture: BECIPythonClient):
         assert not dev.samx.motor_is_moving.get()
         assert dev.samx.readback.get() < 40
     finally:
+        bec.queue.request_queue_continuation()
         if dev.samx.motor_is_moving.get():
             dev.samx.stop()
             timeout = time.time() + 10
@@ -330,6 +334,7 @@ def test_limit_error(bec_ipython_client_fixture):
     assert aborted_scan is True
 
     aborted_scan = False
+    bec.queue.request_queue_continuation()
     dev.samx.limits = [-50, 50]
     try:
         scans.umv(dev.samx, 500, relative=False)
@@ -425,7 +430,7 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
                 continue
             if len(bec.queue.scan_storage.current_scan.live_data) > 0:
                 time.sleep(2)
-                bec.queue.request_scan_interruption(deferred_pause=False)
+                bec.queue.request_scan_interruption(deferred_pause=True)
                 time.sleep(5)
                 bec.queue.request_scan_restart()
                 bec.queue.request_scan_continuation()
@@ -895,6 +900,7 @@ def test_scan_repeat_decorator(bec_ipython_client_fixture):
             device = exception.alarm.info.device
             if device == "positioner_with_failure":
                 logger.info("Resetting failure condition on positioner_with_failure.")
+                bec.queue.request_queue_continuation()
                 dev.positioner_with_failure.fails.set(0).wait()
                 return True  # Retry the scan
         return False  # Do not retry
