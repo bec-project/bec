@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v4.0.2 (2026-10-04)
+
+### Bug Fixes
+
+- **file_writer**: Replace timestamps with async replacement updates
+  ([`588a524`](https://github.com/bec-project/bec/commit/588a5242ceff1a764f272fb05a4b4d7761b60bb1))
+
+Retain only the latest timestamps for replace updates while preserving append behavior for add and
+  add_slice. Add regression coverage for scalar timestamps and growing or shrinking timestamp lists.
+
+Closes #1107
+
+- **file_writer**: Support scalar async replacement values
+  ([`37ae683`](https://github.com/bec-project/bec/commit/37ae683bfe8396a9981cb6ee21a07c4d34c7c390))
+
+
 ## v4.0.1 (2026-10-02)
 
 ### Bug Fixes
