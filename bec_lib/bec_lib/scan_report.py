@@ -254,6 +254,7 @@ class ScanReport:
                 break
             if self.status in ["STOPPED", "CANCELLED"]:
                 raise ScanAbortion
+            self._client.alarm_handler.raise_alarms()
             self._client.callbacks.poll()
             time.sleep(sleep_time)
             elapsed_time += sleep_time

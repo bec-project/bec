@@ -161,6 +161,15 @@ def test_scan_report_wait_for_scan_raises_when_request_is_cancelled(scan_report)
         scan_report._wait_scan(None, 0.1)
 
 
+def test_scan_report_wait_propagates_device_alarm(scan_report):
+    """An alarm must reach a waiter even before its terminal queue snapshot arrives."""
+    scan_report.queue_item.status = "RUNNING"
+    error = RuntimeError("Device failed")
+    scan_report._client.alarm_handler.raise_alarms.side_effect = error
+    with pytest.raises(RuntimeError, match="Device failed"):
+        scan_report._wait_scan(None, 0.1)
+
+
 def test_scan_report_aborts_on_ctrl_c(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(
         scan_type="mv", parameter={"args": {"samx": [5]}}
