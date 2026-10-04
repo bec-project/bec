@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.1.0 (2026-10-04)
+
+### Features
+
+- **demo-config**: Add gauss_async SimAsyncGauss2D device
+  ([`b7c720a`](https://github.com/bec-project/bec/commit/b7c720a65a8c5eb3ac97f83905cbc48b39798954))
+
+
 ## v4.0.3 (2026-10-04)
 
 ### Bug Fixes
