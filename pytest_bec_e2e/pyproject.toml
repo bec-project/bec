@@ -23,6 +23,9 @@ dependencies = [
 [project.entry-points.pytest11]
 bec_end2end_fixtures = "pytest_bec_e2e.plugin"
 
+[project.entry-points.bec]
+pytest_bec_e2e = "pytest_bec_e2e"
+
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
