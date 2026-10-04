@@ -110,7 +110,6 @@ class ServiceConfigModel(BaseModel):
     atlas: AtlasConfig = Field(default_factory=AtlasConfig)
     scilog: SciLogConfig = Field(default_factory=SciLogConfig)
     acl: ACLConfig = Field(default_factory=ACLConfig)
-    abort_on_ctrl_c: bool = True
     procedures: ProcedureConfig = Field(default_factory=ProcedureConfig)
 
     @model_validator(mode="before")
@@ -288,11 +287,6 @@ class ServiceConfig:
             "Accessing service_config directly is deprecated. Use the Pydantic model instead."
         )
         return self.config
-
-    @property
-    def abort_on_ctrl_c(self):
-        """Get abort_on_ctrl_c setting."""
-        return self.model.abort_on_ctrl_c
 
     @property
     def model(self) -> ServiceConfigModel:

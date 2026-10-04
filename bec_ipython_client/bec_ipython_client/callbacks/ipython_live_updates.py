@@ -196,13 +196,13 @@ class IPythonLiveUpdates:
         except ScanInterruption as scan_interr:
             self._stop_status_live()
             self._interrupted_request = (request,)
-            if self._current_queue and self.client._service_config.abort_on_ctrl_c:
+            if self._current_queue:
                 self._wait_for_cleanup()
             self._reset()
             raise scan_interr
         except KeyboardInterrupt as exc:
             self._stop_status_live()
-            if self.client._service_config.abort_on_ctrl_c and self._abort_pending_request():
+            if self._abort_pending_request():
                 self._wait_for_cleanup()
                 self._reset()
                 raise ScanInterruption("User abort.") from exc

@@ -213,10 +213,60 @@ def test_handle_scan_modification_request_restart(scan_guard_mock: ScanGuard) ->
     msg = messages.ScanQueueModificationMessage(
         scan_id="scan_id", action="restart", parameter={"RID": "RID"}, metadata={"RID": "new_RID"}
     )
-    with mock.patch.object(sg, "_send_scan_request_response") as send_response:
-        with mock.patch("bec_server.scan_server.scan_guard.ScanStatus") as scan_status:
-            sg._handle_scan_modification_request(msg)
-            send_response.assert_called_once_with(scan_status(), {"RID": "RID"})
+    with (
+        mock.patch.object(sg, "_send_scan_request_response") as send_response,
+        mock.patch("bec_server.scan_server.scan_guard.ScanStatus") as scan_status,
+        mock.patch.object(sg.parent.queue_manager, "scan_interception") as admit,
+        mock.patch.object(sg.device_manager.connector, "send") as forward,
+    ):
+        sg._handle_scan_modification_request(msg)
+        send_response.assert_called_once_with(scan_status(), {"RID": "RID"})
+        admit.assert_not_called()
+        forward.assert_called_once_with(MessageEndpoints.scan_queue_modification(), msg)
+        assert msg.metadata == {"RID": "new_RID"}
+
+
+@pytest.mark.parametrize(
+    "parameter", [{}, {"RID": None}, {"RID": ""}, {"RID": " "}, {"RID": 1}, {"RID": "original"}]
+)
+def test_rejected_restart_is_not_acknowledged_or_forwarded(
+    scan_guard_mock: ScanGuard, parameter: dict
+) -> None:
+    sg = scan_guard_mock
+    msg = messages.ScanQueueModificationMessage(
+        action="restart", request_id="original", parameter=parameter
+    )
+    with (
+        mock.patch.object(sg.parent.queue_manager, "scan_interception") as admit,
+        mock.patch.object(sg, "_send_scan_request_response") as response,
+        mock.patch.object(sg.device_manager.connector, "send") as forward,
+    ):
+        sg._handle_scan_modification_request(msg)
+        response.assert_not_called()
+        forward.assert_not_called()
+        admit.assert_not_called()
+
+
+def test_lock_and_restart_follow_the_same_ordered_route(scan_guard_mock: ScanGuard) -> None:
+    sg = scan_guard_mock
+    lock = messages.ScanQueueModificationMessage(
+        action="lock", parameter={"reason": "interlock", "identifier": "interlock"}
+    )
+    restart = messages.ScanQueueModificationMessage(
+        action="restart", request_id="original", parameter={"RID": "replacement"}
+    )
+    with (
+        mock.patch.object(sg.parent.queue_manager, "scan_interception") as admit,
+        mock.patch.object(sg, "_send_scan_request_response"),
+        mock.patch.object(sg.device_manager.connector, "send") as forward,
+    ):
+        sg._handle_scan_modification_request(lock)
+        sg._handle_scan_modification_request(restart)
+        assert forward.call_args_list == [
+            mock.call(MessageEndpoints.scan_queue_modification(), lock),
+            mock.call(MessageEndpoints.scan_queue_modification(), restart),
+        ]
+        admit.assert_not_called()
 
 
 def test_append_to_scan_queue(scan_guard_mock: ScanGuard) -> None:
@@ -565,3 +615,10 @@ def test_reject_request_when_queue_admission_fails(
     status, metadata = response.call_args.args
     assert status.accepted is False
     assert metadata == {"RID": "late"}
+
+
+def test_hard_pause_is_not_forwarded(scan_guard_mock):
+    msg = messages.ScanQueueModificationMessage(action="pause", parameter={})
+    with mock.patch.object(scan_guard_mock.device_manager.connector, "send") as send:
+        scan_guard_mock._handle_scan_modification_request(msg)
+    send.assert_not_called()

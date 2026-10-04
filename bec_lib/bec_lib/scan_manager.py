@@ -76,21 +76,26 @@ class ScanManager:
         """request a scan interruption
 
         Args:
-            deferred_pause (bool, optional): Request a deferred pause. If False, a pause will be requested. Defaults to True.
+            deferred_pause (bool, optional): Must be True; hard pause is currently unsupported.
             request_id (str, optional): Request ID. Used when no scan ID exists yet.
         """
-        request_id = self._resolve_request_id(request_id=request_id)
-        if not any(self.scan_storage.current_scan_id):
-            # If we don't have a scan to cancel, we abort
-            return self.request_scan_abortion(request_id=request_id)
+        if not deferred_pause:
+            raise NotImplementedError("Hard pause is unsupported. Use deferred pause or abort.")
+        if request_id is None:
+            return self.request_queue_pause()
 
-        action = "deferred_pause" if deferred_pause else "pause"
+        action = "deferred_pause"
         logger.info(f"Requesting {action}")
 
         return self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=None, request_id=request_id, action=action, parameter={}
+                scan_id=None,
+                request_id=request_id,
+                action=action,
+                parameter={},
+                queue=self.get_default_scan_queue(),
+                metadata=self._queue_metadata(self.get_default_scan_queue()),
             ),
         )
 
@@ -114,6 +119,7 @@ class ScanManager:
                 action="abort",
                 parameter={},
                 queue=target_queue,
+                metadata=self._queue_metadata(target_queue),
             ),
         )
 
@@ -131,7 +137,12 @@ class ScanManager:
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=None, request_id=request_id, action="halt", parameter={}, queue=target_queue
+                scan_id=None,
+                request_id=request_id,
+                action="halt",
+                parameter={},
+                queue=target_queue,
+                metadata=self._queue_metadata(target_queue),
             ),
         )
 
@@ -155,6 +166,7 @@ class ScanManager:
                 action="user_completed",
                 parameter={},
                 queue=target_queue,
+                metadata=self._queue_metadata(target_queue),
             ),
         )
 
@@ -177,6 +189,43 @@ class ScanManager:
                 action="continue",
                 parameter={},
                 queue=target_queue,
+                metadata=self._queue_metadata(target_queue),
+            ),
+        )
+
+    def request_queue_pause(self, queue: str | None = None) -> None:
+        """Pause queue dispatch after the current acquisition finishes.
+
+        Args:
+            queue (str | None): Queue to pause; None uses the configured default queue.
+        """
+        target_queue = queue or self.get_default_scan_queue()
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                action="deferred_pause",
+                queue=target_queue,
+                parameter={},
+                metadata=self._queue_metadata(target_queue),
+            ),
+        )
+
+    def request_queue_continuation(self, queue: str | None = None) -> None:
+        """Resume queue dispatch without selecting or resuming an acquisition.
+
+        Args:
+            queue (str | None): Queue to resume; None uses the configured default queue.
+        """
+        target_queue = queue or self.get_default_scan_queue()
+        self.connector.send(
+            MessageEndpoints.scan_queue_modification_request(),
+            messages.ScanQueueModificationMessage(
+                scan_id=None,
+                request_id=None,
+                action="continue",
+                parameter={},
+                queue=target_queue,
+                metadata=self._queue_metadata(target_queue),
             ),
         )
 
@@ -185,7 +234,13 @@ class ScanManager:
         logger.info("Requesting a queue reset")
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
-            messages.ScanQueueModificationMessage(scan_id=None, action="clear", parameter={}),
+            messages.ScanQueueModificationMessage(
+                scan_id=None,
+                action="clear",
+                parameter={},
+                queue=self.get_default_scan_queue(),
+                metadata=self._queue_metadata(self.get_default_scan_queue()),
+            ),
         )
 
     def request_scan_restart(
@@ -215,6 +270,7 @@ class ScanManager:
                 action="restart",
                 parameter={"position": position, "RID": new_request_id},
                 queue=target_queue,
+                metadata=self._queue_metadata(target_queue),
             ),
         )
         return new_request_id
@@ -243,6 +299,7 @@ class ScanManager:
                     "allow_device_instructions": allow_device_instructions,
                 },
                 queue=queue,
+                metadata=self._queue_metadata(queue),
             ),
         )
 
@@ -258,7 +315,11 @@ class ScanManager:
         self.connector.send(
             MessageEndpoints.scan_queue_modification_request(),
             messages.ScanQueueModificationMessage(
-                scan_id=None, action="release_lock", parameter={"identifier": lock_id}, queue=queue
+                scan_id=None,
+                action="release_lock",
+                parameter={"identifier": lock_id},
+                queue=queue,
+                metadata=self._queue_metadata(queue),
             ),
         )
 
@@ -301,7 +362,11 @@ class ScanManager:
         self.connector.send(
             MessageEndpoints.scan_queue_order_change_request(),
             messages.ScanQueueOrderMessage(
-                scan_id=scan_id, action=action, target_position=position, queue=queue
+                scan_id=scan_id,
+                action=action,
+                target_position=position,
+                queue=queue,
+                metadata=self._queue_metadata(queue),
             ),
         )
         if wait_for_response:
@@ -312,6 +377,15 @@ class ScanManager:
                 cb=self._request_response_callback,
             )
             return update["response"]
+
+    def _queue_metadata(self, queue: str) -> dict[str, str]:
+        """Capture a queue generation when the connected server publishes one."""
+        queues = self.queue_storage.current_scan_queue
+        if not isinstance(queues, dict):
+            return {}
+        status = queues.get(queue)
+        instance_id = getattr(status, "queue_instance_id", None)
+        return {"queue_instance_id": instance_id} if isinstance(instance_id, str) else {}
 
     def _get_request_id_from_storage(self) -> str | None:
         """Helper method to get the request ID from the current queue storage."""

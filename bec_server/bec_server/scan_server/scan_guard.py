@@ -346,11 +346,22 @@ class ScanGuard:
         """
         mod_msg = msg
 
+        if mod_msg.action == "pause":
+            logger.warning("Hard pause is unsupported. Use deferred pause or abort.")
+            return
+
         if mod_msg.action == "restart":
-            RID = mod_msg.content["parameter"].get("RID")
-            if RID:
-                mod_msg.metadata["RID"] = RID
-                self._send_scan_request_response(ScanStatus(), mod_msg.metadata)
+            replacement_id = mod_msg.parameter.get("RID") if mod_msg.parameter else None
+            if (
+                not isinstance(replacement_id, str)
+                or not replacement_id.strip()
+                or replacement_id == mod_msg.request_id
+            ):
+                logger.warning("Scan restart rejected; a fresh replacement RID is required.")
+                return
+            self._send_scan_request_response(
+                ScanStatus(), {**mod_msg.metadata, "RID": replacement_id}
+            )
 
         sqm = MessageEndpoints.scan_queue_modification()
         self.device_manager.connector.send(sqm, mod_msg)

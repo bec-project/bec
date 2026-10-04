@@ -8,7 +8,6 @@ import threading
 import time
 from contextlib import redirect_stdout
 from typing import TYPE_CHECKING
-from unittest.mock import PropertyMock
 
 import h5py
 import numpy as np
@@ -700,30 +699,17 @@ def test_unreachable_device_stays_disabled_when_enabled_twice(bec_ipython_client
             )
 
 
-# @pytest.fixture(scope="function")
 @pytest.mark.timeout(100)
-@pytest.mark.parametrize("abort_on_ctrl_c", [True, False])
-def test_context_manager_export(tmp_path, bec_ipython_client_fixture, abort_on_ctrl_c):
+def test_context_manager_export(tmp_path, bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_line_scan"})
     dev = bec.device_manager.devices
-    bec._client._service_config = PropertyMock()
-    bec._client._service_config.abort_on_ctrl_c = abort_on_ctrl_c
-    if not abort_on_ctrl_c:
-        with pytest.raises(RuntimeError):
-            with scans.scan_export(os.path.join(tmp_path, "test.csv")):
-                scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
-                scans.grid_scan(
-                    dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
-                )
-    else:
-        scan_file = os.path.join(tmp_path, "test.csv")
-        with scans.scan_export(scan_file):
-            scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
-            scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
-
-        assert os.path.exists(scan_file)
+    scan_file = tmp_path / "test.csv"
+    with scans.scan_export(str(scan_file)):
+        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
+        scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    assert scan_file.exists()
 
 
 @pytest.mark.timeout(100)
