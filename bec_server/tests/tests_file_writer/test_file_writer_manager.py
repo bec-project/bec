@@ -381,6 +381,25 @@ def test_update_scan_storage_with_status_ignores_none(file_writer_manager_mock):
     assert file_manager.scan_storage == {}
 
 
+@pytest.mark.parametrize("start_time", [None, 10.0])
+def test_aborted_scan_history_has_valid_start_time(file_writer_manager_mock, start_time):
+    file_manager = file_writer_manager_mock
+    storage = ScanStorage(1, "scan_id")
+    storage.start_time = start_time
+    file_manager.scan_storage["scan_id"] = storage
+    msg = messages.ScanStatusMessage(
+        scan_id="scan_id", status="aborted", timestamp=20.0, info={"monitor_sync": None}
+    )
+    with (
+        mock.patch.object(file_manager, "update_baseline_reading"),
+        mock.patch.object(file_manager, "update_file_references"),
+        mock.patch.object(file_manager, "write_file"),
+    ):
+        file_manager.update_scan_storage_with_status(msg)
+    assert storage.start_time == (20.0 if start_time is None else start_time)
+    assert storage.end_time == 20.0
+
+
 def test_update_scan_storage_with_status_waits_for_v4_sync_segments(file_writer_manager_mock):
     file_manager = file_writer_manager_mock
     storage = ScanStorage(1, "scan_id")

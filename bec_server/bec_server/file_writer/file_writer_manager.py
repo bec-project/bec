@@ -297,6 +297,10 @@ class FileWriterManager(BECService):
                 scan_storage.forced_finish = True
             if not scan_storage.end_time:
                 scan_storage.end_time = msg.content.get("timestamp")
+            if scan_storage.start_time is None:
+                # Preparation can fail before open_scan. Represent that attempt as a
+                # zero-duration acquisition instead of publishing invalid history.
+                scan_storage.start_time = scan_storage.end_time
 
             scan_storage.scan_finished = True
             scan_storage.num_points = msg.num_points
