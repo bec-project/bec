@@ -5,7 +5,7 @@ This module provides a high level interface for interacting with the BEC Redis i
 from __future__ import annotations
 
 import traceback
-from typing import Literal, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 from redis.client import Pipeline, Redis
 
@@ -90,14 +90,15 @@ class RedisConnector:
 
     def register(
         self,
-        topics=None,
-        patterns=None,
-        cb=None,
-        start_thread=True,
-        from_start=False,
-        newest_only=False,
-        **kwargs,
-    ):
+        topics: str | list[str] | EndpointInfo | list[EndpointInfo] | None = None,
+        patterns: str | list[str] | EndpointInfo | list[EndpointInfo] | None = None,
+        cb: Callable | None = None,
+        start_thread: bool = True,
+        from_start: bool = False,
+        newest_only: bool = False,
+        replay_last: bool = False,
+        **kwargs: Any,
+    ) -> None:
         """
         Register a callback for a topic or a pattern
 
@@ -108,6 +109,18 @@ class RedisConnector:
             start_thread (bool, optional): start the dispatcher thread. Defaults to True.
             from_start (bool, optional): for streams only: return data from start on first reading. Defaults to False.
             newest_only (bool, optional): for streams only: return newest data only. Defaults to False.
+            replay_last (bool): Deliver the latest retained SET_PUBLISH value or STREAM entry.
+                SET_PUBLISH values refresh after subscribe and reconnect on the listener.
+                Same-topic live updates can satisfy pending replay.
+                At most one retained read is attempted between live polls.
+                Replay is best effort: failed reads emit nothing and are not rescheduled.
+                Retained SET_PUBLISH reads use a separate
+                connection with at most one-second connect/read timeouts and no internal retries.
+                Streams load their latest entry with get_last(), then resume normal cursor delivery.
+                An initial stream replay already queued may invoke its callback after unregister.
+                Buffered notifications can follow the snapshot, and repeated values are possible.
+                Only opted-in callbacks receive replay.
+                Cannot be combined with from_start.
             **kwargs: additional keyword arguments to be transmitted to the callback
 
         Examples:
@@ -127,6 +140,7 @@ class RedisConnector:
             start_thread=start_thread,
             from_start=from_start,
             newest_only=newest_only,
+            replay_last=replay_last,
             **kwargs,
         )
 

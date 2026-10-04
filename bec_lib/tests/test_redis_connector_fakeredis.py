@@ -659,6 +659,10 @@ def test_merging_streams_does_not_skip_messages(connected_connector: ManagedRedi
     cb_normal.assert_called_once_with({"data": 3}, key="normal")
     cb_normal.reset_mock()
 
+    # Keep live reads from interleaving with the explicitly tested history migration.
+    connector._stop_stream_events_listener_thread.set()
+    connector._stream_events_listener_thread.join(timeout=5)
+    assert not connector._stream_events_listener_thread.is_alive()
     assert (id_3 := connected_connector._stream_subs.end_id("test")) != "+"
 
     connector.xadd("test", {"data": 4})
@@ -681,6 +685,12 @@ def test_merging_streams_does_not_skip_messages(connected_connector: ManagedRedi
     assert cb_from_start.call_count == 3
     assert connected_connector._stream_subs.from_start_subs == {}
     assert connected_connector._stream_subs.end_id("test") == id_3
+
+    connector._stop_stream_events_listener_thread.clear()
+    connector._stream_events_listener_thread = threading.Thread(
+        target=connector._get_stream_messages_loop
+    )
+    connector._stream_events_listener_thread.start()
 
     connector.poll_messages()
 
