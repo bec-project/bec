@@ -651,6 +651,18 @@ class ErrorInfo(BaseModel):
     device: str | list[str] | None = None
 
 
+class DeviceStopResponse(BECMessage):
+    """Completion of a stop boundary, without promising physical standstill.
+
+    Success means matched instruction handlers have drained and device stop calls returned.
+    """
+
+    msg_type: ClassVar[str] = "device_stop_response"
+    request_id: str
+    success: bool
+    errors: list[ErrorInfo] = Field(default_factory=list)
+
+
 class DeviceInstructionResponse(BECMessage):
     msg_type: ClassVar[str] = "device_instruction_response"
     device: str | list[str] | None
