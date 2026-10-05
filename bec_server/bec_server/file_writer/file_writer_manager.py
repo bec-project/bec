@@ -4,7 +4,7 @@ import os
 import threading
 import time
 import traceback
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import Alarms
@@ -60,12 +60,23 @@ class ScanStorage:
         """
         self.scan_segments[point_id] = data
 
+    @property
+    def baseline_ready(self) -> bool:
+        """Whether no baseline read was requested or its bundled data has arrived."""
+        if self.status_msg is None:
+            return True
+        return not self.status_msg.info.get("baseline_readout_requested", False) or bool(
+            self.baseline
+        )
+
     def ready_to_write(self) -> bool:
         """
         Check if the scan is ready to be written to file.
         """
         if self.forced_finish:
             return True
+        if not self.baseline_ready:
+            return False
         if self.enforce_sync:
             # wait for all points to be received. Since this method will be called for every
             # update of the scan segments, we can also accept to write after the scan is finished
@@ -106,8 +117,16 @@ class FileWriterManager(BECService):
         self.available_beamline_states: list[messages.BeamlineStateConfig] = []
         self.beamline_state_subscriptions: set[str] = set()
         self.beamline_states: dict[str, messages.BeamlineStateMessage] = {}
+        self.scan_storage: dict[str, ScanStorage] = {}
+        self._pending_baseline_writes: dict[str, dict] = {}
+        self._pending_file_references: dict[str, dict[str, messages.FileMessage]] = {}
+        self._finished_scan_ids: deque[str] = deque(maxlen=1000)
         self.connector.register(MessageEndpoints.scan_segment(), cb=self._scan_segment_callback)
         self.connector.register(MessageEndpoints.scan_status(), cb=self._scan_status_callback)
+        self.connector.register(MessageEndpoints.scan_baseline(), cb=self._scan_baseline_callback)
+        self.connector.register(
+            patterns=MessageEndpoints.public_file("*", "*"), cb=self._file_reference_callback
+        )
         self.connector.register(
             patterns=MessageEndpoints.device_read_configuration("*"),  # type: ignore
             cb=self._device_configuration_callback,
@@ -122,7 +141,6 @@ class FileWriterManager(BECService):
         )
         self._run_storage_copy_plugin = self._load_storage_copy_plugin()
         self.async_writer = None
-        self.scan_storage: dict[str, ScanStorage] = {}
         self.file_writer = HDF5FileWriter(self)
         self.status = messages.BECStatus.RUNNING
         self.refresh_device_configs()
@@ -140,6 +158,43 @@ class FileWriterManager(BECService):
     def _scan_status_callback(self, msg):
         msg = msg.value
         self.update_scan_storage_with_status(msg)
+
+    def _scan_baseline_callback(self, msg: MessageObject) -> None:
+        baseline_msg = msg.value
+        with self._lock:
+            if baseline_msg.scan_id in self._finished_scan_ids:
+                return
+            storage = self.scan_storage.get(baseline_msg.scan_id)
+            if storage is None:
+                self._pending_baseline_writes[baseline_msg.scan_id] = baseline_msg.data
+                return
+            storage.baseline = baseline_msg.data
+            self.check_storage_status(scan_id=baseline_msg.scan_id)
+
+    def _file_reference_callback(self, msg: MessageObject) -> None:
+        _, scan_id, _, name = msg.topic.rsplit("/", 3)
+        file_msg = msg.value
+        if name == "master" or file_msg.is_master_file:
+            return
+        with self._lock:
+            if scan_id in self._finished_scan_ids:
+                return
+            storage = self.scan_storage.get(scan_id)
+            if storage is None:
+                self._pending_file_references.setdefault(scan_id, {})[name] = file_msg
+                return
+            storage.file_references[name] = file_msg
+
+    def _get_or_create_scan_storage(self, scan_id: str, scan_number: int | None) -> ScanStorage:
+        """Create scan storage and transfer any notifications received before its status or data."""
+        with self._lock:
+            storage = self.scan_storage.get(scan_id)
+            if storage is None:
+                storage = ScanStorage(scan_number=scan_number, scan_id=scan_id)
+                storage.baseline = self._pending_baseline_writes.pop(scan_id, {})
+                storage.file_references = self._pending_file_references.pop(scan_id, {})
+                self.scan_storage[scan_id] = storage
+            return storage
 
     def _device_configuration_callback(self, msg):
         topic, msg = msg.topic, msg.value
@@ -255,10 +310,7 @@ class FileWriterManager(BECService):
         if scan_id is None:
             return
 
-        if not self.scan_storage.get(scan_id):
-            self.scan_storage[scan_id] = ScanStorage(
-                scan_number=msg.content["info"].get("scan_number"), scan_id=scan_id
-            )
+        self._get_or_create_scan_storage(scan_id, msg.content["info"].get("scan_number"))
 
         for state in self.beamline_states.values():
             if state.name not in self.scan_storage[scan_id].beamline_states:
@@ -324,59 +376,12 @@ class FileWriterManager(BECService):
         scan_id = msg.content.get("scan_id")
         if scan_id is None:
             return
-        if not self.scan_storage.get(scan_id):
-            self.scan_storage[scan_id] = ScanStorage(
-                scan_number=msg.metadata.get("scan_number"), scan_id=scan_id
-            )
+        self._get_or_create_scan_storage(scan_id, msg.metadata.get("scan_number"))
         self.scan_storage[scan_id].append(
             point_id=msg.content.get("point_id"), data=msg.content.get("data")
         )
         logger.debug(msg.content.get("point_id"))
         self.check_storage_status(scan_id=scan_id)
-
-    def update_baseline_reading(self, scan_id: str) -> None:
-        """
-        Update the baseline reading for the scan.
-
-        Args:
-            scan_id (str): Scan ID
-        """
-        if not self.scan_storage.get(scan_id):
-            return
-        if self.scan_storage[scan_id].baseline:
-            return
-        baseline = self.connector.get(MessageEndpoints.public_scan_baseline(scan_id))
-        if not baseline:
-            return
-        self.scan_storage[scan_id].baseline = baseline.content["data"]
-        return
-
-    def update_file_references(self, scan_id: str) -> None:
-        """
-        Update the file references for the scan.
-        All external files ought to be announced to the endpoint public_file before the scan finishes. This function
-        retrieves the file references and adds them to the scan storage.
-
-        Args:
-            scan_id (str): Scan ID
-        """
-        if not self.scan_storage.get(scan_id):
-            return
-        msgs = self.connector.keys(MessageEndpoints.public_file(scan_id, "*"))
-        if not msgs:
-            return
-
-        # extract name from 'public/<scan_id>/file/<name>'
-        names = [msg.decode().split("/")[-1] for msg in msgs]
-        file_msgs = [
-            self.connector.get(MessageEndpoints.public_file(scan_id=scan_id, name=name))
-            for name in names
-        ]
-        if not file_msgs:
-            return
-        for name, file_msg in zip(names, file_msgs):
-            self.scan_storage[scan_id].file_references[name] = file_msg
-        return
 
     def update_device_configuration(self, device: str, msg: messages.DeviceMessage) -> None:
         """
@@ -397,8 +402,6 @@ class FileWriterManager(BECService):
         with self._lock:
             if not self.scan_storage.get(scan_id):
                 return
-            self.update_baseline_reading(scan_id)
-            self.update_file_references(scan_id)
             if self.scan_storage[scan_id].ready_to_write():
                 self.write_file(scan_id)
 
@@ -481,6 +484,7 @@ class FileWriterManager(BECService):
         logger.info(f"Writing to file {file_path} took {time.time() - start_time:.2f} seconds.")
 
         self.scan_storage.pop(scan_id)
+        self._finished_scan_ids.append(scan_id)
         self.connector.set_and_publish(
             MessageEndpoints.public_file(scan_id, "master"),
             messages.FileMessage(file_path=file_path, done=True, successful=successful),

@@ -1,5 +1,6 @@
 # pylint: skip-file
 import os
+import threading
 import time
 from unittest import mock
 
@@ -201,15 +202,11 @@ def test_check_storage_status(file_writer_manager_mock, scan_storage_mock):
 
     with (
         mock.patch.object(scan_storage_mock, "ready_to_write") as mock_ready_to_write,
-        mock.patch.object(file_manager, "update_baseline_reading") as mock_update_baseline,
-        mock.patch.object(file_manager, "update_file_references") as mock_update_file_references,
         mock.patch.object(file_manager, "write_file") as mock_write_file,
     ):
         mock_ready_to_write.return_value = True
         file_manager.check_storage_status(scan_id="scan_id")
         assert mock_ready_to_write.called
-        assert mock_update_baseline.call_args == mock.call("scan_id")
-        assert mock_update_file_references.call_args == mock.call("scan_id")
         assert mock_write_file.call_args == mock.call("scan_id")
 
 
@@ -331,18 +328,6 @@ def test_write_file_renames_tmp_file_on_exception(file_writer_manager_mock, scan
             mock_rename.assert_called_once_with(tmp_file_path, final_file_path)
 
 
-def test_update_baseline_reading(file_writer_manager_mock, scan_storage_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = scan_storage_mock
-    with mock.patch.object(file_manager, "connector") as mock_connector:
-        mock_connector.get.return_value = messages.ScanBaselineMessage(
-            scan_id="scan_id", data={"data": "data"}
-        )
-        file_manager.update_baseline_reading("scan_id")
-        assert file_manager.scan_storage["scan_id"].baseline == {"data": "data"}
-        mock_connector.get.assert_called_once_with(MessageEndpoints.public_scan_baseline("scan_id"))
-
-
 def test_scan_storage_append(scan_storage_mock):
     storage = scan_storage_mock
     storage.append(1, {"data": "data"})
@@ -356,21 +341,6 @@ def test_scan_storage_ready_to_write(scan_storage_mock):
     storage.scan_finished = True
     storage.append(1, {"data": "data"})
     assert storage.ready_to_write() is True
-
-
-def test_update_file_references(file_writer_manager_mock):
-    file_manager = file_writer_manager_mock
-    with mock.patch.object(file_manager, "connector") as mock_connector:
-        file_manager.update_file_references("scan_id")
-        mock_connector.keys.assert_not_called()
-
-
-def test_update_file_references_gets_keys(file_writer_manager_mock, scan_storage_mock):
-    file_manager = file_writer_manager_mock
-    file_manager.scan_storage["scan_id"] = scan_storage_mock
-    with mock.patch.object(file_manager, "connector") as mock_connector:
-        file_manager.update_file_references("scan_id")
-        mock_connector.keys.assert_called_once_with(MessageEndpoints.public_file("scan_id", "*"))
 
 
 def test_update_scan_storage_with_status_ignores_none(file_writer_manager_mock):
@@ -397,11 +367,7 @@ def test_update_scan_storage_with_status_waits_for_v4_sync_segments(file_writer_
         info={"scan_number": 1, "monitor_sync": None},
     )
 
-    with (
-        mock.patch.object(file_manager, "update_baseline_reading"),
-        mock.patch.object(file_manager, "update_file_references"),
-        mock.patch.object(file_manager, "write_file") as write_file,
-    ):
+    with (mock.patch.object(file_manager, "write_file") as write_file,):
         file_manager.update_scan_storage_with_status(msg)
 
     assert storage.enforce_sync is True
@@ -559,3 +525,317 @@ def test_file_writer_manager_removes_beamline_state_subscription(file_writer_man
     file_manager._update_available_beamline_states({"data": msg})
     assert "State1" not in file_manager.beamline_state_subscriptions
     assert "State1" not in file_manager.beamline_states
+
+
+@pytest.mark.parametrize("enforce_sync,monitored", [(True, ["samx"]), (True, []), (False, [])])
+def test_ready_to_write_waits_for_baseline(enforce_sync, monitored):
+    storage = ScanStorage(1, "scan_id")
+    storage.status_msg = messages.ScanStatusMessage(
+        scan_id="scan_id",
+        status="closed",
+        info={"baseline_readout_requested": True},
+        readout_priority={"monitored": monitored, "baseline": ["samz"]},
+    )
+    storage.enforce_sync = enforce_sync
+    storage.scan_finished = True
+    storage.num_monitored_readouts = 0
+
+    assert storage.baseline_ready is False
+    assert storage.ready_to_write() is False
+
+    storage.baseline = {"samz": {"samz": {"value": 42, "timestamp": 1}}}
+
+    assert storage.baseline_ready is True
+    assert storage.ready_to_write() is True
+
+
+@pytest.mark.parametrize("arrival_order", ["baseline_first", "baseline_last"])
+def test_baseline_arrival_finalizes_scan_once(file_writer_manager_mock, arrival_order):
+    manager = file_writer_manager_mock
+    manager.scan_storage["scan_id"] = ScanStorage(1, "scan_id")
+    baseline_msg = messages.ScanBaselineMessage(
+        scan_id="scan_id", data={"samz": {"samz": {"value": 42, "timestamp": 1}}}
+    )
+    baseline_event = MessageObject(
+        topic=MessageEndpoints.scan_baseline().endpoint, value=baseline_msg
+    )
+    closed_msg = messages.ScanStatusMessage(
+        scan_id="scan_id",
+        status="closed",
+        scan_number=1,
+        scan_type="software_triggered",
+        num_points=1,
+        num_monitored_readouts=1,
+        readout_priority={"monitored": ["samx"], "baseline": ["samz"]},
+        info={"scan_number": 1, "monitor_sync": "bec", "baseline_readout_requested": True},
+    )
+    segment = messages.ScanMessage(
+        scan_id="scan_id", point_id=0, data={"samx": {"samx": {"value": 1, "timestamp": 1}}}
+    )
+    written_baselines = []
+
+    def write_file(scan_id):
+        written_baselines.append(manager.scan_storage.pop(scan_id).baseline)
+        manager._finished_scan_ids.append(scan_id)
+
+    with (
+        mock.patch.object(manager.connector, "get", return_value=None) as get,
+        mock.patch.object(manager, "write_file", side_effect=write_file) as write,
+    ):
+        if arrival_order == "baseline_first":
+            manager._scan_baseline_callback(baseline_event)
+            write.assert_not_called()
+
+        manager.insert_to_scan_storage(segment)
+        write.assert_not_called()
+        manager.update_scan_storage_with_status(closed_msg)
+
+        if arrival_order == "baseline_last":
+            write.assert_not_called()
+            manager._scan_baseline_callback(baseline_event)
+
+        write.assert_called_once_with("scan_id")
+        assert written_baselines == [baseline_msg.data]
+        get.assert_not_called()
+        assert "scan_id" not in manager.scan_storage
+
+        manager._scan_baseline_callback(baseline_event)
+        write.assert_called_once_with("scan_id")
+        assert "scan_id" not in manager.scan_storage
+        assert manager._pending_baseline_writes == {}
+
+
+def test_baseline_callback_does_not_create_scan_storage(file_writer_manager_mock):
+    manager = file_writer_manager_mock
+    baseline = messages.ScanBaselineMessage(scan_id="unknown_scan", data={"samz": {}})
+    with mock.patch.object(manager, "write_file") as write:
+        manager._scan_baseline_callback(
+            MessageObject(topic=MessageEndpoints.scan_baseline().endpoint, value=baseline)
+        )
+    write.assert_not_called()
+    assert manager.scan_storage == {}
+    assert manager._pending_baseline_writes == {"unknown_scan": baseline.data}
+
+
+@pytest.mark.parametrize("status", ["aborted", "halted", "user_completed"])
+def test_interrupted_scan_does_not_wait_for_baseline(file_writer_manager_mock, status):
+    manager = file_writer_manager_mock
+    storage = ScanStorage(1, "scan_id")
+    manager.scan_storage["scan_id"] = storage
+    status_msg = messages.ScanStatusMessage(
+        scan_id="scan_id",
+        status=status,
+        scan_number=1,
+        scan_type="software_triggered",
+        num_monitored_readouts=1,
+        readout_priority={"monitored": ["samx"], "baseline": ["samz"]},
+        info={"scan_number": 1, "monitor_sync": "bec", "baseline_readout_requested": True},
+    )
+    with (
+        mock.patch.object(manager.connector, "get", return_value=None),
+        mock.patch.object(manager, "write_file") as write,
+    ):
+        manager.update_scan_storage_with_status(status_msg)
+        assert storage.baseline_ready is False
+        write.assert_called_once_with("scan_id")
+
+
+@pytest.mark.parametrize("baseline_devices", [[], ["samz"]])
+@pytest.mark.parametrize("requested_info", [{}, {"baseline_readout_requested": False}])
+def test_scan_without_baseline_request_does_not_wait_for_baseline(
+    file_writer_manager_mock, baseline_devices, requested_info
+):
+    manager = file_writer_manager_mock
+    manager.scan_storage["scan_id"] = ScanStorage(1, "scan_id")
+    closed_msg = messages.ScanStatusMessage(
+        scan_id="scan_id",
+        status="closed",
+        scan_number=1,
+        scan_type="software_triggered",
+        num_monitored_readouts=0,
+        readout_priority={"monitored": [], "baseline": baseline_devices},
+        info={"scan_number": 1, "monitor_sync": "bec", **requested_info},
+    )
+    with (
+        mock.patch.object(manager.connector, "get", return_value=None),
+        mock.patch.object(manager, "write_file") as write,
+    ):
+        manager.update_scan_storage_with_status(closed_msg)
+        write.assert_called_once_with("scan_id")
+
+
+@pytest.mark.parametrize("first_update", ["status", "segment"])
+def test_pending_notifications_are_flushed_when_storage_is_created(
+    file_writer_manager_mock, first_update
+):
+    manager = file_writer_manager_mock
+    baseline = messages.ScanBaselineMessage(
+        scan_id="scan_id", data={"samz": {"samz": {"value": 42, "timestamp": 1}}}
+    )
+    files = {
+        name: messages.FileMessage(file_path=f"/{name}.h5", done=True, successful=True)
+        for name in ["eiger", "pilatus"]
+    }
+    manager._scan_baseline_callback(
+        MessageObject(topic=MessageEndpoints.scan_baseline().endpoint, value=baseline)
+    )
+    for name, file_msg in files.items():
+        manager._file_reference_callback(
+            MessageObject(
+                topic=MessageEndpoints.public_file("scan_id", name).endpoint, value=file_msg
+            )
+        )
+    manager._pending_baseline_writes["other_scan"] = {"samz": {}}
+    manager._pending_file_references["other_scan"] = {"eiger": files["eiger"]}
+    assert manager.scan_storage == {}
+
+    with mock.patch.object(manager, "write_file") as write:
+        if first_update == "status":
+            manager.update_scan_storage_with_status(
+                messages.ScanStatusMessage(
+                    scan_id="scan_id",
+                    status="paused",
+                    info={"scan_number": 1},
+                    readout_priority={"baseline": ["samz"]},
+                )
+            )
+        else:
+            manager.insert_to_scan_storage(
+                messages.ScanMessage(
+                    scan_id="scan_id", point_id=0, data={}, metadata={"scan_number": 1}
+                )
+            )
+        write.assert_not_called()
+
+    storage = manager.scan_storage["scan_id"]
+    assert storage.baseline == baseline.data
+    assert storage.file_references == files
+    assert "scan_id" not in manager._pending_baseline_writes
+    assert "scan_id" not in manager._pending_file_references
+    assert manager._pending_baseline_writes == {"other_scan": {"samz": {}}}
+    assert manager._pending_file_references == {"other_scan": {"eiger": files["eiger"]}}
+
+
+def test_baseline_before_first_status_allows_closed_scan_to_finalize(file_writer_manager_mock):
+    manager = file_writer_manager_mock
+    baseline = messages.ScanBaselineMessage(scan_id="scan_id", data={"samz": {}})
+    manager._scan_baseline_callback(
+        MessageObject(topic=MessageEndpoints.scan_baseline().endpoint, value=baseline)
+    )
+    with mock.patch.object(manager, "write_file") as write:
+        manager.update_scan_storage_with_status(
+            messages.ScanStatusMessage(
+                scan_id="scan_id",
+                status="closed",
+                scan_type="software_triggered",
+                num_monitored_readouts=0,
+                readout_priority={"monitored": [], "baseline": ["samz"]},
+                info={"scan_number": 1, "monitor_sync": "bec", "baseline_readout_requested": True},
+            )
+        )
+        write.assert_called_once_with("scan_id")
+    assert manager.scan_storage["scan_id"].baseline == baseline.data
+    assert manager._pending_baseline_writes == {}
+
+
+def test_file_reference_updates_active_storage(file_writer_manager_mock):
+    manager = file_writer_manager_mock
+    manager.scan_storage["scan_id"] = ScanStorage(1, "scan_id")
+    first = messages.FileMessage(file_path="/eiger.h5", done=False, successful=False)
+    finished = messages.FileMessage(file_path="/eiger.h5", done=True, successful=True)
+    for file_msg in [first, finished]:
+        manager._file_reference_callback(
+            MessageObject(
+                topic=MessageEndpoints.public_file("scan_id", "eiger").endpoint, value=file_msg
+            )
+        )
+    assert manager.scan_storage["scan_id"].file_references == {"eiger": finished}
+    assert manager._pending_file_references == {}
+
+
+@pytest.mark.parametrize(
+    "name,is_master_file", [("master", False), ("master", True), ("other", True)]
+)
+def test_master_file_notifications_are_not_buffered(file_writer_manager_mock, name, is_master_file):
+    manager = file_writer_manager_mock
+    file_msg = messages.FileMessage(
+        file_path="/master.h5", done=True, successful=True, is_master_file=is_master_file
+    )
+    manager._file_reference_callback(
+        MessageObject(topic=MessageEndpoints.public_file("scan_id", name).endpoint, value=file_msg)
+    )
+    assert manager.scan_storage == {}
+    assert manager._pending_file_references == {}
+
+
+def test_finished_scan_does_not_buffer_late_notifications(
+    file_writer_manager_mock, scan_storage_mock
+):
+    manager = file_writer_manager_mock
+    manager.scan_storage["scan_id"] = scan_storage_mock
+    with (
+        mock.patch(
+            "bec_server.file_writer.file_writer_manager.get_full_path", return_value="scan.h5"
+        ),
+        mock.patch.object(manager.file_writer, "write"),
+    ):
+        manager.write_file("scan_id")
+
+    baseline = messages.ScanBaselineMessage(scan_id="scan_id", data={"samz": {}})
+    file_msg = messages.FileMessage(file_path="/eiger.h5", done=True, successful=True)
+    manager._scan_baseline_callback(
+        MessageObject(topic=MessageEndpoints.scan_baseline().endpoint, value=baseline)
+    )
+    manager._file_reference_callback(
+        MessageObject(
+            topic=MessageEndpoints.public_file("scan_id", "eiger").endpoint, value=file_msg
+        )
+    )
+    assert manager.scan_storage == {}
+    assert manager._pending_baseline_writes == {}
+    assert manager._pending_file_references == {}
+
+
+def test_subscriptions_buffer_early_notifications(file_writer_manager_mock, connected_connector):
+    manager = file_writer_manager_mock
+    received = threading.Event()
+    baseline = messages.ScanBaselineMessage(scan_id="scan_id", data={"samz": {}})
+    file_msg = messages.FileMessage(file_path="/eiger.h5", done=True, successful=True)
+
+    def file_reference_callback(msg):
+        manager._file_reference_callback(msg)
+        received.set()
+
+    connected_connector.register(
+        MessageEndpoints.scan_baseline(), cb=manager._scan_baseline_callback
+    )
+    connected_connector.register(
+        patterns=MessageEndpoints.public_file("*", "*"), cb=file_reference_callback
+    )
+    pipe = connected_connector.pipeline()
+    connected_connector.set_and_publish(MessageEndpoints.scan_baseline(), baseline, pipe=pipe)
+    connected_connector.set_and_publish(
+        MessageEndpoints.public_file("scan_id", "eiger"), file_msg, pipe=pipe
+    )
+    pipe.execute()
+    assert received.wait(5), "File reference subscription did not deliver its notification"
+    assert manager.scan_storage == {}
+    assert manager._pending_baseline_writes == {"scan_id": baseline.data}
+    assert manager._pending_file_references == {"scan_id": {"eiger": file_msg}}
+
+    with mock.patch.object(manager, "write_file") as write:
+        manager.update_scan_storage_with_status(
+            messages.ScanStatusMessage(
+                scan_id="scan_id",
+                status="closed",
+                scan_type="software_triggered",
+                num_monitored_readouts=0,
+                readout_priority={"monitored": [], "baseline": ["samz"]},
+                info={"scan_number": 1, "monitor_sync": "bec", "baseline_readout_requested": True},
+            )
+        )
+        write.assert_called_once_with("scan_id")
+    assert manager.scan_storage["scan_id"].baseline == baseline.data
+    assert manager.scan_storage["scan_id"].file_references == {"eiger": file_msg}
+    assert manager._pending_baseline_writes == {}
+    assert manager._pending_file_references == {}
