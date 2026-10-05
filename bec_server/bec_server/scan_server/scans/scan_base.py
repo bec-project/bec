@@ -116,6 +116,9 @@ class ScanInfo(BaseModel):
     metadata: Annotated[dict, Field(description="Additional metadata for the scan")] = {}
 
     # progress tracking
+    baseline_readout_requested: Annotated[
+        bool, Field(description="Whether a read of nonempty baseline devices was requested.")
+    ] = False
     num_monitored_readouts: Annotated[
         int,
         Field(

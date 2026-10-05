@@ -13,6 +13,7 @@ from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.tests.fixtures import dm_with_devices  # noqa: F401
 from bec_lib.tests.utils import ConnectorMock
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
+from bec_server.file_writer.file_writer_manager import ScanStorage
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo, ScanType
 from bec_server.scan_server.scans.scan_status import ScanStatus
@@ -388,6 +389,7 @@ def test_build_scan_status_message(action_context):
     assert msg.dataset_number == 2
     assert msg.num_points == 3
     assert msg.num_monitored_readouts == 0
+    assert msg.info["baseline_readout_requested"] is False
     assert msg.scan_type == "software_triggered"
     assert msg.scan_parameters == {
         "exp_time": 0.1,
@@ -576,6 +578,27 @@ def test_read_actions_emit_expected_messages_and_point_ids(action_context):
     assert monitored_msg_2.metadata["device_instr_id"] == monitored_status_2._device_instr_id
 
 
+@pytest.mark.parametrize("read_baseline", [False, True])
+def test_baseline_request_in_scan_status_controls_file_readiness(action_context, read_baseline):
+    ctx = action_context()
+    _set_readout_priority(ctx, baseline=["samz"], monitored=["samx"])
+    ctx.actions.read_monitored_devices(wait=False)
+    assert ctx.scan.scan_info.baseline_readout_requested is False
+    if read_baseline:
+        ctx.actions.read_baseline_devices(wait=False)
+
+    closed_msg = ctx.actions._build_scan_status_message("closed")
+    assert closed_msg.info["baseline_readout_requested"] is read_baseline
+    storage = ScanStorage(1, closed_msg.scan_id)
+    storage.status_msg = closed_msg
+    storage.scan_finished = True
+    storage.num_monitored_readouts = 1
+    storage.append(0, {"samx": {}})
+    assert storage.ready_to_write() is (not read_baseline)
+    storage.baseline = {"samz": {}}
+    assert storage.ready_to_write() is True
+
+
 def test_empty_read_and_trigger_actions_return_done_status(action_context):
     ctx = action_context()
     ctx.scan.scan_info.metadata["RID"] = "rid-123"
@@ -589,6 +612,7 @@ def test_empty_read_and_trigger_actions_return_done_status(action_context):
     trigger_status = ctx.actions.trigger_all_devices(wait=False)
 
     assert baseline_status.done
+    assert ctx.scan.scan_info.baseline_readout_requested is False
     assert monitored_status.done
     assert trigger_status.done
     assert not _sent_device_instructions(ctx, "read")

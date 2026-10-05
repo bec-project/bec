@@ -614,6 +614,7 @@ class ScanActions:
             metadata={"device_instr_id": status._device_instr_id, "readout_priority": "baseline"},
         )
         self._send(instr)
+        self._scan.scan_info.baseline_readout_requested = True
         if wait:
             status.wait()
         return status
