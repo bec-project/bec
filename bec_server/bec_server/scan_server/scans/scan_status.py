@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from bec_lib import messages
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.errors import DeviceInstructionError
+from bec_server.scan_server.errors import DeviceInstructionError, ScanAbortion
 
 if TYPE_CHECKING:
     from bec_server.scan_server.instruction_handler import InstructionHandler
@@ -201,12 +201,13 @@ class ScanStatus:
                 should be used with caution. Defaults to False.
 
         Raises:
+            ScanAbortion: Raised if shutdown interrupts a pending wait.
             DeviceInstructionError: Raised if the instruction failed.
             ValueError: Raised if resolve_on_known_type is True but the status object has sub status objects.
 
         Returns:
             bool: True if the instruction completed. False if it is still pending when
-                the timeout expires, shutdown interrupts the wait, or
+                the timeout expires or
                 resolve_on_known_type resolves the return type early.
 
         Example:
@@ -230,14 +231,6 @@ class ScanStatus:
         if min_wait is not None:
             time.sleep(min_wait)
 
-        if self._done and self._get_sub_status_done():
-            self._done_checked = True
-            self._raise_if_failed(self._future)
-            for st in self._sub_status_objects:
-                st._done_checked = True
-                self._raise_if_failed(st._future)
-            return True
-
         # pylint: disable=protected-access
         futures = [st._future for st in self._sub_status_objects]
         futures.append(self._future)
@@ -252,9 +245,9 @@ class ScanStatus:
                 self._raise_if_failed(future)
             if len(completed) == len(futures):
                 return True
-            if resolve_on_known_type and self._result_is_status is not None:
-                return False
             if self._shutdown_event.is_set():
+                raise ScanAbortion("Scan interrupted during status wait.")
+            if resolve_on_known_type and self._result_is_status is not None:
                 return False
 
             elapsed = time.monotonic() - start

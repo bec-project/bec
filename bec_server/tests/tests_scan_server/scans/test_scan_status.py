@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_server.scan_server.errors import DeviceInstructionError
+from bec_server.scan_server.errors import DeviceInstructionError, ScanAbortion
 from bec_server.scan_server.scans.scan_status import ScanStatus
 
 
@@ -194,13 +194,78 @@ def test_pending_failure_is_propagated_during_wait(instruction_handler):
             status.wait(timeout=0.01)
 
 
-def test_shutdown_returns_false_for_pending_instruction(instruction_handler):
+@pytest.mark.parametrize("timeout", [0, 0.01, None])
+@pytest.mark.parametrize("container", [False, True])
+def test_shutdown_aborts_pending_wait(instruction_handler, timeout, container):
+    event = threading.Event()
+    child = ScanStatus(instruction_handler, shutdown_event=event)
+    status = (
+        ScanStatus(instruction_handler, shutdown_event=event, is_container=True)
+        if container
+        else child
+    )
+    if container:
+        status.add_status(child)
+    event.set()
+    with pytest.raises(ScanAbortion, match="Scan interrupted during status wait"):
+        status.wait(timeout=timeout)
+    assert not child._future.done()
+    assert status._done_checked and child._done_checked
+
+
+def test_polling_loop_aborts_after_shutdown(instruction_handler):
+    event = threading.Event()
+    status = ScanStatus(instruction_handler, shutdown_event=event)
+    polls = 0
+    with pytest.raises(ScanAbortion):
+        while not status.wait(timeout=0):
+            polls += 1
+            assert polls == 1, "Polling continued after shutdown"
+            event.set()
+
+
+def test_shutdown_during_blocking_wait_aborts(instruction_handler):
+    event = threading.Event()
+    status = ScanStatus(instruction_handler, shutdown_event=event)
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=lambda *args, **kwargs: event.set(),
+    ) as wait:
+        with pytest.raises(ScanAbortion):
+            status.wait()
+    wait.assert_called_once()
+
+
+def test_shutdown_precedes_rpc_type_resolution(instruction_handler):
+    event = threading.Event()
+    status = ScanStatus(instruction_handler, shutdown_event=event)
+    status._update_future(_response("running", result_is_status=True))
+    event.set()
+    with pytest.raises(ScanAbortion):
+        status.wait(resolve_on_known_type=True)
+
+
+def test_completed_instruction_wins_over_shutdown(instruction_handler):
+    event = threading.Event()
+    status = ScanStatus(instruction_handler, shutdown_event=event)
+    status.set_done(42)
+    event.set()
+    assert status.wait(timeout=0) is True
+    assert status.result == 42
+
+
+def test_wait_can_resume_after_shutdown_is_cleared_for_cleanup(instruction_handler):
     event = threading.Event()
     status = ScanStatus(instruction_handler, shutdown_event=event)
     event.set()
-    assert status.wait(timeout=0) is False
-    assert not status._future.done()
-    assert status._done_checked
+    with pytest.raises(ScanAbortion):
+        status.wait()
+    event.clear()
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=lambda *args, **kwargs: status.set_done(),
+    ):
+        assert status.wait() is True
 
 
 def test_wait_uses_elapsed_time_and_remaining_budget(instruction_handler):
@@ -253,3 +318,47 @@ def test_completion_check_does_not_miss_concurrent_failure(instruction_handler):
     with mock.patch.object(status._future, "done", side_effect=complete_after_pending_check):
         with pytest.raises(DeviceInstructionError, match="Concurrent failure"):
             status.wait(timeout=0.01)
+
+
+@pytest.mark.parametrize("container", [False, True])
+@pytest.mark.parametrize("failure", [False, True])
+def test_poll_during_completion_publication(instruction_handler, container, failure):
+    child = ScanStatus(instruction_handler)
+    status = ScanStatus(instruction_handler, is_container=True) if container else child
+    if container:
+        status.add_status(child)
+
+    method = "set_exception" if failure else "set_result"
+    publish = getattr(child._future, method)
+    exception = child._future.exception
+    polls = []
+
+    def poll_before_publication(value):
+        assert child._done and not child._future.done()
+        polls.append(status.wait(timeout=0))
+        return publish(value)
+
+    with (
+        mock.patch.object(child._future, method, side_effect=poll_before_publication),
+        # Fail immediately if wait() inspects the pending future instead of polling.
+        mock.patch.object(child._future, "exception", side_effect=lambda: exception(timeout=0)),
+    ):
+        if failure:
+            child.set_failed(
+                messages.ErrorInfo(
+                    error_message="Delayed failure",
+                    compact_error_message="Delayed failure",
+                    exception_type="RuntimeError",
+                )
+            )
+        else:
+            child.set_done(42)
+
+    assert polls == [False]
+    assert status._done_checked and child._done_checked
+    if failure:
+        with pytest.raises(DeviceInstructionError, match="Delayed failure"):
+            status.wait(timeout=0)
+    else:
+        assert status.wait(timeout=0) is True
+        assert status.result == ([42] if container else 42)
