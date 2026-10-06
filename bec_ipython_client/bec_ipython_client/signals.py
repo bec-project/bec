@@ -3,6 +3,7 @@ from __future__ import annotations
 import signal
 import threading
 import time
+from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import ScanInterruption
@@ -10,17 +11,6 @@ from bec_lib.request_context import active_request_context
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.client import BECClient
-
-PAUSE_MSG = """
-The Scan Queue is entering a paused state. These are your options for changing
-the state of the queue:
-
-%resume              Resume the scan.
-%restart             Restart the scan.
-%abort               Perform cleanup, then kill plan. Mark exit_stats='aborted'.
-%halt                Emergency Stop: Do not perform cleanup --- just stop.
-"""
-from enum import Enum, auto
 
 
 class OperationMode(Enum):
@@ -147,27 +137,18 @@ class SigintHandler(SignalHandler):
             ).start()
             print(
                 "A 'deferred pause' has been requested. The "
-                "scan will pause at the next checkpoint. "
-                "To pause immediately, hit Ctrl+C again in the "
-                "next 10 seconds."
+                "queue will pause after the current acquisition finishes. "
+                "To abort, hit Ctrl+C again in the next 10 seconds."
             )
 
             self.last_sigint_time = time.time()
             return
 
-        # - Ctrl-C twice within 10 seconds or a direct command (e.g. mv) -> hard pause
-        if self.bec._service_config.abort_on_ctrl_c:
-            print("The scan will be aborted.")
-            threading.Thread(
-                target=self.bec.queue.request_scan_abortion,
-                kwargs={"request_id": request_id},
-                daemon=True,
-            ).start()
-            raise ScanInterruption("User abort.")
-        print("A hard pause will be requested.")
+        # Ctrl-C twice within 10 seconds or a direct command (e.g. mv).
+        print("The scan will be aborted.")
         threading.Thread(
-            target=self.bec.queue.request_scan_interruption,
-            kwargs={"deferred_pause": False, "request_id": request_id},
+            target=self.bec.queue.request_scan_abortion,
+            kwargs={"request_id": request_id},
             daemon=True,
         ).start()
-        raise ScanInterruption(PAUSE_MSG)
+        raise ScanInterruption("User abort.")

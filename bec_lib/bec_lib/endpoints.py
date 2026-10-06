@@ -685,6 +685,19 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def device_stop_response():
+        """Report a correlated device interruption boundary.
+
+        Returns:
+            EndpointInfo: Stop-handler completion responses from the device server.
+        """
+        return EndpointInfo(
+            endpoint=f"{EndpointType.INFO.value}/queue/device_stop_response",
+            message_type=messages.DeviceStopResponse,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def scan_queue_status():
         """
         Endpoint for scan queue status. This endpoint is used to publish the scan queue

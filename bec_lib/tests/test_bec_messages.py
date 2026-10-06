@@ -9,6 +9,24 @@ from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
 
+@pytest.mark.parametrize("success", [True, False])
+def test_device_stop_response_serialization(success):
+    errors = (
+        []
+        if success
+        else [
+            messages.ErrorInfo(
+                error_message="stop failed",
+                compact_error_message="stop failed",
+                exception_type="RuntimeError",
+                device="motor",
+            )
+        ]
+    )
+    response = messages.DeviceStopResponse(request_id="stop-one", success=success, errors=errors)
+    assert MsgpackSerialization.loads(MsgpackSerialization.dumps(response)) == response
+
+
 @pytest.mark.parametrize("version", [1.0, 1.1, 1.2, None])
 def test_bec_message_msgpack_serialization_version(version):
     msg = messages.DeviceInstructionMessage(

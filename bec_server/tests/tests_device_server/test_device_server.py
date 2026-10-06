@@ -1,4 +1,5 @@
 import threading
+import time
 from io import StringIO
 from types import SimpleNamespace
 from unittest import mock
@@ -25,6 +26,307 @@ from bec_server.device_server.ophyd_callback_monitor import OphydCallbackMonitor
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+def test_stop_fence_rejects_instruction_queued_behind_busy_handlers(device_server_mock):
+    ds = device_server_mock
+    all_busy = threading.Barrier(5)
+    release = threading.Event()
+    acknowledged = threading.Event()
+    sent = []
+
+    def execute(instr):
+        assert instr.metadata["RID"] == "busy"
+        all_busy.wait(timeout=5)
+        assert release.wait(5)
+
+    def send(endpoint, msg):
+        sent.append((endpoint, msg))
+        if endpoint == MessageEndpoints.device_stop_response():
+            acknowledged.set()
+
+    def instruction(rid, number):
+        return messages.DeviceInstructionMessage(
+            device="samx",
+            action="set",
+            parameter={},
+            metadata={"RID": rid, "device_instr_id": str(number)},
+        )
+
+    with (
+        mock.patch.object(ds, "_execute_device_instructions", side_effect=execute) as execute_mock,
+        mock.patch.object(ds.connector, "send", side_effect=send),
+    ):
+        futures = [
+            ds.executor.submit(ds.handle_device_instructions, instruction("busy", index))
+            for index in range(4)
+        ]
+        try:
+            all_busy.wait(timeout=5)
+            queued = ds.executor.submit(ds.handle_device_instructions, instruction("target", 5))
+            ds.on_stop_devices(
+                MessageObject(
+                    topic=MessageEndpoints.stop_devices().endpoint,
+                    value=messages.VariableMessage(
+                        value=[], metadata={"stop_id": "target", "stop_request_id": "stop-target"}
+                    ),
+                )
+            )
+            assert acknowledged.wait(5)
+            release.set()
+            for future in futures:
+                future.result(timeout=5)
+            queued.result(timeout=5)
+            assert execute_mock.call_count == 4
+            responses = [
+                msg
+                for endpoint, msg in sent
+                if endpoint == MessageEndpoints.device_instructions_response()
+            ]
+            assert len(responses) == 1
+            assert responses[0].status == "error"
+            assert responses[0].instruction.metadata["RID"] == "target"
+        finally:
+            release.set()
+
+
+def test_stop_ack_waits_for_active_handler_and_stops_late_side_effect(device_server_mock):
+    ds = device_server_mock
+    started = threading.Event()
+    first_stop = threading.Event()
+    release = threading.Event()
+    late_effect = threading.Event()
+    acknowledged = threading.Event()
+
+    def execute(_instr):
+        started.set()
+        assert release.wait(5)
+        late_effect.set()
+
+    def stop(_devices, **_kwargs):
+        if first_stop.is_set():
+            assert late_effect.is_set()
+        first_stop.set()
+        return []
+
+    def send(endpoint, msg):
+        if endpoint == MessageEndpoints.device_stop_response():
+            assert msg.success is True
+            acknowledged.set()
+
+    instr = messages.DeviceInstructionMessage(
+        device="samx",
+        action="set",
+        parameter={},
+        metadata={"RID": "target", "device_instr_id": "one"},
+    )
+    with (
+        mock.patch.object(ds, "_execute_device_instructions", side_effect=execute),
+        mock.patch.object(ds, "stop_devices", side_effect=stop) as stops,
+        mock.patch.object(ds.connector, "send", side_effect=send),
+    ):
+        future = ds.executor.submit(ds.handle_device_instructions, instr)
+        try:
+            assert started.wait(5)
+            ds.on_stop_devices(
+                MessageObject(
+                    topic=MessageEndpoints.stop_devices().endpoint,
+                    value=messages.VariableMessage(
+                        value=["samx"],
+                        metadata={"stop_id": "target", "stop_request_id": "stop-target"},
+                    ),
+                )
+            )
+            assert first_stop.wait(5)
+            assert not acknowledged.is_set()
+            release.set()
+            future.result(timeout=5)
+            assert acknowledged.wait(5)
+            assert stops.call_count == 2
+        finally:
+            release.set()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_stop_failure_is_reported_in_correlated_response(device_server_mock):
+    ds = device_server_mock
+    acknowledged = threading.Event()
+    responses = []
+
+    def send(endpoint, msg):
+        if endpoint == MessageEndpoints.device_stop_response():
+            responses.append(msg)
+            acknowledged.set()
+
+    with (
+        mock.patch.object(
+            ds.device_manager.devices.samx.obj, "stop", side_effect=RuntimeError("stop failed")
+        ),
+        mock.patch.object(ds.connector, "send", side_effect=send),
+    ):
+        ds.on_stop_devices(
+            MessageObject(
+                topic=MessageEndpoints.stop_devices().endpoint,
+                value=messages.VariableMessage(
+                    value=["samx"], metadata={"stop_id": "target", "stop_request_id": "stop-target"}
+                ),
+            )
+        )
+        assert acknowledged.wait(5)
+        assert responses[0].success is False
+        assert responses[0].request_id == "stop-target"
+        assert responses[0].errors[0].exception_type == "RuntimeError"
+
+
+def test_cleanup_identity_is_allowed_after_original_acquisition_is_fenced(device_server_mock):
+    ds = device_server_mock
+    ds.on_stop_devices(
+        MessageObject(
+            topic=MessageEndpoints.stop_devices().endpoint,
+            value=messages.VariableMessage(value=[], metadata={"stop_id": "target"}),
+        )
+    )
+    instr = messages.DeviceInstructionMessage(
+        device="samx",
+        action="set",
+        parameter={},
+        metadata={"RID": "target__on-exception", "device_instr_id": "cleanup"},
+    )
+    with mock.patch.object(ds, "_execute_device_instructions") as execute:
+        ds.handle_device_instructions(instr)
+        execute.assert_called_once_with(instr)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_stop_ack_waits_for_returned_device_status(device_server_mock):
+    ds = device_server_mock
+    status = StatusBase()
+    returned = threading.Event()
+    acknowledged = threading.Event()
+
+    def stop():
+        returned.set()
+        return status
+
+    def send(endpoint, msg):
+        if endpoint == MessageEndpoints.device_stop_response():
+            assert msg.success is True
+            acknowledged.set()
+
+    with (
+        mock.patch.object(ds.device_manager.devices.samx.obj, "stop", side_effect=stop),
+        mock.patch.object(ds.connector, "send", side_effect=send),
+    ):
+        try:
+            ds.on_stop_devices(
+                MessageObject(
+                    topic=MessageEndpoints.stop_devices().endpoint,
+                    value=messages.VariableMessage(
+                        value=["samx"],
+                        metadata={"stop_id": "target", "stop_request_id": "stop-target"},
+                    ),
+                )
+            )
+            assert returned.wait(5)
+            assert not acknowledged.is_set()
+            status.set_finished()
+            assert acknowledged.wait(5)
+        finally:
+            if not status.done:
+                status.set_finished()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_pending_stop_status_does_not_delay_other_devices(device_server_mock):
+    ds = device_server_mock
+    stopped_second = threading.Event()
+    status = StatusBase()
+    result = []
+
+    def slow_stop():
+        return status
+
+    with (
+        mock.patch.object(ds.device_manager.devices.samx.obj, "stop", side_effect=slow_stop),
+        mock.patch.object(
+            ds.device_manager.devices.samy.obj, "stop", side_effect=stopped_second.set
+        ),
+    ):
+        thread = threading.Thread(target=lambda: result.extend(ds.stop_devices(["samx", "samy"])))
+        thread.start()
+        try:
+            assert stopped_second.wait(1), "samx delayed samy's stop command"
+            assert thread.is_alive(), "Stop completion must still await samx"
+        finally:
+            status.set_finished()
+            thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert result == []
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_stop_batch_has_one_deadline_for_unresponsive_devices(device_server_mock):
+    ds = device_server_mock
+    statuses = [StatusBase(), StatusBase()]
+    with (
+        mock.patch.object(ds.device_manager.devices.samx.obj, "stop", return_value=statuses[0]),
+        mock.patch.object(ds.device_manager.devices.samy.obj, "stop", return_value=statuses[1]),
+        mock.patch.object(ds.connector, "raise_alarm"),
+    ):
+        started = time.monotonic()
+        try:
+            errors = ds.stop_devices(["samx", "samy"], deadline=started + 0.1)
+            assert time.monotonic() - started < 1
+            assert {error.device for error in errors} == {"samx", "samy"}
+        finally:
+            for status in statuses:
+                if not status.done:
+                    status.set_finished()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_new_stop_request_does_not_queue_behind_unresponsive_requests(device_server_mock):
+    ds = device_server_mock
+    status = StatusBase()
+    four_stops = threading.Event()
+    second_stopped = threading.Event()
+    calls = 0
+
+    def pending_stop():
+        nonlocal calls
+        calls += 1  # Calls for this device are serialized while invoking stop().
+        if calls == 4:
+            four_stops.set()
+        return status
+
+    def request(device, index):
+        ds.on_stop_devices(
+            MessageObject(
+                topic=MessageEndpoints.stop_devices().endpoint,
+                value=messages.VariableMessage(
+                    value=[device], metadata={"stop_request_id": str(index)}
+                ),
+            )
+        )
+
+    with (
+        mock.patch.object(ds.device_manager.devices.samx.obj, "stop", side_effect=pending_stop),
+        mock.patch.object(
+            ds.device_manager.devices.samy.obj, "stop", side_effect=second_stopped.set
+        ),
+    ):
+        try:
+            for index in range(4):
+                request("samx", index)
+            assert four_stops.wait(1)
+            request("samy", 5)
+            assert second_stopped.wait(1), "Prior stop acknowledgements delayed the new stop"
+        finally:
+            status.set_finished()
+            with ds._instruction_condition:
+                threads = tuple(ds._stop_threads)
+            for thread in threads:
+                thread.join(timeout=5)
 
 
 class DeviceServerMock(DeviceServer):
@@ -213,6 +515,85 @@ def test_shutdown_without_starting_ophyd_callback_monitor(device_server_mock):
 
     assert device_server_mock.ophyd_callback_monitor._stop_event.is_set()
     assert device_server_mock.ophyd_callback_monitor._thread is None
+
+
+def test_shutdown_rejects_stop_callback_arriving_during_connector_teardown(device_server_mock):
+    ds = device_server_mock
+    msg = MessageObject(
+        topic=MessageEndpoints.stop_devices().endpoint,
+        value=messages.VariableMessage(value=None, metadata={"stop_id": "late"}),
+    )
+
+    def late_stop():
+        ds.on_stop_devices(msg)
+        for thread in tuple(ds._stop_threads):
+            thread.join(timeout=5)
+
+    with (
+        mock.patch.object(ds, "stop_devices") as stop_devices,
+        mock.patch(
+            "bec_server.device_server.device_server.BECService.shutdown", side_effect=late_stop
+        ),
+    ):
+        ds.shutdown()
+
+    stop_devices.assert_not_called()
+    assert not ds._stop_threads
+    assert "late" not in ds._fenced_requests
+
+
+def test_shutdown_drains_admitted_stop_after_grace_period_before_device_teardown(
+    device_server_mock,
+):
+    ds = device_server_mock
+    stop_started = threading.Event()
+    connector_closed = threading.Event()
+    finish_stop = threading.Event()
+    stop_finished = threading.Event()
+    original_shutdown = ds.device_manager.shutdown
+
+    def stop_devices():
+        stop_started.set()
+        assert finish_stop.wait(5)
+        stop_finished.set()
+
+    def destroy_devices():
+        assert stop_finished.is_set(), "Device teardown raced an admitted stop"
+        assert not ds._stop_threads
+        original_shutdown()
+
+    with (
+        mock.patch.object(ds, "STOP_TIMEOUT", 0),
+        mock.patch.object(ds, "stop_devices", side_effect=stop_devices),
+        mock.patch.object(ds.device_manager, "shutdown", side_effect=destroy_devices),
+        mock.patch(
+            "bec_server.device_server.device_server.BECService.shutdown",
+            side_effect=connector_closed.set,
+        ),
+    ):
+        try:
+            ds.on_stop_devices(
+                MessageObject(
+                    topic=MessageEndpoints.stop_devices().endpoint,
+                    value=messages.VariableMessage(value=None),
+                )
+            )
+            assert stop_started.wait(5)
+            stop_thread = next(iter(ds._stop_threads))
+            original_join = stop_thread.join
+
+            def join_stop(timeout=None):
+                if connector_closed.is_set():
+                    finish_stop.set()
+                original_join(timeout=timeout)
+
+            with mock.patch.object(stop_thread, "join", side_effect=join_stop):
+                ds.shutdown()
+            assert stop_finished.is_set()
+        finally:
+            finish_stop.set()
+            for thread in tuple(ds._stop_threads):
+                thread.join(timeout=5)
 
 
 def test_shutdown_closes_connector_before_joining_blocked_warning(device_server_mock):
@@ -431,6 +812,8 @@ def test_on_stop_devices(device_server_mock):
     device_server = device_server_mock
     with mock.patch.object(device_server, "stop_devices") as stop:
         device_server.on_stop_devices(msg_obj, parent=device_server)
+        for thread in tuple(device_server._stop_threads):
+            thread.join(timeout=5)
         stop.assert_called_once_with()
 
 
@@ -441,6 +824,8 @@ def test_on_stop_devices_with_empty_list(device_server_mock):
     device_server = device_server_mock
     with mock.patch.object(device_server, "stop_devices") as stop:
         device_server.on_stop_devices(msg_obj, parent=device_server)
+        for thread in tuple(device_server._stop_threads):
+            thread.join(timeout=5)
         stop.assert_not_called()
 
 
@@ -451,6 +836,8 @@ def test_on_stop_devices_with_list(device_server_mock):
     device_server = device_server_mock
     with mock.patch.object(device_server, "stop_devices") as stop:
         device_server.on_stop_devices(msg_obj, parent=device_server)
+        for thread in tuple(device_server._stop_threads):
+            thread.join(timeout=5)
         stop.assert_called_once_with(["samx"])
 
 

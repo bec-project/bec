@@ -45,6 +45,22 @@ def test_scan_manager_next_scan_number(scan_manager):
     assert scan_manager.next_scan_number == 4
 
 
+def test_queue_continuation_does_not_resolve_cached_or_context_request(scan_manager):
+    scan_manager._resolve_request_id = mock.Mock(return_value="stale")
+    scan_manager.queue_storage.current_scan_queue = {
+        "secondary": messages.ScanQueueStatus(
+            status="PAUSED", info=[], queue_instance_id="generation"
+        )
+    }
+    scan_manager.request_queue_continuation(queue="secondary")
+    endpoint, msg = scan_manager.connector.send.call_args.args
+    assert endpoint == MessageEndpoints.scan_queue_modification_request()
+    assert msg.request_id is None
+    assert msg.queue == "secondary"
+    assert msg.metadata == {"queue_instance_id": "generation"}
+    scan_manager._resolve_request_id.assert_not_called()
+
+
 def test_scan_manager_next_scan_number_failed(scan_manager):
     scan_manager.connector.get.return_value = None
     assert scan_manager.next_scan_number == 0
@@ -207,11 +223,11 @@ def test_scan_manager_request_scan_interruption_uses_request_id(scan_manager):
             return self.current_scan_info.scan_id
 
     scan_manager.scan_storage = ScanStorage()
-    scan_manager.request_scan_interruption(deferred_pause=False)
+    scan_manager.request_scan_interruption(deferred_pause=True, request_id="request-id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
-            scan_id=None, request_id="request-id", action="pause", parameter={}
+            scan_id=None, request_id="request-id", action="deferred_pause", parameter={}
         ),
     )
 
@@ -509,3 +525,48 @@ def test_scan_manager_add_public_file_pending(scan_manager_with_scan):
         "File: /Users/scans/S00001_master.h5"
         in scan_manager_with_scan.scan_storage.storage[-1].describe()
     )
+
+
+@pytest.mark.parametrize(
+    "action", ["abort", "halt", "deferred_pause", "continue", "restart", "clear"]
+)
+def test_queue_control_carries_captured_queue_generation(scan_manager, action):
+    """Queue identity and routing survive the client-to-server boundary."""
+    scan_manager.queue_storage.current_scan_queue = {
+        "secondary": messages.ScanQueueStatus(
+            info=[], status="RUNNING", queue_instance_id="original-queue"
+        )
+    }
+    scan_manager.scan_storage = mock.Mock(current_scan_id=["scan"])
+    with mock.patch.object(scan_manager, "get_default_scan_queue", return_value="secondary"):
+        if action == "deferred_pause":
+            scan_manager.request_scan_interruption(deferred_pause=True, request_id="request")
+        elif action == "clear":
+            scan_manager.request_queue_reset()
+        else:
+            method = {
+                "abort": "request_scan_abortion",
+                "halt": "request_scan_halt",
+                "continue": "request_scan_continuation",
+                "restart": "request_scan_restart",
+            }[action]
+            getattr(scan_manager, method)(request_id="request")
+    message = scan_manager.connector.send.call_args.args[1]
+    assert message.queue == "secondary"
+    assert message.metadata["queue_instance_id"] == "original-queue"
+    if action != "clear":
+        assert message.request_id == "request"
+
+
+def test_hard_pause_is_rejected_before_sending(scan_manager):
+    with pytest.raises(NotImplementedError, match="Hard pause is unsupported"):
+        scan_manager.request_scan_interruption(deferred_pause=False)
+    scan_manager.connector.send.assert_not_called()
+
+
+def test_queue_pause_does_not_select_cached_acquisition(scan_manager):
+    scan_manager.request_scan_interruption()
+    message = scan_manager.connector.send.call_args.args[1]
+    assert message.action == "deferred_pause"
+    assert message.request_id is None
+    assert message.scan_id is None

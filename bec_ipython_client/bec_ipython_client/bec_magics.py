@@ -29,21 +29,16 @@ class BECMagics(Magics):
 
     @line_magic
     def resume(self, line):
-        "Resume the scan"
-        self.client.queue.request_scan_continuation()
+        "Resume queue dispatch"
+        self.client.queue.request_queue_continuation()
         if self.client._live_updates:
             return self.client._live_updates.continue_request()
         return None
 
     @line_magic
-    def pause(self, line):
-        "Request a scan pause"
-        return self.client.queue.request_scan_interruption(deferred_pause=False)
-
-    @line_magic
     def deferred_pause(self, line):
         "Request a deferred pause"
-        return self.client.queue.request_scan_interruption(deferred_pause=True)
+        return self.client.queue.request_queue_pause()
 
     @line_magic
     def restart(self, line):

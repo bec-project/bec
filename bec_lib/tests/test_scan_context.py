@@ -85,22 +85,14 @@ def test_dataset_id_on_hold_cleanup_on_error(bec_client_mock):
     assert client.scans._dataset_id_on_hold is None
 
 
-@pytest.mark.parametrize("abort_on_ctrl_c", [True, False])
-def test_scan_export_cm(abort_on_ctrl_c):
+def test_scan_export_cm():
     scan_export = ScanExport("temp")
     with mock.patch("bec_lib.scans._get_client") as mock_get_client:
-        mock_get_client.return_value = mock_client = mock.MagicMock()
-        mock_client._service_config = mock_abort = mock.PropertyMock()
-        mock_abort.abort_on_ctrl_c = abort_on_ctrl_c
+        mock_get_client.return_value = mock.MagicMock()
         scan_export._export_to_csv = mock_to_csv = mock.MagicMock()
-        if not abort_on_ctrl_c:
-            with pytest.raises(RuntimeError):
-                with scan_export:
-                    ...  # Do nothing
-        else:
-            with scan_export:
-                ...  # Do nothgin
-            assert mock_to_csv.call_count == 1
+        with scan_export:
+            pass
+        mock_to_csv.assert_called_once_with()
 
 
 def test_parameter_bundler(bec_client_mock):

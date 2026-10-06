@@ -484,19 +484,10 @@ class ScanExport:
         self.client = None
         self.scans = None
 
-    def _check_abort_on_ctrl_c(self):
-        """Check if scan should be aborted on Ctrl-C"""
-        # pylint: disable=protected-access
-        if not self.client._service_config.abort_on_ctrl_c:
-            raise RuntimeError(
-                "ScanExport context manager can only be used if abort_on_ctrl_c is set to True"
-            )
-
     def __enter__(self):
         self.scans = []
         self.client = _get_client()
         self.client.scans._scan_export = self
-        self._check_abort_on_ctrl_c()
         return self
 
     def _export_to_csv(self):

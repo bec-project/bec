@@ -8,7 +8,6 @@ import threading
 import time
 from contextlib import redirect_stdout
 from typing import TYPE_CHECKING
-from unittest.mock import PropertyMock
 
 import h5py
 import numpy as np
@@ -237,7 +236,7 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
                 break
         while True:
             queue = bec.queue.queue_storage.current_scan_queue
-            if queue["primary"].info[0].status == "DEFERRED_PAUSE":
+            if queue["primary"].status == "PAUSED":
                 break
             time.sleep(0.5)
         _thread.interrupt_main()
@@ -261,9 +260,12 @@ def test_scan_abort(bec_ipython_client_fixture: BECIPythonClient):
         time.sleep(0.5)
 
     current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
-    while current_queue.info or current_queue.status != "RUNNING":
+    while current_queue.info:
         time.sleep(0.5)
         current_queue = bec.queue.queue_storage.current_scan_queue["primary"]
+
+    assert current_queue.status == "PAUSED"
+    bec.queue.request_queue_continuation()
 
     assert len(bec.queue.scan_storage.storage[-1].live_data) < 200
 
@@ -305,6 +307,7 @@ def test_umv_ctrl_c_stops_motion(bec_ipython_client_fixture: BECIPythonClient):
         assert not dev.samx.motor_is_moving.get()
         assert dev.samx.readback.get() < 40
     finally:
+        bec.queue.request_queue_continuation()
         if dev.samx.motor_is_moving.get():
             dev.samx.stop()
             timeout = time.time() + 10
@@ -331,6 +334,7 @@ def test_limit_error(bec_ipython_client_fixture):
     assert aborted_scan is True
 
     aborted_scan = False
+    bec.queue.request_queue_continuation()
     dev.samx.limits = [-50, 50]
     try:
         scans.umv(dev.samx, 500, relative=False)
@@ -426,7 +430,7 @@ def test_scan_observer_repeat_queued(bec_ipython_client_fixture: BECIPythonClien
                 continue
             if len(bec.queue.scan_storage.current_scan.live_data) > 0:
                 time.sleep(2)
-                bec.queue.request_scan_interruption(deferred_pause=False)
+                bec.queue.request_scan_interruption(deferred_pause=True)
                 time.sleep(5)
                 bec.queue.request_scan_restart()
                 bec.queue.request_scan_continuation()
@@ -700,30 +704,17 @@ def test_unreachable_device_stays_disabled_when_enabled_twice(bec_ipython_client
             )
 
 
-# @pytest.fixture(scope="function")
 @pytest.mark.timeout(100)
-@pytest.mark.parametrize("abort_on_ctrl_c", [True, False])
-def test_context_manager_export(tmp_path, bec_ipython_client_fixture, abort_on_ctrl_c):
+def test_context_manager_export(tmp_path, bec_ipython_client_fixture):
     bec = bec_ipython_client_fixture
     scans = bec.scans
     bec.metadata.update({"unit_test": "test_line_scan"})
     dev = bec.device_manager.devices
-    bec._client._service_config = PropertyMock()
-    bec._client._service_config.abort_on_ctrl_c = abort_on_ctrl_c
-    if not abort_on_ctrl_c:
-        with pytest.raises(RuntimeError):
-            with scans.scan_export(os.path.join(tmp_path, "test.csv")):
-                scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
-                scans.grid_scan(
-                    dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True
-                )
-    else:
-        scan_file = os.path.join(tmp_path, "test.csv")
-        with scans.scan_export(scan_file):
-            scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
-            scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
-
-        assert os.path.exists(scan_file)
+    scan_file = tmp_path / "test.csv"
+    with scans.scan_export(str(scan_file)):
+        scans.line_scan(dev.samx, -5, 5, steps=10, exp_time=0.01, relative=True)
+        scans.grid_scan(dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.01, relative=True)
+    assert scan_file.exists()
 
 
 @pytest.mark.timeout(100)
@@ -909,6 +900,7 @@ def test_scan_repeat_decorator(bec_ipython_client_fixture):
             device = exception.alarm.info.device
             if device == "positioner_with_failure":
                 logger.info("Resetting failure condition on positioner_with_failure.")
+                bec.queue.request_queue_continuation()
                 dev.positioner_with_failure.fails.set(0).wait()
                 return True  # Retry the scan
         return False  # Do not retry

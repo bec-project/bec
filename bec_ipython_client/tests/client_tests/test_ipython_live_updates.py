@@ -441,7 +441,6 @@ def process_request_keyboard_interrupt_setup(
 ):
     live_updates, _ = ipython_live_updates_with_mocked_live
     callbacks = mock.MagicMock()
-    live_updates.client._service_config = mock.MagicMock(abort_on_ctrl_c=True)
 
     queue = mock.MagicMock()
     queue.scan_ids = ["scan_id"]

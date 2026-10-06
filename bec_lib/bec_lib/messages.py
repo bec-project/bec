@@ -487,11 +487,14 @@ class ScanQueueStatus(BaseModel):
         info (list[QueueInfoEntry]): List of QueueInfoEntry objects representing the current queue status
         status (Literal["PAUSED", "RUNNING", "LOCKED"]): Current status of the scan queue
         locks (list[ScanQueueLock], optional): List of ScanQueueLock objects representing the locks applied to the queue
+        queue_instance_id (str | None, optional): Identity of this queue instance, used to reject
+            controls for a removed and recreated queue. Older servers omit this field.
     """
 
     info: list[QueueInfoEntry]
     status: Literal["PAUSED", "RUNNING", "LOCKED"]
     locks: list[ScanQueueLock] = Field(default_factory=list)
+    queue_instance_id: str | None = None
 
 
 class ScanQueueStatusMessage(BECMessage):
@@ -649,6 +652,18 @@ class ErrorInfo(BaseModel):
     compact_error_message: str | None
     exception_type: str
     device: str | list[str] | None = None
+
+
+class DeviceStopResponse(BECMessage):
+    """Completion of a stop boundary, without promising physical standstill.
+
+    Success means matched instruction handlers have drained and device stop calls returned.
+    """
+
+    msg_type: ClassVar[str] = "device_stop_response"
+    request_id: str
+    success: bool
+    errors: list[ErrorInfo] = Field(default_factory=list)
 
 
 class DeviceInstructionResponse(BECMessage):

@@ -6,6 +6,8 @@ import pathlib
 import platform
 import shutil
 import tempfile
+import time
+import uuid
 
 import pytest
 from pytest_redis import factories as pytest_redis_factories
@@ -245,20 +247,41 @@ def bec_client_lib_with_demo_config(bec_redis_fixture, bec_services_config_file_
 @pytest.fixture
 def bec_ipython_client_fixture(bec_ipython_client_with_demo_config):
     bec = bec_ipython_client_with_demo_config
-    bec.queue.request_queue_reset()
-    bec.queue.request_scan_continuation()
     bec.builtin_actors.scan_interlock.enabled = False
-    wait_for_empty_queue(bec)
+    _reset_queue(bec)
     yield bec
 
 
 @pytest.fixture
 def bec_client_lib(bec_client_lib_with_demo_config):
     bec = bec_client_lib_with_demo_config
-    bec.queue.request_queue_reset()
-    bec.queue.request_scan_continuation()
-    wait_for_empty_queue(bec)
+    _reset_queue(bec)
     yield bec
+
+
+def _reset_queue(bec):
+    """Wait for reset processing before a test can submit new requests."""
+    lock_id = f"e2e-reset-{uuid.uuid4()}"
+    bec.queue.add_queue_lock(queue="primary", reason="Resetting test queue", lock_id=lock_id)
+    deadline = time.monotonic() + 10
+    while True:
+        msg = bec.connector.get(MessageEndpoints.scan_queue_status())
+        if msg and any(lock.identifier == lock_id for lock in msg.queue["primary"].locks):
+            break
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Queue reset barrier was not acknowledged")
+        time.sleep(0.01)
+    bec.queue.request_queue_reset()
+    bec.queue.request_queue_continuation()
+    bec.queue.remove_queue_lock(queue="primary", lock_id=lock_id)
+    while True:
+        msg = bec.connector.get(MessageEndpoints.scan_queue_status())
+        if msg and all(lock.identifier != lock_id for lock in msg.queue["primary"].locks):
+            break
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Queue reset was not acknowledged")
+        time.sleep(0.01)
+    wait_for_empty_queue(bec)
 
 
 @pytest.fixture

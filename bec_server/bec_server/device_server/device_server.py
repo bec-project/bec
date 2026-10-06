@@ -329,6 +329,8 @@ class DeviceServer(BECService):
     This class is intended to provide a thin wrapper around ophyd and the devicemanager. It acts as the entry point for other services
     """
 
+    STOP_TIMEOUT = 10.0
+
     def __init__(self, config: str | ServiceConfig, connector_cls: type[RedisConnector]) -> None:
         """Initialize the device server.
 
@@ -340,6 +342,12 @@ class DeviceServer(BECService):
         super().__init__(config, connector_cls, unique_service=True)
         self.ophyd_callback_monitor = callback_monitor
         self._tasks = []
+        self._instruction_condition = threading.Condition()
+        self._active_instructions: dict[int, dict] = {}
+        self._fenced_requests: set[str] = set()
+        self._device_stop_locks: dict[str, threading.Lock] = {}
+        self._stop_threads: set[threading.Thread] = set()
+        self._stop_admission_closed = False
         self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._start_device_manager()
@@ -380,13 +388,23 @@ class DeviceServer(BECService):
 
     def shutdown(self) -> None:
         """shutdown the device server"""
+        with self._instruction_condition:
+            self._stop_admission_closed = True
+            stop_threads = tuple(self._stop_threads)
         self.ophyd_callback_monitor.request_stop()
+        deadline = time.monotonic() + self.STOP_TIMEOUT
+        for thread in stop_threads:
+            thread.join(timeout=max(0, deadline - time.monotonic()))
         self.ophyd_callback_monitor.join(timeout=1)
         try:
             # Closing the connector also interrupts a warning blocked in the Redis log sink.
             super().shutdown()
         finally:
             self.ophyd_callback_monitor.join()
+            # Connector closure unblocks pending publication. No admitted stop may
+            # access devices after their manager is destroyed, even after the grace period.
+            for thread in stop_threads:
+                thread.join()
         self.stop()
         if self.device_manager:
             self.device_manager.shutdown()
@@ -411,32 +429,101 @@ class DeviceServer(BECService):
         if mvalue is None:
             logger.warning("Failed to parse scan queue modification message.")
             return
-        if mvalue.metadata.get("stop_id"):
-            if isinstance(mvalue.metadata["stop_id"], str):
-                self.requests_handler._stopped_requests.append(mvalue.metadata["stop_id"])
-            elif isinstance(mvalue.metadata["stop_id"], list):
-                # We don't allow None, so we remove it if present
-                for stop_id in mvalue.metadata["stop_id"]:
-                    if stop_id is not None:
-                        self.requests_handler._stopped_requests.append(stop_id)
-        if mvalue.value is None:
-            self.stop_devices()
-            logger.info("Received request to stop all devices.")
-            return
-        if mvalue.value == []:
-            logger.info("Received request to stop no devices.")
-            return
-        logger.info(f"Received request to stop devices: {mvalue.value}")
-        self.stop_devices(mvalue.value)
+        stop_ids = mvalue.metadata.get("stop_id", [])
+        if isinstance(stop_ids, str):
+            stop_ids = [stop_ids]
+        stop_ids = {identity for identity in stop_ids or [] if identity is not None}
+        with self._instruction_condition:
+            if self._stop_admission_closed:
+                return
+            self._fenced_requests.update(stop_ids)
+            if mvalue.metadata.get("stop_id"):
+                if isinstance(mvalue.metadata["stop_id"], str):
+                    self.requests_handler._stopped_requests.append(mvalue.metadata["stop_id"])
+                elif isinstance(mvalue.metadata["stop_id"], list):
+                    # We don't allow None, so we remove it if present
+                    for stop_id in mvalue.metadata["stop_id"]:
+                        if stop_id is not None:
+                            self.requests_handler._stopped_requests.append(stop_id)
+            if mvalue.metadata.get("stop_request_id") or mvalue.value != []:
+                # Stop requests must not queue behind unresponsive stops or block ingress.
+                def run_stop() -> None:
+                    try:
+                        if mvalue.metadata.get("stop_request_id"):
+                            self._finish_device_stop(mvalue, stop_ids)
+                        elif mvalue.value is None:
+                            self.stop_devices()
+                        else:
+                            self.stop_devices(mvalue.value)
+                    finally:
+                        with self._instruction_condition:
+                            self._stop_threads.discard(threading.current_thread())
 
-    def stop_devices(self, devices: list[str] | None = None) -> None:
+                thread = threading.Thread(target=run_stop, name="DeviceStop", daemon=True)
+                self._stop_threads.add(thread)
+                thread.start()
+
+    def _finish_device_stop(self, msg: messages.VariableMessage, stop_ids: set[str]) -> None:
+        """Drain fenced handlers and complete stop calls before acknowledging the boundary."""
+
+        def has_active_handlers() -> bool:
+            return any(
+                any(metadata.get(key) in stop_ids for key in ("RID", "scan_id", "queue_id"))
+                for metadata in self._active_instructions.values()
+            )
+
+        errors: list[messages.ErrorInfo] = []
+        deadline = time.monotonic() + self.STOP_TIMEOUT
+        with self._instruction_condition:
+            draining = has_active_handlers()
+        try:
+            if msg.value != []:
+                errors.extend(self.stop_devices(msg.value, deadline=deadline) or [])
+            if draining:
+                # Stop first so a blocking device method can return, then stop any late side effect.
+                with self._instruction_condition:
+                    if not self._instruction_condition.wait_for(
+                        lambda: not has_active_handlers(),
+                        timeout=max(0, deadline - time.monotonic()),
+                    ):
+                        raise TimeoutError("Interrupted instruction handlers did not drain")
+                if msg.value != []:
+                    errors.extend(self.stop_devices(msg.value, deadline=deadline) or [])
+        except Exception as exc:  # pylint: disable=broad-except
+            errors.append(
+                messages.ErrorInfo(
+                    error_message=traceback.format_exc(),
+                    compact_error_message=str(exc),
+                    exception_type=type(exc).__name__,
+                )
+            )
+        self.connector.send(
+            MessageEndpoints.device_stop_response(),
+            messages.DeviceStopResponse(
+                request_id=msg.metadata["stop_request_id"], success=not errors, errors=errors
+            ),
+        )
+
+    def stop_devices(
+        self, devices: list[str] | None = None, *, deadline: float | None = None
+    ) -> list[messages.ErrorInfo]:
         """
         Stop the specified devices or all devices if none are specified.
 
+        All stop calls return promptly and are issued before waiting on their returned statuses.
+
         Args:
             devices (list[str] | None): List of device names to stop. If None, all devices will be stopped.
+            deadline (float | None): Shared monotonic acknowledgement deadline. None allows ten
+                seconds for the entire batch.
+
+        Returns:
+            list[messages.ErrorInfo]: Failures reported by device stop calls.
         """
         self.status = BECStatus.BUSY
+        if deadline is None:
+            deadline = time.monotonic() + self.STOP_TIMEOUT
+        errors = []
         if devices is None:
             logger.info("Stopping devices after receiving 'abort' request.")
             devices_to_stop = self.device_manager.devices.enabled_devices
@@ -445,27 +532,43 @@ class DeviceServer(BECService):
             devices_to_stop = [
                 dev for dev in self.device_manager.devices.enabled_devices if dev.name in devices
             ]
+        pending: list[tuple[Any, StatusBase]] = []
+        failures: list[tuple[Any, Exception]] = []
+        # stop() must return promptly. Issue every stop before awaiting any status.
         for dev in devices_to_stop:
-            if dev.read_only:
-                # don't stop devices that we haven't set
+            if dev.read_only or not hasattr(dev.obj, "stop"):
                 continue
-            if hasattr(dev.obj, "stop"):
-                try:
-                    dev.obj.stop()
-                except Exception as exc:  # pylint: disable=broad-except
-                    content = traceback.format_exc()
-                    error_info = messages.ErrorInfo(
-                        error_message=content,
-                        compact_error_message=traceback.format_exc(limit=0),
-                        exception_type=exc.__class__.__name__,
-                        device=dev.obj.name,
-                    )
-                    self.connector.raise_alarm(
-                        severity=Alarms.WARNING,
-                        info=error_info,
-                        metadata=self._get_metadata_for_alarm(None),
-                    )
+            try:
+                with self._instruction_condition:
+                    stop_lock = self._device_stop_locks.setdefault(dev.name, threading.Lock())
+                with stop_lock:
+                    stop_status = dev.obj.stop()
+                if isinstance(stop_status, StatusBase):
+                    pending.append((dev, stop_status))
+            except Exception as exc:  # pylint: disable=broad-except
+                failures.append((dev, exc))
+
+        for dev, stop_status in pending:
+            try:
+                stop_status.wait(timeout=max(0, deadline - time.monotonic()))
+            except Exception as exc:  # pylint: disable=broad-except
+                failures.append((dev, exc))
+
+        for dev, exc in failures:
+            error_info = messages.ErrorInfo(
+                error_message="".join(traceback.format_exception(exc)),
+                compact_error_message=f"{type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+                device=dev.obj.name,
+            )
+            errors.append(error_info)
+            self.connector.raise_alarm(
+                severity=Alarms.WARNING,
+                info=error_info,
+                metadata=self._get_metadata_for_alarm(None),
+            )
         self.status = BECStatus.RUNNING
+        return errors
 
     def assert_device_is_enabled(self, instructions: messages.DeviceInstructionMessage) -> None:
         """
@@ -548,6 +651,47 @@ class DeviceServer(BECService):
             self.requests_handler.add_request(instruction, num_status_objects=0)
 
     def handle_device_instructions(self, msg: messages.DeviceInstructionMessage) -> None:
+        """Execute an instruction only if its acquisition has not crossed a stop fence.
+
+        Args:
+            msg (messages.DeviceInstructionMessage): Instruction to admit for execution.
+        """
+        token = threading.get_ident()
+        with self._instruction_condition:
+            if any(
+                msg.metadata.get(key) in self._fenced_requests
+                for key in ("RID", "scan_id", "queue_id")
+            ):
+                error_info = messages.ErrorInfo(
+                    error_message="Instruction cancelled by acquisition interruption",
+                    compact_error_message="Acquisition interrupted",
+                    exception_type="ScanAbortion",
+                )
+                cancelled = True
+            else:
+                self._active_instructions[token] = msg.metadata
+                cancelled = False
+        if cancelled:
+            self.connector.send(
+                MessageEndpoints.device_instructions_response(),
+                messages.DeviceInstructionResponse(
+                    device=msg.device,
+                    status="error",
+                    error_info=error_info,
+                    instruction=msg,
+                    instruction_id=msg.metadata["device_instr_id"],
+                    metadata=msg.metadata,
+                ),
+            )
+            return
+        try:
+            self._execute_device_instructions(msg)
+        finally:
+            with self._instruction_condition:
+                self._active_instructions.pop(token, None)
+                self._instruction_condition.notify_all()
+
+    def _execute_device_instructions(self, msg: messages.DeviceInstructionMessage) -> None:
         """Parse a device instruction message and handle the requested action. Action
         types are set, read, rpc, kickoff or trigger.
 

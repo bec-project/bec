@@ -6,14 +6,15 @@ from unittest import mock
 import pytest
 
 from bec_ipython_client.signals import SigintHandler
+from bec_lib import messages
 from bec_lib.bec_errors import ScanInterruption
 from bec_lib.request_context import ActiveRequestContext, active_request_context
+from bec_lib.scan_report import ScanReport
 
 
 @pytest.fixture
 def bec_with_pending_live_request():
     bec = mock.MagicMock()
-    bec._service_config = mock.MagicMock(abort_on_ctrl_c=True)
     return bec
 
 
@@ -37,7 +38,6 @@ def test_sigint_handler_raises_keyboard_interrupt_for_pending_live_request(
 
 def test_sigint_handler_pending_live_request_does_not_abort_running_scan_from_other_client():
     bec = mock.MagicMock()
-    bec._service_config = mock.MagicMock(abort_on_ctrl_c=True)
     bec.queue.scan_storage.current_scan_info = mock.MagicMock(
         status="RUNNING",
         is_scan=[True],
@@ -60,7 +60,6 @@ def test_sigint_handler_pending_live_request_does_not_abort_running_scan_from_ot
 
 def test_sigint_handler_requests_deferred_pause_for_running_scan():
     bec = mock.MagicMock()
-    bec._service_config = mock.MagicMock(abort_on_ctrl_c=True)
     bec._live_updates = None
     bec.queue.scan_storage.current_scan_info = mock.MagicMock(status="RUNNING", is_scan=[True])
 
@@ -85,7 +84,6 @@ def test_sigint_handler_requests_deferred_pause_for_running_scan():
 
 def test_sigint_handler_requests_abort_for_running_scan_after_second_sigint():
     bec = mock.MagicMock()
-    bec._service_config = mock.MagicMock(abort_on_ctrl_c=True)
     bec._live_updates = None
     bec.queue.scan_storage.current_scan_info = mock.MagicMock(
         status="DEFERRED_PAUSE", is_scan=[True]
@@ -117,7 +115,6 @@ def test_sigint_handler_requests_abort_for_running_scan_after_second_sigint():
 
 def test_sigint_handler_without_active_or_pending_scan_reraises_keyboard_interrupt():
     bec = mock.MagicMock()
-    bec._service_config = mock.MagicMock(abort_on_ctrl_c=True)
     bec.queue.scan_storage.current_scan_info = None
     handler = SigintHandler(bec)
 
@@ -130,7 +127,6 @@ def test_sigint_handler_without_active_or_pending_scan_reraises_keyboard_interru
 
 def test_sigint_handler_without_request_context_passes_none_to_thread_target():
     bec = mock.MagicMock()
-    bec._service_config = mock.MagicMock(abort_on_ctrl_c=True)
     bec._live_updates = None
     bec.queue.scan_storage.current_scan_info = mock.MagicMock(status="RUNNING", is_scan=[True])
     handler = SigintHandler(bec)
@@ -143,3 +139,38 @@ def test_sigint_handler_without_request_context_passes_none_to_thread_target():
         kwargs={"deferred_pause": True, "request_id": None},
         daemon=True,
     )
+
+
+def test_second_sigint_during_report_wait_aborts_without_report_cancellation():
+    bec = mock.MagicMock()
+    bec._service_config = mock.Mock(spec=[])
+    bec.queue.scan_storage.current_scan_info = mock.MagicMock(status="RUNNING", is_scan=[True])
+    handler = SigintHandler(bec)
+    handler.last_sigint_time = 0
+    report = ScanReport()
+    report._client = bec
+    report.request = mock.MagicMock()
+    report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
+    token = active_request_context.set(
+        ActiveRequestContext(request_id="running-request", queue_status="RUNNING")
+    )
+    try:
+        with (
+            mock.patch("bec_ipython_client.signals.time.time", return_value=5),
+            mock.patch.object(threading, "Thread") as thread_cls,
+            mock.patch.object(
+                report, "_wait_scan", side_effect=lambda *a, **kw: handler._normal_mode()
+            ),
+            mock.patch.object(report, "cancel") as cancel,
+            pytest.raises(ScanInterruption, match="User abort."),
+        ):
+            report.wait()
+    finally:
+        active_request_context.reset(token)
+    thread_cls.assert_called_once_with(
+        target=bec.queue.request_scan_abortion,
+        kwargs={"request_id": "running-request"},
+        daemon=True,
+    )
+    thread_cls.return_value.start.assert_called_once_with()
+    cancel.assert_not_called()
