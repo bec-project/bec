@@ -12,12 +12,39 @@ from ophyd_devices.tests.utils import patched_device
 
 from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
+from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("metadata", [{}, {"RID": "reload-request"}])
+def test_reload_notification_does_not_change_device_server_status(device_manager, metadata):
+    device_manager._service._service_name = "DeviceServer"
+    msg = messages.DeviceConfigMessage(action="reload", config={}, metadata=metadata)
+    with (
+        mock.patch.object(device_manager, "update_status") as update_status,
+        mock.patch.object(device_manager, "_reload_action") as reload_action,
+        mock.patch.object(device_manager.connector, "lpush") as lpush,
+    ):
+        device_manager._device_config_update_callback(MessageObject(value=msg, topic=""))
+
+    update_status.assert_not_called()
+    reload_action.assert_not_called()
+    if metadata:
+        lpush.assert_called_once_with(
+            MessageEndpoints.service_response(metadata["RID"]),
+            messages.ServiceResponseMessage(
+                response={"accepted": True, "service": device_manager._service._service_name}
+            ),
+            expire=100,
+        )
+    else:
+        lpush.assert_not_called()
 
 
 @pytest.fixture

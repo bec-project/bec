@@ -583,6 +583,10 @@ class DeviceManagerBase:
         # pylint: disable=protected-access
         action = msg.content["action"]
         config = msg.content["config"]
+        if action == "reload" and not self._use_proxy_objects:
+            # Reload notifications refresh proxies; real devices are already loaded.
+            self._acknowledge_config_request(msg)
+            return
         self.update_status(BECStatus.BUSY)
         if action == "update":
             for dev in config:
