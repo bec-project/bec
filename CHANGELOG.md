@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.1.2 (2026-10-06)
+
+### Bug Fixes
+
+- **file-writer**: Wait for requested baseline data before finalizing scans
+  ([`f10447c`](https://github.com/bec-project/bec/commit/f10447c463f926b96881261f343fa5f71d2b5bc9))
+
+
 ## v4.1.1 (2026-10-06)
 
 ### Bug Fixes
