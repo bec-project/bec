@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.1.1 (2026-10-06)
+
+### Bug Fixes
+
+- Improve error handling and logging for Redis stream connections
+  ([`2f0b9d3`](https://github.com/bec-project/bec/commit/2f0b9d38140a1e9dd0ffaa8f79ccfc4fe1809b18))
+
+
 ## v4.1.0 (2026-10-04)
 
 ### Features
