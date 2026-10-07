@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v4.1.4 (2026-10-07)
+
+### Bug Fixes
+
+- **scan-queue**: Preserve completed abort targets
+  ([`b0f51ed`](https://github.com/bec-project/bec/commit/b0f51ed51406d83b445e2bac9b8efad2f6755ae7))
+
+- **scan-queue**: Publish device stops before worker interruption
+  ([`4a7e581`](https://github.com/bec-project/bec/commit/4a7e5817b7e95e3d9bc9b5515c5db120600ac7a8))
+
+
 ## v4.1.3 (2026-10-07)
 
 ### Bug Fixes
