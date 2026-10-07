@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v4.1.3 (2026-10-07)
+
+### Bug Fixes
+
+- Ignore proxy reload notifications in real device managers
+  ([`575c2c6`](https://github.com/bec-project/bec/commit/575c2c65a2efa96e683276bd12711974f6951f3c))
+
+- Preserve async writer failure in final file status
+  ([`7aeee2e`](https://github.com/bec-project/bec/commit/7aeee2e4ba39e3f5ebf1b0b6f896a91156e38825))
+
+
 ## v4.1.2 (2026-10-06)
 
 ### Bug Fixes
