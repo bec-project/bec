@@ -781,7 +781,7 @@ def test_broadcast_scan_device_info_uses_runtime_metadata(device_server_mock):
         use_alias=True,
         signals=[("image", Kind.hinted.value)],
         signal_metadata={"units": "counts", "processing": {"rotation": 90}},
-        acquisition_group="fly-scan",
+        correlation_group="fly-scan",
     )
     signal.signal_info = runtime_info
     signal.describe = mock.Mock(side_effect=AssertionError("Use the live signal_info model"))
