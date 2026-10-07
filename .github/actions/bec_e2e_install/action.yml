@@ -68,15 +68,32 @@ runs:
         ref: ${{ inputs.BEC_TESTING_PLUGIN_BRANCH }}
         path: ./_e2e_test_checkout_/bec_testing_plugin
 
-    - name: Install Depdendencies & run Pytest
+    - name: Build and install wheels
+      shell: bash -el {0}
+      run: |
+        conda install -y redis-server --channel conda-forge --override-channels
+        python -m pip install build
+        cd ./_e2e_test_checkout_/bec
+        wheel_requirements=()
+        for package in bec_lib bec_server bec_ipython_client pytest_bec_e2e ../ophyd_devices ../bec_testing_plugin; do
+          python -m build --wheel "$package"
+          for wheel in "$package"/dist/*.whl; do
+            if [ "$package" = pytest_bec_e2e ]; then
+              wheel_requirements+=("$wheel")
+            else
+              wheel_requirements+=("$wheel[dev]")
+            fi
+          done
+        done
+        python -m pip install "${wheel_requirements[@]}"
+        python -m pip check
+
+    - name: Run Pytest against installed wheels
       shell: bash -el {0} # Needs to be bash -el {0} to work with conda
       run: |
         cd ./_e2e_test_checkout_/bec
-        source ./bin/install_bec_dev.sh -t
-        pip install -e ../ophyd_devices
-        pip install -e ../bec_testing_plugin
         podman pod create --network=host local_bec
         python ./bec_ipython_client/tests/end-2-end/_ensure_requirements_container.py
-        coverage run --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_lib/bec_lib/tests/* -m pytest -v --maxfail=2 --files-path ./ --start-servers --flush-redis --random-order ./bec_ipython_client/tests/end-2-end/test_acl_e2e.py
-        coverage run --append --branch --source=./bec_server/bec_server,./bec_lib/bec_lib,./bec_ipython_client/bec_ipython_client, --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_lib/bec_lib/tests/* -m pytest -v --maxfail=2 --files-path ./ --start-servers --random-order --ignore=./bec_ipython_client/tests/end-2-end/test_acl_e2e.py ./bec_ipython_client/tests/end-2-end/
+        coverage run --branch --source=bec_server,bec_lib,bec_ipython_client --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_lib/bec_lib/tests/* -m pytest -p ci.check_wheel_install --import-mode=importlib -v --maxfail=2 --files-path ./ --start-servers --flush-redis --random-order ./bec_ipython_client/tests/end-2-end/test_acl_e2e.py
+        coverage run --append --branch --source=bec_server,bec_lib,bec_ipython_client --omit=*/bec_server/scan_server/scan_plugins/*,*/bec_ipython_client/bec_ipython_client/plugins/*,*/bec_lib/bec_lib/tests/* -m pytest -p ci.check_wheel_install --import-mode=importlib -v --maxfail=2 --files-path ./ --start-servers --random-order --ignore=./bec_ipython_client/tests/end-2-end/test_acl_e2e.py ./bec_ipython_client/tests/end-2-end/
         coverage xml -o coverage-e2e.xml
