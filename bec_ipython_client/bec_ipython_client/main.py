@@ -6,7 +6,7 @@ import functools
 import os
 import sys
 import traceback
-from typing import Iterable, Literal, Tuple
+from typing import TYPE_CHECKING, Iterable, Literal, Tuple
 
 import IPython
 import redis
@@ -21,6 +21,7 @@ from rich.text import Text
 from bec_ipython_client.beamline_mixin import BeamlineMixin
 from bec_ipython_client.bec_magics import BECMagics
 from bec_ipython_client.callbacks.ipython_live_updates import IPythonLiveUpdates
+from bec_ipython_client.gui_client import LazyBECGuiClient
 from bec_ipython_client.signals import OperationMode, ScanInterruption, SigintHandler
 from bec_lib import messages, plugin_helper
 from bec_lib.alarm_handler import AlarmBase
@@ -33,6 +34,9 @@ from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_lib.service_config import ServiceConfig
 from bec_lib.utils.pydantic_pretty_print import pretty_print_pydantic_validation_error
+
+if TYPE_CHECKING:
+    from bec_widgets.cli.client_utils import BECGuiClient
 
 logger = bec_logger.logger
 
@@ -66,6 +70,7 @@ class BECIPythonClient:
         wait_for_server=True,
         forced=False,
         mode: OperationMode = OperationMode.Normal,
+        gui_id: str | None = None,
     ) -> None:
         self._client = CLIBECClient(
             config,
@@ -85,11 +90,23 @@ class BECIPythonClient:
         self._exit_event = None
         self._exit_handler_thread = None
         self._live_updates = None
-        self.gui = None
+        self._gui = LazyBECGuiClient(gui_id=gui_id)
         self._client.callbacks.register(
             event_type=EventType.NAMESPACE_UPDATE, callback=self._update_namespace_callback
         )
         self._alarm_history = collections.deque(maxlen=100)
+
+    @property
+    def gui(self) -> BECGuiClient:
+        """Access the GUI client, loading BEC Widgets on first access.
+
+        Returns:
+            BECGuiClient: The initialized GUI client.
+
+        Raises:
+            ImportError: If BEC Widgets or one of its dependencies cannot be imported.
+        """
+        return self._gui.get_client()
 
     def __getattr__(self, name):
         return getattr(self._client, name)
@@ -218,9 +235,11 @@ class BECIPythonClient:
     def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the client and all its components"""
         try:
-            self.gui.close()
-        except AttributeError:
-            pass
+            # call close on the lazy GUI proxy, which will close the
+            # GUI client if it was initialized, or do nothing if it wasn't
+            self._gui.close()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error(f"Error closing GUI client: {exc}")
         self._client.shutdown(per_thread_timeout_s)
         logger.success("done")
 
