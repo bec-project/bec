@@ -89,6 +89,9 @@ runs:
         python -m pip check
 
     - name: Run Pytest against installed wheels
+      env:
+        # Procedure containers still require a source tree for their editable installation.
+        BEC_PROCEDURE_DEPLOYMENT_PATH: ${{ github.workspace }}/_e2e_test_checkout_/bec
       shell: bash -el {0} # Needs to be bash -el {0} to work with conda
       run: |
         cd ./_e2e_test_checkout_/bec

@@ -1,8 +1,15 @@
+from pathlib import Path
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
-from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates, ProcedureWorkerError
+from bec_server.procedures import constants
+from bec_server.procedures.constants import (
+    PROCEDURE,
+    PodmanContainerStates,
+    ProcedureWorkerError,
+    _deployment_path,
+)
 from bec_server.procedures.container_utils import (
     PodmanApiUtils,
     PodmanCliUtils,
@@ -215,3 +222,24 @@ def test_cli_get_state(cli_utils_with_fake_container_json: PodmanCliUtils):
     assert cli_utils_with_fake_container_json.state(
         "13826d25a737b733a5d87975b50a9c1efb5d087365d956cb7db2ccbe6aca07c4"
     ) == PodmanContainerStates("running")
+
+
+def test_procedure_deployment_path_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("BEC_PROCEDURE_DEPLOYMENT_PATH", str(tmp_path))
+    monkeypatch.setattr(constants.bec_lib, "__file__", "/env/site-packages/bec_lib/__init__.py")
+    assert _deployment_path() == tmp_path.resolve()
+
+
+def test_procedure_deployment_path_editable_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("BEC_PROCEDURE_DEPLOYMENT_PATH", raising=False)
+    monkeypatch.setattr(
+        constants.bec_lib, "__file__", str(tmp_path / "bec_lib/bec_lib/__init__.py")
+    )
+    assert _deployment_path() == tmp_path.resolve()
+
+
+def test_procedure_containerfiles_are_package_resources():
+    procedure_path = Path(constants.__file__).resolve().parent
+    assert PROCEDURE.CONTAINER.CONTAINERFILE_LOCATION == procedure_path
+    assert (procedure_path / PROCEDURE.CONTAINER.WORKER_CONTAINERFILE_NAME).is_file()
+    assert (procedure_path / PROCEDURE.CONTAINER.REQUIREMENTS_CONTAINERFILE_NAME).is_file()

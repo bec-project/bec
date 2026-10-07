@@ -8,8 +8,10 @@ import sysconfig
 from importlib.metadata import distribution
 from pathlib import Path
 
+from pytest import Session
 
-def pytest_sessionstart(session) -> None:
+
+def pytest_sessionstart(session: Session) -> None:
     """Verify the packages used by the actual pytest process come from installed wheels."""
     site_packages = Path(sysconfig.get_path("purelib")).resolve()
     for name in (
