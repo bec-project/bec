@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.1.6 (2026-10-07)
+
+### Bug Fixes
+
+- Make continuous scan polling interruptible
+  ([`d72bd33`](https://github.com/bec-project/bec/commit/d72bd331b2198af4da68f238cdd79af10317653d))
+
+
 ## v4.1.5 (2026-10-07)
 
 ### Bug Fixes
