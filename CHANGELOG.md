@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v4.1.5 (2026-10-07)
+
+### Bug Fixes
+
+- **device server**: Finish RPC errors after completed status callbacks
+  ([`6ea0e08`](https://github.com/bec-project/bec/commit/6ea0e08dadab0f2ce4f7203767c5ddc08688125c))
+
+- **device server**: Preserve motion status during readback refresh
+  ([`1a88bb9`](https://github.com/bec-project/bec/commit/1a88bb997e88e4773e7f96017df02a2f6e2277c8))
+
+
 ## v4.1.4 (2026-10-07)
 
 ### Bug Fixes
