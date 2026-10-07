@@ -1,4 +1,6 @@
 import getpass
+import json
+import warnings
 
 import numpy as np
 import pydantic
@@ -83,6 +85,7 @@ def test_signal_info_defaults_and_roundtrip():
     assert info.signals is None
     assert info.signal_metadata is None
     assert info.use_alias is False
+    assert info.correlation_group is None
 
     configured = messages.SignalInfo(
         data_type="processed",
@@ -92,10 +95,76 @@ def test_signal_info_defaults_and_roundtrip():
         role="preview",
         signals=[("image", 1)],
         signal_metadata={"units": "counts"},
-        acquisition_group="monitored",
+        correlation_group="monitored",
         use_alias=True,
     )
     assert messages.SignalInfo.model_validate(configured.model_dump()) == configured
+
+
+@pytest.mark.parametrize("group", [None, "baseline", "monitored", "fly-scan"])
+def test_signal_info_correlation_group_legacy_compatibility(group):
+    info = messages.SignalInfo(correlation_group=group)
+    assert info.correlation_group == group
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        legacy = messages.SignalInfo(acquisition_group=group)
+    assert legacy == info
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        assert info.acquisition_group == group
+    payload = info.model_dump()
+    assert payload["correlation_group"] == group
+    assert "acquisition_group" not in payload
+    assert legacy.model_dump() == payload
+    assert messages.SignalInfo.model_validate(payload) == info
+
+
+def test_signal_info_correlation_group_assignment():
+    info = messages.SignalInfo(correlation_group="baseline")
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        info.acquisition_group = "monitored"
+    assert info.correlation_group == "monitored"
+    info.correlation_group = "fly-scan"
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        assert info.acquisition_group == "fly-scan"
+    with pytest.raises(pydantic.ValidationError):
+        info.correlation_group = 42
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        with pytest.raises(pydantic.ValidationError):
+            info.acquisition_group = 42
+    assert info.correlation_group == "fly-scan"
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        info.acquisition_group = None
+    assert info.correlation_group is None
+
+
+def test_signal_info_correlation_group_takes_precedence():
+    info = messages.SignalInfo(correlation_group=None, acquisition_group="legacy")
+    assert info.correlation_group is None
+    assert "acquisition_group" not in info.model_dump()
+
+
+def test_signal_info_acquisition_group_schema_is_deprecated():
+    properties = messages.SignalInfo.model_json_schema(mode="validation")["properties"]
+    assert properties["acquisition_group"]["deprecated"] is True
+    assert not properties["correlation_group"].get("deprecated", False)
+    serialized = messages.SignalInfo.model_json_schema(mode="serialization")["properties"]
+    assert "acquisition_group" not in serialized
+
+
+def test_signal_info_serialization_excludes_deprecated_alias_without_warnings():
+    info = messages.SignalInfo(correlation_group="monitored")
+    msg = messages.ScanDeviceInfoMessage(
+        scan_id="scan-1",
+        devices={"detector": messages.DeviceRuntimeInfo(signal_info={"preview": info})},
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        payload = info.model_dump()
+        assert json.loads(info.model_dump_json()) == payload
+        assert "acquisition_group" not in payload
+        nested = msg.model_dump()["devices"]["detector"]["signal_info"]["preview"]
+        assert nested == payload
+        assert MsgpackSerialization.loads(MsgpackSerialization.dumps(msg)) == msg
+    assert not caught
 
 
 def test_signal_info_rejects_invalid_dimensions():
@@ -128,7 +197,7 @@ def test_scan_device_info_message_roundtrip():
                         rpc_access=True,
                         signals=[("image", 1)],
                         signal_metadata={"units": "counts"},
-                        acquisition_group="monitored",
+                        correlation_group="monitored",
                         use_alias=True,
                     )
                 },

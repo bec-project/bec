@@ -24,7 +24,15 @@ from typing import (
 from uuid import uuid4
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import deprecated
 
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
@@ -886,6 +894,10 @@ class SignalInfo(BaseModel):
     """
     Base class for signal information.
     This is used to store metadata about the signal.
+
+    Use ``correlation_group`` to group related signals. ``acquisition_group`` is
+    a deprecated input and attribute alias excluded from serialized messages.
+    If both names are supplied, ``correlation_group`` takes precedence.
     """
 
     data_type: Literal["raw", "processed"] = Field(
@@ -921,19 +933,59 @@ class SignalInfo(BaseModel):
         default=None,
         description="Metadata for the signal, which can include additional information about the signal's properties.",
     )
+    correlation_group: Literal["baseline", "monitored"] | str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("correlation_group", "acquisition_group"),
+        description="""Specifies the correlation group of the signal.
+        It can be in sync with 'baseline' or 'monitored' groups mapping readoutPriority.
+        Or mapped to a custom tag that allows grouping signals for correlation and plotting.
+        If None, the signal does not belong to any specific correlation group.
+        """,
+    )
     acquisition_group: Literal["baseline", "monitored"] | str | None = Field(
         default=None,
-        description="""Specifies the acquisition group of the signal.
-        It can be in sync with 'baseline' or 'monitored' groups mapping readoutPriority.
-        Or mapped to a custom tag that allows grouping signals for acquisition and plotting.
-        If None, the signal does not belong to any specific acquisition group.
-        """,
+        deprecated=deprecated("acquisition_group is deprecated, use correlation_group instead"),
+        description="Deprecated input and attribute alias for correlation_group.",
+        repr=False,
+        exclude=True,
     )
     use_alias: bool = Field(
         default=False, description="Whether the signal aliases one or more EPICS signals."
     )
 
     model_config = ConfigDict(validate_assignment=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def warn_deprecated_acquisition_group(cls, value: Any) -> Any:
+        """Warn for legacy input; the canonical name takes precedence when both are supplied."""
+        if (
+            isinstance(value, Mapping)
+            and "acquisition_group" in value
+            and "correlation_group" not in value
+        ):
+            warnings.warn(
+                "acquisition_group is deprecated, use correlation_group instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return value
+
+    @model_validator(mode="after")
+    def synchronize_acquisition_group(self) -> Self:
+        """Keep the deprecated attribute synchronized with the canonical value."""
+        self.__dict__["acquisition_group"] = self.correlation_group
+        return self
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "acquisition_group":
+            warnings.warn(
+                "acquisition_group is deprecated, use correlation_group instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            name = "correlation_group"
+        super().__setattr__(name, value)
 
 
 class DeviceRuntimeInfo(BaseModel):
