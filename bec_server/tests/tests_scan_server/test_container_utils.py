@@ -89,6 +89,8 @@ TEST_CONTAINER_JSON = b"""[{
 
 @pytest.fixture
 def api_utils():
+    if not podman_available():
+        pytest.skip("Podman is not available")
     with patch("bec_server.procedures.container_utils.PodmanClient") as client:
         yield PodmanApiUtils(), client
 
