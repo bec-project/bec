@@ -86,6 +86,7 @@ def test_signal_info_defaults_and_roundtrip():
     assert info.signal_metadata is None
     assert info.use_alias is False
     assert info.correlation_group is None
+    assert info.transports is None
 
     configured = messages.SignalInfo(
         data_type="processed",
@@ -99,6 +100,170 @@ def test_signal_info_defaults_and_roundtrip():
         use_alias=True,
     )
     assert messages.SignalInfo.model_validate(configured.model_dump()) == configured
+
+
+@pytest.mark.parametrize(
+    "transports",
+    [
+        None,
+        [],
+        [messages.RedisSignalTransport.from_endpoint_info(MessageEndpoints.scan_status())],
+        [
+            messages.RedisSignalTransport.from_endpoint_info(
+                MessageEndpoints.device_preview("detector", "preview")
+            ).model_dump(mode="json"),
+            {
+                "transport": "zmq",
+                "address": "tcp://detector-host:5555",
+                "topic": "detector/preview",
+                "encoder": "bec-v1",
+            },
+        ],
+    ],
+)
+def test_signal_info_transports_roundtrip(transports):
+    info = messages.SignalInfo(transports=transports)
+    assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
+    msg = messages.DeviceInfoMessage(device="detector", info=info.model_dump())
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert messages.SignalInfo.model_validate(loaded.info) == info
+    if transports:
+        assert isinstance(info.transports[0], messages.RedisSignalTransport)
+        if len(transports) > 1:
+            assert isinstance(info.transports[1], messages.ZMQSignalTransport)
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        {"transport": "unknown"},
+        {"transport": "redis"},
+        {"transport": "redis", "endpoint": ""},
+        {"transport": "redis", "endpoint": "preview", "message_op": MessageOp.STREAM},
+        {"transport": "redis", "endpoint": "preview", "message_type": "DevicePreviewMessage"},
+        {
+            "transport": "redis",
+            "endpoint": "preview",
+            "message_type": "DevicePreviewMessage",
+            "message_op": "invalid",
+        },
+        {"transport": "zmq", "address": "tcp://localhost:5555", "topic": "preview"},
+        {"transport": "zmq", "topic": "preview", "encoder": "bec-v1"},
+        {"transport": "zmq", "address": "", "topic": "preview", "encoder": "bec-v1"},
+        {"transport": "zmq", "address": "tcp://localhost:5555", "topic": "", "encoder": ""},
+    ],
+)
+def test_signal_info_transports_reject_invalid_descriptors(transport):
+    with pytest.raises(pydantic.ValidationError):
+        messages.SignalInfo(transports=[transport])
+    info = messages.SignalInfo()
+    with pytest.raises(pydantic.ValidationError):
+        info.transports = [transport]
+
+
+@pytest.mark.parametrize(
+    "endpoint_info",
+    [
+        MessageEndpoints.device_preview("detector", "preview"),
+        MessageEndpoints.device_readback("samx"),
+        MessageEndpoints.scan_status(),
+    ],
+)
+def test_redis_signal_transport_from_endpoint_info(endpoint_info):
+    transport = messages.RedisSignalTransport.from_endpoint_info(endpoint_info)
+    assert transport.transport == "redis"
+    assert transport.endpoint == endpoint_info.endpoint
+    assert transport.message_type == endpoint_info.message_type.__name__
+    assert transport.message_op == endpoint_info.message_op
+    restored = messages.RedisSignalTransport.model_validate_json(transport.model_dump_json())
+    assert restored == transport
+    assert restored.message_op is endpoint_info.message_op
+    info = messages.SignalInfo(transports=[transport])
+    assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
+    with pytest.raises(pydantic.ValidationError):
+        transport.endpoint = ""
+    with pytest.raises(pydantic.ValidationError):
+        transport.message_op = "invalid"
+
+
+def test_zmq_signal_transport_assignment():
+    zmq = messages.ZMQSignalTransport(address="ipc:///tmp/bec-preview", topic="", encoder="bec-v1")
+    assert zmq.transport == "zmq"
+    with pytest.raises(pydantic.ValidationError):
+        zmq.encoder = ""
+
+
+def test_zmq_signal_transport_defaults():
+    transport = messages.ZMQSignalTransport(address="tcp://localhost:5555", encoder="bec-v1")
+    assert transport.socket_type == "sub"
+    assert transport.connection_mode == "connect"
+    assert transport.topic is None
+
+
+@pytest.mark.parametrize("socket_type", ["sub", "pull"])
+@pytest.mark.parametrize("connection_mode", ["connect", "bind"])
+def test_zmq_signal_transport_modes_roundtrip(socket_type, connection_mode):
+    transport = messages.ZMQSignalTransport(
+        address="tcp://localhost:5555",
+        socket_type=socket_type,
+        connection_mode=connection_mode,
+        encoder="dectris-stream-v2" if socket_type == "pull" else "array-1.0",
+    )
+    info = messages.SignalInfo(transports=[transport])
+    assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
+    msg = messages.DeviceInfoMessage(device="detector", info=info.model_dump())
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert messages.SignalInfo.model_validate(loaded.info) == info
+
+
+@pytest.mark.parametrize("topic", [None, "", "camera/color"])
+def test_zmq_signal_transport_sub_topics(topic):
+    transport = messages.ZMQSignalTransport(
+        address="tcp://localhost:5555", topic=topic, encoder="camera-stream-v1"
+    )
+    assert transport.topic == topic
+    assert messages.ZMQSignalTransport.model_validate_json(transport.model_dump_json()) == transport
+
+
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"socket_type": "pub"},
+        {"connection_mode": "listen"},
+        {"socket_type": "pull", "topic": "camera/color"},
+        {"socket_type": "pull", "topic": ""},
+    ],
+)
+def test_zmq_signal_transport_rejects_invalid_modes(invalid_fields):
+    with pytest.raises(pydantic.ValidationError):
+        messages.SignalInfo(
+            transports=[
+                {
+                    "transport": "zmq",
+                    "address": "tcp://localhost:5555",
+                    "encoder": "bec-v1",
+                    **invalid_fields,
+                }
+            ]
+        )
+
+
+def test_zmq_signal_transport_topic_assignment():
+    transport = messages.ZMQSignalTransport(
+        address="tcp://localhost:5555", topic="preview", encoder="bec-v1"
+    )
+    with pytest.raises(pydantic.ValidationError):
+        transport.socket_type = "pull"
+    assert transport.socket_type == "sub"
+    transport.topic = None
+    transport.socket_type = "pull"
+    with pytest.raises(pydantic.ValidationError):
+        transport.topic = "preview"
+    assert transport.topic is None
+    transport.connection_mode = "bind"
+    with pytest.raises(pydantic.ValidationError):
+        transport.connection_mode = "listen"
+    assert transport.connection_mode == "bind"
 
 
 @pytest.mark.parametrize("group", [None, "baseline", "monitored", "fly-scan"])

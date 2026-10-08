@@ -35,6 +35,7 @@ from pydantic import (
 )
 from typing_extensions import deprecated
 
+from bec_lib.endpoints import EndpointInfo, MessageOp
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
 
@@ -890,6 +891,83 @@ class DeviceInfoMessage(BECMessage):
     info: dict
 
 
+class RedisSignalTransport(BaseModel):
+    """Redis subscription described by a resolved ``EndpointInfo``.
+
+    Consumers use their existing Redis connection. Endpoint strings are obtained
+    from ``MessageEndpoints`` helpers rather than constructed by callers.
+    """
+
+    transport: Literal["redis"] = "redis"
+    endpoint: str = Field(min_length=1, description="Resolved Redis endpoint.")
+    message_type: str = Field(min_length=1, description="Name of the BEC message class.")
+    message_op: MessageOp = Field(description="Supported Redis endpoint operations.")
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    @classmethod
+    def from_endpoint_info(cls, endpoint_info: EndpointInfo) -> Self:
+        """Build a Redis transport descriptor from a message endpoint.
+
+        Args:
+            endpoint_info (EndpointInfo): Endpoint returned by a ``MessageEndpoints`` helper.
+
+        Returns:
+            Self: Transport descriptor containing the endpoint's subscription information.
+        """
+        return cls(
+            endpoint=endpoint_info.endpoint,
+            message_type=endpoint_info.message_type.__name__,
+            message_op=endpoint_info.message_op,
+        )
+
+
+class ZMQSignalTransport(BaseModel):
+    """ZMQ image subscription described from the receiving client's perspective.
+
+    The address is a peer URI when connecting, or a local listening URI when
+    binding. The encoder identifies the complete wire format, including whether
+    a separate topic frame is present, rather than just JSON or CBOR encoding.
+    """
+
+    transport: Literal["zmq"] = "zmq"
+    address: str = Field(min_length=1, description="ZMQ URI to connect to or bind locally.")
+    socket_type: Literal["sub", "pull"] = Field(
+        default="sub", description="Client socket type: SUB for broadcast or PULL for a pipeline."
+    )
+    connection_mode: Literal["connect", "bind"] = Field(
+        default="connect", description="Whether the client connects to a peer or binds locally."
+    )
+    topic: str | None = Field(
+        default=None,
+        description="UTF-8 subscription prefix for SUB sockets. None means no named topic "
+        "and clients subscribe with an empty filter; an empty string also selects all messages. "
+        "PULL sockets must leave this unset. The encoder defines the topic framing.",
+    )
+    encoder: str = Field(
+        min_length=1, description="Identifier of the complete payload wire format."
+    )
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_topic_socket_type(cls, value: Any) -> Any:
+        """Reject subscription topics for PULL sockets, including on assignment."""
+        if (
+            isinstance(value, Mapping)
+            and value.get("socket_type") == "pull"
+            and value.get("topic") is not None
+        ):
+            raise ValueError("Subscription topics are only supported for SUB sockets.")
+        return value
+
+
+SignalTransport = Annotated[
+    RedisSignalTransport | ZMQSignalTransport, Field(discriminator="transport")
+]
+
+
 class SignalInfo(BaseModel):
     """
     Base class for signal information.
@@ -951,6 +1029,13 @@ class SignalInfo(BaseModel):
     )
     use_alias: bool = Field(
         default=False, description="Whether the signal aliases one or more EPICS signals."
+    )
+
+    transports: list[SignalTransport] | None = Field(
+        default=None,
+        description="Available subscriptions for this signal, populated by the publisher. "
+        "None means transport metadata is unavailable; consumers retain their existing routing. "
+        "Clients choose a supported transport according to their own preferences.",
     )
 
     model_config = ConfigDict(validate_assignment=True)
