@@ -52,14 +52,22 @@ class _WORKER:
     DEFAULT_QUEUE = "primary"
 
 
+def _deployment_path() -> Path:
+    """Locate the source tree mounted into procedure containers, including wheel deployments."""
+    configured_path = os.environ.get("BEC_PROCEDURE_DEPLOYMENT_PATH")
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    return Path(bec_lib.__file__).resolve().parents[2]
+
+
 @dataclass(frozen=True)
 class _CONTAINER:
     PODMAN_URI = "unix:///run/user/1000/podman/podman.sock"
     IMAGE_NAME = "bec_procedure_worker"
-    DEPLOYMENT_PATH = Path(os.path.dirname(bec_lib.__file__)) / "../../"
-    CONTAINERFILE_LOCATION = (  # Directory where `Containerfile` lives
-        DEPLOYMENT_PATH / "bec_server/bec_server/procedures/"
-    )
+    # Procedure images install editable packages from the source tree mounted at /bec.
+    # Wheel installations can supply that tree via BEC_PROCEDURE_DEPLOYMENT_PATH.
+    DEPLOYMENT_PATH = _deployment_path()
+    CONTAINERFILE_LOCATION = Path(__file__).resolve().parent
     REQUIREMENTS_CONTAINERFILE_NAME = "Containerfile.requirements"
     REQUIREMENTS_IMAGE_NAME = "bec_requirements"
     WORKER_CONTAINERFILE_NAME = "Containerfile.worker"
