@@ -24,9 +24,18 @@ from typing import (
 from uuid import uuid4
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import deprecated
 
+from bec_lib.endpoints import EndpointInfo, MessageOp
 from bec_lib.metadata_schema import get_metadata_schema_for_scan
 
 
@@ -606,6 +615,7 @@ DeviceInstructionAction = Literal[
     "baseline_reading",
     "close_scan",
     "publish_data_as_read",
+    "broadcast_scan_device_info",
 ]
 
 
@@ -629,6 +639,7 @@ class DeviceInstructionMessage(BECMessage):
                         "baseline_reading",
                         "close_scan",
                         "publish_data_as_read",
+                        "broadcast_scan_device_info",
                         ]) : Device action, note rpc calls can run any method of the device. The function name needs to be specified in parameters['func']
         parameter (dict): Parameters required for the device action
         metadata (dict, optional): Metadata to describe the conditions of the device instruction
@@ -880,10 +891,91 @@ class DeviceInfoMessage(BECMessage):
     info: dict
 
 
+class RedisSignalTransport(BaseModel):
+    """Redis subscription described by a resolved ``EndpointInfo``.
+
+    Consumers use their existing Redis connection. Endpoint strings are obtained
+    from ``MessageEndpoints`` helpers rather than constructed by callers.
+    """
+
+    transport: Literal["redis"] = "redis"
+    endpoint: str = Field(min_length=1, description="Resolved Redis endpoint.")
+    message_type: str = Field(min_length=1, description="Name of the BEC message class.")
+    message_op: MessageOp = Field(description="Supported Redis endpoint operations.")
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    @classmethod
+    def from_endpoint_info(cls, endpoint_info: EndpointInfo) -> Self:
+        """Build a Redis transport descriptor from a message endpoint.
+
+        Args:
+            endpoint_info (EndpointInfo): Endpoint returned by a ``MessageEndpoints`` helper.
+
+        Returns:
+            Self: Transport descriptor containing the endpoint's subscription information.
+        """
+        return cls(
+            endpoint=endpoint_info.endpoint,
+            message_type=endpoint_info.message_type.__name__,
+            message_op=endpoint_info.message_op,
+        )
+
+
+class ZMQSignalTransport(BaseModel):
+    """ZMQ image subscription described from the receiving client's perspective.
+
+    The address is a peer URI when connecting, or a local listening URI when
+    binding. The encoder identifies the complete wire format, including whether
+    a separate topic frame is present, rather than just JSON or CBOR encoding.
+    """
+
+    transport: Literal["zmq"] = "zmq"
+    address: str = Field(min_length=1, description="ZMQ URI to connect to or bind locally.")
+    socket_type: Literal["sub", "pull"] = Field(
+        default="sub", description="Client socket type: SUB for broadcast or PULL for a pipeline."
+    )
+    connection_mode: Literal["connect", "bind"] = Field(
+        default="connect", description="Whether the client connects to a peer or binds locally."
+    )
+    topic: str | None = Field(
+        default=None,
+        description="UTF-8 subscription prefix for SUB sockets. None means no named topic "
+        "and clients subscribe with an empty filter; an empty string also selects all messages. "
+        "PULL sockets must leave this unset. The encoder defines the topic framing.",
+    )
+    encoder: str = Field(
+        min_length=1, description="Identifier of the complete payload wire format."
+    )
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_topic_socket_type(cls, value: Any) -> Any:
+        """Reject subscription topics for PULL sockets, including on assignment."""
+        if (
+            isinstance(value, Mapping)
+            and value.get("socket_type") == "pull"
+            and value.get("topic") is not None
+        ):
+            raise ValueError("Subscription topics are only supported for SUB sockets.")
+        return value
+
+
+SignalTransport = Annotated[
+    RedisSignalTransport | ZMQSignalTransport, Field(discriminator="transport")
+]
+
+
 class SignalInfo(BaseModel):
     """
     Base class for signal information.
     This is used to store metadata about the signal.
+
+    Use ``correlation_group`` to group related signals. ``acquisition_group`` is
+    a deprecated input and attribute alias excluded from serialized messages.
+    If both names are supplied, ``correlation_group`` takes precedence.
     """
 
     data_type: Literal["raw", "processed"] = Field(
@@ -919,19 +1011,94 @@ class SignalInfo(BaseModel):
         default=None,
         description="Metadata for the signal, which can include additional information about the signal's properties.",
     )
+    correlation_group: Literal["baseline", "monitored"] | str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("correlation_group", "acquisition_group"),
+        description="""Specifies the correlation group of the signal.
+        It can be in sync with 'baseline' or 'monitored' groups mapping readoutPriority.
+        Or mapped to a custom tag that allows grouping signals for correlation and plotting.
+        If None, the signal does not belong to any specific correlation group.
+        """,
+    )
     acquisition_group: Literal["baseline", "monitored"] | str | None = Field(
         default=None,
-        description="""Specifies the acquisition group of the signal.
-        It can be in sync with 'baseline' or 'monitored' groups mapping readoutPriority.
-        Or mapped to a custom tag that allows grouping signals for acquisition and plotting.
-        If None, the signal does not belong to any specific acquisition group.
-        """,
+        deprecated=deprecated("acquisition_group is deprecated, use correlation_group instead"),
+        description="Deprecated input and attribute alias for correlation_group.",
+        repr=False,
+        exclude=True,
     )
     use_alias: bool = Field(
         default=False, description="Whether the signal aliases one or more EPICS signals."
     )
 
+    transports: list[SignalTransport] | None = Field(
+        default=None,
+        description="Available subscriptions for this signal, populated by the publisher. "
+        "None means transport metadata is unavailable; consumers retain their existing routing. "
+        "Clients choose a supported transport according to their own preferences.",
+    )
+
     model_config = ConfigDict(validate_assignment=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def warn_deprecated_acquisition_group(cls, value: Any) -> Any:
+        """Warn for legacy input; the canonical name takes precedence when both are supplied."""
+        if (
+            isinstance(value, Mapping)
+            and "acquisition_group" in value
+            and "correlation_group" not in value
+        ):
+            warnings.warn(
+                "acquisition_group is deprecated, use correlation_group instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return value
+
+    @model_validator(mode="after")
+    def synchronize_acquisition_group(self) -> Self:
+        """Keep the deprecated attribute synchronized with the canonical value."""
+        self.__dict__["acquisition_group"] = self.correlation_group
+        return self
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "acquisition_group":
+            warnings.warn(
+                "acquisition_group is deprecated, use correlation_group instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            name = "correlation_group"
+        super().__setattr__(name, value)
+
+
+class DeviceRuntimeInfo(BaseModel):
+    """Runtime information for a device, captured for a scan.
+
+    Args:
+        signal_info (dict[str, SignalInfo]): BEC signal information keyed by dotted component
+            name. Defaults to an empty dictionary for devices without BEC signals.
+        disabled_signals (list[str]): Dotted component names of signals to ignore for this
+            scan, relative to this device. Defaults to an empty list.
+    """
+
+    signal_info: dict[str, SignalInfo] = Field(default_factory=dict)
+    disabled_signals: list[str] = Field(default_factory=list)
+
+
+class ScanDeviceInfoMessage(BECMessage):
+    """Snapshot of device runtime information for a scan.
+
+    Args:
+        scan_id (str): Scan ID that the snapshot belongs to.
+        devices (dict[str, DeviceRuntimeInfo]): Runtime information keyed by device name.
+        metadata (dict, optional): Additional metadata.
+    """
+
+    msg_type: ClassVar[str] = "scan_device_info_message"
+    scan_id: str
+    devices: dict[str, DeviceRuntimeInfo]
 
 
 class DeviceMonitor2DMessage(BECMessage):

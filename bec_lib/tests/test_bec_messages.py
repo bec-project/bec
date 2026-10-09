@@ -1,10 +1,13 @@
 import getpass
+import json
+import warnings
 
 import numpy as np
 import pydantic
 import pytest
 
 from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
@@ -82,6 +85,8 @@ def test_signal_info_defaults_and_roundtrip():
     assert info.signals is None
     assert info.signal_metadata is None
     assert info.use_alias is False
+    assert info.correlation_group is None
+    assert info.transports is None
 
     configured = messages.SignalInfo(
         data_type="processed",
@@ -91,10 +96,240 @@ def test_signal_info_defaults_and_roundtrip():
         role="preview",
         signals=[("image", 1)],
         signal_metadata={"units": "counts"},
-        acquisition_group="monitored",
+        correlation_group="monitored",
         use_alias=True,
     )
     assert messages.SignalInfo.model_validate(configured.model_dump()) == configured
+
+
+@pytest.mark.parametrize(
+    "transports",
+    [
+        None,
+        [],
+        [messages.RedisSignalTransport.from_endpoint_info(MessageEndpoints.scan_status())],
+        [
+            messages.RedisSignalTransport.from_endpoint_info(
+                MessageEndpoints.device_preview("detector", "preview")
+            ).model_dump(mode="json"),
+            {
+                "transport": "zmq",
+                "address": "tcp://detector-host:5555",
+                "topic": "detector/preview",
+                "encoder": "bec-v1",
+            },
+        ],
+    ],
+)
+def test_signal_info_transports_roundtrip(transports):
+    info = messages.SignalInfo(transports=transports)
+    assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
+    msg = messages.DeviceInfoMessage(device="detector", info=info.model_dump())
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert messages.SignalInfo.model_validate(loaded.info) == info
+    if transports:
+        assert isinstance(info.transports[0], messages.RedisSignalTransport)
+        if len(transports) > 1:
+            assert isinstance(info.transports[1], messages.ZMQSignalTransport)
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        {"transport": "unknown"},
+        {"transport": "redis"},
+        {"transport": "redis", "endpoint": ""},
+        {"transport": "redis", "endpoint": "preview", "message_op": MessageOp.STREAM},
+        {"transport": "redis", "endpoint": "preview", "message_type": "DevicePreviewMessage"},
+        {
+            "transport": "redis",
+            "endpoint": "preview",
+            "message_type": "DevicePreviewMessage",
+            "message_op": "invalid",
+        },
+        {"transport": "zmq", "address": "tcp://localhost:5555", "topic": "preview"},
+        {"transport": "zmq", "topic": "preview", "encoder": "bec-v1"},
+        {"transport": "zmq", "address": "", "topic": "preview", "encoder": "bec-v1"},
+        {"transport": "zmq", "address": "tcp://localhost:5555", "topic": "", "encoder": ""},
+    ],
+)
+def test_signal_info_transports_reject_invalid_descriptors(transport):
+    with pytest.raises(pydantic.ValidationError):
+        messages.SignalInfo(transports=[transport])
+    info = messages.SignalInfo()
+    with pytest.raises(pydantic.ValidationError):
+        info.transports = [transport]
+
+
+@pytest.mark.parametrize(
+    "endpoint_info",
+    [
+        MessageEndpoints.device_preview("detector", "preview"),
+        MessageEndpoints.device_readback("samx"),
+        MessageEndpoints.scan_status(),
+    ],
+)
+def test_redis_signal_transport_from_endpoint_info(endpoint_info):
+    transport = messages.RedisSignalTransport.from_endpoint_info(endpoint_info)
+    assert transport.transport == "redis"
+    assert transport.endpoint == endpoint_info.endpoint
+    assert transport.message_type == endpoint_info.message_type.__name__
+    assert transport.message_op == endpoint_info.message_op
+    restored = messages.RedisSignalTransport.model_validate_json(transport.model_dump_json())
+    assert restored == transport
+    assert restored.message_op is endpoint_info.message_op
+    info = messages.SignalInfo(transports=[transport])
+    assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
+    with pytest.raises(pydantic.ValidationError):
+        transport.endpoint = ""
+    with pytest.raises(pydantic.ValidationError):
+        transport.message_op = "invalid"
+
+
+def test_zmq_signal_transport_assignment():
+    zmq = messages.ZMQSignalTransport(address="ipc:///tmp/bec-preview", topic="", encoder="bec-v1")
+    assert zmq.transport == "zmq"
+    with pytest.raises(pydantic.ValidationError):
+        zmq.encoder = ""
+
+
+def test_zmq_signal_transport_defaults():
+    transport = messages.ZMQSignalTransport(address="tcp://localhost:5555", encoder="bec-v1")
+    assert transport.socket_type == "sub"
+    assert transport.connection_mode == "connect"
+    assert transport.topic is None
+
+
+@pytest.mark.parametrize("socket_type", ["sub", "pull"])
+@pytest.mark.parametrize("connection_mode", ["connect", "bind"])
+def test_zmq_signal_transport_modes_roundtrip(socket_type, connection_mode):
+    transport = messages.ZMQSignalTransport(
+        address="tcp://localhost:5555",
+        socket_type=socket_type,
+        connection_mode=connection_mode,
+        encoder="dectris-stream-v2" if socket_type == "pull" else "array-1.0",
+    )
+    info = messages.SignalInfo(transports=[transport])
+    assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
+    msg = messages.DeviceInfoMessage(device="detector", info=info.model_dump())
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert messages.SignalInfo.model_validate(loaded.info) == info
+
+
+@pytest.mark.parametrize("topic", [None, "", "camera/color"])
+def test_zmq_signal_transport_sub_topics(topic):
+    transport = messages.ZMQSignalTransport(
+        address="tcp://localhost:5555", topic=topic, encoder="camera-stream-v1"
+    )
+    assert transport.topic == topic
+    assert messages.ZMQSignalTransport.model_validate_json(transport.model_dump_json()) == transport
+
+
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"socket_type": "pub"},
+        {"connection_mode": "listen"},
+        {"socket_type": "pull", "topic": "camera/color"},
+        {"socket_type": "pull", "topic": ""},
+    ],
+)
+def test_zmq_signal_transport_rejects_invalid_modes(invalid_fields):
+    with pytest.raises(pydantic.ValidationError):
+        messages.SignalInfo(
+            transports=[
+                {
+                    "transport": "zmq",
+                    "address": "tcp://localhost:5555",
+                    "encoder": "bec-v1",
+                    **invalid_fields,
+                }
+            ]
+        )
+
+
+def test_zmq_signal_transport_topic_assignment():
+    transport = messages.ZMQSignalTransport(
+        address="tcp://localhost:5555", topic="preview", encoder="bec-v1"
+    )
+    with pytest.raises(pydantic.ValidationError):
+        transport.socket_type = "pull"
+    assert transport.socket_type == "sub"
+    transport.topic = None
+    transport.socket_type = "pull"
+    with pytest.raises(pydantic.ValidationError):
+        transport.topic = "preview"
+    assert transport.topic is None
+    transport.connection_mode = "bind"
+    with pytest.raises(pydantic.ValidationError):
+        transport.connection_mode = "listen"
+    assert transport.connection_mode == "bind"
+
+
+@pytest.mark.parametrize("group", [None, "baseline", "monitored", "fly-scan"])
+def test_signal_info_correlation_group_legacy_compatibility(group):
+    info = messages.SignalInfo(correlation_group=group)
+    assert info.correlation_group == group
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        legacy = messages.SignalInfo(acquisition_group=group)
+    assert legacy == info
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        assert info.acquisition_group == group
+    payload = info.model_dump()
+    assert payload["correlation_group"] == group
+    assert "acquisition_group" not in payload
+    assert legacy.model_dump() == payload
+    assert messages.SignalInfo.model_validate(payload) == info
+
+
+def test_signal_info_correlation_group_assignment():
+    info = messages.SignalInfo(correlation_group="baseline")
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        info.acquisition_group = "monitored"
+    assert info.correlation_group == "monitored"
+    info.correlation_group = "fly-scan"
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        assert info.acquisition_group == "fly-scan"
+    with pytest.raises(pydantic.ValidationError):
+        info.correlation_group = 42
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        with pytest.raises(pydantic.ValidationError):
+            info.acquisition_group = 42
+    assert info.correlation_group == "fly-scan"
+    with pytest.warns(DeprecationWarning, match="use correlation_group instead"):
+        info.acquisition_group = None
+    assert info.correlation_group is None
+
+
+def test_signal_info_correlation_group_takes_precedence():
+    info = messages.SignalInfo(correlation_group=None, acquisition_group="legacy")
+    assert info.correlation_group is None
+    assert "acquisition_group" not in info.model_dump()
+
+
+def test_signal_info_acquisition_group_schema_is_deprecated():
+    properties = messages.SignalInfo.model_json_schema(mode="validation")["properties"]
+    assert properties["acquisition_group"]["deprecated"] is True
+    assert not properties["correlation_group"].get("deprecated", False)
+    serialized = messages.SignalInfo.model_json_schema(mode="serialization")["properties"]
+    assert "acquisition_group" not in serialized
+
+
+def test_signal_info_serialization_excludes_deprecated_alias_without_warnings():
+    info = messages.SignalInfo(correlation_group="monitored")
+    msg = messages.ScanDeviceInfoMessage(
+        scan_id="scan-1",
+        devices={"detector": messages.DeviceRuntimeInfo(signal_info={"preview": info})},
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        payload = info.model_dump()
+        assert json.loads(info.model_dump_json()) == payload
+        assert "acquisition_group" not in payload
+        nested = msg.model_dump()["devices"]["detector"]["signal_info"]["preview"]
+        assert nested == payload
+        assert MsgpackSerialization.loads(MsgpackSerialization.dumps(msg)) == msg
+    assert not caught
 
 
 def test_signal_info_rejects_invalid_dimensions():
@@ -110,6 +345,65 @@ def test_signal_info_rejects_invalid_dimension_assignment():
         info.ndim = 3
 
     assert info.ndim == 2
+
+
+def test_scan_device_info_message_roundtrip():
+    msg = messages.ScanDeviceInfoMessage(
+        scan_id="scan-1",
+        devices={
+            "eiger": messages.DeviceRuntimeInfo(
+                signal_info={
+                    "preview": messages.SignalInfo(
+                        data_type="processed",
+                        saved=False,
+                        ndim=2,
+                        scope="continuous",
+                        role="preview",
+                        rpc_access=True,
+                        signals=[("image", 1)],
+                        signal_metadata={"units": "counts"},
+                        correlation_group="monitored",
+                        use_alias=True,
+                    )
+                },
+                disabled_signals=["raw_image", "sub.diagnostic"],
+            ),
+            "samx": messages.DeviceRuntimeInfo(),
+        },
+        metadata={"RID": "rid-1"},
+    )
+
+    res = MsgpackSerialization.dumps(msg)
+    res_loaded = MsgpackSerialization.loads(res)
+
+    assert res_loaded == msg
+    assert res_loaded.devices["eiger"].signal_info["preview"].ndim == 2
+    assert res_loaded.devices["eiger"].signal_info["preview"].role == "preview"
+    assert res_loaded.devices["eiger"].disabled_signals == ["raw_image", "sub.diagnostic"]
+
+
+def test_device_runtime_info_defaults_are_independent():
+    detector = messages.DeviceRuntimeInfo()
+    motor = messages.DeviceRuntimeInfo()
+    detector.signal_info["preview"] = messages.SignalInfo(role="preview")
+    detector.disabled_signals.append("raw_image")
+    assert motor.signal_info == {}
+    assert motor.disabled_signals == []
+
+
+def test_scan_device_info_validates_nested_signal_info():
+    with pytest.raises(pydantic.ValidationError):
+        messages.ScanDeviceInfoMessage(
+            scan_id="scan-1", devices={"eiger": {"signal_info": {"preview": {"ndim": 3}}}}
+        )
+
+
+def test_scan_device_info_endpoint_contract():
+    endpoint = MessageEndpoints.scan_device_info()
+
+    assert endpoint.endpoint == "info/scan_device_info"
+    assert endpoint.message_type is messages.ScanDeviceInfoMessage
+    assert endpoint.message_op == MessageOp.STREAM
 
 
 def test_bundled_message():
