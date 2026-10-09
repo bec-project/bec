@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.1.7 (2026-10-09)
+
+### Bug Fixes
+
+- **ipython**: Safely defer GUI initialization and shutdown
+  ([`ede26fb`](https://github.com/bec-project/bec/commit/ede26fb0ee0d6c11ea9c72d6281a7729f5411915))
+
+### Testing
+
+- Skip Podman API tests when Podman is unavailable
+  ([`8893e7a`](https://github.com/bec-project/bec/commit/8893e7ab2e228d04ccf47abefbf6db072879ce1e))
+
+
 ## v4.1.6 (2026-10-07)
 
 ### Bug Fixes
