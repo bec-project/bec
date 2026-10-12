@@ -73,11 +73,13 @@ class ScanStatus:
 
         Returns:
             bool: Done flag
+
+        Raises:
+            ScanAbortion: Raised if shutdown is active during the status check.
         """
-        if self._shutdown_event.is_set():
-            self.set_done_checked()
-            return True
         self.set_done_checked()
+        if self._shutdown_event.is_set():
+            raise ScanAbortion("Scan interrupted during status check.")
         sub_status_done = self._get_sub_status_done()
         return self._done and sub_status_done
 

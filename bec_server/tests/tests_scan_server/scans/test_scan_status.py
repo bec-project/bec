@@ -139,14 +139,42 @@ def test_wait_can_resolve_when_result_type_is_known(instruction_handler):
     assert status.done is False
 
 
-def test_shutdown_marks_status_checked(instruction_handler):
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("container", [False, True])
+def test_shutdown_aborts_status_check_and_marks_checked(instruction_handler, completed, container):
     shutdown_event = threading.Event()
-    status = ScanStatus(instruction_handler, shutdown_event=shutdown_event, name="move")
+    child = ScanStatus(instruction_handler, shutdown_event=shutdown_event, name="move")
+    status = (
+        ScanStatus(
+            instruction_handler, shutdown_event=shutdown_event, is_container=True, name="move"
+        )
+        if container
+        else child
+    )
+    if container:
+        status.add_status(child)
+    if completed:
+        child.set_done()
     shutdown_event.set()
 
-    assert status.done is True
+    with pytest.raises(ScanAbortion, match="Scan interrupted during status check"):
+        _ = status.done
     assert status._done_checked is True
+    assert child._done_checked is True
     assert repr(status).startswith("ScanStatus(move, ")
+
+
+def test_done_polling_loop_aborts_after_shutdown(instruction_handler):
+    event = threading.Event()
+    status = ScanStatus(instruction_handler, shutdown_event=event)
+    polls = 0
+    with pytest.raises(ScanAbortion):
+        while not status.done:
+            polls += 1
+            assert polls == 1, "Polling continued after shutdown"
+            event.set()
+        pytest.fail("Polling exited normally during shutdown")
+    assert polls == 1
 
 
 @pytest.mark.parametrize("timeout", [0, -1, 0.01])
