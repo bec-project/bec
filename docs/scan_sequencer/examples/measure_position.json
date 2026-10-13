@@ -1,0 +1,47 @@
+{
+  "id": "measure_position",
+  "version": 1,
+  "description": "Set a demo axis and run a time scan.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "position": {
+        "type": "number"
+      },
+      "scan_arguments": {
+        "type": "object",
+        "default": {
+          "points": 1,
+          "interval": 0.1
+        }
+      }
+    },
+    "required": [
+      "position"
+    ],
+    "additionalProperties": false
+  },
+  "body": {
+    "id": "measure_body",
+    "type": "sequence",
+    "children": [
+      {
+        "id": "set_position",
+        "type": "set",
+        "device": "samx",
+        "value": {
+          "param": "position"
+        },
+        "wait": true
+      },
+      {
+        "id": "acquire",
+        "type": "scan_call",
+        "name": "time_scan",
+        "arguments": {
+          "param": "scan_arguments"
+        }
+      }
+    ]
+  }
+}

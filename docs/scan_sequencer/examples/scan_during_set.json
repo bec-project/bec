@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "type": "sequence",
+  "id": "scan_during_set",
+  "revision": 1,
+  "root": {
+    "id": "root",
+    "type": "sequence",
+    "children": [
+      {
+        "id": "start_set",
+        "type": "set",
+        "device": "samx",
+        "value": 1,
+        "wait": false,
+        "bind_status": "ramp"
+      },
+      {
+        "id": "observe",
+        "type": "while",
+        "condition": {
+          "type": "not",
+          "operand": {
+            "type": "status_field",
+            "status_ref": "ramp",
+            "field": "done"
+          }
+        },
+        "body": {
+          "id": "acquire",
+          "type": "scan_call",
+          "name": "time_scan",
+          "arguments": {
+            "points": 1,
+            "interval": 0.1
+          }
+        }
+      }
+    ]
+  }
+}
