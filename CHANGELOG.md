@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v4.2.0 (2026-10-14)
+
+### Features
+
+- Add bec signal info
+  ([`be06b18`](https://github.com/bec-project/bec/commit/be06b18bab48786fd191c08a8bff8f42eb871bd0))
+
+- Add correlation_group with deprecated acquisition_group alias
+  ([`c965349`](https://github.com/bec-project/bec/commit/c9653497323d7d3e49c7605d38e18521f3e16abb))
+
+- **signals**: Advertise Redis and ZMQ transports in signal info
+  ([`9133931`](https://github.com/bec-project/bec/commit/9133931eee9ee1b8265db27f7faced98a2bc115f))
+
+
 ## v4.1.7 (2026-10-09)
 
 ### Bug Fixes
