@@ -5,14 +5,20 @@ from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
 from time import sleep
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
 
 from pydantic import JsonValue
 
+from bec_lib.device import Signal
+
 from ..components import ComponentCall, ForEach, Repeat, ScanCall, Sequence, Set, While
-from .adapters import BECAdapter
 from .evaluation import Scope, boolean, evaluate
 from .resolver import Resolved, bind_parameters
+from .status import cancel_status, status_done
+from .validation import resolve_set_target
+
+if TYPE_CHECKING:
+    from bec_ipython_client import BECIPythonClient
 
 
 class ExecutionError(RuntimeError):
@@ -38,18 +44,16 @@ class Session:
     """Execute a sequence with isolated scopes and tracked pending operations.
 
     Args:
-        adapter (BECAdapter): BEC execution adapter providing live proxy validation and client
-            calls.
+        client (BECIPythonClient): Client providing native scans and device proxies.
     """
 
-    def __init__(self, adapter: BECAdapter) -> None:
+    def __init__(self, client: BECIPythonClient) -> None:
         """Initialize Session parameters.
 
         Args:
-            adapter (BECAdapter): BEC execution adapter providing live proxy validation and client
-                calls.
+            client (BECIPythonClient): Client providing native scans and device proxies.
         """
-        self.adapter = adapter
+        self.client = client
         self.scope = Scope()
         self.path: tuple = ()
         self.pending: deque[tuple[object, tuple]] = deque()
@@ -88,7 +92,7 @@ class Session:
         """Attempt supported cancellation of outstanding operations without masking failures."""
         for status, _path in self.pending:
             try:
-                self.adapter.cancel(status)
+                cancel_status(status)
             except Exception:
                 # Cleanup must preserve the original failure. Device Status has no abort API.
                 continue
@@ -144,7 +148,7 @@ class Session:
         Returns:
             Any: Data resolved in the current runtime scope.
         """
-        return evaluate(value, self.scope, self.adapter.done)
+        return evaluate(value, self.scope, status_done)
 
     def wait(self, status: object) -> None:
         """Poll checked completion; native KeyboardInterrupt interrupts the wait.
@@ -152,8 +156,34 @@ class Session:
         Args:
             status (object): Runtime asynchronous handle, or None for a completed blocking call.
         """
-        while not self.adapter.done(status):
+        while not status_done(status):
             sleep(0.02)
+
+    def set(self, name: str, value: object, *, wait: bool = True) -> object | None:
+        """Use signal set/wait, or umv/mv for device moves.
+
+        Blocking calls complete before returning and need no runtime handle.
+
+        Args:
+            name (str): Device, signal or scan name to look up.
+            value (object): Value to write to the target.
+            wait (bool): Whether to wait for completion. Defaults to True.
+
+        Returns:
+            object | None: Outstanding status for asynchronous operations, or None after a blocking
+                call.
+        """
+        target = resolve_set_target(self.client.device_manager, name)
+        if isinstance(target, Signal):
+            status = target.set(value)
+            if wait:
+                status.wait()
+                return None
+            return status
+        if wait:
+            self.client.scans.umv(target, value, relative=False)
+            return None
+        return self.client.scans.mv(target, value, relative=False)
 
     # One branch per discriminated component, plus status bookkeeping.
     # pylint: disable=too-many-branches
@@ -190,11 +220,11 @@ class Session:
                     self.execute(tree.children[0])
             elif isinstance(node, Set):
                 value = self.value(node.value)
-                status = self.adapter.set(node.device, value, wait=node.wait)
+                status = self.set(node.device, value, wait=node.wait)
                 if not node.wait:
                     self.pending.append((status, self.path))
                 if node.bind_status:
                     self.scope.statuses[node.bind_status] = status
             elif isinstance(node, ScanCall):
                 args, kwargs = self.value(node.positional), self.value(node.arguments)
-                self.adapter.scan(node.name, args, kwargs)
+                getattr(self.client.scans, node.name)(*args, **kwargs)

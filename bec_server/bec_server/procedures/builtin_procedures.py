@@ -4,7 +4,7 @@ import time
 from bec_lib.client import BECClient
 from bec_lib.logger import bec_logger
 from bec_lib.scan_report import ScanReport
-from bec_lib.scan_sequencer import BECAdapter, DefinitionLibrary, ScanCatalog, Sequencer
+from bec_lib.scan_sequencer import DefinitionLibrary, Sequencer
 
 logger = bec_logger.logger
 
@@ -68,4 +68,4 @@ def run_sequence(
         bec (BECClient): Procedure worker's injected BEC IPython client.
     """
     library = DefinitionLibrary(definitions)
-    Sequencer(ScanCatalog.from_client(bec), library).execute(schedule, BECAdapter(bec))
+    Sequencer(bec, library).execute(schedule)

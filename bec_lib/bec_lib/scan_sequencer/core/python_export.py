@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import keyword
+import unicodedata
 from dataclasses import dataclass, field
 
 from pydantic import JsonValue
@@ -73,8 +75,8 @@ class _Names:
 def export_python(tree: Resolved, device_manager=None) -> str:
     """Expand a validated tree into native IPython calls and scoped helper functions.
 
-    Live proxy metadata selects signal set/wait versus device umv/mv. Offline exports
-    use the same small adapter for set targets whose kind cannot be known statically.
+    Live proxy metadata selects signal set/wait versus device umv/mv. Set exports require
+    live proxy metadata to resolve target kinds.
 
     Args:
         tree (Resolved): Resolved component tree.
@@ -87,7 +89,18 @@ def export_python(tree: Resolved, device_manager=None) -> str:
     lines = []
     imports = set()
     counter = 0
-    used_names = {"bec", "dev", "scans"}
+    # Loop bindings must not shadow dependencies used anywhere in the generated source.
+    used_names = set(dir(builtins)) | {
+        "bec",
+        "dev",
+        "scans",
+        "boolean",
+        "bind_parameters",
+        "deque",
+        "sleep",
+        "status_done",
+        "cancel_status",
+    }
     async_operations = False
 
     def emit(text, depth):
@@ -117,8 +130,8 @@ def export_python(tree: Resolved, device_manager=None) -> str:
         if isinstance(expression, expr.LiteralValue):
             return literal(expression.value)
         if isinstance(expression, expr.StatusField):
-            imports.add("from bec_lib.scan_sequencer import BECAdapter")
-            return f"_adapter.done({names.statuses[expression.status_ref]})"
+            imports.add("from bec_lib.scan_sequencer.core.status import status_done")
+            return f"status_done({names.statuses[expression.status_ref]})"
         if isinstance(expression, expr.Not):
             imports.add("from bec_lib.scan_sequencer.core.evaluation import boolean")
             return f"(not boolean({value(expression.operand, names)}))"
@@ -203,11 +216,12 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             visit(item.children[0], depth + 1, names.child())
         elif isinstance(node, ForEach):
             inner = names.child()
-            variable = node.variable if uses_variable(item.children[0], node.variable) else "_"
-            if variable != "_" and (
-                not _identifier(variable) or variable in used_names or variable.startswith("_")
-            ):
-                variable = f"_value_{index}"
+            variable = "_"
+            if uses_variable(item.children[0], node.variable):
+                # Python normalizes identifiers when parsing; check its actual binding.
+                variable = unicodedata.normalize("NFKC", node.variable)
+                if not _identifier(variable) or variable in used_names or variable.startswith("_"):
+                    variable = f"_value_{index}"
             used_names.add(variable)
             inner.variables[node.variable] = variable
             emit(f"for {variable} in {value(node.values, names)}:", depth)
@@ -247,11 +261,8 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             destination, resolved_value = target(node.device), value(node.value, names)
             status = f"_status_{index}"
             if proxy is None:
-                imports.add("from bec_lib.scan_sequencer import BECAdapter")
-                operation = (
-                    f"_adapter.set({literal(node.device)}, {resolved_value}, wait={node.wait})"
-                )
-            elif isinstance(proxy, Signal):
+                raise ValueError("Python export of Set nodes requires a live client")
+            if isinstance(proxy, Signal):
                 operation = f"{destination}.set({resolved_value})" + (
                     ".wait()" if node.wait else ""
                 )
@@ -274,29 +285,28 @@ def export_python(tree: Resolved, device_manager=None) -> str:
 
     visit(tree, 0, _Names())
     if async_operations:
+        imports.discard("from bec_lib.scan_sequencer.core.status import status_done")
         # Drain on success, matching the interpreter; cancel supported handles on errors.
         imports.update(
             [
                 "from collections import deque",
                 "from time import sleep",
-                "from bec_lib.scan_sequencer import BECAdapter",
+                "from bec_lib.scan_sequencer.core.status import cancel_status, status_done",
             ]
         )
         lines = ["_pending = deque()", "try:"] + ["    " + line for line in lines]
         lines += [
             "    while _pending:",
             "        _status = _pending[0]",
-            "        while not _adapter.done(_status):",
+            "        while not status_done(_status):",
             "            sleep(0.02)",
             "        _pending.popleft()",
             "except BaseException:",
             "    for _status in _pending:",
             "        try:",
-            "            _adapter.cancel(_status)",
+            "            cancel_status(_status)",
             "        except Exception:",
             "            pass  # Preserve the original failure during cleanup.",
             "    raise",
         ]
-    if "from bec_lib.scan_sequencer import BECAdapter" in imports:
-        lines.insert(0, "_adapter = BECAdapter(bec)")
     return "\n".join(sorted(imports) + ([""] if imports else []) + lines) + "\n"

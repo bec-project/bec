@@ -10,11 +10,10 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
-from bec_lib.device import Signal
+from bec_lib.device import DeviceBase, Signal
 from bec_lib.devicemanager import DeviceContainer
 from bec_lib.scan_report import ScanReport
 from bec_lib.scan_sequencer import (
-    BECAdapter,
     Definition,
     DefinitionLibrary,
     ExecutionError,
@@ -25,6 +24,8 @@ from bec_lib.scan_sequencer import (
 )
 from bec_lib.scan_sequencer.components import Repeat
 from bec_lib.scan_sequencer.core.catalog import fingerprint
+from bec_lib.scan_sequencer.core.runtime import Session
+from bec_lib.scan_sequencer.core.status import cancel_status, status_done
 
 
 @pytest.fixture
@@ -34,7 +35,7 @@ def metadata():
 
 @pytest.fixture
 def scheduler(metadata):
-    return Sequencer(ScanCatalog(metadata))
+    return Sequencer(native_client(RecordingBackend(ScanCatalog(metadata))))
 
 
 def schedule(root):
@@ -75,7 +76,7 @@ def call(definition="measure", version=1, arguments=None, id="call"):
     }
 
 
-class FakeAdapter:
+class RecordingBackend:
     def __init__(self, catalog, *, scans_to_complete=0, failed=False, interrupt=False):
         self._catalog = catalog
         self.trace = []
@@ -84,13 +85,6 @@ class FakeAdapter:
         self.interrupt = interrupt
         self.cancelled = []
         self.set_status = SimpleNamespace(kind="set", complete=scans_to_complete == 0)
-
-    def catalog(self):
-        return self._catalog
-
-    def validate_device(self, name):
-        if name != "samx":
-            raise ValueError("Unknown device")
 
     def set(self, name, value, *, wait=True):
         self.trace.append(("set", name, value))
@@ -122,9 +116,9 @@ class FakeAdapter:
 def execute(scheduler, document, *, exported=False, **options):
     if exported:
         return readable_export_trace(scheduler, document, **options)
-    adapter = FakeAdapter(scheduler.catalog, **options)
-    scheduler.execute(document, adapter)
-    return adapter.trace
+    backend = RecordingBackend(scheduler.catalog, **options)
+    execute_with_backend(scheduler, document, backend)
+    return backend.trace
 
 
 def polarization(component=False):
@@ -245,19 +239,19 @@ def test_catalog_references_supplied_metadata(metadata):
 
 
 def test_live_catalog_validated_before_hardware(scheduler):
-    adapter = FakeAdapter(ScanCatalog({}))
+    backend = RecordingBackend(ScanCatalog({}))
     with pytest.raises(ValueError, match="Unknown scan"):
-        scheduler.execute(schedule(seq(setting(), scan())), adapter)
-    assert adapter.trace == []
+        execute_with_backend(scheduler, schedule(seq(setting(), scan())), backend)
+    assert backend.trace == []
 
 
 def test_static_validation_before_first_component(scheduler):
     with pytest.raises(ValueError, match="Unknown scan"):
         scheduler.validate(schedule(seq(setting(), {**scan(), "name": "otf_scan"})))
-    adapter = FakeAdapter(scheduler.catalog)
+    backend = RecordingBackend(scheduler.catalog)
     with pytest.raises(ValueError):
-        scheduler.execute(schedule(seq(setting(), scan(arguments={}))), adapter)
-    assert adapter.trace == []
+        execute_with_backend(scheduler, schedule(seq(setting(), scan(arguments={}))), backend)
+    assert backend.trace == []
 
 
 def test_scope_shadowing_and_no_loop_binding_leak(scheduler):
@@ -357,9 +351,9 @@ def test_transitive_versioned_dependencies(scheduler):
     scheduler.definitions.add(Definition(id="measure", version=2, body=setting(99)))
     with pytest.raises(ValueError, match="already exists"):
         scheduler.definitions.add(Definition(id="measure", version=1, body=seq()))
-    adapter = FakeAdapter(scheduler.catalog)
-    scheduler.execute(doc, adapter)
-    assert adapter.trace[0][2] == 0
+    backend = RecordingBackend(scheduler.catalog)
+    execute_with_backend(scheduler, doc, backend)
+    assert backend.trace[0][2] == 0
     assert execute(scheduler, doc) == execute(scheduler, doc, exported=True)
 
 
@@ -411,13 +405,13 @@ def test_failed_status_is_not_successful_loop_termination(scheduler, exported):
 
 @pytest.mark.parametrize("exported", [False, True])
 def test_ctrl_c_during_async_waits_propagates_and_cleans_up(scheduler, exported):
-    adapter = FakeAdapter(scheduler.catalog, scans_to_complete=1, interrupt=True)
+    backend = RecordingBackend(scheduler.catalog, scans_to_complete=1, interrupt=True)
     with pytest.raises(KeyboardInterrupt):
         if exported:
-            readable_export_trace(scheduler, schedule(setting(wait=False)), adapter=adapter)
+            readable_export_trace(scheduler, schedule(setting(wait=False)), backend=backend)
         else:
-            scheduler.execute(schedule(setting(wait=False)), adapter)
-    assert adapter.cancelled == ["set"]
+            execute_with_backend(scheduler, schedule(setting(wait=False)), backend)
+    assert backend.cancelled == ["set"]
 
 
 @pytest.mark.parametrize(
@@ -483,7 +477,7 @@ def test_safe_quoting_and_reserved_literal_wrappers(scheduler):
         schedule(setting(object()))
 
 
-def test_ipython_adapter_uses_native_blocking_and_nonblocking_apis(metadata):
+def test_session_uses_native_blocking_and_nonblocking_apis(metadata):
     status = SimpleNamespace(done=False, wait=Mock())
     signal = Mock(spec=Signal)
     signal.read_only = False
@@ -493,47 +487,54 @@ def test_ipython_adapter_uses_native_blocking_and_nonblocking_apis(metadata):
     report.status = "RUNNING"
     client = SimpleNamespace(
         device_manager=SimpleNamespace(devices=DeviceContainer({"samx": device})),
-        scans=SimpleNamespace(umv=Mock(), mv=Mock(return_value=report), time_scan=Mock()),
+        scans=SimpleNamespace(
+            _available_scans={
+                name: SimpleNamespace(scan_info=info) for name, info in metadata.items()
+            },
+            umv=Mock(),
+            mv=Mock(return_value=report),
+            time_scan=Mock(),
+        ),
     )
-    adapter = BECAdapter(client)
-    assert adapter.set("samx", 1) is None
+    session = Session(client)
+    assert session.set("samx", 1) is None
     client.scans.umv.assert_called_once_with(device, 1, relative=False)
     device.set.assert_not_called()
-    assert adapter.set("samx", 2, wait=False) is report
+    assert session.set("samx", 2, wait=False) is report
     client.scans.mv.assert_called_once_with(device, 2, relative=False)
-    assert not adapter.done(report)
+    assert not status_done(report)
     report.status = "COMPLETED"
-    assert adapter.done(report)
+    assert status_done(report)
     report.wait.assert_called_once_with(timeout=0, file_written=False)
     report.status = "FAILED"
     with pytest.raises(RuntimeError, match="FAILED"):
-        adapter.done(report)
-    adapter.cancel(report)
+        status_done(report)
+    cancel_status(report)
     report.cancel.assert_called_once()
-    assert adapter.set("samx.velocity", 3) is None
+    assert session.set("samx.velocity", 3) is None
     status.wait.assert_called_once_with()
     status.wait.reset_mock()
-    assert adapter.set("samx.velocity", 4, wait=False) is status
-    assert not adapter.done(status)
+    assert session.set("samx.velocity", 4, wait=False) is status
+    assert not status_done(status)
     status.wait.assert_not_called()
     status.done = True
-    assert adapter.done(status)
+    assert status_done(status)
     status.wait.assert_called_once_with(timeout=0, raise_on_failure=True)
     status.wait.side_effect = RuntimeError("failed")
     with pytest.raises(RuntimeError, match="failed"):
-        adapter.done(status)
-    assert adapter.scan("time_scan", [1, 0.1], {}) is None
+        status_done(status)
+    Sequencer(client).execute(schedule(scan(positional=[1, 0.1], arguments={})))
     client.scans.time_scan.assert_called_once_with(1, 0.1)
-    assert adapter.done(None)
+    assert status_done(None)
 
 
 def test_error_path_and_cleanup(scheduler):
     doc = schedule(seq(setting(wait=False), scan()))
-    adapter = FakeAdapter(scheduler.catalog, failed=True)
+    backend = RecordingBackend(scheduler.catalog, failed=True)
     with pytest.raises(ExecutionError) as error:
-        scheduler.execute(doc, adapter)
+        execute_with_backend(scheduler, doc, backend)
     assert error.value.path == ("root", "set")
-    assert adapter.cancelled
+    assert backend.cancelled
 
 
 def test_comparisons_and_boolean_operators(scheduler):
@@ -711,16 +712,16 @@ def test_nested_literal_parameter_dictionary_is_not_reinterpreted(scheduler):
 
 @pytest.mark.parametrize("exported", [False, True])
 def test_ctrl_c_during_scan_propagates_and_cleans_up(scheduler, exported):
-    adapter = FakeAdapter(scheduler.catalog)
-    adapter.scan = Mock(side_effect=KeyboardInterrupt)
+    backend = RecordingBackend(scheduler.catalog)
+    backend.scan = Mock(side_effect=KeyboardInterrupt)
     document = schedule(seq(setting(wait=False), scan(), setting(2, id="after")))
     with pytest.raises(KeyboardInterrupt):
         if exported:
-            readable_export_trace(scheduler, document, adapter=adapter)
+            readable_export_trace(scheduler, document, backend=backend)
         else:
-            scheduler.execute(document, adapter)
-    assert adapter.trace == [("set", "samx", 1)]
-    assert adapter.cancelled == ["set"]
+            execute_with_backend(scheduler, document, backend)
+    assert backend.trace == [("set", "samx", 1)]
+    assert backend.cancelled == ["set"]
 
 
 def test_invalid_mutated_models_revalidate_before_validation(scheduler):
@@ -748,7 +749,7 @@ def test_dotted_set_targets_roundtrip_and_execution(scheduler, target, exported)
         device_manager=SimpleNamespace(devices=devices),
         scans=SimpleNamespace(_available_scans={}, umv=Mock(), mv=Mock()),
     )
-    adapter = BECAdapter(client)
+    scheduler = Sequencer(client)
     document = schedule({**setting(), "device": target})
     restored = Schedule.model_validate_json(document.model_dump_json())
     assert restored.root.device == target
@@ -757,7 +758,7 @@ def test_dotted_set_targets_roundtrip_and_execution(scheduler, target, exported)
         source = scheduler.export(restored, format="python")
         exec(compile(source, "exported_sequence.py", "exec"), namespace)
     else:
-        scheduler.execute(restored, adapter)
+        scheduler.execute(restored)
     if "." in target:
         signal.set.assert_called_once_with(1)
         status.wait.assert_called_once_with()
@@ -792,7 +793,7 @@ def test_invalid_signal_rejected_before_first_set(scheduler, target, message):
     )
     document = schedule(seq(setting(id="first"), {**setting(id="invalid"), "device": target}))
     with pytest.raises(ValueError, match=message):
-        scheduler.execute(document, BECAdapter(client))
+        Sequencer(client).execute(document)
     device.set.assert_not_called()
     device.readonly.set.assert_not_called()
     client.scans.umv.assert_not_called()
@@ -800,66 +801,66 @@ def test_invalid_signal_rejected_before_first_set(scheduler, target, message):
 
 
 class NativeTestStatus:
-    """Signal status facade over the trace adapter used by readable exports."""
+    """Signal status facade over the trace backend used by readable exports."""
 
-    def __init__(self, adapter, handle):
-        self.adapter = adapter
+    def __init__(self, backend, handle):
+        self.backend = backend
         self.handle = handle
 
     @property
     def done(self):
-        return self.adapter.done(self.handle)
+        return self.backend.done(self.handle)
 
     def wait(self, **kwargs):
-        while not self.adapter.done(self.handle):
+        while not self.backend.done(self.handle):
             pass
 
 
 class NativeTestMove(ScanReport):
     """Public move report facade without queue-storage internals."""
 
-    def __init__(self, adapter, handle):
+    def __init__(self, backend, handle):
         super().__init__()
-        self.adapter = adapter
+        self.backend = backend
         self.handle = handle
 
     @property
     def status(self):
-        return "COMPLETED" if self.adapter.done(self.handle) else "RUNNING"
+        return "COMPLETED" if self.backend.done(self.handle) else "RUNNING"
 
     def wait(self, **kwargs):
-        while not self.adapter.done(self.handle):
+        while not self.backend.done(self.handle):
             pass
 
     def cancel(self):
-        self.adapter.cancel(self.handle)
+        self.backend.cancel(self.handle)
 
 
-def readable_export_trace(scheduler, document, adapter=None, **options):
-    adapter = adapter or FakeAdapter(scheduler.catalog, **options)
+def native_client(backend):
+    """Expose a recording backend through native client, device and scan interfaces."""
     signal = Mock(spec=Signal)
     signal.read_only = False
     signal.set.side_effect = lambda value: NativeTestStatus(
-        adapter, adapter.set("samx", value, wait=False)
+        backend, backend.set("samx", value, wait=False)
     )
-    device = SimpleNamespace(read_only=False, set=Mock(), velocity=signal)
+    device = Mock(spec=DeviceBase, read_only=False, set=Mock(), velocity=signal)
     scans = SimpleNamespace(_available_scans={})
 
     def move(target, value, *, relative):
         assert target is device
         assert relative is False
-        return NativeTestMove(adapter, adapter.set("samx", value, wait=False))
+        return NativeTestMove(backend, backend.set("samx", value, wait=False))
 
     def blocking_move(target, value, *, relative):
         move(target, value, relative=relative).wait()
 
     scans.umv = blocking_move
     scans.mv = move
-    for name, info in scheduler.catalog.entries.items():
+    for name, info in backend._catalog.entries.items():
 
         def run_scan(*args, _name=name, **kwargs):
-            scheduler.catalog.validate(_name, list(args), kwargs)
-            return adapter.scan(_name, list(args), kwargs)
+            backend._catalog.validate(_name, list(args), kwargs)
+            return backend.scan(_name, list(args), kwargs)
 
         setattr(scans, name, run_scan)
         scans._available_scans[name] = SimpleNamespace(scan_info=info)
@@ -869,16 +870,28 @@ def readable_export_trace(scheduler, document, adapter=None, **options):
             devices=DeviceContainer({"samx": device, "id_mode": signal})
         ),
     )
-    namespace = {"bec": client, "dev": client.device_manager.devices, "scans": scans}
-    source = scheduler.export(document, format="python")
+    return client
+
+
+def execute_with_backend(scheduler, document, backend):
+    Sequencer(native_client(backend), scheduler.definitions).execute(document)
+
+
+def readable_export_trace(scheduler, document, backend=None, **options):
+    backend = backend or RecordingBackend(scheduler.catalog, **options)
+    client = native_client(backend)
+    namespace = {"bec": client, "dev": client.device_manager.devices, "scans": client.scans}
+    sequencer = Sequencer(client, scheduler.definitions)
+    source = sequencer.export(document, format="python")
+    assert "BECAdapter" not in source
     exec(compile(source, "readable_sequence.py", "exec"), namespace)
-    return adapter.trace
+    return backend.trace
 
 
 def test_readable_export_live_signal_and_native_scan_calls(scheduler):
     signal = Mock(spec=Signal)
     signal.read_only = False
-    scheduler.catalog.device_manager = SimpleNamespace(devices=DeviceContainer({"id_mode": signal}))
+    scheduler.client.device_manager = SimpleNamespace(devices=DeviceContainer({"id_mode": signal}))
     document = schedule(
         {
             "id": "polarizations",
@@ -1008,13 +1021,13 @@ def test_description_literal_set_value_is_not_a_variable(scheduler):
 
 @pytest.mark.parametrize("exported", [False, True])
 def test_async_failure_cleanup_matches_native_export(scheduler, exported):
-    adapter = FakeAdapter(scheduler.catalog, failed=True)
+    backend = RecordingBackend(scheduler.catalog, failed=True)
     with pytest.raises(RuntimeError, match="Set failed"):
         if exported:
-            readable_export_trace(scheduler, ramp(), adapter=adapter)
+            readable_export_trace(scheduler, ramp(), backend=backend)
         else:
-            scheduler.execute(ramp(), adapter)
-    assert adapter.cancelled == ["set"]
+            execute_with_backend(scheduler, ramp(), backend)
+    assert backend.cancelled == ["set"]
 
 
 def test_definition_changes_are_used_without_a_snapshot(scheduler):
@@ -1029,19 +1042,19 @@ def test_definition_changes_are_used_without_a_snapshot(scheduler):
 
 def test_external_json_input_is_validated_before_execution(scheduler):
     document = polarization().model_dump_json()
-    adapter = FakeAdapter(scheduler.catalog)
+    backend = RecordingBackend(scheduler.catalog)
     scheduler.validate(document)
-    scheduler.execute(document, adapter)
-    assert adapter.trace == execute(scheduler, polarization())
+    execute_with_backend(scheduler, document, backend)
+    assert backend.trace == execute(scheduler, polarization())
     assert scheduler.export(document, format="python") == scheduler.export(
         polarization(), format="python"
     )
-    adapter.trace.clear()
+    backend.trace.clear()
     malformed = json.loads(document)
     malformed["root"]["count"] = -1
     with pytest.raises(ValidationError):
-        scheduler.execute(json.dumps(malformed), adapter)
-    assert adapter.trace == []
+        execute_with_backend(scheduler, json.dumps(malformed), backend)
+    assert backend.trace == []
 
 
 def test_available_components_exposes_serializable_model_schemas():
@@ -1110,3 +1123,137 @@ def test_outer_iterator_used_by_inner_values_is_preserved(scheduler):
     assert "for values in [[1, 2]]:" in source
     assert "for _ in [values]:" in source
     assert execute(scheduler, document) == readable_export_trace(scheduler, document)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "boolean",
+        "range",
+        "bind_parameters",
+        "sleep",
+        "getattr",
+        "status_done",
+        "cancel_status",
+        "deque",
+        "Exception",
+        "BaseException",
+        "len",
+        "list",
+        "str",
+        "sum",
+        "open",
+        "for",
+        "class",
+        "not-valid",
+        "two words",
+        "1value",
+        "ｌｅｎ",
+        "ｂｏｏｌｅａｎ",
+        "_",
+    ],
+)
+def test_export_loop_variables_do_not_shadow_dependencies(scheduler, variable):
+    add_measure(scheduler)
+    document = schedule(
+        {
+            "id": "loop",
+            "type": "for_each",
+            "variable": variable,
+            "values": [False],
+            "body": seq(
+                setting({"ref": variable}),
+                {
+                    "id": "while",
+                    "type": "while",
+                    "condition": {"ref": variable},
+                    "body": seq(id="empty"),
+                },
+                {"id": "repeat", "type": "repeat", "count": 2, "body": scan()},
+                call(),
+                setting({"ref": variable}, id="after"),
+                id="body",
+            ),
+        }
+    )
+    source = scheduler.export(document, format="python")
+    outer_loop = next(line for line in source.splitlines() if line.startswith("for "))
+    assert not outer_loop.startswith(f"for {variable} in")
+    assert readable_export_trace(scheduler, document) == execute(scheduler, document)
+
+
+@pytest.mark.parametrize("reference_container", ["definitions", "$defs", "properties"])
+def test_dynamic_component_arguments_preserve_local_schema_refs(scheduler, reference_container):
+    value_name = "value/~"
+    parameters = {
+        "type": "object",
+        "properties": {
+            value_name: {"$ref": f"#/{reference_container}/number"},
+            "done": {"type": "boolean"},
+        },
+        "required": [value_name, "done"],
+    }
+    if reference_container == "properties":
+        parameters["properties"]["number"] = {"type": "number"}
+    else:
+        parameters[reference_container] = {"number": {"type": "number"}}
+    scheduler.definitions.add(
+        Definition(
+            id="referenced",
+            version=1,
+            parameters=parameters,
+            body=setting({"param": value_name}, id="component_set"),
+        )
+    )
+
+    def document(value):
+        return schedule(
+            seq(
+                setting(wait=False, bind="move"),
+                call(
+                    "referenced",
+                    arguments={
+                        value_name: value,
+                        "done": {"type": "status_field", "status_ref": "move", "field": "done"},
+                    },
+                ),
+            )
+        )
+
+    assert execute(scheduler, document(2)) == [("set", "samx", 1), ("set", "samx", 2)]
+    assert readable_export_trace(scheduler, document(2)) == execute(scheduler, document(2))
+    backend = RecordingBackend(scheduler.catalog)
+    with pytest.raises(ValueError, match="must be number"):
+        execute_with_backend(scheduler, document("invalid"), backend)
+    assert backend.trace == []
+
+
+def test_offline_sequencer_supports_inspection_but_requires_client_for_sets(metadata):
+    sequencer = Sequencer.from_catalog(ScanCatalog(metadata))
+    document = schedule(seq(setting(), scan()))
+    sequencer.validate(document)
+    assert "Set samx" in sequencer.export(document, format="description")
+    assert "scans.time_scan(" in sequencer.export(schedule(scan()), format="python")
+    with pytest.raises(ValueError, match="execution requires a live client"):
+        sequencer.execute(document)
+    with pytest.raises(ValueError, match="Set nodes requires a live client"):
+        sequencer.export(document, format="python")
+
+
+def test_client_catalog_is_refreshed_before_validation_and_export(scheduler):
+    document = schedule(scan())
+    scheduler.validate(document)
+    scheduler.client.scans._available_scans.clear()
+    with pytest.raises(ValueError, match="Unknown scan"):
+        scheduler.validate(document)
+    with pytest.raises(ValueError, match="Unknown scan"):
+        scheduler.export(document, format="python")
+
+
+def test_live_export_resolves_targets_before_generating_source(scheduler):
+    document = schedule(setting())
+    source = scheduler.export(document, format="python")
+    assert source == "scans.umv(dev.samx, 1, relative=False)\n"
+    scheduler.client.device_manager.devices.pop("samx")
+    with pytest.raises(ValueError, match="Unknown device or signal"):
+        scheduler.export(document, format="python")
