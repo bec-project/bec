@@ -82,9 +82,9 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             device names.
 
     Returns:
-        str: Runnable native IPython source defining run(bec).
+        str: Statements for the existing BEC IPython namespace.
     """
-    lines = ["def run(bec):", "    dev = bec.device_manager.devices", "    scans = bec.scans"]
+    lines = []
     imports = set()
     counter = 0
     used_names = {"bec", "dev", "scans"}
@@ -159,6 +159,28 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             return "dev." + name
         return f"dev[{literal(name)}]"
 
+    def uses_reference(item, name):
+        expression = expr.expression(item)
+        if isinstance(expression, expr.Reference):
+            return expression.ref == name
+        if isinstance(expression, expr.LiteralValue):
+            return False
+        if isinstance(item, dict):
+            return any(uses_reference(child, name) for child in item.values())
+        if isinstance(item, list):
+            return any(uses_reference(child, name) for child in item)
+        return False
+
+    def uses_variable(item, name):
+        node = item.node
+        values = node.model_dump(mode="json", exclude={"id", "type", "body", "children"})
+        if uses_reference(values, name):
+            return True
+        # Component calls bind their arguments in the caller, but isolate their bodies.
+        if isinstance(node, ComponentCall) or (isinstance(node, ForEach) and node.variable == name):
+            return False
+        return any(uses_variable(child, name) for child in item.children)
+
     def visit(item, depth, names):
         """Emit Python statements for a component and its nested components.
 
@@ -177,12 +199,14 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             for child in item.children:
                 visit(child, depth, names)
         elif isinstance(node, Repeat):
-            emit(f"for _repeat_{index} in range({node.count}):", depth)
+            emit(f"for _ in range({node.count}):", depth)
             visit(item.children[0], depth + 1, names.child())
         elif isinstance(node, ForEach):
             inner = names.child()
-            variable = node.variable
-            if not _identifier(variable) or variable in used_names or variable.startswith("_"):
+            variable = node.variable if uses_variable(item.children[0], node.variable) else "_"
+            if variable != "_" and (
+                not _identifier(variable) or variable in used_names or variable.startswith("_")
+            ):
                 variable = f"_value_{index}"
             used_names.add(variable)
             inner.variables[node.variable] = variable
@@ -248,7 +272,7 @@ def export_python(tree: Resolved, device_manager=None) -> str:
         else:
             raise ValueError(f"Node {node.id}: unsupported Python export")
 
-    visit(tree, 1, _Names())
+    visit(tree, 0, _Names())
     if async_operations:
         # Drain on success, matching the interpreter; cancel supported handles on errors.
         imports.update(
@@ -258,27 +282,21 @@ def export_python(tree: Resolved, device_manager=None) -> str:
                 "from bec_lib.scan_sequencer import BECAdapter",
             ]
         )
-        body = lines[3:]
-        lines[3:] = ["    _pending = deque()", "    try:"] + ["    " + line for line in body]
+        lines = ["_pending = deque()", "try:"] + ["    " + line for line in lines]
         lines += [
-            "        while _pending:",
-            "            _status = _pending[0]",
-            "            while not _adapter.done(_status):",
-            "                sleep(0.02)",
-            "            _pending.popleft()",
-            "    except BaseException:",
-            "        for _status in _pending:",
-            "            try:",
-            "                _adapter.cancel(_status)",
-            "            except Exception:",
-            "                pass  # Preserve the original failure during cleanup.",
-            "        raise",
+            "    while _pending:",
+            "        _status = _pending[0]",
+            "        while not _adapter.done(_status):",
+            "            sleep(0.02)",
+            "        _pending.popleft()",
+            "except BaseException:",
+            "    for _status in _pending:",
+            "        try:",
+            "            _adapter.cancel(_status)",
+            "        except Exception:",
+            "            pass  # Preserve the original failure during cleanup.",
+            "    raise",
         ]
     if "from bec_lib.scan_sequencer import BECAdapter" in imports:
-        lines.insert(3, "    _adapter = BECAdapter(bec)")
-    return (
-        "\n".join(
-            sorted(imports) + ([""] if imports else []) + lines + ["", "# In BEC IPython: run(bec)"]
-        )
-        + "\n"
-    )
+        lines.insert(0, "_adapter = BECAdapter(bec)")
+    return "\n".join(sorted(imports) + ([""] if imports else []) + lines) + "\n"
