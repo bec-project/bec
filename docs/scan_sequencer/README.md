@@ -60,8 +60,10 @@ The existing procedure queue owns ordering, status and cancellation through stat
 The interface supplies the sequence and reusable definitions to that procedure.
 
 Execution uses native Ctrl-C/KeyboardInterrupt, including in procedure workers.
-The Python export provides run(bec) with ordinary loops, scans.<name>(...), signal
-.set(...).wait(), and device scans.umv/scans.mv calls. A live catalog identifies target
+The Python export contains statements for direct use in BEC IPython, where `bec`, `dev`
+and `scans` already exist. It emits ordinary loops, scans.<name>(...), signal
+.set(...).wait(), and device scans.umv/scans.mv calls, without a wrapper function or namespace
+setup. Simple native sequences need no imports. A live catalog identifies target
 kinds from actual proxies, including root signals. Offline exports use BECAdapter for sets
 when target kinds are unavailable. Native BEC calls validate dynamic scan arguments.
 Outstanding asynchronous sets are checked and drained on exit in both execution modes.

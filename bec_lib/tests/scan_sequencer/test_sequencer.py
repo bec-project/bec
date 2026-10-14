@@ -753,10 +753,9 @@ def test_dotted_set_targets_roundtrip_and_execution(scheduler, target, exported)
     restored = Schedule.model_validate_json(document.model_dump_json())
     assert restored.root.device == target
     if exported:
-        namespace = {}
+        namespace = {"bec": client, "dev": devices, "scans": client.scans}
         source = scheduler.export(restored, format="python")
         exec(compile(source, "exported_sequence.py", "exec"), namespace)
-        namespace["run"](client)
     else:
         scheduler.execute(restored, adapter)
     if "." in target:
@@ -870,10 +869,9 @@ def readable_export_trace(scheduler, document, adapter=None, **options):
             devices=DeviceContainer({"samx": device, "id_mode": signal})
         ),
     )
-    namespace = {}
+    namespace = {"bec": client, "dev": client.device_manager.devices, "scans": scans}
     source = scheduler.export(document, format="python")
     exec(compile(source, "readable_sequence.py", "exec"), namespace)
-    namespace["run"](client)
     return adapter.trace
 
 
@@ -915,6 +913,11 @@ def test_readable_export_live_signal_and_native_scan_calls(scheduler):
     )
     assert "ctx." not in source
     assert "BECAdapter" not in source
+    assert "def run" not in source
+    assert "import " not in source
+    assert "dev =" not in source
+    assert "scans =" not in source
+    assert source.startswith("for pol in")
     assert readable_export_trace(scheduler, document) == [
         ("set", "samx", "Circ+"),
         (
@@ -1065,3 +1068,45 @@ def test_external_reusable_definitions_are_received_as_json(scheduler):
     document = schedule(call("external")).model_dump_json()
     assert execute(scheduler, document) == [("set", "samx", 2)]
     assert execute(scheduler, document, exported=True) == [("set", "samx", 2)]
+
+
+def test_unused_iterators_export_as_underscore(scheduler):
+    document = schedule(
+        {
+            "id": "twice",
+            "type": "repeat",
+            "count": 2,
+            "body": {
+                "id": "values",
+                "type": "for_each",
+                "variable": "unused",
+                "values": [1, 2],
+                "body": scan(),
+            },
+        }
+    )
+    source = scheduler.export(document, format="python")
+    assert source.startswith("for _ in range(2):\n    for _ in [1, 2]:")
+    assert execute(scheduler, document) == readable_export_trace(scheduler, document)
+
+
+def test_outer_iterator_used_by_inner_values_is_preserved(scheduler):
+    document = schedule(
+        {
+            "id": "outer",
+            "type": "for_each",
+            "variable": "values",
+            "values": [[1, 2]],
+            "body": {
+                "id": "inner",
+                "type": "for_each",
+                "variable": "unused",
+                "values": [{"ref": "values"}],
+                "body": scan(),
+            },
+        }
+    )
+    source = scheduler.export(document, format="python")
+    assert "for values in [[1, 2]]:" in source
+    assert "for _ in [values]:" in source
+    assert execute(scheduler, document) == readable_export_trace(scheduler, document)
