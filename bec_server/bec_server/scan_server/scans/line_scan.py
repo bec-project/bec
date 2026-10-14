@@ -20,9 +20,9 @@ from typing import Annotated
 
 import numpy as np
 
+from bec_lib import position_generators
 from bec_lib.device import DeviceBase
 from bec_lib.scan_args import DefaultArgType, ScanArgument
-from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType, bundle_args
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -63,6 +63,9 @@ class LineScan(ScanBase):
             "burst_at_each_point",
         ],
     }
+
+    position_preview = "bec_lib.position_generators.line_scan_positions"
+    position_preview_parameter_mapping = {"axes": {"bundle": [1, 2]}, "steps": "steps"}
 
     def __init__(
         self,

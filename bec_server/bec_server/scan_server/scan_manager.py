@@ -164,6 +164,10 @@ class ScanManager:
                 "doc": scan_doc_with_modifiers(scan_cls),
                 "signature": scan_signature_with_modifiers(scan_cls),
                 "gui_visibility": gui_visibility,
+                "position_preview": getattr(scan_cls, "position_preview", None),
+                "position_preview_parameter_mapping": getattr(
+                    scan_cls, "position_preview_parameter_mapping", {}
+                ),
             }
 
     @staticmethod

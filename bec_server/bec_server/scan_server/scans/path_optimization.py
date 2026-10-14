@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from scipy.spatial import cKDTree  # type: ignore
 
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.scans.position_generators import Direction
+from bec_lib.position_generators import Direction
 
 logger = bec_logger.logger
 

@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import numpy as np
 
+from bec_lib import position_generators
 from bec_lib.device import DeviceBase
 from bec_lib.scan_args import DefaultArgType
-from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -49,6 +49,9 @@ class MultiRegionLineScan(ScanBase):
             "burst_at_each_point",
         ],
     }
+
+    position_preview = "bec_lib.position_generators.multi_region_line_positions"
+    position_preview_parameter_mapping = {"regions": "regions"}
 
     def __init__(
         self,

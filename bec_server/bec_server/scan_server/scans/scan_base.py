@@ -64,6 +64,10 @@ class ScanInfo(BaseModel):
     scan_number: Annotated[int | None, Field(description="Scan number, if applicable")] = None
     dataset_number: Annotated[int | None, Field(description="Dataset number, if applicable")] = None
 
+    # Preview metadata uses the same mapping as the advertised scan definition.
+    position_preview: str | None = None
+    position_preview_parameter_mapping: dict = Field(default_factory=dict)
+
     # Scan parameters
     num_points: Annotated[int, Field(description="Number of points in the scan.")] = 0
     positions: Annotated[
@@ -168,6 +172,8 @@ class ScanBase(ABC):
     arg_bundle_size = {"bundle": len(arg_input), "min": None, "max": None}
     is_scan = True
     is_internal = False
+    position_preview: str | None = None
+    position_preview_parameter_mapping: dict = {}
 
     def __init__(
         self,
@@ -207,7 +213,12 @@ class ScanBase(ABC):
             if data is not None:
                 optional_kwargs[kwarg] = data
         self.scan_info = ScanInfo(
-            scan_name=self.scan_name, scan_id=scan_id, scan_type=self.scan_type, **optional_kwargs
+            scan_name=self.scan_name,
+            scan_id=scan_id,
+            scan_type=self.scan_type,
+            position_preview=self.position_preview,
+            position_preview_parameter_mapping=self.position_preview_parameter_mapping,
+            **optional_kwargs,
         )
         self.update_scan_info(monitored=monitored, on_request=on_request)
 

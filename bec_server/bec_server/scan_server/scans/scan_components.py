@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Callable, Literal
 import numpy as np
 
 from bec_lib.device import DeviceBase
+from bec_lib.position_generators import Direction
 from bec_server.scan_server.errors import LimitError
 from bec_server.scan_server.scans.path_optimization import PathOptimizerMixin
-from bec_server.scan_server.scans.position_generators import Direction
 
 if TYPE_CHECKING:
     from bec_lib.devicemanager import DeviceContainer
