@@ -216,5 +216,8 @@ def partial_parameters(definition: Definition, args: object) -> dict:
         if name not in params and "default" in prop:
             params[name] = prop["default"]
         if name in params and known(params[name]):
-            fastjsonschema.compile(prop)(params[name])
+            # Select the property within the original root so its local references retain
+            # access to definitions and other schema locations. Escape JSON Pointer tokens.
+            token = name.replace("~", "~0").replace("/", "~1")
+            fastjsonschema.compile({**schema, "$ref": f"#/properties/{token}"})(params[name])
     return params

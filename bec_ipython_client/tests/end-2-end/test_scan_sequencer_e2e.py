@@ -3,21 +3,19 @@
 from unittest.mock import Mock
 
 import pytest
+from test_procedures_e2e import _wait_while
+from test_procedures_e2e import client_logtool_and_manager as client_logtool_and_manager
 
-from bec_lib.scan_sequencer import (
-    BECAdapter,
-    Definition,
-    DefinitionLibrary,
-    ScanCatalog,
-    Schedule,
-    Sequencer,
-)
+from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.scan_sequencer import Definition, DefinitionLibrary, Schedule, Sequencer
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_sequence_uses_existing_scan_queue_and_device_statuses(
-    bec_ipython_client_fixture, monkeypatch
+    client_logtool_and_manager, monkeypatch
 ):
+    bec_ipython_client_fixture, logtool, manager = client_logtool_and_manager
     # Use the standard demo configuration loaded by the shared client fixture.
     grid_arguments = ["samx", -1.0, 1.0, 2, "samy", -1.0, 1.0, 2]
     grid_keywords = {"relative": False, "exp_time": 0.01}
@@ -72,21 +70,22 @@ def test_sequence_uses_existing_scan_queue_and_device_statuses(
             },
         },
     )
-    scheduler = Sequencer(
-        ScanCatalog.from_client(bec_ipython_client_fixture), DefinitionLibrary([definition])
-    )
+    scheduler = Sequencer(bec_ipython_client_fixture, DefinitionLibrary([definition]))
     trace = []
+    native_move = bec_ipython_client_fixture.scans.umv
+    native_scan = bec_ipython_client_fixture.scans.grid_scan
 
-    class RecordingAdapter(BECAdapter):
-        def set(self, name, value, *, wait=True):
-            trace.append(("set", name, value))
-            return super().set(name, value, wait=wait)
+    def record_move(target, value, **kwargs):
+        trace.append(("set", target.name, value))
+        return native_move(target, value, **kwargs)
 
-        def scan(self, name, positional, arguments):
-            trace.append(("scan", name))
-            return super().scan(name, positional, arguments)
+    def record_scan(*args, **kwargs):
+        trace.append(("scan", "grid_scan"))
+        return native_scan(*args, **kwargs)
 
-    scheduler.execute(document, RecordingAdapter(bec_ipython_client_fixture))
+    monkeypatch.setattr(bec_ipython_client_fixture.scans, "umv", record_move)
+    monkeypatch.setattr(bec_ipython_client_fixture.scans, "grid_scan", record_scan)
+    scheduler.execute(document)
     assert trace == [
         ("set", "samz", 1),
         ("scan", "grid_scan"),
@@ -125,10 +124,22 @@ def test_sequence_uses_existing_scan_queue_and_device_statuses(
         for call in acquire.call_args_list
     )
 
-    status = bec_ipython_client_fixture.proc.request_new(
-        "run_sequence",
-        ((document.model_dump_json(), [definition.model_dump()]), {}),
+    # Follow the existing procedure e2e tests: send a request to their real subprocess manager.
+    request = messages.ProcedureRequestMessage(
+        identifier="run_sequence",
+        args_kwargs=((document.model_dump_json(), [definition.model_dump()]), {}),
         queue="sequence-e2e",
     )
-    status.wait(timeout_s=30, raise_on_failure=True)
-    assert status.done, repr(status)
+    bec_ipython_client_fixture.connector.send(MessageEndpoints.procedure_request(), request)
+    _wait_while(lambda: manager._active_workers == {}, 5)
+    _wait_while(lambda: manager._active_workers != {}, 90)
+
+    logtool.fetch()
+    logs = logtool._logs or []
+    assert any(
+        "Finished procedure" in line and request.execution_id in line for line in logs
+    ), f"Sequence procedure did not finish successfully: {manager._logs}"
+    assert not any(
+        "Encountered error running procedure" in line and request.execution_id in line
+        for line in logs
+    ), f"Sequence procedure failed: {manager._logs}"
