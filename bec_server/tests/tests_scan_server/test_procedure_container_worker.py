@@ -1,7 +1,7 @@
 import os
 import time
 from itertools import repeat
-from threading import Thread
+from threading import Event, Thread
 from time import sleep
 from unittest.mock import MagicMock, call, patch
 
@@ -233,3 +233,72 @@ def test_container_worker_drains_final_status_before_exit(redis_mock, backend_mo
     worker = ContainerProcedureWorker(server="localhost:6379", queue="test")
     worker.work()
     assert worker.status == ProcedureWorkerStatus.FINISHED
+
+
+@patch("bec_server.procedures.container_worker.get_backend")
+@patch("bec_server.procedures.worker_base.RedisConnector")
+def test_abort_and_context_exit_serialize_connector_shutdown(redis_mock, backend_mock):
+    worker = ContainerProcedureWorker(server="localhost:6379", queue="test")
+    closing = Event()
+    release = Event()
+    exit_started = Event()
+    concurrent_close = Event()
+    errors = []
+
+    def close_connector():
+        if closing.is_set():
+            concurrent_close.set()
+            raise RuntimeError("concurrent Redis connector shutdown")
+        closing.set()
+        try:
+            assert release.wait(2)
+        finally:
+            closing.clear()
+
+    def abort():
+        try:
+            worker.abort()
+        except BaseException as exc:
+            errors.append(exc)
+
+    def exit_context():
+        exit_started.set()
+        try:
+            worker.__exit__(None, None, None)
+        except BaseException as exc:
+            errors.append(exc)
+
+    redis_mock().shutdown.side_effect = close_connector
+    worker._kill_process = MagicMock()
+    abort_thread = Thread(target=abort)
+    exit_thread = Thread(target=exit_context)
+    abort_thread.start()
+    try:
+        assert closing.wait(2)
+        exit_thread.start()
+        assert exit_started.wait(2)
+        assert not concurrent_close.wait(0.1)
+    finally:
+        release.set()
+        abort_thread.join(2)
+        if exit_thread.ident is not None:
+            exit_thread.join(2)
+    assert not abort_thread.is_alive()
+    assert not exit_thread.is_alive()
+    assert errors == []
+    worker._kill_process.assert_called()
+
+
+@patch("bec_server.procedures.container_worker.get_backend")
+@patch("bec_server.procedures.worker_base.RedisConnector")
+@pytest.mark.parametrize("abort", [True, False])
+def test_connector_shutdown_failure_still_stops_worker(redis_mock, backend_mock, abort):
+    worker = ContainerProcedureWorker(server="localhost:6379", queue="test")
+    redis_mock().shutdown.side_effect = RuntimeError("failed to close Redis")
+    worker._kill_process = MagicMock()
+    with pytest.raises(RuntimeError, match="failed to close Redis"):
+        if abort:
+            worker.abort()
+        else:
+            worker.__exit__(None, None, None)
+    worker._kill_process.assert_called_once()

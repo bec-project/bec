@@ -105,6 +105,7 @@ class InlineWorker(SubProcessWorker):
         self.client_id = 0
         self._current_execution_id: str | None = None
         self._aborted = threading.Event()
+        self._shutdown_lock = threading.Lock()
         self._process = MagicMock()
         self._process.poll = MagicMock(return_value=None)
         self._ending: bool = False
@@ -284,6 +285,7 @@ class UnlockableWorker(ProcedureWorker):
         # super().__init__(server, queue, lifetime_s)
         self.event_1 = threading.Event()
         self.event_2 = threading.Event()
+        self._shutdown_lock = threading.Lock()
         self._helper = MagicMock()
         self._conn = MagicMock()
         self.execution_id = execution_id

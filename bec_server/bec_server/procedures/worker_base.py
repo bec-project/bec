@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from threading import Event
+from threading import Event, Lock
 
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -52,6 +52,7 @@ class ProcedureWorker(ABC):
         self.client_id = self._conn.client_id()
         self._current_execution_id: str | None = None
         self._aborted = Event()
+        self._shutdown_lock = Lock()
 
         try:
             self._setup_execution_environment()
@@ -63,8 +64,15 @@ class ProcedureWorker(ABC):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._conn.shutdown()
-        self._kill_process()
+        self._cleanup_execution_environment()
+
+    def _cleanup_execution_environment(self) -> None:
+        """Serialize abort and context teardown, always stopping the external process."""
+        with self._shutdown_lock:
+            try:
+                self._conn.shutdown()
+            finally:
+                self._kill_process()
 
     @abstractmethod
     def _kill_process(self):
@@ -90,8 +98,7 @@ class ProcedureWorker(ABC):
     def abort(self):
         """Abort the entire worker"""
         self._aborted.set()
-        self._conn.shutdown()
-        self._kill_process()
+        self._cleanup_execution_environment()
 
     @abstractmethod
     def abort_execution(self, execution_id: str):
