@@ -15,6 +15,12 @@ from pydantic import (
     field_validator,
 )
 
+_EXPRESSION_VALUES = (
+    "Accepts literal JSON or expressions described by available_expressions(), including "
+    "expressions nested in lists and mappings. Use a literal wrapper for expression-shaped "
+    "data that must remain unchanged. Strings are literal values, not variable interpolation."
+)
+
 
 class Model(BaseModel):
     """Strict serializable plan model; runtime state lives elsewhere.
@@ -89,7 +95,10 @@ class ForEach(Node):
 
     type: Literal["for_each"] = "for_each"
     variable: str = Field(min_length=1)
-    values: list[JsonValue]
+    values: list[JsonValue] = Field(
+        description=f"Ordered iteration values, evaluated in the enclosing scope. {_EXPRESSION_VALUES}",
+        examples=[[-1, 1], [{"param": "start"}, {"param": "stop"}]],
+    )
     body: Component
 
 
@@ -108,7 +117,20 @@ class While(Node):
     """
 
     type: Literal["while"] = "while"
-    condition: JsonValue
+    condition: JsonValue = Field(
+        description=(
+            "Boolean literal or expression resolving to a boolean before each iteration; "
+            f"other values are not coerced to booleans. {_EXPRESSION_VALUES}"
+        ),
+        examples=[
+            False,
+            {"type": "compare", "operator": "gt", "left": {"ref": "position"}, "right": 0},
+            {
+                "type": "not",
+                "operand": {"type": "status_field", "status_ref": "ramp", "field": "done"},
+            },
+        ],
+    )
     body: Component
 
 
@@ -130,8 +152,16 @@ class ScanCall(Node):
 
     type: Literal["scan_call"] = "scan_call"
     name: str = Field(min_length=1)
-    arguments: JsonValue = Field(default_factory=dict)
-    positional: list[JsonValue] = Field(default_factory=list)
+    arguments: JsonValue = Field(
+        default_factory=dict,
+        description=f"Scan keyword arguments; must resolve to a mapping. {_EXPRESSION_VALUES}",
+        examples=[{"points": 1, "interval": {"param": "exposure"}}, {"param": "scan_arguments"}],
+    )
+    positional: list[JsonValue] = Field(
+        default_factory=list,
+        description=f"Positional scan arguments in calling order. {_EXPRESSION_VALUES}",
+        examples=[[1, 0.1], ["samx", {"param": "start"}, {"param": "stop"}]],
+    )
 
 
 class Set(Node):
@@ -155,7 +185,15 @@ class Set(Node):
     device: str = Field(
         min_length=1, description="Dotted device or signal name, e.g. samx.velocity"
     )
-    value: JsonValue
+    value: JsonValue = Field(
+        description=f"Value to write to the device or signal. {_EXPRESSION_VALUES}",
+        examples=[
+            1,
+            {"ref": "position"},
+            {"param": "position"},
+            {"type": "literal", "value": {"ref": "position"}},
+        ],
+    )
     wait: StrictBool = True
     bind_status: str | None = Field(default=None, min_length=1)
 
@@ -191,7 +229,14 @@ class ComponentCall(Node):
 
     type: Literal["component_call"] = "component_call"
     definition: DefinitionRef
-    arguments: JsonValue = Field(default_factory=dict)
+    arguments: JsonValue = Field(
+        default_factory=dict,
+        description=(
+            "Component parameters, evaluated in the caller's scope; must resolve to a mapping. "
+            f"{_EXPRESSION_VALUES}"
+        ),
+        examples=[{"position": {"ref": "position"}}, {"param": "component_arguments"}],
+    )
 
 
 Component = Annotated[

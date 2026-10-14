@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from .components import Model
 
@@ -142,6 +142,40 @@ _EXPRESSIONS = {
     "or": Boolean,
     "compare": Compare,
 }
+
+
+def available_expressions() -> dict:
+    """Return JSON Schema and examples for the supported expression shapes.
+
+    References and parameters use single-key mappings; other expressions use a type
+    discriminator. Expressions may appear inside lists and mappings in expression-capable
+    component fields. Literal wrappers prevent evaluation of their entire value.
+
+    Returns:
+        dict: Expression JSON Schema, including model definitions and examples.
+    """
+    schema = TypeAdapter(
+        Reference | Parameter | LiteralValue | StatusField | Not | Boolean | Compare
+    ).json_schema()
+    schema["description"] = (
+        "Supported expression shapes for component values, arguments and conditions. "
+        "Expressions can be nested in lists and mappings. Loop references and parameters "
+        "resolve to data without interpreting the result as another expression. "
+        "Use a literal wrapper to pass expression-shaped data unchanged. "
+        "Ordinary strings, including '${position}', are literal strings, not references. "
+        "Sequence validation additionally checks scope and resolved value types."
+    )
+    schema["examples"] = [
+        {"ref": "position"},
+        {"param": "exposure"},
+        {"type": "literal", "value": {"ref": "position"}},
+        {"type": "status_field", "status_ref": "ramp", "field": "done"},
+        {"type": "not", "operand": {"type": "status_field", "status_ref": "ramp", "field": "done"}},
+        {"type": "and", "operands": [True, False]},
+        {"type": "or", "operands": [False, True]},
+        {"type": "compare", "operator": "gt", "left": {"ref": "position"}, "right": 0},
+    ]
+    return schema
 
 
 def expression(value: JsonValue) -> Model | None:

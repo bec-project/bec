@@ -43,10 +43,10 @@ if __name__ == "__main__":
 
 # In an existing BEC IPython session, load this file with %run -i, then:
 #
-# from bec_lib.scan_sequencer import ScanCatalog, Sequencer
+# from bec_lib.scan_sequencer import Sequencer
 #
 # document = sequence.model_dump_json()
-# sequencer = Sequencer(ScanCatalog.from_client(bec))
+# sequencer = Sequencer(bec)
 # sequencer.validate(document)
 # print(sequencer.export(document, format="description"))
 # print(sequencer.export(document, format="python"))

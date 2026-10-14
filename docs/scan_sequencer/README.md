@@ -24,7 +24,7 @@ execution. The composition is example caller code; the backend receives the resu
 import json
 from pathlib import Path
 from bec_lib.scan_sequencer import (
-    BECAdapter, DefinitionLibrary, ScanCatalog, Sequencer, available_components,
+    DefinitionLibrary, Sequencer, available_components,
 )
 
 # Component inspection works without a BEC connection.
@@ -37,10 +37,9 @@ examples = Path("docs/scan_sequencer/examples")
 sequence = (examples / "alternating_positions.json").read_text()
 definitions = [json.loads((examples / "measure_position.json").read_text())]
 
-catalog = ScanCatalog.from_client(bec)
-scan_names = list(catalog.entries)
-scan_info = catalog.entry("time_scan")
-sequencer = Sequencer(catalog, DefinitionLibrary(definitions))
+sequencer = Sequencer(bec, DefinitionLibrary(definitions))
+scan_names = list(sequencer.catalog.entries)
+scan_info = sequencer.catalog.entry("time_scan")
 sequencer.validate(sequence)  # no hardware execution
 print(sequencer.export(sequence, format="description"))
 python_source = sequencer.export(sequence, format="python")
@@ -52,7 +51,7 @@ status = bec.proc.request_new(
 status.wait(raise_on_failure=True)
 
 # The procedure internally delegates to the same execution entry point:
-# sequencer.execute(sequence, BECAdapter(bec))
+# sequencer.execute(sequence)
 ```
 
 Procedure execution requires services with the registered run_sequence procedure.
@@ -64,8 +63,10 @@ The Python export contains statements for direct use in BEC IPython, where `bec`
 and `scans` already exist. It emits ordinary loops, scans.<name>(...), signal
 .set(...).wait(), and device scans.umv/scans.mv calls, without a wrapper function or namespace
 setup. Simple native sequences need no imports. A live catalog identifies target
-kinds from actual proxies, including root signals. Offline exports use BECAdapter for sets
-when target kinds are unavailable. Native BEC calls validate dynamic scan arguments.
+kinds from actual proxies, including root signals. Offline sequencers created with
+`Sequencer.from_catalog(catalog, definitions)` support validation, descriptions and scan-only
+Python exports. Execution and Python exports containing Set nodes require a client so target
+kinds are resolved before export. Native BEC calls validate dynamic scan arguments.
 Outstanding asynchronous sets are checked and drained on exit in both execution modes.
 Execution never compiles or evaluates an export.
 
@@ -75,6 +76,39 @@ signature. The four scans use one point and a 0.1-second interval each. Check yo
 and limits before execution. A real polarization device, its valid values and an OTF scan signature
 must come from the beamline configuration and advertised catalog; this backend defines none of them.
 `scan_during_set.json` demonstrates scans in a While loop during a checked asynchronous set.
+
+## Generating sequences with an LLM
+
+Give the LLM the component schema, expression schema and current advertised scans before
+asking it to generate a sequence document:
+
+```python
+from bec_lib.scan_sequencer import available_components, available_expressions
+
+sequencer = Sequencer(bec)
+catalog = sequencer.catalog
+capabilities = {
+    "components": available_components(),
+    "expressions": available_expressions(),
+    "scans": {name: catalog.entry(name) for name in catalog.entries},
+}
+```
+
+`available_expressions()` returns JSON Schema generated from the supported expression models,
+including examples for loop references, component parameters, literal wrappers, status observations,
+boolean operators and comparisons. Component field descriptions identify where expressions are
+accepted and include examples of their use. Expressions can be nested inside argument mappings
+and lists. For example, a Set node inside a ForEach over `position` can use
+`"value": {"ref": "position"}`. The string `"${position}"` is a literal string and does not
+interpolate a variable. Use `{"type": "literal", "value": {"ref": "position"}}` to pass that
+reference-shaped mapping as data instead of evaluating it.
+
+The calling interface should also provide the configured device and signal names relevant to the
+request. The expression schema describes shapes; it cannot establish whether a loop variable,
+component parameter or status binding exists at a particular node. After receiving the generated
+JSON, call `sequencer.validate(document)` to check scope, scan arguments and live set targets.
+Return validation errors to the LLM for correction, then validate the revised document before
+calling `sequencer.execute(document)`. Validation does not execute device operations.
 
 ## Contracts and scopes
 
@@ -115,7 +149,7 @@ apply defaults, and support local schema references. Remote schema references ar
   receive available structural checks and full validation again at their call boundary.
 - Execution requires a BEC IPython client, including procedure workers (their existing default).
   Scans use `bec.scans.<name>(*positional, **arguments)` with ordinary blocking IPython behavior.
-  The adapter does not suppress reports, wrap scan handles or poll scan-queue internals.
+  The sequencer does not suppress reports, wrap scan handles or poll scan-queue internals.
   Scan arguments can include the standard client `metadata` mapping (including loop references).
   The catalog validates its real `ScanObject` frontend type separately from scan-specific inputs.
 - A Set node stores the target proxy’s `dotted_name` in its `device` field: `samx` for a
@@ -128,7 +162,8 @@ apply defaults, and support local schema references. Remote schema references ar
   uses their public `done`/`status` and checked `wait` interfaces, propagating failures.
 - run_sequence receives a sequence mapping and a list of definition mappings through existing
   procedure messages and endpoints. No message schema changes are needed.
-- Execution validates against the current client catalog before starting. Catalog fingerprints
+- The sequencer holds the client directly and reads its current scan catalog for validation,
+  execution and export. Set targets are resolved through that client’s device manager. Catalog fingerprints
   are available to interfaces; the backend implements no frozen-definition compatibility policy.
 
 ## Completion and failure
@@ -177,7 +212,7 @@ scan_sequencer/
         resolver.py     # Reusable definitions and parameter binding
         validation.py   # Static tree validation
         catalog.py      # Advertised scan metadata
-        adapters.py     # Concrete BEC client calls and checked statuses
+        status.py       # Checked completion and cancellation of native handles
         runtime.py      # Interpreter and asynchronous cleanup
         python_export.py
         description.py
@@ -186,6 +221,3 @@ scan_sequencer/
 Public imports remain available from bec_lib.scan_sequencer. Extending a component starts
 with its model in components.py and corresponding validation, execution and export handling
 in core/. Component discovery derives directly from these models.
-
-CI runs this test separately with `--use-subprocess-proc-worker`, selecting the scan server's
-existing subprocess procedure worker rather than relying on Podman availability.

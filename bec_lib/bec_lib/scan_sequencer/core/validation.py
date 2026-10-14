@@ -2,11 +2,38 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.signature_serializer import dict_to_signature
 
 from .catalog import ScanCatalog
 from .evaluation import UNKNOWN, Scope, boolean, evaluate, known
 from .resolver import Resolved, partial_parameters
+
+if TYPE_CHECKING:
+    from bec_lib.devicemanager import DeviceManagerBase
+
+
+def resolve_set_target(device_manager: DeviceManagerBase, name: str) -> object:
+    """Resolve a device or signal using DeviceContainer's dotted-name lookup.
+
+    Args:
+        device_manager (DeviceManagerBase): Live device proxy manager.
+        name (str): Device, signal or scan name to look up.
+
+    Returns:
+        object: Settable device or signal proxy.
+    """
+    try:
+        target = device_manager.devices[name]
+    except (KeyError, AttributeError, DeviceConfigError) as exc:
+        raise ValueError(f"Unknown device or signal: {name}") from exc
+    if not callable(getattr(target, "set", None)):
+        raise ValueError(f"Non-settable device or signal: {name}")
+    if getattr(target, "read_only", False):
+        raise ValueError(f"Read-only device or signal: {name}")
+    return target
 
 
 # The visitor has one public entry point; component handlers are internal.
@@ -16,20 +43,18 @@ class _Validator:
 
     Args:
         catalog (ScanCatalog): Catalog used for advertised scan validation.
-        adapter (BECAdapter | None): BEC execution adapter providing live proxy validation and
-            client calls.
+        device_manager (DeviceManagerBase | None): Optional live device proxy manager.
     """
 
-    def __init__(self, catalog, adapter):
+    def __init__(self, catalog, device_manager):
         """Initialize _Validator parameters.
 
         Args:
             catalog (ScanCatalog): Catalog used for advertised scan validation.
-            adapter (BECAdapter | None): BEC execution adapter providing live proxy validation and
-                client calls.
+            device_manager (DeviceManagerBase | None): Optional live device proxy manager.
         """
         self.catalog = catalog
-        self.adapter = adapter
+        self.device_manager = device_manager
 
     def visit(self, item, scope, path):
         """Validate one component and recursively visit its resolved children.
@@ -141,21 +166,22 @@ class _Validator:
         """
         node = item.node
         evaluate(node.value, scope)
-        if self.adapter is not None:
-            self.adapter.validate_device(node.device)
+        if self.device_manager is not None:
+            resolve_set_target(self.device_manager, node.device)
         if node.bind_status:
             if node.bind_status in scope.statuses:
                 raise ValueError(f"Status binding already exists: {node.bind_status}")
             scope.statuses[node.bind_status] = UNKNOWN
 
 
-def validate(tree: Resolved, catalog: ScanCatalog, adapter=None) -> None:
+def validate(
+    tree: Resolved, catalog: ScanCatalog, device_manager: DeviceManagerBase | None = None
+) -> None:
     """Validate every body, including unreachable empty-loop bodies, without running it.
 
     Args:
         tree (Resolved): Resolved component tree.
         catalog (ScanCatalog): Catalog used for advertised scan validation.
-        adapter (BECAdapter | None): BEC execution adapter providing live proxy validation and
-            client calls.
+        device_manager (DeviceManagerBase | None): Optional live device proxy manager.
     """
-    _Validator(catalog, adapter).visit(tree, Scope(), ())
+    _Validator(catalog, device_manager).visit(tree, Scope(), ())
