@@ -65,6 +65,7 @@ def main():
         logger.success(f"Starting ActorProcedureWorker with env: {actor_env}")
     push_status(conn, env["queue"], ProcedureWorkerStatus.IDLE)
     actor_procedure(bec=client, **actor_env)
+    push_status(conn, env["queue"], ProcedureWorkerStatus.FINISHED)
     conn.shutdown()
     logger_connector.shutdown()
 
