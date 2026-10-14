@@ -186,3 +186,6 @@ scan_sequencer/
 Public imports remain available from bec_lib.scan_sequencer. Extending a component starts
 with its model in components.py and corresponding validation, execution and export handling
 in core/. Component discovery derives directly from these models.
+
+CI runs this test separately with `--use-subprocess-proc-worker`, selecting the scan server's
+existing subprocess procedure worker rather than relying on Podman availability.
