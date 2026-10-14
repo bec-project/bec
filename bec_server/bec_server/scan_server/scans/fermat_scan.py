@@ -20,11 +20,11 @@ from typing import Annotated
 
 import numpy as np
 
+from bec_lib import position_generators
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
+from bec_lib.position_generators import Direction
 from bec_lib.scan_args import DefaultArgType, ScanArgument, Units
-from bec_server.scan_server.scans import position_generators
-from bec_server.scan_server.scans.position_generators import Direction
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -57,6 +57,16 @@ class FermatSpiralScan(ScanBase):
             "readout_time",
             "burst_at_each_point",
         ],
+    }
+
+    position_preview = "bec_lib.position_generators.fermat_spiral_pos"
+    position_preview_parameter_mapping = {
+        "m1_start": "start_motor1",
+        "m1_stop": "stop_motor1",
+        "m2_start": "start_motor2",
+        "m2_stop": "stop_motor2",
+        "step": "step",
+        "spiral_type": "spiral_type",
     }
 
     def __init__(

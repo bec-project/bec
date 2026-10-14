@@ -222,3 +222,14 @@ def test_scan_manager_plugins_require_current_scan_base():
 def test_scan_manager_preserves_published_scan_base_class(scan_manager):
     assert scan_manager.available_scans
     assert {info["base_class"] for info in scan_manager.available_scans.values()} == {"ScanBaseV4"}
+
+
+def test_scan_manager_advertises_preview_metadata(scan_manager):
+    info = scan_manager.available_scans["line_scan"]
+    assert info["position_preview"] == "bec_lib.position_generators.line_scan_positions"
+    assert info["position_preview_parameter_mapping"] == {
+        "axes": {"bundle": [1, 2]},
+        "steps": "steps",
+    }
+    assert scan_manager.available_scans["time_scan"]["position_preview"] is None
+    assert scan_manager.available_scans["time_scan"]["position_preview_parameter_mapping"] == {}

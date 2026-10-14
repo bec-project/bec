@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from bec_server.scan_server.scans import position_generators
+from bec_lib import position_generators
 
 
 @pytest.mark.parametrize(

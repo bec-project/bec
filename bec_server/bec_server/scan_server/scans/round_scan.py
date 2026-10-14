@@ -20,9 +20,9 @@ from typing import Annotated
 
 import numpy as np
 
+from bec_lib import position_generators
 from bec_lib.device import DeviceBase
 from bec_lib.scan_args import DefaultArgType, ScanArgument
-from bec_server.scan_server.scans import position_generators
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanType
 from bec_server.scan_server.scans.scan_modifier import scan_hook
 
@@ -58,6 +58,16 @@ class RoundScan(ScanBase):
             "readout_time",
             "burst_at_each_point",
         ],
+    }
+
+    position_preview = "bec_lib.position_generators.round_scan_positions"
+    position_preview_parameter_mapping = {
+        "inner_radius": "inner_radius",
+        "outer_radius": "outer_radius",
+        "number_of_rings": "number_of_rings",
+        "points_in_first_ring": "pos_in_first_ring",
+        "center_1": "center_1",
+        "center_2": "center_2",
     }
 
     def __init__(
