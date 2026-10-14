@@ -1,19 +1,28 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Callable, Generator
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
+from pytest_redis import factories as redis_factories
 
 from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_server.procedures.constants import _CONTAINER, _WORKER
-from bec_server.procedures.container_utils import get_backend
+from bec_lib.procedures.helper import ProcedureState
+from bec_server.procedures.constants import _CONTAINER, _WORKER, PROCEDURE
+from bec_server.procedures.container_utils import (
+    _run_and_capture_error,
+    get_backend,
+    podman_available,
+)
+from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
 from bec_server.procedures.subprocess_worker import SubProcessWorker
 
@@ -133,3 +142,44 @@ def test_happy_path_container_procedure_runner(
     assert logtool.is_present_in_any_message(
         f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
     )
+
+
+# A separate Redis prevents the scan server's manager from also consuming this request.
+proc_redis = redis_factories.redis_proc()
+
+
+@pytest.mark.timeout(120)
+def test_container_procedure_execution(proc_redis, monkeypatch):
+    """Execute a real procedure in Podman against the configured test Redis server.
+
+    Requires the worker image and a host-networked ``local_bec`` pod. For a remote
+    Podman VM, BEC_TEST_CONTAINER_REDIS_HOST can supply a container-reachable host.
+    """
+    if not podman_available():
+        pytest.skip("Podman is not available")
+    host, port = proc_redis.host, proc_redis.port
+    queue = f"container_test_{uuid4().hex}"
+    if container_host := os.environ.get("BEC_TEST_CONTAINER_REDIS_HOST"):
+        worker_environment = ContainerProcedureWorker._worker_environment
+        monkeypatch.setattr(
+            ContainerProcedureWorker,
+            "_worker_environment",
+            lambda worker: worker_environment(worker)
+            | {"redis_server": f"{container_host}:{port}"},
+        )
+    manager = ProcedureManager(f"{host}:{port}", ContainerProcedureWorker)
+    try:
+        status = manager._helper.request.procedure(
+            "_log_msg_args", args_kwargs=(("podman regression",), {}), queue=queue
+        )
+        status.wait(timeout_s=90, raise_on_failure=True)
+        assert status.done, "Container procedure remained scheduled"
+        assert status.state == ProcedureState.SUCCESS
+        _wait_while(lambda: bool(manager.active_workers()), 20)
+        assert any("podman regression" in line for line in manager._logs)
+    finally:
+        try:
+            manager.shutdown()
+        finally:
+            container_name = f"bec_procedure_{PROCEDURE.BEC_VERSION}_{queue}"
+            _run_and_capture_error("podman", "rm", "--force", "--ignore", container_name)

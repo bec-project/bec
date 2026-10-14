@@ -251,7 +251,8 @@ class PodmanCliUtils(_PodmanUtilsBase):
 
     def logs(self, id: str) -> list[str]:
         try:
-            return _run_and_capture_error("podman", "logs", id).stderr.decode().splitlines()
+            output = _run_and_capture_error("podman", "logs", id)
+            return (output.stdout + output.stderr).decode(errors="replace").splitlines()
         except ProcedureWorkerError as e:
             logger.error(e)
             return [f"No logs found for container {id}\n"]

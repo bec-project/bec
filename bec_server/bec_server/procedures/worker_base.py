@@ -53,7 +53,11 @@ class ProcedureWorker(ABC):
         self._current_execution_id: str | None = None
         self._aborted = Event()
 
-        self._setup_execution_environment()
+        try:
+            self._setup_execution_environment()
+        except BaseException:
+            self._conn.shutdown()
+            raise
 
     def __enter__(self):
         return self

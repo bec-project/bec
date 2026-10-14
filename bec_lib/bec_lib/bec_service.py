@@ -83,8 +83,8 @@ def parse_cmdline_args(parser=None, config_name: Literal["client", "server"] | s
     parser.add_argument(
         "--use-subprocess-proc-worker",
         action="store_true",
-        default=False,
-        help="Use the in process procedure worker for local testing",
+        default=None,
+        help="Use the subprocess procedure worker for local testing",
     )
 
     args, extra_args = parser.parse_known_args()

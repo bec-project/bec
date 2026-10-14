@@ -25,7 +25,7 @@ def test_container_worker_init(redis_mock):
     redis_mock().port = "port"
     worker = ContainerProcedureWorker(server="server:port", queue="test_queue", lifetime_s=1)
     assert worker._worker_environment() == {
-        "redis_server": "redis:port",
+        "redis_server": "server:port",
         "queue": "test_queue",
         "timeout_s": "1",
     }
@@ -185,3 +185,51 @@ def test_main_running_newly_registered_proc(redis_mock, logger_mock):
     logger_mock.debug.assert_has_calls([call(f"running task {PROC_NAME}")], any_order=True)
     function_recorder.assert_called_once_with("a", b="c")
     logger_mock.success.assert_called_with("Procedure runner shutting down")
+
+
+@patch("bec_server.procedures.container_worker.get_backend")
+@patch("bec_server.procedures.worker_base.RedisConnector")
+def test_container_worker_uses_supplied_environment(redis_mock, backend_mock):
+    worker = ContainerProcedureWorker(
+        server="127.0.0.1:20772",
+        queue="test",
+        env={"redis_server": "host.containers.internal:20772"},
+    )
+    assert backend_mock().run.call_args.args[1]["redis_server"] == "host.containers.internal:20772"
+    assert worker._worker_environment()["redis_server"] == "127.0.0.1:20772"
+
+
+@patch("bec_server.procedures.container_worker.get_backend")
+@patch("bec_server.procedures.worker_base.RedisConnector")
+def test_container_worker_setup_failure_closes_connector(redis_mock, backend_mock):
+    backend_mock().run.side_effect = RuntimeError("missing pod")
+    with pytest.raises(RuntimeError, match="missing pod"):
+        ContainerProcedureWorker(server="localhost:6379", queue="test")
+    redis_mock().shutdown.assert_called_once()
+
+
+@patch("bec_server.procedures.container_worker.get_backend")
+@patch("bec_server.procedures.worker_base.RedisConnector")
+def test_container_worker_early_exit_reports_logs(redis_mock, backend_mock):
+    from bec_server.procedures.constants import ProcedureWorkerError
+
+    redis_mock().blocking_list_pop.return_value = None
+    backend_mock().state.return_value = PodmanContainerStates.EXITED
+    backend_mock().logs.return_value = ["Cannot connect to Redis"]
+    worker = ContainerProcedureWorker(server="localhost:6379", queue="test")
+    with pytest.raises(ProcedureWorkerError, match="Cannot connect to Redis"):
+        worker.work()
+    assert worker.status == ProcedureWorkerStatus.DEAD
+
+
+@patch("bec_server.procedures.container_worker.get_backend")
+@patch("bec_server.procedures.worker_base.RedisConnector")
+def test_container_worker_drains_final_status_before_exit(redis_mock, backend_mock):
+    redis_mock().blocking_list_pop.side_effect = [
+        ProcedureWorkerStatusMessage(worker_queue="test", status=ProcedureWorkerStatus.FINISHED),
+        None,
+    ]
+    backend_mock().state.return_value = PodmanContainerStates.EXITED
+    worker = ContainerProcedureWorker(server="localhost:6379", queue="test")
+    worker.work()
+    assert worker.status == ProcedureWorkerStatus.FINISHED

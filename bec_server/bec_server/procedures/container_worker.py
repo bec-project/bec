@@ -28,7 +28,7 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
             self._backend.build_worker_image()
         self._container_id = self._backend.run(
             image_tag,
-            self._worker_environment(),
+            self._worker_environment() | self._additional_env,
             [
                 {
                     "source": str(PROCEDURE.CONTAINER.DEPLOYMENT_PATH),

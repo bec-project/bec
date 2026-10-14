@@ -263,3 +263,28 @@ def test_bl_state_actor_cancelled_startup(ready, stop_before_run, threads_check)
             mock_client.beamline_states.ready = True
             actor.stop_event.set()
             t.join(timeout=2)
+
+
+@patch("bec_server.actors.worker.actor_procedure")
+@patch("bec_server.actors.worker.RedisOutputDiverter")
+@patch("bec_server.actors.worker.RedisConnector")
+@patch("bec_server.actors.worker.push_status")
+@patch("bec_server.actors.worker.setup")
+@patch("bec_server.actors.worker.get_actor_env", return_value={})
+@patch("bec_server.actors.worker.get_env")
+def test_actor_worker_reports_finished(
+    get_env_mock, actor_env_mock, setup_mock, push_mock, conn_mock, diverter_mock, procedure_mock
+):
+    from bec_server.actors.worker import main
+
+    conn = MagicMock()
+    setup_mock.return_value = (
+        {"redis_server": "localhost:6379", "queue": "test"},
+        None,
+        MagicMock(),
+        conn,
+    )
+    with patch("bec_server.actors.worker.logger"):
+        main()
+    assert push_mock.call_args.args == (conn, "test", ProcedureWorkerStatus.FINISHED)
+    conn.shutdown.assert_called_once()

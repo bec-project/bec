@@ -217,3 +217,10 @@ def test_cli_get_state(cli_utils_with_fake_container_json: PodmanCliUtils):
     assert cli_utils_with_fake_container_json.state(
         "13826d25a737b733a5d87975b50a9c1efb5d087365d956cb7db2ccbe6aca07c4"
     ) == PodmanContainerStates("running")
+
+
+def test_cli_logs_include_stdout_and_stderr(cli_utils):
+    utils, run = cli_utils
+    run.return_value.stdout = b"startup output\n"
+    run.return_value.stderr = b"startup error\n"
+    assert utils.logs("test") == ["startup output", "startup error"]
