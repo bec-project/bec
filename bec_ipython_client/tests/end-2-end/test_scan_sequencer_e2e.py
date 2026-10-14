@@ -131,4 +131,4 @@ def test_sequence_uses_existing_scan_queue_and_device_statuses(
         queue="sequence-e2e",
     )
     status.wait(timeout_s=30, raise_on_failure=True)
-    assert status.done
+    assert status.done, repr(status)
