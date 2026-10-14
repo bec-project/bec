@@ -3,7 +3,11 @@
 from unittest.mock import Mock
 
 import pytest
+from test_procedures_e2e import _wait_while
+from test_procedures_e2e import client_logtool_and_manager as client_logtool_and_manager
 
+from bec_lib import messages
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.scan_sequencer import (
     BECAdapter,
     Definition,
@@ -14,10 +18,11 @@ from bec_lib.scan_sequencer import (
 )
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_sequence_uses_existing_scan_queue_and_device_statuses(
-    bec_ipython_client_fixture, monkeypatch
+    client_logtool_and_manager, monkeypatch
 ):
+    bec_ipython_client_fixture, logtool, manager = client_logtool_and_manager
     # Use the standard demo configuration loaded by the shared client fixture.
     grid_arguments = ["samx", -1.0, 1.0, 2, "samy", -1.0, 1.0, 2]
     grid_keywords = {"relative": False, "exp_time": 0.01}
@@ -125,10 +130,22 @@ def test_sequence_uses_existing_scan_queue_and_device_statuses(
         for call in acquire.call_args_list
     )
 
-    status = bec_ipython_client_fixture.proc.request_new(
-        "run_sequence",
-        ((document.model_dump_json(), [definition.model_dump()]), {}),
+    # Follow the existing procedure e2e tests: send a request to their real subprocess manager.
+    request = messages.ProcedureRequestMessage(
+        identifier="run_sequence",
+        args_kwargs=((document.model_dump_json(), [definition.model_dump()]), {}),
         queue="sequence-e2e",
     )
-    status.wait(timeout_s=30, raise_on_failure=True)
-    assert status.done, repr(status)
+    bec_ipython_client_fixture.connector.send(MessageEndpoints.procedure_request(), request)
+    _wait_while(lambda: manager._active_workers == {}, 5)
+    _wait_while(lambda: manager._active_workers != {}, 90)
+
+    logtool.fetch()
+    logs = logtool._logs or []
+    assert any(
+        "Finished procedure" in line and request.execution_id in line for line in logs
+    ), f"Sequence procedure did not finish successfully: {manager._logs}"
+    assert not any(
+        "Encountered error running procedure" in line and request.execution_id in line
+        for line in logs
+    ), f"Sequence procedure failed: {manager._logs}"

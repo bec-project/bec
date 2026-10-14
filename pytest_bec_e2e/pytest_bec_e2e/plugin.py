@@ -64,12 +64,6 @@ class LogTestTool:
 @pytest.hookimpl
 def pytest_addoption(parser):
     parser.addoption("--start-servers", action="store_true", default=False)
-    parser.addoption(
-        "--use-subprocess-proc-worker",
-        action="store_true",
-        default=False,
-        help="Use subprocess procedure workers when starting test services.",
-    )
     parser.addoption("--bec-redis-host", action="store", default="localhost")
     parser.addoption("--bec-redis-cmd", action="store", default=None)
     parser.addoption("--flush-redis", action="store_true", default=False)
@@ -176,7 +170,6 @@ def bec_redis_host_port(request, bec_redis_fixture):
 
 @pytest.fixture(scope=bec_servers_scope)
 def bec_servers(
-    request,
     test_config_yaml_file_path,
     bec_services_config_file_path,
     bec_test_config_file_path,
@@ -210,7 +203,6 @@ def bec_servers(
             bec_path=bec_files_path,
             config_path=bec_services_config_file_path,
             interface="subprocess",
-            use_subprocess_proc_worker=request.config.getoption("--use-subprocess-proc-worker"),
         )
         processes = service_handler.start()
         try:
