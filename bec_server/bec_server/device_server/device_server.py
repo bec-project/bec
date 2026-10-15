@@ -832,13 +832,13 @@ class DeviceServer(BECService):
 
     def status_callback(self, status):
         pipe = self.connector.pipeline()
-        obj = None
-        if hasattr(status, "device"):
-            obj = status.device
-        elif hasattr(status, "obj"):
-            obj = status.obj
+        # BEC records the requested target, which may differ from the device
+        # owning a status returned by a delegated operation.
+        obj = status.__dict__.get("obj_ref")
         if obj is None:
-            obj = status.__dict__.get("obj_ref", None)
+            obj = getattr(status, "device", None)
+        if obj is None:
+            obj = getattr(status, "obj", None)
 
         # if we've started a subscription, we need to unsubscribe now
         # this is typically the case for operations on nested devices.
