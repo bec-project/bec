@@ -324,6 +324,66 @@ def test_device_server_status_callback(
             logger.remove(sink_id)
 
 
+@pytest.mark.parametrize("nested_target", [False, True])
+@pytest.mark.parametrize("success", [False, True])
+@pytest.mark.parametrize("action", ["set", "rpc"])
+def test_status_callback_uses_requested_target_for_delegated_status(
+    device_server_mock, nested_target, success, action
+):
+    """A child-owned status must complete and refresh the requested device."""
+
+    class DelegatingDevice(Device):
+        readback = Cpt(Signal, kind=Kind.hinted)
+        confirm_energy = Cpt(Signal, kind=Kind.config)
+
+    device = DelegatingDevice(name="cff")
+    device._kind = Kind.normal
+    target = device.readback if nested_target else device
+    target_name = "cff.readback" if nested_target else "cff"
+    instr = messages.DeviceInstructionMessage(
+        device=target_name,
+        action=action,
+        parameter={"value": 2.25} if action == "set" else {"func": "set"},
+        metadata={"device_instr_id": "diid", "RID": "request-id", "response": True},
+    )
+    status = DeviceStatus(device.confirm_energy)
+    device_server = device_server_mock
+    device_server._add_status_object_info(status, instr, target)
+    if nested_target:
+        status.sub_id = 42
+    if success:
+        status.set_finished()
+    else:
+        status.set_exception(RuntimeError("Energy confirmation failed"))
+
+    with (
+        mock.patch.object(device_server, "_read_device") as read_device,
+        mock.patch.object(device_server, "_update_read_configuration") as read_configuration,
+        mock.patch.object(device_server.connector, "xadd") as xadd,
+        mock.patch.object(target, "unsubscribe") as unsubscribe_target,
+        mock.patch.object(device.confirm_energy, "unsubscribe") as unsubscribe_confirmation,
+    ):
+        device_server.status_callback(status)
+
+    read_device.assert_called_once_with(instr, new_status=False)
+    read_configuration.assert_not_called()
+    if nested_target:
+        unsubscribe_target.assert_called_once_with(42)
+    else:
+        unsubscribe_target.assert_not_called()
+    unsubscribe_confirmation.assert_not_called()
+    xadd.assert_called_once()
+    response = xadd.call_args.args[1]["data"]
+    assert response.device == target_name
+    assert response.success is success
+    if success:
+        assert response.metadata["error_info"] is None
+    else:
+        assert response.metadata["error_info"].exception_type == "RuntimeError"
+        assert "Energy confirmation failed" in response.metadata["error_info"].error_message
+    assert status.device is device.confirm_energy
+
+
 @pytest.mark.parametrize("status_success", [True, False])
 def test_device_server_status_callback_response_includes_error_info(
     device_server_mock, ophyd_device_mock, status_success
