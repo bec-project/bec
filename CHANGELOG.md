@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.2.1 (2026-10-15)
+
+### Bug Fixes
+
+- **device-server**: Resolve statuses against requested targets
+  ([`5c8cd29`](https://github.com/bec-project/bec/commit/5c8cd291d8bf35d5991e5dd65c66478d76db3d42))
+
+
 ## v4.2.0 (2026-10-14)
 
 ### Features
