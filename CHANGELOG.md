@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.3.0 (2026-10-16)
+
+### Features
+
+- Expose scan position previews to clients
+  ([`d5feabd`](https://github.com/bec-project/bec/commit/d5feabd885ba8c919049d80192a4de0a3425a2e4))
+
+### Refactoring
+
+- Move trajectory optimization into bec_lib
+  ([`299c350`](https://github.com/bec-project/bec/commit/299c3506c66fa2636da8c9a673e4caa05103b8b1))
+
+
 ## v4.2.1 (2026-10-15)
 
 ### Bug Fixes
