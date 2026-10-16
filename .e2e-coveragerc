@@ -1,0 +1,22 @@
+[run]
+source =
+    bec_lib/bec_lib
+    bec_server/bec_server
+    bec_ipython_client/bec_ipython_client
+
+[paths]
+bec_lib =
+    bec_lib/bec_lib
+    */site-packages/bec_lib
+bec_server =
+    bec_server/bec_server
+    */site-packages/bec_server
+bec_ipython_client =
+    bec_ipython_client/bec_ipython_client
+    */site-packages/bec_ipython_client
+
+[report]
+omit =
+    */bec_server/scan_server/scan_plugins/*
+    */bec_ipython_client/plugins/*
+    */bec_lib/tests/*
