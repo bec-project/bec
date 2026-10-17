@@ -1470,15 +1470,19 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def procedure_request():
+    def procedure_request(username: str) -> EndpointInfo:
         """
-        Endpoint for requesting new procedures.
+        Endpoint for requesting new procedures, scoped to the submitting user through Redis ACLs.
         The request is sent using a messages.ProcedureRequestMessage message.
+        Its metadata.client_info.acl_user must match the username in this endpoint.
+
+        Args:
+            username (str): Username of the user making the request.
 
         Returns:
             EndpointInfo: Endpoint for procedure request.
         """
-        endpoint = f"{EndpointType.USER.value}/procedures/procedure_request"
+        endpoint = f"{EndpointType.PERSONAL.value}/{username}/procedures/procedure_request"
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.ProcedureRequestMessage,

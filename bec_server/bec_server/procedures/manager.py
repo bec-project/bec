@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import re
 from abc import ABC, abstractmethod
 from collections import deque
 from concurrent import futures
@@ -136,7 +137,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         Args:
             msg (dict[str, Any]): dict corresponding to a ProcedureRequestMessage"""
 
-        logger.debug(f"Procedure manager got request message {msg}")
+        logger.debug(f"Procedure manager got queue request on topic {msg.topic}")
         if (message := self._validate_request(msg.value)) is None:
             return
         exec_msg = self._respond_to_valid_request(message)
@@ -281,7 +282,7 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         self._reply_ep = MessageEndpoints.procedure_request_response()
         self._abort_ep = MessageEndpoints.procedure_abort()
         self._clear_uh_ep = MessageEndpoints.procedure_clear_unhandled()
-        self._request_ep = MessageEndpoints.procedure_request()
+        self._request_ep = MessageEndpoints.procedure_request("*")
         self._q_notif_ep = MessageEndpoints.procedure_queue_notif()
         self._exec_ep = MessageEndpoints.procedure_execution
 
@@ -299,7 +300,7 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
     def _register_endpoints(self):
         self._conn.register(self._abort_ep, None, self._process_abort)
         self._conn.register(self._clear_uh_ep, None, self._process_clear_unhandled)
-        self._conn.register(self._request_ep, None, self._process_queue_request)
+        self._conn.register(patterns=self._request_ep, cb=self._procedure_request_callback)
         self._conn.register(self._q_notif_ep, None, self._publish_metrics)
         self._conn.set(
             MessageEndpoints.available_procedures(),
@@ -310,6 +311,27 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
                 }
             ),
         )
+
+    def _procedure_request_callback(self, msg: MessageObject):
+        """Validate the personal topic against the submitted ACL identity before enqueueing."""
+        message = msg.value
+        if not isinstance(message, ProcedureRequestMessage):
+            logger.warning("Received an invalid procedure request.")
+            return
+        username_regex = MessageEndpoints.procedure_request("([^/]+)").endpoint
+        match = re.fullmatch(username_regex, msg.topic)
+        if not match:
+            self._ack(False, "Could not extract username from topic.", message.execution_id)
+            return
+        client_info = message.metadata.get("client_info")
+        if not isinstance(client_info, dict) or not client_info:
+            self._ack(False, "Missing client info in request metadata.", message.execution_id)
+            return
+        acl_user = client_info.get("acl_user") or "default"
+        if acl_user != match.group(1):
+            self._ack(False, "Username in topic does not match client info.", message.execution_id)
+            return
+        return self._process_queue_request(msg)
 
     def _cleanup_worker_function(self, queue: str):
         def cleanup_worker(fut):
@@ -470,4 +492,4 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         """Remove any callbacks from any Redis endpoints"""
         self._conn.unregister(self._abort_ep, None, self._process_abort)
         self._conn.unregister(self._clear_uh_ep, None, self._process_clear_unhandled)
-        self._conn.unregister(self._request_ep, None, self._process_queue_request)
+        self._conn.unregister(patterns=self._request_ep, cb=self._procedure_request_callback)
