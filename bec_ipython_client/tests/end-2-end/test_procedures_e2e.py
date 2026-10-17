@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass
 from importlib.metadata import version
-from typing import TYPE_CHECKING, Callable, Generator
+from typing import Callable, Generator
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -12,14 +11,13 @@ import pytest
 from pytest_redis import factories as redis_factories
 from redis.exceptions import NoPermissionError
 
-from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.utils.user_acls_test import BECAccessDemo
-from bec_server.procedures.constants import _CONTAINER, _WORKER, PROCEDURE
+from bec_server.procedures.constants import PROCEDURE
 from bec_server.procedures.container_utils import (
     _run_and_capture_error,
     get_backend,
@@ -28,9 +26,6 @@ from bec_server.procedures.container_utils import (
 from bec_server.procedures.container_worker import ContainerProcedureWorker
 from bec_server.procedures.manager import ProcedureManager
 from bec_server.procedures.subprocess_worker import SubProcessWorker
-
-if TYPE_CHECKING:
-    from pytest_bec_e2e.plugin import LogTestTool
 
 logger = bec_logger.logger
 
@@ -41,23 +36,16 @@ logger = bec_logger.logger
 pytestmark = pytest.mark.random_order(disabled=True)
 
 
-@dataclass(frozen=True)
-class PATCHED_CONSTANTS:
-    WORKER = _WORKER()
-    CONTAINER = _CONTAINER()
-    MANAGER_SHUTDOWN_TIMEOUT_S = 2
-    BEC_VERSION = version("bec_lib")
-    REDIS_HOST = "localhost"
+# Isolate test managers from the scan server's manager, which subscribes to the same requests.
+proc_redis = redis_factories.redis_proc()
 
 
 @pytest.fixture
-def client_logtool_and_manager(
-    bec_ipython_client_fixture_with_logtool: tuple[BECIPythonClient, "LogTestTool"],
-) -> Generator[tuple[BECIPythonClient, "LogTestTool", ProcedureManager], None, None]:
-    client, logtool = bec_ipython_client_fixture_with_logtool
-    manager = ProcedureManager(f"{client.connector.host}:{client.connector.port}", SubProcessWorker)
+def procedure_manager(proc_redis) -> Generator[ProcedureManager, None, None]:
+    """Provide a manager whose request channels are isolated from running BEC services."""
+    manager = ProcedureManager(f"{proc_redis.host}:{proc_redis.port}", SubProcessWorker)
     try:
-        yield client, logtool, manager
+        yield manager
     finally:
         manager.shutdown()
 
@@ -78,82 +66,37 @@ def test_building_worker_image():
     assert podman_utils.image_exists(f"bec_procedure_worker:v{version('bec_lib')}")
 
 
-@pytest.mark.timeout(100)
-@patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
-@patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
-@patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
-def test_procedure_runner_spawns_worker(
-    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
-):
-    client, _, manager = client_logtool_and_manager
-    assert manager._active_workers == {}
-    endpoint = MessageEndpoints.procedure_request(client.connector.username)
-    msg = messages.ProcedureRequestMessage(
-        identifier="sleep",
-        args_kwargs=((), {"time_s": 0.1}),
-        queue="test",
-        metadata={"client_info": {"acl_user": client.connector.username}},
+@pytest.mark.timeout(30)
+def test_procedure_runner_spawns_worker(procedure_manager):
+    manager = procedure_manager
+    assert manager.active_workers() == []
+    status = manager._helper.request.procedure(
+        "sleep", args_kwargs=((), {"time_s": 0.1}), queue="test"
     )
-
-    logs = []
-
-    def cb(worker: SubProcessWorker):
-        nonlocal logs
-        logs = worker.logs()
-
-    manager.add_callback("test", cb)
-    client.connector.send(endpoint, msg)
-
-    _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 90)
+    _wait_while(lambda: not manager.active_workers(), 10)
+    status.wait(timeout_s=10, raise_on_failure=True)
+    assert status.state == ProcedureState.SUCCESS
+    # A completed execution leaves the queue-owned worker available for reuse.
+    assert len(manager.active_workers()) == 1
 
 
-@pytest.mark.timeout(100)
-@patch("bec_server.procedures.manager.procedure_registry.is_registered", lambda _: True)
-@patch("bec_server.procedures.oop_worker_base.PROCEDURE", PATCHED_CONSTANTS())
-@patch("bec_server.procedures.container_worker.PROCEDURE", PATCHED_CONSTANTS())
-def test_happy_path_container_procedure_runner(
-    client_logtool_and_manager: tuple[BECIPythonClient, "LogTestTool", ProcedureManager],
-):
+@pytest.mark.timeout(30)
+def test_happy_path_container_procedure_runner(procedure_manager):
     test_args = (1, 2, 3)
     test_kwargs = {"a": "b", "c": "d"}
-    client, logtool, manager = client_logtool_and_manager
-    assert manager._active_workers == {}
-    conn = client.connector
-    endpoint = MessageEndpoints.procedure_request(client.connector.username)
-    msg = messages.ProcedureRequestMessage(
-        identifier="_log_msg_args",
-        args_kwargs=(test_args, test_kwargs),
-        metadata={"client_info": {"acl_user": client.connector.username}},
+    manager = procedure_manager
+    status = manager._helper.request.procedure(
+        "_log_msg_args", args_kwargs=(test_args, test_kwargs)
     )
-    conn.send(endpoint, msg)
-
-    _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 90)
-
-    logtool.fetch()
-    assert logtool.is_present_in_any_message("procedure accepted: True, message:")
-    assert logtool.is_present_in_any_message(
-        "Procedure worker started container for queue primary"
-    ), f"Log content relating to procedures: {manager._logs}"
-
-    res, msg = logtool.are_present_in_order(
-        [
-            "Procedure worker 'primary' status update: IDLE",
-            "Procedure worker 'primary' status update: RUNNING",
-            "Procedure worker 'primary' status update: IDLE",
-            "Procedure worker 'primary' status update: FINISHED",
-        ]
+    status.wait(timeout_s=10, raise_on_failure=True)
+    assert status.state == ProcedureState.SUCCESS
+    manager.shutdown()
+    assert any("Executing procedure _log_msg_args" in line for line in manager._logs)
+    expected = (
+        f"Builtin procedure log_message_args_kwargs called with args: {test_args} "
+        f"and kwargs: {test_kwargs}"
     )
-    assert res, f"failed on {msg}"
-
-    assert logtool.is_present_in_any_message(
-        f"Builtin procedure log_message_args_kwargs called with args: {test_args} and kwargs: {test_kwargs}"
-    )
-
-
-# A separate Redis prevents the scan server's manager from also consuming this request.
-proc_redis = redis_factories.redis_proc()
+    assert any(expected in line for line in manager._logs)
 
 
 @pytest.mark.timeout(30)
@@ -235,10 +178,15 @@ def test_procedure_execution(proc_redis, monkeypatch, worker_type):
         status = manager._helper.request.procedure(
             "_log_msg_args", args_kwargs=(("procedure regression",), {}), queue=queue
         )
-        status.wait(timeout_s=90, raise_on_failure=True)
-        assert status.done, "Procedure remained scheduled"
-        assert status.state == ProcedureState.SUCCESS
-        _wait_while(lambda: bool(manager.active_workers()), 20)
+        status.wait(timeout_s=90)
+        if not status.done or status.state != ProcedureState.SUCCESS:
+            logs = manager._conn.xrange(MessageEndpoints.procedure_logs(queue), "-", "+") or []
+            output = "".join(entry["data"].data for entry in logs)
+            pytest.fail(
+                f"Procedure state: {status.state.value}; error: {status.error}\n"
+                f"Worker output:\n{output}"
+            )
+        _wait_while(lambda: bool(manager.active_workers()), PROCEDURE.WORKER.QUEUE_TIMEOUT_S + 10)
         logs = manager._conn.xrange(MessageEndpoints.procedure_logs(queue), "-", "+") or []
         assert any("procedure regression" in entry["data"].data for entry in logs)
         assert any("procedure regression" in line for line in manager._logs)
@@ -249,3 +197,126 @@ def test_procedure_execution(proc_redis, monkeypatch, worker_type):
             if uses_container:
                 container_name = f"bec_procedure_{PROCEDURE.BEC_VERSION}_{queue}"
                 _run_and_capture_error("podman", "rm", "--force", "--ignore", container_name)
+
+
+@pytest.mark.timeout(120)
+def test_queue_pool_credentials_and_reuse(proc_redis):
+    """Use only the submitted identity in clients, with service control confined to the parent."""
+    from bec_lib.script_executor import upload_script
+
+    server = f"{proc_redis.host}:{proc_redis.port}"
+    admin = RedisConnector(server)
+    alice = RedisConnector(server)
+    manager = None
+    try:
+        access = BECAccessDemo(admin)
+        access.add_account("procedure_service", "service-secret", "admin")
+        access.add_account("procedure_alice", None, "user")
+        admin._managed_connection._redis_conn.acl_setuser(
+            "procedure_alice", enabled=True, reset_passwords=True, passwords=["+first-token"]
+        )
+        admin.authenticate(username="procedure_service", password="service-secret")
+        admin._managed_connection._redis_conn.acl_setuser(
+            "procedure_alice", enabled=True, passwords=["+second-token"]
+        )
+        admin._managed_connection._redis_conn.acl_setuser("default", enabled=False)
+        alice.authenticate(username="procedure_alice", password="first-token")
+        manager = ProcedureManager(
+            server,
+            SubProcessWorker,
+            redis_credentials={"username": "procedure_service", "token": "service-secret"},
+        )
+        helper = FrontendProcedureHelper(alice)
+
+        def execute(queue):
+            script_id = upload_script(
+                alice,
+                "import os, sys\n"
+                "assert 'credentials_file' not in os.environ\n"
+                "assert self.connector.username == 'procedure_alice'\n"
+                "try:\n"
+                "    self.connector._managed_connection._redis_conn.acl_list()\n"
+                "except Exception:\n"
+                "    pass\n"
+                "else:\n"
+                "    raise AssertionError('Procedure obtained service privileges')\n"
+                "print('stdout marker', end='', flush=True)\n"
+                "sys.stderr.write('stderr marker')\n"
+                "sys.stderr.flush()\n",
+            )
+            status = helper.request.procedure(
+                "run_script", args_kwargs=((script_id,), {}), queue=queue
+            )
+            status.wait(timeout_s=30, raise_on_failure=True)
+            assert status.state == ProcedureState.SUCCESS
+            _wait_while(lambda: manager._queues[queue].current is not None, 5)
+            return status
+
+        execute("credential_queue")
+        (first_id,) = manager._queues["credential_queue"].workers
+        first_pid = manager._queues["credential_queue"].workers[first_id].worker._process.pid
+        execute("credential_queue")
+        assert list(manager._queues["credential_queue"].workers) == [first_id]
+        alice.authenticate(username="procedure_alice", password="second-token")
+        execute("credential_queue")
+        assert len(manager._queues["credential_queue"].workers) == 2
+        (second_id,) = set(manager._queues["credential_queue"].workers) - {first_id}
+        assert (
+            manager._queues["credential_queue"].workers[second_id].worker._process.pid != first_pid
+        )
+        alice.authenticate(username="procedure_alice", password="first-token")
+        execute("credential_queue")
+        assert len(manager._queues["credential_queue"].workers) == 2
+        assert (
+            manager._queues["credential_queue"].workers[first_id].worker._process.pid == first_pid
+        )
+        execute("different_queue")
+        assert not set(manager._queues["different_queue"].workers) & set(
+            manager._queues["credential_queue"].workers
+        )
+        logs = (
+            manager._conn.xrange(MessageEndpoints.procedure_logs("credential_queue"), "-", "+")
+            or []
+        )
+        text = "".join(entry["data"].data for entry in logs)
+        assert "stdout marker" in text and "stderr marker" in text
+        assert all(
+            secret not in text for secret in ("first-token", "second-token", "service-secret")
+        )
+    finally:
+        if manager is not None:
+            manager.shutdown()
+        BECAccessDemo(admin).set_default_limited(False)
+        alice.shutdown()
+        admin.shutdown()
+
+
+@pytest.mark.timeout(60)
+def test_invalid_procedure_token_cannot_fall_back_to_default(proc_redis):
+    """Invalid forwarded credentials must fail even when default has full privileges."""
+    server = f"{proc_redis.host}:{proc_redis.port}"
+    manager = ProcedureManager(server, SubProcessWorker)
+    try:
+        BECAccessDemo(manager._conn).add_account("invalid_token_alice", None, "user")
+        manager._conn._managed_connection._redis_conn.acl_setuser(
+            "invalid_token_alice", enabled=True, reset_passwords=True, passwords=["+correct"]
+        )
+        request = messages.ProcedureRequestMessage(
+            identifier="_log_msg_args",
+            args_kwargs=(("must not execute",), {}),
+            queue="invalid_credentials",
+            metadata={
+                "client_info": {"acl_user": "invalid_token_alice", "acl_token": "incorrect-token"}
+            },
+        )
+        manager._conn.send(MessageEndpoints.procedure_request("invalid_token_alice"), request)
+        _wait_while(lambda: not manager._helper.get.unhandled_queue("invalid_credentials"), 30)
+        assert (
+            manager._helper.get.unhandled_queue("invalid_credentials")[0].execution_id
+            == request.execution_id
+        )
+        output = "\n".join(manager._logs)
+        assert "must not execute" not in output
+        assert "incorrect-token" not in output
+    finally:
+        manager.shutdown()

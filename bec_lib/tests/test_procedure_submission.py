@@ -9,6 +9,7 @@ from bec_lib.procedures.helper import FrontendProcedureHelper
 
 def test_procedure_submission_tracks_current_acl_user():
     conn = MagicMock()
+    conn._managed_connection._redis_conn.connection_pool.connection_kwargs = {"password": "secret"}
     helper = FrontendProcedureHelper(conn)
     for username in ["alice", "bob", "default"]:
         conn.username = username
@@ -23,6 +24,7 @@ def test_procedure_submission_tracks_current_acl_user():
 
 def test_submission_replaces_untrusted_acl_identity():
     conn = MagicMock()
+    conn._managed_connection._redis_conn.connection_pool.connection_kwargs = {"password": "secret"}
     conn.username = "alice"
     helper = FrontendProcedureHelper(conn)
     message = ProcedureRequestMessage(
@@ -31,4 +33,7 @@ def test_submission_replaces_untrusted_acl_identity():
     helper.request._procedure(message)
     endpoint, submitted = conn.send.call_args.args
     assert endpoint == MessageEndpoints.procedure_request("alice")
-    assert submitted.metadata == {"client_info": {"acl_user": "alice"}, "custom": "preserved"}
+    assert submitted.metadata == {
+        "client_info": {"acl_user": "alice", "acl_token": "secret"},
+        "custom": "preserved",
+    }

@@ -28,7 +28,7 @@ def test_valid_user_reaches_procedure_manager(manager, username):
         topic=MessageEndpoints.procedure_request(username).endpoint, value=message
     )
     manager._procedure_request_callback(request)
-    manager._process_queue_request.assert_called_once_with(request)
+    manager._process_queue_request.assert_called_once_with(request, token=None)
     manager._ack.assert_not_called()
 
 
@@ -87,7 +87,7 @@ def test_default_user_without_acl_username(manager):
         topic=MessageEndpoints.procedure_request("default").endpoint, value=message
     )
     manager._procedure_request_callback(request)
-    manager._process_queue_request.assert_called_once_with(request)
+    manager._process_queue_request.assert_called_once_with(request, token=None)
 
 
 def test_execution_does_not_forward_private_submission_metadata(manager):
@@ -101,7 +101,7 @@ def test_execution_does_not_forward_private_submission_metadata(manager):
     assert execution.metadata == {}
     assert message.metadata["client_info"]["acl_user"] == "alice"
     assert message.metadata["private"] == "request-only"
-    manager._helper.push.exec.assert_called_once_with(execution.queue, execution)
+    manager._helper.push.exec.assert_not_called()
 
 
 def test_private_submission_metadata_is_not_logged(manager):
@@ -119,7 +119,7 @@ def test_private_submission_metadata_is_not_logged(manager):
 def test_manager_subscribes_only_to_personal_requests():
     with (
         patch("bec_server.procedures.manager.RedisConnector") as connector,
-        patch("bec_server.procedures.manager.BackendProcedureHelper"),
+        patch("bec_server.procedures.queue_manager.BackendProcedureHelper"),
     ):
         connector().host = "localhost"
         connector().port = 6379

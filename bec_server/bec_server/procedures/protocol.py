@@ -1,3 +1,4 @@
+from subprocess import Popen
 from typing import Literal, Protocol, TypedDict
 
 from bec_server.procedures.constants import OopWorkerEnv, PodmanContainerStates
@@ -30,6 +31,16 @@ class ContainerCommandBackend(Protocol):
         pod_name: str | None = None,
         container_name: str | None = None,
     ) -> str: ...
+    def run_interactive(
+        self,
+        image_tag: str,
+        environment: OopWorkerEnv,
+        volumes: list[VolumeSpec],
+        command: str,
+        pod_name: str | None = None,
+        container_name: str | None = None,
+    ) -> Popen: ...
+    def remove(self, id: str) -> None: ...
     def interrupt(self, id: str): ...
     def kill(self, id: str): ...
     def logs(self, id: str) -> list[str]: ...

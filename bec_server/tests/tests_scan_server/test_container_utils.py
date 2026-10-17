@@ -2,6 +2,7 @@ from subprocess import CompletedProcess
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
+from podman.errors import APIError, NotFound
 
 from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates, ProcedureWorkerError
 from bec_server.procedures.container_utils import (
@@ -252,3 +253,60 @@ def test_cli_run_ignores_missing_previous_container(cli_utils):
     assert container_id == "worker-id"
     run_mock.assert_any_call(["podman", "rm", "-f", "--ignore", "new-worker"], capture_output=True)
     assert run_mock.call_args.args[0][:2] == ["podman", "run"]
+
+
+@pytest.mark.parametrize("backend", [PodmanCliUtils, PodmanApiUtils])
+def test_interactive_worker_is_created_before_attached_start(backend):
+    utils = backend.__new__(backend)
+    utils.uri = "unix:///review-podman.sock"
+    prefix = ["podman", "--url", utils.uri] if backend is PodmanApiUtils else ["podman"]
+    events = []
+
+    def create(*args):
+        assert args[: len(prefix) + 2] == (*prefix, "create", "-i")
+        events.append("created")
+        return CompletedProcess(args, 0, stdout=b"container-id\n")
+
+    def start(args, **kwargs):
+        assert events == ["created"]
+        assert args == [*prefix, "start", "--attach", "--interactive", "container-id"]
+        events.append("started")
+        return MagicMock()
+
+    with (
+        patch("bec_server.procedures.container_utils._run_and_capture_error", side_effect=create),
+        patch("bec_server.procedures.container_utils.subprocess.Popen", side_effect=start),
+    ):
+        utils.run_interactive("image", {}, [], "worker", container_name="test-worker")
+    assert events == ["created", "started"]
+
+
+def test_failed_attached_start_removes_created_container():
+    utils = PodmanCliUtils.__new__(PodmanCliUtils)
+    with (
+        patch(
+            "bec_server.procedures.container_utils._run_and_capture_error",
+            return_value=CompletedProcess([], 0, stdout=b"container-id\n"),
+        ),
+        patch(
+            "bec_server.procedures.container_utils.subprocess.Popen",
+            side_effect=OSError("cannot start"),
+        ),
+        patch.object(utils, "remove") as remove,
+    ):
+        with pytest.raises(OSError, match="cannot start"):
+            utils.run_interactive("image", {}, [], "worker")
+    remove.assert_called_once_with("container-id")
+
+
+def test_api_state_after_container_removal():
+    utils = PodmanApiUtils.__new__(PodmanApiUtils)
+    utils.uri = "unix:///review-podman.sock"
+    with patch("bec_server.procedures.container_utils.PodmanClient") as client:
+        lookup = client().__enter__().containers.get
+        lookup.side_effect = NotFound("removed")
+        assert utils.state("worker") is None
+        assert utils.state("worker") is None
+        lookup.side_effect = APIError("connection failed")
+        with pytest.raises(APIError):
+            utils.state("worker")

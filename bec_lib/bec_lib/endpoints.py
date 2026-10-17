@@ -1508,6 +1508,32 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def procedure_workers() -> EndpointInfo:
+        """Return the public registry of workers and their owning queues.
+
+        Returns:
+            EndpointInfo: Worker registry.
+        """
+        return EndpointInfo(
+            endpoint=f"{EndpointType.INFO.value}/procedures/workers",
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.KEY_VALUE,
+        )
+
+    @staticmethod
+    def procedure_queues() -> EndpointInfo:
+        """Return the registry of logical queues, including empty queues.
+
+        Returns:
+            EndpointInfo: Queue registry.
+        """
+        return EndpointInfo(
+            endpoint=f"{EndpointType.INFO.value}/procedures/queues",
+            message_type=messages.AvailableResourceMessage,
+            message_op=MessageOp.KEY_VALUE,
+        )
+
+    @staticmethod
     def procedure_execution(queue_id: str):
         """
         Endpoint for new procedure executions.

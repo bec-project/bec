@@ -16,7 +16,6 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import (
     AvailableResourceMessage,
     BECMessage,
-    ProcedureAbortMessage,
     ProcedureClearUnhandledMessage,
     ProcedureExecutionMessage,
     ProcedureQNotifMessage,
@@ -24,10 +23,10 @@ from bec_lib.messages import (
     ProcedureWorkerStatus,
     RequestResponseMessage,
 )
-from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.redis_connector import MessageObject, RedisConnector
 from bec_server.procedures import procedure_registry
 from bec_server.procedures.constants import PROCEDURE, WorkerAlreadyExists
+from bec_server.procedures.queue_manager import QueueWorkerPools
 
 if TYPE_CHECKING:
     from bec_server.procedures.worker_base import ProcedureWorker
@@ -77,6 +76,8 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         worker_type: type[ProcedureWorker],
         thread_prefix: str = "user_procedure_",
         redis_credentials: RedisCredentials | None = None,
+        *,
+        _defer_startup: bool = False,
     ):
         """Watches the request queue and pushes to worker execution queues. Manages
         instantiating and cleaning up after workers.
@@ -116,8 +117,9 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         self._server = f"{self._conn.host}:{self._conn.port}"
 
         self._reply_ep: EndpointInfo
-        self._register_endpoints()
-        self._publish_available()
+        if not _defer_startup:
+            self._register_endpoints()
+            self._publish_available()
         logger.success("Done initialising procedure manager.")
 
     def _ack(self, accepted: bool, msg: str, exec_id: str):
@@ -265,18 +267,9 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         """Returns a function which will be attached as a callback to finishing workers."""
 
 
-class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureExecutionMessage]):
-    def __init__(
-        self,
-        redis: str,
-        worker_type: type[ProcedureWorker],
-        thread_prefix: str = "user_procedure_",
-        redis_credentials: RedisCredentials | None = None,
-    ):
-        super().__init__(redis, worker_type, thread_prefix, redis_credentials)
-        self._messages_by_ids: dict[str, ProcedureExecutionMessage] = {}
-        self._helper = BackendProcedureHelper(self._conn, monitor_responses=False)
-        self._startup()
+class ProcedureManager(
+    QueueWorkerPools, ProcedureManagerBase[ProcedureRequestMessage, ProcedureExecutionMessage]
+):
 
     def _define_endpoints(self):
         self._reply_ep = MessageEndpoints.procedure_request_response()
@@ -318,12 +311,16 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         if not isinstance(message, ProcedureRequestMessage):
             logger.warning("Received an invalid procedure request.")
             return
+        client_info = message.metadata.get("client_info")
+        token = client_info.pop("acl_token", None) if isinstance(client_info, dict) else None
+        if token is not None and not isinstance(token, str):
+            self._ack(False, "Invalid procedure ACL token type.", message.execution_id)
+            return
         username_regex = MessageEndpoints.procedure_request("([^/]+)").endpoint
         match = re.fullmatch(username_regex, msg.topic)
         if not match:
             self._ack(False, "Could not extract username from topic.", message.execution_id)
             return
-        client_info = message.metadata.get("client_info")
         if not isinstance(client_info, dict) or not client_info:
             self._ack(False, "Missing client info in request metadata.", message.execution_id)
             return
@@ -331,35 +328,9 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         if acl_user != match.group(1):
             self._ack(False, "Username in topic does not match client info.", message.execution_id)
             return
-        return self._process_queue_request(msg)
-
-    def _cleanup_worker_function(self, queue: str):
-        def cleanup_worker(fut):
-            with self.lock:
-                logger.debug(f"cleaning up worker {fut} for queue {queue}...")
-                error = None if fut.cancelled() else fut.exception()
-                if error is not None:
-                    pending = self._helper.get.exec_queue(queue)
-                    running = [
-                        msg for msg in self._helper.get.running_procedures() if msg.queue == queue
-                    ]
-                    self._helper.move.execution_queue_to_unhandled(queue)
-                    for msg in running:
-                        self._helper.push.unhandled(queue, msg)
-                    for msg in pending + running:
-                        self._helper.status_update(
-                            msg.execution_id, "Finished", error=f"Procedure worker failed: {error}"
-                        )
-                    self._helper.notify_watchers(queue, "unhandled")
-                self._helper.remove_from_active.by_queue(queue)
-                self._run_callbacks(queue)
-                self._helper.notify_watchers(queue, "execution")
-                del self._active_workers[queue]
-
-        return cleanup_worker
+        return self._process_queue_request(msg, token=token)
 
     def _respond_to_valid_request(self, message: ProcedureRequestMessage):
-        self._ack(True, f"Running procedure {message.identifier}", message.execution_id)
         queue = message.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
         exec_message = ProcedureExecutionMessage(
             identifier=message.identifier,
@@ -367,15 +338,8 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
             args_kwargs=message.args_kwargs or ((), {}),
             execution_id=message.execution_id,
         )
-        logger.debug(f"active workers: {self._active_workers}, worker requested: {queue}")
-        self._helper.push.exec(queue, exec_message)
+        logger.debug(f"Procedure submitted to logical queue {queue}")
         return exec_message
-
-    def _process_queue_request(self, msg: MessageObject):
-        with self.lock:
-            if (exec_msg := super()._process_queue_request(msg)) is not None:
-                self._messages_by_ids[exec_msg.execution_id] = exec_msg
-        return exec_msg
 
     def _publish_metrics(self, msg: ProcedureQNotifMessage):
         self._conn.publish_metrics(
@@ -419,65 +383,6 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
             self._callbacks[queue] = []
         self._callbacks[queue].append(cb)
 
-    def _run_callbacks(self, queue: str):
-        with self.lock:
-            if queue not in self._active_workers:
-                logger.error(f"Attempted to run callbacks for nonexistent worker {queue}")
-                return
-            if (worker := self._active_workers[queue]["worker"]) is None:
-                return
-        for cb in self._callbacks.get(queue, []):
-            cb(worker)
-        self._callbacks[queue] = []
-
-    def _process_abort(self, msg: MessageObject):
-        message: ProcedureAbortMessage = msg.value  # type: ignore
-        if message.abort_all:
-            self._abort_all()
-        if message.queue is not None:
-            self._abort_queue(message.queue)
-        if message.execution_id is not None:
-            with self.lock:
-                self._abort_execution(message.execution_id)
-
-    def _abort_execution(self, execution_id: str):
-        if (msg := self._messages_by_ids.get(execution_id)) is None:
-            logger.warning(f"Procedure execution with ID {execution_id} not known.")
-            return
-        # Remove it from the queue if not yet started
-        if self._conn.lrem(MessageEndpoints.procedure_execution(msg.queue), 0, msg) > 0:
-            logger.debug(f"Removed execution {msg} from queue.")
-            self._helper.notify_watchers(msg.queue, "execution")
-        # Otherwise try to remove it from whichever worker has it
-        for entry in self._active_workers.values():
-            if (worker := entry["worker"]) is not None and worker:
-                worker.abort_execution(execution_id)
-        # Move it to unhandled and stop tracking
-        self._helper.push.unhandled(msg.queue, msg)
-        del self._messages_by_ids[execution_id]
-
-    def _abort_queue(self, queue: str):
-        with self.lock:
-            self._helper.move.execution_queue_to_unhandled(queue)
-            entry = self._active_workers.get(queue)
-        if entry is not None:
-            self._abort_workers([entry])
-        else:
-            logger.warning(f"Received abort request for unknown queue {queue}!")
-        self._helper.notify_watchers(queue, "execution")
-
-    def _abort_all(self):
-        def drain_pending():
-            with self.lock:
-                queues = self._helper.get.queue_names()
-                self._helper.move.all_execution_queues_to_unhandled()
-                for queue in queues:
-                    self._helper.notify_watchers(queue, "execution")
-
-        with self.lock:
-            entries = list(self._active_workers.values())
-        self._abort_workers(entries, before_wait=drain_pending)
-
     def _process_clear_unhandled(self, msg: MessageObject):
         message: ProcedureClearUnhandledMessage = msg.value  # type: ignore
         with self.lock:
@@ -493,3 +398,4 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         self._conn.unregister(self._abort_ep, None, self._process_abort)
         self._conn.unregister(self._clear_uh_ep, None, self._process_clear_unhandled)
         self._conn.unregister(patterns=self._request_ep, cb=self._procedure_request_callback)
+        self._conn.unregister(self._q_notif_ep, None, self._publish_metrics)
