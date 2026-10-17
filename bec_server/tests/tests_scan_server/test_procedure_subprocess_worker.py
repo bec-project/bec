@@ -61,7 +61,9 @@ def test_streams_both_outputs_before_exit(subprocess_worker):
     assert worker.logs() == ["stdout without newlinestderr without newline"]
 
 
-def test_verbose_output_does_not_block(subprocess_worker):
+@pytest.mark.parametrize("output_encoding", ["utf-8", "ascii"])
+def test_verbose_output_does_not_block(subprocess_worker, monkeypatch, output_encoding):
+    monkeypatch.setenv("PYTHONIOENCODING", output_encoding)
     worker = subprocess_worker(
         "import sys\n"
         "for _ in range(100):\n"
@@ -69,8 +71,9 @@ def test_verbose_output_does_not_block(subprocess_worker):
         "    sys.stderr.write('b' * 4096)\n"
         "sys.stdout.write(' Unicode: λ完\\n')\n"
     )
-    assert worker._process.wait(timeout=10) == 0
+    return_code = worker._process.wait(timeout=10)
     captured = "\n".join(worker.logs())
+    assert return_code == 0, captured[-4000:]
     assert captured.count("a") == 100 * 4096
     assert captured.count("b") == 100 * 4096
     assert captured.endswith(" Unicode: λ完")
