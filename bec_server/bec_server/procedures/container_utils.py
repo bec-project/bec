@@ -220,7 +220,7 @@ class PodmanCliUtils(_PodmanUtilsBase):
         _name_arg = ["--replace", "--name", container_name] if container_name else []
         if container_name:
             # in case of incomplete cleanup previously, even with --replace it is possible to get an error
-            _run_and_capture_error("podman", "rm", "-f", container_name)
+            _run_and_capture_error("podman", "rm", "-f", "--ignore", container_name)
         return (
             _run_and_capture_error(
                 "podman",
