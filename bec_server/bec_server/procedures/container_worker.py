@@ -1,6 +1,7 @@
 import time
 
 from bec_lib.logger import bec_logger
+from bec_lib.redis_connector import RedisConnector
 from bec_server.procedures.constants import PROCEDURE, PodmanContainerStates
 from bec_server.procedures.container_utils import get_backend
 from bec_server.procedures.oop_worker_base import (
@@ -23,12 +24,45 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
     def _setup_execution_environment(self):
         self._backend: ContainerCommandBackend = get_backend()
         image_tag = f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}"
-        self.container_name = f"bec_procedure_{PROCEDURE.BEC_VERSION}_{self._queue}"
+        self.container_name = (
+            f"bec_procedure_{PROCEDURE.BEC_VERSION}_{self._worker_id or self._queue}"
+        )
         if not self._backend.image_exists(image_tag):
             self._backend.build_worker_image()
+        environment = self._worker_environment() | self._additional_env
+        if self._worker_id is not None:
+            self._container_id = self.container_name
+            self._process = self._backend.run_interactive(
+                image_tag,
+                environment,
+                [
+                    {
+                        "source": str(PROCEDURE.CONTAINER.DEPLOYMENT_PATH),
+                        "target": "/bec",
+                        "type": "bind",
+                        "read_only": True,
+                    }
+                ],
+                PROCEDURE.CONTAINER.COMMAND,
+                pod_name=PROCEDURE.CONTAINER.POD_NAME,
+                container_name=self.container_name,
+            )
+            output_conn = RedisConnector([self._redis_server], name="Procedure container output")
+            try:
+                if self._control_credentials is not None:
+                    output_conn.authenticate(
+                        username=self._control_credentials["username"] or "default",
+                        password=self._control_credentials["token"],
+                    )
+                self._start_output_capture(output_conn)
+            except BaseException:
+                output_conn.shutdown()
+                self._kill_process()
+                raise
+            return
         self._container_id = self._backend.run(
             image_tag,
-            self._worker_environment() | self._additional_env,
+            environment,
             [
                 {
                     "source": str(PROCEDURE.CONTAINER.DEPLOYMENT_PATH),
@@ -43,6 +77,8 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
         )
 
     def _ending_or_ended(self):
+        if self._worker_id is not None:
+            return self._process.poll() is not None
         return self._backend.state(self._container_id) in [
             PodmanContainerStates.EXITED,
             PodmanContainerStates.STOPPED,
@@ -50,6 +86,39 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
         ]
 
     def _kill_process(self):
+        if self._worker_id is not None:
+            # The attached CLI can fail while the container is still running.
+            terminal = (
+                None,
+                PodmanContainerStates.CREATED,
+                PodmanContainerStates.EXITED,
+                PodmanContainerStates.STOPPED,
+            )
+            if self._backend.state(self.container_name) not in terminal:
+                self._backend.interrupt(self.container_name)
+                deadline = time.monotonic() + PROCESS_TIMEOUT
+                while time.monotonic() < deadline:
+                    if self._backend.state(self.container_name) in terminal:
+                        break
+                    time.sleep(0.1)
+                else:
+                    self._backend.kill(self.container_name)
+                deadline = time.monotonic() + PROCESS_TIMEOUT
+                while self._backend.state(self.container_name) not in terminal:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("Procedure container failed to stop")
+                    time.sleep(0.1)
+            # Creation completed before the launcher was started, so removal also
+            # prevents an attached start that has not reached the engine yet.
+            self._backend.remove(self.container_name)
+            if self._process.stdin is not None:
+                self._process.stdin.close()
+            try:
+                self._process.wait(PROCESS_TIMEOUT)
+            except Exception:
+                self._process.kill()
+                self._process.wait(PROCESS_TIMEOUT)
+            return
         if not self._ending_or_ended():
             self._backend.interrupt(self.container_name)
             start = time.monotonic()
@@ -73,6 +142,11 @@ class ContainerProcedureWorker(OutOfProcessWorkerBase):
             self._setup_execution_environment()
 
     def logs(self):
+        if self._worker_id is not None:
+            if self._process.poll() is not None:
+                self._join_output()
+            with self._output_lock:
+                return "".join(self._output_logs).splitlines()
         if self._container_id is None:
             return [""]
         return self._backend.logs(self._container_id)

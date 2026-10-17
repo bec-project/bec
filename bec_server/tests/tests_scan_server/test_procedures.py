@@ -1,9 +1,7 @@
 import builtins
 import threading
 import time
-from concurrent.futures import Future, wait
 from functools import partial
-from itertools import starmap
 from typing import Any, Iterable
 from unittest.mock import MagicMock, patch
 
@@ -14,7 +12,6 @@ from bec_lib.acl_login import BECAccess
 from bec_lib.client import BECClient, RedisConnector
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.messages import (
-    ProcedureAbortMessage,
     ProcedureExecutionMessage,
     ProcedureRequestMessage,
     ProcedureWorkerStatus,
@@ -22,13 +19,11 @@ from bec_lib.messages import (
     RequestResponseMessage,
 )
 from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState
-from bec_lib.redis_connector import MessageObject
 from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
 from bec_server.procedures.builtin_procedures import run_macro
-from bec_server.procedures.constants import PROCEDURE, BecProcedure, WorkerAlreadyExists
+from bec_server.procedures.constants import PROCEDURE, BecProcedure
 from bec_server.procedures.manager import ProcedureManager
-from bec_server.procedures.oop_worker_base import _main as oop_worker_main_internal
 from bec_server.procedures.oop_worker_base import main as oop_worker_main
 from bec_server.procedures.procedure_registry import (
     _BUILTIN_PROCEDURES,
@@ -37,7 +32,6 @@ from bec_server.procedures.procedure_registry import (
     register,
 )
 from bec_server.procedures.subprocess_worker import SubProcessWorker
-from bec_server.procedures.worker_base import ProcedureWorker
 from bec_server.test.helpers import wait_until
 
 # pylint: disable=protected-access
@@ -93,6 +87,8 @@ class InlineWorker(SubProcessWorker):
         lifetime_s: float | None = None,
         env: dict[str, str] | None = None,
     ):
+        self._worker_id = None
+        self._control_credentials = None
         self._queue = queue
         self.key = MessageEndpoints.procedure_execution(queue)
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
@@ -172,7 +168,9 @@ def test_procedure_manager_authenticates_with_forwarded_credentials():
     conn = MagicMock()
     with (
         patch("bec_server.procedures.manager.RedisConnector", return_value=conn),
-        patch("bec_server.procedures.manager.BackendProcedureHelper", return_value=MagicMock()),
+        patch(
+            "bec_server.procedures.queue_manager.BackendProcedureHelper", return_value=MagicMock()
+        ),
     ):
         manager = ProcedureManager(
             f"{FAKEREDIS_HOST}:{FAKEREDIS_PORT}",
@@ -216,160 +214,6 @@ def test_validate(procedure_manager: ProcedureManager, message, result):
         assert result is None
     else:
         assert _eq_except_id(validated, result)
-
-
-PROCESS_REQUEST_TEST_CASES = [
-    MessageObject(topic="test", value=ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME)),
-    MessageObject(
-        topic="test", value=ProcedureRequestMessage(identifier=LOG_MSG_PROC_NAME, queue="queue2")
-    ),
-    MessageObject(
-        topic="test",
-        value=ProcedureRequestMessage(identifier="test other procedure", queue="queue2"),
-    ),
-]
-
-
-class PendingWorkerFuture(Future):
-    """Model cancellation notification normally performed by the executor thread."""
-
-    def cancel(self):
-        cancelled = super().cancel()
-        if cancelled and self._state == "CANCELLED":
-            self.set_running_or_notify_cancel()
-        return cancelled
-
-
-@pytest.fixture
-def process_request_manager(procedure_manager: ProcedureManager):
-    procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
-    procedure_manager._ack = MagicMock()
-    procedure_manager._conn.rpush = MagicMock()
-    procedure_manager.spawn = MagicMock()
-
-    def submit(fn, **kwargs):
-        fn(**kwargs)
-        return PendingWorkerFuture()
-
-    procedure_manager.executor.submit = MagicMock(side_effect=submit)
-    yield procedure_manager
-
-
-@pytest.mark.parametrize("message", PROCESS_REQUEST_TEST_CASES)
-def test_process_request_happy_paths(
-    process_request_manager, message: MessageObject[ProcedureRequestMessage]
-):
-    process_request_manager._process_queue_request(message)
-    process_request_manager._ack.assert_called_with(
-        True, f"Running procedure {message.value.identifier}", message.value.execution_id
-    )
-    process_request_manager._conn.rpush.assert_called()
-    endpoint, execution_msg = process_request_manager._conn.rpush.call_args.args
-    queue = message.value.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
-    assert queue in endpoint.endpoint
-    assert execution_msg.identifier == message.value.identifier
-    process_request_manager.spawn.assert_called()
-    assert queue in process_request_manager._active_workers.keys()
-
-
-def test_process_request_failure(process_request_manager):
-    process_request_manager._process_queue_request(MessageObject(topic="", value=None))
-    process_request_manager._ack.assert_not_called()
-    process_request_manager._conn.rpush.assert_not_called()
-    process_request_manager.spawn.assert_not_called()
-    assert process_request_manager._active_workers == {}
-
-
-class UnlockableWorker(ProcedureWorker):
-    TEST_TIMEOUT = 10
-
-    def __init__(self, server: str, queue: str, lifetime_s: int | None = None, execution_id="test"):
-        # super().__init__(server, queue, lifetime_s)
-        self.event_1 = threading.Event()
-        self.event_2 = threading.Event()
-        self._shutdown_lock = threading.Lock()
-        self._helper = MagicMock()
-        self._conn = MagicMock()
-        self.execution_id = execution_id
-        self.status = ProcedureWorkerStatus.IDLE
-        self._ending = False
-
-    def abort_execution(self, execution_id: str): ...
-    def _setup_execution_environment(self): ...
-    def _kill_process(self): ...
-    def _run_task(self, item):
-        self.status = ProcedureWorkerStatus.RUNNING
-        self._helper.status_update(self.execution_id, "Started")
-        self.event_1.wait(self.TEST_TIMEOUT)
-        self.status = ProcedureWorkerStatus.IDLE
-        self._helper.status_update(self.execution_id, "Finished")
-        self.event_2.wait(self.TEST_TIMEOUT)
-        self.status = ProcedureWorkerStatus.FINISHED
-
-    def _ending_or_ended(self) -> bool:
-        return self._ending
-
-    def logs(self):
-        return []
-
-    def work(self):
-        self._run_task(0)
-
-
-class FakeRedisUnlockable(UnlockableWorker):
-    def __init__(
-        self,
-        server: str,
-        queue: str,
-        lifetime_s: int | None = None,
-        env: dict[str, str] | None = None,
-        exec_id: str = "test",
-    ):
-        with patch(
-            "bec_server.procedures.worker_base.RedisConnector",
-            partial(RedisConnector, redis_cls=fakeredis.FakeRedis),  # type: ignore
-        ):
-            ProcedureWorker.__init__(self, server, queue, lifetime_s)
-        self.event_1 = threading.Event()
-        self.event_2 = threading.Event()
-        self.execution_id = exec_id
-
-
-@patch("bec_server.procedures.worker_base.RedisConnector")
-@patch("bec_server.procedures.manager.RedisConnector", MagicMock())
-def test_spawn(redis_connector, procedure_manager: ProcedureManager):
-    procedure_manager._worker_cls = UnlockableWorker
-    message = PROCESS_REQUEST_TEST_CASES[0]
-    # popping from the list queue should give the execution message
-    redis_connector().blocking_list_pop_to_set_add.side_effect = [message, None]
-    queue = message.value.queue or PROCEDURE.WORKER.DEFAULT_QUEUE
-    procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
-    # trigger the running of the test message
-    procedure_manager._process_queue_request(message)  # type: ignore
-    assert queue in procedure_manager._active_workers.keys()
-
-    # spawn method should be added as a future
-    wait_until(procedure_manager._active_workers[queue]["future"].running)
-    # and then create the worker
-    wait_until(lambda: procedure_manager._active_workers[queue].get("worker") is not None)
-    worker = procedure_manager._active_workers[queue]["worker"]
-    assert isinstance(worker, UnlockableWorker)
-    wait_until(lambda: worker.status == ProcedureWorkerStatus.RUNNING)
-
-    # check that you can't instantiate the same worker twice - call spawn directly to
-    # raise the exception in this thread
-    with pytest.raises(WorkerAlreadyExists):
-        procedure_manager.spawn(queue, {})
-
-    # queue "timed out" and brpop returns None, so work() will return on the next iteration
-    with procedure_manager.lock:
-        worker.event_1.set()  # let the task end and return to ProcedureWorker.work()
-        # queue deletion callback needs the lock so we can catch it in FINISHED
-        wait_until(lambda: worker.status == ProcedureWorkerStatus.IDLE)
-        worker.event_2.set()
-        wait_until(lambda: worker.status == ProcedureWorkerStatus.FINISHED)
-    # spawn deletes the worker queue
-    wait_until(lambda: len(procedure_manager._active_workers) == 0)
 
 
 @patch("bec_server.procedures.builtin_procedures.logger")
@@ -435,183 +279,6 @@ def test_register_rejects_already_registered():
     assert e.match("already registered")
 
 
-def _yield_once():
-    yield "value"
-    while True:
-        yield None
-
-
-@patch(
-    "bec_server.procedures.worker_base.RedisConnector",
-    side_effect=lambda *_: MagicMock(
-        blocking_list_pop_to_set_add=MagicMock(side_effect=_yield_once())
-    ),
-)
-def test_manager_status_api(_conn, procedure_manager):
-    procedure_manager._worker_cls = UnlockableWorker
-    for message in PROCESS_REQUEST_TEST_CASES:
-        procedure_manager._process_queue_request(message)
-    wait_until(lambda: procedure_manager.active_workers() == ["primary", "queue2"])
-    wait_until(
-        lambda: (
-            procedure_manager.worker_statuses()
-            == {"primary": ProcedureWorkerStatus.RUNNING, "queue2": ProcedureWorkerStatus.RUNNING}
-        )
-    )
-    for w in procedure_manager._active_workers.values():
-        w["worker"].event_1.set()
-    wait_until(
-        lambda: (
-            procedure_manager.worker_statuses()
-            == {"primary": ProcedureWorkerStatus.IDLE, "queue2": ProcedureWorkerStatus.IDLE}
-        )
-    )
-    for w in procedure_manager._active_workers.values():
-        w["worker"].event_2.set()
-    wait_until(lambda: procedure_manager.active_workers() == [])
-
-
-_ManagerWithMsgs = tuple[ProcedureManager, list[ProcedureExecutionMessage]]
-
-
-@pytest.fixture
-def manager_with_test_msgs(procedure_manager: ProcedureManager):
-    # Queue-management tests do not execute workers.
-    procedure_manager.executor.submit = MagicMock(
-        side_effect=lambda *_, **__: PendingWorkerFuture()
-    )
-    procedure_manager._conn._managed_connection.flushall()
-    contents = [
-        ("test_identifier_1", "queue1", ((), {})),
-        ("test_identifier_2", "queue1", ((), {})),
-        ("test_identifier_1", "queue2", ((), {})),
-        ("test_identifier_2", "queue2", ((), {})),
-    ]
-    msgs = iter(
-        ProcedureRequestMessage(identifier=c[0], queue=c[1], args_kwargs=c[2]) for c in contents
-    )
-    procedure_manager._validate_request = lambda msg: next(msgs)
-    for _ in range(len(contents)):
-        procedure_manager._process_queue_request(MessageObject(topic="", value={}))
-    yield (
-        procedure_manager,
-        [
-            ProcedureExecutionMessage(
-                metadata={}, identifier=c[0], queue=c[1], args_kwargs=c[2], execution_id=str(i)
-            )
-            for i, c in enumerate(contents)
-        ],
-    )
-
-
-def _all_eq_except_id(a: list[ProcedureExecutionMessage], b: list[ProcedureExecutionMessage]):
-    if len(a) != len(b):
-        return False
-    return all(starmap(_eq_except_id, zip(a, b)))
-
-
-@pytest.mark.parametrize("queue", ["queue1", "queue2"])
-@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock())
-def test_startup(manager_with_test_msgs: _ManagerWithMsgs, queue: str):
-    procedure_manager, expected = manager_with_test_msgs
-    procedure_manager._worker_cls = MagicMock
-    queue_expected = list(filter(lambda msg: msg.queue == queue, expected))
-
-    execution_list = procedure_manager._helper.get.exec_queue(queue)
-    assert _all_eq_except_id(execution_list, queue_expected)
-
-    procedure_manager._startup()
-
-    # on startup, the manager should move active queues to unhandled queues
-    execution_list = procedure_manager._helper.get.exec_queue(queue)
-    unhandled_execution_list = procedure_manager._conn.lrange(
-        MessageEndpoints.unhandled_procedure_execution(queue), 0, -1
-    )
-    assert execution_list == []
-    assert _all_eq_except_id(unhandled_execution_list, queue_expected)
-
-
-@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock())
-def test_abort_queue(manager_with_test_msgs: _ManagerWithMsgs):
-    procedure_manager, expected = manager_with_test_msgs
-    remaining_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
-    aborted_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
-
-    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
-    assert _all_eq_except_id(q1_execution_list, aborted_expected)
-    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
-    assert _all_eq_except_id(q2_execution_list, remaining_expected)
-
-    procedure_manager._process_abort(
-        MessageObject(topic="", value=ProcedureAbortMessage.model_validate({"queue": "queue1"}))
-    )
-
-    # on abort, the manager should move active queues to unhandled queues
-    # this should happen for q1 and not q2
-    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
-    unhandled_execution_list = procedure_manager._conn.lrange(
-        MessageEndpoints.unhandled_procedure_execution("queue1"), 0, -1
-    )
-    assert _all_eq_except_id(q2_execution_list, remaining_expected)
-    assert _all_eq_except_id(unhandled_execution_list, aborted_expected)
-
-
-@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock())
-def test_abort_individual(manager_with_test_msgs: _ManagerWithMsgs):
-    procedure_manager, expected = manager_with_test_msgs
-    q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
-    q2_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
-
-    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
-    assert _all_eq_except_id(
-        q1_execution_list, list(filter(lambda msg: msg.queue == "queue1", q1_expected))
-    )
-    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
-    assert _all_eq_except_id(q2_execution_list, q2_expected)
-
-    procedure_manager._process_abort(
-        MessageObject(
-            topic="",
-            value=ProcedureAbortMessage.model_validate(
-                {"execution_id": q2_execution_list[1].execution_id}
-            ),
-        )
-    )
-
-    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
-    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
-    assert _all_eq_except_id(q1_execution_list, q1_expected)
-    assert _all_eq_except_id(q2_execution_list, [q2_expected[0]])
-
-
-@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock)
-def test_abort_all(manager_with_test_msgs: _ManagerWithMsgs):
-    procedure_manager, expected = manager_with_test_msgs
-    q1_expected = list(filter(lambda msg: msg.queue == "queue1", expected))
-    q2_expected = list(filter(lambda msg: msg.queue == "queue2", expected))
-
-    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
-    assert _all_eq_except_id(
-        q1_execution_list, list(filter(lambda msg: msg.queue == "queue1", q1_expected))
-    )
-    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
-    assert _all_eq_except_id(q2_execution_list, q2_expected)
-
-    procedure_manager._process_abort(
-        MessageObject(topic="", value=ProcedureAbortMessage.model_validate({"abort_all": True}))
-    )
-
-    q1_execution_list = procedure_manager._helper.get.exec_queue("queue1")
-    q2_execution_list = procedure_manager._helper.get.exec_queue("queue2")
-    q1_unhandled_list = procedure_manager._helper.get.unhandled_queue("queue1")
-    q2_unhandled_list = procedure_manager._helper.get.unhandled_queue("queue2")
-
-    assert q1_execution_list == []
-    assert q2_execution_list == []
-    assert _all_eq_except_id(q1_unhandled_list, q1_expected)
-    assert _all_eq_except_id(q2_unhandled_list, q2_expected)
-
-
 @patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock)
 def test_procedure_status_rejected(procedure_manager):
     status = procedure_manager._helper.request.procedure("doesn't exist")
@@ -631,62 +298,6 @@ def test_procedure_status_rejected_not_cancellable(procedure_manager):
     assert e.match("A procedure which is already")
 
 
-@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock)
-def test_procedure_status_accepted(procedure_manager):
-    procedure_manager._worker_cls = partial(FakeRedisUnlockable, exec_id="test")
-    msg = ProcedureRequestMessage(
-        identifier="sleep", args_kwargs=((), {"time_s": 0.5}), execution_id="test"
-    )
-    status = procedure_manager._helper.request._procedure(msg)
-    assert status.state == ProcedureState.REQUESTED
-    wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=10)
-    worker = procedure_manager._active_workers["primary"]["worker"]
-    assert isinstance(worker, FakeRedisUnlockable)
-    worker.event_1.set()
-    wait_until(lambda: status.state == ProcedureState.RUNNING, timeout_s=10)
-    worker.event_2.set()
-    wait_until(lambda: status.state == ProcedureState.SUCCESS, timeout_s=10)
-
-
-def _mock_error_procedure(*args, **kwargs):
-    raise RuntimeError("Encountered error in procedure")
-
-
-@patch("bec_server.procedures.oop_worker_base.BECIPythonClient", MagicMock)
-def test_procedure_status_error(procedure_manager):
-    register("error", _mock_error_procedure)
-    msg = ProcedureRequestMessage(identifier="error", execution_id="test")
-    status = procedure_manager._helper.request._procedure(msg)
-    assert status.state == ProcedureState.REQUESTED
-    wait_until(lambda: procedure_manager._active_workers.get("primary") is not None, timeout_s=10)
-    worker = procedure_manager._active_workers["primary"]["worker"]
-    assert isinstance(worker, InlineWorker)
-
-    worker_thread = threading.Thread(
-        target=oop_worker_main_internal,
-        kwargs={
-            "env": {"queue": "primary", "timeout_s": "1.0"},
-            "helper": procedure_manager._helper,
-            "client": MagicMock(),
-            "conn": procedure_manager._conn,
-        },
-        daemon=True,
-    )
-    worker_thread.start()
-    worker_thread.join()
-    with pytest.raises(RuntimeError) as e:
-        status.wait(timeout_s=2, raise_on_failure=True)
-
-    e.match("error in procedure")
-    assert status.error is not None
-
-    assert "<ProcedureStatus for 'error', state: 'Failed'>" in str(status)
-    assert "RuntimeError: Encountered error in procedure" in str(status)
-
-    worker._ending = True
-    wait_until(lambda: procedure_manager._active_workers.get("primary") is None, timeout_s=2)
-
-
 def test_builtin_proc_run_macro_found(shutdown_client):
     recorder = MagicMock()
     with patch.dict(
@@ -700,198 +311,3 @@ def test_builtin_proc_run_macro_not_found(shutdown_client):
     with pytest.raises(ValueError) as e:
         run_macro("not found", bec=shutdown_client)
     assert e.match("not found in the client namespace")
-
-
-def test_procedure_startup_failure_updates_status(procedure_manager):
-    procedure_manager._worker_cls = MagicMock(side_effect=RuntimeError("missing local_bec pod"))
-    procedure_manager._helper.clear.unhandled_queue("startup_failure")
-    status = procedure_manager._helper.request.procedure("sleep", queue="startup_failure")
-    wait_until(lambda: status.done, timeout_s=5)
-    assert status.state == ProcedureState.FAILED
-    assert "missing local_bec pod" in status.error
-    wait_until(lambda: not procedure_manager.active_workers(), timeout_s=5)
-    assert procedure_manager._helper.get.exec_queue("startup_failure") == []
-    assert len(procedure_manager._helper.get.unhandled_queue("startup_failure")) == 1
-
-
-def test_immediately_failed_future_is_cleaned_up(procedure_manager):
-    future = Future()
-    future.set_exception(RuntimeError("worker startup failed"))
-    procedure_manager.executor.submit = MagicMock(return_value=future)
-    procedure_manager._helper.clear.unhandled_queue("immediate_failure")
-    msg = ProcedureRequestMessage(identifier="sleep", queue="immediate_failure")
-    procedure_manager._process_queue_request(MessageObject(topic="", value=msg))
-    assert procedure_manager.active_workers() == []
-    assert procedure_manager._helper.get.exec_queue("immediate_failure") == []
-    assert len(procedure_manager._helper.get.unhandled_queue("immediate_failure")) == 1
-
-
-def test_worker_failure_reports_pending_and_running(procedure_manager):
-    procedure_manager._helper.clear.unhandled_queue("test")
-    pending = ProcedureExecutionMessage(identifier="sleep", queue="test", execution_id="pending")
-    running = ProcedureExecutionMessage(identifier="sleep", queue="test", execution_id="running")
-    other = ProcedureExecutionMessage(identifier="sleep", queue="other", execution_id="other")
-    procedure_manager._helper.push.exec("test", pending)
-    procedure_manager._conn._managed_connection.add_to_set(
-        MessageEndpoints.active_procedure_executions().endpoint, MsgpackSerialization.dumps(running)
-    )
-    procedure_manager._conn._managed_connection.add_to_set(
-        MessageEndpoints.active_procedure_executions().endpoint, MsgpackSerialization.dumps(other)
-    )
-    future = Future()
-    future.set_exception(RuntimeError("container exited"))
-    procedure_manager._active_workers["test"] = {"worker": None, "future": future}
-    with patch.object(procedure_manager._helper, "status_update") as update:
-        procedure_manager._cleanup_worker_function("test")(future)
-    assert {c.args[0] for c in update.call_args_list} == {"pending", "running"}
-    assert all(c.kwargs["error"].endswith("container exited") for c in update.call_args_list)
-    assert procedure_manager._helper.get.exec_queue("test") == []
-    assert procedure_manager._helper.get.running_procedures() == {other}
-    assert len(procedure_manager._helper.get.unhandled_queue("test")) == 2
-
-
-def test_spawn_cleans_up_before_reading_logs(procedure_manager):
-    worker = MagicMock()
-    worker.__enter__.return_value = worker
-    closed = threading.Event()
-    worker.__exit__.side_effect = lambda *_: closed.set()
-    worker.work.side_effect = RuntimeError("lost Redis connection")
-
-    def read_logs():
-        assert closed.is_set(), "Reading subprocess stdout before cleanup can block indefinitely"
-        return ["worker error output"]
-
-    worker.logs.side_effect = read_logs
-    procedure_manager._worker_cls = MagicMock(return_value=worker)
-    procedure_manager._active_workers["test"] = {"worker": None, "future": MagicMock()}
-    try:
-        with pytest.raises(RuntimeError, match="lost Redis connection"):
-            procedure_manager.spawn("test", {})
-        assert "worker error output" in procedure_manager._logs
-    finally:
-        del procedure_manager._active_workers["test"]
-
-
-@pytest.mark.parametrize("abort_action", ["queue", "all", "shutdown"])
-def test_abort_during_worker_startup(procedure_manager, abort_action):
-    procedure_manager._helper.clear.unhandled_queue("starting")
-    starting = threading.Event()
-    finish_startup = threading.Event()
-    started_requests = []
-    worker = MagicMock()
-    worker.__enter__.return_value = worker
-    worker.logs.return_value = []
-
-    def create_worker(*args, **kwargs):
-        starting.set()
-        assert finish_startup.wait(5)
-        if abort_action != "shutdown":
-            # The child can consume requests before the constructor returns to the manager.
-            request = procedure_manager._conn.blocking_list_pop(
-                MessageEndpoints.procedure_execution("starting"), timeout_s=0.01
-            )
-            if request is not None:
-                started_requests.append(request)
-        return worker
-
-    def wait_for_worker(futures, timeout=None):
-        finish_startup.set()
-        result = wait(futures, timeout=1)
-        assert not result.not_done, "Abort held the lock needed to finish worker startup"
-        return result
-
-    procedure_manager._worker_cls = MagicMock(side_effect=create_worker)
-    request = ProcedureRequestMessage(identifier="sleep", queue="starting")
-    procedure_manager._process_queue_request(MessageObject(topic="", value=request))
-    try:
-        assert starting.wait(5)
-        with patch("bec_server.procedures.manager.futures.wait", side_effect=wait_for_worker):
-            if abort_action == "shutdown":
-                procedure_manager.shutdown()
-            else:
-                abort = (
-                    ProcedureAbortMessage(abort_all=True)
-                    if abort_action == "all"
-                    else ProcedureAbortMessage(queue="starting")
-                )
-                procedure_manager._process_abort(MessageObject(topic="", value=abort))
-        worker.abort.assert_called_once()
-        worker.work.assert_not_called()
-        assert started_requests == [], "A pending procedure started while abort was waiting"
-        if abort_action != "shutdown":
-            assert len(procedure_manager._helper.get.unhandled_queue("starting")) == 1
-        wait_until(lambda: not procedure_manager.active_workers(), timeout_s=5)
-    finally:
-        finish_startup.set()
-
-
-@pytest.mark.parametrize("abort_all", [False, True])
-def test_abort_pending_worker_does_not_wait_for_executor(procedure_manager, abort_all):
-    future = Future()
-    procedure_manager.executor.submit = MagicMock(return_value=future)
-    request = ProcedureRequestMessage(identifier="sleep", queue="pending")
-    procedure_manager._process_queue_request(MessageObject(topic="", value=request))
-
-    def wait_for_worker(futures, timeout=None):
-        result = wait(futures, timeout=0)
-        assert not result.not_done, "Cancelled workers should not wait for an executor thread"
-        return result
-
-    abort = (
-        ProcedureAbortMessage(abort_all=True)
-        if abort_all
-        else ProcedureAbortMessage(queue="pending")
-    )
-    with patch("bec_server.procedures.manager.futures.wait", side_effect=wait_for_worker):
-        procedure_manager._process_abort(MessageObject(topic="", value=abort))
-    assert future.cancelled()
-    assert procedure_manager.active_workers() == []
-
-
-def test_abort_all_stops_registered_workers_before_draining(procedure_manager):
-    queue = "running_abort"
-    request = ProcedureExecutionMessage(identifier="sleep", queue=queue, execution_id="pending")
-    procedure_manager._helper.push.exec(queue, request)
-    stopped = threading.Event()
-    future = Future()
-    future.set_running_or_notify_cancel()
-    worker = MagicMock()
-
-    def stop_worker():
-        stopped.set()
-        future.set_result(None)
-
-    worker.abort.side_effect = stop_worker
-    procedure_manager._active_workers[queue] = {"worker": worker, "future": future}
-    future.add_done_callback(procedure_manager._cleanup_worker_function(queue))
-    drain = procedure_manager._helper.move.all_execution_queues_to_unhandled
-    consumed = []
-    execution_snapshots = []
-
-    def observe_queue(notified_queue, queue_type):
-        if notified_queue == queue and queue_type == "execution":
-            execution_snapshots.append(procedure_manager._helper.get.exec_queue(queue))
-
-    def drain_with_active_child():
-        if not stopped.is_set():
-            consumed.append(
-                procedure_manager._conn.blocking_list_pop(
-                    MessageEndpoints.procedure_execution(queue), timeout_s=0.01
-                )
-            )
-        drain()
-
-    with (
-        patch.object(
-            procedure_manager._helper.move,
-            "all_execution_queues_to_unhandled",
-            side_effect=drain_with_active_child,
-        ),
-        patch.object(procedure_manager._helper, "notify_watchers", side_effect=observe_queue),
-    ):
-        procedure_manager._process_abort(
-            MessageObject(topic="", value=ProcedureAbortMessage(abort_all=True))
-        )
-    assert consumed == [], "A running child consumed a request during the queue drain"
-    assert procedure_manager._helper.get.unhandled_queue(queue) == [request]
-    assert execution_snapshots[-1] == [], "Watchers must see the drained execution queue"

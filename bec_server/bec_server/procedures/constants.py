@@ -18,6 +18,7 @@ class OopWorkerEnv(TypedDict):
     queue: str
     timeout_s: str
     client_class: NotRequired[BecClientType]
+    worker_id: NotRequired[str]
 
 
 P = ParamSpec("P")
@@ -48,7 +49,7 @@ class NoImage(ProcedureWorkerError): ...
 @dataclass(frozen=True)
 class _WORKER:
     MAX_WORKERS = 10
-    QUEUE_TIMEOUT_S = 10
+    QUEUE_TIMEOUT_S = 60
     DEFAULT_QUEUE = "primary"
 
 

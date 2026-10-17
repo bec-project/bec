@@ -87,6 +87,11 @@ class ProcedureStatus:
             return
         # The request can be accepted or denied
         if self._state is ProcedureState.REQUESTED:
+            # Cancellation can finish an admission before its acknowledgement arrives.
+            if state == ProcedureState.FAILED:
+                self._state = state
+                self._done.set()
+                return
             if state not in [ProcedureState.REJECTED, ProcedureState.SCHEDULED]:
                 raise ValueError(f"Improper transition from {self._state} to {state}")
             self._state = state
@@ -185,8 +190,11 @@ class _Request(_HelperBase):
         return self._procedure(msg)
 
     def _procedure(self, msg):
-        username = self._conn.username
-        msg.metadata["client_info"] = {"acl_user": username}
+        from bec_lib.acl_login import BECAccess
+
+        credentials = BECAccess(self._conn).current_credentials()
+        username = credentials["username"] or "default"
+        msg.metadata["client_info"] = {"acl_user": username, "acl_token": credentials["token"]}
         st = ProcedureStatus(self._conn, msg.execution_id, msg.identifier)
         self._set_callbacks(msg.execution_id, st)
         self._conn.send(ME.procedure_request(username), msg)
@@ -258,7 +266,29 @@ class _Get(_HelperBase):
             else ME.unhandled_procedure_execution
         )
         raw: list[str] = [s.decode() for s in self._conn.keys(ep("*"))]
-        return [s.split("/")[-1] for s in raw]
+        names = {s.split("/")[-1] for s in raw}
+        if queue_type == "execution":
+            registry = self._conn.get(ME.procedure_queues())
+            if registry is not None:
+                names.update(registry.resource)
+        return sorted(names)
+
+    def workers(self, queue: str | None = None) -> dict[str, dict]:
+        """Return workers, optionally filtered by their owning logical queue.
+
+        Args:
+            queue (str | None): Queue name, or None for all queues.
+        Returns:
+            dict[str, dict]: Worker IDs mapped to queue, status, and current execution.
+        """
+        registry = self._conn.get(ME.procedure_workers())
+        if registry is None:
+            return {}
+        return {
+            identifier: worker
+            for identifier, worker in registry.resource.items()
+            if queue is None or worker["queue"] == queue
+        }
 
     def log_queue_names(self) -> list[str]:
         """Get the names of queues currently containing logs from procedures."""

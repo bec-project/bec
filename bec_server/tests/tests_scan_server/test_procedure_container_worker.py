@@ -302,3 +302,27 @@ def test_connector_shutdown_failure_still_stops_worker(redis_mock, backend_mock,
         else:
             worker.__exit__(None, None, None)
     worker._kill_process.assert_called_once()
+
+
+def test_cancel_before_attached_start_removes_created_container():
+    worker = ContainerProcedureWorker.__new__(ContainerProcedureWorker)
+    worker._worker_id = "worker"
+    worker.container_name = "pending-worker"
+    worker._backend = MagicMock()
+    worker._backend.state.return_value = PodmanContainerStates.CREATED
+    worker._process = MagicMock()
+    exists = {"container": True}
+
+    def remove(name):
+        assert name == "pending-worker"
+        exists["container"] = False
+
+    def delayed_start(timeout):
+        assert not exists["container"], "The pending start could still launch the container"
+        return 125
+
+    worker._backend.remove.side_effect = remove
+    worker._process.wait.side_effect = delayed_start
+    worker._kill_process()
+    worker._backend.remove.assert_called_once_with("pending-worker")
+    worker._process.stdin.close.assert_called_once()

@@ -24,6 +24,10 @@ class ProcedureWorker(ABC):
         queue: str,
         lifetime_s: float | None = None,
         env: dict[str, str] | None = None,
+        *,
+        worker_id: str | None = None,
+        credentials: dict[str, str | None] | None = None,
+        control_credentials: dict[str, str | None] | None = None,
     ):
         """Start a worker to run procedures on the queue identified by `queue`. Should be used as a
         context manager to ensure that cleanup is handled on destruction. E.g.:
@@ -37,27 +41,46 @@ class ProcedureWorker(ABC):
             queue (str): name of the queue to listen to execution messages on
             lifetime_s (int): how long to stay alive with nothing in the queue
             env (dict[str,str]): for out of process workers, environment variables to pass in
+            worker_id (str | None): Independent ID for a queue-owned worker; None for actors.
+            credentials (dict[str, str | None] | None): User credentials injected through stdin.
+            control_credentials (dict[str, str | None] | None): Parent-only service connection credentials.
         """
 
+        self._worker_id = worker_id
+        self._credentials = credentials
+        self._control_credentials = control_credentials
         self._additional_env = env or {}
         self._lifetime_s = lifetime_s or PROCEDURE.WORKER.QUEUE_TIMEOUT_S
         self._queue = queue
 
         self.key = MessageEndpoints.procedure_execution(queue)
         self._active_procs_endpoint = MessageEndpoints.active_procedure_executions()
-        self.status = ProcedureWorkerStatus.IDLE
+        self.status = (
+            ProcedureWorkerStatus.NONE if worker_id is not None else ProcedureWorkerStatus.IDLE
+        )
         self._redis_server = server
         self._conn = RedisConnector([server], name=f"ProcedureWorker-{queue} RedisConnector")
-        self._helper = BackendProcedureHelper(self._conn)
-        self.client_id = self._conn.client_id()
         self._current_execution_id: str | None = None
         self._aborted = Event()
         self._shutdown_lock = Lock()
 
         try:
+            if control_credentials is not None:
+                self._conn.authenticate(
+                    username=control_credentials["username"] or "default",
+                    password=control_credentials["token"],
+                )
+            self._helper = BackendProcedureHelper(self._conn)
+            self.client_id = self._conn.client_id()
             self._setup_execution_environment()
         except BaseException:
-            self._conn.shutdown()
+            try:
+                if hasattr(self, "_process"):
+                    self._cleanup_execution_environment()
+                else:
+                    self._conn.shutdown()
+            except Exception:
+                logger.error("Failed to clean up procedure worker startup")
             raise
 
     def __enter__(self):

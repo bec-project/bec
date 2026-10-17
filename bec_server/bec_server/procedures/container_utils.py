@@ -10,7 +10,7 @@ from typing import Iterator, Literal, cast
 
 from podman import PodmanClient
 from podman.domain.containers import Container
-from podman.errors import APIError
+from podman.errors import APIError, NotFound
 
 from bec_lib.logger import bec_logger
 from bec_server.procedures.constants import (
@@ -80,6 +80,67 @@ class _PodmanUtilsBase(ContainerCommandBackend):
             volume=f"{PROCEDURE.CONTAINER.DEPLOYMENT_PATH}:/bec:ro:z",
             tag=f"{PROCEDURE.CONTAINER.IMAGE_NAME}:v{PROCEDURE.BEC_VERSION}",
         )
+
+    def run_interactive(
+        self,
+        image_tag: str,
+        environment: OopWorkerEnv,
+        volumes: list[VolumeSpec],
+        command: str,
+        pod_name: str | None = None,
+        container_name: str | None = None,
+    ) -> subprocess.Popen:
+        """Attach process pipes so private worker bootstrap never enters Podman metadata.
+
+        Args:
+            image_tag (str): Worker image.
+            environment (OopWorkerEnv): Non-secret worker settings.
+            volumes (list[VolumeSpec]): Code mounts.
+            command (str): Worker entry point.
+            pod_name (str | None): Existing Podman pod.
+            container_name (str | None): Unique worker container name.
+        Returns:
+            subprocess.Popen: Attached process with stdin and separate output pipes.
+        """
+        prefix = self._cli_prefix()
+        args = [*prefix, "create", "-i"]
+        args.extend(_multi_args_from_dict("-e", environment))
+        for volume in volumes:
+            args.extend(
+                [
+                    "-v",
+                    f"{volume['source']}:{volume['target']}{':ro' if volume['read_only'] else ''}",
+                ]
+            )
+        if pod_name:
+            args.extend(["--pod", pod_name])
+        if container_name:
+            args.extend(["--name", container_name])
+        # Create synchronously: cancelling the attached start cannot leave a later
+        # `podman run` creating an orphan container after cleanup has returned.
+        container_id = _run_and_capture_error(*args, image_tag, command).stdout.decode().strip()
+        try:
+            return subprocess.Popen(
+                [*prefix, "start", "--attach", "--interactive", container_id],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0,
+            )
+        except BaseException:
+            self.remove(container_id)
+            raise
+
+    def _cli_prefix(self) -> list[str]:
+        return ["podman", "--url", self.uri] if isinstance(self, PodmanApiUtils) else ["podman"]
+
+    def remove(self, id: str) -> None:
+        """Remove a stopped or starting worker container, preventing a later start.
+
+        Args:
+            id (str): Container name or ID.
+        """
+        _run_and_capture_error(*self._cli_prefix(), "rm", "--force", "--ignore", id)
 
 
 class PodmanApiOutput(ContainerCommandOutput):
@@ -157,7 +218,10 @@ class PodmanApiUtils(_PodmanUtilsBase):
 
     def state(self, id: str) -> PodmanContainerStates | None:
         with PodmanClient(base_url=self.uri) as client:
-            status = client.containers.get(id).status
+            try:
+                status = client.containers.get(id).status
+            except NotFound:
+                return None
             if status == "unknown":
                 return None
             return PodmanContainerStates(status)
@@ -259,7 +323,11 @@ class PodmanCliUtils(_PodmanUtilsBase):
 
     def state(self, id: str) -> PodmanContainerStates | None:
         for container in self._podman_ls_json():
-            if container["Id"] == id or container["Id"].startswith(id):
+            if (
+                container["Id"] == id
+                or container["Id"].startswith(id)
+                or id in container.get("Names", [])
+            ):
                 if names := container.get("Names"):
                     logger.debug(f"Container {names[0]} status: {container['State']}")
                 return PodmanContainerStates(container["State"])

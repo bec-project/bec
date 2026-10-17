@@ -1937,15 +1937,20 @@ class ProcedureWorkerStatusMessage(BECMessage):
     """Message type for sending procedure worker status updates
 
     Args:
-        worker_queue (str): Worker queue ID
+        worker_queue (str): Worker identifier; legacy actor workers use their queue ID.
         status (str): Worker status
         current_execution_id (str | None): ID of the current job, only allowed for RUNNING
+        completed_execution_id (str | None): Completed pooled execution, if any.
+        error (str | None): Error from the completed execution.
     """
 
     msg_type: ClassVar[str] = "procedure_worker_status_message"
     worker_queue: str
     status: ProcedureWorkerStatus
     current_execution_id: str | None = None
+
+    completed_execution_id: str | None = None
+    error: str | None = None
 
     @model_validator(mode="after")
     def check_id(self) -> Self:
