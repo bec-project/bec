@@ -149,17 +149,21 @@ proc_redis = redis_factories.redis_proc()
 
 
 @pytest.mark.timeout(120)
-def test_container_procedure_execution(proc_redis, monkeypatch):
-    """Execute a real procedure in Podman against the configured test Redis server.
+@pytest.mark.parametrize(
+    "worker_type", [ContainerProcedureWorker, SubProcessWorker], ids=["podman", "subprocess"]
+)
+def test_procedure_execution(proc_redis, monkeypatch, worker_type):
+    """Execute a real procedure with either worker backend against isolated Redis.
 
-    Requires the worker image and a host-networked ``local_bec`` pod. For a remote
+    Podman requires the worker image and a host-networked ``local_bec`` pod. For a remote
     Podman VM, BEC_TEST_CONTAINER_REDIS_HOST can supply a container-reachable host.
     """
-    if not podman_available():
+    uses_container = worker_type is ContainerProcedureWorker
+    if uses_container and not podman_available():
         pytest.skip("Podman is not available")
     host, port = proc_redis.host, proc_redis.port
-    queue = f"container_test_{uuid4().hex}"
-    if container_host := os.environ.get("BEC_TEST_CONTAINER_REDIS_HOST"):
+    queue = f"procedure_test_{uuid4().hex}"
+    if uses_container and (container_host := os.environ.get("BEC_TEST_CONTAINER_REDIS_HOST")):
         worker_environment = ContainerProcedureWorker._worker_environment
         monkeypatch.setattr(
             ContainerProcedureWorker,
@@ -167,19 +171,23 @@ def test_container_procedure_execution(proc_redis, monkeypatch):
             lambda worker: worker_environment(worker)
             | {"redis_server": f"{container_host}:{port}"},
         )
-    manager = ProcedureManager(f"{host}:{port}", ContainerProcedureWorker)
+    manager = ProcedureManager(f"{host}:{port}", worker_type)
     try:
         status = manager._helper.request.procedure(
-            "_log_msg_args", args_kwargs=(("podman regression",), {}), queue=queue
+            "_log_msg_args", args_kwargs=(("procedure regression",), {}), queue=queue
         )
         status.wait(timeout_s=90, raise_on_failure=True)
-        assert status.done, "Container procedure remained scheduled"
+        assert status.done, "Procedure remained scheduled"
         assert status.state == ProcedureState.SUCCESS
         _wait_while(lambda: bool(manager.active_workers()), 20)
-        assert any("podman regression" in line for line in manager._logs)
+        logs = manager._conn.xrange(MessageEndpoints.procedure_logs(queue), "-", "+") or []
+        assert any("procedure regression" in entry["data"].data for entry in logs)
+        if uses_container:
+            assert any("procedure regression" in line for line in manager._logs)
     finally:
         try:
             manager.shutdown()
         finally:
-            container_name = f"bec_procedure_{PROCEDURE.BEC_VERSION}_{queue}"
-            _run_and_capture_error("podman", "rm", "--force", "--ignore", container_name)
+            if uses_container:
+                container_name = f"bec_procedure_{PROCEDURE.BEC_VERSION}_{queue}"
+                _run_and_capture_error("podman", "rm", "--force", "--ignore", container_name)
