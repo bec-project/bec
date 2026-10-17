@@ -268,14 +268,12 @@ def test_bl_state_actor_cancelled_startup(ready, stop_before_run, threads_check)
 
 
 @patch("bec_server.actors.worker.actor_procedure")
-@patch("bec_server.actors.worker.RedisOutputDiverter")
-@patch("bec_server.actors.worker.RedisConnector")
 @patch("bec_server.actors.worker.push_status")
 @patch("bec_server.actors.worker.setup")
 @patch("bec_server.actors.worker.get_actor_env", return_value={})
 @patch("bec_server.actors.worker.get_env")
 def test_actor_worker_reports_finished(
-    get_env_mock, actor_env_mock, setup_mock, push_mock, conn_mock, diverter_mock, procedure_mock
+    get_env_mock, actor_env_mock, setup_mock, push_mock, procedure_mock
 ):
     from bec_server.actors.worker import main
 

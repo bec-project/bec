@@ -237,10 +237,21 @@ def _main(
             helper.remove_from_active.by_exec_id(item.execution_id)
 
 
-def main():
-    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
+def main(*, output_to_redis: bool = True) -> None:
+    """Run the worker entry point.
+
+    Args:
+        output_to_redis (bool): Redirect procedure output to Redis in this process. Subprocess
+            workers disable this because their parent streams both output pipes instead.
+    """
 
     env, helper, client, conn = setup(get_env())
+    if not output_to_redis:
+        try:
+            _main(env, helper, client, conn)
+        finally:
+            conn.shutdown()
+        return
     logger_connector = RedisConnector(env["redis_server"])
     output_diverter = RedisOutputDiverter(logger_connector, env["queue"])
     with redirect_stdout(output_diverter):
