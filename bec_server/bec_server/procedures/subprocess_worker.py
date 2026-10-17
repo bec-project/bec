@@ -22,7 +22,8 @@ class SubProcessWorker(OutOfProcessWorkerBase):
     WORKER_FILE = __file__
 
     def _setup_execution_environment(self):
-        env: dict[str, str] = self._worker_environment()  # type: ignore
+        # Match the UTF-8 decoder in the parent even when the host uses another encoding.
+        env: dict[str, str] = {"PYTHONIOENCODING": "utf-8"} | self._worker_environment()
         first_start = not hasattr(self, "_output_logs")
         self._output_error_logged = False
         if first_start:
