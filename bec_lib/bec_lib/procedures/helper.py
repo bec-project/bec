@@ -185,9 +185,11 @@ class _Request(_HelperBase):
         return self._procedure(msg)
 
     def _procedure(self, msg):
+        username = self._conn.username
+        msg.metadata["client_info"] = {"acl_user": username}
         st = ProcedureStatus(self._conn, msg.execution_id, msg.identifier)
         self._set_callbacks(msg.execution_id, st)
-        self._conn.send(ME.procedure_request(), msg)
+        self._conn.send(ME.procedure_request(username), msg)
         return st
 
     def abort_execution(self, execution_id: str):
