@@ -107,6 +107,8 @@ class InlineWorker(SubProcessWorker):
         self._aborted = threading.Event()
         self._shutdown_lock = threading.Lock()
         self._process = MagicMock()
+        self._output_logs = []
+        self._output_lock = threading.Lock()
         self._process.poll = MagicMock(return_value=None)
         self._ending: bool = False
 

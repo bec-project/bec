@@ -182,8 +182,7 @@ def test_procedure_execution(proc_redis, monkeypatch, worker_type):
         _wait_while(lambda: bool(manager.active_workers()), 20)
         logs = manager._conn.xrange(MessageEndpoints.procedure_logs(queue), "-", "+") or []
         assert any("procedure regression" in entry["data"].data for entry in logs)
-        if uses_container:
-            assert any("procedure regression" in line for line in manager._logs)
+        assert any("procedure regression" in line for line in manager._logs)
     finally:
         try:
             manager.shutdown()
