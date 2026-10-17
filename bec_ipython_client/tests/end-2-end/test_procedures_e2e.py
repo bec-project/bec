@@ -10,12 +10,15 @@ from uuid import uuid4
 
 import pytest
 from pytest_redis import factories as redis_factories
+from redis.exceptions import NoPermissionError
 
 from bec_ipython_client.main import BECIPythonClient
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.procedures.helper import ProcedureState
+from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState
+from bec_lib.redis_connector import RedisConnector
+from bec_lib.utils.user_acls_test import BECAccessDemo
 from bec_server.procedures.constants import _CONTAINER, _WORKER, PROCEDURE
 from bec_server.procedures.container_utils import (
     _run_and_capture_error,
@@ -84,9 +87,12 @@ def test_procedure_runner_spawns_worker(
 ):
     client, _, manager = client_logtool_and_manager
     assert manager._active_workers == {}
-    endpoint = MessageEndpoints.procedure_request()
+    endpoint = MessageEndpoints.procedure_request(client.connector.username)
     msg = messages.ProcedureRequestMessage(
-        identifier="sleep", args_kwargs=((), {"time_s": 0.1}), queue="test"
+        identifier="sleep",
+        args_kwargs=((), {"time_s": 0.1}),
+        queue="test",
+        metadata={"client_info": {"acl_user": client.connector.username}},
     )
 
     logs = []
@@ -114,9 +120,11 @@ def test_happy_path_container_procedure_runner(
     client, logtool, manager = client_logtool_and_manager
     assert manager._active_workers == {}
     conn = client.connector
-    endpoint = MessageEndpoints.procedure_request()
+    endpoint = MessageEndpoints.procedure_request(client.connector.username)
     msg = messages.ProcedureRequestMessage(
-        identifier="_log_msg_args", args_kwargs=(test_args, test_kwargs)
+        identifier="_log_msg_args",
+        args_kwargs=(test_args, test_kwargs),
+        metadata={"client_info": {"acl_user": client.connector.username}},
     )
     conn.send(endpoint, msg)
 
@@ -146,6 +154,57 @@ def test_happy_path_container_procedure_runner(
 
 # A separate Redis prevents the scan server's manager from also consuming this request.
 proc_redis = redis_factories.redis_proc()
+
+
+@pytest.mark.timeout(30)
+def test_personal_procedure_submission_acl(proc_redis):
+    """Only the submitting ACL user can publish or subscribe to their request channel."""
+    server = f"{proc_redis.host}:{proc_redis.port}"
+    manager = ProcedureManager(server, SubProcessWorker)
+    alice = RedisConnector(server)
+    bob = RedisConnector(server)
+    try:
+        access = BECAccessDemo(manager._conn)
+        access.add_account("alice", None, "user")
+        access.add_account("bob", None, "user")
+        alice.authenticate(username="alice", password=None)
+        bob.authenticate(username="bob", password=None)
+        with (
+            patch.object(manager, "_process_queue_request") as process,
+            patch.object(manager, "_ack", wraps=manager._ack) as acknowledge,
+        ):
+            helper = FrontendProcedureHelper(alice)
+            helper.request.procedure("sleep")
+            _wait_while(lambda: process.call_count < 1, 5)
+            received = process.call_args.args[0]
+            assert received.topic == MessageEndpoints.procedure_request("alice").endpoint
+            assert received.value.metadata["client_info"]["acl_user"] == "alice"
+
+            # A later login must change both the personal channel and the supplied identity.
+            alice.authenticate(username="bob", password=None)
+            helper.request.procedure("sleep")
+            _wait_while(lambda: process.call_count < 2, 5)
+            assert process.call_args.args[0].value.metadata["client_info"]["acl_user"] == "bob"
+
+            forged = messages.ProcedureRequestMessage(
+                identifier="sleep", metadata={"client_info": {"acl_user": "alice"}}
+            )
+            bob.send(MessageEndpoints.procedure_request("bob"), forged)
+            _wait_while(lambda: not acknowledge.called, 5)
+            acknowledge.assert_called_once_with(
+                False, "Username in topic does not match client info.", forged.execution_id
+            )
+            assert process.call_count == 2
+            with pytest.raises(NoPermissionError):
+                bob.send(MessageEndpoints.procedure_request("alice"), forged)
+            with bob._managed_connection._redis_conn.pubsub() as subscription:
+                subscription.subscribe(MessageEndpoints.procedure_request("alice").endpoint)
+                with pytest.raises(NoPermissionError):
+                    subscription.get_message(timeout=1)
+    finally:
+        alice.shutdown()
+        bob.shutdown()
+        manager.shutdown()
 
 
 @pytest.mark.timeout(120)
