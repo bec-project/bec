@@ -1,7 +1,7 @@
 import builtins
 import threading
 import time
-from concurrent.futures import Future
+from concurrent.futures import Future, wait
 from functools import partial
 from itertools import starmap
 from typing import Any, Iterable
@@ -770,3 +770,128 @@ def test_spawn_cleans_up_before_reading_logs(procedure_manager):
         assert "worker error output" in procedure_manager._logs
     finally:
         del procedure_manager._active_workers["test"]
+
+
+@pytest.mark.parametrize("abort_action", ["queue", "all", "shutdown"])
+def test_abort_during_worker_startup(procedure_manager, abort_action):
+    procedure_manager._helper.clear.unhandled_queue("starting")
+    starting = threading.Event()
+    finish_startup = threading.Event()
+    started_requests = []
+    worker = MagicMock()
+    worker.__enter__.return_value = worker
+    worker.logs.return_value = []
+
+    def create_worker(*args, **kwargs):
+        starting.set()
+        assert finish_startup.wait(5)
+        if abort_action != "shutdown":
+            # The child can consume requests before the constructor returns to the manager.
+            request = procedure_manager._conn.blocking_list_pop(
+                MessageEndpoints.procedure_execution("starting"), timeout_s=0.01
+            )
+            if request is not None:
+                started_requests.append(request)
+        return worker
+
+    def wait_for_worker(futures, timeout=None):
+        finish_startup.set()
+        result = wait(futures, timeout=1)
+        assert not result.not_done, "Abort held the lock needed to finish worker startup"
+        return result
+
+    procedure_manager._worker_cls = MagicMock(side_effect=create_worker)
+    request = ProcedureRequestMessage(identifier="sleep", queue="starting")
+    procedure_manager._process_queue_request(MessageObject(topic="", value=request))
+    try:
+        assert starting.wait(5)
+        with patch("bec_server.procedures.manager.futures.wait", side_effect=wait_for_worker):
+            if abort_action == "shutdown":
+                procedure_manager.shutdown()
+            else:
+                abort = (
+                    ProcedureAbortMessage(abort_all=True)
+                    if abort_action == "all"
+                    else ProcedureAbortMessage(queue="starting")
+                )
+                procedure_manager._process_abort(MessageObject(topic="", value=abort))
+        worker.abort.assert_called_once()
+        worker.work.assert_not_called()
+        assert started_requests == [], "A pending procedure started while abort was waiting"
+        if abort_action != "shutdown":
+            assert len(procedure_manager._helper.get.unhandled_queue("starting")) == 1
+        wait_until(lambda: not procedure_manager.active_workers(), timeout_s=5)
+    finally:
+        finish_startup.set()
+
+
+@pytest.mark.parametrize("abort_all", [False, True])
+def test_abort_pending_worker_does_not_wait_for_executor(procedure_manager, abort_all):
+    future = Future()
+    procedure_manager.executor.submit = MagicMock(return_value=future)
+    request = ProcedureRequestMessage(identifier="sleep", queue="pending")
+    procedure_manager._process_queue_request(MessageObject(topic="", value=request))
+
+    def wait_for_worker(futures, timeout=None):
+        result = wait(futures, timeout=0)
+        assert not result.not_done, "Cancelled workers should not wait for an executor thread"
+        return result
+
+    abort = (
+        ProcedureAbortMessage(abort_all=True)
+        if abort_all
+        else ProcedureAbortMessage(queue="pending")
+    )
+    with patch("bec_server.procedures.manager.futures.wait", side_effect=wait_for_worker):
+        procedure_manager._process_abort(MessageObject(topic="", value=abort))
+    assert future.cancelled()
+    assert procedure_manager.active_workers() == []
+
+
+def test_abort_all_stops_registered_workers_before_draining(procedure_manager):
+    queue = "running_abort"
+    request = ProcedureExecutionMessage(identifier="sleep", queue=queue, execution_id="pending")
+    procedure_manager._helper.push.exec(queue, request)
+    stopped = threading.Event()
+    future = Future()
+    future.set_running_or_notify_cancel()
+    worker = MagicMock()
+
+    def stop_worker():
+        stopped.set()
+        future.set_result(None)
+
+    worker.abort.side_effect = stop_worker
+    procedure_manager._active_workers[queue] = {"worker": worker, "future": future}
+    future.add_done_callback(procedure_manager._cleanup_worker_function(queue))
+    drain = procedure_manager._helper.move.all_execution_queues_to_unhandled
+    consumed = []
+    execution_snapshots = []
+
+    def observe_queue(notified_queue, queue_type):
+        if notified_queue == queue and queue_type == "execution":
+            execution_snapshots.append(procedure_manager._helper.get.exec_queue(queue))
+
+    def drain_with_active_child():
+        if not stopped.is_set():
+            consumed.append(
+                procedure_manager._conn.blocking_list_pop(
+                    MessageEndpoints.procedure_execution(queue), timeout_s=0.01
+                )
+            )
+        drain()
+
+    with (
+        patch.object(
+            procedure_manager._helper.move,
+            "all_execution_queues_to_unhandled",
+            side_effect=drain_with_active_child,
+        ),
+        patch.object(procedure_manager._helper, "notify_watchers", side_effect=observe_queue),
+    ):
+        procedure_manager._process_abort(
+            MessageObject(topic="", value=ProcedureAbortMessage(abort_all=True))
+        )
+    assert consumed == [], "A running child consumed a request during the queue drain"
+    assert procedure_manager._helper.get.unhandled_queue(queue) == [request]
+    assert execution_snapshots[-1] == [], "Watchers must see the drained execution queue"
