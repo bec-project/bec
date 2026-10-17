@@ -1,3 +1,4 @@
+from subprocess import CompletedProcess
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -217,3 +218,37 @@ def test_cli_get_state(cli_utils_with_fake_container_json: PodmanCliUtils):
     assert cli_utils_with_fake_container_json.state(
         "13826d25a737b733a5d87975b50a9c1efb5d087365d956cb7db2ccbe6aca07c4"
     ) == PodmanContainerStates("running")
+
+
+def test_cli_logs_include_stdout_and_stderr(cli_utils):
+    utils, run = cli_utils
+    run.return_value.stdout = b"startup output\n"
+    run.return_value.stderr = b"startup error\n"
+    assert utils.logs("test") == ["startup output", "startup error"]
+
+
+def test_cli_run_ignores_missing_previous_container(cli_utils):
+    utils, run_mock = cli_utils
+    run_mock.reset_mock()
+
+    def run_command(command, **kwargs):
+        missing_container = command[1] == "rm" and "--ignore" not in command
+        return CompletedProcess(
+            command,
+            returncode=1 if missing_container else 0,
+            stdout=b"worker-id\n",
+            stderr=b"No such container" if missing_container else b"",
+        )
+
+    run_mock.side_effect = run_command
+    container_id = utils.run(
+        "worker-image",
+        {"redis_server": "localhost:6379", "queue": "test", "timeout_s": "10"},
+        [],
+        "bec-procedure-worker",
+        container_name="new-worker",
+    )
+
+    assert container_id == "worker-id"
+    run_mock.assert_any_call(["podman", "rm", "-f", "--ignore", "new-worker"], capture_output=True)
+    assert run_mock.call_args.args[0][:2] == ["podman", "run"]

@@ -20,8 +20,8 @@ from bec_server.test.helpers import wait_until
 
 @pytest.fixture
 def fakeredis_config():
-    redis_config = "localhost", 44556
-    server = TcpFakeServer(redis_config)
+    server = TcpFakeServer(("127.0.0.1", 0))
+    redis_config = server.server_address
     t = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
     t.start()
     yield redis_config
@@ -122,6 +122,7 @@ def test_subscription_actor_unsubs():
 def test_polling_actor_inline(fakeredis_config):
     host, port = fakeredis_config
     redis = {"host": host, "port": port}
+    BECClient._reset_singleton()
     client: BECClient = _create_client(BecClientType.BECClient, redis=redis)  # type: ignore
     client.start()
     redis = f"{host}:{port}"
@@ -140,6 +141,7 @@ def test_polling_actor_inline(fakeredis_config):
         actor.stop_event.set()
         actor_thread.join()
         client.shutdown()
+        BECClient._reset_singleton()
 
 
 def test_actor_procedure_happy_path():
@@ -263,3 +265,26 @@ def test_bl_state_actor_cancelled_startup(ready, stop_before_run, threads_check)
             mock_client.beamline_states.ready = True
             actor.stop_event.set()
             t.join(timeout=2)
+
+
+@patch("bec_server.actors.worker.actor_procedure")
+@patch("bec_server.actors.worker.push_status")
+@patch("bec_server.actors.worker.setup")
+@patch("bec_server.actors.worker.get_actor_env", return_value={})
+@patch("bec_server.actors.worker.get_env")
+def test_actor_worker_reports_finished(
+    get_env_mock, actor_env_mock, setup_mock, push_mock, procedure_mock
+):
+    from bec_server.actors.worker import main
+
+    conn = MagicMock()
+    setup_mock.return_value = (
+        {"redis_server": "localhost:6379", "queue": "test"},
+        None,
+        MagicMock(),
+        conn,
+    )
+    with patch("bec_server.actors.worker.logger"):
+        main()
+    assert push_mock.call_args.args == (conn, "test", ProcedureWorkerStatus.FINISHED)
+    conn.shutdown.assert_called_once()

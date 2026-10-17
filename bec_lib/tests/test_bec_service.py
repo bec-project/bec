@@ -408,7 +408,7 @@ def test_parse_cmdline_args_with_config():
                     "file_log_level": None,
                     "redis_log_level": None,
                     "bec_server": None,
-                    "use_subprocess_proc_worker": False,
+                    "use_subprocess_proc_worker": None,
                 },
                 config_name="server",
             )
@@ -429,7 +429,7 @@ def test_parse_cmdline_args_with_user():
                     "file_log_level": None,
                     "redis_log_level": None,
                     "bec_server": None,
-                    "use_subprocess_proc_worker": False,
+                    "use_subprocess_proc_worker": None,
                 },
                 acl={"user": "admin"},
                 config_name="server",

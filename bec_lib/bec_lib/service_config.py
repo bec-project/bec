@@ -7,7 +7,7 @@ import os
 import re
 from getpass import getuser
 from pathlib import Path
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -114,21 +114,20 @@ class ServiceConfigModel(BaseModel):
     procedures: ProcedureConfig = Field(default_factory=ProcedureConfig)
 
     @model_validator(mode="before")
-    def apply_cmdline_args(self, data: Any) -> Self:
-        if isinstance(data, dict):
-            if cmdline_args := data.get("cmdline_args"):
-                for arg in cmdline_args.items():
-                    self._update_data_for_arg(arg, data)
-        return self
-
-    def _update_data_for_arg(self, arg: tuple[str, Any], data: dict):
-        argname, argval = arg
-        if argname not in self._CMDLINE_ARGS:
+    @classmethod
+    def apply_cmdline_args(cls, data: Any) -> Any:
+        """Apply supplied CLI overrides before validating the configuration."""
+        if not isinstance(data, dict):
             return data
-        subconfig, variable = self._CMDLINE_ARGS[argname]
-        if subconfig not in data:
-            data[subconfig] = {}
-        data[subconfig][variable] = argval
+        data = data.copy()
+        for argname, argval in (data.get("cmdline_args") or {}).items():
+            if argname not in cls._CMDLINE_ARGS or argval is None:
+                continue
+            subconfig, variable = cls._CMDLINE_ARGS[argname]
+            values = data.get(subconfig, {})
+            if isinstance(values, BaseModel):
+                values = values.model_dump()
+            data[subconfig] = {**values, variable: argval}
         return data
 
 

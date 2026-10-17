@@ -1,6 +1,7 @@
 import builtins
 import threading
 import time
+from concurrent.futures import Future
 from functools import partial
 from itertools import starmap
 from typing import Any, Iterable
@@ -104,7 +105,10 @@ class InlineWorker(SubProcessWorker):
         self.client_id = 0
         self._current_execution_id: str | None = None
         self._aborted = threading.Event()
+        self._shutdown_lock = threading.Lock()
         self._process = MagicMock()
+        self._output_logs = []
+        self._output_lock = threading.Lock()
         self._process.poll = MagicMock(return_value=None)
         self._ending: bool = False
 
@@ -226,12 +230,28 @@ PROCESS_REQUEST_TEST_CASES = [
 ]
 
 
+class PendingWorkerFuture(Future):
+    """Model cancellation notification normally performed by the executor thread."""
+
+    def cancel(self):
+        cancelled = super().cancel()
+        if cancelled and self._state == "CANCELLED":
+            self.set_running_or_notify_cancel()
+        return cancelled
+
+
 @pytest.fixture
 def process_request_manager(procedure_manager: ProcedureManager):
     procedure_manager._validate_request = MagicMock(side_effect=lambda msg: msg)
     procedure_manager._ack = MagicMock()
     procedure_manager._conn.rpush = MagicMock()
     procedure_manager.spawn = MagicMock()
+
+    def submit(fn, **kwargs):
+        fn(**kwargs)
+        return PendingWorkerFuture()
+
+    procedure_manager.executor.submit = MagicMock(side_effect=submit)
     yield procedure_manager
 
 
@@ -267,6 +287,7 @@ class UnlockableWorker(ProcedureWorker):
         # super().__init__(server, queue, lifetime_s)
         self.event_1 = threading.Event()
         self.event_2 = threading.Event()
+        self._shutdown_lock = threading.Lock()
         self._helper = MagicMock()
         self._conn = MagicMock()
         self.execution_id = execution_id
@@ -455,7 +476,10 @@ _ManagerWithMsgs = tuple[ProcedureManager, list[ProcedureExecutionMessage]]
 
 @pytest.fixture
 def manager_with_test_msgs(procedure_manager: ProcedureManager):
-    procedure_manager._worker_cls = MagicMock
+    # Queue-management tests do not execute workers.
+    procedure_manager.executor.submit = MagicMock(
+        side_effect=lambda *_, **__: PendingWorkerFuture()
+    )
     procedure_manager._conn._managed_connection.flushall()
     contents = [
         ("test_identifier_1", "queue1", ((), {})),
@@ -676,3 +700,73 @@ def test_builtin_proc_run_macro_not_found(shutdown_client):
     with pytest.raises(ValueError) as e:
         run_macro("not found", bec=shutdown_client)
     assert e.match("not found in the client namespace")
+
+
+def test_procedure_startup_failure_updates_status(procedure_manager):
+    procedure_manager._worker_cls = MagicMock(side_effect=RuntimeError("missing local_bec pod"))
+    procedure_manager._helper.clear.unhandled_queue("startup_failure")
+    status = procedure_manager._helper.request.procedure("sleep", queue="startup_failure")
+    wait_until(lambda: status.done, timeout_s=5)
+    assert status.state == ProcedureState.FAILED
+    assert "missing local_bec pod" in status.error
+    wait_until(lambda: not procedure_manager.active_workers(), timeout_s=5)
+    assert procedure_manager._helper.get.exec_queue("startup_failure") == []
+    assert len(procedure_manager._helper.get.unhandled_queue("startup_failure")) == 1
+
+
+def test_immediately_failed_future_is_cleaned_up(procedure_manager):
+    future = Future()
+    future.set_exception(RuntimeError("worker startup failed"))
+    procedure_manager.executor.submit = MagicMock(return_value=future)
+    procedure_manager._helper.clear.unhandled_queue("immediate_failure")
+    msg = ProcedureRequestMessage(identifier="sleep", queue="immediate_failure")
+    procedure_manager._process_queue_request(MessageObject(topic="", value=msg))
+    assert procedure_manager.active_workers() == []
+    assert procedure_manager._helper.get.exec_queue("immediate_failure") == []
+    assert len(procedure_manager._helper.get.unhandled_queue("immediate_failure")) == 1
+
+
+def test_worker_failure_reports_pending_and_running(procedure_manager):
+    procedure_manager._helper.clear.unhandled_queue("test")
+    pending = ProcedureExecutionMessage(identifier="sleep", queue="test", execution_id="pending")
+    running = ProcedureExecutionMessage(identifier="sleep", queue="test", execution_id="running")
+    other = ProcedureExecutionMessage(identifier="sleep", queue="other", execution_id="other")
+    procedure_manager._helper.push.exec("test", pending)
+    procedure_manager._conn._managed_connection.add_to_set(
+        MessageEndpoints.active_procedure_executions().endpoint, MsgpackSerialization.dumps(running)
+    )
+    procedure_manager._conn._managed_connection.add_to_set(
+        MessageEndpoints.active_procedure_executions().endpoint, MsgpackSerialization.dumps(other)
+    )
+    future = Future()
+    future.set_exception(RuntimeError("container exited"))
+    procedure_manager._active_workers["test"] = {"worker": None, "future": future}
+    with patch.object(procedure_manager._helper, "status_update") as update:
+        procedure_manager._cleanup_worker_function("test")(future)
+    assert {c.args[0] for c in update.call_args_list} == {"pending", "running"}
+    assert all(c.kwargs["error"].endswith("container exited") for c in update.call_args_list)
+    assert procedure_manager._helper.get.exec_queue("test") == []
+    assert procedure_manager._helper.get.running_procedures() == {other}
+    assert len(procedure_manager._helper.get.unhandled_queue("test")) == 2
+
+
+def test_spawn_cleans_up_before_reading_logs(procedure_manager):
+    worker = MagicMock()
+    worker.__enter__.return_value = worker
+    closed = threading.Event()
+    worker.__exit__.side_effect = lambda *_: closed.set()
+    worker.work.side_effect = RuntimeError("lost Redis connection")
+
+    def read_logs():
+        assert closed.is_set(), "Reading subprocess stdout before cleanup can block indefinitely"
+        return ["worker error output"]
+
+    worker.logs.side_effect = read_logs
+    procedure_manager._worker_cls = MagicMock(return_value=worker)
+    procedure_manager._active_workers["test"] = {"worker": None, "future": MagicMock()}
+    try:
+        with pytest.raises(RuntimeError, match="lost Redis connection"):
+            procedure_manager.spawn("test", {})
+        assert "worker error output" in procedure_manager._logs
+    finally:
+        del procedure_manager._active_workers["test"]

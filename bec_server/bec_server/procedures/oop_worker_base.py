@@ -59,7 +59,7 @@ class OutOfProcessWorkerBase(ProcedureWorker):
         minimum necessary, or things which are only necessary for the functioning of the worker,
         and other information should be passed through redis"""
         return {
-            "redis_server": f"{PROCEDURE.REDIS_HOST}:{self._conn.port}",
+            "redis_server": self._redis_server,
             "queue": self._queue,
             "timeout_s": str(self._lifetime_s),
         }
@@ -70,7 +70,7 @@ class OutOfProcessWorkerBase(ProcedureWorker):
         # on timeout check if container is still running
 
         status_update = None
-        while not self._ending_or_ended():
+        while not self._aborted.is_set():
             status_update = self._conn.blocking_list_pop(
                 MessageEndpoints.procedure_worker_status_update(self._queue), timeout_s=0.2
             )
@@ -82,10 +82,17 @@ class OutOfProcessWorkerBase(ProcedureWorker):
                 logger.info(
                     f"Procedure worker '{self._queue}' status update: {status_update.status.name}"
                 )
+            elif self._ending_or_ended():
+                break
             # TODO: we probably do want to handle some kind of timeout here but we don't know how
             # long a running procedure should actually take - it could theoretically be infinite
         if self.status != ProcedureWorkerStatus.FINISHED:
             self.status = ProcedureWorkerStatus.DEAD
+            if not self._aborted.is_set():
+                logs = "\n".join(self.logs())
+                raise ProcedureWorkerError(
+                    f"Procedure worker for queue {self._queue} exited unexpectedly.\n{logs}"
+                )
 
 
 def _default_env() -> dict[str, str]:
@@ -230,10 +237,21 @@ def _main(
             helper.remove_from_active.by_exec_id(item.execution_id)
 
 
-def main():
-    """Replaces the main contents of Worker.work() - should be called as the container entrypoint or command"""
+def main(*, output_to_redis: bool = True) -> None:
+    """Run the worker entry point.
+
+    Args:
+        output_to_redis (bool): Redirect procedure output to Redis in this process. Subprocess
+            workers disable this because their parent streams both output pipes instead.
+    """
 
     env, helper, client, conn = setup(get_env())
+    if not output_to_redis:
+        try:
+            _main(env, helper, client, conn)
+        finally:
+            conn.shutdown()
+        return
     logger_connector = RedisConnector(env["redis_server"])
     output_diverter = RedisOutputDiverter(logger_connector, env["queue"])
     with redirect_stdout(output_diverter):

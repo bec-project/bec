@@ -46,6 +46,8 @@ class RedisCredentials(TypedDict):
 
 def _log_on_end(future: Future):
     """Use as a callback so that future is always done."""
+    if future.cancelled():
+        return
     if e := future.exception():
         logger.error(f"Worker failed with exception: {e}")
     else:
@@ -141,9 +143,9 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         with self.lock:
             if exec_msg.queue not in self._active_workers:
                 new_worker = self.executor.submit(self.spawn, queue=queue, env=env)
+                self._active_workers[queue] = {"worker": None, "future": new_worker}
                 new_worker.add_done_callback(_log_on_end)
                 new_worker.add_done_callback(self._cleanup_worker_function(queue))
-                self._active_workers[queue] = {"worker": None, "future": new_worker}
         return exec_msg
 
     def spawn(self, queue: str, env: dict[str, str]):
@@ -156,11 +158,20 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
             raise WorkerAlreadyExists(
                 f"Queue {queue} already has an active worker in {self._active_workers}!"
             )
-        with self._worker_cls(self._server, queue, PROCEDURE.WORKER.QUEUE_TIMEOUT_S, env) as worker:
-            with self.lock:
-                self._active_workers[queue]["worker"] = worker
-            worker.work()
-            self._logs.extend(worker.logs())
+        worker = None
+        try:
+            with self._worker_cls(
+                self._server, queue, PROCEDURE.WORKER.QUEUE_TIMEOUT_S, env
+            ) as worker:
+                with self.lock:
+                    self._active_workers[queue]["worker"] = worker
+                worker.work()
+        finally:
+            if worker is not None:
+                logs = worker.logs()
+                self._logs.extend(logs)
+                for line in logs:
+                    logger.info(f"Procedure worker '{queue}': {line}")
 
     def _wait_for_all_futures(self):
         with self.lock:
@@ -195,7 +206,7 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         self._conn.shutdown()
         # cancel futures by hand to give us the opportunity to detach them from redis if they have started
         with self.lock:
-            for entry in self._active_workers.values():
+            for entry in list(self._active_workers.values()):
                 cancelled = entry["future"].cancel()
                 if not cancelled:
                     # unblock any waiting workers and let them shutdown
@@ -292,6 +303,20 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         def cleanup_worker(fut):
             with self.lock:
                 logger.debug(f"cleaning up worker {fut} for queue {queue}...")
+                error = None if fut.cancelled() else fut.exception()
+                if error is not None:
+                    pending = self._helper.get.exec_queue(queue)
+                    running = [
+                        msg for msg in self._helper.get.running_procedures() if msg.queue == queue
+                    ]
+                    self._helper.move.execution_queue_to_unhandled(queue)
+                    for msg in running:
+                        self._helper.push.unhandled(queue, msg)
+                    for msg in pending + running:
+                        self._helper.status_update(
+                            msg.execution_id, "Finished", error=f"Procedure worker failed: {error}"
+                        )
+                    self._helper.notify_watchers(queue, "unhandled")
                 self._helper.remove_from_active.by_queue(queue)
                 self._run_callbacks(queue)
                 self._helper.notify_watchers(queue, "execution")
