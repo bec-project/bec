@@ -1,7 +1,7 @@
 import builtins
 import threading
 import time
-from concurrent.futures import Future
+from concurrent.futures import Future, wait
 from functools import partial
 from itertools import starmap
 from typing import Any, Iterable
@@ -770,3 +770,67 @@ def test_spawn_cleans_up_before_reading_logs(procedure_manager):
         assert "worker error output" in procedure_manager._logs
     finally:
         del procedure_manager._active_workers["test"]
+
+
+@pytest.mark.parametrize("abort_action", ["queue", "all", "shutdown"])
+def test_abort_during_worker_startup(procedure_manager, abort_action):
+    starting = threading.Event()
+    finish_startup = threading.Event()
+    worker = MagicMock()
+    worker.__enter__.return_value = worker
+    worker.logs.return_value = []
+
+    def create_worker(*args, **kwargs):
+        starting.set()
+        assert finish_startup.wait(5)
+        return worker
+
+    def wait_for_worker(futures, timeout=None):
+        finish_startup.set()
+        result = wait(futures, timeout=1)
+        assert not result.not_done, "Abort held the lock needed to finish worker startup"
+        return result
+
+    procedure_manager._worker_cls = MagicMock(side_effect=create_worker)
+    request = ProcedureRequestMessage(identifier="sleep", queue="starting")
+    procedure_manager._process_queue_request(MessageObject(topic="", value=request))
+    try:
+        assert starting.wait(5)
+        with patch("bec_server.procedures.manager.futures.wait", side_effect=wait_for_worker):
+            if abort_action == "shutdown":
+                procedure_manager.shutdown()
+            else:
+                abort = (
+                    ProcedureAbortMessage(abort_all=True)
+                    if abort_action == "all"
+                    else ProcedureAbortMessage(queue="starting")
+                )
+                procedure_manager._process_abort(MessageObject(topic="", value=abort))
+        worker.abort.assert_called_once()
+        worker.work.assert_not_called()
+        wait_until(lambda: not procedure_manager.active_workers(), timeout_s=5)
+    finally:
+        finish_startup.set()
+
+
+@pytest.mark.parametrize("abort_all", [False, True])
+def test_abort_pending_worker_does_not_wait_for_executor(procedure_manager, abort_all):
+    future = Future()
+    procedure_manager.executor.submit = MagicMock(return_value=future)
+    request = ProcedureRequestMessage(identifier="sleep", queue="pending")
+    procedure_manager._process_queue_request(MessageObject(topic="", value=request))
+
+    def wait_for_worker(futures, timeout=None):
+        result = wait(futures, timeout=0)
+        assert not result.not_done, "Cancelled workers should not wait for an executor thread"
+        return result
+
+    abort = (
+        ProcedureAbortMessage(abort_all=True)
+        if abort_all
+        else ProcedureAbortMessage(queue="pending")
+    )
+    with patch("bec_server.procedures.manager.futures.wait", side_effect=wait_for_worker):
+        procedure_manager._process_abort(MessageObject(topic="", value=abort))
+    assert future.cancelled()
+    assert procedure_manager.active_workers() == []

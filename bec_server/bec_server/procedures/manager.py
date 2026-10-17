@@ -6,7 +6,7 @@ from collections import deque
 from concurrent import futures
 from concurrent.futures import Future, ThreadPoolExecutor
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, Protocol, TypedDict, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Generic, NotRequired, Protocol, TypedDict, TypeVar
 
 from pydantic import ValidationError
 
@@ -37,6 +37,7 @@ logger = bec_logger.logger
 class ProcedureWorkerEntry(TypedDict):
     worker: ProcedureWorker | None
     future: Future
+    abort_requested: NotRequired[bool]
 
 
 class RedisCredentials(TypedDict):
@@ -164,8 +165,13 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
                 self._server, queue, PROCEDURE.WORKER.QUEUE_TIMEOUT_S, env
             ) as worker:
                 with self.lock:
-                    self._active_workers[queue]["worker"] = worker
-                worker.work()
+                    entry = self._active_workers[queue]
+                    entry["worker"] = worker
+                    abort_requested = entry.get("abort_requested", False)
+                if abort_requested:
+                    worker.abort()
+                else:
+                    worker.work()
         finally:
             if worker is not None:
                 logs = worker.logs()
@@ -173,9 +179,18 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
                 for line in logs:
                     logger.info(f"Procedure worker '{queue}': {line}")
 
-    def _wait_for_all_futures(self):
+    def _abort_workers(self, entries: list[ProcedureWorkerEntry]) -> None:
+        """Stop selected workers, allowing workers still starting to register and abort."""
         with self.lock:
-            futs = list(entry["future"] for entry in self._active_workers.values())
+            for entry in entries:
+                entry["abort_requested"] = True
+            workers = [entry["worker"] for entry in entries if entry["worker"] is not None]
+        for entry in entries:
+            entry["future"].cancel()
+        for worker in workers:
+            worker.abort()
+        # A cancelled future need not have been picked up by an executor thread yet.
+        futs = [entry["future"] for entry in entries if not entry["future"].cancelled()]
         futures.wait(futs, timeout=PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S)
 
     def active_workers(self) -> list[str]:
@@ -204,16 +219,9 @@ class ProcedureManagerBase(ABC, Generic[_ReqMsgT, _ExecMsgT]):
         logger.debug(f"shutting down {self.__class__.__name__}")
         self._unregister_endpoints()
         self._conn.shutdown()
-        # cancel futures by hand to give us the opportunity to detach them from redis if they have started
         with self.lock:
-            for entry in list(self._active_workers.values()):
-                cancelled = entry["future"].cancel()
-                if not cancelled:
-                    # unblock any waiting workers and let them shutdown
-                    if worker := entry["worker"]:
-                        # redis unblock executor.client_id
-                        worker.abort()
-        self._wait_for_all_futures()
+            entries = list(self._active_workers.values())
+        self._abort_workers(entries)
         self.executor.shutdown()
 
     @abstractmethod
@@ -398,12 +406,12 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
 
     def _process_abort(self, msg: MessageObject):
         message: ProcedureAbortMessage = msg.value  # type: ignore
-        with self.lock:
-            if message.abort_all:
-                self._abort_all()
-            if message.queue is not None:
-                self._abort_queue(message.queue)
-            if message.execution_id is not None:
+        if message.abort_all:
+            self._abort_all()
+        if message.queue is not None:
+            self._abort_queue(message.queue)
+        if message.execution_id is not None:
+            with self.lock:
                 self._abort_execution(message.execution_id)
 
     def _abort_execution(self, execution_id: str):
@@ -423,12 +431,11 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
         del self._messages_by_ids[execution_id]
 
     def _abort_queue(self, queue: str):
-        self._helper.move.execution_queue_to_unhandled(queue)
-        if (entry := self._active_workers.get(queue)) is not None:
-            if entry["worker"] is not None:
-                entry["worker"].abort()
-            entry["future"].cancel()
-            futures.wait((entry["future"],), PROCEDURE.MANAGER_SHUTDOWN_TIMEOUT_S)
+        with self.lock:
+            self._helper.move.execution_queue_to_unhandled(queue)
+            entry = self._active_workers.get(queue)
+        if entry is not None:
+            self._abort_workers([entry])
         else:
             logger.warning(f"Received abort request for unknown queue {queue}!")
         self._helper.notify_watchers(queue, "execution")
@@ -436,13 +443,9 @@ class ProcedureManager(ProcedureManagerBase[ProcedureRequestMessage, ProcedureEx
     def _abort_all(self):
         with self.lock:
             entries = list(self._active_workers.values())
-            for entry in entries:
-                if entry["worker"] is not None:
-                    entry["worker"].abort()
-            for entry in entries:
-                entry["future"].cancel()
-        self._helper.move.all_execution_queues_to_unhandled()
-        self._wait_for_all_futures()
+        self._abort_workers(entries)
+        with self.lock:
+            self._helper.move.all_execution_queues_to_unhandled()
 
     def _process_clear_unhandled(self, msg: MessageObject):
         message: ProcedureClearUnhandledMessage = msg.value  # type: ignore
