@@ -7,6 +7,7 @@ import json
 import pkgutil
 import sys
 from functools import cache, lru_cache
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, Callable, Literal, Type
 
 from bec_lib.logger import bec_logger
@@ -76,7 +77,17 @@ def get_scan_plugins() -> dict:
     return loaded_plugins
 
 
-def get_scan_modifier_plugin() -> Type[ScanModifier] | None:
+def get_message_plugins() -> list[ModuleType]:
+    """Get plugin modules containing message types"""
+    return _get_available_plugins("bec.messages")
+
+
+def get_state_plugins() -> list[ModuleType]:
+    """Get plugin modules containing BeamlineState types"""
+    return _get_available_plugins("bec.bl_states")
+
+
+def get_scan_modifier_plugin() -> type[ScanModifier] | None:
     """
     Load all scan modifier plugins.
 
