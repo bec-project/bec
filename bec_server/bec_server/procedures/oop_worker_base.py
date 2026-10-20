@@ -16,6 +16,8 @@ from tempfile import TemporaryDirectory
 from threading import Lock, Thread
 from typing import AnyStr, Callable, TextIO
 
+from redis.exceptions import AuthenticationError
+
 from bec_ipython_client.main import BECIPythonClient
 from bec_ipython_client.signals import OperationMode
 from bec_lib import messages
@@ -33,6 +35,7 @@ from bec_server.procedures.constants import (
     BecClientType,
     OopWorkerEnv,
     ProcedureWorkerError,
+    ProcedureWorkerFailure,
 )
 from bec_server.procedures.worker_base import ProcedureWorker
 
@@ -103,10 +106,10 @@ class OutOfProcessWorkerBase(ProcedureWorker):
             while not self._status_updates.empty():
                 update = self._status_updates.get_nowait()
                 if update.status == ProcedureWorkerStatus.DEAD:
-                    raise ProcedureWorkerError("Procedure worker startup failed") from None
+                    raise _startup_error(update.error) from None
                 if update.status == ProcedureWorkerStatus.FINISHED:
                     raise WorkerExpired() from None
-            raise ProcedureWorkerError("Procedure worker input closed unexpectedly") from None
+            raise ProcedureWorkerError(failure=ProcedureWorkerFailure.INPUT_CLOSED) from None
         started = False
         while not self._aborted.is_set():
             try:
@@ -122,7 +125,7 @@ class OutOfProcessWorkerBase(ProcedureWorker):
                     started = True
                     on_started()
                 if update.status == ProcedureWorkerStatus.DEAD:
-                    raise ProcedureWorkerError("Procedure worker startup failed")
+                    raise _startup_error(update.error)
                 if update.status == ProcedureWorkerStatus.FINISHED and not started:
                     raise WorkerExpired()
             elif self._ending_or_ended():
@@ -132,8 +135,8 @@ class OutOfProcessWorkerBase(ProcedureWorker):
                 self._output_thread.join(timeout=0.2)
                 if self._output_thread.is_alive() or not self._status_updates.empty():
                     continue
-                raise ProcedureWorkerError("Procedure worker exited unexpectedly")
-        raise ProcedureWorkerError("Procedure worker was aborted")
+                raise ProcedureWorkerError(failure=ProcedureWorkerFailure.EXITED)
+        raise ProcedureWorkerError(failure=ProcedureWorkerFailure.ABORTED)
 
     def _send_command(self, payload: dict) -> None:
         """Write bootstrap or assignments to the process pipe, without logging the payload."""
@@ -468,6 +471,16 @@ class WorkerExpired(ProcedureWorkerError):
     """An idle worker exited before starting an assignment; the queue may retry it."""
 
 
+def _startup_error(error: str | None) -> ProcedureWorkerError:
+    """Accept only the known authentication category from a child's startup frame."""
+    failure = (
+        ProcedureWorkerFailure.AUTHENTICATION
+        if error == ProcedureWorkerFailure.AUTHENTICATION.value
+        else ProcedureWorkerFailure.STARTUP
+    )
+    return ProcedureWorkerError(failure=failure)
+
+
 def _pool_main(env):
     """Receive credentials and serial assignments through the process input, never Redis."""
     sys.stdout.flush()
@@ -476,8 +489,12 @@ def _pool_main(env):
     # goes through the separate stderr pipe drained by the scan server.
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     input_stream = os.fdopen(os.dup(sys.stdin.fileno()), "rb", buffering=0)
+    # Procedures must see EOF, never consume or wait for worker assignments.
+    with open(os.devnull, "rb") as procedure_stdin:
+        os.dup2(procedure_stdin.fileno(), sys.stdin.fileno())
     client = None
     ready = False
+    startup_failure = ProcedureWorkerFailure.STARTUP
 
     def status(state, current=None, completed=None, error=None):
         update = messages.ProcedureWorkerStatusMessage(
@@ -532,9 +549,15 @@ def _pool_main(env):
                         error = traceback.format_exc()
                         logger.error(error)
                     status(ProcedureWorkerStatus.IDLE, completed=item.execution_id, error=error)
+        except AuthenticationError:
+            startup_failure = ProcedureWorkerFailure.AUTHENTICATION
+            raise
         finally:
             try:
-                status(ProcedureWorkerStatus.FINISHED if ready else ProcedureWorkerStatus.DEAD)
+                status(
+                    ProcedureWorkerStatus.FINISHED if ready else ProcedureWorkerStatus.DEAD,
+                    error=None if ready else startup_failure.value,
+                )
             finally:
                 input_stream.close()
                 control_output.close()
