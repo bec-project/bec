@@ -363,21 +363,23 @@ class BECClient(BECService):
 
     def shutdown(self, per_thread_timeout_s: float | None = None):
         """shutdown the client and all its components"""
-        super().shutdown(per_thread_timeout_s)
-        if self.device_manager:
-            self.device_manager.shutdown()
-        if self.queue:
-            self.queue.shutdown()
-        if self.alarm_handler:
-            self.alarm_handler.shutdown()
-        if self.history is not None:
-            # pylint: disable=protected-access
-            self.history._shutdown()
-        if self.builtin_actors is not None:
-            self.builtin_actors.shutdown()
-            self.builtin_actors = None  # type: ignore
-        bec_logger.logger.remove()
-        self.started = False
+        try:
+            super()._shutdown_service(per_thread_timeout_s)
+            if self.device_manager:
+                self.device_manager.shutdown()
+            if self.queue:
+                self.queue.shutdown()
+            if self.alarm_handler:
+                self.alarm_handler.shutdown()
+            if self.history is not None:
+                # pylint: disable=protected-access
+                self.history._shutdown()
+            if self.builtin_actors is not None:
+                self.builtin_actors.shutdown()
+                self.builtin_actors = None  # type: ignore
+        finally:
+            bec_logger.shutdown()
+            self.started = False
 
     def _print_available_commands(self, title: str, data: list[tuple[str, str]]) -> None:
         console = Console()

@@ -418,8 +418,12 @@ class ScanBundler(BECService):
             logger.warning(f"Resubmitting existing point_id {point_id} for scan_id {scan_id}")
 
     def shutdown(self):
-        self.device_manager.shutdown()
-        self.connector.shutdown()
-        self.executor.shutdown()
-        for emi in self._emitter:
-            emi.shutdown()
+        try:
+            # Flush Redis before closing the shared connector, retaining local teardown logs.
+            super()._shutdown_service()
+            self.device_manager.shutdown()
+            self.executor.shutdown()
+            for emi in self._emitter:
+                emi.shutdown()
+        finally:
+            self._shutdown_logger()

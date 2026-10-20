@@ -10,10 +10,13 @@ import enum
 import json
 import os
 import sys
+import threading
 import time
 import traceback
+from collections import deque
 from itertools import takewhile
-from typing import TYPE_CHECKING, Literal
+from queue import Empty
+from typing import TYPE_CHECKING, Generic, Iterable, Literal, TypeVar
 
 # TODO: Importing bec_lib, instead of `from bec_lib.messages import LogMessage`, avoids potential
 # logger <-> messages circular import. But there could be a better solution.
@@ -31,6 +34,59 @@ else:
     loguru_logger = lazy_import_from("loguru", ("logger",))
     LogWriter = lazy_import_from("bec_lib.file_utils", ("LogWriter",))
     RedisConnector = lazy_import_from("bec_lib.redis_connector", ("RedisConnector",))
+
+
+_T = TypeVar("_T")
+
+
+class BatchQueue(Generic[_T]):
+    """Thread-safe batch queue holding up to 1,000 items and dropping new arrivals when full."""
+
+    _MAX_SIZE = 1000
+
+    def __init__(self) -> None:
+        self._items: deque[_T] = deque()
+        self._not_empty = threading.Condition()
+        self._dropped = 0
+
+    def put(self, item: _T) -> None:
+        """Append one item and wake a consumer, or discard it if the queue is full."""
+        with self._not_empty:
+            if len(self._items) >= self._MAX_SIZE:
+                self._dropped += 1
+                return
+            self._items.append(item)
+            self._not_empty.notify()
+
+    def put_many(self, items: Iterable[_T]) -> None:
+        """Atomically append items up to the remaining capacity, discarding overflow."""
+        with self._not_empty:
+            for item in items:
+                if len(self._items) < self._MAX_SIZE:
+                    self._items.append(item)
+                else:
+                    self._dropped += 1
+            self._not_empty.notify()
+
+    def take_dropped_count(self) -> int:
+        """Atomically return and reset the number of items discarded since the last call."""
+        with self._not_empty:
+            dropped = self._dropped
+            self._dropped = 0
+            return dropped
+
+    def get_all(self, timeout: float | None = None) -> list[_T]:
+        """Block until an item is available, then atomically remove all items."""
+        with self._not_empty:
+            if not self._not_empty.wait_for(lambda: bool(self._items), timeout=timeout):
+                raise Empty
+            items = list(self._items)
+            self._items.clear()
+            return items
+
+    def get_all_nowait(self) -> list[_T]:
+        """Atomically remove all currently available items without blocking."""
+        return self.get_all(timeout=0)
 
 
 class LogLevel(int, enum.Enum):
@@ -91,6 +147,9 @@ class BECLogger:
 
     DEFAULT_MAX_FILE_SIZE_MB = 50
     DEFAULT_MAX_FILES = 14
+    # Keep transactions well below the log stream's 10,000-record retention limit
+    # so a single transaction cannot trim its own records before readers see them.
+    _MAX_REDIS_BATCH_SIZE = 1000
 
     LOG_FORMAT_STDERR = (
         "<green>{service_name} | {{time:YYYY-MM-DD HH:mm:ss}}</green> | {{name}} | <level>[{{level}}]</level> |"
@@ -133,6 +192,13 @@ class BECLogger:
         self._file_max_size_mb = self.DEFAULT_MAX_FILE_SIZE_MB
         self._file_max_files = self.DEFAULT_MAX_FILES
 
+        # Publish log messages to Redis in throttled batches to improve performance.
+        self._log_thread: threading.Thread | None = None
+        self._log_event: threading.Event | None = None
+        self._log_queue: BatchQueue[tuple[str | dict, str | None]] | None = None
+        self._log_throttle = 0.5
+        self._redis_sink_ids: list[int] = []
+
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
             cls._logger = super(BECLogger, cls).__new__(cls)
@@ -141,8 +207,30 @@ class BECLogger:
     @classmethod
     def _reset_singleton(cls):
         if cls._logger is not None:
-            cls._logger.logger.remove()
+            cls._logger.shutdown()
         cls._logger = None
+
+    def shutdown(self) -> None:
+        """
+        Stop accepting logs and flush pending Redis messages if possible.
+
+        Wait up to four batching intervals (at least one second) for the publisher.
+        If Redis fails or the wait expires, remaining messages may be dropped.
+        """
+        self.stop_redis_logging()
+        self.logger.remove()
+
+    def stop_redis_logging(self) -> None:
+        """Flush and stop Redis logging while keeping file and stderr sinks available."""
+        for sink_id in self._redis_sink_ids:
+            try:
+                self.logger.remove(sink_id)
+            except ValueError:
+                # The sink may already have been removed by the caller.
+                pass
+        self._redis_sink_ids.clear()
+        self._stop_log_thread()
+        self._configured = False
 
     def configure(
         self,
@@ -161,12 +249,19 @@ class BECLogger:
             connector (RedisConnector, optional): Connector instance. Defaults to None.
             connector_cls (type[RedisConnector], optional): Connector class. Defaults to None.
             service_config (dict, optional): Service configuration dictionary. Defaults to None.
+
+        Raises:
+            RuntimeError: If the previous Redis publisher is still shutting down.
         """
         if self._configured:
             # already configured, nothing to do - this can happen
             # if running another BECClient (or BECService) in addition
             # to a main one
             return
+        if self._log_thread is not None and self._log_thread.is_alive():
+            raise RuntimeError(
+                "Cannot configure the logger while its previous publisher is stopping."
+            )
         if not self._base_path:
             self._update_base_path(service_config)
         if os.path.exists(self._base_path) is False:
@@ -175,11 +270,21 @@ class BECLogger:
         self.connector = self._get_connector(
             connector=connector, connector_cls=connector_cls, bootstrap_server=bootstrap_server
         )
-
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
-        self._configured = True
-        self._update_sinks()
+        try:
+            self._update_sinks()
+            self._setup_log_thread()
+            self._configured = True
+        except Exception as exc:
+            self.shutdown()
+            if connector is None:
+                try:
+                    self.connector.shutdown()
+                except Exception as cleanup_error:
+                    exc.add_note(f"Failed to close the logger connector: {cleanup_error}")
+            self.connector = None
+            raise
 
     def _get_connector(
         self,
@@ -230,6 +335,86 @@ class BECLogger:
         if not bootstrap_server:
             raise ValueError("bootstrap_server must be provided when using connector_cls")
         return connector_cls(bootstrap=bootstrap_server)
+
+    def _setup_log_thread(self):
+        """
+        Setup the log thread that publishes log messages to redis.
+        """
+        if self.connector is None:
+            return
+        if self._log_thread is not None and self._log_thread.is_alive():
+            return
+
+        self._log_event = threading.Event()
+        self._log_queue = BatchQueue()
+        self._log_thread = threading.Thread(
+            target=self._publish_pipe_to_redis, name="BECLoggerThread", daemon=True
+        )
+        self._log_thread.start()
+
+    def _stop_log_thread(self) -> None:
+        """Request a final flush and wait a bounded time for the Redis publishing thread."""
+        if self._log_thread is None:
+            return
+        if self._log_event is not None:
+            self._log_event.set()
+        if self._log_thread.ident is not None:
+            self._log_thread.join(timeout=max(1.0, self._log_throttle * 4))
+        if self._log_thread.is_alive():
+            return
+        self._log_thread = None
+        self._log_event = None
+        self._log_queue = None
+
+    def _publish_pipe_to_redis(self) -> None:
+        """Collect queued messages into throttled batches and publish them to Redis."""
+        log_event = self._log_event
+        log_queue = self._log_queue
+        if log_event is None or log_queue is None:
+            return
+
+        while True:
+            try:
+                messages = log_queue.get_all(
+                    timeout=0 if log_event.is_set() else self._log_throttle
+                )
+            except Empty:
+                if log_event.is_set():
+                    return
+                continue
+
+            try:
+                # Wait for the batching window and atomically include messages which
+                # arrived while waiting.
+                log_event.wait(timeout=self._log_throttle)
+                try:
+                    messages.extend(log_queue.get_all_nowait())
+                except Empty:
+                    pass
+                dropped = log_queue.take_dropped_count()
+                if dropped:
+                    # Bypass the full queue so the overflow warning cannot itself be dropped.
+                    messages.append((self._dropped_log_warning(dropped), None))
+                # Shutdown wakes the batching delay so accepted messages can be flushed.
+                self._publish_log_batch(messages)
+            finally:
+                # Empty queue reads leave this local alive while the worker is idle.
+                messages.clear()
+
+    def _dropped_log_warning(self, dropped: int) -> dict:
+        """Create a Redis log payload reporting queue overflow for the current batch."""
+        now = datetime.datetime.now().astimezone()
+        message = f"Dropped {dropped} log messages because the Redis log queue was full."
+        return {
+            "text": f"{self.service_name} | {now:%Y-%m-%d %H:%M:%S} | WARNING | {message}\n",
+            "record": {
+                "level": {"name": "WARNING", "no": LogLevel.WARNING.value},
+                "message": message,
+                "time": {"repr": str(now), "timestamp": now.timestamp()},
+                "name": __name__,
+                "function": "_publish_pipe_to_redis",
+            },
+        }
 
     def _update_base_path(self, service_config: dict | None = None):
         """
@@ -311,6 +496,7 @@ class BECLogger:
 
     def _update_sinks(self):
         self.logger.remove()
+        self._redis_sink_ids.clear()
         self.add_redis_log(self._redis_log_level)
         self.add_sys_stderr(self._stderr_log_level)
         self.add_file_log(self._file_log_level)
@@ -439,12 +625,14 @@ class BECLogger:
         Args:
             level (LogLevel): Log level.
         """
-        self.logger.add(
-            self._publish_log_message,
-            serialize=True,
-            level=level,
-            format=self.formatting(),
-            filter=self.filter(),
+        self._redis_sink_ids.append(
+            self.logger.add(
+                self._queue_log_message,
+                serialize=True,
+                level=level,
+                format=self.formatting(),
+                filter=self.filter(),
+            )
         )
 
     def add_console_redis_log(self):
@@ -453,23 +641,63 @@ class BECLogger:
         It deviates from the regular redis log in that it only includes messages with
         level CONSOLE_LOG and CONSOLE_LOG_ERROR.
         """
-        self.logger.add(
-            self._console_redis_logger_callback,
-            serialize=True,
-            level=LogLevel.CONSOLE_LOG,
-            format=self.formatting(is_stderr=True),
-            filter=self.filter_console_redis_log,
+        self._redis_sink_ids.append(
+            self.logger.add(
+                self._console_redis_logger_callback,
+                serialize=True,
+                level=LogLevel.CONSOLE_LOG,
+                format=self.formatting(is_stderr=True),
+                filter=self.filter_console_redis_log,
+            )
         )
 
     def _console_redis_logger_callback(self, msg):
         if not self._configured or self.connector is None:
             return
-        self._publish_log_message(msg, service_name=f"{self.service_name}_CONSOLE")
+        self._queue_log_message(msg, service_name=f"{self.service_name}_CONSOLE")
+
+    def _queue_log_message(self, msg: str | dict, service_name: str | None = None) -> None:
+        """Queue a message for batched Redis publishing."""
+        if not self._configured or self.connector is None:
+            return
+        if self._log_event is not None and self._log_event.is_set():
+            return
+        log_queue = self._log_queue
+        if log_queue is None:
+            return
+        # Loguru's str subclass carries the original record, including bound objects
+        # and exception tracebacks. Only retain the serialized payload in the queue.
+        if isinstance(msg, str):
+            msg = str(msg)
+        log_queue.put((msg, service_name))
+
+    def _publish_log_batch(self, messages: list[tuple[str | dict, str | None]]) -> None:
+        """Publish queued messages using bounded Redis pipelines."""
+        if not messages or self.connector is None:
+            return
+        try:
+            for start in range(0, len(messages), self._MAX_REDIS_BATCH_SIZE):
+                # Keep flushing during shutdown, but stop if its wait budget expires.
+                if not self._configured:
+                    return
+                pipeline = self.connector.pipeline()
+                published = False
+                for msg, service_name in messages[start : start + self._MAX_REDIS_BATCH_SIZE]:
+                    published |= self._publish_log_message(
+                        msg, service_name=service_name, pipe=pipeline
+                    )
+                if published and self._configured:
+                    self.connector.execute_pipeline(pipeline)
+        except Exception:
+            # The connector may be disconnected during shutdown.
+            return
 
     def _decode_log_payload(self, msg: str | dict) -> dict:
         return json.loads(msg) if isinstance(msg, str) else dict(msg)
 
-    def _publish_log_message(self, msg: str | dict, service_name: str | None = None) -> bool:
+    def _publish_log_message(
+        self, msg: str | dict, service_name: str | None = None, pipe=None
+    ) -> bool:
         if not self._configured or self.connector is None:
             return False
         payload = self._decode_log_payload(msg)
@@ -483,6 +711,7 @@ class BECLogger:
                     )
                 },
                 max_size=10000,
+                pipe=pipe,
             )
             return True
         except Exception:

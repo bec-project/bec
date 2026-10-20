@@ -4,6 +4,7 @@ import copy
 import os
 import threading
 import uuid
+from collections.abc import Iterator
 from unittest import mock
 
 import pytest
@@ -14,11 +15,22 @@ from bec_lib.tests.utils import ClientMock, ConnectorMock, DMClientMock
 
 
 @pytest.fixture
-def threads_check():
-    threads_at_start = set(th for th in threading.enumerate() if th is not threading.main_thread())
+def threads_check() -> Iterator[None]:
+    """Check that tests clean up new threads managed by Python's threading module."""
+
+    def python_threads() -> set[threading.Thread]:
+        # pylint: disable=protected-access
+        # Native threads (e.g. Qt workers) can leave dummy entries after they exit.
+        # Python cannot reliably check their lifetime; their owners must check cleanup.
+        return {
+            th
+            for th in threading.enumerate()
+            if th is not threading.main_thread() and not isinstance(th, threading._DummyThread)
+        }
+
+    threads_at_start = python_threads()
     yield
-    threads_after = set(th for th in threading.enumerate() if th is not threading.main_thread())
-    additional_threads = threads_after - threads_at_start
+    additional_threads = python_threads() - threads_at_start
     assert (
         len(additional_threads) == 0
     ), f"Test creates {len(additional_threads)} threads that are not cleaned: {additional_threads}"
