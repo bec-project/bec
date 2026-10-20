@@ -14,7 +14,7 @@ import threading
 import time
 import traceback
 from collections import deque
-from itertools import islice, takewhile
+from itertools import takewhile
 from queue import Empty
 from typing import TYPE_CHECKING, Generic, Iterable, Literal, TypeVar
 
@@ -47,11 +47,13 @@ class BatchQueue(Generic[_T]):
     def __init__(self) -> None:
         self._items: deque[_T] = deque()
         self._not_empty = threading.Condition()
+        self._dropped = 0
 
     def put(self, item: _T) -> None:
         """Append one item and wake a consumer, or discard it if the queue is full."""
         with self._not_empty:
             if len(self._items) >= self._MAX_SIZE:
+                self._dropped += 1
                 return
             self._items.append(item)
             self._not_empty.notify()
@@ -59,8 +61,19 @@ class BatchQueue(Generic[_T]):
     def put_many(self, items: Iterable[_T]) -> None:
         """Atomically append items up to the remaining capacity, discarding overflow."""
         with self._not_empty:
-            self._items.extend(islice(items, self._MAX_SIZE - len(self._items)))
+            for item in items:
+                if len(self._items) < self._MAX_SIZE:
+                    self._items.append(item)
+                else:
+                    self._dropped += 1
             self._not_empty.notify()
+
+    def take_dropped_count(self) -> int:
+        """Atomically return and reset the number of items discarded since the last call."""
+        with self._not_empty:
+            dropped = self._dropped
+            self._dropped = 0
+            return dropped
 
     def get_all(self, timeout: float | None = None) -> list[_T]:
         """Block until an item is available, then atomically remove all items."""
@@ -356,11 +369,30 @@ class BECLogger:
                     messages.extend(log_queue.get_all_nowait())
                 except Empty:
                     pass
+                dropped = log_queue.take_dropped_count()
+                if dropped:
+                    # Bypass the full queue so the overflow warning cannot itself be dropped.
+                    messages.append((self._dropped_log_warning(dropped), None))
                 # Shutdown wakes the batching delay so accepted messages can be flushed.
                 self._publish_log_batch(messages)
             finally:
                 # Empty queue reads leave this local alive while the worker is idle.
                 messages.clear()
+
+    def _dropped_log_warning(self, dropped: int) -> dict:
+        """Create a Redis log payload reporting queue overflow for the current batch."""
+        now = datetime.datetime.now().astimezone()
+        message = f"Dropped {dropped} log messages because the Redis log queue was full."
+        return {
+            "text": f"{self.service_name} | {now:%Y-%m-%d %H:%M:%S} | WARNING | {message}\n",
+            "record": {
+                "level": {"name": "WARNING", "no": LogLevel.WARNING.value},
+                "message": message,
+                "time": {"repr": str(now), "timestamp": now.timestamp()},
+                "name": __name__,
+                "function": "_publish_pipe_to_redis",
+            },
+        }
 
     def _update_base_path(self, service_config: dict | None = None):
         """
