@@ -61,9 +61,12 @@ def test_batch_queue_drops_new_items_when_full_and_accepts_items_after_drain(bul
     batch_queue.put_many([1201, 1202])
 
     assert batch_queue.get_all_nowait() == list(range(1000))
+    assert batch_queue.take_dropped_count() == 203
+    assert batch_queue.take_dropped_count() == 0
     batch_queue.put(1203)
     batch_queue.put_many([1204, 1205])
     assert batch_queue.get_all_nowait() == [1203, 1204, 1205]
+    assert batch_queue.take_dropped_count() == 0
 
 
 def test_configure(logger, tmp_path):
@@ -252,7 +255,7 @@ def test_log_thread_publishes_queued_messages_as_one_batch(logger):
 
 
 @pytest.mark.parametrize("shutdown", [False, True])
-def test_log_queue_drops_overflow_while_redis_publisher_is_blocked(logger, shutdown):
+def test_log_queue_warns_about_overflow_while_redis_publisher_is_blocked(logger, shutdown):
     logger._configured = True
     logger.service_name = "test"
     logger.connector = mock.MagicMock(spec=RedisConnector)
@@ -270,7 +273,7 @@ def test_log_queue_drops_overflow_while_redis_publisher_is_blocked(logger, shutd
             drained.set()
 
     def collect_message(*, msg_dict, **kwargs):
-        received.append(msg_dict["data"].log_msg["text"])
+        received.append(msg_dict["data"])
 
     logger.connector.execute_pipeline.side_effect = execute_pipeline
     logger.connector.xadd.side_effect = collect_message
@@ -300,7 +303,49 @@ def test_log_queue_drops_overflow_while_redis_publisher_is_blocked(logger, shutd
         release.set()
         logger.shutdown()
 
-    assert received == ["first", *map(str, range(1000))]
+    assert [msg.log_msg["text"] for msg in received if msg.log_type == "info"] == [
+        "first",
+        *map(str, range(1000)),
+    ]
+    warnings = [msg for msg in received if msg.log_type == "warning"]
+    assert len(warnings) == 1
+    warning = warnings[0].log_msg
+    assert warning["record"]["message"] == (
+        "Dropped 200 log messages because the Redis log queue was full."
+    )
+    assert warning["record"]["message"] in warning["text"]
+    assert warning["record"]["time"]["timestamp"] > 0
+    assert warning["service_name"] == "test"
+    assert logger.connector.execute_pipeline.call_count == 3
+
+
+def test_overflow_warning_is_written_to_redis_once_on_shutdown(logger, connected_connector):
+    logger._configured = True
+    logger.service_name = "test"
+    logger.connector = connected_connector
+    logger._log_queue = BatchQueue()
+    logger._log_queue._MAX_SIZE = 3
+    logger._log_event = threading.Event()
+    for index in range(5):
+        logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": str(index)})
+
+    logger._log_event.set()
+    logger._publish_pipe_to_redis()
+    logger._log_event.clear()
+    logger._queue_log_message({"record": {"level": {"name": "INFO"}}, "text": "next"})
+    logger._log_event.set()
+    logger._publish_pipe_to_redis()
+
+    records = connected_connector.xread(MessageEndpoints.log(), from_start=True)
+    messages = [entry["data"] for entry in records]
+    assert [msg.log_type for msg in messages] == ["info", "info", "info", "warning", "info"]
+    warning = messages[3].log_msg
+    assert warning["record"]["message"] == (
+        "Dropped 2 log messages because the Redis log queue was full."
+    )
+    assert warning["record"]["level"] == {"name": "WARNING", "no": LogLevel.WARNING.value}
+    assert warning["service_name"] == "test"
+    assert messages[-1].log_msg["text"] == "next"
 
 
 def test_large_log_batch_remains_readable_between_transactions(logger, connected_connector):
