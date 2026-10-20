@@ -88,6 +88,91 @@ def test_configure(logger, tmp_path):
                 assert logger._configured is True
 
 
+@pytest.mark.parametrize("failure", ["file_sink", "thread_start", "started_thread"])
+def test_failed_configure_cleans_up_and_can_be_retried(logger, tmp_path, failure):
+    connector = mock.MagicMock(spec=RedisConnector)
+    error = RuntimeError("configuration failed")
+    if failure == "file_sink":
+        failure_patch = mock.patch.object(logger, "add_file_log", side_effect=error)
+    elif failure == "thread_start":
+        failure_patch = mock.patch("bec_lib.logger.threading.Thread.start", side_effect=error)
+    else:
+        setup = logger._setup_log_thread
+
+        def setup_then_fail():
+            setup()
+            raise error
+
+        failure_patch = mock.patch.object(logger, "_setup_log_thread", side_effect=setup_then_fail)
+
+    with failure_patch, pytest.raises(RuntimeError) as exc_info:
+        logger.configure(
+            ["localhost:1"],
+            "test",
+            connector=connector,
+            service_config={"log_writer": {"base_path": str(tmp_path)}},
+        )
+
+    assert exc_info.value is error
+    assert logger._configured is False
+    assert logger._log_thread is None
+    assert logger._log_event is None
+    assert logger._log_queue is None
+    assert logger._redis_sink_ids == []
+    assert not logger.logger._core.handlers
+    connector.shutdown.assert_not_called()
+
+    logger.configure(["localhost:1"], "test", connector=connector)
+    assert logger._configured
+    assert logger._log_thread.is_alive()
+
+
+@pytest.mark.parametrize("shutdown_fails", [False, True])
+def test_failed_configure_closes_only_the_connector_it_created(logger, tmp_path, shutdown_fails):
+    connector = mock.MagicMock(spec=RedisConnector)
+    if shutdown_fails:
+        connector.shutdown.side_effect = RuntimeError("connector cleanup failed")
+    with (
+        mock.patch.object(logger, "add_file_log", side_effect=PermissionError("not writable")),
+        pytest.raises(PermissionError) as exc_info,
+    ):
+        logger.configure(
+            ["localhost:1"],
+            "test",
+            connector_cls=mock.Mock(return_value=connector),
+            service_config={"log_writer": {"base_path": str(tmp_path)}},
+        )
+    connector.shutdown.assert_called_once_with()
+    assert logger.connector is None
+    if shutdown_fails:
+        assert "connector cleanup failed" in exc_info.value.__notes__[0]
+
+
+def test_stop_redis_logging_preserves_local_sinks_until_shutdown(
+    logger, connected_connector, tmp_path
+):
+    logger.configure(
+        ["localhost:1"],
+        "test",
+        connector=connected_connector,
+        service_config={"log_writer": {"base_path": str(tmp_path)}},
+    )
+    logger.add_console_log()
+    logger.logger.error("pending before Redis closes")
+    logger.stop_redis_logging()
+    logger.stop_redis_logging()
+    connected_connector.shutdown()
+    logger.logger.error("failure during teardown")
+    logger.logger.log("CONSOLE_LOG_ERROR", "console failure during teardown")
+
+    assert "failure during teardown" in (tmp_path / "test.log").read_text()
+    assert "console failure during teardown" in (tmp_path / "test_CONSOLE.log").read_text()
+    assert logger._log_thread is None
+    assert logger._redis_sink_ids == []
+    logger.shutdown()
+    assert not logger.logger._core.handlers
+
+
 def test_update_base_path_correct_config(logger):
     config = {"log_writer": {"base_path": "./logs"}}
     assert logger._base_path is None
@@ -252,6 +337,40 @@ def test_log_thread_publishes_queued_messages_as_one_batch(logger):
     assert batch_published.wait(timeout=1)
     assert logger.connector.xadd.call_count == 2
     logger.connector.execute_pipeline.assert_called_once()
+
+
+def test_full_queue_flushes_before_batching_deadline(logger):
+    logger._configured = True
+    logger.connector = mock.MagicMock(spec=RedisConnector)
+    logger._log_throttle = 10
+    logger._log_queue = BatchQueue()
+    logger._log_event = threading.Event()
+    waiting = threading.Event()
+    published = threading.Event()
+    queue = logger._log_queue
+    payload = {"record": {"level": {"name": "INFO"}}, "text": "hello"}
+    wait_until_full = queue.wait_until_full
+
+    def signal_wait(*args):
+        waiting.set()
+        wait_until_full(*args)
+
+    def signal_publish(_):
+        if logger.connector.xadd.call_count == BatchQueue._MAX_SIZE + 1:
+            published.set()
+
+    logger.connector.execute_pipeline.side_effect = signal_publish
+    logger._log_thread = threading.Thread(target=logger._publish_pipe_to_redis)
+    queue.put((payload, None))
+    with mock.patch.object(queue, "wait_until_full", side_effect=signal_wait):
+        logger._log_thread.start()
+        try:
+            assert waiting.wait(timeout=1)
+            queue.put_many([(payload, None)] * BatchQueue._MAX_SIZE)
+            assert published.wait(timeout=1)
+        finally:
+            logger.shutdown()
+    assert logger.connector.execute_pipeline.call_count == 2
 
 
 @pytest.mark.parametrize("shutdown", [False, True])
@@ -560,10 +679,10 @@ def test_idle_log_thread_releases_previous_batch(logger, publish_fails):
     logger._setup_log_thread()
     get_all = logger._log_queue.get_all
 
-    def get_all_and_signal_idle(timeout=None):
+    def get_all_and_signal_idle(timeout=None, **kwargs):
         if published.is_set() and timeout != 0:
             idle.set()
-        return get_all(timeout=timeout)
+        return get_all(timeout=timeout, **kwargs)
 
     payload = Payload(record={"level": {"name": "INFO"}}, text="hello")
     payload_ref = weakref.ref(payload)

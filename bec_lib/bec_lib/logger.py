@@ -56,7 +56,8 @@ class BatchQueue(Generic[_T]):
                 self._dropped += 1
                 return
             self._items.append(item)
-            self._not_empty.notify()
+            if len(self._items) in (1, self._MAX_SIZE):
+                self._not_empty.notify()
 
     def put_many(self, items: Iterable[_T]) -> None:
         """Atomically append items up to the remaining capacity, discarding overflow."""
@@ -75,10 +76,16 @@ class BatchQueue(Generic[_T]):
             self._dropped = 0
             return dropped
 
-    def get_all(self, timeout: float | None = None) -> list[_T]:
-        """Block until an item is available, then atomically remove all items."""
+    def get_all(
+        self, timeout: float | None = None, *, stop_event: threading.Event | None = None
+    ) -> list[_T]:
+        """Wait for items or shutdown, then atomically remove all available items."""
         with self._not_empty:
-            if not self._not_empty.wait_for(lambda: bool(self._items), timeout=timeout):
+            self._not_empty.wait_for(
+                lambda: self._items or (stop_event is not None and stop_event.is_set()),
+                timeout=timeout,
+            )
+            if not self._items:
                 raise Empty
             items = list(self._items)
             self._items.clear()
@@ -87,6 +94,18 @@ class BatchQueue(Generic[_T]):
     def get_all_nowait(self) -> list[_T]:
         """Atomically remove all currently available items without blocking."""
         return self.get_all(timeout=0)
+
+    def wait_until_full(self, timeout: float, stop_event: threading.Event) -> None:
+        """Wait for the queue to fill, the batching deadline, or publisher shutdown."""
+        with self._not_empty:
+            self._not_empty.wait_for(
+                lambda: len(self._items) >= self._MAX_SIZE or stop_event.is_set(), timeout=timeout
+            )
+
+    def wake(self) -> None:
+        """Wake the consumer after a shutdown request."""
+        with self._not_empty:
+            self._not_empty.notify()
 
 
 class LogLevel(int, enum.Enum):
@@ -197,6 +216,7 @@ class BECLogger:
         self._log_event: threading.Event | None = None
         self._log_queue: BatchQueue[tuple[str | dict, str | None]] | None = None
         self._log_throttle = 0.5
+        self._redis_sink_ids: list[int] = []
 
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
@@ -216,7 +236,18 @@ class BECLogger:
         Wait up to four batching intervals (at least one second) for the publisher.
         If Redis fails or the wait expires, remaining messages may be dropped.
         """
+        self.stop_redis_logging()
         self.logger.remove()
+
+    def stop_redis_logging(self) -> None:
+        """Flush and stop Redis logging while keeping file and stderr sinks available."""
+        for sink_id in self._redis_sink_ids:
+            try:
+                self.logger.remove(sink_id)
+            except ValueError:
+                # The sink may already have been removed by the caller.
+                pass
+        self._redis_sink_ids.clear()
         self._stop_log_thread()
         self._configured = False
 
@@ -258,12 +289,21 @@ class BECLogger:
         self.connector = self._get_connector(
             connector=connector, connector_cls=connector_cls, bootstrap_server=bootstrap_server
         )
-        self._setup_log_thread()
-
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
-        self._configured = True
-        self._update_sinks()
+        try:
+            self._update_sinks()
+            self._setup_log_thread()
+            self._configured = True
+        except Exception as exc:
+            self.shutdown()
+            if connector is None:
+                try:
+                    self.connector.shutdown()
+                except Exception as cleanup_error:
+                    exc.add_note(f"Failed to close the logger connector: {cleanup_error}")
+            self.connector = None
+            raise
 
     def _get_connector(
         self,
@@ -337,7 +377,10 @@ class BECLogger:
             return
         if self._log_event is not None:
             self._log_event.set()
-        self._log_thread.join(timeout=max(1.0, self._log_throttle * 4))
+        if self._log_queue is not None:
+            self._log_queue.wake()
+        if self._log_thread.ident is not None:
+            self._log_thread.join(timeout=max(1.0, self._log_throttle * 4))
         if self._log_thread.is_alive():
             return
         self._log_thread = None
@@ -353,18 +396,16 @@ class BECLogger:
 
         while True:
             try:
-                messages = log_queue.get_all(
-                    timeout=0 if log_event.is_set() else self._log_throttle
-                )
+                messages = log_queue.get_all(stop_event=log_event)
             except Empty:
                 if log_event.is_set():
                     return
                 continue
 
             try:
-                # Wait for the batching window and atomically include messages which
-                # arrived while waiting.
-                log_event.wait(timeout=self._log_throttle)
+                # Flush early under load while allowing sparse logs to accumulate.
+                if len(messages) < self._MAX_REDIS_BATCH_SIZE:
+                    log_queue.wait_until_full(self._log_throttle, log_event)
                 try:
                     messages.extend(log_queue.get_all_nowait())
                 except Empty:
@@ -474,6 +515,7 @@ class BECLogger:
 
     def _update_sinks(self):
         self.logger.remove()
+        self._redis_sink_ids.clear()
         self.add_redis_log(self._redis_log_level)
         self.add_sys_stderr(self._stderr_log_level)
         self.add_file_log(self._file_log_level)
@@ -602,12 +644,14 @@ class BECLogger:
         Args:
             level (LogLevel): Log level.
         """
-        self.logger.add(
-            self._queue_log_message,
-            serialize=True,
-            level=level,
-            format=self.formatting(),
-            filter=self.filter(),
+        self._redis_sink_ids.append(
+            self.logger.add(
+                self._queue_log_message,
+                serialize=True,
+                level=level,
+                format=self.formatting(),
+                filter=self.filter(),
+            )
         )
 
     def add_console_redis_log(self):
@@ -616,12 +660,14 @@ class BECLogger:
         It deviates from the regular redis log in that it only includes messages with
         level CONSOLE_LOG and CONSOLE_LOG_ERROR.
         """
-        self.logger.add(
-            self._console_redis_logger_callback,
-            serialize=True,
-            level=LogLevel.CONSOLE_LOG,
-            format=self.formatting(is_stderr=True),
-            filter=self.filter_console_redis_log,
+        self._redis_sink_ids.append(
+            self.logger.add(
+                self._console_redis_logger_callback,
+                serialize=True,
+                level=LogLevel.CONSOLE_LOG,
+                format=self.formatting(is_stderr=True),
+                filter=self.filter_console_redis_log,
+            )
         )
 
     def _console_redis_logger_callback(self, msg):

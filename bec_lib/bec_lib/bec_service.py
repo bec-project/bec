@@ -407,12 +407,22 @@ class BECService:
         logger.info(out)
         print(out)
 
-    def shutdown(self, per_thread_timeout_s: float | None = None):
-        """shutdown the BECService"""
+    def shutdown(self, per_thread_timeout_s: float | None = None) -> None:
+        """Shut down the service and its owned logger."""
+        try:
+            self._shutdown_service(per_thread_timeout_s)
+        finally:
+            self._shutdown_logger()
+
+    def _shutdown_service(self, per_thread_timeout_s: float | None = None) -> None:
+        """Stop Redis and service threads while retaining local logs for subclass teardown.
+
+        Subclasses with further teardown should call this method and then call
+        ``_shutdown_logger()`` in their final cleanup block.
+        """
         try:
             if bec_logger.connector is self.connector:
-                # shutdown the logger if it is using the same connector as this service
-                bec_logger.shutdown()
+                bec_logger.stop_redis_logging()
             self.connector.shutdown(per_thread_timeout_s=per_thread_timeout_s)
             self._service_info_event.set()
             if self._service_info_thread:
@@ -422,6 +432,12 @@ class BECService:
                 self._metrics_emitter_thread.join(timeout=per_thread_timeout_s)
         except AttributeError:
             print("Failed to shutdown BECService.")
+
+    def _shutdown_logger(self) -> None:
+        """Remove logging sinks after the owning service has finished its teardown."""
+        connector = getattr(self, "connector", None)
+        if connector is not None and bec_logger.connector is connector:
+            bec_logger.shutdown()
 
     @property
     def service_status(self):
