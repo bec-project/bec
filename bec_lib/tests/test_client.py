@@ -7,11 +7,42 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_lib.client import SystemConfig
+from bec_lib.client import BECClient, SystemConfig
 from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.file_utils import sanitize_relative_subdir
+from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import MessageObject
 from bec_lib.tests.fixtures import bec_client_mock
+
+
+@pytest.mark.parametrize("teardown_raises", [False, True])
+def test_shutdown_preserves_component_logs_and_cleans_sinks(
+    bec_client_mock, monkeypatch, tmp_path, teardown_raises
+):
+    client = bec_client_mock
+    bec_logger.shutdown()
+    monkeypatch.setattr(bec_logger, "_base_path", tmp_path)
+    bec_logger.configure(["localhost:1"], "test_client", connector=client.connector)
+    for name in ("_service_info_event", "_metrics_emitter_event"):
+        monkeypatch.setattr(client, name, threading.Event(), raising=False)
+    for name in ("_service_info_thread", "_metrics_emitter_thread"):
+        monkeypatch.setattr(client, name, None, raising=False)
+
+    def component_shutdown():
+        bec_logger.logger.error("client component teardown")
+        if teardown_raises:
+            raise RuntimeError("cleanup failed")
+
+    with mock.patch.object(client.device_manager, "shutdown", side_effect=component_shutdown):
+        if teardown_raises:
+            with pytest.raises(RuntimeError, match="cleanup failed"):
+                BECClient.shutdown(client)
+        else:
+            BECClient.shutdown(client)
+
+    assert "client component teardown" in (tmp_path / "test_client.log").read_text()
+    assert not bec_logger.logger._core.handlers
+    assert not client.started
 
 
 def test_system_config():

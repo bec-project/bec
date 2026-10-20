@@ -88,6 +88,91 @@ def test_configure(logger, tmp_path):
                 assert logger._configured is True
 
 
+@pytest.mark.parametrize("failure", ["file_sink", "thread_start", "started_thread"])
+def test_failed_configure_cleans_up_and_can_be_retried(logger, tmp_path, failure):
+    connector = mock.MagicMock(spec=RedisConnector)
+    error = RuntimeError("configuration failed")
+    if failure == "file_sink":
+        failure_patch = mock.patch.object(logger, "add_file_log", side_effect=error)
+    elif failure == "thread_start":
+        failure_patch = mock.patch("bec_lib.logger.threading.Thread.start", side_effect=error)
+    else:
+        setup = logger._setup_log_thread
+
+        def setup_then_fail():
+            setup()
+            raise error
+
+        failure_patch = mock.patch.object(logger, "_setup_log_thread", side_effect=setup_then_fail)
+
+    with failure_patch, pytest.raises(RuntimeError) as exc_info:
+        logger.configure(
+            ["localhost:1"],
+            "test",
+            connector=connector,
+            service_config={"log_writer": {"base_path": str(tmp_path)}},
+        )
+
+    assert exc_info.value is error
+    assert logger._configured is False
+    assert logger._log_thread is None
+    assert logger._log_event is None
+    assert logger._log_queue is None
+    assert logger._redis_sink_ids == []
+    assert not logger.logger._core.handlers
+    connector.shutdown.assert_not_called()
+
+    logger.configure(["localhost:1"], "test", connector=connector)
+    assert logger._configured
+    assert logger._log_thread.is_alive()
+
+
+@pytest.mark.parametrize("shutdown_fails", [False, True])
+def test_failed_configure_closes_only_the_connector_it_created(logger, tmp_path, shutdown_fails):
+    connector = mock.MagicMock(spec=RedisConnector)
+    if shutdown_fails:
+        connector.shutdown.side_effect = RuntimeError("connector cleanup failed")
+    with (
+        mock.patch.object(logger, "add_file_log", side_effect=PermissionError("not writable")),
+        pytest.raises(PermissionError) as exc_info,
+    ):
+        logger.configure(
+            ["localhost:1"],
+            "test",
+            connector_cls=mock.Mock(return_value=connector),
+            service_config={"log_writer": {"base_path": str(tmp_path)}},
+        )
+    connector.shutdown.assert_called_once_with()
+    assert logger.connector is None
+    if shutdown_fails:
+        assert "connector cleanup failed" in exc_info.value.__notes__[0]
+
+
+def test_stop_redis_logging_preserves_local_sinks_until_shutdown(
+    logger, connected_connector, tmp_path
+):
+    logger.configure(
+        ["localhost:1"],
+        "test",
+        connector=connected_connector,
+        service_config={"log_writer": {"base_path": str(tmp_path)}},
+    )
+    logger.add_console_log()
+    logger.logger.error("pending before Redis closes")
+    logger.stop_redis_logging()
+    logger.stop_redis_logging()
+    connected_connector.shutdown()
+    logger.logger.error("failure during teardown")
+    logger.logger.log("CONSOLE_LOG_ERROR", "console failure during teardown")
+
+    assert "failure during teardown" in (tmp_path / "test.log").read_text()
+    assert "console failure during teardown" in (tmp_path / "test_CONSOLE.log").read_text()
+    assert logger._log_thread is None
+    assert logger._redis_sink_ids == []
+    logger.shutdown()
+    assert not logger.logger._core.handlers
+
+
 def test_update_base_path_correct_config(logger):
     config = {"log_writer": {"base_path": "./logs"}}
     assert logger._base_path is None

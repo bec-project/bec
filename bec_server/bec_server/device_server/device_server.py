@@ -390,16 +390,18 @@ class DeviceServer(BECService):
 
     def shutdown(self) -> None:
         """shutdown the device server"""
-        self.ophyd_callback_monitor.request_stop()
-        self.ophyd_callback_monitor.join(timeout=1)
         try:
-            # Closing the connector also interrupts a warning blocked in the Redis log sink.
-            super().shutdown()
+            self.ophyd_callback_monitor.request_stop()
+            self.ophyd_callback_monitor.join(timeout=1)
+            try:
+                super()._shutdown_service()
+            finally:
+                self.ophyd_callback_monitor.join()
+            self.stop()
+            if self.device_manager:
+                self.device_manager.shutdown()
         finally:
-            self.ophyd_callback_monitor.join()
-        self.stop()
-        if self.device_manager:
-            self.device_manager.shutdown()
+            self._shutdown_logger()
 
     def _update_device_metadata(self, instr) -> None:
         devices = instr.content["device"]

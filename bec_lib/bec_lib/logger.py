@@ -197,6 +197,7 @@ class BECLogger:
         self._log_event: threading.Event | None = None
         self._log_queue: BatchQueue[tuple[str | dict, str | None]] | None = None
         self._log_throttle = 0.5
+        self._redis_sink_ids: list[int] = []
 
     def __new__(cls):
         if not hasattr(cls, "_logger") or cls._logger is None:
@@ -216,7 +217,18 @@ class BECLogger:
         Wait up to four batching intervals (at least one second) for the publisher.
         If Redis fails or the wait expires, remaining messages may be dropped.
         """
+        self.stop_redis_logging()
         self.logger.remove()
+
+    def stop_redis_logging(self) -> None:
+        """Flush and stop Redis logging while keeping file and stderr sinks available."""
+        for sink_id in self._redis_sink_ids:
+            try:
+                self.logger.remove(sink_id)
+            except ValueError:
+                # The sink may already have been removed by the caller.
+                pass
+        self._redis_sink_ids.clear()
         self._stop_log_thread()
         self._configured = False
 
@@ -258,12 +270,21 @@ class BECLogger:
         self.connector = self._get_connector(
             connector=connector, connector_cls=connector_cls, bootstrap_server=bootstrap_server
         )
-        self._setup_log_thread()
-
         self.bootstrap_server = bootstrap_server
         self.service_name = service_name
-        self._configured = True
-        self._update_sinks()
+        try:
+            self._update_sinks()
+            self._setup_log_thread()
+            self._configured = True
+        except Exception as exc:
+            self.shutdown()
+            if connector is None:
+                try:
+                    self.connector.shutdown()
+                except Exception as cleanup_error:
+                    exc.add_note(f"Failed to close the logger connector: {cleanup_error}")
+            self.connector = None
+            raise
 
     def _get_connector(
         self,
@@ -337,7 +358,8 @@ class BECLogger:
             return
         if self._log_event is not None:
             self._log_event.set()
-        self._log_thread.join(timeout=max(1.0, self._log_throttle * 4))
+        if self._log_thread.ident is not None:
+            self._log_thread.join(timeout=max(1.0, self._log_throttle * 4))
         if self._log_thread.is_alive():
             return
         self._log_thread = None
@@ -474,6 +496,7 @@ class BECLogger:
 
     def _update_sinks(self):
         self.logger.remove()
+        self._redis_sink_ids.clear()
         self.add_redis_log(self._redis_log_level)
         self.add_sys_stderr(self._stderr_log_level)
         self.add_file_log(self._file_log_level)
@@ -602,12 +625,14 @@ class BECLogger:
         Args:
             level (LogLevel): Log level.
         """
-        self.logger.add(
-            self._queue_log_message,
-            serialize=True,
-            level=level,
-            format=self.formatting(),
-            filter=self.filter(),
+        self._redis_sink_ids.append(
+            self.logger.add(
+                self._queue_log_message,
+                serialize=True,
+                level=level,
+                format=self.formatting(),
+                filter=self.filter(),
+            )
         )
 
     def add_console_redis_log(self):
@@ -616,12 +641,14 @@ class BECLogger:
         It deviates from the regular redis log in that it only includes messages with
         level CONSOLE_LOG and CONSOLE_LOG_ERROR.
         """
-        self.logger.add(
-            self._console_redis_logger_callback,
-            serialize=True,
-            level=LogLevel.CONSOLE_LOG,
-            format=self.formatting(is_stderr=True),
-            filter=self.filter_console_redis_log,
+        self._redis_sink_ids.append(
+            self.logger.add(
+                self._console_redis_logger_callback,
+                serialize=True,
+                level=LogLevel.CONSOLE_LOG,
+                format=self.formatting(is_stderr=True),
+                filter=self.filter_console_redis_log,
+            )
         )
 
     def _console_redis_logger_callback(self, msg):
