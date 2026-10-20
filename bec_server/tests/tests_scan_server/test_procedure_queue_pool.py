@@ -12,6 +12,7 @@ from bec_lib.endpoints import MessageEndpoints as ME
 from bec_lib.messages import ProcedureRequestMessage, ProcedureWorkerStatus
 from bec_lib.procedures.helper import FrontendProcedureHelper, ProcedureState, ProcedureStatus
 from bec_lib.redis_connector import MessageObject, RedisConnector
+from bec_server.procedures.constants import ProcedureWorkerError, ProcedureWorkerFailure
 from bec_server.procedures.manager import ProcedureManager
 
 
@@ -143,6 +144,109 @@ def test_token_rotation_selects_queue_local_worker_and_reuses_old_identity(manag
     assert FrontendProcedureHelper(manager._conn).get.queue_names() == ["primary"]
 
 
+def test_drained_queue_shuts_down_after_delay_and_can_be_recreated(manager):
+    first = submit(manager, "temporary")
+    wait_for(lambda: ControlledWorker.instances and ControlledWorker.instances[0].executions)
+    worker = ControlledWorker.instances[0]
+    worker.completed.set()
+    wait_for(lambda: first.execution_id not in manager._messages_by_ids)
+    helper = FrontendProcedureHelper(manager._conn)
+    assert helper.get.queue_names() == ["temporary"]
+    with manager.lock:
+        queue = manager._queues["temporary"]
+        manager._retire_empty_queues()
+        assert queue.idle_since is not None
+        queue.idle_since = monotonic() - queue.AUTO_SHUTDOWN_TIME - 1
+    wait_for(lambda: "temporary" not in manager._queues)
+    assert worker.aborted.is_set()
+    assert helper.get.queue_names() == []
+    assert manager._conn.get(ME.procedure_workers()).resource == {}
+    second = submit(manager, "temporary")
+    wait_for(
+        lambda: len(ControlledWorker.instances) == 2 and ControlledWorker.instances[1].executions
+    )
+    assert ControlledWorker.instances[1].executions == [second]
+
+
+def test_queue_retirement_retries_after_registry_publication_failure(manager):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    with patch.object(manager, "_start_queue"):
+        execution = submit(manager, "retirement-retry")
+        with manager.lock:
+            manager._abort_execution(execution.execution_id)
+            queue = manager._queues["retirement-retry"]
+            queue.idle_since = monotonic() - queue.AUTO_SHUTDOWN_TIME - 1
+            with patch.object(
+                manager, "_publish_pools", side_effect=RedisConnectionError("offline")
+            ):
+                with pytest.raises(RedisConnectionError):
+                    manager._retire_empty_queues()
+            assert "retirement-retry" in manager._queues
+            manager._retire_empty_queues()
+            assert "retirement-retry" not in manager._queues
+    assert FrontendProcedureHelper(manager._conn).get.queue_names() == []
+
+
+def test_pending_queue_is_retained_until_cancelled(manager):
+    with patch.object(manager, "_start_queue"):
+        execution = submit(manager, "pending")
+        with manager.lock:
+            manager._retire_empty_queues()
+            assert "pending" in manager._queues
+        manager._abort_execution(execution.execution_id)
+        with manager.lock:
+            queue = manager._queues["pending"]
+            manager._retire_empty_queues()
+            assert "pending" in manager._queues
+            queue.idle_since = monotonic() - queue.AUTO_SHUTDOWN_TIME - 1
+        wait_for(lambda: "pending" not in manager._queues)
+    assert FrontendProcedureHelper(manager._conn).get.queue_names() == []
+    assert manager._helper.get.unhandled_queue("pending") == [execution]
+
+
+def test_new_submission_resets_queue_shutdown_delay(manager):
+    with patch.object(manager, "_start_queue"):
+        first = submit(manager, "reused")
+        manager._abort_execution(first.execution_id)
+        with manager.lock:
+            queue = manager._queues["reused"]
+            queue.idle_since = monotonic() - queue.AUTO_SHUTDOWN_TIME - 1
+            second = submit(manager, "reused")
+            assert manager._queues["reused"] is queue
+            assert queue.idle_since is None
+            manager._retire_empty_queues()
+            assert "reused" in manager._queues
+        manager._abort_execution(second.execution_id)
+        with manager.lock:
+            manager._retire_empty_queues()
+            assert queue.idle_since is not None
+            assert monotonic() - queue.idle_since < queue.AUTO_SHUTDOWN_TIME
+
+
+def test_startup_discards_old_queue_registry_and_shutdown_clears_current_registry():
+    from bec_lib.messages import AvailableResourceMessage
+
+    server = fakeredis.FakeServer()
+    connector = partial(RedisConnector, redis_cls=partial(fakeredis.FakeRedis, server=server))
+    conn = connector("localhost:6379")
+    try:
+        conn.set(ME.procedure_queues(), AvailableResourceMessage(resource={"old-empty": {}}))
+        with patch("bec_server.procedures.manager.RedisConnector", connector):
+            instance = ProcedureManager("localhost:6379", ControlledWorker)
+        try:
+            assert instance._queues == {}
+            assert conn.get(ME.procedure_queues()).resource == {}
+            with patch.object(instance, "_start_queue"):
+                submit(instance, "current")
+                assert "current" in conn.get(ME.procedure_queues()).resource
+        finally:
+            instance.shutdown()
+        assert conn.get(ME.procedure_queues()).resource == {}
+    finally:
+        conn.shutdown()
+
+
 def test_same_credentials_do_not_share_workers_across_queues(manager):
     submit(manager, "a")
     submit(manager, "b")
@@ -219,6 +323,23 @@ def test_worker_failure_only_fails_current_execution(manager):
     )
     assert manager._helper.get.unhandled_queue("primary") == [first]
     assert ControlledWorker.instances[1].executions == [second]
+
+
+@pytest.mark.parametrize("failure", [None, *ProcedureWorkerFailure])
+def test_worker_failure_status_exposes_only_safe_category(manager, failure):
+    """Public errors preserve known categories without forwarding exception details."""
+    with patch.object(
+        manager._helper, "status_update", wraps=manager._helper.status_update
+    ) as update:
+        execution = submit(manager)
+        wait_for(lambda: ControlledWorker.instances and ControlledWorker.instances[0].executions)
+        worker = ControlledWorker.instances[0]
+        worker.error = ProcedureWorkerError("private-token in internal details", failure=failure)
+        worker.completed.set()
+        wait_for(lambda: execution.execution_id not in manager._messages_by_ids)
+        expected = failure.value if failure else "Procedure worker failed (ProcedureWorkerError)"
+        finished = [call for call in update.call_args_list if "error" in call.kwargs]
+        assert finished[-1].kwargs["error"] == expected
 
 
 def test_worker_startup_failure_preserves_later_pending_jobs(manager):

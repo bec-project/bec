@@ -34,7 +34,25 @@ class BecProcedure(Protocol[P]):
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> None: ...
 
 
-class ProcedureWorkerError(RuntimeError): ...
+class ProcedureWorkerFailure(str, Enum):
+    """Fixed, credential-free descriptions suitable for public execution status."""
+
+    STARTUP = "Procedure worker startup failed"
+    AUTHENTICATION = "Procedure worker authentication failed"
+    EXITED = "Procedure worker exited unexpectedly"
+    INPUT_CLOSED = "Procedure worker input closed unexpectedly"
+    ABORTED = "Procedure worker was aborted"
+
+
+class ProcedureWorkerError(RuntimeError):
+    """Worker failure with an optional safe category for public status."""
+
+    def __init__(self, *args: object, failure: ProcedureWorkerFailure | None = None) -> None:
+        """Default to the public failure description unless internal details are supplied."""
+        if not args and failure is not None:
+            args = (failure.value,)
+        super().__init__(*args)
+        self.failure = failure
 
 
 class WorkerAlreadyExists(ProcedureWorkerError): ...

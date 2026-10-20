@@ -6,7 +6,8 @@ from collections import deque
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from threading import BoundedSemaphore, Event, Thread
-from typing import Any
+from time import monotonic
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from redis.exceptions import RedisError
@@ -21,7 +22,7 @@ from bec_lib.messages import (
 )
 from bec_lib.procedures.helper import BackendProcedureHelper
 from bec_lib.serialization import MsgpackSerialization
-from bec_server.procedures.constants import PROCEDURE
+from bec_server.procedures.constants import PROCEDURE, ProcedureWorkerError
 from bec_server.procedures.oop_worker_base import WorkerExpired
 from bec_server.procedures.worker_base import ProcedureWorker
 
@@ -49,9 +50,14 @@ class QueueAdmission:
 
 @dataclass
 class ProcedureQueue:
-    """A stable queue name, a serial runner, and that queue's worker pool."""
+    """A queue and its workers, retired after 60 seconds without pending or running work.
 
+    New admissions reset the idle countdown, independently of individual worker expiry.
+    """
+
+    AUTO_SHUTDOWN_TIME: ClassVar[float] = 60
     name: str
+    idle_since: float | None = None
     workers: dict[str, QueueWorker] = field(default_factory=dict)
     future: Future | None = None
     admissions: deque[QueueAdmission] = field(default_factory=deque)
@@ -72,7 +78,7 @@ class QueueWorkerPools:
         thread_prefix: str = "user_procedure_",
         redis_credentials: dict[str, str | None] | None = None,
     ) -> None:
-        """Initialise stable queues and their credential-bound worker pools.
+        """Initialise transient queues and their credential-bound worker pools.
 
         Args:
             redis (str): Redis server address.
@@ -88,12 +94,7 @@ class QueueWorkerPools:
         self._worker_slots = BoundedSemaphore(PROCEDURE.WORKER.MAX_WORKERS)
         credentials = BECAccess(self._conn).current_credentials()
         self._control_credentials = credentials
-        registry = self._conn.get(ME.procedure_queues())
-        self._queues = (
-            {name: ProcedureQueue(name) for name in registry.resource}
-            if isinstance(registry, AvailableResourceMessage)
-            else {}
-        )
+        self._queues = {}
         self._startup()
         self._publish_pools()
         self._register_endpoints()
@@ -126,6 +127,7 @@ class QueueWorkerPools:
             self._messages_by_ids[execution.execution_id] = execution
             self._credentials_by_id[execution.execution_id] = credentials
             queue = self._queues.setdefault(name, ProcedureQueue(name))
+            queue.idle_since = None
             queue.admissions.append(QueueAdmission(execution))
             try:
                 self._flush_admissions(queue)
@@ -161,7 +163,9 @@ class QueueWorkerPools:
     def _cleanup_worker_function(self, name):
         def finished(future):
             with self.lock:
-                queue = self._queues[name]
+                queue = self._queues.get(name)
+                if queue is None or queue.future is not future:
+                    return
                 if not future.cancelled() and future.exception() is not None:
                     logger.error(
                         f"Procedure queue {name} runner failed: {type(future.exception()).__name__}"
@@ -301,6 +305,10 @@ class QueueWorkerPools:
     def _maintain_workers(self):
         while not self._stopping.wait(0.1):
             with self.lock:
+                try:
+                    self._retire_empty_queues()
+                except RedisError:
+                    pass  # Retry retirement once Redis is available again.
                 for queue in self._queues.values():
                     if queue.admissions:
                         try:
@@ -319,7 +327,13 @@ class QueueWorkerPools:
                 for queue in self._queues.values():
                     for identifier, entry in queue.workers.items():
                         if not entry.busy and (
-                            entry.stopping or waiting or entry.worker._ending_or_ended()
+                            entry.stopping
+                            or waiting
+                            or entry.worker._ending_or_ended()
+                            or (
+                                queue.idle_since is not None
+                                and monotonic() - queue.idle_since >= queue.AUTO_SHUTDOWN_TIME
+                            )
                         ):
                             entry.stopping = True
                             expired.append((queue, identifier))
@@ -329,6 +343,38 @@ class QueueWorkerPools:
                     queue.wake.set()
                 except Exception:
                     logger.error("Failed to retire procedure worker")
+
+    def _retire_empty_queues(self):
+        """Track idle time and retire queues after the shutdown delay; lock required."""
+        now = monotonic()
+        retired = {}
+        for name, queue in self._queues.items():
+            if (
+                queue.admissions
+                or queue.current is not None
+                or self._conn.llen(ME.procedure_execution(name))
+            ):
+                queue.idle_since = None
+                continue
+            if queue.idle_since is None:
+                queue.idle_since = now
+            if (
+                now - queue.idle_since >= queue.AUTO_SHUTDOWN_TIME
+                and not queue.workers
+                and (queue.future is None or queue.future.done())
+            ):
+                retired[name] = queue
+        if not retired:
+            return
+        for name in retired:
+            self._queues.pop(name)
+        try:
+            self._publish_pools()
+        except RedisError:
+            self._queues.update(retired)
+            raise
+        for name in retired:
+            self._helper.notify_watchers(name, "execution")
 
     def _execute(self, queue, execution):
         if queue.runner_error is not None:
@@ -408,7 +454,11 @@ class QueueWorkerPools:
                 try:
                     error = self._execute(queue, execution)
                 except Exception as exc:
-                    error = f"Procedure worker failed ({type(exc).__name__})"
+                    error = (
+                        exc.failure.value
+                        if isinstance(exc, ProcedureWorkerError) and exc.failure is not None
+                        else f"Procedure worker failed ({type(exc).__name__})"
+                    )
                 with self.lock:
                     current_worker = queue.current_worker
                     cancel_current = queue.cancelled.is_set()
@@ -543,5 +593,6 @@ class QueueWorkerPools:
         for queue in self._queues.values():
             queue.wake.set()
         self.executor.shutdown(wait=True)
+        self._queues.clear()
         self._publish_pools()
         self._conn.shutdown()
