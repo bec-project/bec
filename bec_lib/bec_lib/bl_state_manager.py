@@ -11,6 +11,7 @@ from rich.table import Table
 
 from bec_lib import bl_states, messages
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.plugin_helper import get_state_plugins
 
 if TYPE_CHECKING:
     from bec_lib.bl_states import BeamlineStateConfig
@@ -52,6 +53,10 @@ def _state_class_for_state_type(state_type: str) -> type[bl_states.BeamlineState
     started by the scan server.
     """
     state_class = getattr(bl_states, state_type, None)
+    if state_class is None:
+        for mod in get_state_plugins():
+            if (state_class := getattr(mod, state_type, None)) is not None:
+                break
     if (
         not inspect.isclass(state_class)
         or not issubclass(state_class, bl_states.BeamlineState)
