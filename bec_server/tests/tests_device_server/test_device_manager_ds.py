@@ -16,7 +16,7 @@ from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
@@ -812,6 +812,32 @@ def test_get_device_order_without_order_map(dm_with_devices):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_initial_load_cleans_up_on_device_info_publication_failure(device_manager):
+    config = {
+        "name": "detector",
+        "deviceClass": "ophyd.Signal",
+        "enabled": True,
+        "readoutPriority": "monitored",
+    }
+    detector = ophyd.Signal(name="detector", value=1)
+    try:
+        with (
+            mock.patch.object(device_manager, "construct_device_obj", return_value=(detector, {})),
+            mock.patch.object(
+                device_manager, "publish_device_info", side_effect=RuntimeError("Publish failed")
+            ),
+            mock.patch.object(detector, "destroy", wraps=detector.destroy) as destroy,
+        ):
+            with pytest.raises(RuntimeError, match="Publish failed"):
+                device_manager._init_device(config, delayed=False, progress=mock.Mock())
+            destroy.assert_called_once_with()
+            assert "detector" not in device_manager.devices
+    finally:
+        if not detector._destroyed:
+            detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 @pytest.mark.parametrize("enabled", [True, False])
 @pytest.mark.parametrize("failure", [None, "connect", "hook"])
 def test_device_info_refreshes_after_connection(
@@ -975,6 +1001,138 @@ def test_device_info_callback_ignores_root_removed_while_waiting_to_publish(
     finally:
         device_manager.devices.pop("detector", None)
         detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("action", ["remove", "disable", "flush", "cleanup"])
+def test_device_destruction_waits_for_active_metadata_snapshot(
+    device_manager, connected_connector, action
+):
+    from bec_server.device_server.devices.device_serializer import get_device_info
+
+    class Detector(ophyd.Device):
+        value = ophyd.Component(ophyd.Signal, value=0)
+
+    detector = Detector(name="detector")
+    config = {
+        "name": "detector",
+        "deviceClass": "ophyd.Device",
+        "enabled": True,
+        "readoutPriority": "monitored",
+    }
+    device = DSDevice(name="detector", obj=detector, config=config, parent=device_manager)
+    device_manager.devices["detector"] = device
+    handler = ConfigUpdateHandler(device_manager)
+    describing = threading.Event()
+    resume_description = threading.Event()
+    teardown_started = threading.Event()
+    destroyed = threading.Event()
+    destroy = detector.destroy
+
+    def describe(obj, **kwargs):
+        describing.set()
+        assert resume_description.wait(3)
+        assert not obj._destroyed
+        return get_device_info(obj, **kwargs)
+
+    def destroy_detector():
+        destroyed.set()
+        destroy()
+
+    def teardown():
+        teardown_started.set()
+        if action == "remove":
+            handler._remove_config(
+                messages.DeviceConfigMessage(action="remove", config={"detector": {}}),
+                cancel_event=threading.Event(),
+            )
+        elif action == "disable":
+            handler._update_config(
+                messages.DeviceConfigMessage(
+                    action="update", config={"detector": {"enabled": False}}
+                ),
+                cancel_event=threading.Event(),
+            )
+        elif action == "flush":
+            handler._flush_config()
+        else:
+            handler._cleanup_failed_device_init(detector, device)
+
+    try:
+        with (
+            mock.patch.object(device_manager, "connector", connected_connector),
+            mock.patch(
+                "bec_server.device_server.devices.devicemanager.get_device_info",
+                side_effect=describe,
+            ) as snapshot,
+            mock.patch.object(detector, "destroy", side_effect=destroy_detector),
+            ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            callback = executor.submit(
+                device_manager._obj_callback_signal_info_changed, obj=detector.value
+            )
+            try:
+                assert describing.wait(3)
+                closing = executor.submit(teardown)
+                assert teardown_started.wait(3)
+                assert not destroyed.wait(0.1), "Destroyed a device during metadata serialization"
+            finally:
+                resume_description.set()
+            callback.result(timeout=3)
+            closing.result(timeout=3)
+            assert detector._destroyed
+            device_manager._obj_callback_signal_info_changed(obj=detector.value)
+            assert snapshot.call_count == 1
+    finally:
+        resume_description.set()
+        handler.executor.shutdown(wait=True)
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_destruction_can_wait_for_metadata_callback(device_manager):
+    class Detector(ophyd.Device):
+        value = ophyd.Component(ophyd.Signal, value=0)
+
+    detector = Detector(name="detector")
+    device_manager.devices["detector"] = SimpleNamespace(obj=detector, enabled=True)
+    destroy = detector.destroy
+    try:
+        with (
+            mock.patch(
+                "bec_server.device_server.devices.devicemanager.get_device_info", return_value={}
+            ) as describe,
+            ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+
+            def destroy_after_callback():
+                callback = executor.submit(
+                    device_manager._obj_callback_signal_info_changed, obj=detector.value
+                )
+                callback.result(timeout=3)
+                destroy()
+
+            with mock.patch.object(detector, "destroy", side_effect=destroy_after_callback):
+                device_manager.disconnect_device(detector)
+            describe.assert_not_called()
+            assert detector._destroyed
+    finally:
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_failed_device_destruction_restores_metadata_updates(dm_with_devices):
+    detector = dm_with_devices.devices.samx.obj
+    with mock.patch.object(detector, "destroy", side_effect=RuntimeError("Destroy failed")):
+        with pytest.raises(RuntimeError, match="Destroy failed"):
+            dm_with_devices.disconnect_device(detector)
+    with mock.patch(
+        "bec_server.device_server.devices.devicemanager.get_device_info", return_value={}
+    ) as describe:
+        dm_with_devices.publish_device_info(detector, connect=False)
+        describe.assert_called_once_with(detector, connect=False)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
