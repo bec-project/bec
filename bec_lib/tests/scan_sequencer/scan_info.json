@@ -1,0 +1,472 @@
+{
+  "time_scan": {
+    "class": "TimeScan",
+    "base_class": "ScanBaseV4",
+    "is_scan": true,
+    "is_internal": false,
+    "arg_input": {},
+    "required_kwargs": [],
+    "arg_bundle_size": {
+      "bundle": 0,
+      "min": null,
+      "max": null
+    },
+    "signature": [
+      {
+        "name": "points",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "default": "_empty",
+        "annotation": {
+          "Annotated": {
+            "type": "int",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": null,
+                "description": null,
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": null,
+                "reference_units": null,
+                "gt": null,
+                "ge": null,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "interval",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "default": "_empty",
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Interval",
+                "description": null,
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "exp_time",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "default": 0,
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Exposure Time",
+                "description": "Exposure time in seconds",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "settling_time",
+        "kind": "POSITIONAL_OR_KEYWORD",
+        "default": 0,
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Settling Time",
+                "description": "Time to settle before trigger and readout.",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "kwargs",
+        "kind": "VAR_KEYWORD",
+        "default": "_empty",
+        "annotation": "_empty"
+      }
+    ],
+    "doc": "Trigger and readout devices at a fixed interval.\nNote that the interval time cannot be less than the exposure time.\nThe effective sleep time between points is:\n    sleep_time = max(interval - exp_time, 0)\n\nArgs:\n    points (int): points.\n    interval (float [s]): interval. s\n    exp_time (float [s]): Exposure time in seconds. Default: 0 s\n    settling_time (float [s]): Time to settle before trigger and readout. Default: 0 s\n\nReturns:\n    ScanReport\n\nExamples:\n    Minimum:\n        >>> scans.time_scan(1, 1.0)\n    Full:\n        >>> scans.time_scan(1, 1.0, exp_time=0, settling_time=0)",
+    "gui_visibility": {
+      "Scan Parameters": [
+        "points",
+        "interval",
+        "exp_time",
+        "settling_time"
+      ]
+    }
+  },
+  "line_scan": {
+    "class": "LineScan",
+    "base_class": "ScanBaseV4",
+    "is_scan": true,
+    "is_internal": false,
+    "arg_input": {
+      "device": "DeviceBase",
+      "start": {
+        "Annotated": {
+          "type": "float",
+          "metadata": {
+            "ScanArgument": {
+              "display_name": "Start Position",
+              "description": null,
+              "tooltip": null,
+              "expert": false,
+              "hidden": false,
+              "example": null,
+              "units": null,
+              "reference_units": "device",
+              "gt": null,
+              "ge": null,
+              "lt": null,
+              "le": null,
+              "reference_limits": null,
+              "precision": null,
+              "alternative_group": null
+            }
+          }
+        }
+      },
+      "stop": {
+        "Annotated": {
+          "type": "float",
+          "metadata": {
+            "ScanArgument": {
+              "display_name": "Stop Position",
+              "description": null,
+              "tooltip": null,
+              "expert": false,
+              "hidden": false,
+              "example": null,
+              "units": null,
+              "reference_units": "device",
+              "gt": null,
+              "ge": null,
+              "lt": null,
+              "le": null,
+              "reference_limits": null,
+              "precision": null,
+              "alternative_group": null
+            }
+          }
+        }
+      }
+    },
+    "required_kwargs": [],
+    "arg_bundle_size": {
+      "bundle": 3,
+      "min": 1,
+      "max": null
+    },
+    "signature": [
+      {
+        "name": "args",
+        "kind": "VAR_POSITIONAL",
+        "default": "_empty",
+        "annotation": "_empty"
+      },
+      {
+        "name": "steps",
+        "kind": "KEYWORD_ONLY",
+        "default": "_empty",
+        "annotation": {
+          "Annotated": {
+            "type": "int",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Number of Steps",
+                "description": null,
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": null,
+                "reference_units": null,
+                "gt": 0.0,
+                "ge": null,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "relative",
+        "kind": "KEYWORD_ONLY",
+        "default": "_empty",
+        "annotation": {
+          "Annotated": {
+            "type": "bool",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Relative",
+                "description": "Whether the positions are relative to the current position",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": null,
+                "reference_units": null,
+                "gt": null,
+                "ge": null,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "exp_time",
+        "kind": "KEYWORD_ONLY",
+        "default": 0,
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Exposure Time",
+                "description": "Exposure time in seconds",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "frames_per_trigger",
+        "kind": "KEYWORD_ONLY",
+        "default": 1,
+        "annotation": {
+          "Annotated": {
+            "type": "int",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Frames per Trigger",
+                "description": "Number of frames per trigger for devices that support configurable frame counts per trigger.",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": null,
+                "reference_units": null,
+                "gt": null,
+                "ge": 1.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "settling_time",
+        "kind": "KEYWORD_ONLY",
+        "default": 0,
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Settling Time",
+                "description": "Time to settle before trigger and readout.",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "settling_time_after_trigger",
+        "kind": "KEYWORD_ONLY",
+        "default": 0,
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Settling Time After Trigger",
+                "description": "Time to settle after the trigger but before the readout.",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "readout_time",
+        "kind": "KEYWORD_ONLY",
+        "default": 0,
+        "annotation": {
+          "Annotated": {
+            "type": "float",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Readout Time",
+                "description": "Configuration for devices that support configurable readout times.",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": "s",
+                "reference_units": null,
+                "gt": null,
+                "ge": 0.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "burst_at_each_point",
+        "kind": "KEYWORD_ONLY",
+        "default": 1,
+        "annotation": {
+          "Annotated": {
+            "type": "int",
+            "metadata": {
+              "ScanArgument": {
+                "display_name": "Burst at Each Point",
+                "description": "Number of triggers and readouts at each point.",
+                "tooltip": null,
+                "expert": false,
+                "hidden": false,
+                "example": null,
+                "units": null,
+                "reference_units": null,
+                "gt": null,
+                "ge": 1.0,
+                "lt": null,
+                "le": null,
+                "reference_limits": null,
+                "precision": null,
+                "alternative_group": null
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "kwargs",
+        "kind": "VAR_KEYWORD",
+        "default": "_empty",
+        "annotation": "_empty"
+      }
+    ],
+    "doc": "A line scan for one or more motors.\n\nArgs:\n    *args (device: DeviceBase, start: float, stop: float): repeated scan argument bundles.\n    steps (int): steps.\n    relative (bool): Whether the positions are relative to the current position.\n    exp_time (float [s]): Exposure time in seconds. Default: 0 s\n    frames_per_trigger (int): Number of frames per trigger for devices that support configurable frame counts per trigger. Default: 1\n    settling_time (float [s]): Time to settle before trigger and readout. Default: 0 s\n    settling_time_after_trigger (float [s]): Time to settle after the trigger but before the readout. Default: 0 s\n    readout_time (float [s]): Configuration for devices that support configurable readout times. Default: 0 s\n    burst_at_each_point (int): Number of triggers and readouts at each point. Default: 1\n\nReturns:\n    ScanReport\n\nExamples:\n    Minimum:\n        >>> scans.line_scan(dev.device1, -1.0, 1.0, steps=10, relative=False)\n    Full:\n        >>> scans.line_scan(dev.device1, -1.0, 1.0, steps=10, relative=False, exp_time=0, frames_per_trigger=1, settling_time=0, settling_time_after_trigger=0, readout_time=0, burst_at_each_point=1)",
+    "gui_visibility": {
+      "Movement Parameters": [
+        "steps",
+        "relative"
+      ],
+      "Acquisition Parameters": [
+        "exp_time",
+        "frames_per_trigger",
+        "settling_time",
+        "settling_time_after_trigger",
+        "readout_time",
+        "burst_at_each_point"
+      ]
+    }
+  }
+}

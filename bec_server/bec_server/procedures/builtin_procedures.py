@@ -4,6 +4,7 @@ import time
 from bec_lib.client import BECClient
 from bec_lib.logger import bec_logger
 from bec_lib.scan_report import ScanReport
+from bec_lib.scan_sequencer import DefinitionLibrary, Sequencer
 
 logger = bec_logger.logger
 
@@ -54,3 +55,17 @@ def run_macro(macro_name: str, params: tuple[tuple, dict] | None = None, *, bec:
         raise ValueError(
             f"Macro {macro_name} not found in the client namespace! Available: {list(user_macros.keys())}"
         )
+
+
+def run_sequence(
+    schedule: dict | str, definitions: list[dict] | None = None, *, bec: BECClient
+) -> None:
+    """Execute the sequence and reusable definitions supplied by the calling interface.
+
+    Args:
+        schedule (dict | str): Decoded JSON document or JSON text from the interface.
+        definitions (list[dict] | None): Reusable definitions required by the sequence.
+        bec (BECClient): Procedure worker's injected BEC IPython client.
+    """
+    library = DefinitionLibrary(definitions)
+    Sequencer(bec, library).execute(schedule)

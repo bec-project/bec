@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "type": "sequence",
+  "id": "alternating_positions",
+  "revision": 1,
+  "root": {
+    "id": "repeat",
+    "type": "repeat",
+    "count": 2,
+    "body": {
+      "id": "positions",
+      "type": "for_each",
+      "variable": "position",
+      "values": [
+        1,
+        -1
+      ],
+      "body": {
+        "id": "measure",
+        "type": "component_call",
+        "definition": {
+          "id": "measure_position",
+          "version": 1
+        },
+        "arguments": {
+          "position": {
+            "ref": "position"
+          }
+        }
+      }
+    }
+  }
+}
