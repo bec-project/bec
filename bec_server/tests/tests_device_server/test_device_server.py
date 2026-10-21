@@ -145,7 +145,7 @@ def test_start_refreshes_existing_device_manager(
     connected_connector.set(
         MessageEndpoints.device_config(), messages.AvailableResourceMessage(resource=[config])
     )
-    connected_connector.set(
+    connected_connector.set_and_publish(
         MessageEndpoints.device_info("samx"),
         messages.DeviceInfoMessage(device="samx", info=device._info),
     )

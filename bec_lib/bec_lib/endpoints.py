@@ -346,7 +346,8 @@ class MessageEndpoints:
     def device_info(device: str):
         """
         Endpoint for device info. This endpoint is used by the device server to publish
-        the device info using a messages.DeviceInfoMessage message.
+        the device info using a messages.DeviceInfoMessage message. Updates are stored
+        and published so clients can refresh cached descriptions.
 
         Args:
             device (str): Device name, e.g. "samx".
@@ -358,7 +359,7 @@ class MessageEndpoints:
         return EndpointInfo(
             endpoint=endpoint,
             message_type=messages.DeviceInfoMessage,
-            message_op=MessageOp.KEY_VALUE,
+            message_op=MessageOp.SET_PUBLISH,
         )
 
     @staticmethod
