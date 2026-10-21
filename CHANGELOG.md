@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v4.3.1 (2026-10-21)
+
+### Bug Fixes
+
+- **procedures**: Correct Podman startup and report worker failures
+  ([`104b8e2`](https://github.com/bec-project/bec/commit/104b8e2cbc864be02602485213be947408b676cc))
+
+- **procedures**: Default subprocess output to UTF-8
+  ([`7774d4f`](https://github.com/bec-project/bec/commit/7774d4ff28a88a50479113370e76ad8a4b669250))
+
+- **procedures**: Ignore missing containers and test both workers
+  ([`8a7bcaf`](https://github.com/bec-project/bec/commit/8a7bcaf0652222a093519b0d05663df8e4b2a6f0))
+
+- **procedures**: Serialize concurrent worker teardown
+  ([`deb5814`](https://github.com/bec-project/bec/commit/deb58147d3df7f4d2946d57722b8b0c0be26fba4))
+
+- **procedures**: Stream subprocess stdout and stderr to Redis
+  ([`08714e3`](https://github.com/bec-project/bec/commit/08714e3d6ec34a62b8ca438c6a38eea51cccac53))
+
+
 ## v4.3.0 (2026-10-16)
 
 ### Features
