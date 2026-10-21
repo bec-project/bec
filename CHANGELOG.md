@@ -1,6 +1,25 @@
 # CHANGELOG
 
 
+## v4.3.2 (2026-10-21)
+
+### Bug Fixes
+
+- **procedures**: Avoid deadlock when aborting worker startup
+  ([`6e51331`](https://github.com/bec-project/bec/commit/6e51331fdef356187284b3b93fe745be1b9b22b6))
+
+- **procedures**: Isolate stdin and retire idle queues
+  ([`e0d35f7`](https://github.com/bec-project/bec/commit/e0d35f78cbe4a564bd8ca1b673d05b2c88843ec3))
+
+- **procedures**: Scope procedure submissions to authenticated users
+  ([`5927642`](https://github.com/bec-project/bec/commit/5927642eac1c5d5858bbee71326b7d3a5aacff27))
+
+### Refactoring
+
+- **procedures**: Manage credential-bound workers per queue
+  ([`4b9035f`](https://github.com/bec-project/bec/commit/4b9035f2a37b4592efd07907bd765ff880510522))
+
+
 ## v4.3.1 (2026-10-21)
 
 ### Bug Fixes
