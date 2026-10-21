@@ -44,6 +44,7 @@ dependencies = [
 
 
 [project.optional-dependencies]
+adzmq = ["Pillow>=10,<14", "pyzmq>=25,<28"]
 dev = [
     "black~=26.0",
     "coverage~=7.0",
@@ -60,6 +61,7 @@ dev = [
     "typer~=0.15",
 ]
 ci = ["bec-testing-plugin"]
+all = ["bec_lib[adzmq,dev]"]
 
 [project.scripts]
 bec-channel-monitor = "bec_lib.channel_monitor:channel_monitor_launch"
