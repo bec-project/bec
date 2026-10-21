@@ -200,7 +200,7 @@ class ConfigUpdateHandler:
     def _cleanup_failed_device_init(self, obj: OphydObject, device: DSDevice | None = None) -> None:
         """Best-effort cleanup that does not mask the initialization failure."""
         try:
-            obj.destroy()
+            self.device_manager.disconnect_device(obj)
         # pylint: disable=broad-except
         except Exception:
             logger.error(
@@ -285,7 +285,7 @@ class ConfigUpdateHandler:
         """Flush all devices from the device manager."""
         for _, obj in self.device_manager.devices.items():
             try:
-                obj.obj.destroy()
+                self.device_manager.disconnect_device(obj.obj)
             except Exception:
                 logger.warning(f"Failed to destroy {obj.obj.name}")
                 raise RuntimeError("Failed to flush config")

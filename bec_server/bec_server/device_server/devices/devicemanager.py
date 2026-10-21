@@ -93,6 +93,7 @@ class DSDevice(DeviceBaseWithConfig):
         self.obj = obj
         self.metadata = {}
         self.initialized = False
+        self._device_info_active = True
 
     def __getattr__(self, name: str) -> inspect.Any:
         if hasattr(self.obj, name):
@@ -148,6 +149,7 @@ class DeviceManagerDS(DeviceManagerBase):
         self._config_update_handler_cls = config_update_handler
         self.config_update_handler = None
         self.failed_devices = {}
+        self._device_info_lock = threading.Lock()
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
         self._auto_monitor_readback_updates = set()
@@ -219,6 +221,10 @@ class DeviceManagerDS(DeviceManagerBase):
         # pylint: disable=broad-except
         except Exception:
             if name not in self.devices:
+                try:
+                    self.disconnect_device(obj)
+                except Exception:  # pylint: disable=broad-except
+                    logger.error(f"Failed to destroy device {name}: {traceback.format_exc()}")
                 raise
             msg = traceback.format_exc()
             logger.warning(f"Failed to initialize device {name}: {msg}")
@@ -649,16 +655,66 @@ class DeviceManagerDS(DeviceManagerBase):
             if isinstance(signal, BECMessageSignal):
                 signal.subscribe(callback=self._obj_callback_bec_message_signal, run=False)
 
+    def _subscribe_to_bec_signal_info(self, obj: OphydObject) -> None:
+        """Observe runtime signal metadata after connection hooks finish."""
+        if not hasattr(obj, "walk_signals"):
+            return
+        for _, _, signal in obj.walk_signals():
+            event = getattr(signal, "SUB_SIGNAL_INFO_CHANGED", None)
+            if not isinstance(signal, BECMessageSignal) or event is None:
+                continue
+            signal.clear_sub(self._obj_callback_signal_info_changed, event_type=event)
+            signal.subscribe(self._obj_callback_signal_info_changed, event_type=event, run=False)
+
+    def _obj_callback_signal_info_changed(self, *, obj: OphydObject, **_kwargs) -> None:
+        """Publish the active root device's full runtime description."""
+        root = obj.root
+        device = self.devices.get(root.name)
+        if (
+            device is None
+            or device.obj is not root
+            or not getattr(device, "_device_info_active", True)
+        ):
+            return
+        self.publish_device_info(root, connect=device.enabled)
+
     def initialize_enabled_device(self, opaas_obj):
         """connect to an enabled device and initialize the device buffer"""
-        if hasattr(opaas_obj.obj, "on_connected"):
-            opaas_obj.obj.on_connected()
+        try:
+            if hasattr(opaas_obj.obj, "on_connected"):
+                opaas_obj.obj.on_connected()
+        except Exception:
+            self.publish_device_info(opaas_obj.obj, connect=False)
+            raise
+        self._subscribe_to_bec_signal_info(opaas_obj.obj)
+        publish_error = self.publish_device_info(opaas_obj.obj, connect=opaas_obj.enabled)
+        if publish_error:
+            raise publish_error
         opaas_obj.initialize_device_buffer(self.connector)
 
-    @staticmethod
-    def disconnect_device(obj):
-        """disconnect from a device"""
-        obj.destroy()
+    def disconnect_device(self, obj: OphydObject | DSDevice) -> None:
+        """Stop metadata publication before destroying a device outside the lock.
+
+        Args:
+            obj (OphydObject | DSDevice): Device object or its server-side wrapper.
+        """
+        root = obj.obj if isinstance(obj, DSDevice) else obj
+        with self._device_info_lock:
+            device = self.devices.get(root.name)
+            was_active = getattr(device, "_device_info_active", True)
+            if device is not None and device.obj is root:
+                device._device_info_active = False  # pylint: disable=protected-access
+            else:
+                device = None
+        try:
+            root.destroy()
+        except Exception:
+            # A failed teardown may leave a live device available for retry.
+            if device is not None and getattr(root, "_destroyed", True) is False:
+                with self._device_info_lock:
+                    if self.devices.get(root.name) is device:
+                        device._device_info_active = was_active  # pylint: disable=protected-access
+            raise
 
     def reset_device(self, obj: DSDevice):
         """reset a device"""
@@ -709,32 +765,53 @@ class DeviceManagerDS(DeviceManagerBase):
             return exc
 
     def publish_device_info(
-        self, obj: OphydObject, connect: bool = True, pipe=None
+        self, obj: OphydObject, connect: bool = True, pipe: Pipeline | None = None
     ) -> None | Exception:
         """
         Publish the device info to redis. The device info contains
         inter alia the class name, user functions and signals.
 
+        Immediate publications serialize snapshot construction and writing. The
+        bootstrap description can be queued in the initialization pipeline before
+        runtime metadata subscriptions are installed.
+
         Args:
-            obj (_type_): _description_
-            connect (bool): Whether to connect to the device before getting the info. Defaults to True.
+            obj (OphydObject): Root device whose complete description is published.
+            connect (bool): Include descriptions of connected signals. False builds
+                a disconnected description. Defaults to True.
+            pipe (Pipeline | None): Optional initialization pipeline to queue the
+                bootstrap description in.
+
+        Returns:
+            None | Exception: Error after publishing the disconnected fallback, or
+                None on success. Errors preventing fallback publication are raised.
         """
-        try:
-            interface = get_device_info(obj, connect=connect)
-            self.connector.set(
-                MessageEndpoints.device_info(obj.name),
-                messages.DeviceInfoMessage(device=obj.name, info=interface),
-                pipe,
-            )
-        except Exception as exc:
-            logger.error(f"Failed to publish device info for {obj.name}: {exc}")
-            interface = get_device_info(obj, connect=False)
-            self.connector.set(
-                MessageEndpoints.device_info(obj.name),
-                messages.DeviceInfoMessage(device=obj.name, info=interface),
-                pipe,
-            )
-            return exc
+        with self._device_info_lock:
+            if pipe is None:
+                device = self.devices.get(obj.name)
+                if (
+                    device is None
+                    or device.obj is not obj
+                    or not getattr(device, "_device_info_active", True)
+                ):
+                    return None
+            try:
+                interface = get_device_info(obj, connect=connect)
+                self.connector.set_and_publish(
+                    MessageEndpoints.device_info(obj.name),
+                    messages.DeviceInfoMessage(device=obj.name, info=interface),
+                    pipe,
+                )
+            except Exception as exc:
+                logger.error(f"Failed to publish device info for {obj.name}: {exc}")
+                interface = get_device_info(obj, connect=False)
+                self.connector.set_and_publish(
+                    MessageEndpoints.device_info(obj.name),
+                    messages.DeviceInfoMessage(device=obj.name, info=interface),
+                    pipe,
+                )
+                return exc
+        return None
 
     def reset_device_data(self, obj: OphydObject, pipe=None) -> None:
         """delete all device data and device info"""
