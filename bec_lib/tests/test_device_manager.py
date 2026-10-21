@@ -14,7 +14,7 @@ import bec_lib
 from bec_lib import messages
 from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.connector import MessageObject
-from bec_lib.devicemanager import DeviceConfigError
+from bec_lib.devicemanager import DeviceConfigError, DeviceManagerBase
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
@@ -691,3 +691,181 @@ def test_set_rpc_method_context(dm_with_devices):
             assert rpc_method_context.get() == dummy_method
         assert rpc_method_context.get() == another_dummy_method
     assert rpc_method_context.get() is None
+
+
+def test_device_info_notification_updates_proxy_without_replacing_it(device_manager):
+    proxy = mock.Mock()
+    proxy._info = {"signals": {"preview": {"transports": None}}}
+    info_identity = proxy._info
+    signal_info_identity = proxy._info["signals"]["preview"]
+    device_manager.devices["detector"] = proxy
+    updated = {"signals": {"preview": {"transports": [{"transport": "zmq"}]}}}
+    notification = MessageObject(
+        value=messages.DeviceInfoMessage(device="detector", info=updated), topic=""
+    )
+    with mock.patch.object(device_manager, "_get_device_info", return_value=notification.value):
+        device_manager._device_info_update_callback(notification)
+    assert device_manager.devices["detector"] is proxy
+    assert proxy._info is info_identity
+    assert proxy._info["signals"]["preview"] is signal_info_identity
+    assert signal_info_identity["transports"] == [{"transport": "zmq"}]
+    assert proxy._info == updated
+    proxy._parse_info.assert_not_called()
+    # Late notifications must not recreate removed devices.
+    device_manager.devices.pop("detector")
+    device_manager._device_info_update_callback(notification)
+    assert "detector" not in device_manager.devices
+
+
+def test_device_info_notification_does_not_replace_real_devices(device_manager):
+    device_manager._use_proxy_objects = False
+    proxy = mock.Mock()
+    proxy._info = {"original": True}
+    device_manager.devices["detector"] = proxy
+    device_manager._device_info_update_callback(
+        MessageObject(value=messages.DeviceInfoMessage(device="detector", info={}), topic="")
+    )
+    assert proxy._info == {"original": True}
+
+
+def test_device_info_notification_uses_current_cache_after_initial_load(
+    device_manager, connected_connector
+):
+    from bec_lib.endpoints import MessageEndpoints
+
+    stale = messages.DeviceInfoMessage(
+        device="detector", info={"signals": {"preview": {"transports": None}}}
+    )
+    current = messages.DeviceInfoMessage(
+        device="detector", info={"signals": {"preview": {"transports": ["current"]}}}
+    )
+    connected_connector.set_and_publish(MessageEndpoints.device_info("detector"), current)
+    callback_started = threading.Event()
+
+    def delayed_notification():
+        callback_started.set()
+        device_manager._device_info_update_callback(MessageObject(value=stale, topic=""))
+
+    with (
+        mock.patch.object(device_manager, "connector", connected_connector),
+        mock.patch.object(device_manager, "_start_connectors"),
+        mock.patch.object(
+            device_manager,
+            "_get_device_info",
+            new=DeviceManagerBase._get_device_info.__get__(device_manager),
+        ),
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+
+        def initial_load():
+            nonlocal notification
+            notification = executor.submit(delayed_notification)
+            assert callback_started.wait(3)
+            proxy = mock.Mock()
+            proxy._info = copy.deepcopy(device_manager._get_device_info("detector").info)
+            device_manager.devices["detector"] = proxy
+
+        notification = None
+        with mock.patch.object(device_manager, "_get_config", side_effect=initial_load):
+            device_manager.initialize("")
+        notification.result(timeout=3)
+
+    assert device_manager.devices["detector"]._info == current.info
+
+
+def test_device_info_pubsub_refreshes_existing_proxy(device_manager, connected_connector):
+    from bec_lib.endpoints import MessageEndpoints
+
+    proxy = mock.Mock()
+    proxy._info = {"signals": {"preview": {"transports": None}}}
+    device_manager.devices["detector"] = proxy
+    received = threading.Event()
+    callback = device_manager._device_info_update_callback
+
+    def on_info(msg):
+        callback(msg)
+        received.set()
+
+    with (
+        mock.patch.object(device_manager, "connector", connected_connector),
+        mock.patch.object(device_manager, "_device_info_update_callback", new=on_info),
+        mock.patch.object(
+            device_manager,
+            "_get_device_info",
+            new=DeviceManagerBase._get_device_info.__get__(device_manager),
+        ),
+    ):
+        device_manager._start_base_register()
+        message = messages.DeviceInfoMessage(
+            device="detector", info={"signals": {"preview": {"transports": ["updated"]}}}
+        )
+        connected_connector.set_and_publish(MessageEndpoints.device_info("detector"), message)
+        assert received.wait(3)
+        assert proxy._info == message.info
+        assert connected_connector.get(MessageEndpoints.device_info("detector")) == message
+
+
+def test_device_info_notification_ignores_deleted_cache(device_manager):
+    proxy = mock.Mock()
+    proxy._info = {"original": True}
+    device_manager.devices["detector"] = proxy
+    notification = MessageObject(
+        value=messages.DeviceInfoMessage(device="detector", info={}), topic=""
+    )
+    with mock.patch.object(device_manager, "_get_device_info", return_value=None):
+        device_manager._device_info_update_callback(notification)
+    assert proxy._info == {"original": True}
+
+
+def test_device_info_notification_updates_nested_proxy_metadata_in_place(device_manager):
+    from bec_lib.device import Device
+
+    def camera(name, address):
+        return {
+            "device_base_class": "device",
+            "device_attr_name": name,
+            "signals": {
+                "preview": {
+                    "describe": {"signal_info": {"transports": address}},
+                    "obj_name": f"detector_{name}_preview",
+                }
+            },
+        }
+
+    description = {
+        "signals": {},
+        "sub_devices": [
+            {
+                "device_base_class": "device",
+                "device_attr_name": "group",
+                "signals": {},
+                "sub_devices": [camera("first", None), camera("second", None)],
+            }
+        ],
+    }
+    device = Device(name="detector", info=description)
+    device_manager.devices["detector"] = device
+    group, first, second = device.group, device.group.first, device.group.second
+    preview = first.preview
+    retained_metadata = preview._signal_info["describe"]["signal_info"]
+    updated = copy.deepcopy(description)
+    updated["sub_devices"][0]["sub_devices"] = [
+        camera("second", ["second-address"]),
+        camera("first", ["first-address"]),
+    ]
+    unchanged_message = copy.deepcopy(updated)
+    current = messages.DeviceInfoMessage(device="detector", info=updated)
+    with mock.patch.object(device_manager, "_get_device_info", return_value=current):
+        device_manager._device_info_update_callback(MessageObject(value=current, topic=""))
+    assert device.group is group
+    assert group.first is first and group.second is second
+    assert first.preview is preview
+    assert retained_metadata["transports"] == ["first-address"]
+    assert second.preview._signal_info["describe"]["signal_info"]["transports"] == [
+        "second-address"
+    ]
+    assert device._info == updated == unchanged_message
+    assert group._info is device._info["sub_devices"][0]
+    assert first._info is group._info["sub_devices"][1]
+    retained_metadata["local_only"] = True
+    assert updated == unchanged_message  # Received messages do not alias mutable proxy metadata.

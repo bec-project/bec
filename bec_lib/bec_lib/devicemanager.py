@@ -36,18 +36,13 @@ from bec_lib.device import (
 )
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.messages import AvailableResourceMessage, DeviceConfigMessage
+from bec_lib.messages import AvailableResourceMessage, DeviceConfigMessage, DeviceInfoMessage
 from bec_lib.utils.import_utils import lazy_import_from
 from bec_lib.utils.rpc_utils import rgetattr
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.bec_service import BECService
-    from bec_lib.messages import (
-        BECStatus,
-        DeviceInfoMessage,
-        ScanStatusMessage,
-        ServiceResponseMessage,
-    )
+    from bec_lib.messages import BECStatus, ScanStatusMessage, ServiceResponseMessage
 else:
     # TODO: put back normal import when Pydantic gets faster
     BECStatus, ServiceResponseMessage = lazy_import_from(
@@ -684,6 +679,55 @@ class DeviceManagerBase:
             MessageEndpoints.device_config_update(), cb=self._device_config_update_callback
         )
         self.connector.register(MessageEndpoints.scan_status(), cb=self._update_scan_info)
+        if self._use_proxy_objects:
+            self.connector.register(
+                patterns=MessageEndpoints.device_info("*"), cb=self._device_info_update_callback
+            )
+
+    def _device_info_update_callback(self, msg) -> None:
+        """Read current metadata after an invalidation without replacing proxy identities."""
+        if not self._use_proxy_objects:
+            return
+        update = msg.value
+        if not isinstance(update, DeviceInfoMessage):
+            return
+        with self._config_lock:
+            device = self.devices.get(update.device)
+            if device is not None:
+                # A notification queued during initialization may predate the initial Redis read.
+                current = self._get_device_info(update.device)
+                if isinstance(current, DeviceInfoMessage):
+                    self._merge_device_info(
+                        device._info, current.info  # pylint: disable=protected-access
+                    )
+
+    @classmethod
+    def _merge_device_info(cls, current: dict, updated: dict) -> None:
+        """Refresh full descriptions while retaining nested proxy metadata references."""
+        for key in tuple(current):
+            if key not in updated:
+                del current[key]
+        for key, value in updated.items():
+            previous = current.get(key)
+            if isinstance(previous, dict) and isinstance(value, dict):
+                cls._merge_device_info(previous, value)
+            elif key == "sub_devices" and isinstance(previous, list) and isinstance(value, list):
+                by_name = {
+                    item["device_attr_name"]: item
+                    for item in previous
+                    if isinstance(item, dict) and isinstance(item.get("device_attr_name"), str)
+                }
+                children = []
+                for child in value:
+                    existing = by_name.get(child.get("device_attr_name"))
+                    if existing is None:
+                        children.append(copy.deepcopy(child))
+                    else:
+                        cls._merge_device_info(existing, child)
+                        children.append(existing)
+                previous[:] = children
+            else:
+                current[key] = copy.deepcopy(value)
 
     def _log_callback(self, msg, **kwargs) -> None:
         """
