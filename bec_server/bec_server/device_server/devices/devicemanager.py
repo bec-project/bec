@@ -93,6 +93,7 @@ class DSDevice(DeviceBaseWithConfig):
         self.obj = obj
         self.metadata = {}
         self.initialized = False
+        self._device_info_active = True
 
     def __getattr__(self, name: str) -> inspect.Any:
         if hasattr(self.obj, name):
@@ -220,6 +221,10 @@ class DeviceManagerDS(DeviceManagerBase):
         # pylint: disable=broad-except
         except Exception:
             if name not in self.devices:
+                try:
+                    self.disconnect_device(obj)
+                except Exception:  # pylint: disable=broad-except
+                    logger.error(f"Failed to destroy device {name}: {traceback.format_exc()}")
                 raise
             msg = traceback.format_exc()
             logger.warning(f"Failed to initialize device {name}: {msg}")
@@ -665,7 +670,11 @@ class DeviceManagerDS(DeviceManagerBase):
         """Publish the active root device's full runtime description."""
         root = obj.root
         device = self.devices.get(root.name)
-        if device is None or device.obj is not root:
+        if (
+            device is None
+            or device.obj is not root
+            or not getattr(device, "_device_info_active", True)
+        ):
             return
         self.publish_device_info(root, connect=device.enabled)
 
@@ -683,10 +692,29 @@ class DeviceManagerDS(DeviceManagerBase):
             raise publish_error
         opaas_obj.initialize_device_buffer(self.connector)
 
-    @staticmethod
-    def disconnect_device(obj):
-        """disconnect from a device"""
-        obj.destroy()
+    def disconnect_device(self, obj: OphydObject | DSDevice) -> None:
+        """Stop metadata publication before destroying a device outside the lock.
+
+        Args:
+            obj (OphydObject | DSDevice): Device object or its server-side wrapper.
+        """
+        root = obj.obj if isinstance(obj, DSDevice) else obj
+        with self._device_info_lock:
+            device = self.devices.get(root.name)
+            was_active = getattr(device, "_device_info_active", True)
+            if device is not None and device.obj is root:
+                device._device_info_active = False  # pylint: disable=protected-access
+            else:
+                device = None
+        try:
+            root.destroy()
+        except Exception:
+            # A failed teardown may leave a live device available for retry.
+            if device is not None and getattr(root, "_destroyed", True) is False:
+                with self._device_info_lock:
+                    if self.devices.get(root.name) is device:
+                        device._device_info_active = was_active  # pylint: disable=protected-access
+            raise
 
     def reset_device(self, obj: DSDevice):
         """reset a device"""
@@ -761,7 +789,11 @@ class DeviceManagerDS(DeviceManagerBase):
         with self._device_info_lock:
             if pipe is None:
                 device = self.devices.get(obj.name)
-                if device is None or device.obj is not obj:
+                if (
+                    device is None
+                    or device.obj is not obj
+                    or not getattr(device, "_device_info_active", True)
+                ):
                     return None
             try:
                 interface = get_device_info(obj, connect=connect)

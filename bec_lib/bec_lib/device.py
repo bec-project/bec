@@ -11,7 +11,9 @@ import threading
 import time
 import uuid
 from collections import defaultdict, namedtuple
+from contextlib import nullcontext
 from contextvars import ContextVar
+from copy import deepcopy
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
@@ -1140,6 +1142,12 @@ class Device(OphydInterfaceBase):
         """
         Provides a summary of the device, all associated signals and their type.
         """
+        lock = getattr(self.root.parent, "_config_lock", None)
+        with lock if lock is not None else nullcontext():
+            signals = deepcopy(self._info.get("signals", {}))
+        Console().print(self._build_summary_table(signals))
+
+    def _build_summary_table(self, signals: dict) -> Table:
         table = Table(title=f"{self.name} - Summary of Available Signals")
         table.add_column("Name")
         table.add_column("Data Name")
@@ -1148,7 +1156,6 @@ class Device(OphydInterfaceBase):
         table.add_column("Type")
         table.add_column("Labels")
         table.add_column("Description")
-        signals = self._info.get("signals", {})
         signals_grouped = defaultdict(dict)
         for kind in ["hinted", "normal", "config", "omitted"]:
             signals_grouped[kind] = {
@@ -1197,8 +1204,7 @@ class Device(OphydInterfaceBase):
                     signal_info.get("doc"),
                 )
 
-        console = Console()
-        console.print(table)
+        return table
 
 
 class AdjustableMixin:

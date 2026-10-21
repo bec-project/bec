@@ -890,15 +890,17 @@ class DeviceManagerBase:
         Supported types are "AsyncSignal", "AsyncMultiSignal", "DynamicSignal", "FileEventSignal", "PreviewSignal", and "ProgressSignal".
 
         Returns:
-            list: List of tuples containing the device name, component name and the signal info.
+            list: List of tuples containing the device name, component name and a copy of the
+                signal info.
         """
         signals = []
         if not isinstance(signal_type, list):
             signal_type = [signal_type]
-        for device in self.devices.values():
-            for comp, signal_info in device._info.get("signals", {}).items():
-                if signal_info.get("signal_class") in signal_type:
-                    signals.append((device.name, comp, signal_info))
+        with self._config_lock:
+            for device in self.devices.values():
+                for comp, signal_info in device._info.get("signals", {}).items():
+                    if signal_info.get("signal_class") in signal_type:
+                        signals.append((device.name, comp, copy.deepcopy(signal_info)))
         return signals
 
     def get_device_config_cached(
@@ -955,19 +957,21 @@ class DeviceManagerBase:
                 device_obj = self.devices.get(dev_name)
                 if not device_obj:
                     continue
-                available_signal = device_obj._info.get("signals", {})
                 device_config = dev_conf.get("deviceConfig") or {}
 
                 for signal_name in device_config:
-                    if signal_name in available_signal:
-                        signal_obj_name = available_signal[signal_name].get("obj_name")
-                        signal_obj = getattr(device_obj, signal_name, None)
-                        if not signal_obj or not signal_obj_name:
-                            continue
-                        sig_read = signal_obj.read(cached=True)
-                        if sig_read is None:
-                            continue
-                        dev_conf["deviceConfig"][signal_name] = sig_read[signal_obj_name]["value"]
+                    with self._config_lock:
+                        available_signal = device_obj._info.get("signals", {})
+                        signal_obj_name = available_signal.get(signal_name, {}).get("obj_name")
+                    if not signal_obj_name:
+                        continue
+                    signal_obj = getattr(device_obj, signal_name, None)
+                    if not signal_obj:
+                        continue
+                    sig_read = signal_obj.read(cached=True)
+                    if sig_read is None:
+                        continue
+                    dev_conf["deviceConfig"][signal_name] = sig_read[signal_obj_name]["value"]
 
             config[dev_name] = _DeviceModelCore(**dev_conf).model_dump(
                 exclude_defaults=exclude_defaults
