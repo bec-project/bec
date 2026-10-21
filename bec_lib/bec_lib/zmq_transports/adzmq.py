@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 import json
 from collections.abc import Mapping, Sequence
-from math import prod
+from math import isfinite, prod
 from threading import Condition, Event, Lock, Thread
 from typing import Literal
 
@@ -22,6 +22,19 @@ from .protocol import DecodedFrame, EncodedFrame
 # Matching protocol signatures and lazy optional dependency imports are intentional.
 # pylint: disable=duplicate-code,import-outside-toplevel
 
+_EPICS_TO_UNIX_SECONDS = 631_152_000
+
+
+def _unix_timestamp(header: Mapping) -> float | None:
+    timestamp = header.get("timeStamp")
+    if not isinstance(timestamp, (int, float)) or isinstance(timestamp, bool):
+        return None
+    try:
+        timestamp = float(timestamp) + _EPICS_TO_UNIX_SECONDS
+    except OverflowError:
+        return None
+    return timestamp if isfinite(timestamp) else None
+
 
 class ADZMQStream:
     """Receive ADZMQ images; implements :class:`SignalStream`.
@@ -33,6 +46,9 @@ class ADZMQStream:
     Mailbox and lifecycle semantics follow :class:`SignalStream`.
     The mailbox holds the latest message received by the worker; upstream ZMQ
     and network buffers can still contain older frames. This is a preview API.
+
+    The original header's ``timeStamp`` is in seconds since the EPICS epoch
+    (1990-01-01 UTC). Frames expose it separately as ``timestamp`` in Unix seconds.
 
     Args:
         default_byte_order (Literal["little", "big"]): Raw payload byte order
@@ -124,7 +140,7 @@ class ADZMQStream:
         header = json.loads(parts[0])
         if not isinstance(header, Mapping) or header.get("htype") != "array-1.0":
             raise ValueError("Unsupported ADZMQ header type")
-        return EncodedFrame(data=parts[1], metadata=header)
+        return EncodedFrame(data=parts[1], metadata=header, timestamp=_unix_timestamp(header))
 
     def stop(self) -> None:
         """Clear the mailbox, wake consumers, and join the receiver."""
@@ -180,7 +196,10 @@ class ADZMQStream:
                 a complete multipart message (JSON header and binary image payload).
 
         Returns:
-            DecodedFrame: Image in NumPy order, with color channels last for JPEG.
+            DecodedFrame: Image array and original publisher metadata. Raw RGB2
+                and RGB3 images (``ndattr.ColorMode`` 3 and 4) and color JPEG
+                images decode with channels last (height, width, 3).
+                The metadata retains the publisher's original shape.
 
         Raises:
             ValueError: Invalid header, payload size, or unsupported compression.
@@ -221,10 +240,20 @@ class ADZMQStream:
             if len(payload) != prod(shape) * dtype.itemsize:
                 raise ValueError("Payload size does not match header shape and dtype")
             data = np.frombuffer(payload, dtype=dtype).reshape(tuple(shape))
+            ndattrs = header.get("ndattr")
+            if data.ndim == 3 and isinstance(ndattrs, Mapping):
+                color_mode = ndattrs.get("ColorMode")
+                if color_mode == 3:  # RGB2: height, channels, width
+                    data = np.moveaxis(data, 1, -1)
+                elif color_mode == 4:  # RGB3: channels, height, width
+                    data = np.moveaxis(data, 0, -1)
         else:
             raise ValueError(f"Unsupported ADZMQ encoding: {encoding}")
         data.setflags(write=False)
-        return DecodedFrame(data=data, metadata=header)
+        timestamp = frame.timestamp
+        if timestamp is None:
+            timestamp = _unix_timestamp(header)
+        return DecodedFrame(data=data, metadata=header, timestamp=timestamp)
 
     @staticmethod
     def _decode_jpeg(payload: bytes, shape: list[int], ndattrs: object) -> np.ndarray:

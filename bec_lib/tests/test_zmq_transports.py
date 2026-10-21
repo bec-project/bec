@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from bec_lib.messages import ZMQSignalTransport
-from bec_lib.zmq_transports import ADZMQStream
+from bec_lib.zmq_transports import ADZMQStream, EncodedFrame
 
 zmq = pytest.importorskip("zmq")
 Image = pytest.importorskip("PIL.Image")
@@ -39,6 +39,63 @@ def test_default_byte_order():
     parts = message()
     parts[1] = np.arange(6, dtype=">u2").tobytes()
     np.testing.assert_array_equal(ADZMQStream("big").decode(parts).data, np.arange(6).reshape(2, 3))
+
+
+@pytest.mark.parametrize(
+    "header_updates,expected",
+    [
+        ({}, None),
+        ({"timeStamp": 0}, 631_152_000.0),
+        ({"timeStamp": 1_000_000_000.25}, 1_631_152_000.25),
+        ({"timeStamp": "invalid"}, None),
+    ],
+)
+def test_frame_timestamp(header_updates, expected):
+    parts = message(**header_updates)
+    stream = ADZMQStream()
+    encoded = stream._unpack(parts)
+    assert encoded.timestamp == expected
+    assert encoded.metadata == json.loads(parts[0])
+
+    for frame in (parts, encoded, EncodedFrame(encoded.data, encoded.metadata)):
+        decoded = stream.decode(frame)
+        assert decoded.timestamp == expected
+        assert decoded.metadata == encoded.metadata
+
+
+@pytest.mark.parametrize("color_mode,channel_axis", [(2, 2), (3, 1), (4, 0)])
+def test_raw_area_detector_color_modes(color_mode, channel_axis):
+    expected = np.arange(5 * 8 * 3, dtype=np.uint8).reshape(5, 8, 3)
+    raw = np.moveaxis(expected, -1, channel_axis)
+    shape = list(raw.shape)
+    parts = message(type="uint8", shape=shape, ndattr={"ColorMode": color_mode})
+    parts[1] = raw.tobytes()
+
+    frame = ADZMQStream().decode(parts)
+
+    np.testing.assert_array_equal(frame.data, expected)
+    assert frame.metadata["shape"] == shape
+    assert not frame.data.flags.writeable
+    assert np.shares_memory(frame.data, np.frombuffer(parts[1], dtype=np.uint8))
+
+
+@pytest.mark.parametrize(
+    "shape,ndattrs",
+    [
+        pytest.param((5, 8), {"ColorMode": 0}, id="mono"),
+        pytest.param((5, 8), {"ColorMode": 1}, id="bayer"),
+        pytest.param((3, 5, 8), {}, id="no-color-mode"),
+    ],
+)
+def test_raw_preserves_layout_for_other_color_modes(shape, ndattrs):
+    expected = np.arange(np.prod(shape), dtype=np.uint8).reshape(shape)
+    parts = message(type="uint8", shape=list(shape), ndattr=ndattrs)
+    parts[1] = expected.tobytes()
+
+    frame = ADZMQStream().decode(parts)
+
+    np.testing.assert_array_equal(frame.data, expected)
+    assert frame.metadata["shape"] == list(shape)
 
 
 @pytest.mark.parametrize(

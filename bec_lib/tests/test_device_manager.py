@@ -524,6 +524,125 @@ def test_get_bec_signals(dm_with_devices):
     assert isinstance(eiger[2], dict)
 
 
+def test_get_bec_signals_waits_for_metadata_refresh(device_manager):
+    proxy = mock.Mock()
+    proxy.name = "detector"
+    signal_info = {"signal_class": "PreviewSignal", "describe": {"source": "old"}}
+    proxy._info = {"signals": {"preview": signal_info}}
+    device_manager.devices["detector"] = proxy
+    updated = {"signal_class": "PreviewSignal", "describe": {"source": "new"}}
+    notification = MessageObject(
+        value=messages.DeviceInfoMessage(device="detector", info={"signals": {"preview": updated}}),
+        topic="",
+    )
+    refresh_started = threading.Event()
+    resume_refresh = threading.Event()
+    discovery_started = threading.Event()
+
+    def read_current_info(_name):
+        refresh_started.set()
+        assert resume_refresh.wait(3)
+        return notification.value
+
+    def detector_signals():
+        return [
+            signal
+            for signal in device_manager.get_bec_signals("PreviewSignal")
+            if signal[0] == proxy.name
+        ]
+
+    def discover():
+        discovery_started.set()
+        return detector_signals()
+
+    before_refresh = detector_signals()
+    with (
+        mock.patch.object(device_manager, "_get_device_info", side_effect=read_current_info),
+        ThreadPoolExecutor(max_workers=2) as executor,
+    ):
+        refresh = executor.submit(device_manager._device_info_update_callback, notification)
+        try:
+            assert refresh_started.wait(3)
+            discovery = executor.submit(discover)
+            assert discovery_started.wait(3)
+            with pytest.raises(TimeoutError):
+                discovery.result(timeout=0.1)
+        finally:
+            resume_refresh.set()
+        refresh.result(timeout=3)
+        assert discovery.result(timeout=3) == [("detector", "preview", updated)]
+    assert before_refresh[0][2]["describe"]["source"] == "old"
+
+
+@pytest.mark.parametrize("reader", ["summary", "config"])
+def test_signal_metadata_readers_wait_for_config_lock(device_manager, reader):
+    from bec_lib.device import Device
+
+    device = Device(name="detector", parent=device_manager)
+    device._info = {"signals": {"value": {"kind_str": "normal", "obj_name": "detector_value"}}}
+    device_manager.devices["detector"] = device
+    resource = messages.AvailableResourceMessage(
+        resource=[
+            {
+                "name": "detector",
+                "enabled": True,
+                "deviceClass": "ophyd.Device",
+                "readoutPriority": "monitored",
+                "deviceConfig": {"value": 1},
+            }
+        ]
+    )
+    started = threading.Event()
+
+    def read():
+        started.set()
+        if reader == "summary":
+            return device.summary()
+        return device_manager.get_device_config()
+
+    with (
+        mock.patch.object(device_manager.connector, "get", return_value=resource),
+        mock.patch("rich.console.Console.print") as print_table,
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        with device_manager._config_lock:
+            result = executor.submit(read)
+            assert started.wait(3)
+            with pytest.raises(TimeoutError):
+                result.result(timeout=0.1)
+            device_manager._merge_device_info(device._info, {"signals": {}})
+        if reader == "summary":
+            result.result(timeout=3)
+            assert not print_table.call_args.args[0].rows
+        else:
+            assert result.result(timeout=3)["detector"]["deviceConfig"] == {"value": 1}
+
+
+def test_device_summary_builds_from_snapshot_after_releasing_lock(dm_with_devices):
+    device_manager = dm_with_devices
+    device = device_manager.devices["samx"]
+    build_table = device._build_summary_table
+
+    def clear_signal_metadata():
+        with device_manager._config_lock:
+            device_manager._merge_device_info(device._info, {"signals": {}})
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+
+        def build_after_refresh(signals):
+            executor.submit(clear_signal_metadata).result(timeout=3)
+            return build_table(signals)
+
+        with (
+            mock.patch.object(device, "_build_summary_table", side_effect=build_after_refresh),
+            mock.patch("rich.console.Console.print") as print_table,
+        ):
+            device.summary()
+
+    assert not device._info["signals"]
+    assert print_table.call_args.args[0].rows
+
+
 def test_get_device_config(dm_with_devices, session_from_test_config):
     device_manager = dm_with_devices
     with mock.patch.object(device_manager.connector, "get") as mock_get:

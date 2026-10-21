@@ -17,18 +17,21 @@ class EncodedFrame:
 
     JPEG payloads remain compressed. Raw payloads retain their wire byte order.
     Metadata must be treated as read-only by consumers.
+    The timestamp is in Unix seconds, or None if unavailable.
     """
 
     data: bytes
     metadata: Mapping[str, Any]
+    timestamp: float | None = None
 
 
 @dataclass(frozen=True)
 class DecodedFrame:
-    """Image and publisher metadata; consumers must not mutate the image."""
+    """Read-only image and publisher metadata, with a timestamp in Unix seconds if available."""
 
     data: np.ndarray
     metadata: Mapping[str, Any]
+    timestamp: float | None = None
 
 
 class SignalStream(Protocol):
