@@ -8,6 +8,7 @@ import yaml
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bl_states import DeviceWithinLimitsStateConfig
+from bec_lib.data_api import DataAPI
 from bec_lib.devicemanager import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -120,6 +121,74 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == recorder.data[ii]
+
+
+@pytest.mark.timeout(100)
+def test_data_api_bundles_monitored_grid_scan_with_monitored_async_signal_lib(bec_client_lib):
+    bec = bec_client_lib
+    scans = bec.scans
+    dev = bec.device_manager.devices
+    updates = []
+
+    def callback(update):
+        updates.append(update)
+
+    DataAPI.clear_instance()
+    try:
+        bec.metadata.update({"unit_test": "test_data_api_grid_scan_monitored_async_bundle"})
+        scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
+        # A non-constant model so that mispaired points would be detectable.
+        dev.waveform.sim.select_model("GaussianModel")
+        dev.waveform.async_update.set("add")
+
+        data_api = DataAPI(bec)
+        sources = [("samx", "samx"), ("samy", "samy"), ("waveform", "waveform_waveform_0d")]
+        with data_api.subscribe(sources=sources, scan="live", callback=callback) as subscription:
+            assert subscription.sources == sources
+
+            status = scans.grid_scan(
+                dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.05, relative=True
+            )
+            scan_id = status.queue_item.scan_ids[0]
+
+            status.wait(num_points=True, file_written=True)
+            expected_points = status.scan.num_points
+
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                last = updates[-1] if updates else None
+                if (
+                    last is not None
+                    and last.scan_id == scan_id
+                    and len(last.aligned_ordinals) == expected_points
+                ):
+                    break
+                time.sleep(0.1)
+
+        assert expected_points == 100
+        assert updates
+
+        last = updates[-1]
+        assert last.scan_id == scan_id
+        assert set(last.sources) == set(sources)
+        assert last.aligned_ordinals == tuple(range(expected_points))
+        assert last.complete
+
+        columns = last.aligned()
+        for key in sources:
+            assert len(columns[key]) == expected_points
+
+        # Value-aware pairing check: monitored positions at aligned ordinal i
+        # must equal the scan item's recorded point i.
+        scan_item = bec.queue.scan_storage.find_scan_by_ID(scan_id)
+        recorded_x = scan_item.live_data["samx"]["samx"]["val"]
+        recorded_y = scan_item.live_data["samy"]["samy"]["val"]
+        assert list(columns[("samx", "samx")]) == list(recorded_x)
+        assert list(columns[("samy", "samy")]) == list(recorded_y)
+        waveform_source = last.get("waveform", "waveform_waveform_0d")
+        assert waveform_source.metadata["async_update_type"] == "add"
+    finally:
+        DataAPI.clear_instance()
 
 
 @pytest.mark.timeout(100)
