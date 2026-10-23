@@ -9,6 +9,7 @@ from typing import Any, Callable
 from IPython.core.interactiveshell import InteractiveShell
 from IPython.lib import deepreload
 
+from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.macros.config_model import (
     FileImportMacro,
@@ -18,7 +19,9 @@ from bec_lib.macros.config_model import (
     ModuleImportMacro,
     parse_macro_config,
 )
+from bec_lib.messages import MacroConfigMessage
 from bec_lib.plugin_helper import default_macro_config_path
+from bec_lib.redis_connector import RedisConnector
 
 logger = bec_logger.logger
 
@@ -57,22 +60,56 @@ def _deep_reload(module: ModuleType) -> ModuleType:
 
 
 class BecMacroNamespace:
-    def __init__(self) -> None:
+    def __init__(self, connector: RedisConnector) -> None:
+        self._connector = connector
         self._loaded = False
         self._config: MacroConfig | None = None
         # pushed name -> macro, kept so that exactly these objects can be dropped again on reload
         self._in_interactive_client_global_namespace: dict[str, Callable[[Any], Any]] = {}
         self._interactive_namespace_ref: InteractiveShell | None = None
+        # the stream only ever holds the current config, so reading it from the start hands a newly
+        # started client the config the other clients are using
+        self._connector.register(
+            MessageEndpoints.macro_config(), cb=self._on_config_message, from_start=True
+        )
+
+    def shutdown(self):
+        """Stop listening for macro config updates from other clients."""
+        self._connector.unregister(MessageEndpoints.macro_config(), cb=self._on_config_message)
 
     def load_default(self):
         self.load_config(default_macro_config_path())
 
     def load_config(self, config_path: Path):
+        """Load a macro config file, apply it, and publish it so that all other clients apply it too.
+
+        Args:
+            config_path (Path): path to the YAML macro config file
+        """
         with open(config_path) as f:
             config = parse_macro_config(f)
+        self._apply_config(config)
+        self._connector.xadd(
+            MessageEndpoints.macro_config(),
+            {"data": MacroConfigMessage(config=config.model_dump_json())},
+            max_size=1,
+        )
+
+    def _apply_config(self, config: MacroConfig):
         self._unload_macros()
         self._config = config
         self.reload()
+
+    def _on_config_message(self, msg_dict: dict):
+        """Apply a macro config published by another client, unless it is the one already loaded."""
+        config = MacroConfig.model_validate_json(msg_dict["data"].config)
+        if config == self._config:
+            return
+        logger.info("Received a new macro config, reloading macros.")
+        try:
+            self._apply_config(config)
+        except Exception as e:
+            logger.error(f"Failed to apply the received macro config: {e}")
 
     def reload(self):
         """Unload all macros and load them again from the owned config. Macro modules are deep

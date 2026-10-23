@@ -90,13 +90,14 @@ def ipython_shell() -> Generator[InteractiveShell, None, None]:
 
 @pytest.fixture
 def macros(
-    macro_sources, ipython_shell
-) -> tuple[BecMacroNamespace, InteractiveShell, Callable[[str], None]]:
+    macro_sources, ipython_shell, connected_connector
+) -> Generator[tuple[BecMacroNamespace, InteractiveShell, Callable[[str], None]], None, None]:
     config_path, write_macro_sources = macro_sources
-    macro_namespace = BecMacroNamespace()
+    macro_namespace = BecMacroNamespace(connected_connector)
     macro_namespace.load_config(config_path)
     macro_namespace.populate_globals_in_ipython(ipython_shell)
-    return macro_namespace, ipython_shell, write_macro_sources
+    yield macro_namespace, ipython_shell, write_macro_sources
+    macro_namespace.shutdown()
 
 
 def test_macros_are_loaded_from_modules_and_files(macros):

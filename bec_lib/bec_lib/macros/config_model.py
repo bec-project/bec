@@ -112,7 +112,7 @@ _NestedStrDictAdapter = TypeAdapter(_NestedStrInDict)
 
 
 def parse_macro_config(config_stream: TextIO) -> MacroConfig:
-    """Parse a text buffer or file handler for a TOML macro config into a MacroConfig object."""
+    """Parse a text buffer or file handler for a YAML macro config into a MacroConfig object."""
 
     def _split_strings(d: _NestedStrInDict) -> _NestedStrOutDict:
         def _split_entry(entry: str) -> dict[str, str | None]:
