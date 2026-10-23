@@ -10,6 +10,7 @@ import getpass
 import importlib
 import inspect
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, TypedDict
 
@@ -29,6 +30,7 @@ from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.file_utils import sanitize_relative_subdir
 from bec_lib.logger import bec_logger
+from bec_lib.macros.macro_namespace import BecMacroNamespace
 from bec_lib.messaging_services import MessagingContainer
 from bec_lib.plugin_helper import _get_available_plugins, get_file_writer_storage_copy_plugin
 from bec_lib.procedures.hli import ProcedureHli
@@ -222,6 +224,10 @@ class BECClient(BECService):
             )
             builtins.bec = self._parent
             self.macros = UserMacros(self)
+            local_macro_path = Path(pth) if (pth := config.model.user_macros.base_path) else None
+            self.macros_v2 = BecMacroNamespace(
+                connector=self.connector, user_macros_dir=local_macro_path
+            )
             self.builtin_actors = BuiltinActorHli(self)
             self.load_high_level_interface("bec_hli")
             self._start_services()
