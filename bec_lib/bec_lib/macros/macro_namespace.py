@@ -12,6 +12,9 @@ from IPython.lib import deepreload
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.macros.config_model import (
+    PLUGIN_MACROS_DIR_PLACEHOLDER,
+    USER_MACROS_DIR_PLACEHOLDER,
+    DirImportMacro,
     FileImportMacro,
     MacroConfig,
     MacroNsSpec,
@@ -20,7 +23,7 @@ from bec_lib.macros.config_model import (
     parse_macro_config,
 )
 from bec_lib.messages import MacroConfigMessage
-from bec_lib.plugin_helper import default_macro_config_path
+from bec_lib.plugin_helper import default_macro_config_path, plugin_macros_dir
 from bec_lib.redis_connector import RedisConnector
 
 logger = bec_logger.logger
@@ -60,9 +63,17 @@ def _deep_reload(module: ModuleType) -> ModuleType:
 
 
 class BecMacroNamespace:
-    def __init__(self, connector: RedisConnector) -> None:
+    def __init__(self, connector: RedisConnector, user_macros_dir: Path | None = None) -> None:
+        """
+        Args:
+            connector (RedisConnector): connector used to share the macro config between clients
+            user_macros_dir (Path | None): the local user macro directory which a config may refer
+                to with the `<user_macros>` placeholder; usually from the service config
+        """
         self._connector = connector
+        self._user_macros_dir = user_macros_dir
         self._loaded = False
+        self._loaded_names: set[str] = set()
         self._config: MacroConfig | None = None
         # pushed name -> macro, kept so that exactly these objects can be dropped again on reload
         self._in_interactive_client_global_namespace: dict[str, Callable[[Any], Any]] = {}
@@ -171,27 +182,78 @@ class BecMacroNamespace:
             return
         if self._config is None:
             raise ValueError("Macro config must be loaded before attempting to load macros!")
-        # If _add_macros... succeeds, they are added to this namespace all at once:
-        # so if _loaded is True, then _config.macros.keys() are all the loaded macros
-        # the temporary holder lives only for this pass, so macros sharing a module all come from
-        # the same, once-reloaded, module object
-        self._add_macros_to_namespace(self, self._config.macros, {})
+        # If _add_macros... succeeds, they are added to this namespace all at once, so if _loaded is
+        # True, _loaded_names are exactly the loaded macros. The temporary holder lives only for
+        # this pass, so macros sharing a module all come from the same, once-reloaded, module object
+        self._loaded_names = self._add_macros_to_namespace(self, self._config.macros, {})
         self._loaded = True
 
     def _add_macros_to_namespace(
         self, namespace: object, macros: MacroNsSpec, loaded_modules: dict[str, ModuleType]
-    ):
-        for name in macros:
-            if hasattr(namespace, name):
-                raise ValueError(
-                    f"'{name}' is not a valid macro or macro namespace name! Please update the macro config."
+    ) -> set[str]:
+        """Load the given macros and set them on the namespace, returning the names which were set.
+        Directory references are merged into the namespace, so these can differ from the keys."""
+        loaded_macros: dict[str, Callable[[Any], Any] | SimpleNamespace] = {}
+        for name, macro in macros.items():
+            if isinstance(macro, DirImportMacro):
+                new_macros = self._load_dir_macros(
+                    self._resolve_dir(macro.reference), loaded_modules
                 )
-        loaded_macros = {
-            name: self._load_macro_ref_or_spec(macro, loaded_modules)
-            for name, macro in macros.items()
-        }
+            else:
+                new_macros = {name: self._load_macro_ref_or_spec(macro, loaded_modules)}
+            for new_name in new_macros:
+                if new_name in loaded_macros or hasattr(namespace, new_name):
+                    raise ValueError(
+                        f"'{new_name}' is not a valid macro or macro namespace name, or is defined more than once! Please update the macro config."
+                    )
+            loaded_macros.update(new_macros)
         for name, macro in loaded_macros.items():
             setattr(namespace, name, macro)
+        return set(loaded_macros)
+
+    def _resolve_dir(self, reference: str) -> Path | None:
+        """Resolve a directory reference, replacing the placeholders with the directories of this
+        client. Returns None, with a warning, if a placeholder cannot be resolved here."""
+        if reference == USER_MACROS_DIR_PLACEHOLDER:
+            if self._user_macros_dir is None:
+                logger.warning(
+                    f"No user macro directory is configured, skipping macros from {reference}"
+                )
+            return self._user_macros_dir
+        if reference == PLUGIN_MACROS_DIR_PLACEHOLDER:
+            try:
+                return plugin_macros_dir()
+            except ValueError as e:
+                logger.warning(f"Skipping macros from {reference}: {e}")
+                return None
+        return Path(reference).expanduser().resolve()
+
+    def _load_dir_macros(
+        self, path: Path | None, loaded_modules: dict[str, ModuleType]
+    ) -> dict[str, SimpleNamespace]:
+        """Load a directory of macro files: each .py file becomes a namespace of its public
+        functions, each subdirectory a nested namespace. Names which are not valid identifiers, or
+        start with an underscore or a dot, are skipped."""
+        if path is None:
+            return {}
+        if not path.is_dir():
+            logger.warning(f"Macro directory {path} does not exist, skipping it")
+            return {}
+        macros: dict[str, SimpleNamespace] = {}
+        for entry in sorted(path.iterdir()):
+            name = entry.stem if entry.is_file() else entry.name
+            if name.startswith(("_", ".")) or not (entry.is_dir() or entry.suffix == ".py"):
+                continue
+            if not name.isidentifier():
+                logger.warning(f"Skipping {entry}: {name!r} is not a valid Python identifier")
+                continue
+            if entry.is_dir():
+                macros[name] = SimpleNamespace(**self._load_dir_macros(entry, loaded_modules))
+            else:
+                macros[name] = self._load_file_macro(  # type: ignore # func_name is None
+                    FileImportMacro(reference=entry, func_name=None), loaded_modules
+                )
+        return macros
 
     def _load_macro_ref_or_spec(
         self, macro: MacroRef | MacroNsSpec, loaded_modules: dict[str, ModuleType]
@@ -261,6 +323,7 @@ class BecMacroNamespace:
                 "The loaded macro config seems to have been deleted while macros were loaded! This shouldn't be possible, please contact the BEC developers."
             )
         self._drop_globals_in_ipython()
-        for macro_name in self._config.macros.keys():
+        for macro_name in self._loaded_names:
             delattr(self, macro_name)
+        self._loaded_names = set()
         self._loaded = False

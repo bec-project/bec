@@ -254,8 +254,24 @@ def plugin_repo_path() -> str:
     return dist_info.get("url")[5:]  # cut off "file:" prefix # type: ignore # this must exist
 
 
+def plugin_macros_dir() -> Path:
+    """Get the `macros` directory of the installed plugin package. Raises ValueError if no plugin or
+    more than one plugin is installed.
+
+    Returns:
+        Path: the directory `<plugin package>/macros`
+    """
+    return Path(importlib.import_module(plugin_package_name()).__path__[0]) / "macros"
+
+
 def default_macro_config_path() -> Path:
-    return Path(plugin_repo_path()) / "default_macro_config.yaml"
+    """Get the path of the default macro config shipped with the installed plugin package. Raises
+    ValueError if no plugin or more than one plugin is installed.
+
+    Returns:
+        Path: the file `<plugin package>/macros/config.yaml`
+    """
+    return plugin_macros_dir() / "config.yaml"
 
 
 def reload_plugin_modules() -> None:

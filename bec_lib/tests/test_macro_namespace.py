@@ -246,3 +246,96 @@ def test_a_received_config_which_fails_to_load_is_logged_not_raised(macro_namesp
 
     logger.error.assert_called_once()
     assert "does_not_exist" in logger.error.call_args.args[0]
+
+
+@pytest.fixture
+def macro_dir(tmp_path):
+    """A macro directory with a nested subdirectory, plus entries which must be ignored."""
+    macro_dir = tmp_path / "macro_dir"
+    (macro_dir / "alignment" / "fine").mkdir(parents=True)
+    (macro_dir / "__pycache__").mkdir()
+    (macro_dir / "top.py").write_text('def top_macro():\n    return "top"\n')
+    (macro_dir / "_private.py").write_text('def hidden():\n    return "hidden"\n')
+    (macro_dir / "not-an-identifier.py").write_text('def nope():\n    return "nope"\n')
+    (macro_dir / "README.md").write_text("not a macro")
+    (macro_dir / "alignment" / "x.py").write_text('def align_x():\n    return "align-x"\n')
+    (macro_dir / "alignment" / "fine" / "center.py").write_text(
+        'def center():\n    return "center"\n'
+    )
+    return macro_dir
+
+
+def test_directory_contents_are_merged_into_the_namespace(tmp_path, macro_dir, connected_connector):
+    macro_namespace = BecMacroNamespace(connected_connector)
+    macro_namespace.load_config(_write_config(tmp_path, f"macros:\n  anything: {macro_dir}\n"))
+
+    # the key is only a label; each file is a namespace, each subdirectory nests
+    assert not hasattr(macro_namespace, "anything")
+    assert macro_namespace.top.top_macro() == "top"
+    assert macro_namespace.alignment.x.align_x() == "align-x"
+    assert macro_namespace.alignment.fine.center.center() == "center"
+    for ignored in ("_private", "not-an-identifier", "README", "__pycache__"):
+        assert not hasattr(macro_namespace, ignored)
+    assert macro_namespace._loaded_names == {"top", "alignment"}
+
+
+def test_unload_removes_merged_directory_contents(tmp_path, macro_dir, connected_connector):
+    macro_namespace = BecMacroNamespace(connected_connector)
+    macro_namespace.load_config(_write_config(tmp_path, f"macros:\n  anything: {macro_dir}\n"))
+
+    macro_namespace._unload_macros()
+
+    assert not hasattr(macro_namespace, "top")
+    assert not hasattr(macro_namespace, "alignment")
+
+
+def test_directory_contents_clashing_with_other_macros_raise(
+    tmp_path, macro_dir, macro_module, deep_reload, connected_connector
+):
+    config = f"macros:\n  top: {_MODULE}::run_test\n  anything: {macro_dir}\n"
+
+    with pytest.raises(ValueError, match="'top' is not a valid macro"):
+        BecMacroNamespace(connected_connector).load_config(_write_config(tmp_path, config))
+
+
+def test_user_macros_placeholder_resolves_to_the_configured_dir(
+    tmp_path, macro_dir, connected_connector
+):
+    macro_namespace = BecMacroNamespace(connected_connector, user_macros_dir=macro_dir)
+    macro_namespace.load_config(_write_config(tmp_path, "macros:\n  local: <user_macros>\n"))
+
+    assert macro_namespace.top.top_macro() == "top"
+
+
+def test_user_macros_placeholder_is_skipped_with_a_warning_if_unconfigured(
+    tmp_path, connected_connector
+):
+    macro_namespace = BecMacroNamespace(connected_connector)
+
+    with mock.patch("bec_lib.macros.macro_namespace.logger") as logger:
+        macro_namespace.load_config(_write_config(tmp_path, "macros:\n  local: <user_macros>\n"))
+
+    logger.warning.assert_called_once()
+    assert macro_namespace._loaded_names == set()
+
+
+def test_plugin_macros_placeholder_resolves_to_the_plugin_dir(
+    tmp_path, macro_dir, connected_connector
+):
+    with mock.patch("bec_lib.macros.macro_namespace.plugin_macros_dir", return_value=macro_dir):
+        macro_namespace = BecMacroNamespace(connected_connector)
+        macro_namespace.load_config(_write_config(tmp_path, "macros:\n  shared: <plugin_macros>\n"))
+
+    assert macro_namespace.alignment.x.align_x() == "align-x"
+
+
+def test_missing_directory_is_skipped_with_a_warning(tmp_path, connected_connector):
+    macro_namespace = BecMacroNamespace(connected_connector)
+
+    with mock.patch("bec_lib.macros.macro_namespace.logger") as logger:
+        macro_namespace.load_config(
+            _write_config(tmp_path, f"macros:\n  gone: {tmp_path / 'gone'}\n")
+        )
+
+    logger.warning.assert_called_once()
+    assert macro_namespace._loaded_names == set()
