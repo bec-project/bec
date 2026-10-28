@@ -7,6 +7,7 @@ from bec_server.procedures.builtin_procedures import (
     run_macro,
     run_scan,
     run_script,
+    run_sequence,
     sleep,
 )
 from bec_server.procedures.constants import BecProcedure
@@ -17,6 +18,7 @@ _BUILTIN_PROCEDURES: dict[str, BecProcedure] = {
     "sleep": sleep,
     "run_script": run_script,
     "run_macro": run_macro,
+    "run_sequence": run_sequence,
 }
 
 _PROCEDURE_REGISTRY: dict[str, BecProcedure] = {} | _BUILTIN_PROCEDURES
