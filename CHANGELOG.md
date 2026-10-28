@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.3.3 (2026-10-28)
+
+### Bug Fixes
+
+- **file_writer**: Handle numpy unicode arrays in HDF5 storage
+  ([`223b365`](https://github.com/bec-project/bec/commit/223b365c061975736f670e9434a855b92bd769c6))
+
+
 ## v4.3.2 (2026-10-21)
 
 ### Bug Fixes
