@@ -9,6 +9,7 @@ from collections import defaultdict
 from copy import deepcopy
 
 import h5py
+import numpy as np
 from pydantic import BaseModel
 
 from bec_lib import messages, plugin_helper
@@ -164,6 +165,8 @@ class HDF5StorageWriter:
                     data = json.dumps(data)
                 elif not all(isinstance(x, type(data[0])) for x in data):
                     data = json.dumps(data)
+            if isinstance(data, np.ndarray) and data.dtype.kind == "U":
+                data = data.astype(h5py.string_dtype(encoding="utf-8"))
             dataset = container.create_dataset(name, data=data)
             self.add_attribute(dataset, val.attrs)
             self.add_content(dataset, val._storage)
@@ -175,7 +178,7 @@ class HDF5StorageWriter:
                     container.attrs["signal"] = "value"
         except Exception:
             content = traceback.format_exc()
-            logger.error(f"Failed to write dataset {name}: {content}")
+            logger.error(f"Failed to write dataset {container.name}/{name}: {content}")
         return
 
     def add_attribute(self, container: typing.Any, attributes: dict):
