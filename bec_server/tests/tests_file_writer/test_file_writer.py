@@ -10,7 +10,11 @@ from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.file_writer import HDF5FileWriter
 from bec_server.file_writer.default_writer import DefaultFormat
-from bec_server.file_writer.file_writer import AdditionalScanMetadata, HDF5Storage
+from bec_server.file_writer.file_writer import (
+    AdditionalScanMetadata,
+    HDF5Storage,
+    HDF5StorageWriter,
+)
 from bec_server.file_writer.file_writer_manager import ScanStorage
 
 
@@ -647,3 +651,27 @@ def test_hdf5_writer_forwards_written_async_signals(tmp_path, hdf5_file_writer, 
         )
 
     assert CapturingFormatForTest.last_written_async_signals == {"waveform": ["waveform_data"]}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        np.array(["cam.acquire_time", "roi1.selected_operations"]),
+        np.array([["µm", "曝光"], ["ROI", ""]]),
+        np.array([], dtype="U33"),
+        np.array("roi1.selected_operations"),
+    ],
+)
+def test_storage_writer_numpy_unicode(tmp_path, data):
+    """Configuration string arrays retain their shape and Unicode text in HDF5."""
+    storage = HDF5Storage()
+    dataset = storage.create_dataset("value", data=data)
+    dataset.attrs["description"] = "Configuration names"
+    path = tmp_path / "strings.h5"
+    with h5py.File(path, "w") as handle:
+        HDF5StorageWriter.write(storage._storage, handle)
+    with h5py.File(path, "r") as handle:
+        assert "value" in handle
+        assert handle["value"].shape == data.shape
+        np.testing.assert_array_equal(handle["value"].asstr()[()], data)
+        assert handle["value"].attrs["description"] == "Configuration names"
