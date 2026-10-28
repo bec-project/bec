@@ -1891,6 +1891,21 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def macro_config():
+        """
+        Endpoint for the macro config shared between all clients. The client which loads a macro
+        config file publishes it here using a messages.MacroConfigMessage message, and all other
+        clients load their macros from it. It is a stream with a single message.
+
+        Returns:
+            EndpointInfo: Endpoint for the shared macro config.
+        """
+        endpoint = f"{EndpointType.USER.value}/macros/config"
+        return EndpointInfo(
+            endpoint=endpoint, message_type=messages.MacroConfigMessage, message_op=MessageOp.STREAM
+        )
+
+    @staticmethod
     def beamline_state(state_name: str):
         """
         Endpoint for beamline state. This endpoint is used to publish the beamline state

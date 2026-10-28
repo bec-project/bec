@@ -2257,6 +2257,19 @@ class MacroUpdateMessage(BECMessage):
         return self
 
 
+class MacroConfigMessage(BECMessage):
+    """
+    Message to share the macro config between all clients. The client which loads a macro config
+    file publishes the parsed config, so that the YAML only has to be parsed once.
+
+    Args:
+        config (str): A `bec_lib.macros.config_model.MacroConfig`, serialized with `model_dump_json`.
+    """
+
+    msg_type: ClassVar[str] = "macro_config_message"
+    config: str
+
+
 class MessagingServiceTextContent(BaseModel):
     """
     Text content for messaging services
