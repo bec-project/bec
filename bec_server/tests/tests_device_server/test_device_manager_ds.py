@@ -1,6 +1,7 @@
 import copy
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest import mock
 
@@ -15,10 +16,29 @@ from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+@pytest.fixture
+def metadata_preview_signal():
+    """Provide the metadata event contract without requiring an unreleased ophyd API."""
+    from ophyd_devices.utils.bec_signals import PreviewSignal
+
+    class MetadataPreviewSignal(PreviewSignal):
+        """Preview signal whose test helper explicitly emits metadata changes."""
+
+        SUB_SIGNAL_INFO_CHANGED = "signal_info_changed"
+
+        def update_signal_info(self, **changes) -> None:
+            """Update the shared message schema and emit the server's metadata event."""
+            for name, value in changes.items():
+                setattr(self.signal_info, name, value)
+            self._run_subs(sub_type=self.SUB_SIGNAL_INFO_CHANGED)
+
+    return MetadataPreviewSignal
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -789,3 +809,444 @@ def test_get_device_order_without_order_map(dm_with_devices):
     devices = ["samx", "eiger"]
     with pytest.raises(RuntimeError, match="Device order map is not initialized"):
         device_manager.get_device_order(devices)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_initial_load_cleans_up_on_device_info_publication_failure(device_manager):
+    config = {
+        "name": "detector",
+        "deviceClass": "ophyd.Signal",
+        "enabled": True,
+        "readoutPriority": "monitored",
+    }
+    detector = ophyd.Signal(name="detector", value=1)
+    try:
+        with (
+            mock.patch.object(device_manager, "construct_device_obj", return_value=(detector, {})),
+            mock.patch.object(
+                device_manager, "publish_device_info", side_effect=RuntimeError("Publish failed")
+            ),
+            mock.patch.object(detector, "destroy", wraps=detector.destroy) as destroy,
+        ):
+            with pytest.raises(RuntimeError, match="Publish failed"):
+                device_manager._init_device(config, delayed=False, progress=mock.Mock())
+            destroy.assert_called_once_with()
+            assert "detector" not in device_manager.devices
+    finally:
+        if not detector._destroyed:
+            detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize("failure", [None, "connect", "hook"])
+def test_device_info_refreshes_after_connection(
+    device_manager, connected_connector, enabled, failure, metadata_preview_signal
+):
+    class Detector(ophyd.Device):
+        preview = ophyd.Component(metadata_preview_signal, ndim=2)
+        value = ophyd.Component(ophyd.Signal, value=42)
+
+        def on_connected(self):
+            for port in (5555, 5556):
+                # Hooks may wait for workers which emit metadata events.
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    executor.submit(
+                        self.preview.update_signal_info,
+                        transports=[
+                            messages.ZMQSignalTransport(
+                                address=f"tcp://localhost:{port}", encoder="adzmq-array-1.0"
+                            )
+                        ],
+                    ).result(timeout=3)
+                # Bootstrap metadata remains unchanged until the connection hook completes.
+                assert len(published) == 1
+                assert (
+                    connected_connector.get(MessageEndpoints.device_info("detector"))
+                    == published[0]
+                )
+            if failure == "hook":
+                raise RuntimeError("Connection hook failed")
+
+    detector = Detector(name="detector")
+    previous = messages.DeviceInfoMessage(device="detector", info={"previous": True})
+    connected_connector.set_and_publish(MessageEndpoints.device_info("detector"), previous)
+    published = []
+    publish = connected_connector.set_and_publish
+
+    def record_publish(topic, msg, pipe=None, **kwargs):
+        if topic == MessageEndpoints.device_info("detector"):
+            published.append(msg)
+        return publish(topic, msg, pipe, **kwargs)
+
+    def configure(obj, _config):
+        assert len(published) == 2
+        obj.preview.update_signal_info(
+            signal_metadata={**obj.preview.signal_info.signal_metadata, "transpose": True}
+        )
+
+    config = {
+        "name": "detector",
+        "deviceClass": "ophyd.Device",
+        "enabled": enabled,
+        "readoutPriority": "monitored",
+    }
+    failed = enabled and failure is not None
+    try:
+        with (
+            mock.patch.object(device_manager, "connector", connected_connector),
+            mock.patch.object(connected_connector, "set_and_publish", side_effect=record_publish),
+            mock.patch.object(device_manager, "update_config", side_effect=configure),
+            mock.patch.object(
+                device_manager,
+                "connect_device",
+                return_value=ConnectionError("Connection failed") if failure == "connect" else None,
+            ) as connect,
+        ):
+            if failed:
+                with pytest.raises((ConnectionError, RuntimeError), match="failed"):
+                    device_manager.initialize_device(config, {}, detector)
+            else:
+                device_manager.initialize_device(config, {}, detector)
+
+            cached = connected_connector.get(MessageEndpoints.device_info("detector"))
+            assert published[-1] == cached
+            if enabled and not failed:
+                assert len(published) == 3
+                info = cached.info["signals"]["preview"]["describe"]["signal_info"]
+                assert info["transports"][0]["address"] == "tcp://localhost:5556"
+                assert info["signal_metadata"]["transpose"] is True
+                # Publishing the final description must preserve freshly initialized buffers.
+                assert connected_connector.get(MessageEndpoints.device_readback("detector"))
+                detector.preview.update_signal_info(transports=None)
+                assert len(published) == 4
+            else:
+                assert len(published) == (2 if enabled and failure == "hook" else 1)
+                assert cached.info["signals"] == {}
+            if not enabled:
+                connect.assert_not_called()
+                assert detector.preview.signal_info.transports is None
+    finally:
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_info_publication_failure_restores_previous_device(device_manager):
+    config = {
+        "name": "detector",
+        "deviceClass": "ophyd.Signal",
+        "enabled": False,
+        "readoutPriority": "monitored",
+    }
+    old_signal = ophyd.Signal(name="detector", value=1)
+    new_signal = ophyd.Signal(name="detector", value=2)
+    try:
+        previous = device_manager.initialize_device(config, {}, old_signal)
+        with mock.patch.object(
+            device_manager, "publish_device_info", side_effect=RuntimeError("Publish failed")
+        ):
+            with pytest.raises(RuntimeError, match="Publish failed"):
+                device_manager.initialize_device({**config, "enabled": True}, {}, new_signal)
+        assert device_manager.devices["detector"] is previous
+        assert previous.enabled is False
+        assert not old_signal._destroyed
+    finally:
+        device_manager.devices.pop("detector", None)
+        old_signal.destroy()
+        new_signal.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_info_callback_ignores_root_removed_while_waiting_to_publish(
+    device_manager, connected_connector
+):
+    class Detector(ophyd.Device):
+        value = ophyd.Component(ophyd.Signal, value=0)
+
+    detector = Detector(name="detector")
+    signal = detector.value
+    device_manager.devices["detector"] = SimpleNamespace(obj=detector, enabled=True)
+    cached = messages.DeviceInfoMessage(device="detector", info={"current": True})
+    connected_connector.set_and_publish(MessageEndpoints.device_info("detector"), cached)
+    callback_passed_root_check = threading.Event()
+    publish = device_manager.publish_device_info
+
+    def publish_after_root_check(obj, **kwargs):
+        callback_passed_root_check.set()
+        return publish(obj, **kwargs)
+
+    try:
+        with (
+            mock.patch.object(device_manager, "connector", connected_connector),
+            mock.patch.object(
+                device_manager, "publish_device_info", side_effect=publish_after_root_check
+            ),
+            mock.patch(
+                "bec_server.device_server.devices.devicemanager.get_device_info", return_value={}
+            ) as describe,
+            ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+            with device_manager._device_info_lock:
+                callback = executor.submit(
+                    device_manager._obj_callback_signal_info_changed, obj=signal
+                )
+                assert callback_passed_root_check.wait(3)
+                device_manager.devices.pop("detector")
+                detector.destroy()
+            callback.result(timeout=3)
+
+            describe.assert_not_called()
+            assert connected_connector.get(MessageEndpoints.device_info("detector")) == cached
+    finally:
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("action", ["remove", "disable", "flush", "cleanup"])
+def test_device_destruction_waits_for_active_metadata_snapshot(
+    device_manager, connected_connector, action
+):
+    from bec_server.device_server.devices.device_serializer import get_device_info
+
+    class Detector(ophyd.Device):
+        value = ophyd.Component(ophyd.Signal, value=0)
+
+    detector = Detector(name="detector")
+    config = {
+        "name": "detector",
+        "deviceClass": "ophyd.Device",
+        "enabled": True,
+        "readoutPriority": "monitored",
+    }
+    device = DSDevice(name="detector", obj=detector, config=config, parent=device_manager)
+    device_manager.devices["detector"] = device
+    handler = ConfigUpdateHandler(device_manager)
+    describing = threading.Event()
+    resume_description = threading.Event()
+    teardown_started = threading.Event()
+    destroyed = threading.Event()
+    destroy = detector.destroy
+
+    def describe(obj, **kwargs):
+        describing.set()
+        assert resume_description.wait(3)
+        assert not obj._destroyed
+        return get_device_info(obj, **kwargs)
+
+    def destroy_detector():
+        destroyed.set()
+        destroy()
+
+    def teardown():
+        teardown_started.set()
+        if action == "remove":
+            handler._remove_config(
+                messages.DeviceConfigMessage(action="remove", config={"detector": {}}),
+                cancel_event=threading.Event(),
+            )
+        elif action == "disable":
+            handler._update_config(
+                messages.DeviceConfigMessage(
+                    action="update", config={"detector": {"enabled": False}}
+                ),
+                cancel_event=threading.Event(),
+            )
+        elif action == "flush":
+            handler._flush_config()
+        else:
+            handler._cleanup_failed_device_init(detector, device)
+
+    try:
+        with (
+            mock.patch.object(device_manager, "connector", connected_connector),
+            mock.patch(
+                "bec_server.device_server.devices.devicemanager.get_device_info",
+                side_effect=describe,
+            ) as snapshot,
+            mock.patch.object(detector, "destroy", side_effect=destroy_detector),
+            ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            callback = executor.submit(
+                device_manager._obj_callback_signal_info_changed, obj=detector.value
+            )
+            try:
+                assert describing.wait(3)
+                closing = executor.submit(teardown)
+                assert teardown_started.wait(3)
+                assert not destroyed.wait(0.1), "Destroyed a device during metadata serialization"
+            finally:
+                resume_description.set()
+            callback.result(timeout=3)
+            closing.result(timeout=3)
+            assert detector._destroyed
+            device_manager._obj_callback_signal_info_changed(obj=detector.value)
+            assert snapshot.call_count == 1
+    finally:
+        resume_description.set()
+        handler.executor.shutdown(wait=True)
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_destruction_can_wait_for_metadata_callback(device_manager):
+    class Detector(ophyd.Device):
+        value = ophyd.Component(ophyd.Signal, value=0)
+
+    detector = Detector(name="detector")
+    device_manager.devices["detector"] = SimpleNamespace(obj=detector, enabled=True)
+    destroy = detector.destroy
+    try:
+        with (
+            mock.patch(
+                "bec_server.device_server.devices.devicemanager.get_device_info", return_value={}
+            ) as describe,
+            ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+
+            def destroy_after_callback():
+                callback = executor.submit(
+                    device_manager._obj_callback_signal_info_changed, obj=detector.value
+                )
+                callback.result(timeout=3)
+                destroy()
+
+            with mock.patch.object(detector, "destroy", side_effect=destroy_after_callback):
+                device_manager.disconnect_device(detector)
+            describe.assert_not_called()
+            assert detector._destroyed
+    finally:
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_failed_device_destruction_restores_metadata_updates(dm_with_devices):
+    detector = dm_with_devices.devices.samx.obj
+    with mock.patch.object(detector, "destroy", side_effect=RuntimeError("Destroy failed")):
+        with pytest.raises(RuntimeError, match="Destroy failed"):
+            dm_with_devices.disconnect_device(detector)
+    with mock.patch(
+        "bec_server.device_server.devices.devicemanager.get_device_info", return_value={}
+    ) as describe:
+        dm_with_devices.publish_device_info(detector, connect=False)
+        describe.assert_called_once_with(detector, connect=False)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_info_publication_ignores_replaced_root(device_manager, connected_connector):
+    previous = ophyd.Device(name="detector")
+    current = ophyd.Device(name="detector")
+    device_manager.devices["detector"] = SimpleNamespace(obj=current, enabled=True)
+    cached = messages.DeviceInfoMessage(device="detector", info={"current": True})
+    connected_connector.set_and_publish(MessageEndpoints.device_info("detector"), cached)
+    try:
+        with (
+            mock.patch.object(device_manager, "connector", connected_connector),
+            mock.patch(
+                "bec_server.device_server.devices.devicemanager.get_device_info"
+            ) as describe,
+        ):
+            # A callback may have passed its root check before waiting to publish.
+            device_manager.publish_device_info(previous)
+            describe.assert_not_called()
+            assert connected_connector.get(MessageEndpoints.device_info("detector")) == cached
+    finally:
+        device_manager.devices.pop("detector", None)
+        previous.destroy()
+        current.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_signal_info_subscription_is_not_duplicated(
+    device_manager, connected_connector, metadata_preview_signal
+):
+    class Detector(ophyd.Device):
+        preview = ophyd.Component(metadata_preview_signal, ndim=2)
+
+    detector = Detector(name="detector")
+    holder = SimpleNamespace(obj=detector, enabled=True)
+    device_manager.devices["detector"] = holder
+    try:
+        with (
+            mock.patch.object(device_manager, "connector", connected_connector),
+            mock.patch.object(
+                connected_connector, "set_and_publish", wraps=connected_connector.set_and_publish
+            ) as publish,
+        ):
+
+            def metadata_publications():
+                # The full-suite fixture also runs monitors for other devices.
+                return [
+                    call
+                    for call in publish.call_args_list
+                    if call.args and call.args[0] == MessageEndpoints.device_info("detector")
+                ]
+
+            device_manager._subscribe_to_bec_signal_info(detector)
+            detector.preview.update_signal_info(
+                transports=[
+                    messages.ZMQSignalTransport(
+                        address="tcp://localhost:5555", encoder="adzmq-array-1.0"
+                    )
+                ]
+            )
+            cached = connected_connector.get(MessageEndpoints.device_info("detector"))
+            info = cached.info["signals"]["preview"]["describe"]["signal_info"]
+            assert info["transports"][0]["address"] == "tcp://localhost:5555"
+            assert metadata_publications() == [
+                mock.call(MessageEndpoints.device_info("detector"), cached, None)
+            ]
+            # Repeated registration replaces the subscription instead of duplicating it.
+            publish.reset_mock()
+            device_manager._subscribe_to_bec_signal_info(detector)
+            detector.preview.update_signal_info(
+                signal_metadata={**detector.preview.signal_info.signal_metadata, "transpose": True}
+            )
+            assert len(metadata_publications()) == 1
+            detector.preview.update_signal_info(transports=None)
+            assert len(metadata_publications()) == 2
+            assert (
+                connected_connector.get(MessageEndpoints.device_info("detector")).info["signals"][
+                    "preview"
+                ]["describe"]["signal_info"]["transports"]
+                is None
+            )
+    finally:
+        device_manager.devices.pop("detector", None)
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("enabled", [True, False])
+def test_signal_info_callback_respects_root_device_enabled_flag(device_manager, enabled):
+    detector = ophyd.Device(name="detector")
+    signal = ophyd.Signal(name="signal", parent=detector)
+    device_manager.devices["detector"] = SimpleNamespace(obj=detector, enabled=enabled)
+    try:
+        with mock.patch.object(device_manager, "publish_device_info") as publish:
+            device_manager._obj_callback_signal_info_changed(obj=signal)
+            publish.assert_called_once_with(detector, connect=enabled)
+    finally:
+        device_manager.devices.pop("detector", None)
+        signal.destroy()
+        detector.destroy()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("replaced", [False, True])
+def test_signal_info_callback_ignores_removed_or_replaced_devices(device_manager, replaced):
+    detector = ophyd.Device(name="detector")
+    signal = ophyd.Signal(name="signal", parent=detector)
+    if replaced:
+        device_manager.devices["detector"] = SimpleNamespace(obj=object(), enabled=True)
+    try:
+        with mock.patch.object(device_manager, "publish_device_info") as publish:
+            device_manager._obj_callback_signal_info_changed(obj=signal)
+            publish.assert_not_called()
+    finally:
+        device_manager.devices.pop("detector", None)
+        signal.destroy()
+        detector.destroy()
