@@ -12,6 +12,7 @@ from bec_lib import numpy_encoder
 from bec_lib.device import DeviceBase
 from bec_lib.endpoints import EndpointInfo
 from bec_lib.messages import BECMessage, BECStatus
+from bec_lib.plugin_helper import get_message_plugins
 
 
 class BECCodec(ABC):
@@ -63,7 +64,16 @@ class BECMessageEncoder(BECCodec):
 
     @staticmethod
     def decode(type_name: str, data: dict) -> BECMessage:
-        return getattr(messages_module, type_name)(**data)
+        msg_type = getattr(messages_module, type_name, None)
+        if msg_type is None:
+            for mod in get_message_plugins():
+                if (msg_type := getattr(mod, type_name, None)) is not None:
+                    break
+        if msg_type is None:
+            raise TypeError(
+                f"BECMessage type {type_name} was not found in bec_lib.messages nor in a plugin message module!"
+            )
+        return msg_type(**data)
 
 
 class EnumEncoder(BECCodec):
