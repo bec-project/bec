@@ -100,9 +100,8 @@ class ScanStatus:
         """
         Manually set the done checked flag to avoid creating warnings for unchecked status objects.
         """
-        self._done_checked = True
-        for st in self._sub_status_objects:
-            st._done_checked = True
+        for status in self._iter_statuses():
+            status._done_checked = True
 
     def add_status(self, status: ScanStatus):
         """
@@ -175,16 +174,20 @@ class ScanStatus:
         if self._sub_status_objects:
             out = []
             for st in self._sub_status_objects:
-                out.append(st._future.result())
+                out.append(st.result)
             if not self._is_container:
                 out.append(self._future.result())
             return out
         return self._future.result()
 
+    def _iter_statuses(self) -> Iterator[ScanStatus]:
+        """Iterate over this status and all descendants."""
+        yield self
+        for status in self._sub_status_objects:
+            yield from status._iter_statuses()
+
     def _get_sub_status_done(self) -> bool:
-        return (
-            all(st._done for st in self._sub_status_objects) if self._sub_status_objects else True
-        )
+        return all(st._done and st._get_sub_status_done() for st in self._sub_status_objects)
 
     @staticmethod
     def _raise_if_failed(obj: concurrent.futures.Future) -> None:
@@ -284,57 +287,77 @@ class ScanStatus:
             and not (resolve_on_known_type and self._result_is_status is not None)
         )
         with self._wait_context(waiting=waiting):
-            self._registry.pop(self._device_instr_id, None)
-            for st in self._sub_status_objects:
-                self._registry.pop(st._device_instr_id, None)
+            self._wait_for_completion(
+                min_wait=min_wait,
+                timeout=timeout,
+                logger_wait=logger_wait,
+                resolve_on_known_type=resolve_on_known_type,
+            )
+        return self
 
-            if min_wait is not None:
-                time.sleep(min_wait)
+    def _wait_for_completion(
+        self,
+        min_wait: float | None,
+        timeout: float,
+        logger_wait: float,
+        resolve_on_known_type: bool,
+    ) -> None:
+        """Wait for a scan status and its descendants inside an active wait context.
 
-            if self._done and self._get_sub_status_done():
-                self._done_checked = True
-                self._raise_if_failed(self._future)
-                for st in self._sub_status_objects:
-                    st._done_checked = True
-                    self._raise_if_failed(st._future)
-                return self
+        Args:
+            min_wait (float | None): Minimum delay before checking completion.
+            timeout (float): Completion timeout in seconds after the minimum delay.
+            logger_wait (float): Delay in seconds before logging pending statuses.
+            resolve_on_known_type (bool): Return once the RPC result type is known.
 
-            # pylint: disable=protected-access
-            futures = [st._future for st in self._sub_status_objects]
-            futures.append(self._future)
+        Raises:
+            TimeoutError: The completion deadline expired.
+            DeviceInstructionError: A device instruction failed.
+        """
+        # pylint: disable=protected-access
+        statuses = list(self._iter_statuses())
+        for status in statuses:
+            status._registry.pop(status._device_instr_id, None)
 
-            increment = 0.5
-            started_at = time.monotonic()
-            deadline = started_at + timeout
+        if min_wait is not None:
+            time.sleep(min_wait)
 
-            while not all(e.done() for e in futures):
-                if resolve_on_known_type and self._result_is_status is not None:
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TimeoutError("The wait operation timed out.")
-                done, _ = concurrent.futures.wait(
-                    futures,
-                    timeout=min(increment, remaining),
-                    return_when=concurrent.futures.FIRST_EXCEPTION,
-                )
-                for future in done:
-                    self._raise_if_failed(future)
-                if all(future.done() for future in futures):
-                    break
-                if self._shutdown_event.is_set():
-                    break
-                if not all(future.done() for future in futures):
-                    self._notify_wait()
-                if time.monotonic() - started_at > logger_wait:
-                    objs = []
-                    objs.extend([str(st) for st in self._sub_status_objects if not st.done])
-                    objs.append(str(self))
-                    logger.info(
-                        f"Waiting for the completion of the following status objects: {objs}"
-                    )
+        if self._done and self._get_sub_status_done():
+            self.set_done_checked()
+            for status in statuses:
+                self._raise_if_failed(status._future)
+            return
 
-            return self
+        futures = [status._future for status in statuses]
+
+        increment = 0.5
+        started_at = time.monotonic()
+        deadline = started_at + timeout
+
+        while not all(e.done() for e in futures):
+            if resolve_on_known_type and self._result_is_status is not None:
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("The wait operation timed out.")
+            done, _ = concurrent.futures.wait(
+                futures,
+                timeout=min(increment, remaining),
+                return_when=concurrent.futures.FIRST_EXCEPTION,
+            )
+            for future in done:
+                self._raise_if_failed(future)
+            if all(future.done() for future in futures):
+                break
+            if self._shutdown_event.is_set():
+                break
+            if not all(future.done() for future in futures):
+                self._notify_wait()
+            if time.monotonic() - started_at > logger_wait:
+                objs = []
+                objs.extend([str(st) for st in self._sub_status_objects if not st.done])
+                objs.append(str(self))
+                logger.info(f"Waiting for the completion of the following status objects: {objs}")
 
     def __repr__(self):
         name = f"{self._name}, " if self._name else ""
