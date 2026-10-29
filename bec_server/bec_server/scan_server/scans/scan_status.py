@@ -100,9 +100,8 @@ class ScanStatus:
         """
         Manually set the done checked flag to avoid creating warnings for unchecked status objects.
         """
-        self._done_checked = True
-        for st in self._sub_status_objects:
-            st._done_checked = True
+        for status in self._iter_statuses():
+            status._done_checked = True
 
     def add_status(self, status: ScanStatus):
         """
@@ -175,16 +174,20 @@ class ScanStatus:
         if self._sub_status_objects:
             out = []
             for st in self._sub_status_objects:
-                out.append(st._future.result())
+                out.append(st.result)
             if not self._is_container:
                 out.append(self._future.result())
             return out
         return self._future.result()
 
+    def _iter_statuses(self) -> Iterator[ScanStatus]:
+        """Iterate over this status and all descendants."""
+        yield self
+        for status in self._sub_status_objects:
+            yield from status._iter_statuses()
+
     def _get_sub_status_done(self) -> bool:
-        return (
-            all(st._done for st in self._sub_status_objects) if self._sub_status_objects else True
-        )
+        return all(st._done and st._get_sub_status_done() for st in self._sub_status_objects)
 
     @staticmethod
     def _raise_if_failed(obj: concurrent.futures.Future) -> None:
@@ -284,24 +287,21 @@ class ScanStatus:
             and not (resolve_on_known_type and self._result_is_status is not None)
         )
         with self._wait_context(waiting=waiting):
-            self._registry.pop(self._device_instr_id, None)
-            for st in self._sub_status_objects:
-                self._registry.pop(st._device_instr_id, None)
+            statuses = list(self._iter_statuses())
+            for status in statuses:
+                status._registry.pop(status._device_instr_id, None)
 
             if min_wait is not None:
                 time.sleep(min_wait)
 
             if self._done and self._get_sub_status_done():
-                self._done_checked = True
-                self._raise_if_failed(self._future)
-                for st in self._sub_status_objects:
-                    st._done_checked = True
-                    self._raise_if_failed(st._future)
+                self.set_done_checked()
+                for status in statuses:
+                    self._raise_if_failed(status._future)
                 return self
 
             # pylint: disable=protected-access
-            futures = [st._future for st in self._sub_status_objects]
-            futures.append(self._future)
+            futures = [status._future for status in statuses]
 
             increment = 0.5
             started_at = time.monotonic()

@@ -420,3 +420,82 @@ def test_zero_timeout_does_not_poll_pending_status(instruction_handler):
         with pytest.raises(TimeoutError):
             status.wait(timeout=0)
     wait.assert_not_called()
+
+
+@pytest.fixture
+def nested_statuses(instruction_handler):
+    """Provide two nested containers and a pending leaf sharing a registry."""
+    registry = {}
+    parent = ScanStatus(instruction_handler, is_container=True, registry=registry)
+    child = ScanStatus(instruction_handler, is_container=True, registry=registry)
+    leaf = ScanStatus(instruction_handler, registry=registry)
+    child.add_status(leaf)
+    parent.add_status(child)
+    for status in (parent, child, leaf):
+        registry[status._device_instr_id] = status
+    return parent, child, leaf, registry
+
+
+def test_nested_container_waits_for_leaf_and_collects_results(nested_statuses):
+    parent, child, leaf, registry = nested_statuses
+    assert parent.done is False
+    assert parent.result is None
+    assert parent._done_checked and child._done_checked and leaf._done_checked
+
+    def complete(futures, **kwargs):
+        assert leaf._future in futures
+        assert not registry
+        leaf.set_done(42)
+        return set(futures), set()
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=complete
+    ) as wait:
+        assert parent.wait() is parent
+    wait.assert_called_once()
+    assert parent.done is True
+    assert parent.result == [[42]]
+
+
+@pytest.mark.parametrize("already_failed", [False, True])
+def test_nested_container_propagates_leaf_failure(nested_statuses, already_failed):
+    parent, _, leaf, _ = nested_statuses
+
+    def fail():
+        leaf.set_failed(
+            messages.ErrorInfo(
+                error_message="Nested motor failed",
+                compact_error_message="Nested motor failed",
+                exception_type="RuntimeError",
+            )
+        )
+
+    def fail_during_wait(futures, **kwargs):
+        assert leaf._future in futures
+        fail()
+        return set(futures), set()
+
+    if already_failed:
+        fail()
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=fail_during_wait,
+    ):
+        with pytest.raises(DeviceInstructionError, match="Nested motor failed"):
+            parent.wait()
+
+
+def test_nested_container_times_out_for_pending_leaf(nested_statuses):
+    parent, _, leaf, _ = nested_statuses
+    with pytest.raises(TimeoutError):
+        parent.wait(timeout=0)
+    assert parent.done is False
+    assert not leaf._future.done()
+
+
+def test_completed_nested_container_marks_descendants_checked(nested_statuses):
+    parent, child, leaf, registry = nested_statuses
+    leaf.set_done(7)
+    assert parent.wait().result == [[7]]
+    assert not registry
+    assert parent._done_checked and child._done_checked and leaf._done_checked
