@@ -101,8 +101,8 @@ def scan_hook(func):
     in the appropriate order.
     """
 
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    # pylint: disable=protected-access
+    def dispatch(self, *args, **kwargs):
         if func.__name__ not in self._scan_modifier_hooks:
             return func(self, *args, **kwargs)
 
@@ -130,6 +130,11 @@ def scan_hook(func):
             after_method(*args, **kwargs)
 
         return
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        with self.actions._scan_hook_context(func.__name__):
+            return dispatch(self, *args, **kwargs)
 
     # pylint: disable=protected-access
     wrapper._scan_hook_info = {"method_name": func.__name__}  # type: ignore

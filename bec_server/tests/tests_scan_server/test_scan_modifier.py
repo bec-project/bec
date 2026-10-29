@@ -117,7 +117,7 @@ class _ScanNameFilteringModifier(ScanModifier):
 
 @pytest.fixture
 def test_scan(device_manager, connected_connector):
-    return _TestScan(
+    scan = _TestScan(
         scan_id="scan-id",
         redis_connector=connected_connector,
         device_manager=device_manager,
@@ -126,6 +126,8 @@ def test_scan(device_manager, connected_connector):
         system_config={},
         scan_modifier=None,
     )
+    yield scan
+    scan.actions._hook_broadcaster.stop()
 
 
 def test_scan_hook_marks_method_with_hook_info():
@@ -290,3 +292,87 @@ def test_scan_modifier_hook_filters_raise_on_ambiguous_match(test_scan):
 
     with pytest.raises(ValueError, match="Multiple scan modifier implementations matched hook"):
         test_scan.post_scan()
+
+
+def test_hook_broadcast_through_redis(test_scan, connected_connector):
+    test_scan.actions._hook_broadcaster.start()
+    import threading
+
+    from bec_lib.endpoints import MessageEndpoints
+
+    completed = threading.Event()
+    received = []
+
+    def receive(message):
+        received.append(message.value)
+        if message.value.status == "completed":
+            completed.set()
+
+    connected_connector.register(MessageEndpoints.scan_hook(), cb=receive)
+    test_scan.post_scan()
+    assert completed.wait(2)
+    assert [(msg.hook, msg.status) for msg in received] == [("post_scan", "completed")]
+
+
+def test_modifier_execution_remains_inside_hook_broadcast(test_scan):
+    test_scan.actions._hook_broadcaster.start()
+    from bec_lib.endpoints import MessageEndpoints
+
+    class Modifier(ScanModifier):
+        @scan_hook_impl("post_scan", "before")
+        def before(self):
+            assert self.actions._scan_hook_stack == ["post_scan"]
+
+        @scan_hook_impl("post_scan", "after")
+        def after(self):
+            assert self.actions._scan_hook_stack == ["post_scan"]
+
+    test_scan._scan_modifier = Modifier(test_scan)
+    test_scan._scan_modifier_hooks = get_scan_hooks_impl(Modifier)
+    with mock.patch.object(test_scan.redis_connector, "send") as publish:
+        test_scan.post_scan()
+        test_scan.actions._hook_broadcaster.flush()
+    updates = [call.args[1] for call in publish.call_args_list]
+    assert all(call.args[0] == MessageEndpoints.scan_hook() for call in publish.call_args_list)
+    assert [msg.status for msg in updates] == ["completed"]
+    assert test_scan.after_hook_calls == ["post_scan"]
+
+
+def test_latest_hook_and_instruction_updates_through_redis(test_scan, connected_connector):
+    import threading
+
+    from bec_lib import messages
+    from bec_lib.endpoints import MessageEndpoints
+
+    broadcaster = test_scan.actions._hook_broadcaster
+    broadcaster.start()
+    completed = threading.Event()
+    instruction_received = threading.Event()
+    updates = []
+
+    def receive(message):
+        updates.append(message.value)
+        if message.value.instructions:
+            instruction_received.set()
+        if message.value.status == "completed":
+            completed.set()
+
+    connected_connector.register(MessageEndpoints.scan_hook(), cb=receive)
+    instructions = [
+        messages.DeviceInstructionMessage(device=device, action="stage", parameter={})
+        for device in ["samx", "samy"]
+    ]
+    with mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"):
+        with test_scan.actions._scan_hook_context("stage"):
+            for instruction in instructions:
+                test_scan.actions._send(instruction)
+            broadcaster.flush()
+            assert instruction_received.wait(2)
+        broadcaster.stop()
+    assert completed.wait(2)
+    assert [(event.hook, event.status) for event in updates] == [
+        ("stage", "running"),
+        ("stage", "completed"),
+    ]
+    assert [event.instructions for event in updates] == [[instructions[-1]], []]
+    assert all(event.metadata["scan_id"] == "scan-id" for event in updates)

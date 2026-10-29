@@ -3,7 +3,8 @@ from __future__ import annotations
 import functools
 import os
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from string import Template
 from typing import TYPE_CHECKING, Any, Callable, Literal, TypeAlias
 
@@ -18,6 +19,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
+from bec_server.scan_server.scan_hook_broadcaster import ScanHookBroadcaster
 from bec_server.scan_server.scans.scan_status import ScanStatus
 
 if TYPE_CHECKING:
@@ -67,6 +69,59 @@ class ScanActions:
         self._metadata_suffix = ""
         self._queued_device_locks: set[str] = set()
         self._scan_running = False
+        self._scan_hook_stack: list[str] = []
+        self._hook_broadcaster = ScanHookBroadcaster(self._connector)
+
+    @contextmanager
+    def _scan_hook_context(self, hook: str) -> Iterator[None]:
+        """Broadcast a hook's execution and restore the parent of nested hooks."""
+        if self._scan_hook_stack and self._scan_hook_stack[-1] == hook:
+            yield
+            return
+        self._scan_hook_stack.append(hook)
+        try:
+            self._broadcast_scan_hook()
+            yield
+        except BaseException:
+            self._broadcast_scan_hook(status="error")
+            raise
+        else:
+            self._broadcast_scan_hook(status="completed")
+        finally:
+            self._scan_hook_stack.pop()
+            if self._scan_hook_stack:
+                self._broadcast_scan_hook()
+
+    def _broadcast_scan_hook(
+        self,
+        instructions: list[messages.DeviceInstructionMessage] | None = None,
+        status: Literal["running", "completed", "error"] = "running",
+        waiting: bool = False,
+        wait_started_at: float | None = None,
+    ) -> None:
+        """Publish the current hook with the scan's original correlation metadata."""
+        scan_info = self._scan.scan_info
+        if scan_info.scan_id is None:
+            return
+        self._hook_broadcaster.add(
+            messages.ScanHookMessage(
+                scan_id=scan_info.scan_id,
+                hook=self._scan_hook_stack[-1] if self._scan_hook_stack else None,
+                status=status,
+                instructions=instructions or [],
+                waiting=waiting,
+                wait_started_at=wait_started_at,
+                metadata={**scan_info.metadata, "scan_id": scan_info.scan_id},
+            )
+        )
+
+    def _on_status_wait(self, status: ScanStatus) -> None:
+        """Report pending instructions; the next lifecycle or instruction update replaces the wait."""
+        self._broadcast_scan_hook(
+            instructions=status.pending_instructions,
+            waiting=True,
+            wait_started_at=status.wait_started_at,
+        )
 
     @property
     def readout_priority(self) -> dict:
@@ -649,10 +704,13 @@ class ScanActions:
             metadata={"device_instr_id": status._device_instr_id},
         )
         self._send(instr)
-        if min_wait is not None:
-            self._shutdown_event.wait(min_wait)
-        if wait:
-            status.wait()
+        # The exposure delay blocks execution even if the trigger has already completed.
+        # pylint: disable=protected-access
+        with status._wait_context(waiting=bool(min_wait and min_wait > 0)):
+            if min_wait is not None:
+                self._shutdown_event.wait(min_wait)
+            if wait:
+                status.wait()
         return status
 
     @requires_scan_is_running
@@ -1045,6 +1103,7 @@ class ScanActions:
             registry=self._status_registry,
             is_container=is_container,
             name=name,
+            wait_callback=self._on_status_wait,
         )
         self._status_registry[status._device_instr_id] = status
         return status
@@ -1076,7 +1135,11 @@ class ScanActions:
         instr_devices = msg.device if isinstance(msg.device, list) else [msg.device]
         if set(instr_devices) & self._devices_with_required_response:
             msg.metadata["response"] = True
+        status = self._status_registry.get(msg.metadata.get("device_instr_id"))
+        if status is not None:
+            status.instruction = msg
         self._connector.send(MessageEndpoints.device_instructions(), msg)
+        self._broadcast_scan_hook(instructions=[msg])
 
     def _get_message_metadata(self) -> dict:
         metadata = {}
