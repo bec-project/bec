@@ -312,18 +312,46 @@ class ManagedRedisConnection:
         client = pipe if pipe is not None else self._redis_conn
         client.publish(topic, msg)
 
-    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
+    def send(
+        self,
+        topic: str,
+        msg: str | BECMessage,
+        pipe: Pipeline | None = None,
+        *,
+        timeout_s: float | None = None,
+    ) -> None:
         """
         Send a message to a topic
 
         Args:
             topic (str): topic
             msg (BECMessage): message
-            pipe (Pipeline, optional): redis pipe. Defaults to None.
+            pipe (Pipeline | None, optional): Redis pipeline. Defaults to None.
+            timeout_s (float | None, optional): Connect and socket timeout for an isolated
+                connection with retries disabled. Incompatible with a pipeline. Defaults to None.
         """
+        if timeout_s is not None and (pipe is not None or timeout_s <= 0):
+            raise ValueError("A bounded publication requires a positive timeout and no pipeline.")
         if isinstance(msg, BECMessage):
             msg = MsgpackSerialization.dumps(msg)
-        self.raw_send(topic, msg, pipe)  # type: ignore # using sync client
+        if timeout_s is None:
+            self.raw_send(topic, msg, pipe)  # type: ignore # using sync client
+            return
+        source_pool = self._redis_conn.connection_pool
+        options = {
+            **source_pool.connection_kwargs,
+            "socket_connect_timeout": timeout_s,
+            "socket_timeout": timeout_s,
+            "retry": self._get_retry_policy(),
+            "retry_on_timeout": False,
+            "redis_connect_func": None,
+        }
+        pool = type(source_pool)(connection_class=source_pool.connection_class, **options)
+        try:
+            with type(self._redis_conn)(connection_pool=pool) as publisher:
+                publisher.publish(topic, msg)
+        finally:
+            pool.disconnect()
 
     def _start_events_dispatcher_thread(self, start_thread):
         if start_thread and self._events_dispatcher_thread is None:

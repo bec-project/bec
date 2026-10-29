@@ -74,7 +74,9 @@ class ScanActions:
 
     @contextmanager
     def _scan_hook_context(self, hook: str) -> Iterator[None]:
-        """Broadcast a hook's execution and restore the parent of nested hooks."""
+        """Broadcast lifecycle hooks, reporting per-point execution as scan_core."""
+        if hook == "at_each_point":
+            hook = "scan_core"
         if self._scan_hook_stack and self._scan_hook_stack[-1] == hook:
             yield
             return

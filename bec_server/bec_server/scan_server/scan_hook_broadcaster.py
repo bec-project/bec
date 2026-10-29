@@ -18,6 +18,9 @@ logger = bec_logger.logger
 class ScanHookBroadcaster:
     """Send only the latest update in each 0.1 second broadcast window."""
 
+    PUBLISH_TIMEOUT_S = 0.1
+    STOP_TIMEOUT_S = 0.5
+
     def __init__(self, connector: RedisConnector) -> None:
         self._connector = connector
         self._lock = threading.Lock()
@@ -25,20 +28,34 @@ class ScanHookBroadcaster:
         self._latest_update: messages.ScanHookMessage | None = None
         self._timer: threading.Timer | None = None
         self._active = False
+        self._stopped = False
+        self._stopping = False
+        self._finalizer: threading.Thread | None = None
 
     def start(self) -> None:
         """Enable event collection when the scan worker begins execution."""
         with self._lock:
+            if self._stopping:
+                raise RuntimeError("A stopped scan hook broadcaster cannot be restarted.")
             self._active = True
 
     def stop(self) -> None:
-        """Disable collection and attempt final delivery without affecting the scan outcome."""
+        """Attempt final delivery within a fixed budget, then discard pending telemetry."""
         with self._lock:
+            if self._stopping:
+                return
+            self._stopping = True
             self._active = False
-        try:
-            self.flush()
-        except Exception:  # pylint: disable=broad-except
-            logger.exception("Failed to broadcast final scan hook update")
+            if self._timer is not None:
+                self._timer.cancel()
+        self._finalizer = threading.Thread(target=self._flush_scheduled, daemon=True)
+        self._finalizer.start()
+        self._finalizer.join(self.STOP_TIMEOUT_S)
+        with self._lock:
+            self._stopped = True
+            self._latest_update = None
+        if self._finalizer.is_alive():
+            logger.warning("Timed out delivering the final scan hook update; discarding telemetry")
 
     def add(self, event: messages.ScanHookMessage) -> None:
         """Replace the pending update and schedule a flush when the first event arrives.
@@ -76,15 +93,17 @@ class ScanHookBroadcaster:
                     self._timer = None
                     if timer is not None:
                         timer.cancel()
-                    event = self._latest_update
+                    event = None if self._stopped else self._latest_update
                     self._latest_update = None
                 if event is None:
                     return
                 try:
-                    self._connector.send(MessageEndpoints.scan_hook(), event)
+                    self._connector.send(
+                        MessageEndpoints.scan_hook(), event, timeout_s=self.PUBLISH_TIMEOUT_S
+                    )
                 except Exception:
                     with self._lock:
-                        if self._latest_update is None:
+                        if not self._stopped and self._latest_update is None:
                             self._latest_update = event
                     raise
         finally:

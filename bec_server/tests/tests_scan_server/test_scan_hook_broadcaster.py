@@ -38,7 +38,9 @@ def test_only_latest_update_in_window_is_sent():
         timer.return_value.start.assert_called_once()
         connector.send.assert_not_called()
         timer.call_args.args[1]()
-        connector.send.assert_called_once_with(MessageEndpoints.scan_hook(), events[-1])
+        connector.send.assert_called_once_with(
+            MessageEndpoints.scan_hook(), events[-1], timeout_s=broadcaster.PUBLISH_TIMEOUT_S
+        )
         broadcaster.flush()
         assert connector.send.call_count == 1
         broadcaster.add(_event("close_scan"))
@@ -87,7 +89,7 @@ def test_failed_flush_retains_latest_update_for_retry():
 def test_timer_flushes_without_further_scan_activity():
     connector = mock.Mock()
     sent = threading.Event()
-    connector.send.side_effect = lambda *args: sent.set()
+    connector.send.side_effect = lambda *args, **kwargs: sent.set()
     broadcaster = ScanHookBroadcaster(connector)
     broadcaster.start()
     broadcaster.add(_event())
@@ -125,7 +127,7 @@ def test_slow_publication_does_not_block_or_overwrite_new_updates(fail_first):
     original = _event("stage")
     latest = _event("pre_scan")
 
-    def send(*args):
+    def send(*args, **kwargs):
         publishing.set()
         assert release.wait(5)
         if fail_first:
