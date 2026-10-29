@@ -784,9 +784,9 @@ def test_worker_records_lifecycle_hooks_and_flushes_latest(
     updates = [call.args[0] for call in add.call_args_list]
     assert publish.call_args.args[1] == updates[-1]
     assert broadcaster._latest_update is None
-    assert [
-        msg.hook for msg in updates if msg.status == "completed" and msg.hook != "at_each_point"
-    ] == SCAN_SEQUENCE
+    assert [msg.hook for msg in updates if msg.status == "completed"] == SCAN_SEQUENCE
+    assert all(msg.hook != "at_each_point" for msg in updates)
+    assert [(msg.hook, msg.status) for msg in updates].count(("scan_core", "running")) == 1
     assert [(msg.hook, msg.status) for msg in updates].count(("stage", "running")) == 1
 
 

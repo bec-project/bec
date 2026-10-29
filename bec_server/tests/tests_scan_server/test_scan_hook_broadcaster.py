@@ -87,7 +87,7 @@ def test_failed_flush_retains_latest_update_for_retry():
 def test_timer_flushes_without_further_scan_activity():
     connector = mock.Mock()
     sent = threading.Event()
-    connector.send.side_effect = lambda *args: sent.set()
+    connector.send.side_effect = lambda *args, **kwargs: sent.set()
     broadcaster = ScanHookBroadcaster(connector)
     broadcaster.start()
     broadcaster.add(_event())
@@ -125,7 +125,7 @@ def test_slow_publication_does_not_block_or_overwrite_new_updates(fail_first):
     original = _event("stage")
     latest = _event("pre_scan")
 
-    def send(*args):
+    def send(*args, **kwargs):
         publishing.set()
         assert release.wait(5)
         if fail_first:
@@ -170,3 +170,47 @@ def test_stop_logs_publication_failure_and_joins_timer():
     assert not timer.is_alive()
     log.assert_called_once()
     assert not broadcaster._active
+
+
+def test_stop_waits_for_in_flight_publication_and_flushes_latest():
+    connector = mock.Mock()
+    broadcaster = ScanHookBroadcaster(connector)
+    publishing = threading.Event()
+    release = threading.Event()
+    stopping = threading.Event()
+    stopped = threading.Event()
+    original = _event("stage")
+    latest = _event("close_scan")
+
+    def send(*args, **kwargs):
+        publishing.set()
+        assert release.wait(2)
+
+    def stop():
+        stopping.set()
+        broadcaster.stop()
+        stopped.set()
+
+    connector.send.side_effect = send
+    broadcaster.start()
+    broadcaster.add(original)
+    publisher = broadcaster._timer
+    stopper = threading.Thread(target=stop)
+    try:
+        assert publishing.wait(2)
+        broadcaster.add(latest)
+        pending = broadcaster._timer
+        stopper.start()
+        assert stopping.wait(2)
+        assert not stopped.wait(0.02)
+    finally:
+        release.set()
+        publisher.join(2)
+        if stopper.ident is not None:
+            stopper.join(2)
+        broadcaster.stop()
+    assert not stopper.is_alive()
+    assert not pending.is_alive()
+    assert stopped.is_set()
+    assert [call.args[1] for call in connector.send.call_args_list] == [original, latest]
+    assert broadcaster._latest_update is None

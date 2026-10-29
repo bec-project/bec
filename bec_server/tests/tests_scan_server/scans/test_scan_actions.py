@@ -1289,19 +1289,19 @@ def test_nested_hook_broadcast_restores_parent_and_reports_errors(action_context
     ctx.scan.scan_info.metadata = {"RID": "rid", "queue_id": "qid"}
     with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
         with ctx.actions._scan_hook_context("scan_core"):
-            with ctx.actions._scan_hook_context("at_each_point"):
+            with ctx.actions._scan_hook_context("stage"):
                 pass
             with pytest.raises(ValueError, match="failed"):
-                with ctx.actions._scan_hook_context("at_each_point"):
+                with ctx.actions._scan_hook_context("stage"):
                     raise ValueError("failed")
     updates = [call.args[0] for call in add.call_args_list]
     assert [(msg.hook, msg.status) for msg in updates] == [
         ("scan_core", "running"),
-        ("at_each_point", "running"),
-        ("at_each_point", "completed"),
+        ("stage", "running"),
+        ("stage", "completed"),
         ("scan_core", "running"),
-        ("at_each_point", "running"),
-        ("at_each_point", "error"),
+        ("stage", "running"),
+        ("stage", "error"),
         ("scan_core", "running"),
         ("scan_core", "completed"),
     ]
@@ -1417,7 +1417,7 @@ def test_device_wait_is_replaced_by_next_hook_update_through_redis(
                     child.set_done()
             ctx.actions._hook_broadcaster.stop()
     waiting_updates = [event for event in updates if event.waiting]
-    assert all(event.hook == "at_each_point" for event in waiting_updates)
+    assert all(event.hook == "scan_core" for event in waiting_updates)
     assert [instruction.device for instruction in waiting_updates[0].instructions] == [
         "samx",
         "samy",
@@ -1453,7 +1453,7 @@ def test_exposure_wait_is_reported_even_after_trigger_completion(action_context)
     delay.assert_called_once_with(0.2)
     waiting = [call.args[0] for call in add.call_args_list if call.args[0].waiting]
     assert len(waiting) == 1
-    assert waiting[0].hook == "at_each_point"
+    assert waiting[0].hook == "scan_core"
     assert waiting[0].instructions == []
     assert waiting[0].wait_started_at is not None
     updates = [call.args[0] for call in add.call_args_list]
@@ -1506,3 +1506,31 @@ def test_short_wait_is_replaced_by_next_instruction_without_an_end_update(action
     assert updates[0].waiting is False
     assert updates[0].wait_started_at is None
     assert updates[0].instructions == [next_instruction]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_per_point_hooks_collapse_into_scan_core_without_extra_lifecycle_updates(
+    action_context, fail
+):
+    ctx = action_context(connector=mock.Mock())
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        try:
+            with ctx.actions._scan_hook_context("scan_core"):
+                for _ in range(2):
+                    with ctx.actions._scan_hook_context("at_each_point"):
+                        ctx.actions._send(
+                            messages.DeviceInstructionMessage(
+                                device="samx", action="read", parameter={}
+                            )
+                        )
+                        if fail:
+                            raise ValueError("point failed")
+        except ValueError:
+            if not fail:
+                raise
+    updates = [call.args[0] for call in add.call_args_list]
+    assert all(event.hook == "scan_core" for event in updates)
+    assert [event.status for event in updates] == (
+        ["running", "running", "error"] if fail else ["running", "running", "running", "completed"]
+    )
+    assert ctx.actions._scan_hook_stack == []
