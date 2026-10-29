@@ -259,7 +259,7 @@ class ScanStatus:
 
         Args:
             min_wait (float, optional): Minimum wait time in seconds. Defaults to None.
-            timeout (float, optional): Timeout in seconds. Defaults to None.
+            timeout (float, optional): Timeout in seconds after the minimum wait. Defaults to infinity.
             logger_wait (int, optional): Time in seconds before logging the remaining status objects. Defaults to 5.
             resolve_on_known_type (bool, optional): Whether to exit early once the return type of the rpc method is known.
                 It is used to discriminate status objects from normal return values. It is mostly for internal use and
@@ -304,24 +304,29 @@ class ScanStatus:
             futures.append(self._future)
 
             increment = 0.5
-            wait_time = 0
+            started_at = time.monotonic()
+            deadline = started_at + timeout
 
             while not all(e.done() for e in futures):
                 if resolve_on_known_type and self._result_is_status is not None:
                     break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("The wait operation timed out.")
                 done, _ = concurrent.futures.wait(
-                    futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
+                    futures,
+                    timeout=min(increment, remaining),
+                    return_when=concurrent.futures.FIRST_EXCEPTION,
                 )
                 for future in done:
                     self._raise_if_failed(future)
-                wait_time += increment
-                if wait_time >= timeout:
-                    raise TimeoutError("The wait operation timed out.")
+                if all(future.done() for future in futures):
+                    break
                 if self._shutdown_event.is_set():
                     break
                 if not all(future.done() for future in futures):
                     self._notify_wait()
-                if wait_time > logger_wait:
+                if time.monotonic() - started_at > logger_wait:
                     objs = []
                     objs.extend([str(st) for st in self._sub_status_objects if not st.done])
                     objs.append(str(self))

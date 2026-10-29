@@ -366,3 +366,57 @@ def test_wait_deduplicates_response_copies_with_array_parameters(instruction_han
     ):
         status.wait()
     callback.assert_called_once_with(status)
+
+
+@pytest.mark.parametrize("elapsed", [0.02, 0.2])
+def test_wait_returns_completed_result_before_raising_timeout(instruction_handler, elapsed):
+    status = ScanStatus(instruction_handler)
+    clock = [100.0]
+
+    def complete(futures, *, timeout, return_when):
+        assert timeout == pytest.approx(0.2)
+        clock[0] += elapsed
+        status.set_done(42)
+        return {status._future}, set()
+
+    with (
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.time.monotonic", side_effect=lambda: clock[0]
+        ),
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=complete
+        ),
+    ):
+        assert status.wait(timeout=0.2).result == 42
+
+
+def test_wait_limits_polling_to_remaining_deadline(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    clock = [100.0]
+    poll_timeouts = []
+
+    def advance(futures, *, timeout, return_when):
+        poll_timeouts.append(timeout)
+        clock[0] += timeout
+        return set(), {status._future}
+
+    with (
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.time.monotonic", side_effect=lambda: clock[0]
+        ),
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=advance
+        ),
+    ):
+        with pytest.raises(TimeoutError):
+            status.wait(timeout=0.7)
+    assert poll_timeouts == pytest.approx([0.5, 0.2])
+    assert clock[0] == pytest.approx(100.7)
+
+
+def test_zero_timeout_does_not_poll_pending_status(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    with mock.patch("bec_server.scan_server.scans.scan_status.concurrent.futures.wait") as wait:
+        with pytest.raises(TimeoutError):
+            status.wait(timeout=0)
+    wait.assert_not_called()
