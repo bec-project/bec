@@ -6,7 +6,9 @@ import concurrent.futures
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
@@ -34,6 +36,7 @@ class ScanStatus:
         registry: dict = None,
         is_container: bool = False,
         name: str | None = None,
+        wait_callback: Callable[[ScanStatus], None] | None = None,
     ) -> None:
         """
         Initialize the status object.
@@ -46,9 +49,15 @@ class ScanStatus:
             registry (dict, optional): Registry for status objects. Defaults to None.
             is_container (bool, optional): Flag that indicates if the status object is a container. Defaults to False.
             name (str, optional): Name of the status object. Defaults to None.
+            wait_callback (Callable[[ScanStatus], None] | None, optional): Callback receiving this
+                status when waiting begins or pending instructions change. Defaults to None.
 
         """
         self._name = name
+        self.instruction: messages.DeviceInstructionMessage | None = None
+        self._wait_callback = wait_callback
+        self._wait_started_at: float | None = None
+        self._reported_wait_instruction_ids: tuple[str | int, ...] | None = None
         self._instruction_handler = instruction_handler
         self._device_instr_id = (
             device_instr_id if device_instr_id is not None else str(uuid.uuid4())
@@ -182,6 +191,62 @@ class ScanStatus:
         if obj.exception() is not None:
             raise obj.exception()
 
+    @property
+    def pending_instructions(self) -> list[messages.DeviceInstructionMessage]:
+        """Return device instructions whose futures have not completed.
+
+        Returns:
+            list[messages.DeviceInstructionMessage]: Pending instructions, including child statuses.
+        """
+        pending = []
+        for status in self._sub_status_objects:
+            pending.extend(status.pending_instructions)
+        if not self._future.done():
+            instruction = self.instruction
+            if instruction is None and self.message is not None:
+                instruction = self.message.instruction
+            if instruction is not None:
+                pending.append(instruction)
+        return pending
+
+    @property
+    def wait_started_at(self) -> float | None:
+        """Return the current wait's start time, or None outside a wait.
+
+        Returns:
+            float | None: Unix timestamp when waiting began.
+        """
+        return self._wait_started_at
+
+    def _notify_wait(self) -> None:
+        if self._wait_callback is None:
+            return
+        pending_ids = tuple(
+            instruction.metadata.get("device_instr_id", id(instruction))
+            for instruction in self.pending_instructions
+        )
+        if pending_ids == self._reported_wait_instruction_ids:
+            return
+        try:
+            self._wait_callback(self)
+            self._reported_wait_instruction_ids = pending_ids
+        except Exception:  # pylint: disable=broad-except
+            logger.exception("Failed to report scan wait")
+
+    @contextmanager
+    def _wait_context(self, waiting: bool = True) -> Iterator[None]:
+        """Report a blocking wait without broadcasting its end; nested waits share its start time."""
+        if not waiting or self._wait_callback is None or self._wait_started_at is not None:
+            yield
+            return
+        self._wait_started_at = time.time()
+        try:
+            self._notify_wait()
+            yield
+        finally:
+            self._wait_started_at = None
+            self._reported_wait_instruction_ids = None
+
     def wait(
         self,
         min_wait: float | None = None,
@@ -214,48 +279,57 @@ class ScanStatus:
                 "resolve_on_known_type is not supported for status objects with sub status objects."
             )
 
-        self._registry.pop(self._device_instr_id, None)
-        for st in self._sub_status_objects:
-            self._registry.pop(st._device_instr_id, None)
-
-        if min_wait is not None:
-            time.sleep(min_wait)
-
-        if self._done and self._get_sub_status_done():
-            self._done_checked = True
-            self._raise_if_failed(self._future)
+        waiting = bool(min_wait and min_wait > 0) or (
+            not (self._done and self._get_sub_status_done())
+            and not (resolve_on_known_type and self._result_is_status is not None)
+        )
+        with self._wait_context(waiting=waiting):
+            self._registry.pop(self._device_instr_id, None)
             for st in self._sub_status_objects:
-                st._done_checked = True
-                self._raise_if_failed(st._future)
+                self._registry.pop(st._device_instr_id, None)
+
+            if min_wait is not None:
+                time.sleep(min_wait)
+
+            if self._done and self._get_sub_status_done():
+                self._done_checked = True
+                self._raise_if_failed(self._future)
+                for st in self._sub_status_objects:
+                    st._done_checked = True
+                    self._raise_if_failed(st._future)
+                return self
+
+            # pylint: disable=protected-access
+            futures = [st._future for st in self._sub_status_objects]
+            futures.append(self._future)
+
+            increment = 0.5
+            wait_time = 0
+
+            while not all(e.done() for e in futures):
+                if resolve_on_known_type and self._result_is_status is not None:
+                    break
+                done, _ = concurrent.futures.wait(
+                    futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
+                )
+                for future in done:
+                    self._raise_if_failed(future)
+                wait_time += increment
+                if wait_time >= timeout:
+                    raise TimeoutError("The wait operation timed out.")
+                if self._shutdown_event.is_set():
+                    break
+                if not all(future.done() for future in futures):
+                    self._notify_wait()
+                if wait_time > logger_wait:
+                    objs = []
+                    objs.extend([str(st) for st in self._sub_status_objects if not st.done])
+                    objs.append(str(self))
+                    logger.info(
+                        f"Waiting for the completion of the following status objects: {objs}"
+                    )
+
             return self
-
-        # pylint: disable=protected-access
-        futures = [st._future for st in self._sub_status_objects]
-        futures.append(self._future)
-
-        increment = 0.5
-        wait_time = 0
-
-        while not all(e.done() for e in futures):
-            if resolve_on_known_type and self._result_is_status is not None:
-                break
-            done, _ = concurrent.futures.wait(
-                futures, timeout=increment, return_when=concurrent.futures.FIRST_EXCEPTION
-            )
-            for future in done:
-                self._raise_if_failed(future)
-            wait_time += increment
-            if wait_time >= timeout:
-                raise TimeoutError("The wait operation timed out.")
-            if self._shutdown_event.is_set():
-                break
-            if wait_time > logger_wait:
-                objs = []
-                objs.extend([str(st) for st in self._sub_status_objects if not st.done])
-                objs.append(str(self))
-                logger.info(f"Waiting for the completion of the following status objects: {objs}")
-
-        return self
 
     def __repr__(self):
         name = f"{self._name}, " if self._name else ""

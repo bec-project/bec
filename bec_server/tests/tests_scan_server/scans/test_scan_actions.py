@@ -1281,3 +1281,228 @@ def test_publish_manual_read_rejects_missing_signals(action_context):
     readings = {"samx": {"other_signal": {"value": 1}}, "samy": _reading("samy", 2)}
     with pytest.raises(ValueError, match=r"Missing signals: .*'samx': .*'samx'"):
         ctx.actions.publish_manual_read(readings, wait=False)
+
+
+def test_nested_hook_broadcast_restores_parent_and_reports_errors(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    ctx.scan.scan_info.metadata = {"RID": "rid", "queue_id": "qid"}
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with ctx.actions._scan_hook_context("scan_core"):
+            with ctx.actions._scan_hook_context("at_each_point"):
+                pass
+            with pytest.raises(ValueError, match="failed"):
+                with ctx.actions._scan_hook_context("at_each_point"):
+                    raise ValueError("failed")
+    updates = [call.args[0] for call in add.call_args_list]
+    assert [(msg.hook, msg.status) for msg in updates] == [
+        ("scan_core", "running"),
+        ("at_each_point", "running"),
+        ("at_each_point", "completed"),
+        ("scan_core", "running"),
+        ("at_each_point", "running"),
+        ("at_each_point", "error"),
+        ("scan_core", "running"),
+        ("scan_core", "completed"),
+    ]
+    assert all(
+        msg.metadata == {"RID": "rid", "queue_id": "qid", "scan_id": "scan-id-test"}
+        for msg in updates
+    )
+    assert ctx.actions._scan_hook_stack == []
+
+
+def test_worker_and_decorator_context_do_not_duplicate_broadcasts(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with ctx.actions._scan_hook_context("stage"):
+            with ctx.actions._scan_hook_context("stage"):
+                pass
+    updates = [call.args[0] for call in add.call_args_list]
+    assert [msg.status for msg in updates] == ["running", "completed"]
+
+
+def test_every_sent_instruction_is_broadcast_without_waiting(action_context):
+    ctx = action_context(connector=mock.Mock())
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with ctx.actions._scan_hook_context("stage"):
+            for device in ["samx", "samy"]:
+                ctx.actions._send(
+                    messages.DeviceInstructionMessage(device=device, action="stage", parameter={})
+                )
+    events = [call.args[0] for call in add.call_args_list]
+    assert [(event.hook, event.status) for event in events] == [
+        ("stage", "running"),
+        ("stage", "running"),
+        ("stage", "running"),
+        ("stage", "completed"),
+    ]
+    assert [event.instructions[0].device for event in events if event.instructions] == [
+        "samx",
+        "samy",
+    ]
+    assert ctx.connector.send.call_count == 2
+
+
+def test_exception_cleanup_broadcast_preserves_original_scan_identity(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    ctx.scan.scan_info.metadata = {"RID": "rid", "queue_id": "qid"}
+    ctx.actions._metadata_suffix = "__on-exception"
+    with ctx.actions._scan_hook_context("on_exception"):
+        pass
+    ctx.actions._hook_broadcaster.flush()
+    msg = ctx.connector.send.call_args.args[1]
+    assert msg.scan_id == "scan-id-test"
+    assert msg.metadata == {"RID": "rid", "queue_id": "qid", "scan_id": "scan-id-test"}
+
+
+def test_initial_instructions_have_no_hook_and_keep_scan_identity(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        ctx.actions._send(
+            messages.DeviceInstructionMessage(device="samx", action="read", parameter={})
+        )
+    event = add.call_args.args[0]
+    assert event.hook is None
+    assert event.scan_id == "scan-id-test"
+    assert event.instructions[0].action == "read"
+    ctx.actions._hook_broadcaster.stop()
+
+
+def test_device_wait_is_replaced_by_next_hook_update_through_redis(
+    action_context, connected_connector
+):
+    import concurrent.futures
+
+    ctx = action_context(connector=connected_connector)
+    ctx.actions.acquire_device_lock = mock.Mock()
+    ctx.actions._hook_broadcaster.start()
+    both_pending = threading.Event()
+    one_pending = threading.Event()
+    finished = threading.Event()
+    updates = []
+
+    def receive(message):
+        event = message.value
+        updates.append(event)
+        if event.waiting and len(event.instructions) == 2:
+            both_pending.set()
+        if event.waiting and len(event.instructions) == 1:
+            one_pending.set()
+        if not event.waiting and event.status == "completed":
+            finished.set()
+
+    connected_connector.register(MessageEndpoints.scan_hook(), cb=receive)
+    status = ctx.actions.set(["samx", "samy"], [1.0, 2.0], wait=False)
+
+    def run():
+        with ctx.actions._scan_hook_context("at_each_point"):
+            status.wait(timeout=5)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run)
+        try:
+            assert both_pending.wait(2)
+            status._sub_status_objects[0].set_done()
+            assert one_pending.wait(2)
+            status._sub_status_objects[1].set_done()
+            future.result(timeout=2)
+            assert finished.wait(2)
+        finally:
+            for child in status._sub_status_objects:
+                if not child._future.done():
+                    child.set_done()
+            ctx.actions._hook_broadcaster.stop()
+    waiting_updates = [event for event in updates if event.waiting]
+    assert all(event.hook == "at_each_point" for event in waiting_updates)
+    assert [instruction.device for instruction in waiting_updates[0].instructions] == [
+        "samx",
+        "samy",
+    ]
+    assert waiting_updates[-1].instructions[0].device == "samy"
+    assert len({event.wait_started_at for event in waiting_updates}) == 1
+    assert all(event.wait_started_at <= event.timestamp for event in waiting_updates)
+    assert updates[-1].wait_started_at is None
+    assert updates[-1].instructions == []
+
+
+def test_exposure_wait_is_reported_even_after_trigger_completion(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.scan.scan_info.metadata["RID"] = "rid-123"
+    ctx.device_manager.parent.device_lock_registry = mock.Mock()
+    ctx.device_manager.parent.device_lock_registry.get_owned_devices.return_value = ["samx"]
+    _set_software_triggered(ctx, "samx")
+    original_send = ctx.actions._send
+
+    def acknowledge(instruction):
+        original_send(instruction)
+        if instruction.action == "trigger":
+            status = ctx.actions._status_registry[instruction.metadata["device_instr_id"]]
+            status.set_done()
+
+    with (
+        mock.patch.object(ctx.actions, "_send", side_effect=acknowledge),
+        mock.patch.object(ctx.actions._hook_broadcaster, "add") as add,
+        mock.patch.object(ctx.actions._shutdown_event, "wait") as delay,
+    ):
+        with ctx.actions._scan_hook_context("at_each_point"):
+            ctx.actions.trigger_all_devices(min_wait=0.2)
+    delay.assert_called_once_with(0.2)
+    waiting = [call.args[0] for call in add.call_args_list if call.args[0].waiting]
+    assert len(waiting) == 1
+    assert waiting[0].hook == "at_each_point"
+    assert waiting[0].instructions == []
+    assert waiting[0].wait_started_at is not None
+    updates = [call.args[0] for call in add.call_args_list]
+    assert len(updates) == 4
+    assert updates[-1].status == "completed"
+    assert updates[-1].waiting is False
+    assert updates[-1].wait_started_at is None
+
+
+def test_short_wait_is_replaced_by_next_instruction_without_an_end_update(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    status = ctx.actions._create_status()
+    instruction = messages.DeviceInstructionMessage(
+        device="samx",
+        action="set",
+        parameter={"value": 1},
+        metadata={"device_instr_id": status._device_instr_id},
+    )
+
+    def complete(*args, **kwargs):
+        status.set_done()
+        return {status._future}, set()
+
+    with (
+        mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"),
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=complete
+        ),
+    ):
+        with mock.patch.object(
+            ctx.actions._hook_broadcaster, "add", wraps=ctx.actions._hook_broadcaster.add
+        ) as add:
+            ctx.actions._send(instruction)
+            status.wait()
+            assert add.call_count == 2
+            assert add.call_args.args[0].waiting is True
+            next_instruction = messages.DeviceInstructionMessage(
+                device="samx", action="read", parameter={}
+            )
+            ctx.actions._send(next_instruction)
+            assert add.call_count == 3
+        ctx.actions._hook_broadcaster.stop()
+    updates = [
+        call.args[1]
+        for call in ctx.connector.send.call_args_list
+        if call.args[0] == MessageEndpoints.scan_hook()
+    ]
+    assert len(updates) == 1
+    assert updates[0].waiting is False
+    assert updates[0].wait_started_at is None
+    assert updates[0].instructions == [next_instruction]

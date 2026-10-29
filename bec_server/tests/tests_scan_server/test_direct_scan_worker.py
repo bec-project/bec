@@ -761,3 +761,86 @@ def test_update_queue_info_forwards_to_queue_manager(direct_worker_context):
     direct_worker_context.direct_worker.update_queue_info()
 
     direct_worker_context.queue_manager.send_queue_status.assert_called_once_with()
+
+
+@pytest.mark.parametrize("decorated", [True, False])
+def test_worker_records_lifecycle_hooks_and_flushes_latest(
+    direct_worker_context, make_scan, decorated
+):
+    from bec_server.scan_server.direct_scan_worker import SCAN_SEQUENCE
+
+    scan = make_scan()
+    if not decorated:
+        for hook in SCAN_SEQUENCE:
+            setattr(scan, hook, mock.Mock())
+    _append_scan(direct_worker_context.queue, scan)
+    scan.actions._initialize_scan = mock.Mock()
+    broadcaster = scan.actions._hook_broadcaster
+    with (
+        mock.patch.object(broadcaster, "add", wraps=broadcaster.add) as add,
+        mock.patch.object(direct_worker_context.connector, "send") as publish,
+    ):
+        direct_worker_context.direct_worker.run(scan)
+    updates = [call.args[0] for call in add.call_args_list]
+    assert publish.call_args.args[1] == updates[-1]
+    assert broadcaster._latest_update is None
+    assert [
+        msg.hook for msg in updates if msg.status == "completed" and msg.hook != "at_each_point"
+    ] == SCAN_SEQUENCE
+    assert [(msg.hook, msg.status) for msg in updates].count(("stage", "running")) == 1
+
+
+def test_worker_flushes_latest_exception_cleanup_update(direct_worker_context, make_scan):
+    scan = make_scan(fail_step="stage")
+    _append_scan(direct_worker_context.queue, scan)
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.queue.run_on_exception_hook = True
+    scan.actions._initialize_scan = mock.Mock()
+    broadcaster = scan.actions._hook_broadcaster
+    with (
+        mock.patch.object(broadcaster, "add", wraps=broadcaster.add) as add,
+        mock.patch.object(direct_worker_context.connector, "send") as publish,
+    ):
+        with pytest.raises(ScanAbortion):
+            direct_worker_context.direct_worker.run(scan)
+    updates = [call.args[0] for call in add.call_args_list]
+    assert publish.call_args.args[1] == updates[-1]
+    assert broadcaster._latest_update is None
+    assert [(msg.hook, msg.status) for msg in updates][-3:] == [
+        ("stage", "error"),
+        ("on_exception", "running"),
+        ("on_exception", "completed"),
+    ]
+    assert all(msg.scan_id == "scan-id" and msg.metadata["RID"] == "rid-1" for msg in updates)
+
+
+@pytest.mark.parametrize("fail_step", [None, "stage"])
+def test_final_broadcast_failure_preserves_scan_outcome(
+    direct_worker_context, make_scan, fail_step
+):
+    scan = make_scan(fail_step=fail_step)
+    _append_scan(direct_worker_context.queue, scan)
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.queue.run_on_exception_hook = True
+    scan.actions._initialize_scan = mock.Mock()
+    registry = direct_worker_context.scan_server.device_lock_registry
+    with (
+        mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"),
+        mock.patch.object(
+            direct_worker_context.connector, "send", side_effect=RuntimeError("Telemetry failed")
+        ),
+        mock.patch.object(registry, "release_all") as release,
+    ):
+        if fail_step is None:
+            direct_worker_context.direct_worker.run(scan)
+            assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
+            assert direct_worker_context.scan_worker.current_instruction_queue_item is None
+            assert direct_worker_context.direct_worker.scan is None
+        else:
+            with pytest.raises(ScanAbortion) as exc:
+                direct_worker_context.direct_worker.run(scan)
+            assert isinstance(exc.value.__cause__, RuntimeError)
+            assert str(exc.value.__cause__) == "stage failed"
+        release.assert_called_once_with("rid-1")
