@@ -25,20 +25,28 @@ class ScanHookBroadcaster:
         self._latest_update: messages.ScanHookMessage | None = None
         self._timer: threading.Timer | None = None
         self._active = False
+        self._stopped = False
 
     def start(self) -> None:
         """Enable event collection when the scan worker begins execution."""
         with self._lock:
+            if self._stopped:
+                raise RuntimeError("A stopped scan hook broadcaster cannot be restarted.")
             self._active = True
 
     def stop(self) -> None:
-        """Disable collection and attempt final delivery without affecting the scan outcome."""
+        """Stop collection, join the pending timer, and attempt final delivery."""
         with self._lock:
+            if self._stopped:
+                return
+            self._stopped = True
             self._active = False
-        try:
-            self.flush()
-        except Exception:  # pylint: disable=broad-except
-            logger.exception("Failed to broadcast final scan hook update")
+            timer = self._timer
+            if timer is not None:
+                timer.cancel()
+        if timer is not None and timer is not threading.current_thread():
+            timer.join()
+        self._flush_scheduled()
 
     def add(self, event: messages.ScanHookMessage) -> None:
         """Replace the pending update and schedule a flush when the first event arrives.
@@ -84,7 +92,7 @@ class ScanHookBroadcaster:
                     self._connector.send(MessageEndpoints.scan_hook(), event)
                 except Exception:
                     with self._lock:
-                        if self._latest_update is None:
+                        if not self._stopped and self._latest_update is None:
                             self._latest_update = event
                     raise
         finally:
