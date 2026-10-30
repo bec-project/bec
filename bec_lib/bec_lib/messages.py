@@ -56,13 +56,114 @@ class BECStatus(Enum):
     ERROR = -1
 
 
-class ROIConfig(BaseModel):
-    """Configuration for the ROI processing signal."""
+class RectROIConfig(BaseModel):
+    """Axis-aligned rectangle in pixels, with x/y at the top-left corner."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["rect"] = "rect"
     x: int
     y: int
     width: int
     height: int
+
+
+class RotatedRectROIConfig(BaseModel):
+    """Rectangle in pixels, rotated about its unrotated bounding-box center.
+
+    x/y locate the top-left of the unrotated box. The rotation center is
+    (x + width / 2, y + height / 2). Positive angles are clockwise in degrees
+    in image coordinates (x right, y down).
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    type: Literal["rotated_rect"] = "rotated_rect"
+    x: float
+    y: float
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    angle: float
+
+
+class CircleROIConfig(BaseModel):
+    """Circle in pixels; x/y locate the top-left of its bounding box.
+
+    Its center is (x + radius, y + radius) in image coordinates (x right, y down).
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    type: Literal["circle"] = "circle"
+    x: float
+    y: float
+    radius: float = Field(gt=0)
+
+
+class EllipseROIConfig(BaseModel):
+    """Ellipse in pixels, rotated about the center of its unrotated bounding box.
+
+    x/y locate the top-left of that box; width/height are its full dimensions.
+    The rotation center is (x + width / 2, y + height / 2). Positive angles are
+    clockwise in degrees in image coordinates (x right, y down).
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    type: Literal["ellipse"] = "ellipse"
+    x: float
+    y: float
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    angle: float
+
+
+class PixelMapROIConfig(BaseModel):
+    """Full-image mask indexed as mask[y][x]; True pixels belong to the ROI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["pixelmap"] = "pixelmap"
+    mask: list[list[bool]]
+
+    @field_validator("mask")
+    @classmethod
+    def validate_mask(cls, mask: list[list[bool]]) -> list[list[bool]]:
+        """Require a nonempty, rectangular two-dimensional mask."""
+        if not mask or not mask[0] or any(len(row) != len(mask[0]) for row in mask):
+            raise ValueError("Pixel map must be a nonempty rectangular 2D mask.")
+        return mask
+
+
+class CustomAnchorROIConfig(BaseModel):
+    """Closed polygon of ordered (x, y) vertices in pixels.
+
+    The closing edge is implicit; the first vertex need not be repeated.
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    type: Literal["custom_anchor"] = "custom_anchor"
+    vertices: list[tuple[float, float]] = Field(min_length=3)
+
+    @field_validator("vertices")
+    @classmethod
+    def validate_vertices(cls, vertices: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """Require at least three distinct polygon vertices."""
+        if len(set(vertices)) < 3:
+            raise ValueError("A polygon requires at least three distinct vertices.")
+        return vertices
+
+
+ROIConfiguration = Annotated[
+    RectROIConfig
+    | RotatedRectROIConfig
+    | CircleROIConfig
+    | EllipseROIConfig
+    | PixelMapROIConfig
+    | CustomAnchorROIConfig,
+    Field(discriminator="type"),
+]
 
 
 class ROIAnalysisConfig(BaseModel):
@@ -158,9 +259,17 @@ class ROIConfigurationMessage(BECMessage):
     signal: str
     name: str
     active: bool
-    roi_config: ROIConfig
+    roi_config: ROIConfiguration
     selected_operations: list[str]
     block_while_scanning: bool = True
+
+    @field_validator("roi_config", mode="before")
+    @classmethod
+    def accept_legacy_rectangle(cls, value: Any) -> Any:
+        """Interpret untagged rectangle payloads from older clients as rect ROIs."""
+        if isinstance(value, dict) and "type" not in value:
+            return {"type": "rect", **value}
+        return value
 
 
 class ROIAvailableAnalysisMessage(BECMessage):

@@ -691,3 +691,37 @@ def test_set_rpc_method_context(dm_with_devices):
             assert rpc_method_context.get() == dummy_method
         assert rpc_method_context.get() == another_dummy_method
     assert rpc_method_context.get() is None
+
+
+def test_device_config_update_refreshes_saved_signal_metadata(dm_with_devices):
+    """A file-writer proxy must see changed persistence flags before the next scan."""
+    manager = dm_with_devices
+    device = manager.devices.samx
+    old_info = copy.deepcopy(device._info)
+    old_info.setdefault("signals", {})["roi.result_scalar"] = {
+        "signal_class": "DynamicSignal",
+        "describe": {"signal_info": {"saved": True}},
+    }
+    device._info = old_info
+    new_info = copy.deepcopy(old_info)
+    new_info["signals"]["roi.result_scalar"]["describe"]["signal_info"]["saved"] = False
+    msg = messages.DeviceConfigMessage(
+        action="update", config={"samx": {"deviceConfig": {"save_roi_data": False}}}
+    )
+    with (
+        mock.patch.object(
+            manager,
+            "_get_device_info",
+            return_value=messages.DeviceInfoMessage(device="samx", info=new_info),
+        ) as get_info,
+        mock.patch.object(device, "_parse_info") as parse_info,
+    ):
+        manager.parse_config_message(msg)
+    get_info.assert_called_once_with("samx")
+    parse_info.assert_called_once()
+    roi = next(
+        info
+        for name, component, info in manager.get_bec_signals("DynamicSignal")
+        if name == "samx" and component == "roi.result_scalar"
+    )
+    assert roi["describe"]["signal_info"]["saved"] is False

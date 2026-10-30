@@ -238,8 +238,14 @@ class ConfigUpdateHandler:
                 # apply config
                 try:
                     self.device_manager.update_config(device.obj, new_config)
+                    # Persistence flags and other signal metadata can change with config.
+                    # Publish before acknowledgement and the subsequent proxy update.
+                    error = self.device_manager.publish_device_info(device.obj)
+                    if error is not None:
+                        raise error
                 except Exception as exc:
                     self.device_manager.update_config(device.obj, old_config)
+                    self.device_manager.publish_device_info(device.obj)
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
                 if "limits" in dev_config["deviceConfig"]:

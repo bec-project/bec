@@ -2167,9 +2167,31 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def roi_config_request(device: str, signal: str, username: str) -> EndpointInfo:
+        """Request an ROI configuration change, scoped to the submitting user by Redis ACLs.
+
+        Args:
+            device (str): Name of the device.
+            signal (str): Name of the signal.
+            username (str): Username of the submitting user; subscribers may use ``*``.
+
+        Returns:
+            EndpointInfo: Endpoint for ROI configuration requests.
+        """
+        return EndpointInfo(
+            endpoint=(
+                f"{EndpointType.PERSONAL.value}/{username}/devices/roi_config_request/"
+                f"{device}/{signal}"
+            ),
+            message_type=messages.ROIConfigurationMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def roi_config(device: str, signal: str):
         """
-        Endpoint for ROI configuration. This endpoint is used to publish ROI configuration updates using a messages.ROIConfigurationMessage message.
+        Current ROI configuration published by the device after applying a request.
+        Clients send changes to roi_config_request instead.
 
         Args:
             device (str): Name of the device.

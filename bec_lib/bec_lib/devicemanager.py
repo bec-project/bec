@@ -598,13 +598,15 @@ class DeviceManagerBase:
                     )
                 if "enabled" in config[dev]:
                     self.devices[dev]._config["enabled"] = config[dev]["enabled"]
-                    if self.devices[dev].enabled:
-                        dev_info_msg = self._get_device_info(dev)
-                        self.devices[dev]._info = dev_info_msg.info
-                        if self._use_proxy_objects:
-                            self.devices[dev]._parse_info()
                     status = "enabled" if self.devices[dev].enabled else "disabled"
                     logger.info(f"Device {dev} has been {status}.")
+                if ("deviceConfig" in config[dev] or "enabled" in config[dev]) and self.devices[
+                    dev
+                ].enabled:
+                    dev_info_msg = self._get_device_info(dev)
+                    self.devices[dev]._info = dev_info_msg.info
+                    if self._use_proxy_objects:
+                        self.devices[dev]._parse_info()
                 if "readOnly" in config[dev]:
                     self.devices[dev]._config["readOnly"] = config[dev]["readOnly"]
                 if "userParameter" in config[dev]:
