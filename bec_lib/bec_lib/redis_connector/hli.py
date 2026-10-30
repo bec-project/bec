@@ -266,8 +266,26 @@ class RedisConnector:
         return self._managed_connection.raw_send(topic, msg, pipe)
 
     @validate_endpoint("topic")
-    def send(self, topic: str, msg: str | BECMessage, pipe: Pipeline | None = None) -> None:
-        return self._managed_connection.send(topic, msg, pipe)
+    def send(
+        self,
+        topic: str,
+        msg: str | BECMessage,
+        pipe: Pipeline | None = None,
+        *,
+        timeout_s: float | None = None,
+    ) -> None:
+        """Publish a message, optionally using isolated, bounded network I/O.
+
+        Args:
+            topic (str): Validated endpoint topic.
+            msg (str | BECMessage): Message to publish.
+            pipe (Pipeline | None): Optional pipeline; incompatible with timeout_s.
+            timeout_s (float | None): Connect and socket timeout for a dedicated connection
+                with retries disabled. None preserves the shared connection's settings.
+        """
+        if timeout_s is None:
+            return self._managed_connection.send(topic, msg, pipe)
+        return self._managed_connection.send(topic, msg, pipe, timeout_s=timeout_s)
 
     @validate_endpoint("topic")
     def lpush(self, topic, msg, pipe=None, max_size=None, expire=None):

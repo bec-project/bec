@@ -144,3 +144,358 @@ def test_shutdown_marks_status_checked(instruction_handler):
     assert status.done is True
     assert status._done_checked is True
     assert repr(status).startswith("ScanStatus(move, ")
+
+
+def _instruction(device):
+    return messages.DeviceInstructionMessage(device=device, action="set", parameter={"value": 1})
+
+
+def test_wait_reports_start_without_an_end_notification(instruction_handler):
+    updates = []
+    status = ScanStatus(
+        instruction_handler,
+        wait_callback=lambda obj: updates.append((obj.wait_started_at, obj.pending_instructions)),
+    )
+    status.instruction = _instruction("samx")
+
+    def complete(*args, **kwargs):
+        assert updates[0][0] is not None
+        status.set_done()
+        return {status._future}, set()
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=complete
+    ):
+        assert status.wait() is status
+    assert len(updates) == 1
+    assert updates[0][0] is not None
+    assert updates[0][1] == [status.instruction]
+    assert status.wait_started_at is None
+
+
+def test_completed_and_known_type_statuses_do_not_report_a_wait(instruction_handler):
+    callback = mock.Mock()
+    status = ScanStatus(instruction_handler, wait_callback=callback)
+    status.set_done()
+    status.wait()
+    pending = ScanStatus(instruction_handler, wait_callback=callback)
+    pending._update_future(_response("running", result_is_status=True))
+    pending.wait(resolve_on_known_type=True)
+    callback.assert_not_called()
+
+
+@pytest.mark.parametrize("exit_reason", ["timeout", "error", "shutdown"])
+def test_wait_state_is_reset_without_broadcasting_an_end(instruction_handler, exit_reason):
+    updates = []
+    status = ScanStatus(
+        instruction_handler, wait_callback=lambda obj: updates.append(obj.wait_started_at)
+    )
+
+    def unblock(*args, **kwargs):
+        if exit_reason == "error":
+            status.set_failed(
+                messages.ErrorInfo(
+                    error_message="failed",
+                    compact_error_message="failed",
+                    exception_type="RuntimeError",
+                )
+            )
+            return {status._future}, set()
+        if exit_reason == "shutdown":
+            status._shutdown_event.set()
+        return set(), {status._future}
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=unblock
+    ):
+        if exit_reason == "timeout":
+            with pytest.raises(TimeoutError):
+                status.wait(timeout=0.1)
+        elif exit_reason == "error":
+            with pytest.raises(DeviceInstructionError):
+                status.wait()
+        else:
+            status.wait()
+    assert len(updates) == 1
+    assert updates[0] is not None
+    assert status.wait_started_at is None
+
+
+def test_container_wait_updates_only_remaining_instructions(instruction_handler):
+    updates = []
+    container = ScanStatus(
+        instruction_handler,
+        is_container=True,
+        wait_callback=lambda obj: updates.append((obj.wait_started_at, obj.pending_instructions)),
+    )
+    first, second = ScanStatus(instruction_handler), ScanStatus(instruction_handler)
+    first.instruction, second.instruction = _instruction("samx"), _instruction("samy")
+    container.add_status(first)
+    container.add_status(second)
+
+    def progress(*args, **kwargs):
+        if not first._future.done():
+            first.set_done()
+            return {first._future, container._future}, {second._future}
+        second.set_done()
+        return {first._future, second._future, container._future}, set()
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=progress
+    ):
+        container.wait()
+    assert [update[1] for update in updates] == [
+        [first.instruction, second.instruction],
+        [second.instruction],
+    ]
+    assert updates[0][0] == updates[1][0]
+    assert container.wait_started_at is None
+
+
+def test_pending_instructions_include_nested_statuses_and_response_fallback(instruction_handler):
+    parent = ScanStatus(instruction_handler, is_container=True)
+    child = ScanStatus(instruction_handler, is_container=True)
+    pending = ScanStatus(instruction_handler)
+    pending._update_future(_response("running"))
+    child.add_status(pending)
+    parent.add_status(child)
+    assert parent.pending_instructions == [pending.message.instruction]
+    pending.set_done()
+    assert parent.pending_instructions == []
+
+
+def test_minimum_and_nested_waits_share_one_start_time(instruction_handler):
+    updates = []
+    status = ScanStatus(
+        instruction_handler, wait_callback=lambda obj: updates.append(obj.wait_started_at)
+    )
+    status.set_done()
+    with status._wait_context():
+        with mock.patch("bec_server.scan_server.scans.scan_status.time.sleep") as sleep:
+            status.wait(min_wait=0.01)
+            sleep.assert_called_once_with(0.01)
+    assert len(updates) == 1
+    assert updates[0] is not None
+    assert status.wait_started_at is None
+
+
+def test_failed_wait_notification_does_not_change_result(instruction_handler):
+    callback = mock.Mock(side_effect=RuntimeError("notification failed"))
+    status = ScanStatus(instruction_handler, wait_callback=callback)
+    status.set_done(12)
+    with mock.patch("bec_server.scan_server.scans.scan_status.time.sleep"):
+        assert status.wait(min_wait=0.01) is status
+    assert status.result == 12
+    assert callback.call_count == 1
+    assert status.wait_started_at is None
+
+
+def test_wait_does_not_repeat_unchanged_pending_instructions(instruction_handler):
+    callback = mock.Mock()
+    status = ScanStatus(instruction_handler, wait_callback=callback)
+    status.instruction = _instruction("samx")
+    polls = 0
+
+    def progress(*args, **kwargs):
+        nonlocal polls
+        polls += 1
+        assert callback.call_count == 1
+        if polls == 3:
+            status.set_done()
+            return {status._future}, set()
+        return set(), {status._future}
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=progress
+    ):
+        status.wait()
+    callback.assert_called_once_with(status)
+    assert status.wait_started_at is None
+
+
+def test_wait_notification_state_resets_for_another_wait(instruction_handler):
+    starts = []
+    status = ScanStatus(
+        instruction_handler, wait_callback=lambda obj: starts.append(obj.wait_started_at)
+    )
+    status.instruction = _instruction("samx")
+    with (
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.time.time", side_effect=[1000.0, 1001.0]
+        ),
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+            return_value=(set(), set()),
+        ),
+    ):
+        for _ in range(2):
+            with pytest.raises(TimeoutError):
+                status.wait(timeout=0.1)
+            assert status.wait_started_at is None
+    assert starts == [1000.0, 1001.0]
+
+
+def test_wait_deduplicates_response_copies_with_array_parameters(instruction_handler):
+    import numpy as np
+
+    callback = mock.Mock()
+    status = ScanStatus(
+        instruction_handler, device_instr_id="instruction-1", wait_callback=callback
+    )
+
+    def response():
+        message = _response("running")
+        message.instruction.parameter = {"value": np.array([1.0, 2.0])}
+        message.instruction.metadata = {"device_instr_id": "instruction-1"}
+        return message
+
+    status._update_future(response())
+    polls = 0
+
+    def progress(*args, **kwargs):
+        nonlocal polls
+        polls += 1
+        if polls == 1:
+            status._update_future(response())
+            return set(), {status._future}
+        status.set_done()
+        return {status._future}, set()
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=progress
+    ):
+        status.wait()
+    callback.assert_called_once_with(status)
+
+
+@pytest.mark.parametrize("elapsed", [0.02, 0.2])
+def test_wait_returns_completed_result_before_raising_timeout(instruction_handler, elapsed):
+    status = ScanStatus(instruction_handler)
+    clock = [100.0]
+
+    def complete(futures, *, timeout, return_when):
+        assert timeout == pytest.approx(0.2)
+        clock[0] += elapsed
+        status.set_done(42)
+        return {status._future}, set()
+
+    with (
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.time.monotonic", side_effect=lambda: clock[0]
+        ),
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=complete
+        ),
+    ):
+        assert status.wait(timeout=0.2).result == 42
+
+
+def test_wait_limits_polling_to_remaining_deadline(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    clock = [100.0]
+    poll_timeouts = []
+
+    def advance(futures, *, timeout, return_when):
+        poll_timeouts.append(timeout)
+        clock[0] += timeout
+        return set(), {status._future}
+
+    with (
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.time.monotonic", side_effect=lambda: clock[0]
+        ),
+        mock.patch(
+            "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=advance
+        ),
+    ):
+        with pytest.raises(TimeoutError):
+            status.wait(timeout=0.7)
+    assert poll_timeouts == pytest.approx([0.5, 0.2])
+    assert clock[0] == pytest.approx(100.7)
+
+
+def test_zero_timeout_does_not_poll_pending_status(instruction_handler):
+    status = ScanStatus(instruction_handler)
+    with mock.patch("bec_server.scan_server.scans.scan_status.concurrent.futures.wait") as wait:
+        with pytest.raises(TimeoutError):
+            status.wait(timeout=0)
+    wait.assert_not_called()
+
+
+@pytest.fixture
+def nested_statuses(instruction_handler):
+    """Provide two nested containers and a pending leaf sharing a registry."""
+    registry = {}
+    parent = ScanStatus(instruction_handler, is_container=True, registry=registry)
+    child = ScanStatus(instruction_handler, is_container=True, registry=registry)
+    leaf = ScanStatus(instruction_handler, registry=registry)
+    child.add_status(leaf)
+    parent.add_status(child)
+    for status in (parent, child, leaf):
+        registry[status._device_instr_id] = status
+    return parent, child, leaf, registry
+
+
+def test_nested_container_waits_for_leaf_and_collects_results(nested_statuses):
+    parent, child, leaf, registry = nested_statuses
+    assert parent.done is False
+    assert parent.result is None
+    assert parent._done_checked and child._done_checked and leaf._done_checked
+
+    def complete(futures, **kwargs):
+        assert leaf._future in futures
+        assert not registry
+        leaf.set_done(42)
+        return set(futures), set()
+
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait", side_effect=complete
+    ) as wait:
+        assert parent.wait() is parent
+    wait.assert_called_once()
+    assert parent.done is True
+    assert parent.result == [[42]]
+
+
+@pytest.mark.parametrize("already_failed", [False, True])
+def test_nested_container_propagates_leaf_failure(nested_statuses, already_failed):
+    parent, _, leaf, _ = nested_statuses
+
+    def fail():
+        leaf.set_failed(
+            messages.ErrorInfo(
+                error_message="Nested motor failed",
+                compact_error_message="Nested motor failed",
+                exception_type="RuntimeError",
+            )
+        )
+
+    def fail_during_wait(futures, **kwargs):
+        assert leaf._future in futures
+        fail()
+        return set(futures), set()
+
+    if already_failed:
+        fail()
+    with mock.patch(
+        "bec_server.scan_server.scans.scan_status.concurrent.futures.wait",
+        side_effect=fail_during_wait,
+    ):
+        with pytest.raises(DeviceInstructionError, match="Nested motor failed"):
+            parent.wait()
+
+
+def test_nested_container_times_out_for_pending_leaf(nested_statuses):
+    parent, _, leaf, _ = nested_statuses
+    with pytest.raises(TimeoutError):
+        parent.wait(timeout=0)
+    assert parent.done is False
+    assert not leaf._future.done()
+
+
+def test_completed_nested_container_marks_descendants_checked(nested_statuses):
+    parent, child, leaf, registry = nested_statuses
+    leaf.set_done(7)
+    assert parent.wait().result == [[7]]
+    assert not registry
+    assert parent._done_checked and child._done_checked and leaf._done_checked

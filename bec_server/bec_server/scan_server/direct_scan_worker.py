@@ -79,6 +79,7 @@ class DirectScanWorker:
         scan.actions._update_queue_info_callback = self.update_queue_info
         queue = self.worker.current_instruction_queue_item
         try:
+            scan.actions._hook_broadcaster.start()
             with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
                 scan.actions._initialize_scan()
                 for step in SCAN_SEQUENCE:
@@ -86,7 +87,8 @@ class DirectScanWorker:
                     if not method:
                         raise ScanAbortion(f"Scan is missing required method: {step}")
                     self.check_for_interruption()
-                    method()
+                    with scan.actions._scan_hook_context(step):
+                        method()
                     self.run_post_scan_step(step, scan)
         except ScanAbortion as exc:
             if not self._prepare_exception_cleanup(queue, exc):
@@ -97,7 +99,10 @@ class DirectScanWorker:
                 return
             self._handle_exception(exc)
         finally:
-            self._release_scan_locks(scan)
+            try:
+                scan.actions._hook_broadcaster.stop()
+            finally:
+                self._release_scan_locks(scan)
 
         if queue is None:
             return
@@ -245,7 +250,9 @@ class DirectScanWorker:
         try:
             scan._shutdown_event.clear()
             with self.worker.device_manager._rpc_method(scan.actions.rpc_call):
-                scan.on_exception(hook_exc)
+                # pylint: disable=protected-access
+                with scan.actions._scan_hook_context("on_exception"):
+                    scan.on_exception(hook_exc)
 
         except Exception:
             scan.actions.send_client_info("")

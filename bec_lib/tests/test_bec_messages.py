@@ -1124,3 +1124,32 @@ def test_feedback_message():
     assert res_loaded == msg
     assert res_loaded.username == getpass.getuser()
     assert res_loaded.versions == messages.ServiceVersions._get_version_numbers()
+
+
+def test_scan_hook_message_roundtrip():
+    instruction = messages.DeviceInstructionMessage(
+        device="samx", action="set", parameter={"value": 2}, metadata={"device_instr_id": "move"}
+    )
+    msg = messages.ScanHookMessage(
+        scan_id="scan-id",
+        hook="pre_scan",
+        instructions=[instruction],
+        metadata={"RID": "request-id", "queue_id": "queue-id"},
+    )
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert loaded == msg
+    assert isinstance(loaded.instructions[0], messages.DeviceInstructionMessage)
+    assert messages.ScanHookMessage(scan_id="scan-id", hook="stage").instructions == []
+
+
+def test_scan_hook_wait_fields_are_optional_and_roundtrip():
+    old_update = messages.ScanHookMessage.model_validate(
+        {"scan_id": "scan-id", "hook": "at_each_point", "status": "running", "instructions": []}
+    )
+    assert old_update.waiting is False
+    assert old_update.wait_started_at is None
+    waiting = old_update.model_copy(update={"waiting": True, "wait_started_at": 1791244800.0})
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(waiting))
+    assert loaded == waiting
+    assert loaded.waiting is True
+    assert loaded.wait_started_at == 1791244800.0

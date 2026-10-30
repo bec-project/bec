@@ -1,3 +1,5 @@
+import threading
+import time
 from types import SimpleNamespace
 from unittest import mock
 
@@ -761,3 +763,147 @@ def test_update_queue_info_forwards_to_queue_manager(direct_worker_context):
     direct_worker_context.direct_worker.update_queue_info()
 
     direct_worker_context.queue_manager.send_queue_status.assert_called_once_with()
+
+
+@pytest.mark.parametrize("decorated", [True, False])
+def test_worker_records_lifecycle_hooks_and_flushes_latest(
+    direct_worker_context, make_scan, decorated
+):
+    from bec_server.scan_server.direct_scan_worker import SCAN_SEQUENCE
+
+    scan = make_scan()
+    if not decorated:
+        for hook in SCAN_SEQUENCE:
+            setattr(scan, hook, mock.Mock())
+    _append_scan(direct_worker_context.queue, scan)
+    scan.actions._initialize_scan = mock.Mock()
+    broadcaster = scan.actions._hook_broadcaster
+    with (
+        mock.patch.object(broadcaster, "add", wraps=broadcaster.add) as add,
+        mock.patch.object(direct_worker_context.connector, "send") as publish,
+    ):
+        direct_worker_context.direct_worker.run(scan)
+    updates = [call.args[0] for call in add.call_args_list]
+    assert publish.call_args.args[1] == updates[-1]
+    assert broadcaster._latest_update is None
+    assert [msg.hook for msg in updates if msg.status == "completed"] == SCAN_SEQUENCE
+    assert all(msg.hook != "at_each_point" for msg in updates)
+    assert [(msg.hook, msg.status) for msg in updates].count(("scan_core", "running")) == 1
+    assert [(msg.hook, msg.status) for msg in updates].count(("stage", "running")) == 1
+
+
+def test_worker_flushes_latest_exception_cleanup_update(direct_worker_context, make_scan):
+    scan = make_scan(fail_step="stage")
+    _append_scan(direct_worker_context.queue, scan)
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.queue.run_on_exception_hook = True
+    scan.actions._initialize_scan = mock.Mock()
+    broadcaster = scan.actions._hook_broadcaster
+    with (
+        mock.patch.object(broadcaster, "add", wraps=broadcaster.add) as add,
+        mock.patch.object(direct_worker_context.connector, "send") as publish,
+    ):
+        with pytest.raises(ScanAbortion):
+            direct_worker_context.direct_worker.run(scan)
+    updates = [call.args[0] for call in add.call_args_list]
+    assert publish.call_args.args[1] == updates[-1]
+    assert broadcaster._latest_update is None
+    assert [(msg.hook, msg.status) for msg in updates][-3:] == [
+        ("stage", "error"),
+        ("on_exception", "running"),
+        ("on_exception", "completed"),
+    ]
+    assert all(msg.scan_id == "scan-id" and msg.metadata["RID"] == "rid-1" for msg in updates)
+
+
+@pytest.mark.parametrize("fail_step", [None, "stage"])
+def test_final_broadcast_failure_preserves_scan_outcome(
+    direct_worker_context, make_scan, fail_step
+):
+    scan = make_scan(fail_step=fail_step)
+    _append_scan(direct_worker_context.queue, scan)
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.queue.run_on_exception_hook = True
+    scan.actions._initialize_scan = mock.Mock()
+    registry = direct_worker_context.scan_server.device_lock_registry
+    with (
+        mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"),
+        mock.patch.object(
+            direct_worker_context.connector, "send", side_effect=RuntimeError("Telemetry failed")
+        ),
+        mock.patch.object(registry, "release_all") as release,
+    ):
+        if fail_step is None:
+            direct_worker_context.direct_worker.run(scan)
+            assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
+            assert direct_worker_context.scan_worker.current_instruction_queue_item is None
+            assert direct_worker_context.direct_worker.scan is None
+        else:
+            with pytest.raises(ScanAbortion) as exc:
+                direct_worker_context.direct_worker.run(scan)
+            assert isinstance(exc.value.__cause__, RuntimeError)
+            assert str(exc.value.__cause__) == "stage failed"
+        release.assert_called_once_with("rid-1")
+
+
+@pytest.mark.parametrize("fail_step", [None, "stage"])
+def test_blocked_monitoring_does_not_hold_scan_worker_or_device_locks(
+    direct_worker_context, make_scan, fail_step
+):
+    scan = make_scan(fail_step=fail_step)
+    _append_scan(direct_worker_context.queue, scan)
+    direct_worker_context.scan_worker.current_instruction_queue_item = direct_worker_context.queue
+    direct_worker_context.queue.active_scan = scan
+    direct_worker_context.queue.run_on_exception_hook = True
+    scan.actions._initialize_scan = mock.Mock()
+    broadcaster = scan.actions._hook_broadcaster
+    broadcaster.STOP_TIMEOUT_S = 0.02
+    publishing = threading.Event()
+    release_publication = threading.Event()
+    publisher = threading.Thread(target=broadcaster._flush_scheduled)
+    prepare = scan.prepare_scan
+
+    def block_publication(*args, **kwargs):
+        publishing.set()
+        assert release_publication.wait(5)
+
+    def prepare_scan():
+        prepare()
+        publisher.start()
+        assert publishing.wait(2)
+
+    scan.prepare_scan = prepare_scan
+    registry = direct_worker_context.scan_server.device_lock_registry
+    try:
+        with (
+            mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"),
+            mock.patch.object(
+                direct_worker_context.connector, "send", side_effect=block_publication
+            ),
+            mock.patch.object(registry, "release_all") as release,
+        ):
+            started_at = time.monotonic()
+            if fail_step is None:
+                direct_worker_context.direct_worker.run(scan)
+                assert direct_worker_context.queue.status == InstructionQueueStatus.COMPLETED
+                assert direct_worker_context.scan_worker.current_instruction_queue_item is None
+                assert direct_worker_context.direct_worker.scan is None
+            else:
+                with pytest.raises(ScanAbortion) as exc:
+                    direct_worker_context.direct_worker.run(scan)
+                assert str(exc.value.__cause__) == "stage failed"
+            assert time.monotonic() - started_at < 1
+            assert not release_publication.is_set()
+            release.assert_called_once_with("rid-1")
+            assert broadcaster._latest_update is None
+    finally:
+        release_publication.set()
+        if publisher.ident is not None:
+            publisher.join(2)
+        if broadcaster._finalizer is not None:
+            broadcaster._finalizer.join(2)
+    assert not publisher.is_alive()
+    assert not broadcaster._finalizer.is_alive()
+    assert broadcaster._latest_update is None

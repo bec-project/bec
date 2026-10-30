@@ -654,6 +654,32 @@ class DeviceInstructionMessage(BECMessage):
     parameter: dict
 
 
+class ScanHookMessage(BECMessage):
+    """A scan lifecycle event, optionally including dispatched device instructions.
+
+    Args:
+        scan_id (str): Scan whose lifecycle is being reported.
+        hook (str | None): Active lifecycle hook, or None before a hook has started.
+        status (Literal["running", "completed", "error"]): Hook execution state.
+        instructions (list[DeviceInstructionMessage]): Instructions dispatched in this hook.
+            Only the latest lifecycle or instruction update in each 0.1 second window is sent.
+        waiting (bool): Whether this update was recorded during a device or exposure wait.
+            Wait updates include only pending instructions. The next hook or instruction update
+            replaces the wait; no separate update is emitted when waiting ends.
+        wait_started_at (float | None): Start time of the reported wait, or None for other updates.
+        timestamp (float): Time at which the lifecycle or instruction event was recorded.
+    """
+
+    msg_type: ClassVar[str] = "scan_hook"
+    scan_id: str
+    hook: str | None
+    status: Literal["running", "completed", "error"] = "running"
+    instructions: list[DeviceInstructionMessage] = Field(default_factory=list)
+    timestamp: float = Field(default_factory=time.time)
+    waiting: bool = False
+    wait_started_at: float | None = None
+
+
 class ErrorInfo(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     error_message: str

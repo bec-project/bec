@@ -184,3 +184,55 @@ def test_redis_connector_get_last(connected_connector: RedisConnector, endpoint)
     assert list(connector.get_last(endpoint, count=4)) == [{"data": 1}, {"data": 2}, {"data": 3}]
     assert connector.get_last(endpoint, count=0) is None
     assert connector.get_last(endpoint, count=-1) is None
+
+
+@pytest.mark.parametrize("publication_fails", [False, True])
+def test_bounded_send_isolates_timeouts_and_closes_connection(
+    connected_connector, monkeypatch, publication_fails
+):
+    client = connected_connector._managed_connection._redis_conn
+    source_pool = client.connection_pool
+    original_options = source_pool.connection_kwargs.copy()
+    original_publish = type(client).publish
+    original_disconnect = type(source_pool).disconnect
+    publishers = []
+    disconnected = []
+
+    def publish(publisher, topic, message):
+        publishers.append(publisher)
+        if publication_fails:
+            raise RuntimeError("Publication failed")
+        return original_publish(publisher, topic, message)
+
+    def disconnect(pool, *args, **kwargs):
+        disconnected.append(pool)
+        return original_disconnect(pool, *args, **kwargs)
+
+    monkeypatch.setattr(type(client), "publish", publish)
+    monkeypatch.setattr(type(source_pool), "disconnect", disconnect)
+    event = messages.ScanHookMessage(scan_id="scan-id", hook="stage")
+    if publication_fails:
+        with pytest.raises(RuntimeError, match="Publication failed"):
+            connected_connector.send(MessageEndpoints.scan_hook(), event, timeout_s=0.1)
+    else:
+        connected_connector.send(MessageEndpoints.scan_hook(), event, timeout_s=0.1)
+    pool = publishers[0].connection_pool
+    assert pool is not source_pool
+    assert pool in disconnected
+    assert source_pool not in disconnected
+    assert source_pool.connection_kwargs == original_options
+    assert pool.connection_kwargs["socket_timeout"] == 0.1
+    assert pool.connection_kwargs["socket_connect_timeout"] == 0.1
+    assert pool.connection_kwargs["retry"]._retries == 0
+    assert pool.connection_kwargs["redis_connect_func"] is None
+    assert pool.connection_kwargs["db"] == original_options["db"]
+
+
+@pytest.mark.parametrize("timeout_s, use_pipeline", [(0, False), (-1, False), (0.1, True)])
+def test_bounded_send_rejects_invalid_timeout_or_pipeline(
+    connected_connector, timeout_s, use_pipeline
+):
+    event = messages.ScanHookMessage(scan_id="scan-id", hook="stage")
+    pipe = connected_connector.pipeline() if use_pipeline else None
+    with pytest.raises(ValueError, match="positive timeout and no pipeline"):
+        connected_connector.send(MessageEndpoints.scan_hook(), event, pipe, timeout_s=timeout_s)

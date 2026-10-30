@@ -528,7 +528,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             return
         self.message_sent.append({"queue": topic, "msg": msg})
 
-    def send(self, topic, msg, pipe=None):
+    def send(self, topic, msg, pipe=None, *, timeout_s=None):
         if not isinstance(msg, messages.BECMessage):
             raise TypeError("Message must be a BECMessage")
         return self.raw_send(topic, msg, pipe)

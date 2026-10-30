@@ -797,6 +797,19 @@ class MessageEndpoints:
         )
 
     @staticmethod
+    def scan_hook() -> EndpointInfo:
+        """Endpoint for the latest scan hook or instruction update in each 0.1 second window.
+
+        Returns:
+            EndpointInfo: Endpoint carrying individual messages.ScanHookMessage updates.
+        """
+        return EndpointInfo(
+            endpoint=f"{EndpointType.INFO.value}/scans/scan_hook",
+            message_type=messages.ScanHookMessage,
+            message_op=MessageOp.SEND,
+        )
+
+    @staticmethod
     def scan_progress():
         """
         Endpoint for scan progress. This endpoint is used to publish the scan progress using
