@@ -1914,6 +1914,46 @@ def test_queue_order_change(dormant_scan_queue, order_msg, position):
             assert queue.queue[ii].scans[0].scan_info.scan_id != target_id
 
 
+@pytest.mark.parametrize(
+    "action, target_index, target_position, position",
+    [
+        ("move_top", 5, None, 1),
+        ("move_to", 5, 0, 1),
+        ("move_up", 1, None, 1),
+        ("move_bottom", 0, None, 0),
+    ],
+)
+@pytest.mark.parametrize("status", [ScanQueueStatus.RUNNING, ScanQueueStatus.PAUSED])
+def test_queue_order_change_keeps_running_scan_first(
+    dormant_scan_queue, action, target_index, target_position, position, status
+):
+    queue = dormant_scan_queue
+    queue_manager = queue.queue_manager
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={
+            "args": {"samx": (-5, 5)},
+            "kwargs": {"steps": 3, "system_config": {}, "relative": False},
+        },
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    for _ in range(10):
+        queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    running = queue.queue[0]
+    queue.active_instruction_queue = running
+    queue.status = status
+
+    target_id = queue.queue[target_index].scans[0].scan_info.scan_id
+    queue_manager._handle_scan_order_change(
+        messages.ScanQueueOrderMessage(
+            scan_id=target_id, queue="primary", action=action, target_position=target_position
+        )
+    )
+    assert queue.queue[0] is running
+    assert queue.queue[position].scans[0].scan_info.scan_id == target_id
+
+
 def test_add_lock_to_queue(queuemanager_mock):
     """Test adding a lock to a queue"""
     queue_manager = queuemanager_mock()
@@ -2312,3 +2352,43 @@ def test_status_setter_calls_send_queue_status(dormant_scan_queue):
     with mock.patch.object(queue.queue_manager, "send_queue_status") as mock_send:
         queue.status = ScanQueueStatus.RUNNING
         mock_send.assert_called_once()
+
+
+def test_paused_reorder_never_restarts_the_finished_active_item(dormant_scan_queue):
+    """Moving a scan to the top of a paused queue must not put it in front of the paused scan."""
+    queue = dormant_scan_queue
+    queue_manager = queue.queue_manager
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={
+            "args": {"samx": (-5, 5)},
+            "kwargs": {"steps": 3, "system_config": {}, "relative": False},
+        },
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    for _ in range(3):
+        queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    running, waiting, moved = list(queue.queue)
+    queue.active_instruction_queue = running
+    running.move_to_next_scan()
+    running.status = InstructionQueueStatus.RUNNING
+    queue.status = ScanQueueStatus.PAUSED
+
+    queue_manager._handle_scan_order_change(
+        messages.ScanQueueOrderMessage(
+            scan_id=moved.scans[0].scan_info.scan_id, queue="primary", action="move_top"
+        )
+    )
+    assert list(queue.queue) == [running, moved, waiting]
+
+    # resume: the paused scan finishes, then the moved one runs next
+    queue.status = ScanQueueStatus.RUNNING
+    running.status = InstructionQueueStatus.COMPLETED
+    assert queue._next_instruction_queue() is True
+    assert queue.active_instruction_queue is moved
+    moved.move_to_next_scan()
+    moved.status = InstructionQueueStatus.COMPLETED
+    assert queue._next_instruction_queue() is True
+    assert queue.active_instruction_queue is waiting
+    assert running not in queue.queue

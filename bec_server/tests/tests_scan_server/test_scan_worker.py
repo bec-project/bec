@@ -167,7 +167,8 @@ def test_shutdown_interrupts_current_scan_wait(reorder):
                         scan_id="pending-scan", action="move_top", queue="primary"
                     )
                 )
-                assert queue.queue[0] is pending
+                # nothing may move in front of the active item, paused or not
+                assert list(queue.queue) == [active, pending]
 
             shutdown_thread.start()
             assert shutdown_finished.wait(timeout=2), "Shutdown did not interrupt the active scan"
