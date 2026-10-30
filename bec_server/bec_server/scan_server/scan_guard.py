@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_server.scan_server.scan_queue import ScanQueueStatus
 
 logger = bec_logger.logger
 
@@ -308,28 +307,21 @@ class ScanGuard:
             logger.error(f"Invalid queue: {target_queue}")
             self._send_scan_queue_order_change_response(False, f"Invalid queue: {target_queue}")
             return
-        if self.parent.queue_manager.queues[target_queue].status != ScanQueueStatus.PAUSED:
-            logger.error(f"Queue {target_queue} is not paused.")
-            self._send_scan_queue_order_change_response(
-                False, f"Queue {target_queue} is not paused. Cannot move scans."
-            )
-            return
-        if msg.action == "move_to" and msg.target_position is None:
-            logger.error("Missing target_position")
-            self._send_scan_queue_order_change_response(
-                False, "Missing target_position for move_to"
-            )
-            return
-
         queue = self.parent.queue_manager.queues[target_queue]
-        for scan in queue.queue:
-            if msg.scan_id in scan.scan_id:
-                break
-        else:
-            logger.error(f"Scan {msg.scan_id} not found in queue {target_queue}")
-            self._send_scan_queue_order_change_response(
-                False, f"Scan {msg.scan_id} not found in queue {target_queue}"
-            )
+        with queue._lock:  # pylint: disable=protected-access
+            active = queue.active_instruction_queue
+            if active is not None and msg.scan_id in active.scan_id:
+                rejection = "The running scan cannot be moved."
+            elif msg.action == "move_to" and msg.target_position is None:
+                rejection = "Missing target_position for move_to"
+            elif not any(msg.scan_id in scan.scan_id for scan in queue.queue):
+                rejection = f"Scan {msg.scan_id} not found in queue {target_queue}"
+            else:
+                rejection = None
+
+        if rejection is not None:
+            logger.error(rejection)
+            self._send_scan_queue_order_change_response(False, rejection)
             return
         self.device_manager.connector.send(sqoc, msg)
         self._send_scan_queue_order_change_response(True, "Order change accepted")

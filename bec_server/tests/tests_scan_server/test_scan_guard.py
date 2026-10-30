@@ -1,4 +1,5 @@
 import threading
+from collections import deque
 from unittest import mock
 
 import pytest
@@ -449,9 +450,17 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
     [
         (
             messages.ScanQueueOrderMessage(
-                queue="primary", scan_id="scan_id", action="move_bottom"
+                queue="primary", scan_id="waiting_id", action="move_bottom"
             ),
             True,
+            True,
+            "",
+        ),
+        (
+            messages.ScanQueueOrderMessage(
+                queue="primary", scan_id="waiting_id", action="move_bottom"
+            ),
+            False,
             True,
             "",
         ),
@@ -461,7 +470,15 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
             ),
             False,
             False,
-            "Queue primary is not paused. Cannot move scans.",
+            "The running scan cannot be moved.",
+        ),
+        (
+            messages.ScanQueueOrderMessage(
+                queue="primary", scan_id="scan_id", action="move_bottom"
+            ),
+            True,
+            False,
+            "The running scan cannot be moved.",
         ),
         (
             messages.ScanQueueOrderMessage(queue="wrong", scan_id="scan_id", action="move_bottom"),
@@ -470,7 +487,7 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
             "Invalid queue: wrong",
         ),
         (
-            messages.ScanQueueOrderMessage(queue="primary", scan_id="scan_id", action="move_to"),
+            messages.ScanQueueOrderMessage(queue="primary", scan_id="waiting_id", action="move_to"),
             True,
             False,
             "Missing target_position for move_to",
@@ -494,16 +511,18 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
     class MockQueue:
         def __init__(self):
             self.signal_event = threading.Event()
-            self.queue = [MockInstructionItem()]
+            self._lock = threading.Lock()
+            self.queue = [MockInstructionItem("scan_id"), MockInstructionItem("waiting_id")]
             self.status = ScanQueueStatus.PAUSED if queue_paused else ScanQueueStatus.RUNNING
+            self.active_instruction_queue = self.queue[0]
             self._cancel_auto_shutdown_timer_locked = mock.Mock()
 
         def stop_worker(self):
             pass
 
     class MockInstructionItem:
-        def __init__(self):
-            self.scan_id = ["scan_id"]
+        def __init__(self, scan_id: str):
+            self.scan_id = [scan_id]
 
     sg.parent.queue_manager.queues = {"primary": MockQueue()}
     msg_obj = MessageObject(MessageEndpoints.scan_queue_order_change_request(), msg)
@@ -520,3 +539,81 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
             in sg.device_manager.connector.send.mock_calls
         )
         assert success_call not in sg.device_manager.connector.send.calls
+
+
+def test_queue_order_change_allows_waiting_scans_in_running_queue(scan_guard_mock):
+    sg = scan_guard_mock
+    if sg.parent.queue_manager:
+        sg.parent.queue_manager.shutdown()
+    running = mock.MagicMock(scan_id=["running_id"])
+    waiting = mock.MagicMock(scan_id=["waiting_id"])
+    queue = mock.MagicMock(
+        queue=[running, waiting], status=ScanQueueStatus.RUNNING, active_instruction_queue=running
+    )
+    sg.parent.queue_manager.queues = {"primary": queue}
+    msg = messages.ScanQueueOrderMessage(
+        queue="primary", scan_id="waiting_id", action="move_to", target_position=1
+    )
+    sg._scan_queue_order_callback(
+        MessageObject(MessageEndpoints.scan_queue_order_change_request(), msg)
+    )
+    assert (
+        mock.call(MessageEndpoints.scan_queue_order_change(), msg)
+        in sg.device_manager.connector.send.mock_calls
+    )
+
+
+def test_queue_order_validation_excludes_worker_advancement(scan_guard_mock):
+    """Keep worker advancement outside validation and allow it during publication."""
+    sg = scan_guard_mock
+    sg.parent.queue_manager.shutdown()
+    checking = threading.Event()
+    worker_attempted = threading.Event()
+    worker_finished = threading.Event()
+
+    class CheckedDeque(deque):
+        def __iter__(self):
+            iterator = super().__iter__()
+            checking.set()
+            assert worker_attempted.wait(2)
+            worker_finished.wait(0.1)
+            return iterator
+
+    running = mock.Mock(scan_id=["running_id"])
+    waiting = mock.Mock(scan_id=["waiting_id"])
+    queue = mock.MagicMock(
+        queue=CheckedDeque([running, waiting]),
+        active_instruction_queue=running,
+        _lock=threading.Lock(),
+    )
+    sg.parent.queue_manager.queues = {"primary": queue}
+
+    def advance_worker():
+        assert checking.wait(2)
+        worker_attempted.set()
+        with queue._lock:
+            queue.queue.popleft()
+        worker_finished.set()
+
+    def send_without_queue_lock(*_args, **_kwargs):
+        assert worker_finished.wait(2), "Publishing must release the queue lock"
+
+    sg.device_manager.connector.send.side_effect = send_without_queue_lock
+    worker = threading.Thread(target=advance_worker)
+    worker.start()
+    msg = messages.ScanQueueOrderMessage(queue="primary", scan_id="waiting_id", action="move_top")
+    try:
+        sg._handle_scan_order_change(msg)
+    finally:
+        worker.join(2)
+    assert not worker.is_alive()
+    assert worker_finished.is_set()
+    sg.device_manager.connector.send.assert_has_calls(
+        [
+            mock.call(MessageEndpoints.scan_queue_order_change(), msg),
+            mock.call(
+                MessageEndpoints.scan_queue_order_change_response(),
+                messages.RequestResponseMessage(accepted=True, message="Order change accepted"),
+            ),
+        ]
+    )
