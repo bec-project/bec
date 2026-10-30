@@ -461,7 +461,7 @@ def test_check_valid_request_raises_for_empty_request(scan_guard_mock):
             ),
             False,
             False,
-            "Queue primary is not paused. Cannot move scans.",
+            "The running scan cannot be moved.",
         ),
         (
             messages.ScanQueueOrderMessage(queue="wrong", scan_id="scan_id", action="move_bottom"),
@@ -496,6 +496,7 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
             self.signal_event = threading.Event()
             self.queue = [MockInstructionItem()]
             self.status = ScanQueueStatus.PAUSED if queue_paused else ScanQueueStatus.RUNNING
+            self.active_instruction_queue = self.queue[0]
             self._cancel_auto_shutdown_timer_locked = mock.Mock()
 
         def stop_worker(self):
@@ -520,3 +521,25 @@ def test_check_queue_order_callback(scan_guard_mock, msg, queue_paused, valid, r
             in sg.device_manager.connector.send.mock_calls
         )
         assert success_call not in sg.device_manager.connector.send.calls
+
+
+def test_queue_order_change_allows_waiting_scans_in_running_queue(scan_guard_mock):
+    sg = scan_guard_mock
+    if sg.parent.queue_manager:
+        sg.parent.queue_manager.shutdown()
+    running = mock.MagicMock(scan_id=["running_id"])
+    waiting = mock.MagicMock(scan_id=["waiting_id"])
+    queue = mock.MagicMock(
+        queue=[running, waiting], status=ScanQueueStatus.RUNNING, active_instruction_queue=running
+    )
+    sg.parent.queue_manager.queues = {"primary": queue}
+    msg = messages.ScanQueueOrderMessage(
+        queue="primary", scan_id="waiting_id", action="move_to", target_position=1
+    )
+    sg._scan_queue_order_callback(
+        MessageObject(MessageEndpoints.scan_queue_order_change_request(), msg)
+    )
+    assert (
+        mock.call(MessageEndpoints.scan_queue_order_change(), msg)
+        in sg.device_manager.connector.send.mock_calls
+    )

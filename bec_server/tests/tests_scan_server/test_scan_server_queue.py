@@ -1914,6 +1914,45 @@ def test_queue_order_change(dormant_scan_queue, order_msg, position):
             assert queue.queue[ii].scans[0].scan_info.scan_id != target_id
 
 
+@pytest.mark.parametrize(
+    "action, target_index, target_position, position",
+    [
+        ("move_top", 5, None, 1),
+        ("move_to", 5, 0, 1),
+        ("move_up", 1, None, 1),
+        ("move_bottom", 0, None, 0),
+    ],
+)
+def test_queue_order_change_keeps_running_scan_first(
+    dormant_scan_queue, action, target_index, target_position, position
+):
+    queue = dormant_scan_queue
+    queue_manager = queue.queue_manager
+    msg = messages.ScanQueueMessage(
+        scan_type="line_scan",
+        parameter={
+            "args": {"samx": (-5, 5)},
+            "kwargs": {"steps": 3, "system_config": {}, "relative": False},
+        },
+        queue="primary",
+        metadata={"RID": "something"},
+    )
+    for _ in range(10):
+        queue_manager.add_to_queue(scan_queue="primary", msg=msg)
+    running = queue.queue[0]
+    queue.active_instruction_queue = running
+    queue.status = ScanQueueStatus.RUNNING
+
+    target_id = queue.queue[target_index].scans[0].scan_info.scan_id
+    queue_manager._handle_scan_order_change(
+        messages.ScanQueueOrderMessage(
+            scan_id=target_id, queue="primary", action=action, target_position=target_position
+        )
+    )
+    assert queue.queue[0] is running
+    assert queue.queue[position].scans[0].scan_info.scan_id == target_id
+
+
 def test_add_lock_to_queue(queuemanager_mock):
     """Test adding a lock to a queue"""
     queue_manager = queuemanager_mock()

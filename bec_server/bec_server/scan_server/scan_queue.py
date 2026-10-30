@@ -237,13 +237,20 @@ class QueueManager:
             msg (messages.ScanQueueOrderMessage): ScanQueueOrderMessage
 
         """
-        with self._lock:
+        target_queue = msg.queue
+        # take the worker's queue lock first (same order as the worker) so the running item
+        # cannot be popped while we decide what may move
+        with self.queues[target_queue]._lock, self._lock:
             logger.info(f"Handling scan queue order change: {msg}")
-            target_queue = msg.queue
             queue = self.queues[target_queue].queue
             queue_item = self._get_queue_item_by_scan_id(msg)
             if not queue_item:
                 logger.error(f"Scan {msg.scan_id} not found in queue {target_queue}")
+                return
+            # in a running queue, the active item stays first and nothing moves in front of it
+            first = self._first_movable_index(target_queue)
+            if queue.index(queue_item) < first:
+                logger.error(f"Scan {msg.scan_id} is running and cannot be moved")
                 return
 
             if msg.action == "move_to":
@@ -252,7 +259,7 @@ class QueueManager:
                     logger.error("Missing target_position")
                     return
 
-                position = max(0, min(msg.target_position, len(queue) - 1))
+                position = max(first, min(msg.target_position, len(queue) - 1))
 
                 queue.remove(queue_item)
                 queue.insert(position, queue_item)
@@ -260,7 +267,7 @@ class QueueManager:
             if msg.action == "move_up":
                 # move the scan up by one position
                 idx = queue.index(queue_item)
-                if idx == 0:
+                if idx <= first:
                     return
                 queue.remove(queue_item)
                 queue.insert(idx - 1, queue_item)
@@ -276,7 +283,7 @@ class QueueManager:
             if msg.action == "move_top":
                 # move the scan to the top of the queue
                 queue.remove(queue_item)
-                queue.insert(0, queue_item)
+                queue.insert(first, queue_item)
 
             if msg.action == "move_bottom":
                 # move the scan to the bottom of the queue
@@ -284,6 +291,19 @@ class QueueManager:
                 queue.append(queue_item)
 
             self.send_queue_status()
+
+    def _first_movable_index(self, queue_name: str) -> int:
+        """Index of the first queue item that may be moved: 1 while an item runs, else 0."""
+        scan_queue = self.queues[queue_name]
+        active = scan_queue.active_instruction_queue
+        if (
+            scan_queue.status != ScanQueueStatus.PAUSED
+            and active is not None
+            and scan_queue.queue
+            and scan_queue.queue[0] is active
+        ):
+            return 1
+        return 0
 
     def _get_queue_item_by_scan_id(
         self, msg: messages.ScanQueueOrderMessage

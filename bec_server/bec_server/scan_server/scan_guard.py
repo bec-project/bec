@@ -308,11 +308,15 @@ class ScanGuard:
             logger.error(f"Invalid queue: {target_queue}")
             self._send_scan_queue_order_change_response(False, f"Invalid queue: {target_queue}")
             return
-        if self.parent.queue_manager.queues[target_queue].status != ScanQueueStatus.PAUSED:
-            logger.error(f"Queue {target_queue} is not paused.")
-            self._send_scan_queue_order_change_response(
-                False, f"Queue {target_queue} is not paused. Cannot move scans."
-            )
+        queue = self.parent.queue_manager.queues[target_queue]
+        active = queue.active_instruction_queue
+        if (
+            queue.status != ScanQueueStatus.PAUSED
+            and active is not None
+            and msg.scan_id in active.scan_id
+        ):
+            logger.error(f"Scan {msg.scan_id} is running in queue {target_queue}.")
+            self._send_scan_queue_order_change_response(False, "The running scan cannot be moved.")
             return
         if msg.action == "move_to" and msg.target_position is None:
             logger.error("Missing target_position")
@@ -321,7 +325,6 @@ class ScanGuard:
             )
             return
 
-        queue = self.parent.queue_manager.queues[target_queue]
         for scan in queue.queue:
             if msg.scan_id in scan.scan_id:
                 break
