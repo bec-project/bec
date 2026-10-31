@@ -46,6 +46,12 @@ class DeviceServerMock(DeviceServer):
         pass
 
 
+def track_status(server, native, instruction, device):
+    """Control native hardware in tests while observing its neutral server context."""
+    target = server.device_provider.wrap(device)
+    return server._add_status_object_info(target.operation(native), instruction, target)
+
+
 @pytest.fixture
 def device_server_mock(dm_with_devices):
     device_manager = dm_with_devices
@@ -257,7 +263,8 @@ def test_shutdown_closes_connector_before_joining_blocked_warning(device_server_
 
             device_server_mock.shutdown()
 
-            close.assert_called_once()
+            # The early close unblocks diagnostics; BECService repeats idempotent cleanup.
+            assert close.call_count == 2
             assert warning_wait_results == [True]
             assert not thread.is_alive()
             assert callback_monitor._thread is None
@@ -295,16 +302,18 @@ def test_device_server_status_callback(
 
     # Status object with obj=None, should use device from obj_ref
     status_obj_None = StatusBase(obj=None)
-    device_server._add_status_object_info(status_obj_None, instruction=instr, device=dev)
+    context_status_obj_None = track_status(
+        device_server, status_obj_None, instruction=instr, device=dev
+    )
     with mock.patch.object(device_server, "_read_device") as mock_read_device:
-        device_server.status_callback(status_obj_None)
+        device_server.status_callback(context_status_obj_None)
         mock_read_device.assert_called_once_with(instr, new_status=False)
 
     # Status object with obj set
     status = StatusBase(obj=dev)
-    device_server._add_status_object_info(status, instruction=instr, device=dev)
+    context_status = track_status(device_server, status, instruction=instr, device=dev)
     with mock.patch.object(device_server, "_read_device") as mock_read_device:
-        device_server.status_callback(status)
+        device_server.status_callback(context_status)
         mock_read_device.assert_called_once_with(instr, new_status=False)
 
     # Status object, but missing object_info. This should log an error and likely raises
@@ -348,9 +357,10 @@ def test_status_callback_uses_requested_target_for_delegated_status(
     )
     status = DeviceStatus(device.confirm_energy)
     device_server = device_server_mock
-    device_server._add_status_object_info(status, instr, target)
+    context_status = track_status(device_server, status, instr, target)
     if nested_target:
-        status.sub_id = 42
+        subscription = mock.Mock()
+        context_status.subscription = subscription
     if success:
         status.set_finished()
     else:
@@ -363,12 +373,13 @@ def test_status_callback_uses_requested_target_for_delegated_status(
         mock.patch.object(target, "unsubscribe") as unsubscribe_target,
         mock.patch.object(device.confirm_energy, "unsubscribe") as unsubscribe_confirmation,
     ):
-        device_server.status_callback(status)
+        device_server.status_callback(context_status)
 
     read_device.assert_called_once_with(instr, new_status=False)
     read_configuration.assert_not_called()
     if nested_target:
-        unsubscribe_target.assert_called_once_with(42)
+        subscription.close.assert_called_once_with()
+        unsubscribe_target.assert_not_called()
     else:
         unsubscribe_target.assert_not_called()
     unsubscribe_confirmation.assert_not_called()
@@ -404,7 +415,7 @@ def test_device_server_status_callback_response_includes_error_info(
     )
 
     status = DeviceStatus(dev)
-    device_server._add_status_object_info(status, instruction=instr, device=dev)
+    context_status = track_status(device_server, status, instruction=instr, device=dev)
     if status_success:
         status.set_finished()
     else:
@@ -412,7 +423,7 @@ def test_device_server_status_callback_response_includes_error_info(
 
     with mock.patch.object(device_server, "_read_device") as mock_read_device:
         with mock.patch.object(device_server.connector, "xadd") as xadd_mock:
-            device_server.status_callback(status)
+            device_server.status_callback(context_status)
 
     mock_read_device.assert_called_once_with(instr, new_status=False)
     xadd_mock.assert_called_once()
@@ -447,7 +458,7 @@ def test_motion_readback_preserves_instruction_result(
         metadata={"stream": "primary", "device_instr_id": "diid", "RID": "test"},
     )
     status = DeviceStatus(device)
-    device_server._add_status_object_info(status, instruction=instr, device=device)
+    context_status = track_status(device_server, status, instruction=instr, device=device)
     if success:
         status.set_finished()
     else:
@@ -457,7 +468,8 @@ def test_motion_readback_preserves_instruction_result(
     handler.add_request(instr, num_status_objects=1)
     signals = {device.name: {"value": 5, "timestamp": 1234}}
     with mock.patch.object(device, "read", return_value=signals):
-        handler.add_status_object("diid", status)
+        handler.add_status_object("diid", context_status)
+        assert context_status.service_done.wait(5)
 
     responses = [
         sent["msg"]
@@ -501,7 +513,7 @@ def test_motion_readback_keeps_other_set_instruction_pending(
     handler = device_server.requests_handler
     devices = [device_server.device_manager.devices[name].obj for name in ("samx", "samy")]
     statuses = [DeviceStatus(device) for device in devices]
-    callbacks_finished = [threading.Event(), threading.Event()]
+    contexts = []
     instructions = [
         messages.DeviceInstructionMessage(
             device=device.name,
@@ -525,20 +537,23 @@ def test_motion_readback_keeps_other_set_instruction_pending(
         ) as second_read,
     ):
         try:
-            for instr, status, event in zip(instructions, statuses, callbacks_finished):
+            for instr in instructions:
                 device_server.handle_device_instructions(instr)
-                status.add_callback(lambda _, event=event: event.set())
+                contexts.append(
+                    handler.get_request(instr.metadata["device_instr_id"])["status_objects"][0]
+                )
             first_set.assert_called_once_with(5)
             second_set.assert_called_once_with(5)
             second_request = handler.get_request("samy")
-            assert second_request["status_objects"] == [statuses[1]]
+            assert len(second_request["status_objects"]) == 1
+            assert second_request["status_objects"][0].target.identity.root == "samy"
             assert second_request["num_status_objects"] == 1
 
             if first_success:
                 statuses[0].set_finished()
             else:
                 statuses[0].set_exception(RuntimeError("first motor failed"))
-            assert callbacks_finished[0].wait(timeout=5)
+            assert contexts[0].service_done.wait(timeout=5)
 
             assert handler.get_request("samx") is None
             assert handler.get_request("samy") is second_request
@@ -557,7 +572,7 @@ def test_motion_readback_keeps_other_set_instruction_pending(
             for status, success, event, message in zip(
                 statuses,
                 (first_success, second_success),
-                callbacks_finished,
+                contexts,
                 ("first motor failed", "second motor failed"),
             ):
                 if not status.done:
@@ -565,7 +580,7 @@ def test_motion_readback_keeps_other_set_instruction_pending(
                         status.set_finished()
                     else:
                         status.set_exception(RuntimeError(message))
-                assert event.wait(timeout=5)
+                assert event.service_done.wait(timeout=5)
         second_read.assert_called_once_with()
 
     responses = [
@@ -615,7 +630,6 @@ def test_pending_motion_readback_error_finishes_instruction(
         ),
         metadata={"device_instr_id": "diid", "RID": "test"},
     )
-    callbacks_finished = threading.Event()
 
     def read():
         if status.done:
@@ -627,12 +641,12 @@ def test_pending_motion_readback_error_finishes_instruction(
         mock.patch.object(device.obj, "read", side_effect=read),
     ):
         device_server.handle_device_instructions(instr)
-        status.add_callback(lambda _: callbacks_finished.set())
+        context = device_server.requests_handler.get_request("diid")["status_objects"][0]
         if motion_fails:
             status.set_exception(ValueError("motor failed"))
         else:
             status.set_finished()
-        assert callbacks_finished.wait(timeout=5), "Status callbacks did not finish"
+        assert context.service_done.wait(timeout=5), "Service callback did not finish"
 
     responses = [
         sent["msg"]
@@ -1132,8 +1146,12 @@ def test_broadcast_scan_device_info_publishes_device_records(device_server_mock)
     expected_info = detector.preview.signal_info
 
     device_server_mock.device_manager.devices = {
-        "eiger": SimpleNamespace(obj=detector),
-        "samx": SimpleNamespace(obj=Signal(name="samx", value=0)),
+        "eiger": SimpleNamespace(
+            obj=detector, handler=device_server_mock.device_provider.wrap(detector)
+        ),
+        "samx": SimpleNamespace(
+            handler=device_server_mock.device_provider.wrap(Signal(name="samx", value=0))
+        ),
     }
     device_server_mock.connector.xadd = mock.MagicMock()
     instructions = messages.DeviceInstructionMessage(
@@ -1186,7 +1204,11 @@ def test_broadcast_scan_device_info_uses_runtime_metadata(device_server_mock):
     signal.signal_info = runtime_info
     signal.describe = mock.Mock(side_effect=AssertionError("Use the live signal_info model"))
 
-    device_server_mock.device_manager.devices = {"eiger": SimpleNamespace(obj=detector)}
+    device_server_mock.device_manager.devices = {
+        "eiger": SimpleNamespace(
+            obj=detector, handler=device_server_mock.device_provider.wrap(detector)
+        )
+    }
     device_server_mock.connector.xadd = mock.MagicMock()
     instructions = messages.DeviceInstructionMessage(
         device="eiger",
@@ -1209,8 +1231,14 @@ def test_broadcast_scan_device_info_omits_empty_devices(device_server_mock, devi
         plain = Cpt(Signal, value=0)
 
     device_server_mock.device_manager.devices = {
-        "samx": SimpleNamespace(obj=Signal(name="samx", value=0), enabled=True),
-        "empty": SimpleNamespace(obj=EmptyDetector(name="empty"), enabled=True),
+        "samx": SimpleNamespace(
+            handler=device_server_mock.device_provider.wrap(Signal(name="samx", value=0)),
+            enabled=True,
+        ),
+        "empty": SimpleNamespace(
+            handler=device_server_mock.device_provider.wrap(EmptyDetector(name="empty")),
+            enabled=True,
+        ),
     }
     device_server_mock.connector.xadd = mock.MagicMock()
     instructions = messages.DeviceInstructionMessage(
@@ -1382,7 +1410,8 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
             device_server.handle_device_instructions(instructions)
             request_info = device_server.requests_handler.get_request(instr_id="diid")
             assert len(request_info["status_objects"]) == 1
-            assert id(status) == id(request_info["status_objects"][0])
+            assert request_info["status_objects"][0].target.identity.root == "eiger"
+            assert not hasattr(status, "instruction")
             assert status.done is False
             assert send_response_mock.call_count == 2
             assert send_response_mock.call_args_list[0] == mock.call("diid", None, False)
@@ -1391,6 +1420,7 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
             )
             status.set_finished()
             finished_thread_event.wait()
+            assert request_info["status_objects"][0].service_done.wait(5)
             assert status.done is True
             assert send_response_mock.call_count == 3
             assert send_response_mock.call_args == mock.call(
@@ -1924,7 +1954,8 @@ def test_request_handler_ignores_response_if_stop_id(device_server_mock, stop_id
 
     status = StatusBase()
     device_server.requests_handler.add_request(request, num_status_objects=1)
-    device_server.requests_handler.add_status_object("diid", status)
+    context = track_status(device_server, status, request, Device(name="test_device"))
+    device_server.requests_handler.add_status_object("diid", context)
 
     with mock.patch.object(device_server.connector, "send") as send_mock:
         with mock.patch.object(device_server, "stop_devices") as stop_mock:
@@ -1947,9 +1978,11 @@ def test_request_handler_update_instruction_uses_snapshot_when_request_removed(d
 
     status = StatusBase()
     status.set_finished()
+    context = track_status(device_server, status, request, Device(name="test_device"))
+    context.processed = True
     request_info = {
         "instr": request,
-        "status_objects": [status],
+        "status_objects": [context],
         "num_status_objects": 1,
         "done": False,
         "is_status_obj": True,
@@ -1963,3 +1996,32 @@ def test_request_handler_update_instruction_uses_snapshot_when_request_removed(d
             device_server.requests_handler._update_instruction("diid", is_status_obj=True)
 
     set_finished_mock.assert_called_once_with("diid", success=True)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_immediate_rpc_set_first_refresh_failure_keeps_error_envelope(device_server_mock):
+    server = device_server_mock
+    device = server.device_manager.devices.samx
+    device.obj._kind = Kind.normal
+    device._config["onFailure"] = OnFailure.RAISE
+    status = DeviceStatus(device.obj)
+    status.set_finished()
+    instruction = messages.DeviceInstructionMessage(
+        device="samx",
+        action="rpc",
+        parameter={"func": "set", "args": [5], "rpc_id": "rpc-id"},
+        metadata={"device_instr_id": "diid", "RID": "test"},
+    )
+    with (
+        mock.patch.object(device.obj, "set", return_value=status),
+        mock.patch.object(device.obj, "read", side_effect=RuntimeError("first refresh failed")),
+    ):
+        server.handle_device_instructions(instruction)
+    rpc = [
+        entry["msg"]
+        for entry in server.connector.message_sent
+        if isinstance(entry["msg"], messages.DeviceRPCMessage)
+    ]
+    assert len(rpc) == 1
+    assert rpc[0].success is False
+    assert "first refresh failed" in rpc[0].out.error_message

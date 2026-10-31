@@ -51,6 +51,7 @@ dev = [
     "isort~=5.13, >=5.13.2",
     "pandas>=2,<4",
     "pylint>=3,<5",
+    "pyright>=1.1.402,<2",
     "pytest>=8,<10",
     "pytest-random-order~=1.1",
     "pytest-timeout~=2.2",

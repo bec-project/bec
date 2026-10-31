@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import traceback
 from contextlib import redirect_stdout
+from dataclasses import replace
 from io import StringIO
 from typing import TYPE_CHECKING, Any, cast
 
-import ophyd
-
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.device_backend import DeviceHandler, ReadCategory, RPCResult
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.devices import is_serializable
 
 logger = bec_logger.logger
@@ -49,6 +48,11 @@ class RPCHandler:
                 device = cast(str, instr.device)
                 self.device_server.assert_device_is_enabled(instr)
                 res = self.process_rpc_instruction(instr)
+                request = self.requests_handler.get_request(instr.metadata["device_instr_id"])
+                if request and not request["status_objects"]:
+                    self.device_manager.devices[self._get_device_root(instr)].handler.flush_events(
+                        timeout=10
+                    )
                 # send result to client
                 self.send_rpc_result_to_client(instr, device, instr_params, res, result)
                 logger.trace(res)
@@ -136,7 +140,7 @@ class RPCHandler:
             error_message=error_traceback,
             compact_error_message=traceback.format_exc(limit=0),
             exception_type=exc.__class__.__name__,
-            device=self.device_server.get_device_from_exception(exc),
+            device=self.device_server.device_provider.error_device(exc),
         )
         logger.info(f"Received exception: {error_info}, {exc}")
         instr_params = instr.parameter
@@ -164,18 +168,11 @@ class RPCHandler:
             instr(messages.DeviceInstructionMessage): RPC instruction
         """
         _, obj, _ = self._get_rpc_components(instr)
-
-        if not hasattr(obj, "kind"):
-            return self._rpc_read_and_return(instr)
-
-        if obj.kind not in [ophyd.Kind.omitted, ophyd.Kind.config]:
-            return self._rpc_read_and_return(instr)
-        if obj.kind == ophyd.Kind.config:
+        if obj.read_category == ReadCategory.CONFIGURATION:
             return self._rpc_read_configuration_and_return(instr)
-        if obj.kind == ophyd.Kind.omitted:
+        if obj.read_category == ReadCategory.OMITTED:
             return obj.read()
-
-        return None
+        return self._rpc_read_and_return(instr)
 
     def _handle_rpc_property_set(self, instr: messages.DeviceInstructionMessage) -> None:
         """
@@ -184,18 +181,8 @@ class RPCHandler:
         Args:
             instr(messages.DeviceInstructionMessage): RPC instruction
         """
-        instr_params = instr.parameter
-        device_root = self._get_device_root(instr)
-        sub_access = instr_params.get("func", "").split(".")
-        property_name = sub_access[-1]
-        if len(sub_access) > 1:
-            sub_access = sub_access[0:-1]
-        else:
-            sub_access = []
-        obj = self.device_manager.devices[device_root].obj
-        if sub_access:
-            obj = rgetattr(obj, ".".join(sub_access))
-        setattr(obj, property_name, instr_params.get("args")[0])
+        handler = self.device_manager.devices[self._get_device_root(instr)].handler
+        handler.set_property(instr.parameter.get("func", ""), instr.parameter.get("args")[0])
 
     def _handle_set(self, instr: messages.DeviceInstructionMessage) -> Any:
         """
@@ -204,93 +191,59 @@ class RPCHandler:
         Args:
             instr(messages.DeviceInstructionMessage): RPC instruction
         """
-        _, obj, rpc_var = self._get_rpc_components(instr)
-
-        if isinstance(obj, ophyd.Signal) and getattr(rpc_var, "__name__", None) in ["set", "put"]:
-            val = instr.parameter.get("args")[0]
-            val = self.device_server.convert_value_if_needed(obj, val)
-            instr.parameter["args"][0] = val
-        res = self._execute_rpc_call(rpc_var, instr)
-
-        if not isinstance(res, ophyd.StatusBase) or res.done:
-            self._update_cache(obj, instr)
-        else:
-            # for set operations that return a Status object, we update the cache
-            # when the status object is done
-            def _update_cache_on_set_done(status_obj, rpc_mixin_self=self, obj=obj, instr=instr):
-                rpc_mixin_self._update_cache(obj, instr)
-
-            res.add_callback(_update_cache_on_set_done)
-
-        if isinstance(res, ophyd.StatusBase):
-            self._register_status_object(instr, res, obj)
-
-        return self._serialize_rpc_response(instr, res)
+        return self._handle_misc_rpc(instr)
 
     def _handle_misc_rpc(self, instr: messages.DeviceInstructionMessage) -> Any:
-        """
-        Handle miscellaneous RPC operations and update the cache if necessary.
-
-        Args:
-            instr(messages.DeviceInstructionMessage): RPC instruction
-
-        Returns:
-            Any: Result of RPC instruction
-        """
-        instr_params = instr.content.get("parameter")
-
-        _, obj, rpc_var = self._get_rpc_components(instr)
-        res = self._execute_rpc_call(rpc_var, instr)
-
-        # update the cache for value-updating functions
-        if instr_params.get("func") in ["put", "get"] or instr_params.get("func").endswith(
-            (".put", ".get")
-        ):
-            self._update_cache(obj, instr)
-
-        if isinstance(res, ophyd.StatusBase):
-            self._register_status_object(instr, res, obj)
-
-        return self._serialize_rpc_response(instr, res)
+        """Run an explicit provider RPC and preserve BEC response/cache semantics."""
+        _, root_handler, invocation = self._get_rpc_components(instr)
+        result = self._execute_rpc_call(invocation, instr)
+        target = self.device_manager.devices[self._get_device_root(instr)].handler.resolve(
+            result.target_path
+        )
+        if result.completion is not None:
+            # Register callback context before observing an already-complete result.
+            context = self.device_server._add_status_object_info(result.completion, instr, target)
+            is_set = instr.parameter.get("func") == "set" or instr.parameter.get(
+                "func", ""
+            ).endswith(".set")
+            context.refresh = result.refresh and is_set and not result.completion.done
+            if result.refresh and not context.refresh:
+                self._update_cache(target, instr)
+            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], context)
+        elif result.refresh:
+            self._update_cache(target, instr)
+        return (
+            result.status.as_rpc(instr.metadata.get("RID"))
+            if result.status is not None
+            else result.value
+        )
 
     ##################################################
     ###### Helper functions for RPC processing ######
     ##################################################
 
-    def _execute_rpc_call(self, rpc_var: Any, instr: messages.DeviceInstructionMessage) -> Any:
-        """
-        Get result from RPC call. This is the core function that executes the RPC call.
-
-        Args:
-            rpc_var(Any): RPC variable or callable
-            instr_params(dict): RPC instruction parameters
-
-        Returns:
-            Any: Result of RPC call
-        """
-        instr_params = instr.parameter
-        if callable(rpc_var):
-            args = tuple(instr_params.get("args", ()))
-            kwargs = instr_params.get("kwargs", {})
-            res = rpc_var(*args, **kwargs)
-        else:
-            res = rpc_var
-        if not is_serializable(res):
-            if isinstance(res, ophyd.StatusBase):
-                return res
-            if isinstance(res, list) and instr_params.get("func") in ["stage", "unstage"]:
-                # pylint: disable=protected-access
-                return [obj._staged for obj in res]
-            res = None
-            msg = f"Return value of rpc call {instr_params} is not serializable."
-            error_info = messages.ErrorInfo(
-                error_message=msg,
-                compact_error_message=msg,
+    def _execute_rpc_call(
+        self, rpc_var: tuple[DeviceHandler, str], instr: messages.DeviceInstructionMessage
+    ) -> RPCResult:
+        """Execute a typed provider invocation; HAL serialization stays in the provider."""
+        handler, path = rpc_var
+        result = handler.rpc(
+            path,
+            tuple(instr.parameter.get("args", ())),
+            instr.parameter.get("kwargs", {}),
+            rid=instr.metadata.get("RID"),
+        )
+        if result.warning is not None:
+            text = f"Return value of rpc call {instr.parameter} is not serializable."
+            warning = messages.ErrorInfo(
+                error_message=text,
+                compact_error_message=text,
                 exception_type="TypeError",
                 device=instr.device,
             )
-            self.connector.raise_alarm(severity=Alarms.WARNING, info=error_info)
-        return res
+            self.connector.raise_alarm(severity=Alarms.WARNING, info=warning)
+            result = replace(result, warning=warning)
+        return result
 
     def _assert_rpc_write_allowed(self, instr: messages.DeviceInstructionMessage) -> None:
         """
@@ -311,45 +264,16 @@ class RPCHandler:
 
     def _get_rpc_components(
         self, instr: messages.DeviceInstructionMessage
-    ) -> tuple[str, ophyd.Device | ophyd.Signal, Any]:
-        """
-        Get RPC components: device root, RPC object, and RPC method.
-
-        As an example of the returned values:
-        For instruction:
-            device: "motor1"
-            parameter: {"func": "move", "args": [5], "kwargs": {}}
-        The returned values would be:
-            device_root: "motor1"
-            rpc_obj: <ophyd.Device motor1>
-            rpc_method: <bound method Device.move of <ophyd.Device motor1>>
-
-        For instruction:
-            device: "motor1.position"
-            parameter: {"func": "set", "args": [10], "kwargs": {}}
-        The returned values would be:
-            device_root: "motor1"
-            rpc_obj: <ophyd.Signal motor1.position>
-            rpc_method: <bound method Signal.set of <ophyd.Signal motor1.position>>
-
-        Args:
-            instr(messages.DeviceInstructionMessage): RPC instruction
-
-        Returns:
-            tuple[str, ophyd.Device | ophyd.Signal, Any]: Device root, RPC object, and RPC method
-        """
-        instr_params = instr.parameter
-        device_root = self._get_device_root(instr)
-        obj = self.device_manager.devices[device_root].obj
-        rpc_method = rgetattr(obj, instr_params.get("func"))
-        if instr_params.get("func", "").endswith((".set", ".put", ".read")):
-            rpc_obj = rgetattr(
-                self.device_manager.devices[device_root].obj,
-                instr_params.get("func").rsplit(".", 1)[0],
-            )
+    ) -> tuple[str, DeviceHandler, tuple[DeviceHandler, str]]:
+        """Resolve the requested handler/path without exposing a native bound method."""
+        root = self._get_device_root(instr)
+        handler = self.device_manager.devices[root].handler
+        path = instr.parameter.get("func", "")
+        if path.endswith((".set", ".put", ".read")):
+            target = handler.resolve(path.rsplit(".", 1)[0])
         else:
-            rpc_obj = obj
-        return device_root, rpc_obj, rpc_method
+            target = handler
+        return root, target, (handler, path)
 
     def _get_device_root(self, instr: messages.DeviceInstructionMessage) -> str:
         """
@@ -391,61 +315,6 @@ class RPCHandler:
             res = res[0]
         return res
 
-    def _register_status_object(
-        self,
-        instr: messages.DeviceInstructionMessage,
-        res: ophyd.StatusBase,
-        obj: ophyd.OphydObject,
-    ) -> None:
-        """
-        Register status object with the requests handler if applicable.
-
-        Args:
-            instr(messages.DeviceInstructionMessage): RPC instruction
-            res(ophyd.StatusBase): Result of RPC instruction
-        """
-        if not isinstance(res, ophyd.StatusBase):
-            return
-        res.__dict__["instruction"] = instr
-        res.__dict__["obj_ref"] = obj
-        self.requests_handler.add_status_object(instr.metadata["device_instr_id"], res)
-
-    def _serialize_rpc_response(self, instr: messages.DeviceInstructionMessage, res: Any) -> Any:
-        """
-        Serialize RPC response based on its type.
-
-        Args:
-            instr(messages.DeviceInstructionMessage): RPC instruction
-            res(ophyd.StatusBase): StatusBase object returned from RPC
-
-        Returns:
-            Any: Serialized RPC response
-        """
-        if isinstance(res, ophyd.StatusBase):
-            return {
-                "type": "status",
-                "RID": instr.metadata.get("RID"),
-                "success": res.success,
-                "timeout": res.timeout,
-                "done": res.done,
-                "settle_time": res.settle_time,
-            }
-
-        if isinstance(res, tuple) and hasattr(res, "_asdict") and hasattr(res, "_fields"):
-            # convert namedtuple to dict
-            return {
-                "type": "namedtuple",
-                "RID": instr.metadata.get("RID"),
-                "fields": res._fields,
-                "values": res._asdict(),
-            }
-
-        if isinstance(res, list) and res and isinstance(res[0], ophyd.Staged):
-            return [str(stage) for stage in res]
-
-        # no-op for other types
-        return res
-
     def _instr_with_operation(
         self, instr: messages.DeviceInstructionMessage, operation: str
     ) -> bool:
@@ -464,9 +333,7 @@ class RPCHandler:
         func_name = instr_params.get("func", "")
         return func_name == operation or func_name.endswith(f".{operation}")
 
-    def _update_cache(
-        self, obj: ophyd.OphydObject, instr: messages.DeviceInstructionMessage
-    ) -> Any:
+    def _update_cache(self, obj: DeviceHandler, instr: messages.DeviceInstructionMessage) -> Any:
         """
         Update the redis cache.
 
@@ -477,11 +344,9 @@ class RPCHandler:
         Returns:
             Any: Result of RPC instruction
         """
-        if obj.kind == ophyd.Kind.config:
+        if obj.read_category == ReadCategory.CONFIGURATION:
             return self._rpc_read_configuration_and_return(instr)
-        if obj.kind in [ophyd.Kind.normal, ophyd.Kind.hinted]:
+        if obj.read_category == ReadCategory.NORMAL:
             return self._rpc_read_and_return(instr)
-
-        # handle other other weird combinations of ophyd Kind
         self._rpc_read_and_return(instr)
         return self._rpc_read_configuration_and_return(instr)
