@@ -125,6 +125,8 @@ def test_cleanup_failed_device_init_destroys_disconnected_object(dm_with_devices
     handler = ConfigUpdateHandler(dm_with_devices)
     obj = mock.MagicMock(name="failed_device")
     obj.name = "failed_device"
+    obj.root = obj
+    obj.parent = None
     obj.connected = False
 
     handler._cleanup_failed_device_init(obj)
@@ -137,6 +139,9 @@ def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_dev
     handler = ConfigUpdateHandler(dm_with_devices)
     obj = mock.MagicMock(name="failed_device")
     obj.name = "failed_device"
+    obj.root = obj
+    obj.parent = None
+    obj.connected = False
     obj.destroy.side_effect = RuntimeError("destroy failed")
     device = mock.MagicMock(name="failed_device_wrapper")
     device.name = "failed_device"
@@ -148,6 +153,7 @@ def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_dev
 
     obj.destroy.assert_called_once_with()
     reset_device.assert_called_once_with(device)
+    obj.destroy.side_effect = None  # Allow owned retry during fixture shutdown.
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

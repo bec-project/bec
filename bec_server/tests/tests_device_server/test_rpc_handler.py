@@ -1,14 +1,19 @@
 # pylint: skip-file
 from collections import namedtuple
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from ophyd import Component as Cpt
 from ophyd import Device, DeviceStatus, Kind, Signal, Staged, StatusBase
+from ophyd_devices.bec_adapters import OphydProvider
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.device_backend import OperationMetadata, ReadCategory, RPCResult
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.device_server import DeviceServer, DisabledDeviceError, RequestHandler
+from bec_server.device_server.operation_context import OperationContext
 from bec_server.device_server.rpc_handler import RPCHandler
 
 
@@ -18,9 +23,22 @@ def rpc_cls() -> RPCHandler:  # type: ignore
     device_server_mock.device_manager = mock.MagicMock()
     device_server_mock.connector = mock.MagicMock()
     device_server_mock.requests_handler = mock.MagicMock(spec=RequestHandler)
+    provider = OphydProvider()
+    device_server_mock.device_provider = provider
+    device_server_mock._add_status_object_info.side_effect = (
+        lambda completion, instruction, target: OperationContext(completion, instruction, target)
+    )
     rpc_handler = RPCHandler(device_server=device_server_mock)
+    rpc_handler.device_provider = provider
+    yield rpc_handler
+    provider.close()
 
-    return rpc_handler
+
+def rpc_invocation(rpc_cls, member, parameters):
+    device = Device(name="device")
+    path = parameters.get("func", "operation")
+    setattr(device, path, member)
+    return rpc_cls.device_provider.wrap(device), path
 
 
 @pytest.fixture()
@@ -61,7 +79,9 @@ def test_execute_rpc_call(rpc_cls: RPCHandler, instr_params):
         parameter=instr_params,
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
+    out = rpc_cls._execute_rpc_call(
+        rpc_var=rpc_invocation(rpc_cls, rpc_var, msg.parameter), instr=msg
+    )
     if instr_params:
         if instr_params.get("args") and instr_params.get("kwargs"):
             rpc_var.assert_called_once_with(*instr_params["args"], **instr_params["kwargs"])
@@ -71,7 +91,7 @@ def test_execute_rpc_call(rpc_cls: RPCHandler, instr_params):
             rpc_var.assert_called_once_with(**instr_params["kwargs"])
         else:
             rpc_var.assert_called_once_with()
-    assert out == 1
+    assert out.value == 1
 
 
 @pytest.mark.parametrize("instr_params", [({"args": (1, 2, 3), "kwargs": {"a": 1, "b": 2}}), ({})])
@@ -83,8 +103,10 @@ def test_execute_rpc_call_var(rpc_cls: RPCHandler, instr_params: dict):
         parameter=instr_params,
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
-    assert out == 5
+    out = rpc_cls._execute_rpc_call(
+        rpc_var=rpc_invocation(rpc_cls, rpc_var, msg.parameter), instr=msg
+    )
+    assert out.value == 5
 
 
 def test_execute_rpc_call_not_serializable(rpc_cls: RPCHandler):
@@ -98,8 +120,10 @@ def test_execute_rpc_call_not_serializable(rpc_cls: RPCHandler):
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
     with mock.patch("bec_lib.messages.uuid.uuid4", return_value="uuid"):
-        out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
-        assert out is None
+        out = rpc_cls._execute_rpc_call(
+            rpc_var=rpc_invocation(rpc_cls, rpc_var, msg.parameter), instr=msg
+        )
+        assert out.value is None
         error_info = messages.ErrorInfo(
             id="uuid",
             error_message=f"Return value of rpc call {msg.parameter} is not serializable.",
@@ -122,9 +146,13 @@ def test_execute_rpc_call_ophyd_status(rpc_cls: RPCHandler):
         parameter={},
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
-    assert out is rpc_var.return_value
+    out = rpc_cls._execute_rpc_call(
+        rpc_var=rpc_invocation(rpc_cls, rpc_var, msg.parameter), instr=msg
+    )
+    assert out.completion is not None
+    assert not out.completion.done
     status.set_finished()
+    assert out.completion.result(timeout=2) is None
 
 
 def test_execute_rpc_call_list_from_stage(rpc_cls: RPCHandler):
@@ -138,8 +166,10 @@ def test_execute_rpc_call_list_from_stage(rpc_cls: RPCHandler):
         parameter={"func": "stage"},
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
-    out = rpc_cls._execute_rpc_call(rpc_var=rpc_var, instr=msg)
-    assert out == [True, False]
+    out = rpc_cls._execute_rpc_call(
+        rpc_var=rpc_invocation(rpc_cls, rpc_var, msg.parameter), instr=msg
+    )
+    assert out.value == [True, False]
 
 
 @pytest.mark.parametrize(
@@ -155,9 +185,7 @@ def test_send_rpc_exception(
     rpc_cls.requests_handler.get_request.return_value = {
         "status_objects": [mock.Mock(done=done) for done in statuses_done]
     }
-    with mock.patch.object(
-        rpc_cls.device_server, "get_device_from_exception", return_value="device"
-    ):
+    with mock.patch.object(rpc_cls.device_provider, "error_device", return_value="device"):
         rpc_cls.send_rpc_exception(Exception(), instr)
     error_info = rpc_cls.connector.set.call_args[0][1].out
     rpc_cls.connector.set.assert_called_once_with(
@@ -221,21 +249,19 @@ def test_run_rpc_sends_rpc_exception(rpc_cls, instr):
         _send_rpc_exception.assert_called_once_with(mock.ANY, instr)
 
 
+class RPCDevice(Device):
+    readback = Cpt(Signal, value=0, kind=Kind.hinted)
+    user_setpoint = Cpt(Signal, value=0, kind=Kind.normal)
+    velocity = Cpt(Signal, value=0, kind=Kind.config)
+    notused = Cpt(Signal, value=0, kind=Kind.omitted)
+
+
 @pytest.fixture()
-def dev_mock():
-    dev_mock = mock.MagicMock()
-    dev_mock.name = "device"
-    dev_mock.read_only = False
-    dev_mock.obj = mock.MagicMock(spec=Device)
-    dev_mock.obj.readback = mock.MagicMock(spec=Signal)
-    dev_mock.obj.readback.kind = Kind.hinted
-    dev_mock.obj.user_setpoint = mock.MagicMock(spec=Signal)
-    dev_mock.obj.user_setpoint.kind = Kind.normal
-    dev_mock.obj.velocity = mock.MagicMock(spec=Signal)
-    dev_mock.obj.velocity.kind = Kind.config
-    dev_mock.obj.notused = mock.MagicMock(spec=Signal)
-    dev_mock.obj.notused.kind = Kind.omitted
-    return dev_mock
+def dev_mock(rpc_cls):
+    device = RPCDevice(name="device")
+    return SimpleNamespace(
+        name="device", read_only=False, obj=device, handler=rpc_cls.device_provider.wrap(device)
+    )
 
 
 @pytest.mark.parametrize(
@@ -275,7 +301,7 @@ def test_process_rpc_instruction_read(rpc_cls, dev_mock, instr, func, read_calle
 def test_process_rpc_instruction_with_status_return(rpc_cls, dev_mock, instr):
     rpc_cls.device_manager.devices = {"device": dev_mock}
     rpc_cls._status_callback = mock.MagicMock()
-    with mock.patch.object(rpc_cls, "_execute_rpc_call") as rpc_result:
+    with mock.patch.object(dev_mock.obj, "trigger") as rpc_result:
         status = StatusBase()
         rpc_result.return_value = status
         res = rpc_cls.process_rpc_instruction(instr)
@@ -292,7 +318,7 @@ def test_process_rpc_instruction_with_status_return(rpc_cls, dev_mock, instr):
 
 def test_process_rpc_instruction_with_namedtuple_return(rpc_cls, dev_mock, instr):
     rpc_cls.device_manager.devices = {"device": dev_mock}
-    with mock.patch.object(rpc_cls, "_execute_rpc_call") as rpc_result:
+    with mock.patch.object(dev_mock.obj, "trigger") as rpc_result:
         point_type = namedtuple("Point", ["x", "y"])
         point_tuple = point_type(5, 6)
         rpc_result.return_value = point_tuple
@@ -311,7 +337,7 @@ def test_process_rpc_instruction_with_namedtuple_return(rpc_cls, dev_mock, instr
 )
 def test_process_rpc_instruction_with_list_return(rpc_cls, dev_mock, instr, return_val, result):
     rpc_cls.device_manager.devices = {"device": dev_mock}
-    with mock.patch.object(rpc_cls, "_execute_rpc_call") as rpc_result:
+    with mock.patch.object(dev_mock.obj, "trigger") as rpc_result:
         rpc_result.return_value = return_val
         res = rpc_cls.process_rpc_instruction(instr)
         assert res == result
@@ -370,8 +396,12 @@ def test_set_config_signal_updates_cache(rpc_cls, dev_mock, instr):
     rpc_cls.device_manager.devices = {"device": dev_mock}
     rpc_cls._update_cache = mock.MagicMock()
     rpc_cls._execute_rpc_call = mock.MagicMock()
-    rpc_cls._execute_rpc_call.return_value = DeviceStatus(
-        device=dev_mock.obj, done=True, success=True
+    native = DeviceStatus(device=dev_mock.obj, done=True, success=True)
+    rpc_cls._execute_rpc_call.return_value = RPCResult(
+        completion=dev_mock.handler.operation(native),
+        status=OperationMetadata(True, done=True),
+        target_path="velocity",
+        refresh=True,
     )
     instr = messages.DeviceInstructionMessage(
         device="device",
@@ -380,13 +410,16 @@ def test_set_config_signal_updates_cache(rpc_cls, dev_mock, instr):
         metadata={"RID": "RID", "device_instr_id": "diid"},
     )
     rpc_cls.process_rpc_instruction(instr=instr)
-    rpc_cls._update_cache.assert_called_once_with(dev_mock.obj.velocity, instr)
+    context = rpc_cls.requests_handler.add_status_object.call_args.args[1]
+    assert context.refresh is False
+    rpc_cls._update_cache.assert_called_once_with(context.target, instr)
+    assert context.target.read_category == ReadCategory.CONFIGURATION
 
 
 def test_update_cache_config_kind(rpc_cls, instr, mock_rpc_methods):
     """Test that _update_cache calls read_configuration for config kind signals"""
     signal_mock = mock.MagicMock(spec=Signal)
-    signal_mock.kind = Kind.config
+    signal_mock.read_category = ReadCategory.CONFIGURATION
     mock_rpc_methods["read_config"].return_value = {"config": "data"}
 
     result = rpc_cls._update_cache(signal_mock, instr)
@@ -399,7 +432,7 @@ def test_update_cache_config_kind(rpc_cls, instr, mock_rpc_methods):
 def test_update_cache_hinted_kind(rpc_cls, instr, mock_rpc_methods):
     """Test that _update_cache calls read for hinted kind signals"""
     signal_mock = mock.MagicMock(spec=Signal)
-    signal_mock.kind = Kind.hinted
+    signal_mock.read_category = ReadCategory.NORMAL
     mock_rpc_methods["read"].return_value = {"read": "data"}
 
     result = rpc_cls._update_cache(signal_mock, instr)
@@ -412,7 +445,7 @@ def test_update_cache_hinted_kind(rpc_cls, instr, mock_rpc_methods):
 def test_update_cache_normal_kind(rpc_cls, instr, mock_rpc_methods):
     """Test that _update_cache calls read for normal kind signals"""
     signal_mock = mock.MagicMock(spec=Signal)
-    signal_mock.kind = Kind.normal
+    signal_mock.read_category = ReadCategory.NORMAL
     mock_rpc_methods["read"].return_value = {"read": "data"}
 
     result = rpc_cls._update_cache(signal_mock, instr)
@@ -425,7 +458,7 @@ def test_update_cache_normal_kind(rpc_cls, instr, mock_rpc_methods):
 def test_update_cache_omitted_kind(rpc_cls, instr, mock_rpc_methods):
     """Test that _update_cache calls both read methods for omitted kind signals"""
     signal_mock = mock.MagicMock(spec=Signal)
-    signal_mock.kind = Kind.omitted
+    signal_mock.read_category = ReadCategory.OMITTED
     mock_rpc_methods["read_config"].return_value = {"config": "data"}
 
     result = rpc_cls._update_cache(signal_mock, instr)

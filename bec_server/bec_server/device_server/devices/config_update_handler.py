@@ -4,7 +4,7 @@ import concurrent.futures
 import copy
 import threading
 import traceback
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -14,7 +14,6 @@ from bec_lib.logger import bec_logger
 from bec_lib.plugin_helper import reload_plugin_modules
 
 if TYPE_CHECKING:
-    from ophyd import OphydObject
 
     from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
 
@@ -197,14 +196,14 @@ class ConfigUpdateHandler:
             MessageEndpoints.device_config_request_response(request_id), msg, expire=60
         )
 
-    def _cleanup_failed_device_init(self, obj: OphydObject, device: DSDevice | None = None) -> None:
+    def _cleanup_failed_device_init(self, obj: object, device: DSDevice | None = None) -> None:
         """Best-effort cleanup that does not mask the initialization failure."""
         try:
-            obj.destroy()
+            self.device_manager.handler_for(obj).close()
         # pylint: disable=broad-except
         except Exception:
             logger.error(
-                f"Failed to destroy partially initialized device {obj.name}: "
+                f"Failed to destroy partially initialized device {device.name if device is not None else type(obj).__name__}: "
                 f"{traceback.format_exc()}"
             )
 
@@ -237,16 +236,13 @@ class ConfigUpdateHandler:
 
                 # apply config
                 try:
-                    self.device_manager.update_config(device.obj, new_config)
+                    self.device_manager.update_config(device.handler, new_config)
                 except Exception as exc:
-                    self.device_manager.update_config(device.obj, old_config)
+                    self.device_manager.update_config(device.handler, old_config)
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
                 if "limits" in dev_config["deviceConfig"]:
-                    limits = {
-                        "low": {"value": device.obj.low_limit_travel.get()},
-                        "high": {"value": device.obj.high_limit_travel.get()},
-                    }
+                    limits = device.handler.limits()
                     self.device_manager.connector.set_and_publish(
                         MessageEndpoints.device_limits(device.name),
                         messages.DeviceMessage(signals=limits),
@@ -257,7 +253,7 @@ class ConfigUpdateHandler:
                 was_enabled = device._config.get("enabled", True)
                 if was_enabled and not dev_config["enabled"]:
                     # It was enabled and we want to disable it. Disconnect and reset the device.
-                    self.device_manager.disconnect_device(device.obj)
+                    self.device_manager.disconnect_device(device.handler)
                     self.device_manager.reset_device(device)
                     device._config["enabled"] = False
                 elif not was_enabled and dev_config["enabled"]:
@@ -285,9 +281,9 @@ class ConfigUpdateHandler:
         """Flush all devices from the device manager."""
         for _, obj in self.device_manager.devices.items():
             try:
-                obj.obj.destroy()
+                obj.handler.close()
             except Exception:
-                logger.warning(f"Failed to destroy {obj.obj.name}")
+                logger.warning(f"Failed to destroy {obj.name}")
                 raise RuntimeError("Failed to flush config")
         self.device_manager.devices.flush()
 

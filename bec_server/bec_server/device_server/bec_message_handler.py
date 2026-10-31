@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable, TypedDict
 
 import numpy as np
-from ophyd import OphydObject
-from ophyd_devices.utils import bec_signals as bms
 
 from bec_lib import messages
+from bec_lib.device_backend import DeviceEvent, EventKind, MessageChannel
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import RedisConnector
@@ -40,36 +39,44 @@ class BECMessageHandler:
         self.devices = device_manager.devices
         self._async_signal_index_state: dict[tuple[str, str], _AsyncSignalIndexState] = {}
 
-    def emit(self, obj: OphydObject, message: messages.BECMessage):
-        """
-        Emit a message for the given object.
-        This method handles different types of signals and publishes the appropriate messages to Redis.
+    def emit(self, obj: object, message: messages.BECMessage):
+        """Compatibility callback; descriptions identify BEC channels without HAL types."""
+        handler = self.device_manager.handler_for(obj)
+        info = handler.runtime_info().get("")
+        if info is None:
+            raise TypeError(f"Unsupported signal type: {type(obj)}")
+        channel = {
+            "file_event": MessageChannel.FILE,
+            "progress": MessageChannel.PROGRESS,
+            "preview": MessageChannel.PREVIEW,
+        }.get(info.role, MessageChannel.DYNAMIC)
+        self.emit_event(
+            DeviceEvent(
+                handler.identity,
+                EventKind.MESSAGE,
+                message=message,
+                channel=channel,
+                signal_metadata=info.signal_metadata,
+            )
+        )
 
-        Args:
-            obj (OphydObject): The object that emitted the signal.
-            message (messages.BECMessage): The message to be published.
+    def emit_event(self, event: DeviceEvent) -> None:
+        """Publish a typed provider push event using existing BEC endpoints."""
+        dispatch = {
+            MessageChannel.FILE: self._handle_file_event_signal,
+            MessageChannel.PROGRESS: self._handle_progress_signal,
+            MessageChannel.PREVIEW: self._handle_preview_signal,
+            MessageChannel.DYNAMIC: self._handle_async_signal,
+        }
+        if event.channel not in dispatch or event.message is None:
+            raise TypeError(f"Unsupported BEC push channel: {event.channel}")
+        dispatch[event.channel](event, event.message)
 
-        Raises:
-            TypeError: If the object is not a supported signal type.
-        """
-
-        if isinstance(obj, bms.FileEventSignal):
-            return self._handle_file_event_signal(obj, message)
-        if isinstance(obj, bms.ProgressSignal):
-            return self._handle_progress_signal(obj, message)
-        if isinstance(obj, bms.PreviewSignal):
-            return self._handle_preview_signal(obj, message)
-        if isinstance(obj, bms.DynamicSignal):
-            return self._handle_async_signal(obj, message)
-
-        logger.error(f"Unsupported signal type: {type(obj)}")
-        raise TypeError(f"Unsupported signal type: {type(obj)}")
-
-    def _handle_file_event_signal(self, obj: bms.FileEventSignal, message: messages.BECMessage):
+    def _handle_file_event_signal(self, obj: DeviceEvent, message: messages.BECMessage):
         if not isinstance(message, messages.FileMessage):
             raise TypeError(f"Expected FileMessage, got {type(message)}")
 
-        device_name = obj.root.name
+        device_name = obj.source.root
         scan_id = self._get_current_scan_id()
         if scan_id is None:
             logger.warning(
@@ -89,11 +96,11 @@ class BECMessageHandler:
         )
         pipe.execute()
 
-    def _handle_progress_signal(self, obj: bms.ProgressSignal, message: messages.BECMessage):
+    def _handle_progress_signal(self, obj: DeviceEvent, message: messages.BECMessage):
         if not isinstance(message, messages.ProgressMessage):
             raise TypeError(f"Expected ProgressMessage, got {type(message)}")
 
-        device_name = obj.root.name
+        device_name = obj.source.root
         scan_status_msg = self._get_scan_status_message()
         if scan_status_msg is None:
             logger.warning(
@@ -110,7 +117,7 @@ class BECMessageHandler:
             MessageEndpoints.device_progress(device_name), message, expire=3600
         )
 
-    def _handle_preview_signal(self, obj: bms.PreviewSignal, message: messages.BECMessage):
+    def _handle_preview_signal(self, obj: DeviceEvent, message: messages.BECMessage):
         if not isinstance(message, messages.DevicePreviewMessage):
             raise TypeError(f"Expected DevicePreviewMessage, got {type(message)}")
 
@@ -126,18 +133,18 @@ class BECMessageHandler:
 
         stream_msg = {"data": message}
         self.connector.xadd(
-            MessageEndpoints.device_preview(device=obj.root.name, signal=message.signal),
+            MessageEndpoints.device_preview(device=obj.source.root, signal=message.signal),
             stream_msg,
             max_size=min(100, int(max_size // dsize)),
             expire=3600,
         )
 
-    def _handle_async_signal(self, obj: bms.AsyncSignal, message: messages.BECMessage):
+    def _handle_async_signal(self, obj: DeviceEvent, message: messages.BECMessage):
         if not isinstance(message, messages.DeviceMessage):
             raise TypeError(f"Expected DeviceMessage, got {type(message)}")
 
-        device_name = obj.root.name
-        signal_name = obj.name
+        device_name = obj.source.root
+        signal_name = obj.source.name
 
         scan_status_msg = self._get_scan_status_message()
         if scan_status_msg is None:
@@ -212,9 +219,9 @@ class BECMessageHandler:
         pipe.execute()
 
     def _get_async_signal_indices(
-        self, obj: bms.DynamicSignal, scan_id: str, signal_names: Iterable[str]
+        self, obj: DeviceEvent, scan_id: str, signal_names: Iterable[str]
     ) -> dict[str, int]:
-        state_key = (obj.root.name, obj.name)
+        state_key = (obj.source.root, obj.source.name)
         state = self._async_signal_index_state.get(state_key)
         if state is None or state["scan_id"] != scan_id:
             state = _AsyncSignalIndexState(scan_id=scan_id, indices={})
