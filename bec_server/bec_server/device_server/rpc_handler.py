@@ -48,6 +48,11 @@ class RPCHandler:
                 device = cast(str, instr.device)
                 self.device_server.assert_device_is_enabled(instr)
                 res = self.process_rpc_instruction(instr)
+                request = self.requests_handler.get_request(instr.metadata["device_instr_id"])
+                if request and not request["status_objects"]:
+                    self.device_manager.devices[self._get_device_root(instr)].handler.flush_events(
+                        timeout=10
+                    )
                 # send result to client
                 self.send_rpc_result_to_client(instr, device, instr_params, res, result)
                 logger.trace(res)

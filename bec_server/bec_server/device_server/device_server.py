@@ -212,12 +212,21 @@ class RequestHandler:
                 logger.exception(f"Status callback failed for instruction {instr_id}")
                 error = status_obj.exception() or exc
                 status_obj.service_error = error
-                status_obj.processed = True
                 error_info = self.get_error_info(error, status_obj)
-                self.set_finished(instr_id, success=False, error_info=error_info)
-                self.parent.dispatch_status_response(
-                    status_obj, status_obj.instruction.device, error_info=error_info
-                )
+                status_obj.service_error_info = error_info
+                try:
+                    self.parent.dispatch_status_response(
+                        status_obj, status_obj.instruction.device, error_info=error_info
+                    )
+                except Exception:
+                    logger.exception(
+                        f"Error response publication failed for instruction {instr_id}"
+                    )
+                # A batch may still be registering peers when a terminal
+                # completion invokes this observer inline. Preserve its expected
+                # count and aggregate the service failure with all peer results.
+                status_obj.processed = True
+                self._update_instruction(instr_id, is_status_obj=True)
                 return
             status_obj.processed = True
             self._update_instruction(instr_id, is_status_obj=True)
@@ -255,7 +264,7 @@ class RequestHandler:
             ]
             if any(val for val, _ in exceptions):
                 error, obj = next((val, obj) for val, obj in exceptions if val)
-                error_info = self.get_error_info(error, obj)
+                error_info = obj.service_error_info or self.get_error_info(error, obj)
                 self.set_finished(instr_id, success=False, error_info=error_info)
 
             else:
@@ -715,6 +724,7 @@ class DeviceServer(BECService):
         kickoff_parameter = instr.content["parameter"].get("configure", {})
         status = obj.kickoff(kickoff_parameter, instr.metadata)
         if status is None:
+            obj.flush_events(timeout=10)
             self.requests_handler.add_request(instr, num_status_objects=0, done=True, success=True)
             return
         self.requests_handler.add_request(instr, num_status_objects=1)
@@ -812,6 +822,7 @@ class DeviceServer(BECService):
             if Capability.PRE_SCAN in obj.capabilities:
                 status = obj.pre_scan()
             if status is None:
+                obj.flush_events(timeout=10)
                 continue
             if not isinstance(status, Completion):
                 raise ValueError(
@@ -824,13 +835,25 @@ class DeviceServer(BECService):
 
         self.requests_handler.patch_num_status_objects(instr, num_status_objects)
 
+    @staticmethod
+    def _close_operation_subscription(status: OperationContext) -> None:
+        subscription, status.subscription = status.subscription, None
+        if subscription is not None:
+            subscription.close()
+
     def status_callback(self, status):
         status = self._context_for(status)
         pipe = self.connector.pipeline()
         obj = status.target
-        if status.subscription is not None:
-            status.subscription.close()
-            status.subscription = None
+        try:
+            obj.flush_events(timeout=10)
+        except Exception as error:
+            try:
+                self._close_operation_subscription(status)
+            except Exception as cleanup_error:
+                error.add_note(f"Subscription disposal also failed: {cleanup_error!r}")
+            raise
+        self._close_operation_subscription(status)
         device_name = obj.identity.qualified_name
         if status.staging_state is not None:
             self._device_staged_callback(status)
@@ -947,6 +970,8 @@ class DeviceServer(BECService):
                 pipe,
             )
         pipe.execute()
+        for dev in devices:
+            self.device_manager.devices[dev.split(".")[0]].handler.flush_events(timeout=10)
         logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
@@ -972,6 +997,8 @@ class DeviceServer(BECService):
                 pipe,
             )
         pipe.execute()
+        for dev in devices:
+            self.device_manager.devices[dev.split(".")[0]].handler.flush_events(timeout=10)
         logger.trace(
             f"Elapsed time for reading and updating status info: {(time.time() - start) * 1000} ms"
         )
@@ -1054,8 +1081,10 @@ class DeviceServer(BECService):
                             )
                     if status is not None:
                         raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")
+                obj.flush_events(timeout=10)
             status = self.device_manager.devices[dev].handler.stage()
             if status is None or isinstance(status, list):
+                obj.flush_events(timeout=10)
                 continue
             if not isinstance(status, Completion):
                 raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")
@@ -1101,6 +1130,7 @@ class DeviceServer(BECService):
                 else:
                     logger.debug(f"Device {obj.identity.root} was already unstaged.")
             if status is None or isinstance(status, list):
+                obj.flush_events(timeout=10)
                 continue
             if not isinstance(status, Completion):
                 raise ValueError(

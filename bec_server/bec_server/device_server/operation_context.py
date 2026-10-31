@@ -21,6 +21,7 @@ class OperationContext:
     staging_state: int | None = None
     refresh: bool = False
     service_error: BaseException | None = None
+    service_error_info: messages.ErrorInfo | None = None
     processed: bool = False
     processing: bool = False
     callback_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)

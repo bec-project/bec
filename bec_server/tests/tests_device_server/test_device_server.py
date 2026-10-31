@@ -469,6 +469,7 @@ def test_motion_readback_preserves_instruction_result(
     signals = {device.name: {"value": 5, "timestamp": 1234}}
     with mock.patch.object(device, "read", return_value=signals):
         handler.add_status_object("diid", context_status)
+        assert context_status.service_done.wait(5)
 
     responses = [
         sent["msg"]
@@ -1419,6 +1420,7 @@ def test_handle_device_instructions_pre_scan(device_server_mock, instructions):
             )
             status.set_finished()
             finished_thread_event.wait()
+            assert request_info["status_objects"][0].service_done.wait(5)
             assert status.done is True
             assert send_response_mock.call_count == 3
             assert send_response_mock.call_args == mock.call(

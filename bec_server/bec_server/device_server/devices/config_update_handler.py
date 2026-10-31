@@ -383,7 +383,7 @@ class ConfigUpdateHandler:
             if dev not in self.device_manager.devices:
                 continue
             device = self.device_manager.devices[dev]
-            self.device_manager.disconnect_device(device)
+            self.device_manager.disconnect_device(device.handler)
             self.device_manager.reset_device(device)
             self.device_manager.devices.pop(dev)
 

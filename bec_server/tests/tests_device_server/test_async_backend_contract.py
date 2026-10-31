@@ -229,7 +229,7 @@ def test_repeated_stop_close_release_all_owned_threads(backend):
     assert not any(thread.is_alive() for thread in provider.callbacks._threads)
 
 
-def make_server(provider, connector=None):
+def make_server(provider, connector=None, *, specification="proof.AsyncDevice"):
     """Use real manager/dispatch/request code with an injected neutral provider."""
     connector = connector or ConnectorMock("", store_data=False)
     parent = SimpleNamespace(
@@ -239,7 +239,7 @@ def make_server(provider, connector=None):
     manager.config_update_handler = mock.Mock()
     config = {
         "name": "proof",
-        "deviceClass": "proof.AsyncDevice",
+        "deviceClass": specification,
         "enabled": True,
         "readOnly": False,
         "readoutPriority": "monitored",
@@ -338,3 +338,25 @@ def test_async_close_is_bounded_when_completion_observer_is_blocked(backend, mon
         release.set()
     provider.close()
     assert provider.closed
+
+
+def test_config_remove_closes_active_async_handler_and_pending_acquisition():
+    from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
+
+    provider = AsyncProvider()
+    server, handler = make_server(provider)
+    operation = handler.trigger()
+    assert handler.started.wait(2)
+    config = ConfigUpdateHandler(server.device_manager)
+    try:
+        config._remove_config(
+            messages.DeviceConfigMessage(action="remove", config={"proof": {}}), threading.Event()
+        )
+        assert "proof" not in server.device_manager.devices
+        assert handler._closed
+        assert not handler.hardware_running
+        with pytest.raises(Interrupted):
+            operation.result(2)
+    finally:
+        config.shutdown()
+        server.device_manager.shutdown()

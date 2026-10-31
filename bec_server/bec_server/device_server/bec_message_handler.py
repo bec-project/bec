@@ -77,7 +77,7 @@ class BECMessageHandler:
             raise TypeError(f"Expected FileMessage, got {type(message)}")
 
         device_name = obj.source.root
-        scan_id = self._get_current_scan_id()
+        scan_id = obj.context.scan_id if obj.context is not None else self._get_current_scan_id()
         if scan_id is None:
             logger.warning(
                 f"Scan ID is None for device {device_name} and file event signal. Cannot emit file event."
@@ -101,8 +101,10 @@ class BECMessageHandler:
             raise TypeError(f"Expected ProgressMessage, got {type(message)}")
 
         device_name = obj.source.root
-        scan_status_msg = self._get_scan_status_message()
-        if scan_status_msg is None:
+        scan_status_msg = (
+            obj.context if obj.context is not None else self._get_scan_status_message()
+        )
+        if scan_status_msg is None or scan_status_msg.status is None:
             logger.warning(
                 f"Scan status message is None for device {device_name} and progress signal."
             )
@@ -146,7 +148,9 @@ class BECMessageHandler:
         device_name = obj.source.root
         signal_name = obj.source.name
 
-        scan_status_msg = self._get_scan_status_message()
+        scan_status_msg = (
+            obj.context if obj.context is not None else self._get_scan_status_message()
+        )
         if scan_status_msg is None:
             logger.warning(
                 f"Scan status message is None for device {device_name} and async signal {signal_name}."

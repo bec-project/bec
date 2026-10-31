@@ -25,23 +25,47 @@ The ophyd adapter calls existing synchronous hooks on their existing caller.
 Admission uses a short fence and an in-flight counter; it does not hold a lock
 while a hook/RPC waits. Native status callbacks settle the neutral operation and
 queue service callbacks onto a completion pool. Native event callbacks snapshot
-mutable payloads and enqueue ordered delivery on a separate event worker. Redis
+mutable message payloads and enqueue ordered delivery on a separate event worker;
+read/configuration invalidations carry no duplicate array buffer. Redis
 publication stays in BEC. Immediate completions can invoke callbacks on the
 registering service thread. After successful provider close, a late observer of a
 terminal operation is notified on its registering thread; native producers have
 already been fenced and settled.
 
+BEC supplies a pure, bounded `EventContext` sampler to subscriptions. Native
+message ingress captures scan ID/state before queuing; file, progress and dynamic
+events retain that receipt-time scope even if the scan changes before delivery.
+An explicit empty context remains off-scan. Completion processing fences already
+accepted events for the requested device tree before acknowledging the request,
+so file/data publication precedes terminal responses. An idle tree does not wait
+for unrelated callbacks. A flush timeout or publication error becomes a service
+error without changing the native completion outcome; temporary subscriptions
+are disposed even on that failure path.
+
 Successful disposal drains accepted events before returning. File/data events
 are not coalesced. Invalidations retain existing BEC monitor selection and batch
-policy. Read-generated synchronous notifications are suppressed only inside that
-same thread's snapshot scope, preventing feedback loops without suppressing
-transport updates on other threads. Delivery failures are logged immediately and
-reported again at disposal. Original subscription tokens survive a failed native
+policy. Read-generated invalidations carry causal root ancestry across the queue:
+the first changed peer remains observable, while a return to an already-read
+root is suppressed. Transport updates on other threads are unaffected. Delivery
+failures are logged immediately without retaining traceback/payload graphs.
+Fixed-size summaries per subscription and live receipt fence preserve failure
+attribution without accumulating a per-event error history; acknowledgment
+advances those frontiers, and direct subscription disposal still reports the
+original failure. Whole-tree teardown logs historical publication failures while
+committing successful resource destruction; such a history must not leave a
+removed device falsely enabled. Native unsubscribe failures remain retryable and
+prevent native destruction. Original subscription tokens survive a failed native
 destroy so pending requests can still dispose their own temporary registration.
 Failed unsubscribe/drain work remains owned for retry.
 
+A failed native set schedules its existing failure-stop policy on provider-owned
+recovery workers. New commands for that tree fail promptly with a retryable
+recovery error until stop finishes; reads, subscription observation and explicit
+stop remain available. This prevents an old failed command's delayed stop from
+interrupting a newer move. Tree close drains recovery before native destruction.
+
 Provider shutdown fences construction and submission, waits for admitted work,
-drains subscriptions and completion delivery, and closes its workers. Drain waits
+drains subscriptions, recovery and completion delivery, and closes its workers. Drain waits
 are bounded (ten seconds in the ophyd provider). A bounded failure is observable
 and retains infrastructure for retry. This does not make a custom synchronous
 constructor, hook, hardware read or `destroy()` forcibly interruptible: native
@@ -124,8 +148,8 @@ asyncio runtime proof cover native imports and raw-object access.
 The device-server suite includes an isolated Redis workflow for each provider.
 It owns a temporary loopback Redis process and exercises request completion,
 push readback/file/progress/preview/dynamic data, indices, stop and teardown.
-This is service-boundary integration, not a complete scan-server scan. It uses
-simulation/mocks and does not connect to real hardware or ADSim. Final local test
-commands and environment limits are recorded in
+These service-boundary tests use simulation/mocks. The separate end-to-end suite
+starts real BEC services and exercises full scans and procedure workers; its
+commands, final results and environment limits are recorded in
 [the validation note](device_backend_validation.md). Linux and the other Python CI versions
 remain CI validation, not claims of local execution.

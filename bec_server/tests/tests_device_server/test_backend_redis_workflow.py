@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -331,10 +332,11 @@ def test_request_push_interruption_and_shutdown_over_real_redis(redis_address, b
         unstage_id = submit("unstage")
         assert until(lambda: terminal(unstage_id)).status == "completed"
     finally:
-        manager.shutdown()
-        server.executor.shutdown(wait=True, cancel_futures=True)
-        client.shutdown()
-        service_connector.shutdown()
+        with ExitStack() as cleanup:
+            cleanup.callback(service_connector.shutdown)
+            cleanup.callback(client.shutdown)
+            cleanup.callback(server.executor.shutdown, wait=True, cancel_futures=True)
+            cleanup.callback(manager.shutdown)
     if backend == "asyncio":
         assert provider.closed
         assert not provider.thread.is_alive()

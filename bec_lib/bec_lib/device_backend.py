@@ -160,6 +160,14 @@ class MessageChannel(str, Enum):
 
 
 @dataclass(frozen=True)
+class EventContext:
+    """Service-owned immutable scan identity captured when a push event is received."""
+
+    scan_id: str | None
+    status: str | None
+
+
+@dataclass(frozen=True)
 class DeviceEvent:
     """An ordered event accepted by a provider subscription.
 
@@ -176,6 +184,7 @@ class DeviceEvent:
     message: messages.BECMessage | None = None
     channel: MessageChannel | None = None
     signal_metadata: Mapping[str, Any] | None = None
+    context: EventContext | None = None
 
 
 class Subscription(Protocol):  # pylint: disable=too-few-public-methods
@@ -348,8 +357,27 @@ class DeviceHandler(Protocol):  # pylint: disable=too-many-public-methods
         """Independently submit stop; terminal success means acknowledged shutdown."""
         ...
 
-    def subscribe(self, callback: Callable[[DeviceEvent], None]) -> Subscription:
-        """Subscribe to pushed service events outside the HAL owner context."""
+    def subscribe(
+        self,
+        callback: Callable[[DeviceEvent], None],
+        *,
+        context: Callable[[], EventContext] | None = None,
+    ) -> Subscription:
+        """Deliver outside the HAL owner, sampling optional context before enqueueing.
+
+        The context supplier must only sample immutable service state; it may run
+        on an ingress/owner thread and must not perform I/O, wait or access devices.
+        Actual event processing and publication run on the delivery executor.
+        """
+        ...
+
+    def flush_events(self, timeout: float = 10) -> None:
+        """Fence accepted delivery off the owner thread and report unobserved errors.
+
+        Use one bounded fence, not subscription idleness, so continued production
+        cannot indefinitely delay service acknowledgement. Do not mutate native
+        outcomes or attribute another device's publication errors to this target.
+        """
         ...
 
     def subscribe_readback(self, callback: Callable[[DeviceEvent], None]) -> Subscription:

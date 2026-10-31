@@ -280,7 +280,7 @@ def test_subscribe_to_device_events(dm_with_devices):
     raw._run_subs(sub_type="done_moving", value=2)
     subscription.close()
     assert [event.kind for event in events] == [EventKind.READBACK, EventKind.READBACK]
-    assert [event.value for event in events] == [1, 2]
+    assert [event.value for event in events] == [None, None]
     assert all(event.source.root == "event_root" for event in events)
     handler.close()
 

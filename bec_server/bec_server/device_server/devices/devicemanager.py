@@ -24,6 +24,7 @@ from bec_lib.device_backend import (
     DeviceEvent,
     DeviceHandler,
     DeviceProvider,
+    EventContext,
     EventKind,
     MessageChannel,
 )
@@ -97,6 +98,10 @@ class DSDevice(DeviceBaseWithConfig):
             if parent is not None and hasattr(type(parent), "handler_for")
             else create_device_provider()
         )
+        # Retain the owning handler even if failed initialization later destroys
+        # the native object before its first read. Reload can then close it again.
+        self._handler = self._device_provider.wrap(obj)
+        self._handler_object = obj
         self.metadata = {}
         self.initialized = False
 
@@ -237,6 +242,10 @@ class DeviceManagerDS(DeviceManagerBase):
         # pylint: disable=broad-except
         except Exception:
             if name not in self.devices:
+                try:
+                    self.handler_for(obj).close()
+                except Exception:
+                    logger.exception(f"Failed to clean up unregistered device {name}")
                 raise
             msg = traceback.format_exc()
             logger.warning(f"Failed to initialize device {name}: {msg}")
@@ -501,10 +510,18 @@ class DeviceManagerDS(DeviceManagerBase):
 
         self.initialize_enabled_device(opaas_obj)
 
-        opaas_obj.handler.subscribe(self._handle_device_event)
+        opaas_obj.handler.subscribe(self._handle_device_event, context=self._event_context)
         self.update_config(opaas_obj.handler, config)
 
         return opaas_obj
+
+    def _event_context(self) -> EventContext:
+        """Sample two immutable scan fields at ingress without I/O or device access."""
+        current = self.scan_info.msg if self.scan_info is not None else None
+        return EventContext(
+            scan_id=current.scan_id if current is not None else None,
+            status=current.status if current is not None else None,
+        )
 
     def _handle_device_event(self, event: DeviceEvent) -> None:
         """Receive a typed event outside the HAL owner context."""

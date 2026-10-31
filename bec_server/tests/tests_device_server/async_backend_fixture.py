@@ -60,9 +60,10 @@ class NoDiagnostics:
 
 
 class PushSubscription:
-    def __init__(self, owner, callback):
+    def __init__(self, owner, callback, context=None):
         self.owner = owner
         self.callback = callback
+        self.context = context
         self.accepting = True
         self.lock = threading.RLock()
         self.pending = set()
@@ -72,8 +73,14 @@ class PushSubscription:
         with self.lock:
             if not self.accepting:
                 return
+            event_context = (
+                self.context()
+                if self.context is not None and event.kind == EventKind.MESSAGE
+                else event.context
+            )
             snapshot = replace(
                 event,
+                context=event_context,
                 message=event.message.model_copy(deep=True) if event.message is not None else None,
                 signal_metadata=copy.deepcopy(event.signal_metadata),
             )
@@ -389,12 +396,26 @@ class AsyncHandler:
 
         return self._submit(stop, control=True)
 
-    def subscribe(self, callback):
+    def subscribe(self, callback, *, context=None):
         if self._closing or self._closed:
             raise RuntimeError("Async fixture is closing")
-        subscription = PushSubscription(self, callback)
+        subscription = PushSubscription(self, callback, context=context)
         self.subscriptions.append(subscription)
         return subscription
+
+    def flush_events(self, timeout=10):
+        if getattr(
+            _async_owner, "provider", None
+        ) is not None or threading.current_thread().name.startswith("AsyncProofEvents"):
+            raise RuntimeError("Cannot synchronously wait on an owner or event thread")
+        self.provider.events.submit(lambda: None).result(timeout)
+        errors = []
+        for subscription in self.subscriptions:
+            with subscription.lock:
+                errors.extend(subscription.errors)
+                subscription.errors.clear()
+        if errors:
+            raise errors[0]
 
     def subscribe_readback(self, callback):
         return self.subscribe(callback)
