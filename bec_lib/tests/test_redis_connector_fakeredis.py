@@ -427,6 +427,36 @@ def test_redis_connector_register_stream(connected_connector):
     assert connector._stream_subs.all_topics == []
 
 
+@pytest.mark.timeout(5)
+def test_redis_connector_stream_cb_swapped_during_blocking_read(connected_connector):
+    """Callbacks (un)registered while the listener is blocked in xread must (not) receive the
+    messages that read returns."""
+    connector = connected_connector
+    cb_mock1 = mock.Mock(spec=[])
+    cb_mock2 = mock.Mock(spec=[])
+    in_read = threading.Event()
+    proceed = threading.Event()
+    orig_read = connector._try_read_streams
+
+    def blocking_read(topics_ids, from_start=False):
+        if not from_start:
+            in_read.set()
+            proceed.wait(timeout=2)
+        return orig_read(topics_ids, from_start)
+
+    with mock.patch.object(connector, "_try_read_streams", blocking_read):
+        connector.register(TestStreamEndpoint, cb=cb_mock1, start_thread=False)
+        assert in_read.wait(timeout=2)
+        connector.unregister("test", cb=cb_mock1)
+        connector.register(TestStreamEndpoint, cb=cb_mock2, start_thread=False)
+        connector.xadd("test", {"data": 1})
+        proceed.set()
+        # raises TimeoutError if the message was dropped instead of delivered to cb_mock2
+        connector.poll_messages(timeout=2)
+    cb_mock1.assert_not_called()
+    cb_mock2.assert_called_once_with({"data": 1})
+
+
 @pytest.mark.timeout(10)
 def test_redis_connector_register_stream_identical(connected_connector):
     connector = connected_connector
