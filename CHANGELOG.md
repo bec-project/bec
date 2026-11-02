@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.4.0 (2026-11-02)
+
+### Features
+
+- **roi**: Add typed configurations and user-scoped requests
+  ([`f21a389`](https://github.com/bec-project/bec/commit/f21a3892cb9b0cc990ff36b374d2dd2137d12b69))
+
+
 ## v4.3.3 (2026-10-28)
 
 ### Bug Fixes
