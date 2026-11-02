@@ -12,7 +12,7 @@ from bec_lib import messages
 from bec_lib.codecs import BECCodec
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase
-from bec_lib.endpoints import MessageEndpoints
+from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.serialization import MsgpackSerialization, json_ext, msgpack
 
 
@@ -212,6 +212,13 @@ def test_device_serializer(serializer):
 
 def test_enum_serializer(serializer):
     assert serializer.loads(serializer.dumps(CustomEnum.VALUE1)) == "value1"
+
+
+def test_endpoint_info_decodes_to_enum(serializer):
+    endpoint = MessageEndpoints.scan_interlock_enabled()
+    restored = serializer.loads(serializer.dumps(endpoint))
+    assert restored == endpoint
+    assert restored.message_op is MessageOp.STREAM
 
 
 def test_serializer_encoding_on_failure():

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from bec_lib import messages as messages_module
 from bec_lib import numpy_encoder
 from bec_lib.device import DeviceBase
-from bec_lib.endpoints import EndpointInfo
+from bec_lib.endpoints import EndpointInfo, MessageOp
 from bec_lib.messages import BECMessage, BECStatus
 
 
@@ -126,7 +126,7 @@ class EndpointInfoEncoder(BECCodec):
         return EndpointInfo(
             endpoint=data["endpoint"],
             message_type=getattr(messages_module, data["message_type"]),
-            message_op=data["message_op"],
+            message_op=MessageOp(data["message_op"]),
         )
 
 
