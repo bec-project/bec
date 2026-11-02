@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.4.1 (2026-11-02)
+
+### Bug Fixes
+
+- Endpoint codec decodes messageop to enum
+  ([`973c2ac`](https://github.com/bec-project/bec/commit/973c2ac4ba2abf5d3c7c34e7ce7a3133cd31fc74))
+
+
 ## v4.4.0 (2026-11-02)
 
 ### Features
