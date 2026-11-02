@@ -510,10 +510,7 @@ class ManagedRedisConnection:
                     [(t, self._redis_conn.xrange(t, "-", end)) for t, end in topics_ids.items()],
                     None,
                 )
-            return (
-                self._redis_conn.xread(topics_ids, block=200) or [],
-                None,
-            )  # type: ignore strs are fine key and id types
+            return (self._redis_conn.xread(topics_ids, block=200) or [], None)  # type: ignore strs are fine key and id types
         except redis.exceptions.ConnectionError:
             return None, self.connection_error_str
         except redis.exceptions.NoPermissionError:
@@ -556,11 +553,14 @@ class ManagedRedisConnection:
             # Then read all the normal streams
             with self._stream_subs.lock:
                 normal_topics = self._stream_subs.topic_ids()
-                normal_subs = self._stream_subs.normal_subs
             normal_error = None
             if normal_topics:
                 response, normal_error = self._try_read_streams(normal_topics)
                 if normal_error is None:
+                    # Take the subscribers after the blocking read so that sub changes during the
+                    # read take immediate effect
+                    with self._stream_subs.lock:
+                        normal_subs = self._stream_subs.normal_subs
                     updated_ids = self._handle_stream_msg_list(response, normal_subs)
                 else:
                     updated_ids = {}
