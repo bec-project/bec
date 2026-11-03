@@ -1,5 +1,11 @@
+from __future__ import annotations
+
 import collections
 from functools import reduce
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .file_writer import HDF5Storage
 
 
 def get_merged_flat_dicts(input_dicts: list[dict]):
@@ -50,3 +56,18 @@ def merge_dicts(input_dicts: list[dict]) -> dict:
         keys = key.split("/")[1:]
         nested_update(merged_dict, reduce(lambda k, v: {v: k}, reversed(keys), val))
     return merged_dict
+
+
+def dict_to_storage(storage: HDF5Storage, data: dict) -> None:
+    """Recursively convert a dictionary to storage groups and datasets.
+
+    Args:
+        storage (HDF5Storage): Storage container to populate.
+        data (dict): Nested dictionary containing dataset values.
+    """
+    for key, val in data.items():
+        if isinstance(val, dict):
+            sub = storage.create_group(key)
+            dict_to_storage(sub, val)
+            continue
+        storage.create_dataset(key, val)
