@@ -769,7 +769,9 @@ class ScanHookMessage(BECMessage):
     Args:
         scan_id (str): Scan whose lifecycle is being reported.
         hook (str | None): Active lifecycle hook, or None before a hook has started.
-        status (Literal["running", "completed", "error"]): Hook execution state.
+        status (Literal["running", "completed", "interrupted", "error"]): Hook execution state.
+            "interrupted" means the step was ended by a user or alarm interruption of the scan
+            (finish now, abort or halt); "error" is used for any other exception.
         instructions (list[DeviceInstructionMessage]): Instructions dispatched in this hook.
             Instruction updates are coalesced to the latest one in each 0.1 second window;
             the start, completion or failure of a top-level step is sent at once.
@@ -785,7 +787,7 @@ class ScanHookMessage(BECMessage):
     msg_type: ClassVar[str] = "scan_hook"
     scan_id: str
     hook: str | None
-    status: Literal["running", "completed", "error"] = "running"
+    status: Literal["running", "completed", "interrupted", "error"] = "running"
     instructions: list[DeviceInstructionMessage] = Field(default_factory=list)
     timestamp: float = Field(default_factory=time.time)
     waiting: bool = False

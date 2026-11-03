@@ -14,6 +14,7 @@ from bec_lib.tests.fixtures import dm_with_devices  # noqa: F401
 from bec_lib.tests.utils import ConnectorMock
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.file_writer.file_writer_manager import ScanStorage
+from bec_server.scan_server.errors import ScanAbortion, UserScanInterruption
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo, ScanType
 from bec_server.scan_server.scans.scan_status import ScanStatus
@@ -1309,6 +1310,57 @@ def test_nested_hook_broadcast_restores_parent_and_reports_errors(action_context
         msg.metadata == {"RID": "rid", "queue_id": "qid", "scan_id": "scan-id-test"}
         for msg in updates
     )
+    assert ctx.actions._scan_hook_stack == []
+
+
+@pytest.mark.parametrize(
+    "exit_info", [("user_completed", "user"), ("aborted", "user"), ("halted", "alarm")]
+)
+def test_interrupted_step_is_reported_as_interrupted(action_context, exit_info):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with pytest.raises(UserScanInterruption):
+            with ctx.actions._scan_hook_context("scan_core"):
+                raise UserScanInterruption(exit_info=exit_info)
+    updates = [call.args[0] for call in add.call_args_list]
+    assert [(msg.hook, msg.status) for msg in updates] == [
+        ("scan_core", "running"),
+        ("scan_core", "interrupted"),
+    ]
+
+
+@pytest.mark.parametrize("exc", [ScanAbortion("motor has no velocity"), RuntimeError("failed")])
+def test_failed_step_is_still_reported_as_error(action_context, exc):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with pytest.raises(type(exc)):
+            with ctx.actions._scan_hook_context("scan_core"):
+                raise exc
+    updates = [call.args[0] for call in add.call_args_list]
+    assert [(msg.hook, msg.status) for msg in updates] == [
+        ("scan_core", "running"),
+        ("scan_core", "error"),
+    ]
+
+
+def test_interruption_in_a_nested_hook_interrupts_its_step(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with pytest.raises(UserScanInterruption):
+            with ctx.actions._scan_hook_context("scan_core"):
+                with ctx.actions._scan_hook_context("before_core"):
+                    raise UserScanInterruption(exit_info=("user_completed", "user"))
+    updates = [call.args[0] for call in add.call_args_list]
+    assert [(msg.hook, msg.status) for msg in updates] == [
+        ("scan_core", "running"),
+        ("before_core", "running"),
+        ("before_core", "interrupted"),
+        ("scan_core", "running"),
+        ("scan_core", "interrupted"),
+    ]
     assert ctx.actions._scan_hook_stack == []
 
 
