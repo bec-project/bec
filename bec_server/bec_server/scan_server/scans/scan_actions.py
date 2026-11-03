@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import os
+import time
 import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -70,29 +71,38 @@ class ScanActions:
         self._queued_device_locks: set[str] = set()
         self._scan_running = False
         self._scan_hook_stack: list[str] = []
+        self._step_started_at: float | None = None
         self._hook_broadcaster = ScanHookBroadcaster(self._connector)
 
     @contextmanager
     def _scan_hook_context(self, hook: str) -> Iterator[None]:
-        """Broadcast lifecycle hooks, reporting per-point execution as scan_core."""
+        """
+        Broadcast lifecycle hooks, reporting per-point execution as scan_core. The start, end and
+        failure of a top-level step are sent at once, so no step or error is lost to coalescing.
+        """
         if hook == "at_each_point":
             hook = "scan_core"
         if self._scan_hook_stack and self._scan_hook_stack[-1] == hook:
             yield
             return
+        is_step = not self._scan_hook_stack
+        if is_step and self._hook_broadcaster.active:
+            self._step_started_at = time.time()
         self._scan_hook_stack.append(hook)
         try:
-            self._broadcast_scan_hook()
+            self._broadcast_scan_hook(flush=is_step)
             yield
         except BaseException:
-            self._broadcast_scan_hook(status="error")
+            self._broadcast_scan_hook(status="error", flush=is_step)
             raise
         else:
-            self._broadcast_scan_hook(status="completed")
+            self._broadcast_scan_hook(status="completed", flush=is_step)
         finally:
             self._scan_hook_stack.pop()
             if self._scan_hook_stack:
                 self._broadcast_scan_hook()
+            else:
+                self._step_started_at = None
 
     def _broadcast_scan_hook(
         self,
@@ -100,8 +110,14 @@ class ScanActions:
         status: Literal["running", "completed", "error"] = "running",
         waiting: bool = False,
         wait_started_at: float | None = None,
+        flush: bool = False,
     ) -> None:
-        """Publish the current hook with the scan's original correlation metadata."""
+        """
+        Publish the current hook with the scan's original correlation metadata.
+
+        Args:
+            flush (bool): Send at once instead of at the end of the 0.1 second window.
+        """
         scan_info = self._scan.scan_info
         if scan_info.scan_id is None:
             return
@@ -113,9 +129,12 @@ class ScanActions:
                 instructions=instructions or [],
                 waiting=waiting,
                 wait_started_at=wait_started_at,
+                hook_started_at=self._step_started_at,
                 metadata={**scan_info.metadata, "scan_id": scan_info.scan_id},
             )
         )
+        if flush:
+            self._hook_broadcaster.flush_now()
 
     def _on_status_wait(self, status: ScanStatus) -> None:
         """Report pending instructions; the next lifecycle or instruction update replaces the wait."""

@@ -771,11 +771,14 @@ class ScanHookMessage(BECMessage):
         hook (str | None): Active lifecycle hook, or None before a hook has started.
         status (Literal["running", "completed", "error"]): Hook execution state.
         instructions (list[DeviceInstructionMessage]): Instructions dispatched in this hook.
-            Only the latest lifecycle or instruction update in each 0.1 second window is sent.
+            Instruction updates are coalesced to the latest one in each 0.1 second window;
+            the start, completion or failure of a top-level step is sent at once.
         waiting (bool): Whether this update was recorded during a device or exposure wait.
             Wait updates include only pending instructions. The next hook or instruction update
             replaces the wait; no separate update is emitted when waiting ends.
         wait_started_at (float | None): Start time of the reported wait, or None for other updates.
+        hook_started_at (float | None): Start time of the current top-level step, e.g. scan_core,
+            or None outside a step.
         timestamp (float): Time at which the lifecycle or instruction event was recorded.
     """
 
@@ -787,6 +790,7 @@ class ScanHookMessage(BECMessage):
     timestamp: float = Field(default_factory=time.time)
     waiting: bool = False
     wait_started_at: float | None = None
+    hook_started_at: float | None = None
 
 
 class ErrorInfo(BaseModel):

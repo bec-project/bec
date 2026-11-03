@@ -5,6 +5,7 @@ import pytest
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
+from bec_lib.endpoints import MessageEndpoints
 from bec_server.scan_server.direct_scan_worker import DirectScanWorker
 from bec_server.scan_server.errors import DeviceInstructionError, ScanAbortion, UserScanInterruption
 from bec_server.scan_server.scan_queue import (
@@ -778,11 +779,15 @@ def test_worker_records_lifecycle_hooks_and_flushes_latest(
     broadcaster = scan.actions._hook_broadcaster
     with (
         mock.patch.object(broadcaster, "add", wraps=broadcaster.add) as add,
-        mock.patch.object(direct_worker_context.connector, "send") as publish,
+        mock.patch.object(
+            direct_worker_context.connector,
+            "set_and_publish",
+            wraps=direct_worker_context.connector.set_and_publish,
+        ) as publish,
     ):
         direct_worker_context.direct_worker.run(scan)
     updates = [call.args[0] for call in add.call_args_list]
-    assert publish.call_args.args[1] == updates[-1]
+    assert _published_hooks(publish)[-1] == updates[-1]
     assert broadcaster._latest_update is None
     assert [msg.hook for msg in updates if msg.status == "completed"] == SCAN_SEQUENCE
     assert all(msg.hook != "at_each_point" for msg in updates)
@@ -800,12 +805,16 @@ def test_worker_flushes_latest_exception_cleanup_update(direct_worker_context, m
     broadcaster = scan.actions._hook_broadcaster
     with (
         mock.patch.object(broadcaster, "add", wraps=broadcaster.add) as add,
-        mock.patch.object(direct_worker_context.connector, "send") as publish,
+        mock.patch.object(
+            direct_worker_context.connector,
+            "set_and_publish",
+            wraps=direct_worker_context.connector.set_and_publish,
+        ) as publish,
     ):
         with pytest.raises(ScanAbortion):
             direct_worker_context.direct_worker.run(scan)
     updates = [call.args[0] for call in add.call_args_list]
-    assert publish.call_args.args[1] == updates[-1]
+    assert _published_hooks(publish)[-1] == updates[-1]
     assert broadcaster._latest_update is None
     assert [(msg.hook, msg.status) for msg in updates][-3:] == [
         ("stage", "error"),
@@ -813,6 +822,25 @@ def test_worker_flushes_latest_exception_cleanup_update(direct_worker_context, m
         ("on_exception", "completed"),
     ]
     assert all(msg.scan_id == "scan-id" and msg.metadata["RID"] == "rid-1" for msg in updates)
+
+
+def _published_hooks(publish: mock.Mock) -> list:
+    return [
+        call.args[1]
+        for call in publish.call_args_list
+        if call.args[0] == MessageEndpoints.scan_hook()
+    ]
+
+
+def _fail_hook_publication(set_and_publish):
+    """Make only the scan hook publication fail; other messages are stored as usual."""
+
+    def publish(topic, msg, *args, **kwargs):
+        if topic == MessageEndpoints.scan_hook():
+            raise RuntimeError("Telemetry failed")
+        return set_and_publish(topic, msg, *args, **kwargs)
+
+    return publish
 
 
 @pytest.mark.parametrize("fail_step", [None, "stage"])
@@ -829,7 +857,9 @@ def test_final_broadcast_failure_preserves_scan_outcome(
     with (
         mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"),
         mock.patch.object(
-            direct_worker_context.connector, "send", side_effect=RuntimeError("Telemetry failed")
+            direct_worker_context.connector,
+            "set_and_publish",
+            side_effect=_fail_hook_publication(direct_worker_context.connector.set_and_publish),
         ),
         mock.patch.object(registry, "release_all") as release,
     ):

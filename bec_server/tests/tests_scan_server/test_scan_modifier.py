@@ -311,7 +311,13 @@ def test_hook_broadcast_through_redis(test_scan, connected_connector):
     connected_connector.register(MessageEndpoints.scan_hook(), cb=receive)
     test_scan.post_scan()
     assert completed.wait(2)
-    assert [(msg.hook, msg.status) for msg in received] == [("post_scan", "completed")]
+    # the start and the end of a step are sent at once, not coalesced
+    assert [(msg.hook, msg.status) for msg in received] == [
+        ("post_scan", "running"),
+        ("post_scan", "completed"),
+    ]
+    stored = connected_connector.get(MessageEndpoints.scan_hook())
+    assert (stored.hook, stored.status) == ("post_scan", "completed")
 
 
 def test_modifier_execution_remains_inside_hook_broadcast(test_scan):
@@ -329,12 +335,15 @@ def test_modifier_execution_remains_inside_hook_broadcast(test_scan):
 
     test_scan._scan_modifier = Modifier(test_scan)
     test_scan._scan_modifier_hooks = get_scan_hooks_impl(Modifier)
-    with mock.patch.object(test_scan.redis_connector, "send") as publish:
+    with mock.patch.object(test_scan.redis_connector, "set_and_publish") as publish:
         test_scan.post_scan()
         test_scan.actions._hook_broadcaster.flush()
-    updates = [call.args[1] for call in publish.call_args_list]
-    assert all(call.args[0] == MessageEndpoints.scan_hook() for call in publish.call_args_list)
-    assert [msg.status for msg in updates] == ["completed"]
+    updates = [
+        call.args[1]
+        for call in publish.call_args_list
+        if call.args[0] == MessageEndpoints.scan_hook()
+    ]
+    assert [msg.status for msg in updates] == ["running", "completed"]
     assert test_scan.after_hook_calls == ["post_scan"]
 
 
@@ -372,7 +381,9 @@ def test_latest_hook_and_instruction_updates_through_redis(test_scan, connected_
     assert completed.wait(2)
     assert [(event.hook, event.status) for event in updates] == [
         ("stage", "running"),
+        ("stage", "running"),
         ("stage", "completed"),
     ]
-    assert [event.instructions for event in updates] == [[instructions[-1]], []]
+    # the step start is sent at once; the instructions are coalesced to the latest one
+    assert [event.instructions for event in updates] == [[], [instructions[-1]], []]
     assert all(event.metadata["scan_id"] == "scan-id" for event in updates)

@@ -1148,8 +1148,18 @@ def test_scan_hook_wait_fields_are_optional_and_roundtrip():
     )
     assert old_update.waiting is False
     assert old_update.wait_started_at is None
+    assert old_update.hook_started_at is None
     waiting = old_update.model_copy(update={"waiting": True, "wait_started_at": 1791244800.0})
     loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(waiting))
     assert loaded == waiting
     assert loaded.waiting is True
     assert loaded.wait_started_at == 1791244800.0
+
+
+def test_scan_hook_step_start_roundtrips():
+    msg = messages.ScanHookMessage(
+        scan_id="scan-id", hook="scan_core", status="error", hook_started_at=1791244800.0
+    )
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert loaded == msg
+    assert loaded.hook_started_at == 1791244800.0

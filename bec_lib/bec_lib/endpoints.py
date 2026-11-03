@@ -798,15 +798,18 @@ class MessageEndpoints:
 
     @staticmethod
     def scan_hook() -> EndpointInfo:
-        """Endpoint for the latest scan hook or instruction update in each 0.1 second window.
+        """Endpoint for the latest scan hook or instruction update of the running scan.
+
+        Step changes are published at once, instruction updates at most once per 0.1 second
+        window. The latest update is stored, so clients that start mid-scan can read it.
 
         Returns:
-            EndpointInfo: Endpoint carrying individual messages.ScanHookMessage updates.
+            EndpointInfo: Endpoint carrying messages.ScanHookMessage updates.
         """
         return EndpointInfo(
             endpoint=f"{EndpointType.INFO.value}/scans/scan_hook",
             message_type=messages.ScanHookMessage,
-            message_op=MessageOp.SEND,
+            message_op=MessageOp.SET_PUBLISH,
         )
 
     @staticmethod

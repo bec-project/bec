@@ -1,4 +1,4 @@
-"""Broadcast the latest scan lifecycle or instruction update to clients."""
+"""Broadcast and store the latest scan lifecycle or instruction update for clients."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ logger = bec_logger.logger
 
 
 class ScanHookBroadcaster:
-    """Send only the latest update in each 0.1 second broadcast window."""
+    """Send only the latest update in each 0.1 second broadcast window, unless flushed at once."""
 
     def __init__(self, connector: RedisConnector) -> None:
         self._connector = connector
@@ -26,6 +26,12 @@ class ScanHookBroadcaster:
         self._timer: threading.Timer | None = None
         self._active = False
         self._stopped = False
+
+    @property
+    def active(self) -> bool:
+        """Whether events are collected, i.e. the scan worker is executing the scan."""
+        with self._lock:
+            return self._active
 
     def start(self) -> None:
         """Enable event collection when the scan worker begins execution."""
@@ -69,6 +75,13 @@ class ScanHookBroadcaster:
         except Exception:  # pylint: disable=broad-except
             logger.exception("Failed to broadcast scan hook events")
 
+    def flush_now(self) -> None:
+        """Send the pending update without waiting for the window, e.g. for a step change.
+
+        A failed publication is logged and does not interrupt the caller.
+        """
+        self._flush_scheduled()
+
     def flush(self) -> None:
         """Send the latest pending update and cancel the pending timer.
 
@@ -89,7 +102,7 @@ class ScanHookBroadcaster:
                 if event is None:
                     return
                 try:
-                    self._connector.send(MessageEndpoints.scan_hook(), event)
+                    self._connector.set_and_publish(MessageEndpoints.scan_hook(), event)
                 except Exception:
                     with self._lock:
                         if not self._stopped and self._latest_update is None:
