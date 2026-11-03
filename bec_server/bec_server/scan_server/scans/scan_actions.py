@@ -20,6 +20,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
+from bec_server.scan_server.errors import UserScanInterruption
 from bec_server.scan_server.scan_hook_broadcaster import ScanHookBroadcaster
 from bec_server.scan_server.scans.scan_status import ScanStatus
 
@@ -79,6 +80,8 @@ class ScanActions:
         """
         Broadcast lifecycle hooks, reporting per-point execution as scan_core. The start, end and
         failure of a top-level step are sent at once, so no step or error is lost to coalescing.
+        A step ended by a user or alarm interruption (finish now, abort, halt) is reported as
+        interrupted, any other exception as an error.
         """
         if hook == "at_each_point":
             hook = "scan_core"
@@ -92,6 +95,9 @@ class ScanActions:
         try:
             self._broadcast_scan_hook(flush=is_step)
             yield
+        except UserScanInterruption:
+            self._broadcast_scan_hook(status="interrupted", flush=is_step)
+            raise
         except BaseException:
             self._broadcast_scan_hook(status="error", flush=is_step)
             raise
@@ -107,7 +113,7 @@ class ScanActions:
     def _broadcast_scan_hook(
         self,
         instructions: list[messages.DeviceInstructionMessage] | None = None,
-        status: Literal["running", "completed", "error"] = "running",
+        status: Literal["running", "completed", "interrupted", "error"] = "running",
         waiting: bool = False,
         wait_started_at: float | None = None,
         flush: bool = False,

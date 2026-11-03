@@ -1163,3 +1163,10 @@ def test_scan_hook_step_start_roundtrips():
     loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
     assert loaded == msg
     assert loaded.hook_started_at == 1791244800.0
+
+
+def test_scan_hook_interrupted_status_roundtrips():
+    msg = messages.ScanHookMessage(scan_id="scan-id", hook="scan_core", status="interrupted")
+    loaded = MsgpackSerialization.loads(MsgpackSerialization.dumps(msg))
+    assert loaded == msg
+    assert loaded.status == "interrupted"
