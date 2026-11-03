@@ -18,7 +18,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 
 from .default_writer import DefaultFormat as default_NeXus_format
-from .merged_dicts import merge_dicts
+from .merged_dicts import dict_to_storage, merge_dicts
 
 logger = bec_logger.logger
 
@@ -398,12 +398,3 @@ class HDF5FileWriter:
                         "shape": value_dset_shape,
                         "dtype": value_dset.dtype.name,
                     }
-
-
-def dict_to_storage(storage, data):
-    for key, val in data.items():
-        if isinstance(val, dict):
-            sub = storage.create_group(key)
-            dict_to_storage(sub, val)
-            continue
-        storage.create_dataset(key, val)

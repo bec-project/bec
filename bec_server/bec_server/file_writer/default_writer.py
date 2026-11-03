@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any
 import h5py
 import numpy as np
 
+from .merged_dicts import dict_to_storage, merge_dicts
+
 if TYPE_CHECKING:
     from bec_lib import messages
     from bec_lib.devicemanager import DeviceManagerBase
@@ -132,8 +134,7 @@ class DefaultFormat:
         # /entry/collection
         collection = entry.create_group("collection")
         collection.attrs["NX_class"] = "NXcollection"
-        devices = collection.create_dataset("devices", data=self.data)
-        devices.attrs["NX_class"] = "NXcollection"
+        self._write_device_data(collection, "devices", self.data)
         metadata = collection.create_dataset("metadata", data=self.info_storage)
         metadata.attrs["NX_class"] = "NXcollection"
         readout_groups = collection.create_group("readout_groups")
@@ -145,8 +146,7 @@ class DefaultFormat:
             group.attrs["NX_class"] = "NXcollection"
             for device in devices:
                 group.create_soft_link(name=device, target=f"/entry/collection/devices/{device}")
-        configuration = collection.create_dataset("configuration", data=self.configuration)
-        configuration.attrs["NX_class"] = "NXcollection"
+        self._write_device_data(collection, "configuration", self.configuration)
 
         # create file references
         file_references = collection.create_group("file_references")
@@ -188,6 +188,96 @@ class DefaultFormat:
             state_group = beamline_states_group.create_dataset(name=state_name, data=state_values)
             state_group.attrs["NX_class"] = "NXcollection"
 
+    def _write_device_data(self, collection: HDF5Storage, name: str, data: dict) -> None:
+        """Build device datasets with units from cached signal descriptions."""
+        devices = collection.create_group(name)
+        devices.attrs["NX_class"] = "NXcollection"
+        for device_name, readings in data.items():
+            if isinstance(readings, list) and readings and isinstance(readings[0], dict):
+                readings = merge_dicts(readings)
+            if not isinstance(readings, dict):
+                devices.create_dataset(device_name, data=readings)
+                continue
+            device_group = devices.create_group(device_name)
+            dict_to_storage(device_group, readings)
+            for signal_name, reading in readings.items():
+                if not isinstance(reading, dict) or "value" not in reading:
+                    continue
+                units = self._get_signal_units(device_name, signal_name)
+                if units:
+                    # pylint: disable=protected-access
+                    device_group._storage[signal_name]._storage["value"].attrs["units"] = units
+
+    def _get_signal_units(self, device_name: str, signal_name: str) -> str | None:
+        """Return available units from cached device and signal descriptions."""
+        device = self.device_manager.devices.get(device_name)
+        if device is None:
+            return None
+        # pylint: disable=protected-access
+        return self._get_units_from_info(device._info, signal_name, device_name)
+
+    @staticmethod
+    def _get_per_signal_units(signals: dict, signal_name: str) -> str | None:
+        """Read units from the matching signal's description or metadata."""
+        for signal_info in signals.values():
+            if signal_info.get("obj_name") != signal_name:
+                continue
+            for source in ("describe", "metadata"):
+                units = signal_info.get(source, {}).get("units")
+                if isinstance(units, str) and units.strip():
+                    return units
+        return None
+
+    @staticmethod
+    def _get_units_from_info(
+        info: dict, signal_name: str, device_name: str | None = None
+    ) -> str | None:
+        """Resolve signal units, including engineering units of nested positioners."""
+        signals = info.get("signals", {})
+        units = DefaultFormat._get_per_signal_units(signals, signal_name)
+        if units:
+            return units
+
+        description = info.get("describe", {})
+        configuration_description = info.get("describe_configuration", {})
+        for source in (description, configuration_description):
+            units = source.get(signal_name, {}).get("units")
+            if isinstance(units, str) and units.strip():
+                return units
+
+        for child_info in info.get("sub_devices", []):
+            units = DefaultFormat._get_units_from_info(child_info, signal_name)
+            if units:
+                return units
+
+        # Resolve a positioner's own signals by their published names, not prefixes:
+        # sibling axes can have different engineering units.
+        is_user_setpoint = signals.get("user_setpoint", {}).get("obj_name") == signal_name
+        is_setpoint = is_user_setpoint or signals.get("setpoint", {}).get("obj_name") == signal_name
+        readback_components = (
+            ("user_readback", "readback") if is_user_setpoint else ("readback", "user_readback")
+        )
+        readback_names = []
+        for component in readback_components:
+            name = signals.get(component, {}).get("obj_name")
+            if isinstance(name, str):
+                readback_names.append(name)
+        if device_name is not None and device_name not in readback_names:
+            readback_names.append(device_name)
+        if is_setpoint or signal_name in readback_names:
+            for name in readback_names:
+                if is_setpoint:
+                    units = DefaultFormat._get_per_signal_units(signals, name)
+                    if units:
+                        return units
+                units = description.get(name, {}).get("units")
+                if isinstance(units, str) and units.strip():
+                    return units
+            units = configuration_description.get("egu")
+            if isinstance(units, str) and units.strip():
+                return units
+        return None
+
     def safe_dataset(
         self,
         group: HDF5Storage,
@@ -210,7 +300,9 @@ class DefaultFormat:
             name (str): The name of the dataset.
             device (str): The device name to retrieve the data from.
             attributes (dict, optional): Additional attributes to set on the dataset. Defaults to None.
-            units (str, optional): The units of the dataset. Defaults to None.
+            units (str, optional): Explicit units for a copied dataset. If omitted, units
+                are inferred from device metadata unless supplied in attributes. Soft links
+                inherit the units of their target dataset. Defaults to None.
             description (str, optional): The description of the dataset. Defaults to None.
             softlink (bool, optional): Create a soft link into /entry/collection/devices instead of
                 copying the value into a new dataset. Defaults to True. For async signals, this is always True.
@@ -233,6 +325,10 @@ class DefaultFormat:
                 ds.attrs[key] = val
         if units:
             ds.attrs["units"] = units
+        elif "units" not in ds.attrs:
+            inferred_units = self._get_signal_units(device, signal)
+            if inferred_units:
+                ds.attrs["units"] = inferred_units
         if description:
             ds.attrs["description"] = description
 
