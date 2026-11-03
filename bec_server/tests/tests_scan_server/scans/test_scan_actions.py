@@ -1312,6 +1312,104 @@ def test_nested_hook_broadcast_restores_parent_and_reports_errors(action_context
     assert ctx.actions._scan_hook_stack == []
 
 
+def _hook_updates(connector: mock.Mock) -> list[messages.ScanHookMessage]:
+    return [
+        call.args[1]
+        for call in connector.set_and_publish.call_args_list
+        if call.args[0] == MessageEndpoints.scan_hook()
+    ]
+
+
+def test_top_level_steps_are_sent_at_once_with_their_start(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.scan.scan_info.metadata = {"RID": "rid", "queue_id": "qid"}
+    # no window ever ends, so everything sent was sent at once
+    with mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"):
+        ctx.actions._hook_broadcaster.start()
+        with ctx.actions._scan_hook_context("scan_core"):
+            with ctx.actions._scan_hook_context("at_each_point"):
+                pass
+            with ctx.actions._scan_hook_context("stage"):
+                pass
+        with pytest.raises(ValueError, match="failed"):
+            with ctx.actions._scan_hook_context("post_scan"):
+                raise ValueError("failed")
+        with ctx.actions._scan_hook_context("on_exception"):
+            pass
+        updates = _hook_updates(ctx.connector)
+
+    assert [(msg.hook, msg.status) for msg in updates] == [
+        ("scan_core", "running"),
+        ("scan_core", "completed"),
+        ("post_scan", "running"),
+        ("post_scan", "error"),
+        ("on_exception", "running"),
+        ("on_exception", "completed"),
+    ]
+    # the end of a step keeps the time the step started
+    assert updates[0].hook_started_at == updates[1].hook_started_at
+    assert updates[2].hook_started_at == updates[3].hook_started_at
+    assert updates[0].hook_started_at <= updates[2].hook_started_at
+    assert all(msg.scan_id == "scan-id-test" for msg in updates)
+    assert all(
+        msg.metadata == {"RID": "rid", "queue_id": "qid", "scan_id": "scan-id-test"}
+        for msg in updates
+    )
+
+
+def test_nested_hooks_carry_the_start_of_their_step(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.actions._hook_broadcaster.start()
+    with mock.patch.object(ctx.actions._hook_broadcaster, "add") as add:
+        with ctx.actions._scan_hook_context("pre_scan"):
+            with ctx.actions._scan_hook_context("before_pre_scan"):
+                pass
+    updates = [call.args[0] for call in add.call_args_list]
+    assert {msg.hook_started_at for msg in updates} == {updates[0].hook_started_at}
+    assert updates[0].hook_started_at is not None
+    assert ctx.actions._step_started_at is None
+
+
+def test_scan_hook_is_not_published_outside_scan_execution(action_context):
+    ctx = action_context(connector=mock.Mock())
+    with ctx.actions._scan_hook_context("stage"):
+        pass
+    ctx.actions._hook_broadcaster.start()
+    ctx.actions._hook_broadcaster.stop()
+    with ctx.actions._scan_hook_context("unstage"):
+        pass
+    assert not _hook_updates(ctx.connector)
+
+
+def test_scan_hook_publication_failure_does_not_interrupt_the_step(action_context):
+    ctx = action_context(connector=mock.Mock())
+    ctx.connector.set_and_publish.side_effect = ConnectionError("redis down")
+    ctx.actions._hook_broadcaster.start()
+    ran = False
+    with ctx.actions._scan_hook_context("stage"):
+        ran = True
+    ctx.actions._hook_broadcaster.stop()
+    assert ran
+    assert ctx.connector.set_and_publish.call_count >= 2
+
+
+def test_latest_scan_hook_is_readable_by_late_subscribers(action_context, connected_connector):
+    ctx = action_context(connector=connected_connector)
+    ctx.actions._hook_broadcaster.start()
+    with ctx.actions._scan_hook_context("stage"):
+        pass
+    with ctx.actions._scan_hook_context("scan_core"):
+        with ctx.actions._scan_hook_context("at_each_point"):
+            stored = connected_connector.get(MessageEndpoints.scan_hook())
+    ctx.actions._hook_broadcaster.stop()
+
+    assert isinstance(stored, messages.ScanHookMessage)
+    assert (stored.scan_id, stored.hook, stored.status) == ("scan-id-test", "scan_core", "running")
+    final = connected_connector.get(MessageEndpoints.scan_hook())
+    assert (final.hook, final.status) == ("scan_core", "completed")
+    assert final.hook_started_at == stored.hook_started_at
+
+
 def test_worker_and_decorator_context_do_not_duplicate_broadcasts(action_context):
     ctx = action_context(connector=mock.Mock())
     ctx.actions._hook_broadcaster.start()
@@ -1353,7 +1451,7 @@ def test_exception_cleanup_broadcast_preserves_original_scan_identity(action_con
     with ctx.actions._scan_hook_context("on_exception"):
         pass
     ctx.actions._hook_broadcaster.flush()
-    msg = ctx.connector.send.call_args.args[1]
+    msg = _hook_updates(ctx.connector)[-1]
     assert msg.scan_id == "scan-id-test"
     assert msg.metadata == {"RID": "rid", "queue_id": "qid", "scan_id": "scan-id-test"}
 
@@ -1497,11 +1595,7 @@ def test_short_wait_is_replaced_by_next_instruction_without_an_end_update(action
             ctx.actions._send(next_instruction)
             assert add.call_count == 3
         ctx.actions._hook_broadcaster.stop()
-    updates = [
-        call.args[1]
-        for call in ctx.connector.send.call_args_list
-        if call.args[0] == MessageEndpoints.scan_hook()
-    ]
+    updates = _hook_updates(ctx.connector)
     assert len(updates) == 1
     assert updates[0].waiting is False
     assert updates[0].wait_started_at is None

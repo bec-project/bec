@@ -36,15 +36,15 @@ def test_only_latest_update_in_window_is_sent():
             broadcaster.add(event)
         timer.assert_called_once_with(0.1, broadcaster._flush_scheduled)
         timer.return_value.start.assert_called_once()
-        connector.send.assert_not_called()
+        connector.set_and_publish.assert_not_called()
         timer.call_args.args[1]()
-        connector.send.assert_called_once_with(MessageEndpoints.scan_hook(), events[-1])
+        connector.set_and_publish.assert_called_once_with(MessageEndpoints.scan_hook(), events[-1])
         broadcaster.flush()
-        assert connector.send.call_count == 1
+        assert connector.set_and_publish.call_count == 1
         broadcaster.add(_event("close_scan"))
         assert timer.call_count == 2
         broadcaster.stop()
-    assert connector.send.call_count == 2
+    assert connector.set_and_publish.call_count == 2
 
 
 def test_stop_flushes_latest_update_and_joins_timer():
@@ -55,10 +55,10 @@ def test_stop_flushes_latest_update_and_joins_timer():
     timer = broadcaster._timer
     broadcaster.stop()
     assert not timer.is_alive()
-    connector.send.assert_called_once()
+    connector.set_and_publish.assert_called_once()
     broadcaster.add(_event("close_scan"))
     broadcaster.flush()
-    assert connector.send.call_count == 1
+    assert connector.set_and_publish.call_count == 1
 
 
 def test_events_before_scan_execution_are_ignored():
@@ -66,7 +66,7 @@ def test_events_before_scan_execution_are_ignored():
     broadcaster = ScanHookBroadcaster(connector)
     broadcaster.add(_event())
     broadcaster.flush()
-    connector.send.assert_not_called()
+    connector.set_and_publish.assert_not_called()
 
 
 def test_failed_flush_retains_latest_update_for_retry():
@@ -76,18 +76,18 @@ def test_failed_flush_retains_latest_update_for_retry():
     with mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"):
         event = _event()
         broadcaster.add(event)
-        connector.send.side_effect = RuntimeError("Redis unavailable")
+        connector.set_and_publish.side_effect = RuntimeError("Redis unavailable")
         with pytest.raises(RuntimeError):
             broadcaster.flush()
-        connector.send.side_effect = None
+        connector.set_and_publish.side_effect = None
         broadcaster.stop()
-    assert connector.send.call_args.args[1] == event
+    assert connector.set_and_publish.call_args.args[1] == event
 
 
 def test_timer_flushes_without_further_scan_activity():
     connector = mock.Mock()
     sent = threading.Event()
-    connector.send.side_effect = lambda *args, **kwargs: sent.set()
+    connector.set_and_publish.side_effect = lambda *args, **kwargs: sent.set()
     broadcaster = ScanHookBroadcaster(connector)
     broadcaster.start()
     broadcaster.add(_event())
@@ -95,7 +95,7 @@ def test_timer_flushes_without_further_scan_activity():
         assert sent.wait(2)
     finally:
         broadcaster.stop()
-    connector.send.assert_called_once()
+    connector.set_and_publish.assert_called_once()
 
 
 def test_new_update_replaces_failed_publication():
@@ -104,14 +104,14 @@ def test_new_update_replaces_failed_publication():
     broadcaster.start()
     with mock.patch("bec_server.scan_server.scan_hook_broadcaster.threading.Timer"):
         broadcaster.add(_event("stage"))
-        connector.send.side_effect = RuntimeError("Redis unavailable")
+        connector.set_and_publish.side_effect = RuntimeError("Redis unavailable")
         with pytest.raises(RuntimeError):
             broadcaster.flush()
         latest = _event("pre_scan", device="samx")
         broadcaster.add(latest)
-        connector.send.side_effect = None
+        connector.set_and_publish.side_effect = None
         broadcaster.stop()
-    assert connector.send.call_args.args[1] == latest
+    assert connector.set_and_publish.call_args.args[1] == latest
 
 
 @pytest.mark.parametrize("fail_first", [False, True])
@@ -125,13 +125,13 @@ def test_slow_publication_does_not_block_or_overwrite_new_updates(fail_first):
     original = _event("stage")
     latest = _event("pre_scan")
 
-    def send(*args, **kwargs):
+    def publish(*args, **kwargs):
         publishing.set()
         assert release.wait(5)
         if fail_first:
             raise RuntimeError("Redis unavailable")
 
-    connector.send.side_effect = send
+    connector.set_and_publish.side_effect = publish
 
     def add_latest():
         broadcaster.add(latest)
@@ -153,14 +153,14 @@ def test_slow_publication_does_not_block_or_overwrite_new_updates(fail_first):
                 producer.join(5)
         assert not publisher.is_alive()
         assert not producer.is_alive()
-        connector.send.side_effect = None
+        connector.set_and_publish.side_effect = None
         broadcaster.stop()
-    assert [call.args[1] for call in connector.send.call_args_list] == [original, latest]
+    assert [call.args[1] for call in connector.set_and_publish.call_args_list] == [original, latest]
 
 
 def test_stop_logs_publication_failure_and_joins_timer():
     connector = mock.Mock()
-    connector.send.side_effect = RuntimeError("Redis unavailable")
+    connector.set_and_publish.side_effect = RuntimeError("Redis unavailable")
     broadcaster = ScanHookBroadcaster(connector)
     broadcaster.start()
     broadcaster.add(_event())
@@ -182,7 +182,7 @@ def test_stop_waits_for_in_flight_publication_and_flushes_latest():
     original = _event("stage")
     latest = _event("close_scan")
 
-    def send(*args, **kwargs):
+    def publish(*args, **kwargs):
         publishing.set()
         assert release.wait(2)
 
@@ -191,7 +191,7 @@ def test_stop_waits_for_in_flight_publication_and_flushes_latest():
         broadcaster.stop()
         stopped.set()
 
-    connector.send.side_effect = send
+    connector.set_and_publish.side_effect = publish
     broadcaster.start()
     broadcaster.add(original)
     publisher = broadcaster._timer
@@ -212,5 +212,5 @@ def test_stop_waits_for_in_flight_publication_and_flushes_latest():
     assert not stopper.is_alive()
     assert not pending.is_alive()
     assert stopped.is_set()
-    assert [call.args[1] for call in connector.send.call_args_list] == [original, latest]
+    assert [call.args[1] for call in connector.set_and_publish.call_args_list] == [original, latest]
     assert broadcaster._latest_update is None
