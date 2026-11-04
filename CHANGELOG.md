@@ -1,6 +1,34 @@
 # CHANGELOG
 
 
+## v4.5.0 (2026-11-04)
+
+### Bug Fixes
+
+- **scan-server**: Preserve scan identity during monitoring cleanup
+  ([`5e8c048`](https://github.com/bec-project/bec/commit/5e8c048c0e9a875370c6d193ca1bafd2216b0822))
+
+- **scan-server**: Report interrupted scan steps as interrupted, not as errors
+  ([`d56ad74`](https://github.com/bec-project/bec/commit/d56ad7413129de883c0a9bd0bdcb731107478fc8))
+
+- **scan-server**: Use monotonic deadlines for status waits
+  ([`466fdac`](https://github.com/bec-project/bec/commit/466fdac12176c24efd710b0ecd053419c611d10d))
+
+- **scan-server**: Wait for nested status containers
+  ([`8636fe5`](https://github.com/bec-project/bec/commit/8636fe5757013559d3826e95253dba042837e068))
+
+### Features
+
+- **scan-server**: Broadcast scan hooks and device waits
+  ([`143183b`](https://github.com/bec-project/bec/commit/143183b8c0cdae367b7d084573e248d1a3874ee7))
+
+- **scan-server**: Store the latest scan hook for late subscribers
+  ([`72d9231`](https://github.com/bec-project/bec/commit/72d92314216f7e884149dc9a2452030ff7e20799))
+
+- **scan_server**: Allow reordering waiting scans in a running queue
+  ([`c2115f0`](https://github.com/bec-project/bec/commit/c2115f09b19fd6bf032f5428e7283cec5e22477b))
+
+
 ## v4.4.2 (2026-11-04)
 
 ### Bug Fixes
