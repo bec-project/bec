@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.4.2 (2026-11-04)
+
+### Bug Fixes
+
+- Race in streamsubs
+  ([`c67f208`](https://github.com/bec-project/bec/commit/c67f2083b8a44814dfa1052394d48387f72c8a94))
+
+
 ## v4.4.1 (2026-11-02)
 
 ### Bug Fixes
