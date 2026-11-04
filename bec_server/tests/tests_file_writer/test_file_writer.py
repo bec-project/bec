@@ -128,6 +128,162 @@ def test_get_entry_returns_values_for_scalar_and_list_data(default_format):
     assert default_format.get_entry("temperature", signal="readback") == 273.15
 
 
+@pytest.mark.parametrize("monitored", [False, True])
+def test_device_datasets_include_units(default_format, tmp_path, monitored):
+    device = mock.Mock()
+    device._info = {}
+    device._info["describe"] = {
+        "motor": {"units": "mm"},
+        "setpoint": {"units": "mm"},
+        "empty": {"units": ""},
+    }
+    device._info["describe_configuration"] = {"config": {"units": "s"}}
+    default_format.device_manager = mock.Mock(devices={"motor": device})
+    readings = {
+        signal: {"value": 1.0, "timestamp": 123.0}
+        for signal in ["motor", "setpoint", "empty", "unknown", "config"]
+    }
+    default_format.data = {
+        "motor": [readings, readings] if monitored else readings,
+        "missing": {"readback": {"value": 1.0}},
+    }
+    storage = default_format.get_storage_format()
+    # Plugin formats can override attributes before the datasets are written.
+    devices = storage["entry"]._storage["collection"]._storage["devices"]
+    assert devices._storage["motor"]._storage["motor"]._storage["value"].attrs == {"units": "mm"}
+    devices._storage["motor"]._storage["setpoint"]._storage["value"].attrs["units"] = "um"
+    with h5py.File(tmp_path / "units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(storage, scan_file)
+        motor = scan_file["entry/collection/devices/motor"]
+        assert motor["motor/value"].attrs["units"] == "mm"
+        assert motor["motor/value"].shape == ((2,) if monitored else ())
+        assert motor["motor/timestamp"].shape == ((2,) if monitored else ())
+        assert motor["setpoint/value"].attrs["units"] == "um"
+        assert motor["config/value"].attrs["units"] == "s"
+        assert "units" not in motor["empty/value"].attrs
+        assert "units" not in motor["unknown/value"].attrs
+        assert "units" not in motor["motor/timestamp"].attrs
+        assert "units" not in scan_file["entry/collection/devices/missing/readback/value"].attrs
+
+
+@pytest.mark.parametrize("units", ["deg", None, "", "   "])
+def test_device_dataset_units_egu_fallback(default_format, tmp_path, units):
+    device = mock.Mock()
+    device._info = {}
+    device._info["describe"] = {}
+    device._info["describe_configuration"] = {"egu": units}
+    default_format.device_manager = mock.Mock(devices={"motor": device})
+    default_format.data = {"motor": {"motor": {"value": 1.0}, "status": {"value": 1}}}
+    storage = default_format.get_storage_format()
+    with h5py.File(tmp_path / "units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(storage, scan_file)
+        motor = scan_file["entry/collection/devices/motor"]
+        assert motor["motor/value"].attrs.get("units") == (
+            units if units and units.strip() else None
+        )
+        assert "units" not in motor["status/value"].attrs
+
+
+@pytest.mark.parametrize("monitored", [False, True])
+def test_nested_device_units(default_format, tmp_path, monitored):
+    def positioner(name, units, setpoint_component):
+        return {
+            "device_base_class": "positioner",
+            "hints": {"fields": [name]},
+            "describe_configuration": {"egu": units},
+            "signals": {
+                "readback": {"obj_name": name},
+                setpoint_component: {"obj_name": f"{name}_target"},
+                "status": {"obj_name": f"{name}_status"},
+                "acceleration": {"obj_name": f"{name}_acceleration", "describe": {"units": "s"}},
+            },
+        }
+
+    device = mock.Mock()
+    device._info = {
+        "sub_devices": [
+            positioner("stage_x", "mm", "setpoint"),
+            {"sub_devices": [positioner("stage_rotation", "deg", "user_setpoint")]},
+            positioner("stage_unknown", None, "setpoint"),
+        ]
+    }
+    device._info["describe"] = {}
+    device._info["describe_configuration"] = {"egu": "wrong-root-unit"}
+    default_format.device_manager = mock.Mock(devices={"stage": device})
+    readings = {
+        f"{name}{suffix}": {"value": 1.0, "timestamp": 123.0}
+        for name in ("stage_x", "stage_rotation", "stage_unknown")
+        for suffix in ("", "_target", "_status", "_acceleration")
+    }
+    default_format.data = {"stage": [readings, readings] if monitored else readings}
+    default_format.configuration = {"stage": readings}
+    storage = default_format.get_storage_format()
+    copied = default_format.storage.create_group("copied")
+    default_format.safe_dataset(
+        copied,
+        name="rotation_target",
+        device="stage",
+        signal="stage_rotation_target",
+        softlink=False,
+    )
+    with h5py.File(tmp_path / "nested_units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(storage, scan_file)
+        for group in ("devices", "configuration"):
+            stage = scan_file[f"entry/collection/{group}/stage"]
+            for name, units in (
+                ("stage_x", "mm"),
+                ("stage_rotation", "deg"),
+                ("stage_unknown", None),
+            ):
+                assert stage[f"{name}/value"].attrs.get("units") == units
+                assert stage[f"{name}_target/value"].attrs.get("units") == units
+                assert "units" not in stage[f"{name}_status/value"].attrs
+                assert stage[f"{name}_acceleration/value"].attrs["units"] == "s"
+        assert scan_file["copied/rotation_target"].attrs["units"] == "deg"
+
+
+@pytest.mark.parametrize("source", ["describe", "metadata"])
+def test_all_signal_units_from_info(default_format, tmp_path, source):
+    device = mock.Mock()
+    device._info = {
+        "signals": {
+            component: {"obj_name": signal_name, source: {"units": units}}
+            for component, signal_name, units in [
+                ("user_readback", "motor", "degrees"),
+                ("user_setpoint", "motor_user_setpoint", "degrees"),
+                ("acceleration", "motor_acceleration", "sec"),
+                ("high_limit_travel", "motor_high_limit_travel", "degrees"),
+                ("user_offset_dir", "motor_user_offset_dir", None),
+                ("nested.sensor", "motor_nested_sensor", "K"),
+            ]
+        }
+    }
+    # Per-signal info must take precedence over aggregate descriptions and egu.
+    device._info["describe"] = {"motor": {"units": "wrong"}}
+    device._info["describe_configuration"] = {"egu": "wrong"}
+    default_format.device_manager = mock.Mock(devices={"motor": device})
+    readings = {
+        info["obj_name"]: {"value": 1.0, "timestamp": 123.0}
+        for info in device._info["signals"].values()
+    }
+    default_format.data = {"motor": readings}
+    default_format.configuration = {"motor": readings}
+    storage = default_format.get_storage_format()
+    copied = default_format.storage.create_group("copied")
+    default_format.safe_dataset(
+        copied, name="acceleration", device="motor", signal="motor_acceleration", softlink=False
+    )
+    with h5py.File(tmp_path / "signal_info_units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(storage, scan_file)
+        for group in ("devices", "configuration"):
+            motor = scan_file[f"entry/collection/{group}/motor"]
+            for info in device._info["signals"].values():
+                signal = motor[info["obj_name"]]
+                assert signal["value"].attrs.get("units") == info[source]["units"]
+                assert "units" not in signal["timestamp"].attrs
+        assert scan_file["copied/acceleration"].attrs["units"] == "sec"
+
+
 def test_get_entry_returns_default_for_missing_signal(default_format):
     default_format.data = {"samx": {"samx": {"value": 1}}}
 
@@ -200,6 +356,90 @@ def test_safe_dataset_forces_softlink_for_async_signal(default_format):
 
     assert group._storage["samx"]._storage_type == "softlink"
     assert group._storage["samx"]._data == "/entry/collection/devices/samx/samx/value"
+
+
+@pytest.mark.parametrize(
+    "signal,metadata_units,egu,units,attributes,expected",
+    [
+        ("readback", "mm", None, None, None, "mm"),
+        ("motor", None, "deg", None, None, "deg"),
+        ("status", None, "deg", None, None, None),
+        ("readback", "mm", None, "um", {"units": "m"}, "um"),
+        ("readback", "mm", None, None, {"units": "m"}, "m"),
+        ("readback", "", None, None, None, None),
+        ("readback", "   ", None, None, None, None),
+    ],
+)
+def test_safe_dataset_infers_units(
+    default_format, tmp_path, signal, metadata_units, egu, units, attributes, expected
+):
+    device = mock.Mock()
+    device._info = {}
+    device._info["describe"] = {signal: {"units": metadata_units}}
+    device._info["describe_configuration"] = {"egu": egu}
+    default_format.device_manager = mock.Mock(devices={"motor": device})
+    default_format.data = {"motor": {signal: {"value": 1.0}}}
+    group = default_format.storage.create_group("group")
+    default_format.safe_dataset(
+        group,
+        name="position",
+        device="motor",
+        signal=signal,
+        units=units,
+        attributes=attributes,
+        softlink=False,
+    )
+    with h5py.File(tmp_path / "safe_units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(default_format.storage._storage, scan_file)
+        assert scan_file["group/position"].attrs.get("units") == expected
+
+
+def test_safe_dataset_softlink_inherits_units(default_format, tmp_path):
+    device = mock.Mock()
+    device._info = {}
+    device._info["describe"] = {"motor": {"units": "mm"}}
+    device._info["describe_configuration"] = {}
+    default_format.device_manager = mock.Mock(devices={"motor": device})
+    default_format.data = {"motor": {"motor": {"value": 1.0}}}
+    storage = default_format.get_storage_format()
+    group = default_format.storage.create_group("linked")
+    default_format.safe_dataset(group, name="position", device="motor")
+    with h5py.File(tmp_path / "linked_units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(storage, scan_file)
+        assert isinstance(scan_file["linked"].get("position", getlink=True), h5py.SoftLink)
+        assert scan_file["linked/position"].attrs["units"] == "mm"
+
+
+@pytest.mark.parametrize("component", ["setpoint", "user_setpoint"])
+@pytest.mark.parametrize("source", ["egu", "readback"])
+def test_setpoint_inherits_position_units(default_format, tmp_path, component, source):
+    device = mock.Mock()
+    device._info = {"signals": {component: {"obj_name": "target_position"}}}
+    device._info["describe"] = {
+        "motor": {"units": "mm"} if source == "readback" else {},
+        "target_position": {},
+        "motor_other_setpoint": {},
+        "motor_status": {},
+    }
+    device._info["describe_configuration"] = {"egu": "mm"} if source == "egu" else {}
+    default_format.device_manager = mock.Mock(devices={"motor": device})
+    default_format.data = {
+        "motor": {name: {"value": 1.0, "timestamp": 123.0} for name in device._info["describe"]}
+    }
+    storage = default_format.get_storage_format()
+    copied = default_format.storage.create_group("copied")
+    default_format.safe_dataset(
+        copied, name="target", device="motor", signal="target_position", softlink=False
+    )
+    with h5py.File(tmp_path / "setpoint_units.h5", "w") as scan_file:
+        HDF5StorageWriter.write(storage, scan_file)
+        motor = scan_file["entry/collection/devices/motor"]
+        assert motor["motor/value"].attrs["units"] == "mm"
+        assert motor["target_position/value"].attrs["units"] == "mm"
+        assert scan_file["copied/target"].attrs["units"] == "mm"
+        assert "units" not in motor["target_position/timestamp"].attrs
+        assert "units" not in motor["motor_other_setpoint/value"].attrs
+        assert "units" not in motor["motor_status/value"].attrs
 
 
 def test_device_shape_matches_returns_false_for_missing_or_unshapeable_values(default_format):
