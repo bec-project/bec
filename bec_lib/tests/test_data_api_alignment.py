@@ -1,0 +1,268 @@
+"""Tests for the DataAPI v2 models and ordinal alignment engine."""
+
+import numpy as np
+import pytest
+
+from bec_lib.data_api.alignment import (
+    Bundle,
+    CorrelationGroupError,
+    SourceSeries,
+    partition_correlation_groups,
+)
+
+# pylint: disable=protected-access
+# pylint: disable=missing-function-docstring
+
+
+class TestSourceSeries:
+    def test_in_order_insert(self):
+        series = SourceSeries("samx", "samx", "monitored")
+        for i in range(3):
+            series.insert(i, float(i), 100.0 + i)
+        assert series.frontier == 3
+        assert series.complete
+        snap = series.snapshot()
+        assert snap.ordinals == (0, 1, 2)
+        assert snap.values == (0.0, 1.0, 2.0)
+        assert snap.complete
+
+    def test_out_of_order_insert_fills_hole(self):
+        series = SourceSeries("samx", "samx", "monitored")
+        series.insert(0, 0.0, 100.0)
+        series.insert(2, 2.0, 102.0)
+        assert not series.complete
+        assert series.frontier == 3
+        series.insert(1, 1.0, 101.0)
+        assert series.complete
+        assert series.snapshot().values == (0.0, 1.0, 2.0)
+
+    def test_overwrite_same_ordinal(self):
+        series = SourceSeries("det", "wave", "async")
+        series.insert(0, [1], 100.0)
+        series.insert(0, [1, 2], 100.5)
+        assert len(series) == 1
+        assert series.snapshot().values == ([1, 2],)
+
+    def test_unindexed_arrival_counter(self):
+        series = SourceSeries("det", "legacy", "unindexed")
+        assert series.insert(None, "a", 1.0) == 0
+        assert series.insert(None, "b", 2.0) == 1
+        assert series.complete
+
+    def test_clear(self):
+        series = SourceSeries("samx", "samx", "monitored")
+        series.insert(0, 0.0, 100.0)
+        series.clear()
+        assert len(series) == 0
+        assert series.frontier == 0
+
+
+class TestCorrelationGroups:
+    def test_scan_group_mixed_monitored_and_async(self):
+        groups = partition_correlation_groups(
+            [
+                (("samx", "samx"), "monitored", None),
+                (("samy", "samy"), "monitored", None),
+                (("det", "wave"), "async", "monitored"),
+            ]
+        )
+        assert groups == {"scan": [("samx", "samx"), ("samy", "samy"), ("det", "wave")]}
+
+    def test_async_tag_group(self):
+        groups = partition_correlation_groups(
+            [(("a", "s1"), "async", "grp1"), (("b", "s2"), "async", "grp1")]
+        )
+        assert groups == {"async:grp1": [("a", "s1"), ("b", "s2")]}
+
+    def test_mixed_sets_partition_instead_of_error(self):
+        groups = partition_correlation_groups(
+            [
+                (("samx", "samx"), "monitored", None),
+                (("det", "wave"), "async", "grp1"),
+                (("det2", "legacy"), "unindexed", None),
+            ]
+        )
+        assert groups == {
+            "scan": [("samx", "samx")],
+            "async:grp1": [("det", "wave")],
+            "standalone:det2/legacy": [("det2", "legacy")],
+        }
+
+    def test_ungrouped_async_sources_are_separate_standalones(self):
+        groups = partition_correlation_groups(
+            [(("a", "s1"), "async", None), (("b", "s2"), "async", None)]
+        )
+        assert len(groups) == 2
+
+    def test_empty_rejected(self):
+        with pytest.raises(CorrelationGroupError):
+            partition_correlation_groups([])
+
+
+class TestBundle:
+    def _bundle_xyz(self):
+        bundle = Bundle("scan_1")
+        x = bundle.get_series("samx", "samx", "monitored")
+        y = bundle.get_series("samy", "samy", "monitored")
+        z = bundle.get_series("det", "wave", "async")
+        return bundle, x, y, z
+
+    def test_aligned_intersection(self):
+        bundle, x, y, z = self._bundle_xyz()
+        for i in range(3):
+            x.insert(i, float(i), 100.0 + i)
+            y.insert(i, 100.0 + i, 100.0 + i)
+        z.insert(0, 10.0, 200.0)
+        z.insert(1, 20.0, 201.0)
+
+        update = bundle.build_update("live")
+        assert list(update.aligned_ordinals) == [0, 1]
+        cols = update.aligned()
+        assert list(cols[("samx", "samx")]) == [0.0, 1.0]
+        assert list(cols[("samy", "samy")]) == [100.0, 101.0]
+        assert list(cols[("det", "wave")]) == [10.0, 20.0]
+        assert not update.complete  # frontiers differ
+
+    def test_gap_does_not_shift_pairing(self):
+        """The core fix over positional pairing: a missing ordinal creates a
+        hole, not an off-by-one pairing."""
+        bundle, x, _, z = self._bundle_xyz()
+        bundle.series.pop(("samy", "samy"))
+        x.insert(0, 0.0, 100.0)
+        x.insert(1, 1.0, 101.0)
+        x.insert(2, 2.0, 102.0)
+        z.insert(0, 10.0, 200.0)
+        z.insert(2, 30.0, 202.0)  # ordinal 1 lost/late
+
+        update = bundle.build_update("live")
+        assert list(update.aligned_ordinals) == [0, 2]
+        cols = update.aligned()
+        # x point 2 pairs with z ordinal 2 — never with z's second arrival.
+        assert list(cols[("samx", "samx")]) == [0.0, 2.0]
+        assert list(cols[("det", "wave")]) == [10.0, 30.0]
+        assert not update.complete
+
+        # Late arrival fills the hole.
+        z.insert(1, 20.0, 201.0)
+        update = bundle.build_update("live")
+        assert list(update.aligned_ordinals) == [0, 1, 2]
+        assert update.complete
+
+    def test_complete_when_all_sources_at_same_frontier(self):
+        bundle, x, y, z = self._bundle_xyz()
+        for i in range(2):
+            x.insert(i, float(i), 0)
+            y.insert(i, float(i), 0)
+            z.insert(i, float(i), 0)
+        update = bundle.build_update("live")
+        assert update.complete
+        assert list(update.aligned_ordinals) == [0, 1]
+
+    def test_cadence_violation_logged_once(self):
+        from unittest import mock
+
+        bundle, x, _, z = self._bundle_xyz()
+        bundle.series.pop(("samy", "samy"))
+        x.insert(0, 0.0, 0)
+        for i in range(4):
+            z.insert(i, float(i), 0)
+        with mock.patch("bec_lib.data_api.alignment.logger.warning") as warning:
+            bundle.build_update("live")
+            first_round = warning.call_count
+            bundle.build_update("live")
+        # Cadence violation and lag are each warned exactly once per scan
+        # (this scenario triggers both: z is ahead, x trails).
+        assert first_round == 2
+        assert warning.call_count == 2
+
+    def test_update_metadata_and_reason(self):
+        bundle, x, y, z = self._bundle_xyz()
+        x.insert(0, 0.0, 0)
+        y.insert(0, 0.0, 0)
+        z.insert(0, 0.0, 0)
+        update = bundle.build_update("history", metadata={"file_path": "/x.h5"})
+        assert update.reason == "history"
+        assert update.metadata["file_path"] == "/x.h5"
+        assert update.get("samx", "samx").values == (0.0,)
+        assert update.get("nope", "nope") is None
+
+
+class TestBulkIngest:
+    """Bulk history fills must stay numpy end to end (GUI-freeze regression:
+    per-point ingest exploded file arrays into Python objects, and the render
+    paid an O(n) np.asarray on the GUI thread to rebuild them)."""
+
+    def test_extend_bulk_zero_copy_snapshot(self):
+        series = SourceSeries("det", "sig", "monitored")
+        values = np.arange(1000, dtype=float)
+        timestamps = np.arange(1000, dtype=float) + 100.0
+        assert series.extend_bulk(values, timestamps)
+        assert len(series) == 1000
+        assert series.frontier == 1000
+        assert series.complete
+        snap = series.snapshot()
+        assert snap.values is values  # zero copy - the file array itself
+        assert snap.timestamps is timestamps
+        assert isinstance(snap.ordinals, np.ndarray)
+        assert snap.complete
+
+    def test_extend_bulk_only_fills_empty_series(self):
+        series = SourceSeries("det", "sig", "monitored")
+        series.insert(0, 1.0, 100.0)
+        assert not series.extend_bulk(np.arange(5.0))
+
+    def test_insert_after_bulk_debulks_and_preserves_data(self):
+        series = SourceSeries("det", "sig", "monitored")
+        series.extend_bulk(np.array([1.0, 2.0, 3.0]), np.array([10.0, 11.0, 12.0]))
+        series.insert(3, 4.0, 13.0)
+        snap = series.snapshot()
+        assert list(snap.values) == [1.0, 2.0, 3.0, 4.0]
+        assert list(snap.ordinals) == [0, 1, 2, 3]
+        assert series.complete
+
+    def test_bulk_timestamp_length_mismatch_dropped(self):
+        series = SourceSeries("det", "sig", "monitored")
+        series.extend_bulk(np.arange(4.0), np.arange(2.0))
+        snap = series.snapshot()
+        assert len(snap.timestamps) == 4
+        assert snap.timestamps[0] is None
+
+    def test_contiguous_alignment_without_set_intersection(self):
+        """Complete sources of different lengths align on the common prefix
+        as a zero-copy view - no per-ordinal set work."""
+        bundle = Bundle("scan_1")
+        long = bundle.get_series("a", "a", "monitored")
+        short = bundle.get_series("b", "b", "monitored")
+        long_values = np.arange(5.0)
+        long.extend_bulk(long_values)
+        short.extend_bulk(np.arange(3.0) + 100.0)
+        update = bundle.build_update("history")
+        assert update.aligned_contiguous
+        assert not update.complete
+        assert list(update.aligned_ordinals) == [0, 1, 2]
+        cols = update.aligned()
+        assert list(cols[("a", "a")]) == [0.0, 1.0, 2.0]
+        assert list(cols[("b", "b")]) == [100.0, 101.0, 102.0]
+        assert np.shares_memory(cols[("a", "a")], long_values)  # prefix view
+
+    def test_bulk_and_incomplete_source_fall_back_to_intersection(self):
+        bundle = Bundle("scan_1")
+        bulk = bundle.get_series("a", "a", "monitored")
+        gappy = bundle.get_series("b", "b", "monitored")
+        bulk.extend_bulk(np.arange(5.0))
+        gappy.insert(0, 10.0, 0.0)
+        gappy.insert(2, 30.0, 0.0)
+        update = bundle.build_update("live")
+        assert not update.aligned_contiguous
+        assert list(update.aligned_ordinals) == [0, 2]
+        cols = update.aligned()
+        assert list(cols[("a", "a")]) == [0.0, 2.0]
+        assert list(cols[("b", "b")]) == [10.0, 30.0]
+
+    def test_single_bulk_source_aligned_is_the_file_array(self):
+        bundle = Bundle("scan_1")
+        series = bundle.get_series("a", "a", "monitored")
+        values = np.arange(10.0)
+        series.extend_bulk(values)
+        update = bundle.build_update("history")
+        assert update.aligned()[("a", "a")] is values  # end-to-end zero copy

@@ -12,10 +12,11 @@ import time
 from collections import deque, namedtuple
 from collections.abc import Iterable
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Dict, Literal, NamedTuple, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, NamedTuple, Tuple
 
 import h5py
 import hdf5plugin  # Required to ensure compatibility with HDF5 files using plugins
+import numpy as np
 from _collections_abc import dict_items, dict_keys
 from prettytable import PrettyTable
 
@@ -307,14 +308,68 @@ class SignalDataReference:
         else:
             self._dict_entry = dict_entry if isinstance(dict_entry, list) else [dict_entry]
 
-    def read(self) -> dict[Literal["value", "timestamp"], Any]:
+    #: Elements per slab for chunked reads of large datasets.
+    _CHUNK_ELEMENTS = 8_000_000
+
+    def read(
+        self, progress: Callable[[float], None] | None = None
+    ) -> dict[Literal["value", "timestamp"], Any]:
         """
         Read the data from the HDF5 file.
+
+        Args:
+            progress: Optional callable receiving the read fraction (0..1).
+                When given, large datasets are read in slabs (uncached, no
+                copies) so callers can display loading progress.
 
         Returns:
             dict: The data from the HDF5 file, including the value and timestamp (optional).
         """
-        return self._get_entry()
+        if progress is None:
+            return self._get_entry()
+        return self._read_chunked(progress)
+
+    def _read_chunked(self, progress: Callable[[float], None]) -> dict:
+        """Slab-wise direct read with progress reporting (bypasses the cache)."""
+
+        def report(fraction: float) -> None:
+            try:
+                progress(min(1.0, fraction))
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("History read progress callback failed", exc_info=True)
+
+        out: dict = {}
+        with h5py.File(self._file_reference.file_path, "r") as f:
+            node = f[self._entry_path]
+            for key in self._dict_entry or []:
+                node = node[key]
+            if isinstance(node, h5py.Dataset):
+                datasets = {"value": node}
+            else:
+                datasets = {
+                    key: node[key] for key in node.keys() if isinstance(node[key], h5py.Dataset)
+                }
+            total_bytes = sum(d.size * d.dtype.itemsize for d in datasets.values()) or 1
+            done_bytes = 0
+            for key, dset in datasets.items():
+                shape = dset.shape
+                if not shape or dset.size <= self._CHUNK_ELEMENTS:
+                    out[key] = dset[()]
+                    done_bytes += dset.size * dset.dtype.itemsize
+                    report(done_bytes / total_bytes)
+                    continue
+                row_elements = max(1, int(np.prod(shape[1:], dtype=np.int64)))
+                rows_per_slab = max(1, self._CHUNK_ELEMENTS // row_elements)
+                row_bytes = row_elements * dset.dtype.itemsize
+                arr = np.empty(shape, dtype=dset.dtype)
+                for start in range(0, shape[0], rows_per_slab):
+                    stop = min(start + rows_per_slab, shape[0])
+                    dset.read_direct(arr, np.s_[start:stop], np.s_[start:stop])
+                    report((done_bytes + stop * row_bytes) / total_bytes)
+                out[key] = arr
+                done_bytes += dset.size * dset.dtype.itemsize
+        report(1.0)
+        return out
 
     def _get_entry(self) -> dict:
         data = self._file_reference.read(self._entry_path, entry_filter=self._dict_entry)
@@ -359,7 +414,7 @@ class DeviceDataReference(AttributeDict, SignalDataReference):
                 [
                     signal,
                     signal_info.get("shape", "N/A"),
-                    f"{signal_info.get('mem_size', 0)/1024/1024:.2f} MB",
+                    f"{signal_info.get('mem_size', 0) / 1024 / 1024:.2f} MB",
                     signal_info.get("dtype", "N/A"),
                 ]
             )
@@ -704,7 +759,7 @@ class ScanDataContainer:
         end_time = (
             f"\tEnd time: {datetime.datetime.fromtimestamp(self._msg.end_time).strftime('%c')}\n"
         )
-        elapsed_time = f"\tElapsed time: {(self._msg.end_time-self._msg.start_time):.1f} s\n"
+        elapsed_time = f"\tElapsed time: {(self._msg.end_time - self._msg.start_time):.1f} s\n"
         scan_id = f"\tScan ID: {self._msg.scan_id}\n"
         scan_number = f"\tScan number: {self._msg.scan_number}\n"
         scan_name = f"\tScan name: {self._msg.scan_name}\n"
