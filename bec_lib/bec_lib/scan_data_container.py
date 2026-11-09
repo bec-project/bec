@@ -8,6 +8,7 @@ import copy
 import datetime
 import functools
 import importlib
+import re
 import time
 from collections import deque, namedtuple
 from collections.abc import Iterable
@@ -114,17 +115,19 @@ def retry_file_access(func):
 
 
 @functools.lru_cache(maxsize=100)
-def get_hdf5_structure_from_file(file_path: str) -> dict:
+def get_hdf5_structure_from_file(file_path: str, group_path: str = "/") -> dict:
     """
     Get the structure of an HDF5 file. The method caches the result of the last 100 files.
     Args:
         file_path (str): The path to the HDF5 file.
+        group_path (str): Group within the file to inspect.
 
     Returns:
         dict: The structure of the HDF5 file.
     """
     with h5py.File(file_path, "r") as f:
-        return _get_hdf5_structure(f)
+        group = f.get(group_path)
+        return _get_hdf5_structure(group) if isinstance(group, h5py.Group) else {}
 
 
 def _get_hdf5_structure(group: h5py.Group) -> dict:
@@ -261,14 +264,42 @@ class FileReference:
         return out
 
     @retry_file_access
-    def get_hdf5_structure(self) -> dict:
+    def get_scan_entries(self) -> tuple[tuple[str, ...], str]:
+        """Return the available BEC entry names and the file's default entry name."""
+        with h5py.File(self.file_path, "r") as file:
+            numbered = []
+            for name in file:
+                match = re.fullmatch(r"entry_(0|[1-9][0-9]*)", name)
+                if match is None:
+                    continue
+                group = file.get(name)
+                if not isinstance(group, h5py.Group):
+                    continue
+                nx_class = group.attrs.get("NX_class")
+                if isinstance(nx_class, (str, bytes)) and nx_class in ("NXentry", b"NXentry"):
+                    numbered.append((int(match[1]), name))
+            names = tuple(name for _, name in sorted(numbered))
+            if isinstance(file.get("entry"), h5py.Group):
+                names = ("entry", *names)
+            default = file.attrs.get("default", "")
+            if isinstance(default, bytes):
+                default = default.decode("utf-8", errors="replace")
+            if isinstance(default, str) and default.lstrip("/") in names:
+                return names, default.lstrip("/")
+            return names, names[0] if names else "entry"
+
+    @retry_file_access
+    def get_hdf5_structure(self, group_path: str = "/") -> dict:
         """
-        Get the structure of the HDF5 file.
+        Get the structure of a group in the HDF5 file.
+
+        Args:
+            group_path (str): Group within the file to inspect.
 
         Returns:
             dict: The structure of the HDF5 file.
         """
-        return get_hdf5_structure_from_file(self.file_path)
+        return get_hdf5_structure_from_file(self.file_path, group_path)
 
 
 class AttributeDict(dict):
@@ -594,9 +625,24 @@ class ScanDataContainer:
     This is a helper class for accessing data in an HDF5 file.
     """
 
-    def __init__(self, file_path: str = None, msg: messages.ScanHistoryMessage = None):
+    def __init__(
+        self,
+        file_path: str | None = None,
+        msg: messages.ScanHistoryMessage | None = None,
+        *,
+        entry_index: int | None = None,
+    ):
+        if entry_index is not None and (type(entry_index) is not int or entry_index < 0):
+            raise ValueError("entry_index must be a non-negative integer.")
+        self._entry_index = entry_index
         self._file_reference = None
         self._msg = msg
+        self._reset_views()
+        if file_path is not None:
+            self.set_file(file_path)
+
+    def _reset_views(self) -> None:
+        self._resolved_entry_name = None
         self.devices = LazyDeviceAttributeDict(self._load_devices)
         self.readout_groups = ReadoutGroup(self.devices)
         self.metadata = LazyAttributeDict(self._load_metadata)
@@ -606,9 +652,6 @@ class ScanDataContainer:
         self._async_devices = None
         self._loaded_devices = False
         self._loaded_metadata = False
-        self._info = None
-        if file_path is not None:
-            self.set_file(file_path)
 
     def set_file(self, file_path: str):
         """
@@ -617,7 +660,43 @@ class ScanDataContainer:
         Args:
             file_path (str): The path to the HDF5 file.
         """
+        if self._file_reference is not None:
+            if self._file_reference.file_path == file_path:
+                return
+            self._reset_views()
         self._file_reference = FileReference(file_path)
+
+    @property
+    def entry_paths(self) -> tuple[str, ...]:
+        """List available BEC NeXus entry paths in acquisition order."""
+        if self._file_reference is None:
+            raise ValueError("File reference not set.")
+        names, _ = self._file_reference.get_scan_entries()
+        return tuple(f"/{name}" for name in names)
+
+    @property
+    def entry_path(self) -> str:
+        """Return the NeXus group path used by this view."""
+        return f"/{self._get_entry_name()}"
+
+    def for_entry(self, entry_index: int) -> ScanDataContainer:
+        """Return an independent view of a numbered entry in the same scan file."""
+        if self._file_reference is None:
+            raise ValueError("File reference not set.")
+        return ScanDataContainer(
+            file_path=self._file_reference.file_path, msg=self._msg, entry_index=entry_index
+        )
+
+    def _get_entry_name(self) -> str:
+        if self._file_reference is None:
+            raise ValueError("File reference not set.")
+        if self._resolved_entry_name is None:
+            names, default = self._file_reference.get_scan_entries()
+            name = default if self._entry_index is None else f"entry_{self._entry_index}"
+            if self._entry_index is not None and name not in names:
+                raise KeyError(f"Scan file has no /{name} entry.")
+            self._resolved_entry_name = name
+        return self._resolved_entry_name
 
     def _load_metadata(self) -> None:
         """
@@ -625,7 +704,9 @@ class ScanDataContainer:
         """
         if self._loaded_metadata:
             return
-        self.metadata.update(self._file_reference.read("entry/collection/metadata"))
+        self.metadata.update(
+            self._file_reference.read(f"{self._get_entry_name()}/collection/metadata")
+        )
         self._loaded_metadata = True
 
     def _load_devices(self, timeout_time: float = 3) -> None:
@@ -651,11 +732,11 @@ class ScanDataContainer:
             if self._file_reference is None:
                 raise ValueError("File reference not set. Cannot load devices.")
 
-        if self._info is None:
-            self._info = self._file_reference.get_hdf5_structure()
-        self._load_device_group("baseline", self._info)
-        self._load_device_group("monitored", self._info)
-        self._load_device_group("async", self._info, grouped_cache=False)
+        readout_path = f"{self._get_entry_name()}/collection/readout_groups"
+        groups = self._file_reference.get_hdf5_structure(readout_path)
+        self._load_device_group("baseline", groups)
+        self._load_device_group("monitored", groups)
+        self._load_device_group("async", groups, grouped_cache=False)
         self._loaded_devices = True
         logger.trace(f"devices loaded in {time.time() - _start:.2f} s")
 
@@ -665,10 +746,9 @@ class ScanDataContainer:
         info: dict,
         grouped_cache: bool = True,
     ) -> None:
-        device_group = (
-            info.get("entry", {}).get("collection", {}).get("readout_groups", {}).get(group, {})
-        )
-        base_path = f"entry/collection/readout_groups/{group}"
+        entry_name = self._get_entry_name()
+        device_group = info.get(group, {})
+        base_path = f"{entry_name}/collection/readout_groups/{group}"
 
         assert self._file_reference is not None
 

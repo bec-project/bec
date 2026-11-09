@@ -1,6 +1,7 @@
 from collections import Counter
 
 import h5py
+import numpy as np
 import pytest
 
 from bec_lib import endpoints
@@ -187,19 +188,34 @@ def test_subscan_sequence_one_file_and_one_history_record(
     data = bec.history.get_by_scan_id(scan_id)
     assert data._msg.exit_status == ("aborted" if fail_role else "closed")
     assert sum(item._msg.scan_id == scan_id for item in bec.history[:]) == 1
-    with h5py.File(data._msg.file_path) as master:
-        expected = ("entry_0",) if fail_role == "before" else ("entry_0", "entry_1", "entry_2")
-        assert tuple(sorted(master)) == expected
-        assert master.attrs["default"] == ("entry_0" if fail_role == "before" else "entry_1")
-    for status in acquisitions:
-        if status.status != "closed":
-            continue
-        entry_status = bec.connector.get(
-            endpoints.MessageEndpoints.public_scan_info(status.scan_id)
+    expected_entries = [([-1], 0.01), ([0, 0.5, 1], 0.03), ([1], 0.02)]
+    if fail_role == "before":
+        expected_entries = expected_entries[:1]
+    assert data.entry_paths == tuple(f"/entry_{index}" for index in range(len(expected_entries)))
+    assert data.entry_path == ("/entry_0" if fail_role == "before" else "/entry_1")
+    for index, (positions, exp_time) in enumerate(expected_entries):
+        failed = (index == 0 and fail_role == "before") or (
+            index == 2 and fail_role in {"after", "close"}
         )
-        assert entry_status.scan_id == status.scan_id
-        point = bec.connector.get(endpoints.MessageEndpoints.public_scan_segment(status.scan_id, 0))
-        assert point.scan_id == status.scan_id
+        entry = data.for_entry(index)
+        if not failed:
+            np.testing.assert_allclose(entry.devices.samx.samx.get(), positions, atol=0.05)
+        metadata = entry.metadata["bec"]
+        assert metadata["status"] == ("aborted" if failed else "closed")
+        entry_scan_id = metadata["scan_id"]
+        assert entry_scan_id == f"{scan_id}-{index}"
+        assert "acquisition_id" not in metadata
+        assert "parent_scan_id" not in metadata
+        entry_status = bec.connector.get(endpoints.MessageEndpoints.public_scan_info(entry_scan_id))
+        assert entry_status.scan_id == entry_scan_id
+        assert metadata["scan_number"] == descriptor["scan_number"]
+        assert metadata["exp_time"] == exp_time
+
+        if not failed:
+            point = bec.connector.get(
+                endpoints.MessageEndpoints.public_scan_segment(entry_scan_id, 0)
+            )
+            assert point.scan_id == entry_scan_id
 
     if event_devices:
         with h5py.File(data._msg.file_path) as master:
