@@ -8,12 +8,14 @@ from test_file_writer_manager import file_writer_manager_mock
 
 from bec_lib import messages, plugin_helper
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.scan_data_container import ScanDataContainer
 from bec_server.file_writer import HDF5FileWriter
 from bec_server.file_writer.default_writer import DefaultFormat
 from bec_server.file_writer.file_writer import (
     AdditionalScanMetadata,
     HDF5Storage,
     HDF5StorageWriter,
+    NeXusLayoutError,
 )
 from bec_server.file_writer.file_writer_manager import ScanStorage
 
@@ -925,3 +927,39 @@ def test_storage_writer_numpy_unicode(tmp_path, data):
         assert handle["value"].shape == data.shape
         np.testing.assert_array_equal(handle["value"].asstr()[()], data)
         assert handle["value"].attrs["description"] == "Configuration names"
+
+
+def test_write_numbered_entries_to_one_scan_file(hdf5_file_writer, scan_storage_mock, tmp_path):
+    path = str(tmp_path / "scan_42.h5")
+    for index in range(3):
+        with mock.patch.object(
+            hdf5_file_writer,
+            "_create_device_data_storage",
+            return_value={"samx": [{"samx": {"value": index}}]},
+        ):
+            hdf5_file_writer.write(
+                path,
+                scan_storage_mock,
+                configuration_data={},
+                entry_index=index,
+                default_entry=index == 1,
+            )
+
+    temporary_file = str(tmp_path / "scan_42.tmp")
+    data = ScanDataContainer(temporary_file)
+    assert data.entry_paths == ("/entry_0", "/entry_1", "/entry_2")
+    with pytest.raises(NeXusLayoutError, match="already exists"):
+        hdf5_file_writer.write(path, scan_storage_mock, configuration_data={}, entry_index=0)
+    assert data.entry_path == "/entry_1"
+    assert data.devices.samx.samx.get().tolist() == [1]
+    for index in range(3):
+        assert data.for_entry(index).devices.samx.samx.get().tolist() == [index]
+    with h5py.File(temporary_file, "r") as file:
+        identifiers = [
+            file[f"entry_{index}/entry_identifier_uuid"].asstr()[()] for index in range(3)
+        ]
+        assert len(set(identifiers)) == 1
+        for index in range(3):
+            group = file[f"entry_{index}/collection/devices/samx/samx"]
+            assert group.attrs["NX_class"] == "NXdata"
+            assert group.attrs["signal"] == "value"

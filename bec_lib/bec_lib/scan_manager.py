@@ -375,7 +375,19 @@ class ScanManager:
 
     def _scan_status_callback(self, msg) -> None:
         scan = msg.value
-        self.scan_storage.update_with_scan_status(scan)
+        if start := scan.sequence_start():
+            self.scan_storage.update_with_scan_status(start)
+        for update in scan.sequence_updates():
+            self.scan_storage.update_with_scan_status(update)
+        parent_id = messages.sequence_id_for_acquisition(scan.scan_id, scan.info.get("entry_index"))
+        if not parent_id:
+            self.scan_storage.update_with_scan_status(scan)
+        else:
+            parent_status = scan.model_copy(update={"scan_id": parent_id})
+            if scan.status in {"open", "closed"} and scan.info.get("entry_role") == "main":
+                self.scan_storage.update_with_scan_status(parent_status, metadata_only=True)
+            if scan.closes_sequence():
+                self.scan_storage.update_with_scan_status(parent_status, sequence_completion=True)
 
     def _scan_segment_callback(self, msg) -> None:
         scan_msgs = msg.value
@@ -462,6 +474,8 @@ class ScanManager:
     def _public_file_callback(self, msg, **_kwargs) -> None:
         topic = msg.topic
         value = msg.value
+        if value.metadata.get("entry_index") is not None:
+            return
         scan_id = topic.split("/")[-3]
         self.scan_storage.add_public_file(scan_id, value)
 

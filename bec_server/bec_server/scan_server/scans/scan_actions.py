@@ -68,6 +68,11 @@ class ScanActions:
         self._update_queue_info_callback: Callable[[], None] | None = None
         self._devices_with_required_response = set()
         self._readout_groups_read = False
+        self._sequence_parent: ScanActions | None = None
+        self._sequence_start: dict | None = None
+        self._sequence_terminal_sent = False
+        self._entry_role: str | None = None
+        self._entries_started = 0
         self._metadata_suffix = ""
         self._queued_device_locks: set[str] = set()
         self._scan_running = False
@@ -917,7 +922,8 @@ class ScanActions:
 
         self.check_for_unchecked_statuses()
 
-        self._send_scan_status("closed")
+        if self._sequence_parent is None:
+            self._send_scan_status("closed")
 
     @requires_scan_is_running
     def check_for_unchecked_statuses(self):
@@ -1170,6 +1176,8 @@ class ScanActions:
 
     def _get_message_metadata(self) -> dict:
         metadata = {}
+        if self._sequence_parent is not None:
+            metadata["entry_index"] = self._scan.scan_info.sequence_index
         if self._scan.scan_info.scan_id is not None:
             metadata["scan_id"] = self._scan.scan_info.scan_id + self._metadata_suffix
         for key in ["RID", "queue_id"]:
@@ -1431,18 +1439,75 @@ class ScanActions:
         self,
         status: Literal["open", "paused", "closed", "aborted", "halted", "user_completed"],
         reason: Literal["user", "alarm"] | None = None,
+        *,
+        parent: bool = False,
     ) -> None:
         """Publish the current scan status for the active direct scan."""
         scan = self._scan
         logger.info(f"New scan status: {scan.scan_info.scan_id} / {status} / {scan.scan_info}")
         msg = self._build_scan_status_message(status=status, reason=reason)
+        sequence_id = scan.scan_info.sequence_id
+        if parent and sequence_id:
+            msg.scan_id = sequence_id
+            msg.info["scan_id"] = sequence_id
 
         expire = None if status in ["open", "paused"] else 1800
+        is_entry = self._sequence_parent is not None and not parent
+        if is_entry:
+            msg.info.pop("entry_sequence", None)
+            if components := msg.info.get("file_components"):
+                base_path, extension = components
+                msg.info["file_components"] = (
+                    f"{base_path}_entry_{scan.scan_info.sequence_index}",
+                    extension,
+                )
+            sequence_parent = self._sequence_parent
+            msg.info.update(entry_index=scan.scan_info.sequence_index, entry_role=self._entry_role)
+        elif scan.scan_info.entry_sequence:
+            msg.info.update(
+                entries_started=self._entries_started,
+                total_sequences=len(scan.scan_info.entry_sequence),
+            )
+
         pipe = self._connector.pipeline()
-        self._connector.set(
-            MessageEndpoints.public_scan_info(scan.scan_info.scan_id), msg, pipe=pipe, expire=expire
-        )
-        self._connector.set_and_publish(MessageEndpoints.scan_status(), msg, pipe=pipe)
+        if is_entry or status != "open" or not scan.scan_info.entry_sequence:
+            self._connector.set(
+                MessageEndpoints.public_scan_info(msg.scan_id), msg, pipe=pipe, expire=expire
+            )
+        if is_entry:
+            sequence_updates = []
+            if sequence_parent._sequence_start is not None:
+                msg.info["sequence_start"] = sequence_parent._sequence_start
+            terminal = status in {"aborted", "halted", "user_completed"}
+            if terminal or status == "paused":
+                summary = sequence_parent._build_scan_status_message(status=status, reason=reason)
+                summary.scan_id = sequence_id
+                summary.info.update(
+                    scan_id=sequence_id,
+                    entries_started=sequence_parent._entries_started,
+                    total_sequences=scan.scan_info.total_sequences,
+                )
+                sequence_updates.append(summary)
+            if sequence_updates:
+                msg.info["sequence_updates"] = [update.model_dump() for update in sequence_updates]
+            self._connector.set_and_publish(MessageEndpoints.scan_status(), msg, pipe=pipe)
+        elif scan.scan_info.entry_sequence:
+            if status == "open":
+                self._sequence_start = msg.model_dump(
+                    exclude={"status": True, "scan_id": True, "info": {"scan_id"}}
+                )
+                self._sequence_terminal_sent = False
+            elif not parent and not self._sequence_terminal_sent:
+                # Interruptions between acquisitions have no active acquisition event.
+                self._connector.set_and_publish(MessageEndpoints.scan_status(), msg, pipe=pipe)
+        else:
+            self._connector.set_and_publish(MessageEndpoints.scan_status(), msg, pipe=pipe)
+        if is_entry:
+            pipe.execute()
+            sequence_parent._sequence_start = None
+            if terminal:
+                sequence_parent._sequence_terminal_sent = True
+            return
         cli_input = compose_cli_input_from_scan_info(scan.scan_info)
         scan_number = scan.scan_info.scan_number
         scan_id = scan.scan_info.scan_id
@@ -1509,6 +1574,8 @@ class ScanActions:
     ) -> dict:
         """Build the compatibility-augmented info payload for scan status messages."""
         base_info = self._scan.scan_info.model_dump(mode="python")
+        if base_info["entry_sequence"] is None:
+            base_info.pop("entry_sequence")
         if base_info.get("positions") is not None:
             base_info["positions"] = base_info["positions"].tolist()
         compatibility_fields = {

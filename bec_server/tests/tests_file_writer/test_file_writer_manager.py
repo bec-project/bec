@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from unittest import mock
 
+import h5py
 import numpy as np
 import pytest
 
@@ -13,6 +14,7 @@ from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.redis_connector import MessageObject
+from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.file_writer import FileWriterManager
@@ -933,3 +935,228 @@ def test_async_failure_survives_finalization(
         assert not history_calls
     assert not writer.file_handle.id.valid
     assert Path(path).exists()
+
+
+def test_sequence_master_is_renamed_only_after_last_entry_is_written(
+    file_writer_manager_mock, tmp_path
+):
+    manager = file_writer_manager_mock
+    path = tmp_path / "sequence_master.h5"
+    sequence = [
+        {"entry_index": index, "scan_id": f"parent-{index}", "role": role}
+        for index, role in enumerate(("before", "main", "after"))
+    ]
+
+    def parent_status(status, entries_started):
+        manager.update_scan_storage_with_status(
+            messages.ScanStatusMessage(
+                scan_id="parent",
+                scan_number=1,
+                scan_type="software_triggered",
+                status=status,
+                info={
+                    "entry_sequence": sequence,
+                    "entries_started": entries_started,
+                    "dataset_number": 1,
+                    "scan_name": "bracketed_scan",
+                },
+            )
+        )
+
+    def entry_closed(index):
+        manager.update_scan_storage_with_status(
+            messages.ScanStatusMessage(
+                scan_id=f"parent-{index}",
+                scan_number=1,
+                scan_type="software_triggered",
+                status="closed",
+                num_monitored_readouts=1,
+                readout_priority={"monitored": ["samx"]},
+                info={"entry_index": index, "readout_priority": {"monitored": ["samx"]}},
+            )
+        )
+
+    def send_point(index):
+        manager.insert_to_scan_storage(
+            messages.ScanMessage(
+                scan_id=f"parent-{index}",
+                point_id=0,
+                data={"samx": {"samx": {"value": index, "timestamp": 1.0}}},
+                metadata={"entry_index": index},
+            )
+        )
+
+    detector_path = tmp_path / "detector.h5"
+    with h5py.File(detector_path, "w") as detector:
+        detector["data"] = [2]
+
+    def detector_status(done):
+        manager._file_reference_callback(
+            MessageObject(
+                topic=MessageEndpoints.public_file("parent-2", "detector").endpoint,
+                value=messages.FileMessage(
+                    file_path=str(detector_path),
+                    done=done,
+                    successful=done,
+                    hinted_h5_entries={"data": "/data"},
+                ),
+            )
+        )
+
+    rename = os.rename
+
+    def verify_rename(source, destination):
+        assert not path.exists()
+        with h5py.File(source) as temporary:
+            assert list(temporary) == ["entry_0", "entry_1", "entry_2"]
+            assert temporary["entry_2/collection/devices/samx/samx/value"][0] == 2
+            assert temporary["entry_2/collection/file_references/detector/data"][0] == 2
+        rename(source, destination)
+
+    def fail_on_alarm(**kwargs):
+        pytest.fail(kwargs["info"].error_message)
+
+    with (
+        mock.patch.object(manager.connector, "raise_alarm", side_effect=fail_on_alarm),
+        mock.patch(
+            "bec_server.file_writer.file_writer_manager.get_full_path", return_value=str(path)
+        ),
+        mock.patch(
+            "bec_server.file_writer.file_writer_manager.os.rename", side_effect=verify_rename
+        ) as publish,
+    ):
+        parent_status("open", 0)
+        for index in (0, 1):
+            send_point(index)
+            entry_closed(index)
+            writer = manager.scan_storage["parent"].async_writer
+            with writer.io_lock:
+                assert writer.file_handle[f"entry_{index}"].attrs["NX_class"] == "NXentry"
+            assert not path.exists()
+        # A successful terminal status commits the whole announced plan, even if
+        # the progress counter is stale and the final entry's messages are delayed.
+        parent_status("closed", 2)
+        assert not path.exists()
+
+        detector_status(done=False)
+        entry_closed(2)
+        assert not path.exists()
+
+        send_point(2)
+        assert not path.exists()
+
+        detector_status(done=True)
+        publish.assert_called_once_with(str(path.with_suffix(".tmp")), str(path))
+
+    assert path.exists()
+    assert not path.with_suffix(".tmp").exists()
+
+
+def test_slow_async_data_stays_with_its_scan_when_next_scan_finishes(
+    file_writer_manager_mock, tmp_path
+):
+    manager = file_writer_manager_mock
+    paths = {name: tmp_path / f"{name}_master.h5" for name in ("first", "second")}
+    streams = {}
+
+    def append(parent, values, cursor):
+        topic = MessageEndpoints.device_async_readback(f"{parent}-0", "det").endpoint
+        reading = messages.DeviceMessage(
+            signals={"det": {"value": values, "timestamp": list(range(len(values)))}},
+            metadata={"async_update": {"type": "add", "max_shape": [None]}},
+        )
+        streams.setdefault(topic, []).append(
+            (cursor, {b"data": MsgpackSerialization.dumps(reading)})
+        )
+
+    def read_streams(keys, block=None):
+        return [
+            (topic.encode(), pending)
+            for topic, cursor in keys.items()
+            if (pending := [item for item in streams.get(topic, ()) if item[0] > cursor])
+        ]
+
+    def parent_status(parent, status):
+        manager.update_scan_storage_with_status(
+            messages.ScanStatusMessage(
+                scan_id=parent,
+                scan_number=1 if parent == "first" else 2,
+                scan_type="software_triggered",
+                status=status,
+                info={
+                    "entry_sequence": [
+                        {"entry_index": 0, "scan_id": f"{parent}-0", "role": "main"}
+                    ],
+                    "entries_started": int(status == "closed"),
+                    "dataset_number": 1,
+                    "scan_name": "sequence",
+                },
+            )
+        )
+
+    def entry_status(parent, status):
+        priority = {"async": ["det"]}
+        manager.update_scan_storage_with_status(
+            messages.ScanStatusMessage(
+                scan_id=f"{parent}-0",
+                scan_type="software_triggered",
+                status=status,
+                readout_priority=priority,
+                info={"entry_index": 0, "readout_priority": priority},
+            )
+        )
+
+    def detector_status(done):
+        manager._file_reference_callback(
+            MessageObject(
+                topic=MessageEndpoints.public_file("first-0", "detector").endpoint,
+                value=messages.FileMessage(
+                    file_path=str(detector_path), done=done, successful=done
+                ),
+            )
+        )
+
+    detector_path = tmp_path / "detector.h5"
+    with h5py.File(detector_path, "w") as detector:
+        detector["value"] = 1
+
+    def fail_on_alarm(**kwargs):
+        pytest.fail(kwargs["info"].error_message)
+
+    with (
+        mock.patch.object(manager.connector, "raise_alarm", side_effect=fail_on_alarm),
+        mock.patch(
+            "bec_server.file_writer.file_writer_manager.get_full_path",
+            side_effect=lambda scan_status_msg, **_: str(paths[scan_status_msg.scan_id]),
+        ),
+        mock.patch.object(manager.connector, "raw_xread", side_effect=read_streams),
+    ):
+        parent_status("first", "open")
+        entry_status("first", "open")
+        append("first", [1], "1-0")
+        entry_status("first", "closed")
+        writer = manager.scan_storage["first"].async_writer
+        with writer.io_lock:
+            assert writer.file_handle["entry_0"].attrs["NX_class"] == "NXentry"
+            assert not list(writer.file_handle["entry_0/collection/file_references"])
+        detector_status(False)
+        parent_status("first", "closed")
+        assert not paths["first"].exists()
+
+        parent_status("second", "open")
+        entry_status("second", "open")
+        append("first", [2], "2-0")
+        append("second", [9], "1-0")
+        entry_status("second", "closed")
+        parent_status("second", "closed")
+        assert paths["second"].exists()
+        assert not paths["first"].exists()
+
+        detector_status(True)
+        for parent, values in (("first", [1, 2]), ("second", [9])):
+            with h5py.File(paths[parent]) as file:
+                assert file["entry_0/collection/devices/det/det/value"][:].tolist() == values
+                if parent == "first":
+                    assert file["entry_0/collection/file_references/detector/data/value"][()] == 1
+
+    assert not list(tmp_path.glob("*.tmp"))

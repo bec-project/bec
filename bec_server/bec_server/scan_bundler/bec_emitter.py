@@ -90,6 +90,7 @@ class BECEmitter(EmitterBase):
             data=sb.sync_storage[scan_id][point_id],
             metadata={
                 "scan_id": scan_id,
+                **{key: info[key] for key in ("entry_index", "entry_role") if key in info},
                 "scan_type": info.get("scan_type"),
                 "scan_report_devices": info.get("scan_report_devices"),
             },

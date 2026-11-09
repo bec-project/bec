@@ -29,8 +29,11 @@ class DefaultFormat:
         device_manager: DeviceManagerBase,
         additional_scan_metadata: AdditionalScanMetadata,
         written_async_signals: dict[str, list[str]] | None = None,
+        *,
+        entry_name: str = "entry",
     ):
         self.storage = storage
+        self.entry_name = entry_name
         self.data = data
         self.configuration = configuration
         self.file_references = file_references
@@ -125,7 +128,7 @@ class DefaultFormat:
         Write the BEC entries to the NeXus file format.
         """
         # /entry
-        entry = self.storage.create_group("entry")
+        entry = self.storage.create_group(self.entry_name)
         entry.attrs["NX_class"] = "NXentry"
         entry.attrs["start_time"] = self.additional_scan_metadata.start_time
         entry.attrs["end_time"] = self.additional_scan_metadata.end_time
@@ -145,25 +148,12 @@ class DefaultFormat:
             group = readout_groups.create_group(priority_name)
             group.attrs["NX_class"] = "NXcollection"
             for device in devices:
-                group.create_soft_link(name=device, target=f"/entry/collection/devices/{device}")
+                group.create_soft_link(
+                    name=device, target=f"/{self.entry_name}/collection/devices/{device}"
+                )
         self._write_device_data(collection, "configuration", self.configuration)
 
-        # create file references
-        file_references = collection.create_group("file_references")
-        file_references.attrs["NX_class"] = "NXcollection"
-        for name, msg in self.file_references.items():
-            if name == "master":
-                continue
-            if msg.is_master_file:
-                continue
-            file_device = file_references.create_group(name=name)
-            if msg.hinted_h5_entries:
-                for entry_name, entry_path in msg.hinted_h5_entries.items():
-                    file_device.create_ext_link(
-                        name=entry_name, target=msg.file_path, entry=entry_path
-                    )
-            else:
-                file_device.create_ext_link(name="data", target=msg.file_path, entry="/")
+        self.write_file_references(collection, self.file_references)
 
         # create beamline states
         states = {}
@@ -278,6 +268,25 @@ class DefaultFormat:
                 return units
         return None
 
+    @staticmethod
+    def write_file_references(collection: HDF5Storage, references: dict) -> None:
+        """Add the detector file links to an entry collection."""
+        file_references = collection.create_group("file_references")
+        file_references.attrs["NX_class"] = "NXcollection"
+        for name, msg in references.items():
+            if name == "master":
+                continue
+            if msg.is_master_file:
+                continue
+            file_device = file_references.create_group(name=name)
+            if msg.hinted_h5_entries:
+                for entry_name, entry_path in msg.hinted_h5_entries.items():
+                    file_device.create_ext_link(
+                        name=entry_name, target=msg.file_path, entry=entry_path
+                    )
+            else:
+                file_device.create_ext_link(name="data", target=msg.file_path, entry="/")
+
     def safe_dataset(
         self,
         group: HDF5Storage,
@@ -316,7 +325,7 @@ class DefaultFormat:
 
         if softlink:
             group.create_soft_link(
-                name=name, target=f"/entry/collection/devices/{device}/{signal}/value"
+                name=name, target=f"/{self.entry_name}/collection/devices/{device}/{signal}/value"
             )
             return
         ds = group.create_dataset(name, data=value)
@@ -433,7 +442,7 @@ class DefaultFormat:
 
         """
 
-        entry = self.storage.create_group("entry")
+        entry = self.storage.create_group(self.entry_name)
         self.write_entry_metadata(entry)
 
         # /entry/control

@@ -719,7 +719,7 @@ class QueueManager:
         instr_queue = self.queues[queue].queue[0]
         if instr_queue.active_scan is None:
             return None
-        return instr_queue.active_scan.scan_info.scan_id
+        return instr_queue.active_scan.scan_info.sequence_id
 
     def _get_owned_devices_for_instruction_queue(
         self, instruction_queue: DirectInstructionQueueItem
@@ -1187,7 +1187,7 @@ class DirectInstructionQueueItem:
 
     @property
     def scan_id(self) -> list[str | None]:
-        return [scan.scan_info.scan_id for scan in self.scans]
+        return [scan.scan_info.sequence_id for scan in self.scans]
 
     @property
     def is_scan(self) -> list[bool]:
@@ -1281,7 +1281,11 @@ class DirectInstructionQueueItem:
             readout_priority=scan.scan_info.readout_priority_modification,
             is_scan=scan.scan_info.scan_type is not None,
             scan_number=self._get_scan_number(scan),
-            scan_id=scan.scan_info.scan_id,
+            scan_id=scan.scan_info.sequence_id,
+            entry_sequence=[entry.model_dump() for entry in (scan.scan_info.entry_sequence or ())],
+            sequence_index=(
+                scan.actions._entries_started - 1 if scan.actions._entries_started else None
+            ),
             report_instructions=scan.scan_info.scan_report_instructions,
             owned_device_locks=scan.actions.get_owned_device_locks(),
             pending_device_locks=scan.actions.get_pending_device_locks(),

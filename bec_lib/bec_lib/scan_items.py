@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from bec_lib.live_scan_data import LiveScanData
 from bec_lib.logger import bec_logger
+from bec_lib.messages import sequence_id_for_acquisition
 from bec_lib.scan_data_container import ScanDataContainer
 from bec_lib.utils import threadlocked
 
@@ -327,7 +328,12 @@ class ScanStorage:
         return None
 
     @threadlocked
-    def update_with_scan_status(self, scan_status: messages.ScanStatusMessage) -> None:
+    def update_with_scan_status(
+        self,
+        scan_status: messages.ScanStatusMessage,
+        metadata_only: bool = False,
+        sequence_completion: bool = False,
+    ) -> None:
         """Update a scan item with new status information.
 
         This method is thread-safe and updates various scan attributes based on the
@@ -336,6 +342,8 @@ class ScanStorage:
 
         Args:
             scan_status: The status message containing updated scan information.
+            metadata_only: Update the report dimensions without changing the parent lifecycle.
+            sequence_completion: Apply the final acquisition outcome to the local parent item.
         """
 
         scan_id = scan_status.scan_id
@@ -349,22 +357,41 @@ class ScanStorage:
         scan_item = self.find_scan_by_ID(scan_id=scan_id)
         if not scan_item:
             self._pending_inserts[scan_id].append(
-                {"func": "update_with_scan_status", "func_args": (scan_status,)}
+                {
+                    "func": "update_with_scan_status",
+                    "func_args": (scan_status, metadata_only, sequence_completion),
+                }
             )
             return
 
-        terminal_states = {"aborted", "halted", "closed", "user_completed"}
+        if sequence_completion and scan_item.status_message is not None:
+            scan_status = scan_item.status_message.model_copy(
+                update={
+                    "status": scan_status.status,
+                    "reason": scan_status.reason,
+                    "timestamp": scan_status.timestamp,
+                    "num_points": scan_item.num_points,
+                    "num_monitored_readouts": scan_item.num_monitored_readouts,
+                    "info": {
+                        **scan_item.status_message.info,
+                        "scan_report_instructions": scan_item.scan_report_instructions,
+                    },
+                }
+            )
 
-        # update timestamps
-        if scan_status.status == "open":
-            scan_item.start_time = scan_status.timestamp
-        elif scan_status.status in terminal_states and scan_status.timestamp:
-            # Only terminal states should stamp the end time; paused scans remain open.
-            scan_item.end_time = scan_status.timestamp
+        if not metadata_only:
+            terminal_states = {"aborted", "halted", "closed", "user_completed"}
 
-        # update status message
-        scan_item.status = scan_status.status
-        scan_item.status_message = scan_status
+            # update timestamps
+            if scan_status.status == "open":
+                scan_item.start_time = scan_status.timestamp
+            elif scan_status.status in terminal_states and scan_status.timestamp:
+                # Only terminal states should stamp the end time; paused scans remain open.
+                scan_item.end_time = scan_status.timestamp
+
+            # update status message
+            scan_item.status = scan_status.status
+            scan_item.status_message = scan_status
 
         # update total number of points
         if scan_status.num_points:
@@ -381,7 +408,8 @@ class ScanStorage:
         scan_item.scan_report_instructions = scan_status.info.get("scan_report_instructions", [])
 
         # run status callbacks
-        scan_item.emit_status(scan_status)
+        if not metadata_only and not sequence_completion:
+            scan_item.emit_status(scan_status)
 
     @threadlocked
     def add_scan_segment(self, scan_msg: messages.ScanMessage) -> None:
@@ -395,7 +423,10 @@ class ScanStorage:
             scan_msg: The scan message containing the data segment to add.
         """
         logger.debug(f"Received scan segment {scan_msg.point_id} for scan {scan_msg.scan_id}: ")
-        scan_id = scan_msg.scan_id
+        scan_id = (
+            sequence_id_for_acquisition(scan_msg.scan_id, scan_msg.metadata.get("entry_index"))
+            or scan_msg.scan_id
+        )
         scan_item = self.find_scan_by_ID(scan_id)
         if scan_item is None:
             self._pending_inserts[scan_id].append(
@@ -403,7 +434,8 @@ class ScanStorage:
             )
             return
 
-        scan_item.live_data.set(scan_msg.point_id, scan_msg)
+        if scan_id == scan_msg.scan_id or scan_msg.metadata.get("entry_role") == "main":
+            scan_item.live_data.set(scan_msg.point_id, scan_msg)
         scan_item.emit_data(scan_msg)
 
     @threadlocked

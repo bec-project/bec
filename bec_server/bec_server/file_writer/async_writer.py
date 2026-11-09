@@ -1,5 +1,5 @@
 """
-Async writer for writing async device data to a separate nexus file
+Async writer for streaming device data into a temporary NeXus file
 """
 
 from __future__ import annotations
@@ -82,6 +82,8 @@ class AsyncWriter(threading.Thread):
         connector: RedisConnector,
         devices: list[str],
         async_signals: list[tuple[str, str, dict]],
+        *,
+        sequence: bool = False,
     ):
         """
         Initialize the async writer
@@ -99,6 +101,10 @@ class AsyncWriter(threading.Thread):
         self.file_path = file_path if isinstance(file_path, str) else str(file_path)
         self.tmp_file_path = self.file_path.replace(".h5", ".tmp")
         self.scan_id = scan_id
+        self.sequence = sequence
+        self.io_lock = threading.RLock()
+        self._entry_topics: dict[str, tuple[int, str]] = {}
+        self._entry_signals = defaultdict(lambda: defaultdict(set))
         self.scan_number = scan_number
         self.devices = devices
         self.connector = connector
@@ -128,21 +134,45 @@ class AsyncWriter(threading.Thread):
         """
         Initialize the stream keys for the devices
         """
-        for device in self.devices:
-            topic = MessageEndpoints.device_async_readback(
-                scan_id=self.scan_id, device=device
-            ).endpoint
-            key = "0-0"
-            self.stream_keys[topic] = key
-        for device_name, component_name, signal_info in self.async_signals:
-            saved = signal_info.get("describe", {}).get("signal_info", {}).get("saved", False)
-            if not saved:
-                continue
-            topic = MessageEndpoints.device_async_signal(
-                scan_id=self.scan_id, device=device_name, signal=signal_info["storage_name"]
-            ).endpoint
-            key = "0-0"
-            self.stream_keys[topic] = key
+        self._register_streams(self.scan_id, self.devices, self.async_signals)
+
+    def add_entry(
+        self,
+        index: int,
+        scan_id: str,
+        devices: list[str],
+        async_signals: list[tuple[str, str, dict]],
+    ) -> None:
+        """Subscribe this writer to an acquisition's streams."""
+        with self.io_lock:
+            self._register_streams(scan_id, devices, async_signals, index)
+
+    def _register_streams(self, scan_id, devices, async_signals, index=None):
+        topics = [
+            (MessageEndpoints.device_async_readback(scan_id=scan_id, device=device), device)
+            for device in devices
+        ]
+        for device, _, info in async_signals:
+            if info.get("describe", {}).get("signal_info", {}).get("saved", False):
+                topics.append(
+                    (
+                        MessageEndpoints.device_async_signal(
+                            scan_id=scan_id, device=device, signal=info["storage_name"]
+                        ),
+                        device,
+                    )
+                )
+        for endpoint, device in topics:
+            self.stream_keys.setdefault(endpoint.endpoint, "0-0")
+            if index is not None:
+                self._entry_topics[endpoint.endpoint] = (index, device)
+
+    def entry_signals(self, index: int) -> dict[str, list[str]] | None:
+        """Return the signals already written into one NeXus entry."""
+        return {
+            device: sorted(signals)
+            for device, signals in self._entry_signals.get(index, {}).items()
+        } or None
 
     def poll_data(self, poll_timeout: int | None = 500) -> dict | None:
         """
@@ -153,17 +183,24 @@ class AsyncWriter(threading.Thread):
                 it waits indefinitely. If set to None, it returns immediately.
         """
         # pylint: disable=protected-access
+        if not self.stream_keys:
+            return None
         out = self.connector.raw_xread(self.stream_keys, block=poll_timeout)
         return self._decode_stream_messages_xread(out)
 
     def _decode_stream_messages_xread(self, msg) -> dict | None:
         out = defaultdict(list)
         for topic, msgs in msg:
+            topic_name = topic.decode()
+            destination = (
+                self._entry_topics[topic_name]
+                if self.sequence
+                else self._get_device_name_from_topic(topic_name)
+            )
             for index, record in msgs:
-                device_name = self._get_device_name_from_topic(topic.decode())
                 for _, msg_entry in record.items():
                     device_msg: messages.DeviceMessage = MsgpackSerialization.loads(msg_entry)
-                    out[device_name].append(device_msg)
+                    out[destination].append(device_msg)
                 self.stream_keys[topic.decode()] = index
         return out if out else None
 
@@ -205,14 +242,20 @@ class AsyncWriter(threading.Thread):
     def _run(self) -> None:
         try:
             self.send_file_message(done=False, successful=False)
-            self.initialize_stream_keys()
-            if not self.devices and not self.async_signals:
-                return
-            # self.register_async_callbacks()
-            while not self.shutdown_event.is_set():
-                self.poll_and_write_data()
-            # run one last time to get any remaining data
-            self.poll_and_write_data(final=True)
+            if self.sequence:
+                while not self.shutdown_event.is_set():
+                    with self.io_lock:
+                        self.flush_pending()
+                    self.shutdown_event.wait(0.05)
+                with self.io_lock:
+                    self.flush_pending(final=True)
+            else:
+                self.initialize_stream_keys()
+                if not self.stream_keys:
+                    return
+                while not self.shutdown_event.is_set():
+                    self.poll_and_write_data()
+                self.poll_and_write_data(final=True)
             logger.info(f"Finished writing async data file {self.tmp_file_path}")
         # pylint: disable=broad-except
         except Exception:
@@ -229,6 +272,22 @@ class AsyncWriter(threading.Thread):
                 info=error_info,
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
+
+    def flush_pending(self, *, final: bool = False, entry_index: int | None = None) -> None:
+        """Drain currently published data while the caller holds the file lock."""
+        while data := self.poll_data(poll_timeout=None):
+            self.write_data(data)
+            if not final:
+                break
+        if self.file_handle is not None and (final or entry_index is not None):
+            self._flush_replacements(entry_index)
+            self.file_handle.flush()
+
+    def open_file(self) -> h5py.File:
+        """Open the temporary file once while the caller holds the file lock."""
+        if self.file_handle is None:
+            self.file_handle = h5py.File(self.tmp_file_path, "w")
+        return self.file_handle
 
     def send_file_message(self, done: bool, successful: bool) -> None:
         """
@@ -272,17 +331,22 @@ class AsyncWriter(threading.Thread):
                 typically used only after the scan is complete. Defaults to False.
 
         """
-        if self.file_handle is None:
-            self.file_handle = h5py.File(self.tmp_file_path, "w")
+        f = self.open_file()
 
-        f = self.file_handle
-
-        for device_name, data_container in data.items():
+        for destination, data_container in data.items():
+            if self.sequence:
+                index, device_name = destination
+                base_path = f"/entry_{index}/collection/devices"
+                written_signals = self._entry_signals[index]
+            else:
+                device_name = destination
+                base_path = self.BASE_PATH
+                written_signals = self._written_signals
             self.written_devices.add(device_name)
 
             # create the device group if it doesn't exist
             # -> /entry/collections/devices/<device_name>
-            group_name = f"{self.BASE_PATH}/{device_name}"
+            group_name = f"{base_path}/{device_name}"
             if group_name not in f:
                 f.create_group(group_name)
             device_group = f[group_name]
@@ -336,14 +400,23 @@ class AsyncWriter(threading.Thread):
                                 info=error_info,
                                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                             )
-                    self._written_signals[device_name].add(signal_name)
+                    written_signals[device_name].add(signal_name)
 
         if write_replace:
-            for group_name, value in self.device_data_replace.items():
-                group = f[group_name]
-                create_dataset_safe(group, "value", data=value, maxshape=value.shape)
+            self._flush_replacements()
 
         f.flush()
+
+    def _flush_replacements(self, entry_index: int | None = None) -> None:
+        prefix = f"/entry_{entry_index}/"
+        for group_name in list(self.device_data_replace):
+            if entry_index is not None and not group_name.startswith(prefix):
+                continue
+            value = self.device_data_replace.pop(group_name)
+            group = self.file_handle[group_name]
+            if "value" in group:
+                del group["value"]
+            create_dataset_safe(group, "value", data=value, maxshape=value.shape)
 
     def _report_unwritable_update(self, device_name: str, signal_name: str) -> None:
         """

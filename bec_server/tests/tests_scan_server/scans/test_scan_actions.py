@@ -16,7 +16,7 @@ from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 from bec_server.file_writer.file_writer_manager import ScanStorage
 from bec_server.scan_server.errors import ScanAbortion, UserScanInterruption
 from bec_server.scan_server.instruction_handler import InstructionHandler
-from bec_server.scan_server.scans.scan_base import ScanBase, ScanInfo, ScanType
+from bec_server.scan_server.scans.scan_base import ScanBase, ScanEntryPlan, ScanInfo, ScanType
 from bec_server.scan_server.scans.scan_status import ScanStatus
 from bec_server.scan_server.tests.utils import NoopScan
 
@@ -391,6 +391,7 @@ def test_build_scan_status_message(action_context):
     assert msg.num_points == 3
     assert msg.num_monitored_readouts == 0
     assert msg.info["baseline_readout_requested"] is False
+    assert (msg.info["sequence_index"], msg.info["total_sequences"]) == (0, 1)
     assert msg.scan_type == "software_triggered"
     assert msg.scan_parameters == {
         "exp_time": 0.1,
@@ -1098,6 +1099,38 @@ def test_send_scan_status_publishes_message(action_context):
     ]
     assert ctx.connector.notify.call_args.kwargs == {"pipe": pipe}
     pipe.execute.assert_called_once_with()
+
+
+@pytest.mark.parametrize("status", ["open", "aborted", "halted", "user_completed"])
+def test_sequence_status_between_entries(action_context, status):
+    ctx = action_context()
+    ctx.scan.scan_info.entry_sequence = (
+        ScanEntryPlan(
+            entry_index=0,
+            scan_id="scan-id-test-0",
+            role="main",
+            scan_name="test",
+            request_inputs={},
+        ),
+    )
+    ctx.actions._entries_started = 1
+    with (
+        mock.patch.object(ctx.connector, "set_and_publish") as publish,
+        mock.patch.object(ctx.connector, "set") as set_status,
+    ):
+        ctx.actions._send_scan_status(status, reason="user")
+
+    if status == "open":
+        publish.assert_not_called()
+        set_status.assert_not_called()
+        assert "status" not in ctx.actions._sequence_start
+        return
+
+    endpoint, message = publish.call_args.args
+    assert endpoint == MessageEndpoints.scan_status()
+    assert message.status == status
+    assert message.info["entry_sequence"][0]["scan_id"] == "scan-id-test-0"
+    assert message.info["entries_started"] == 1
 
 
 def test_send_scan_status_publishes_new_scan_notification(action_context):

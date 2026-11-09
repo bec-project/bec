@@ -13,7 +13,7 @@ from bec_server.scan_server.scan_queue import (
     InstructionQueueStatus,
     ScanQueue,
 )
-from bec_server.scan_server.scans.scan_base import ScanBase
+from bec_server.scan_server.scans.scan_base import ScanBase, ScanEntryPlan
 from bec_server.scan_server.scans.scan_modifier import ScanModifier, scan_hook, scan_hook_impl
 from bec_server.scan_server.tests.utils import ScanServerMock
 
@@ -467,6 +467,47 @@ def test_run_uses_on_exception_cleanup_before_handling_error(direct_worker_conte
         direct_worker_context.direct_worker._handle_exception.call_args.args[0], RuntimeError
     )
     direct_worker_context.direct_worker._handle_exception.assert_called_once()
+
+
+def test_abort_between_entries_skips_main_cleanup(direct_worker_context, make_scan):
+    worker = direct_worker_context.direct_worker
+    queue = direct_worker_context.queue
+    parent = make_scan()
+    before = make_scan()
+    parent._entry_scans = (before, parent)
+    parent.scan_info.entry_sequence = (
+        ScanEntryPlan(
+            entry_index=0,
+            scan_id="before-id",
+            role="before",
+            scan_name=before.scan_name,
+            request_inputs={},
+        ),
+        ScanEntryPlan(
+            entry_index=1,
+            scan_id="main-id",
+            role="main",
+            scan_name=parent.scan_name,
+            request_inputs={},
+        ),
+    )
+    queue.active_scan = parent
+    direct_worker_context.scan_worker.current_instruction_queue_item = queue
+
+    def abort_after_before(scan):
+        assert scan is before
+        direct_worker_context.scan_worker.status = InstructionQueueStatus.STOPPED
+
+    with (
+        mock.patch.object(worker, "_run_acquisition", side_effect=abort_after_before) as run,
+        mock.patch.object(parent, "on_exception") as cleanup,
+        mock.patch.object(parent.actions, "_send_scan_status"),
+        pytest.raises(ScanAbortion),
+    ):
+        worker.run(parent)
+
+    run.assert_called_once_with(before)
+    cleanup.assert_not_called()
 
 
 def test_run_uses_on_exception_cleanup_for_scan_abortion(direct_worker_context, make_scan):
