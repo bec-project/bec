@@ -375,6 +375,99 @@ def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices_and_st
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_late_file_completion_keeps_original_acquisition_id(dm_with_devices_and_status):
+    manager = dm_with_devices_and_status
+    device = manager.devices.bec_signals_device.obj
+    handler = manager._bec_message_handler
+    first = messages.ScanStatusMessage(scan_id="parent-0", status="open", info={"entry_index": 0})
+    second = first.model_copy(update={"scan_id": "parent-1"})
+    pending = messages.FileMessage(file_path="first.h5", done=False, successful=False)
+    done = pending.model_copy(update={"done": True, "successful": True, "metadata": {}})
+
+    with mock.patch.object(handler, "connector") as connector:
+        manager.scan_info.msg = first
+        handler.emit(device.file_event, pending)
+        manager.scan_info.msg = second
+        handler.emit(device.file_event, done)
+
+    assert done.metadata == {"scan_id": "parent-0", "entry_index": 0}
+    assert connector.set_and_publish.call_args.args[0] == MessageEndpoints.public_file(
+        "parent-0", device.name
+    )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("tagged_announcement", [False, True])
+@pytest.mark.parametrize("late_done", [False, True])
+def test_late_file_event_preserves_new_owner_of_reused_path(
+    dm_with_devices_and_status, tagged_announcement, late_done
+):
+    manager = dm_with_devices_and_status
+    device = manager.devices.bec_signals_device.obj
+    handler = manager._bec_message_handler
+    path = "reused.h5"
+
+    with mock.patch.object(handler, "connector") as connector:
+        for index in (0, 1):
+            scan_id = f"parent-{index}"
+            manager.scan_info.msg = messages.ScanStatusMessage(
+                scan_id=scan_id, status="open", info={"entry_index": index}
+            )
+            announcement = messages.FileMessage(
+                file_path=path,
+                done=False,
+                successful=False,
+                metadata={"scan_id": scan_id} if tagged_announcement else {},
+            )
+            handler.emit(device.file_event, announcement)
+            assert connector.set_and_publish.call_args.args[0] == MessageEndpoints.public_file(
+                scan_id, device.name
+            )
+            assert announcement.metadata == {"scan_id": scan_id, "entry_index": index}
+
+        manager.scan_info.msg = messages.ScanStatusMessage(
+            scan_id="parent-2", status="open", info={"entry_index": 2}
+        )
+        late = messages.FileMessage(
+            file_path=path, done=late_done, successful=late_done, metadata={"scan_id": "parent-0"}
+        )
+        handler.emit(device.file_event, late)
+        assert connector.set_and_publish.call_args.args[0] == MessageEndpoints.public_file(
+            "parent-0", device.name
+        )
+
+        completion = messages.FileMessage(file_path=path, done=True, successful=True)
+        handler.emit(device.file_event, completion)
+        assert connector.set_and_publish.call_args.args[0] == MessageEndpoints.public_file(
+            "parent-1", device.name
+        )
+        assert completion.metadata == {"scan_id": "parent-1", "entry_index": 1}
+        assert (device.name, path) not in handler._pending_files
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_interleaved_async_signals_keep_their_acquisition_indices(dm_with_devices_and_status):
+    manager = dm_with_devices_and_status
+    device = manager.devices.bec_signals_device.obj
+    handler = manager._bec_message_handler
+    manager.scan_info.msg = messages.ScanStatusMessage(scan_id="parent-1", status="open", info={})
+
+    with mock.patch.object(handler, "connector") as connector:
+        indices = []
+        for scan_id in ("parent-0", "parent-1", "parent-0"):
+            reading = messages.DeviceMessage(
+                signals={"async_signal": {"value": [1], "timestamp": 1.0}},
+                metadata={"scan_id": scan_id, "async_update": {"type": "add", "max_shape": [None]}},
+            )
+            handler.emit(device.async_signal, reading)
+            assert connector.xadd.call_args.args[0] == MessageEndpoints.device_async_signal(
+                scan_id=scan_id, device=device.name, signal=device.async_signal.name
+            )
+            indices.append(reading.metadata["async_indices"]["async_signal"])
+        assert indices == [0, 0, 1]
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 @pytest.mark.parametrize(
     "value", [None, messages.ProgressMessage(value=1, max_value=2, done=False), "some string"]
 )
