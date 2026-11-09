@@ -374,6 +374,15 @@ class ScanQueueHistoryMessage(BECMessage):
     queue: str = Field(default="primary")
 
 
+def sequence_id_for_acquisition(scan_id: str | None, entry_index: int | None) -> str | None:
+    """Return the sequence key for an acquisition carrying an entry index."""
+    if scan_id and entry_index is not None:
+        suffix = f"-{entry_index}"
+        if scan_id.endswith(suffix):
+            return scan_id.removesuffix(suffix) or None
+    return None
+
+
 class ScanStatusMessage(BECMessage):
     """Message type for sending scan status updates.
 
@@ -432,6 +441,40 @@ class ScanStatusMessage(BECMessage):
     )
     info: dict
     timestamp: float = Field(default_factory=time.time)
+
+    def sequence_start(self) -> ScanStatusMessage | None:
+        """Build the local parent record from the first acquisition's sequence metadata."""
+        descriptor = self.info.get("sequence_start")
+        if descriptor is None:
+            return None
+        sequence_id = sequence_id_for_acquisition(self.scan_id, self.info.get("entry_index"))
+        return ScanStatusMessage.model_validate(
+            {
+                **descriptor,
+                "scan_id": sequence_id,
+                "status": "open",
+                "info": {**descriptor["info"], "scan_id": sequence_id},
+            }
+        )
+
+    def closes_sequence(self) -> bool:
+        """Whether this is the successful close of the last acquisition."""
+        index = self.info.get("sequence_index")
+        count = self.info.get("total_sequences")
+        return (
+            self.status == "closed"
+            and self.info.get("entry_index") is not None
+            and isinstance(index, int)
+            and isinstance(count, int)
+            and index == count - 1
+        )
+
+    def sequence_updates(self) -> list[ScanStatusMessage]:
+        """Return parent lifecycle updates carried by this acquisition status."""
+        return [
+            ScanStatusMessage.model_validate(update)
+            for update in self.info.get("sequence_updates", ())
+        ]
 
     def __str__(self):
         content = deepcopy(self.__dict__)
@@ -535,6 +578,8 @@ class RequestBlock(BaseModel):
         is_scan (bool): True if the request is a scan, False if it is an rpc call
         scan_number (int | None): Scan number if applicable
         scan_id (str | None): Scan ID if applicable
+        entry_sequence (list[dict]): Ordered acquisition plan for a scan with subscans
+        sequence_index (int | None): Zero-based index of the most recently started acquisition
         report_instructions (list[dict] | None): List of report instructions for the scan, if any
         owned_device_locks (list[str]): List of device locks owned by the request
         pending_device_locks (list[str]): List of device locks pending for the request
@@ -549,6 +594,8 @@ class RequestBlock(BaseModel):
     is_scan: bool
     scan_number: int | None
     scan_id: str | None
+    entry_sequence: list[dict] = Field(default_factory=list)
+    sequence_index: int | None = None
     report_instructions: list[dict] | None = None
     owned_device_locks: list[str] = Field(default_factory=list)
     pending_device_locks: list[str] = Field(default_factory=list)

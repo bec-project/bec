@@ -5,6 +5,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from bec_lib import messages
+from bec_lib.bec_errors import ScanInputValidationError
 from bec_lib.device import DeviceBase
 from bec_lib.logger import bec_logger
 from bec_lib.scan_input_validator import ScanInputValidator
@@ -15,7 +16,7 @@ from .scans.scan_argument_modifier import (
     get_scan_modifier,
     scan_signature_with_modifiers,
 )
-from .scans.scan_base import ScanBase
+from .scans.scan_base import ScanBase, SubscanSpec
 
 logger = bec_logger.logger
 
@@ -66,12 +67,52 @@ class ScanAssembler:
         Returns:
             ScanBase: Scan instance of the initialized scan class
         """
-        scan = msg.content.get("scan_type")
+        scan = self._construct_scan(
+            msg.scan_type,
+            unpack_scan_args(msg.parameter.get("args", [])),
+            msg.parameter.get("kwargs", {}),
+            msg.metadata,
+            scan_id,
+        )
+        with self.device_manager._rpc_method(partial(self._raise_on_rpc_call, type(scan))):
+            before, after = scan._configure_entry_sequence(self.describe_subscan)
+
+        if before or after:
+            if not scan.is_scan:
+                raise ScanInputValidationError.with_error_info(
+                    "Subscans require a parent acquisition scan."
+                )
+            entries = []
+            for spec in (*before, None, *after):
+                entry = scan
+                if spec is not None:
+                    kwargs = {**spec.kwargs, "system_config": scan.scan_info.system_config}
+                    metadata = dict(msg.metadata)
+                    metadata["user_metadata"] = {
+                        **scan.scan_info.user_metadata,
+                        **kwargs.pop("user_metadata", {}),
+                    }
+                    entry = self._construct_scan(
+                        spec.scan_class.scan_name, spec.args, kwargs, metadata, scan_id
+                    )
+                    with self.device_manager._rpc_method(
+                        partial(self._raise_on_rpc_call, type(entry))
+                    ):
+                        entry._configure_entry_sequence(self.describe_subscan)
+                    if entry.scan_info.entry_sequence:
+                        raise ScanInputValidationError.with_error_info("Subscans cannot be nested.")
+                if entry.scan_info.scan_type is None:
+                    raise ScanInputValidationError.with_error_info(
+                        "Sequence entries must have an acquisition scan type."
+                    )
+                entries.append(entry)
+            scan._entry_scans = tuple(entries)
+        return scan
+
+    def _construct_scan(self, scan, args, kwargs, metadata, scan_id) -> ScanBase:
         scan_cls = self.scan_manager.scan_dict[scan]
 
         logger.info(f"Preparing scan of type {scan} / {scan_cls.__name__}")
-        args = unpack_scan_args(msg.content.get("parameter", {}).get("args", []))
-        kwargs = msg.content.get("parameter", {}).get("kwargs", {})
         scan_info = self._get_scan_info(scan, scan_cls)
 
         resolved_args, resolved_kwargs = self.input_validator.validate(
@@ -82,7 +123,7 @@ class ScanAssembler:
             scan_cls, scan_info["signature"], resolved_args, resolved_kwargs
         )
 
-        metadata = msg.metadata.copy() if msg.metadata is not None else None
+        metadata = metadata.copy() if metadata is not None else None
         user_metadata = metadata.pop("user_metadata", {}) if metadata is not None else {}
         with self.device_manager._rpc_method(partial(self._raise_on_rpc_call, scan_cls)):
             scan_instance = scan_cls(
@@ -98,6 +139,16 @@ class ScanAssembler:
                 **resolved_kwargs,
             )
             return scan_instance
+
+    def describe_subscan(self, spec: SubscanSpec) -> dict:
+        """Validate registered scan inputs and return their serializable request metadata."""
+        scan_class = spec.scan_class
+        name = scan_class.scan_name
+        if self.scan_manager.scan_dict.get(name) is not scan_class:
+            raise ValueError(f"Subscan class {scan_class.__name__} is not registered as {name!r}.")
+        info = self._get_scan_info(name, scan_class)
+        self.input_validator.validate(name, info, spec.args, spec.kwargs)
+        return self._assemble_request_inputs(scan_class, list(spec.args), spec.kwargs)
 
     def _raise_on_rpc_call(self, scan_cls, device: str, func_call: str, *args, **kwargs):
         # This function is used to raise an error if a runtime RPC call is made during scan initialization as it

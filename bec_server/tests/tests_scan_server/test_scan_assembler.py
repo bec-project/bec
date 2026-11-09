@@ -7,12 +7,15 @@ from bec_lib import messages
 from bec_lib.bec_errors import ScanInputValidationError
 from bec_lib.device import DeviceBase
 from bec_lib.scan_args import ScanArgument
+from bec_lib.serialization import msgpack
 from bec_lib.tests.fixtures import dm_with_devices
 from bec_server.scan_server.scan_assembler import ScanAssembler, unpack_scan_args
 from bec_server.scan_server.scans.acquire import Acquire
 from bec_server.scan_server.scans.fermat_scan import FermatSpiralScan
 from bec_server.scan_server.scans.line_scan import LineScan
 from bec_server.scan_server.scans.scan_argument_modifier import scan_signature_with_modifiers
+from bec_server.scan_server.scans.scan_base import SubscanSpec
+from bec_server.scan_server.scans.scan_modifier import scan_hook
 from bec_server.scan_server.tests.utils import NoopScan
 
 
@@ -815,3 +818,90 @@ def test_scan_assembler_validates_unknown_kwargs_without_published_metadata(dm_w
 
     with pytest.raises(ScanInputValidationError, match="unknown"):
         assembler.assemble_scan(msg, "scan_id")
+
+
+class _ScanWithSubscans(NoopScan):
+    scan_name = "scan_with_subscans"
+
+    def __init__(self, **kwargs):
+        super().__init__(system_config={}, **kwargs)
+
+    @scan_hook
+    def configure_subscans(self):
+        self.add_subscan(Acquire, exp_time=0.2, when="after")
+        self.add_subscan(Acquire, exp_time=0.1)
+
+
+@pytest.fixture
+def subscan_parent(scan_assembler):
+    scan_assembler.scan_manager.scan_dict = {
+        _ScanWithSubscans.scan_name: _ScanWithSubscans,
+        Acquire.scan_name: Acquire,
+    }
+    scan_assembler.scan_manager.available_scans = {}
+    return _ScanWithSubscans(
+        scan_id="parent-id",
+        redis_connector=scan_assembler.connector,
+        device_manager=scan_assembler.device_manager,
+        instruction_handler=scan_assembler.parent.queue_manager.instruction_handler,
+        request_inputs={},
+    )
+
+
+def test_subscan_plan_uses_registered_scan_inputs(scan_assembler, subscan_parent):
+    scan = subscan_parent
+    before, after = scan._configure_entry_sequence(scan_assembler.describe_subscan)
+
+    assert [spec.kwargs for spec in (*before, *after)] == [{"exp_time": 0.1}, {"exp_time": 0.2}]
+    info = msgpack.loads(msgpack.dumps(scan.actions._build_scan_status_info({}, {}, None)))
+    assert [
+        (entry["entry_index"], entry["role"], entry["scan_name"])
+        for entry in info["entry_sequence"]
+    ] == [
+        (0, "before", "acquire"),
+        (1, "main", _ScanWithSubscans.scan_name),
+        (2, "after", "acquire"),
+    ]
+    assert info["entry_sequence"][0]["request_inputs"]["kwargs"] == {"exp_time": 0.1}
+    assert info["scan_id"] == "parent-id"
+    with pytest.raises(RuntimeError, match="only be registered"):
+        scan.add_subscan(Acquire)
+    with pytest.raises(RuntimeError, match="already been configured"):
+        scan._configure_entry_sequence(scan_assembler.describe_subscan)
+
+
+def test_subscan_validation_rejects_invalid_scan_inputs(scan_assembler):
+    scan_assembler.scan_manager.scan_dict = {Acquire.scan_name: Acquire}
+    scan_assembler.scan_manager.available_scans = {}
+    spec = SubscanSpec(Acquire, (), {"exp_time": -1}, "before")
+    with pytest.raises(ScanInputValidationError, match="exp_time"):
+        scan_assembler.describe_subscan(spec)
+
+
+def test_subscan_registration_snapshots_mutable_inputs(scan_assembler, subscan_parent):
+    scan = subscan_parent
+    shared = {"tags": ["before"]}
+
+    def configure():
+        scan.add_subscan(Acquire, user_metadata=shared)
+        shared["tags"][0] = "after"
+        scan.add_subscan(Acquire, user_metadata=shared, when="after")
+        with pytest.raises(TypeError, match="serialize"):
+            scan.add_subscan(Acquire, user_metadata={"invalid": object()})
+
+    with mock.patch.object(scan, "configure_subscans", side_effect=configure):
+        before, after = scan._configure_entry_sequence(scan_assembler.describe_subscan)
+
+    assert before[0].kwargs["user_metadata"]["tags"] == ["before"]
+    assert after[0].kwargs["user_metadata"]["tags"] == ["after"]
+
+
+def test_subscan_request_constructs_flat_sequence(scan_assembler, subscan_parent):
+    parent = scan_assembler.assemble_scan(
+        messages.ScanQueueMessage(scan_type=subscan_parent.scan_name, parameter={}), "parent-id"
+    )
+    before, main, after = parent._entry_scans
+    assert main is parent
+    assert before.exp_time == 0.1
+    assert after.exp_time == 0.2
+    assert {entry.scan_info.scan_id for entry in parent._entry_scans} == {"parent-id"}
