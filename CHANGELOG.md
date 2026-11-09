@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.6.0 (2026-11-09)
+
+### Features
+
+- **file-writer**: Persist signal units in scan files
+  ([`80530ef`](https://github.com/bec-project/bec/commit/80530ef5f91d9cde5a72020e44cd915b9753fe94))
+
+
 ## v4.5.1 (2026-11-09)
 
 ### Bug Fixes
