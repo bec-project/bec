@@ -116,7 +116,10 @@ def test_live_updates_process_queue_pending(ipython_live_updates_with_mocked_liv
 
 
 @pytest.mark.timeout(20)
-def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_live, queue_elements):
+@pytest.mark.parametrize("with_subscans", [False, True])
+def test_live_updates_process_queue_running(
+    ipython_live_updates_with_mocked_live, queue_elements, with_subscans
+):
     live_updates, mock_live = ipython_live_updates_with_mocked_live
     client = live_updates.client
     queue, request_block, request_msg = queue_elements
@@ -129,7 +132,13 @@ def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_liv
         scan_id=["scan_id"],
     )
     live_updates._active_request = request_msg
-    request_block.report_instructions = [{"wait_table": 10}]
+    if with_subscans:
+        request_block.entry_sequence = [{"scan_id": "scan_id-0", "role": "before"}]
+        request_block.report_instructions = None
+        expected = {"scan_progress": {"entry_sequence": request_block.entry_sequence}}
+    else:
+        expected = {"wait_table": 10}
+        request_block.report_instructions = [expected]
     client.queue.queue_storage.current_scan_queue = {
         "primary": messages.ScanQueueStatus(info=[], status="RUNNING")
     }
@@ -143,7 +152,7 @@ def test_live_updates_process_queue_running(ipython_live_updates_with_mocked_liv
                 with mock.patch.object(live_updates, "_process_instruction") as process:
                     res = live_updates._process_queue(queue, request_msg)
                     mock_live.assert_not_called()
-                    process.assert_called_once_with({"wait_table": 10})
+                    process.assert_called_once_with(expected)
                     assert res is True
 
 

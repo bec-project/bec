@@ -82,6 +82,7 @@ class ScanItem:
         self.status_message: messages.ScanStatusMessage | None = None
         self.data = ScanDataContainer()
         self.live_data = LiveScanData()
+        self.acquisitions: dict[str, ScanItem] = {}
         self.num_points: int | None = None
         self.num_monitored_readouts: int | None = None
         self.start_time: float | None = None
@@ -91,6 +92,16 @@ class ScanItem:
         self._callbacks = []
         self._bec = builtins.__dict__.get("bec")
         self.public_files = {}
+
+    def _get_acquisition(self, scan_id: str, *, is_main: bool) -> ScanItem:
+        if scan_id not in self.acquisitions:
+            acquisition = ScanItem(
+                self._queue_id, self.scan_number, scan_id, "open", self.scan_manager
+            )
+            if is_main:
+                acquisition.live_data = self.live_data
+            self.acquisitions[scan_id] = acquisition
+        return self.acquisitions[scan_id]
 
     @property
     def queue(self):
@@ -346,7 +357,11 @@ class ScanStorage:
             sequence_completion: Apply the final acquisition outcome to the local parent item.
         """
 
-        scan_id = scan_status.scan_id
+        acquisition_id = scan_status.scan_id
+        sequence_id = sequence_id_for_acquisition(
+            acquisition_id, scan_status.info.get("entry_index")
+        )
+        scan_id = sequence_id or acquisition_id
         if not scan_id:
             return
 
@@ -363,6 +378,11 @@ class ScanStorage:
                 }
             )
             return
+
+        if sequence_id:
+            scan_item = scan_item._get_acquisition(
+                acquisition_id, is_main=scan_status.info.get("entry_role") == "main"
+            )
 
         if sequence_completion and scan_item.status_message is not None:
             scan_status = scan_item.status_message.model_copy(
@@ -408,7 +428,7 @@ class ScanStorage:
         scan_item.scan_report_instructions = scan_status.info.get("scan_report_instructions", [])
 
         # run status callbacks
-        if not metadata_only and not sequence_completion:
+        if not metadata_only and not sequence_completion and not sequence_id:
             scan_item.emit_status(scan_status)
 
     @threadlocked
@@ -434,8 +454,12 @@ class ScanStorage:
             )
             return
 
-        if scan_id == scan_msg.scan_id or scan_msg.metadata.get("entry_role") == "main":
-            scan_item.live_data.set(scan_msg.point_id, scan_msg)
+        acquisition = scan_item
+        if scan_msg.scan_id != scan_id:
+            acquisition = scan_item._get_acquisition(
+                scan_msg.scan_id, is_main=scan_msg.metadata.get("entry_role") == "main"
+            )
+        acquisition.live_data.set(scan_msg.point_id, scan_msg)
         scan_item.emit_data(scan_msg)
 
     @threadlocked

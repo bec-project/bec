@@ -76,6 +76,14 @@ class IPythonLiveUpdates:
             self._process_instruction(instr)
             self._processed_instructions += 1
 
+    def _process_request_block(self, block: messages.RequestBlock) -> None:
+        if block.entry_sequence:
+            self._process_report_instructions(
+                [{"scan_progress": {"entry_sequence": block.entry_sequence}}]
+            )
+        else:
+            self._process_report_instructions(block.report_instructions or [])
+
     def _process_instruction(self, instr: dict):
         """Process the received instruction based on scan_report_type.
 
@@ -179,9 +187,7 @@ class IPythonLiveUpdates:
                         break
 
                 available_blocks = self._available_req_blocks(queue, request)
-                req_block = available_blocks[0]
-                report_instructions = req_block.report_instructions or []
-                self._process_report_instructions(report_instructions)
+                self._process_request_block(available_blocks[0])
 
             self._reset()
 
@@ -305,10 +311,9 @@ class IPythonLiveUpdates:
         ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 
-        report_instructions = req_block.report_instructions or []
-        if not report_instructions:
+        if not (req_block.entry_sequence or req_block.report_instructions):
             return False
-        self._process_report_instructions(report_instructions)
+        self._process_request_block(req_block)
 
         if not queue.active_request_block:
             return True

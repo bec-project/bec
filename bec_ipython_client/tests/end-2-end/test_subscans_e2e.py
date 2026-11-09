@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 
 import h5py
@@ -144,7 +145,13 @@ def test_subscan_sequence_one_file_and_one_history_record(
         wait_until(lambda: len(async_recorder.data) >= len(expected_callbacks), timeout_s=5)
         assert Counter(sync_recorder.data) == Counter(expected_callbacks)
         assert Counter(async_recorder.data) == Counter(expected_callbacks)
-        assert f"finished. Scan ID {scan_id}" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        sections = re.split(r"Acquisition (\d/3 \(\w+\))", output)
+        assert sections[1::2] == ["1/3 (before)", "2/3 (main)", "3/3 (after)"]
+        assert [
+            re.findall(r"^\|\s*(\d+)\s*\|", table, re.MULTILINE) for table in sections[2::2]
+        ] == [["1"], ["1", "2", "3"], ["1"]]
+        assert f"finished. Scan ID {scan_id}" in output
     assert len(report.scan.live_data) == (0 if fail_role == "before" else 3)
     acquisitions = [
         event
