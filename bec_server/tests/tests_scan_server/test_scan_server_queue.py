@@ -729,16 +729,18 @@ def wait_to_reach_state(queue_manager, queue, state):
 
 
 @pytest.mark.timeout(5)
-def test_set_pause(dormant_scan_queue):
-    """Test that set_pause sets worker_status to PAUSED when it's RUNNING"""
+@pytest.mark.parametrize(
+    "initial_status", [InstructionQueueStatus.RUNNING, InstructionQueueStatus.DEFERRED_PAUSE]
+)
+def test_set_pause(dormant_scan_queue, initial_status):
+    """A hard pause also upgrades a deferred pause."""
     queue_manager = dormant_scan_queue.queue_manager
 
     # Add a queue item so worker_status has something to operate on
     msg = _queued_scan_message()
     queue_manager.add_to_queue(scan_queue="primary", msg=msg)
 
-    # Set worker status to RUNNING
-    queue_manager.queues["primary"].queue[0].status = InstructionQueueStatus.RUNNING
+    queue_manager.queues["primary"].queue[0].status = initial_status
 
     # Call set_pause
     queue_manager.set_pause(queue="primary")

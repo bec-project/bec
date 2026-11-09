@@ -9,6 +9,7 @@ from rich.live import Live
 from rich.panel import Panel
 
 from bec_ipython_client.callbacks.device_progress import LiveUpdatesDeviceProgress
+from bec_ipython_client.signals import ScanPaused
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
 from bec_lib.request_context import ActiveRequestContext, active_request_context
@@ -202,10 +203,11 @@ class IPythonLiveUpdates:
 
         except ScanInterruption as scan_interr:
             self._stop_status_live()
-            self._interrupted_request = (request,)
             if self._current_queue and self.client._service_config.abort_on_ctrl_c:
                 self._wait_for_cleanup()
             self._reset()
+            if isinstance(scan_interr, ScanPaused):
+                self._interrupted_request = (request, callbacks)
             raise scan_interr
         except KeyboardInterrupt as exc:
             self._stop_status_live()
@@ -384,4 +386,4 @@ class IPythonLiveUpdates:
         """Continue the interrupted request."""
         if not self._interrupted_request:
             return
-        self.process_request(*self._interrupted_request, self._user_callback)
+        self.process_request(*self._interrupted_request)

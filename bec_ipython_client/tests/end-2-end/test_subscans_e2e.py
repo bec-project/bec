@@ -1,12 +1,16 @@
+import os
 import re
+import signal
+import threading
 from collections import Counter
 
 import h5py
 import numpy as np
 import pytest
 
+from bec_ipython_client.bec_magics import BECMagics
 from bec_lib import endpoints
-from bec_lib.bec_errors import ScanAbortion
+from bec_lib.bec_errors import ScanAbortion, ScanInterruption
 from bec_lib.tests.utils import wait_until
 from bec_server.scan_server.scans import acquire, line_scan, scan_modifier
 
@@ -49,10 +53,11 @@ class BracketedLineScan(line_scan.LineScan):
     def configure_subscans(self):
         on_request = self.scan_info.readout_priority_modification["on_request"]
         fail_role = self.scan_info.user_metadata.get("fail_role")
+        interrupt_role = self.scan_info.user_metadata.get("interrupt_role")
         before = FailingAcquire if fail_role == "before" else acquire.Acquire
         self.add_subscan(
             before,
-            exp_time=0.01,
+            exp_time=1 if interrupt_role == "before" else 0.01,
             monitored=["samx"],
             on_request=on_request,
         )
@@ -61,7 +66,7 @@ class BracketedLineScan(line_scan.LineScan):
         )
         self.add_subscan(
             after,
-            exp_time=0.02,
+            exp_time=1 if interrupt_role == "after" else 0.02,
             monitored=["samx"],
             on_request=on_request,
             when="after",
@@ -237,3 +242,85 @@ def test_subscan_sequence_one_file_and_one_history_record(
                 camera_paths.add(link.filename)
                 assert len(collection["devices/monitor_async/monitor_async_data/value"]) == count
             assert len(camera_paths) == 3
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize(
+    "role, abort", [("before", True), ("main", True), ("after", True), ("main", False)]
+)
+def test_ipython_ctrl_c_subscan(request, monkeypatch, capsys, role, abort):
+    if not request.config.getoption("--start-servers"):
+        pytest.skip("This test loads a scan plugin into the local test scan server.")
+    bec = request.getfixturevalue("bec_ipython_client_fixture")
+    monkeypatch.setattr(bec._service_config.model, "abort_on_ctrl_c", abort)
+    original_handler = signal.getsignal(signal.SIGINT)
+    bec.scans.umv(bec.device_manager.devices.samx, 0, relative=False)
+    assert signal.getsignal(signal.SIGINT) is original_handler
+    motor = bec.device_manager.devices.samx
+    started = threading.Event()
+    finished = threading.Event()
+    acquisition = None
+
+    def on_status(msg):
+        nonlocal acquisition
+        status = msg.value
+        if status.status == "open" and status.info.get("entry_role") == role:
+            acquisition = status
+            started.set()
+
+    def interrupt():
+        if not started.wait(15) or finished.is_set():
+            return
+        os.kill(os.getpid(), signal.SIGINT)
+
+        def deferred():
+            item = bec.queue.scan_storage.current_scan_info
+            return item is not None and item.status.lower() in {"deferred_pause", "paused"}
+
+        for _ in range(100):
+            if finished.wait(0.05):
+                return
+            if deferred():
+                os.kill(os.getpid(), signal.SIGINT)
+                return
+
+    endpoint = endpoints.MessageEndpoints.scan_status()
+    bec.connector.register(endpoint, cb=on_status)
+    sender = threading.Thread(target=interrupt, daemon=True)
+    sender.start()
+    try:
+        with pytest.raises(ScanInterruption, match="User abort" if abort else "paused state"):
+            bec.scans.bracketed_line_scan(
+                motor,
+                0,
+                1,
+                steps=3,
+                exp_time=1 if role == "main" else 0.03,
+                relative=False,
+                metadata={"interrupt_role": role},
+            )
+        assert signal.getsignal(signal.SIGINT) is original_handler
+        assert acquisition is not None
+        entry_index = acquisition.info["entry_index"]
+        scan_id = acquisition.scan_id.removesuffix(f"-{entry_index}")
+        if not abort:
+            wait_until(
+                lambda: bec.queue.scan_storage.current_scan_info.status == "PAUSED", timeout_s=5
+            )
+            BECMagics(shell=None, client=bec).resume("")
+            assert "Acquisition 3/3 (after)" in capsys.readouterr().out
+            assert signal.getsignal(signal.SIGINT) is original_handler
+        wait_until(lambda: bec.history.get_by_scan_id(scan_id) is not None, timeout_s=10)
+        data = bec.history.get_by_scan_id(scan_id)
+        status = "aborted" if abort else "closed"
+        assert data._msg.exit_status == status
+        assert data.entry_paths == tuple(
+            f"/entry_{i}" for i in range(entry_index + 1 if abort else 3)
+        )
+        assert data.for_entry(entry_index).metadata["bec"]["status"] == status
+    finally:
+        finished.set()
+        started.set()
+        bec.connector.unregister(endpoint, cb=on_status)
+        sender.join()
+        bec.queue.request_scan_continuation()

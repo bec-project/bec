@@ -372,7 +372,10 @@ class QueueManager:
         """pause the queue and the currently running instruction queue"""
         que = self.queues[queue]
         with AutoResetCM(que):
-            if que.worker_status == InstructionQueueStatus.RUNNING:
+            if que.worker_status in (
+                InstructionQueueStatus.RUNNING,
+                InstructionQueueStatus.DEFERRED_PAUSE,
+            ):
                 que.worker_status = InstructionQueueStatus.PAUSED
 
     @requires_queue
