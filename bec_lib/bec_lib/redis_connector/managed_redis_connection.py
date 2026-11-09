@@ -716,7 +716,7 @@ class ManagedRedisConnection:
             except redis.exceptions.ConnectionError:
                 if not error:
                     error = True
-                    bec_logger.logger.error(self.connection_error_str)
+                    logger.error(self.connection_error_str)
                 self._stop_events_listener_thread.wait(timeout=1)
             # pylint: disable=broad-except
             except Exception:
