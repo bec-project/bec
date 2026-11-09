@@ -1,6 +1,6 @@
 import gc
+import queue
 import threading
-import time
 from typing import Generator
 from unittest import mock
 
@@ -9,7 +9,6 @@ import pytest
 import redis
 from redis.client import Pipeline
 
-import bec_lib.messages as bec_messages
 from bec_lib import messages
 from bec_lib.endpoints import EndpointInfo, EndpointType, MessageEndpoints, MessageOp
 from bec_lib.messages import ProcedureExecutionMessage
@@ -40,9 +39,10 @@ def fake_redis_server(host, port, **kwargs):
 
 
 @pytest.fixture
-def connected_connector():
-    ManagedRedisConnection.RETRY_ON_TIMEOUT = 0
+def connected_connector(monkeypatch):
+    monkeypatch.setattr(messages, "TestMessage", TestMessage, raising=False)
     connector = ManagedRedisConnection("localhost:1", redis_cls=fake_redis_server)
+    monkeypatch.setattr(connector, "RETRY_ON_TIMEOUT", 0)
     connector.flushall()
     try:
         yield connector
@@ -235,11 +235,10 @@ def test_redis_connector_unregister_cb_not_topic(connected_connector):
 
 
 def test_redis_connector_unregister_topic_keeps_others_alive(connected_connector):
-    def send_msgs_and_poll(timeout=None):
+    def send_msgs_and_poll():
         connector.send(topic1.endpoint, TestMessage())
         connector.send(topic2.endpoint, TestMessage())
-        time.sleep(0.1)  # give some time for messages to be received
-        connector.poll_messages(timeout=timeout)
+        connector.poll_messages(timeout=1)
 
     connector = connected_connector
 
@@ -266,7 +265,7 @@ def test_redis_connector_unregister_topic_keeps_others_alive(connected_connector
     # unregistering the last callback for a topic should remove the topic from the list
     connector.unregister(topic2, cb=received_event2)
     with pytest.raises(TimeoutError):
-        send_msgs_and_poll(timeout=1)
+        send_msgs_and_poll()
     assert received_event1.call_count == 1
     assert received_event2.call_count == 2
 
@@ -441,16 +440,18 @@ def test_redis_connector_stream_cb_swapped_during_blocking_read(connected_connec
     def blocking_read(topics_ids, from_start=False):
         if not from_start:
             in_read.set()
-            proceed.wait(timeout=2)
+            proceed.wait()
         return orig_read(topics_ids, from_start)
 
     with mock.patch.object(connector, "_try_read_streams", blocking_read):
-        connector.register(TestStreamEndpoint, cb=cb_mock1, start_thread=False)
-        assert in_read.wait(timeout=2)
-        connector.unregister("test", cb=cb_mock1)
-        connector.register(TestStreamEndpoint, cb=cb_mock2, start_thread=False)
-        connector.xadd("test", {"data": 1})
-        proceed.set()
+        try:
+            connector.register(TestStreamEndpoint, cb=cb_mock1, start_thread=False)
+            assert in_read.wait(timeout=2)
+            connector.unregister("test", cb=cb_mock1)
+            connector.register(TestStreamEndpoint, cb=cb_mock2, start_thread=False)
+            connector.xadd("test", {"data": 1})
+        finally:
+            proceed.set()
         # raises TimeoutError if the message was dropped instead of delivered to cb_mock2
         connector.poll_messages(timeout=2)
     cb_mock1.assert_not_called()
@@ -549,31 +550,36 @@ def test_redis_connector_register_stream_from_start(connected_connector):
 def test_redis_connector_register_stream_newest_only(connected_connector):
     connector = connected_connector
     endpoint = TestStreamEndpoint
-    # simulate callback taking 1s to perform its task
-    cb_mock = mock.Mock(spec=[], side_effect=lambda _: time.sleep(1))
+    received = queue.Queue()
+    burst_published = threading.Event()
+    read = connector._redis_conn.xrevrange
 
-    connector.register(endpoint, cb=cb_mock, newest_only=True)
-    connector.xadd(endpoint.endpoint, {"data": 0})
-    # from here: cb_mock will be called from another thread when new stream item is pushed
-    # cb_mock.call_count will be increased before sleep time (when call has just been done)
-    while cb_mock.call_count == 0:
-        time.sleep(0.01)
-    cb_mock.assert_called_once_with({"data": 0})
-    cb_mock.reset_mock()
-    # cb_mock is now sleeping...
-    # Meanwhile data is published:
-    connector.xadd(endpoint.endpoint, {"data": 1})
-    connector.xadd(endpoint.endpoint, {"data": 2})
-    connector.xadd(endpoint.endpoint, {"data": 3})
-    while cb_mock.call_count == 0:
-        time.sleep(0.01)
-    # cb_mock has been called for the second time ;
-    # 'newest_only' means it should be called with newest data
-    cb_mock.assert_called_once_with({"data": 3})
+    def read_after_burst(topic, max_id, min_id, count):
+        if min_id != "-":
+            burst_published.wait()
+        return read(topic, max_id, min_id, count)
 
-    num_threads = threading.active_count()
-    connector.unregister(endpoint, cb=cb_mock)
-    assert threading.active_count() == num_threads - 1
+    def callback(message):
+        received.put(message)
+
+    # Gate the reader itself. Callbacks run on a separate dispatcher thread.
+    with mock.patch.object(connector._redis_conn, "xrevrange", side_effect=read_after_burst):
+        try:
+            connector.register(endpoint, cb=callback, newest_only=True)
+            listener = next(
+                iter(connector._stream_subs._direct_read_subs[endpoint.endpoint])
+            ).thread
+            connector.xadd(endpoint.endpoint, {"data": 0})
+            assert received.get(timeout=2) == {"data": 0}
+
+            for value in range(1, 4):
+                connector.xadd(endpoint.endpoint, {"data": value})
+        finally:
+            burst_published.set()
+
+        assert received.get(timeout=2) == {"data": 3}
+        connector.unregister(endpoint, cb=callback)
+        assert not listener.is_alive()
 
 
 @pytest.mark.timeout(5)
@@ -581,27 +587,27 @@ def test_redis_connector_register_stream_newest_only_multiple_endpoints_same_cb(
     connected_connector,
 ):
     connector = connected_connector
-    endpoint = [TestStreamEndpoint, TestStreamEndpoint2]
-    cb_mock = mock.Mock(spec=[])  # spec is here to remove all attributes
-    connector.register(endpoint, cb=cb_mock, newest_only=True, a=1)
-    time.sleep(0.1)
-    for ep in endpoint:
-        connector.xadd(ep.endpoint, {"data": 1})
-    while cb_mock.call_count < 2:
-        time.sleep(0.1)
-    assert mock.call({"data": 1}, a=1) in cb_mock.mock_calls
-    cb_mock.reset_mock()
+    endpoints = [TestStreamEndpoint, TestStreamEndpoint2]
+    received = queue.Queue()
 
-    for ep in endpoint:
-        connector.xadd(ep.endpoint, {"data": 2})
-    while cb_mock.call_count < 2:
-        time.sleep(0.1)
-    assert mock.call({"data": 2}, a=1) in cb_mock.mock_calls
+    def callback(message, *, a):
+        received.put((message, a))
 
-    num_threads = threading.active_count()
-    connector.unregister(endpoint, cb=cb_mock)
-    # each direct connection (newest_only) makes 1 thread
-    assert threading.active_count() == num_threads - len(endpoint)
+    connector.register(endpoints, cb=callback, newest_only=True, a=1)
+    listeners = [
+        next(iter(connector._stream_subs._direct_read_subs[endpoint.endpoint])).thread
+        for endpoint in endpoints
+    ]
+
+    for batch in (1, 2):
+        for endpoint in endpoints:
+            connector.xadd(endpoint.endpoint, {"data": (batch, endpoint.endpoint)})
+        assert {
+            tuple(message["data"]): a for message, a in (received.get(timeout=2) for _ in endpoints)
+        } == {(batch, endpoint.endpoint): 1 for endpoint in endpoints}
+
+    connector.unregister(endpoints, cb=callback)
+    assert all(not listener.is_alive() for listener in listeners)
 
 
 def test_register_raises_if_no_cb(connected_connector):
@@ -762,14 +768,14 @@ def test_stream_subs_garbage_collection(connected_connector):
         connected_connector.register(TestStreamEndpoint, cb=sub3)
 
         assert len(connected_connector._stream_subs._subs["test"].subs) == 3
-        connected_connector._stream_subs.gc_cb_refs()
+        with connected_connector._stream_subs.lock:
+            connected_connector._stream_subs.gc_cb_refs()
         assert len(connected_connector._stream_subs._subs["test"].subs) == 3
 
         del sub2
-        time.sleep(0.05)
         gc.collect()
-        time.sleep(0.05)
-        connected_connector._stream_subs.gc_cb_refs()
+        with connected_connector._stream_subs.lock:
+            connected_connector._stream_subs.gc_cb_refs()
 
         assert len(connected_connector._stream_subs._subs["test"].subs) == 2
 
@@ -784,10 +790,9 @@ def test_stream_subs_garbage_collection(connected_connector):
 
         del sub4
         del sub3
-        time.sleep(0.05)
         gc.collect()
-        time.sleep(0.05)
-        connected_connector._stream_subs.gc_cb_refs()
+        with connected_connector._stream_subs.lock:
+            connected_connector._stream_subs.gc_cb_refs()
 
         assert len(connected_connector._stream_subs._subs["test"].subs) == 1
         assert len(connected_connector._stream_subs.from_start_subs["test"]) == 1
@@ -802,10 +807,9 @@ def test_stream_subs_garbage_collection(connected_connector):
         del sub1
         del sub5
         del sub6
-        time.sleep(0.05)
         gc.collect()
-        time.sleep(0.05)
-        connected_connector._stream_subs.gc_cb_refs()
+        with connected_connector._stream_subs.lock:
+            connected_connector._stream_subs.gc_cb_refs()
 
         assert "test" not in connected_connector._stream_subs._subs
         assert "test" not in connected_connector._stream_subs.from_start_subs

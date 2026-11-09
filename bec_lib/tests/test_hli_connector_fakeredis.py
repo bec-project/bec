@@ -12,7 +12,6 @@ from bec_lib.redis_connector.constants import (
     IncompatibleMessageForEndpoint,
     IncompatibleRedisOperation,
 )
-from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnection
 from bec_lib.serialization import MsgpackSerialization
 
 from .test_managed_redis_connection import TestMessage
@@ -34,9 +33,9 @@ def fake_redis_server(host, port, **kwargs):
 
 
 @pytest.fixture
-def connected_connector():
-    ManagedRedisConnection.RETRY_ON_TIMEOUT = 0
+def connected_connector(monkeypatch):
     connector = RedisConnector("localhost:1", redis_cls=fake_redis_server)
+    monkeypatch.setattr(connector._managed_connection, "RETRY_ON_TIMEOUT", 0)
     connector._managed_connection.flushall()
     try:
         yield connector

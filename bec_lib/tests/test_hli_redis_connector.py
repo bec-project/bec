@@ -1,34 +1,19 @@
-from typing import Any, ClassVar, Optional
 from unittest import mock
 
 import pytest
 
-import bec_lib.messages as bec_messages
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
-from bec_lib.endpoints import EndpointInfo, MessageEndpoints
-from bec_lib.messages import AlarmMessage, BECMessage, BECStatus, BundleMessage, ClientInfoMessage
+from bec_lib.endpoints import MessageEndpoints
+from bec_lib.messages import AlarmMessage
 from bec_lib.messaging_hooks import MessagingEvent
 from bec_lib.redis_connector import IncompatibleRedisOperation, RedisConnector
-from bec_lib.redis_connector.constants import WrongArguments
-from bec_lib.redis_connector.validation import validate_endpoint
 from bec_lib.serialization import MsgpackSerialization
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
 # pylint: disable=missing-class-docstring
 # pylint: disable=redefined-outer-name
-
-
-class TestMessage(BECMessage):
-    __test__: ClassVar[bool] = False  # just for pytest to ignore this class
-    msg_type: ClassVar[str] = "test_message"
-    msg: Optional[str] = None
-
-
-# register at BEC messages module level, to be able to
-# find it when using "loads()"
-bec_messages.TestMessage = TestMessage
 
 
 @pytest.fixture
@@ -110,7 +95,7 @@ def test_redis_connector_raise_alarm(
 
 def test_redis_connector_send_converts_ep(hli_connector: RedisConnector):
     topic = MessageEndpoints.scan_segment()
-    msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={})
+    msg = messages.ScanMessage(point_id=1, scan_id="scan_id", data={})
     hli_connector.send(topic, msg)
     hli_connector._redis_conn.publish.assert_called_once_with(
         topic.endpoint, MsgpackSerialization.dumps(msg)
@@ -131,12 +116,12 @@ def test_redis_connector_keys(hli_connector, pattern):
 
 
 def test_send_raises_on_invalid_message_type(hli_connector):
-    correct_msg = bec_messages.DeviceMessage(
+    correct_msg = messages.DeviceMessage(
         signals={"samx": {"value": 1, "timestamp": 1}}, metadata={}
     )
     hli_connector.set_and_publish(MessageEndpoints.device_read("samx"), correct_msg)
     with pytest.raises(TypeError) as excinfo:
-        msg = bec_messages.ScanMessage(point_id=1, scan_id="scan_id", data={}, metadata={})
+        msg = messages.ScanMessage(point_id=1, scan_id="scan_id", data={}, metadata={})
         hli_connector.set_and_publish(MessageEndpoints.device_read("samx"), msg)
     assert "Message type <class 'bec_lib.messages.ScanMessage'> is not compatible " in str(
         excinfo.value

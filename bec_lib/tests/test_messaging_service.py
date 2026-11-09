@@ -979,8 +979,9 @@ def test_set_auto_notifications_persists_notification_config(scilog_service, con
 
 
 def test_set_auto_notifications_merges_with_existing_routes(scilog_service, connected_connector):
-    connected_connector.set_and_publish(
-        MessageEndpoints.notification_config(),
+    # Seed Redis without queuing an older config update on the subscriber thread.
+    connected_connector._managed_connection.set(  # pylint: disable=protected-access
+        MessageEndpoints.notification_config().endpoint,
         messages.NotificationConfigMessage(
             routes={
                 "new_scan": [
@@ -1009,8 +1010,8 @@ def test_set_auto_notifications_merges_with_existing_routes(scilog_service, conn
 def test_set_auto_notifications_disable_removes_only_matching_service_scope(
     scilog_service, connected_connector
 ):
-    connected_connector.set_and_publish(
-        MessageEndpoints.notification_config(),
+    connected_connector._managed_connection.set(  # pylint: disable=protected-access
+        MessageEndpoints.notification_config().endpoint,
         messages.NotificationConfigMessage(
             routes={
                 "new_scan": [
@@ -1031,7 +1032,30 @@ def test_set_auto_notifications_disable_removes_only_matching_service_scope(
             ]
         }
     )
-    assert scilog_service._auto_notifications == {}  # pylint: disable=protected-access
+
+
+def test_set_auto_notifications_disable_removes_cached_scope(scilog_service):
+    scilog_service._on_notification_config_change_msg(  # pylint: disable=protected-access
+        {
+            "data": messages.NotificationConfigMessage(
+                routes={
+                    "new_scan": [
+                        messages.NotificationServiceTarget(
+                            service_name="scilog", scope=["default", "secondary"]
+                        )
+                    ]
+                }
+            )
+        }
+    )
+
+    # Check the synchronous cache update without an asynchronous notification overwriting it.
+    with mock.patch.object(scilog_service, "_sync_auto_notifications_config"):
+        scilog_service.set_auto_notifications(MessagingEvent.SCAN, enabled=False, scopes="default")
+
+    assert scilog_service._auto_notifications == {  # pylint: disable=protected-access
+        "new_scan": ["secondary"]
+    }
 
 
 def test_set_auto_notifications_uses_default_scope_when_scopes_omitted(
@@ -1087,8 +1111,8 @@ def test_messaging_service_tracks_external_notification_config_updates(
 
 
 def test_messaging_service_loads_notification_config_on_init(connected_connector):
-    connected_connector.set_and_publish(
-        MessageEndpoints.notification_config(),
+    connected_connector._managed_connection.set(  # pylint: disable=protected-access
+        MessageEndpoints.notification_config().endpoint,
         messages.NotificationConfigMessage(
             routes={
                 "new_scan": [

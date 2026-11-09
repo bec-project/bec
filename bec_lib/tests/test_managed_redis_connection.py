@@ -10,11 +10,11 @@ from louie.saferef import safe_ref
 from redis import Redis
 from redis.exceptions import RedisError
 
-import bec_lib.messages as bec_messages
 from bec_lib import messages
 from bec_lib.endpoints import EndpointInfo, MessageEndpoints
+from bec_lib.logger import bec_logger
 from bec_lib.messages import BECMessage, BECStatus, BundleMessage, ClientInfoMessage
-from bec_lib.redis_connector import IncompatibleRedisOperation
+from bec_lib.redis_connector import IncompatibleRedisOperation, managed_redis_connection
 from bec_lib.redis_connector.constants import WrongArguments
 from bec_lib.redis_connector.managed_redis_connection import ManagedRedisConnection
 from bec_lib.redis_connector.streams import StreamSubInfo
@@ -33,9 +33,11 @@ class TestMessage(BECMessage):
     msg: Optional[str] = None
 
 
-# register at BEC messages module level, to be able to
-# find it when using "loads()"
-bec_messages.TestMessage = TestMessage
+@pytest.fixture
+def connector_logger():
+    # Rebind the module's logger so other services can keep using the shared logger.
+    with mock.patch.object(managed_redis_connection, "logger") as logger:
+        yield logger
 
 
 @pytest.fixture
@@ -68,7 +70,7 @@ def legacy_object_array_payload():
 
 @pytest.mark.parametrize("from_start", [True, False])
 def test_stream_listener_skips_rejected_object_arrays(
-    connector, legacy_object_array_payload, from_start
+    connector, connector_logger, legacy_object_array_payload, from_start
 ):
     topic = MessageEndpoints.processed_data("legacy").endpoint
     other_topic = MessageEndpoints.processed_data("valid").endpoint
@@ -91,11 +93,8 @@ def test_stream_listener_skips_rejected_object_arrays(
     connector._redis_conn.xread.return_value = [] if from_start else response
     connector._redis_conn.xrange.side_effect = lambda topic, *_: dict(response)[topic.encode()]
 
-    with (
-        mock.patch.object(
-            connector._stop_stream_events_listener_thread, "is_set", side_effect=[False, True]
-        ),
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
+    with mock.patch.object(
+        connector._stop_stream_events_listener_thread, "is_set", side_effect=[False, True]
     ):
         connector._get_stream_messages_loop()
 
@@ -106,11 +105,11 @@ def test_stream_listener_skips_rejected_object_arrays(
         message = connector._message_callbacks_queue.get_nowait()
         assert message.msg == {"data": valid}
         assert list(message.callbacks) == [(subscription.cb_ref, {})]
-    assert log_error.call_count == 2
+    assert connector_logger.error.call_count == 2
 
 
 def test_direct_stream_listener_skips_rejected_object_arrays(
-    connector, legacy_object_array_payload
+    connector, connector_logger, legacy_object_array_payload
 ):
     topic = MessageEndpoints.processed_data("legacy").endpoint
     valid = messages.RawMessage(data="valid")
@@ -121,8 +120,7 @@ def test_direct_stream_listener_skips_rejected_object_arrays(
     stop_event = mock.Mock()
     stop_event.is_set.side_effect = [False, False, True]
     callback = mock.Mock()
-    with mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error:
-        connector._direct_stream_listener(topic, stop_event, callback, {})
+    connector._direct_stream_listener(topic, stop_event, callback, {})
 
     assert connector._redis_conn.xrevrange.call_args_list == [
         mock.call(topic, "+", "-", count=1),
@@ -132,7 +130,7 @@ def test_direct_stream_listener_skips_rejected_object_arrays(
     message = connector._message_callbacks_queue.get_nowait()
     assert message.msg == {"data": valid}
     assert list(message.callbacks) == [(callback, {})]
-    log_error.assert_called_once()
+    connector_logger.error.assert_called_once()
 
 
 def test_redis_connector_send_client_info(connector: ManagedRedisConnection):
@@ -525,7 +523,7 @@ def test_blocking_list_pop(connector: ManagedRedisConnection):
     ),
 )
 def test_user_pw_restored_on_auth_fail(connector: ManagedRedisConnection, test_dict):
-    connector._redis_conn.connection_pool.connection_kwargs = test_dict
+    connector._redis_conn.connection_pool.connection_kwargs = test_dict.copy()
     connector._redis_conn.auth.side_effect = RedisError
     with pytest.raises(RedisError):
         connector.authenticate(username="user", password="pass")
@@ -543,7 +541,9 @@ def test_try_read_streams_returns_error_message_for_no_permission(
     assert error == "Permission denied for stream topics: {'topic'}"
 
 
-def test_stream_connection_logs_once_and_logs_recovery(connector: ManagedRedisConnection):
+def test_stream_connection_logs_once_and_logs_recovery(
+    connector: ManagedRedisConnection, connector_logger
+):
     stream_subs = mock.MagicMock()
     stream_subs.lock = contextlib.nullcontext()
     stream_subs.gc_cb_refs = mock.MagicMock()
@@ -564,20 +564,18 @@ def test_stream_connection_logs_once_and_logs_recovery(connector: ManagedRedisCo
         [],
     ]
 
-    with (
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
-    ):
-        connector._get_stream_messages_loop()
+    connector._get_stream_messages_loop()
 
-    log_error.assert_called_once_with(connector.connection_error_str)
-    log_info.assert_called_once_with(
+    connector_logger.error.assert_called_once_with(connector.connection_error_str)
+    connector_logger.info.assert_called_once_with(
         f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
     )
     assert connector._stop_stream_events_listener_thread.wait.call_count == 2
 
 
-def test_stream_connection_logs_permission_error_and_recovery(connector: ManagedRedisConnection):
+def test_stream_connection_logs_permission_error_and_recovery(
+    connector: ManagedRedisConnection, connector_logger
+):
     stream_subs = mock.MagicMock()
     stream_subs.lock = contextlib.nullcontext()
     stream_subs.gc_cb_refs = mock.MagicMock()
@@ -592,14 +590,10 @@ def test_stream_connection_logs_permission_error_and_recovery(connector: Managed
     connector._stop_stream_events_listener_thread.wait = mock.MagicMock()
     connector._redis_conn.xread.side_effect = [redis.exceptions.NoPermissionError("denied"), []]
 
-    with (
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
-    ):
-        connector._get_stream_messages_loop()
+    connector._get_stream_messages_loop()
 
-    log_error.assert_called_once_with("Permission denied for stream topics: {'topic'}")
-    log_info.assert_called_once_with(
+    connector_logger.error.assert_called_once_with("Permission denied for stream topics: {'topic'}")
+    connector_logger.info.assert_called_once_with(
         f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
     )
     assert connector._stop_stream_events_listener_thread.wait.call_count == 1
@@ -609,7 +603,7 @@ def test_stream_connection_logs_permission_error_and_recovery(connector: Managed
     "error_type", [redis.exceptions.NoPermissionError, redis.exceptions.ConnectionError]
 )
 def test_stream_connection_logs_errors_from_both_read_paths(
-    connector: ManagedRedisConnection, error_type
+    connector: ManagedRedisConnection, connector_logger, error_type
 ):
     def callback():
         pass
@@ -619,21 +613,17 @@ def test_stream_connection_logs_errors_from_both_read_paths(
     connector._redis_conn.xrange.side_effect = [error_type("denied"), error_type("denied"), []]
     connector._redis_conn.xread.side_effect = [error_type("denied"), error_type("denied"), [], []]
 
-    with (
-        mock.patch.object(connector, "_stop_stream_events_listener_thread") as stop_event,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
-    ):
+    with mock.patch.object(connector, "_stop_stream_events_listener_thread") as stop_event:
         stop_event.is_set.side_effect = [False, False, False, False, True]
         connector._get_stream_messages_loop()
 
     if error_type is redis.exceptions.NoPermissionError:
-        assert log_error.call_count == 2
-        log_error.assert_any_call("Permission denied for stream topics: {'history'}")
-        log_error.assert_any_call("Permission denied for stream topics: {'live'}")
+        assert connector_logger.error.call_count == 2
+        connector_logger.error.assert_any_call("Permission denied for stream topics: {'history'}")
+        connector_logger.error.assert_any_call("Permission denied for stream topics: {'live'}")
     else:
-        log_error.assert_called_once_with(connector.connection_error_str)
-    log_info.assert_called_once_with(
+        connector_logger.error.assert_called_once_with(connector.connection_error_str)
+    connector_logger.info.assert_called_once_with(
         f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
     )
     assert stop_event.wait.call_count == 2
@@ -644,7 +634,7 @@ def test_stream_connection_logs_errors_from_both_read_paths(
 @pytest.mark.parametrize("from_start", [False, True])
 @pytest.mark.parametrize("remove_subscription", ["unregister", "gc"])
 def test_stream_connection_waits_for_read_before_logging_recovery(
-    connector: ManagedRedisConnection, from_start, remove_subscription
+    connector: ManagedRedisConnection, connector_logger, from_start, remove_subscription
 ):
     def callback():
         pass
@@ -670,30 +660,30 @@ def test_stream_connection_waits_for_read_before_logging_recovery(
             else:
                 callback = None
         elif iteration == 3:
-            log_info.assert_not_called()
+            # Other BEC components can log while the stream is still disconnected.
+            bec_logger.logger.info("Unrelated shutdown message")
+            connector_logger.info.assert_not_called()
             assert not connector._stream_subs.all_topics
             connector._stream_subs.add(
                 False, "0-0", "topic", StreamSubInfo(safe_ref(replacement_callback), {})
             )
         return iteration == 5
 
-    with (
-        mock.patch.object(connector, "_stop_stream_events_listener_thread") as stop_event,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.error") as log_error,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
-    ):
+    with mock.patch.object(connector, "_stop_stream_events_listener_thread") as stop_event:
         stop_event.is_set.side_effect = advance_loop
         connector._get_stream_messages_loop()
 
-    log_error.assert_called_once_with(connector.connection_error_str)
-    log_info.assert_called_once_with(
+    connector_logger.error.assert_called_once_with(connector.connection_error_str)
+    connector_logger.info.assert_called_once_with(
         f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
     )
     assert connector._redis_conn.xrange.call_count == int(from_start)
     assert connector._redis_conn.xread.call_count == (2 if from_start else 3)
 
 
-def test_pubsub_connection_logs_once_and_logs_recovery(connector: ManagedRedisConnection):
+def test_pubsub_connection_logs_once_and_logs_recovery(
+    connector: ManagedRedisConnection, connector_logger
+):
     connector._garbage_collect_cb_refs = mock.MagicMock()
     connector._stop_events_listener_thread = mock.MagicMock()
     connector._stop_events_listener_thread.is_set.side_effect = [False, False, False, True]
@@ -704,16 +694,10 @@ def test_pubsub_connection_logs_once_and_logs_recovery(connector: ManagedRedisCo
         None,
     ]
 
-    with (
-        mock.patch(
-            "bec_lib.redis_connector.managed_redis_connection.bec_logger.logger.error"
-        ) as log_error,
-        mock.patch("bec_lib.redis_connector.managed_redis_connection.logger.info") as log_info,
-    ):
-        connector._get_messages_loop()
+    connector._get_messages_loop()
 
-    log_error.assert_called_once_with(connector.connection_error_str)
-    log_info.assert_called_once_with(
+    connector_logger.error.assert_called_once_with(connector.connection_error_str)
+    connector_logger.info.assert_called_once_with(
         f"{connector.name} reconnected to redis ({connector.host}:{connector.port})."
     )
     assert connector._stop_events_listener_thread.wait.call_count == 2
