@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.5.1 (2026-11-09)
+
+### Bug Fixes
+
+- **tests**: Isolate Redis recovery and notification tests
+  ([`1fe6a0f`](https://github.com/bec-project/bec/commit/1fe6a0f772e02437410f5728e9dd0edd82e4db43))
+
+
 ## v4.5.0 (2026-11-04)
 
 ### Bug Fixes
