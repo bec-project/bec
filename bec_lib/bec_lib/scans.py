@@ -151,11 +151,10 @@ class ScanObject:
         # pylint: disable=unsupported-assignment-operation
         request.metadata["RID"] = request_id
 
-        self._send_scan_request(request)
-
         report = ScanReport.from_request(request, client=self.client)
         report.request.callbacks.register_many("scan_segment", callback, sync=True)
         report.request.callbacks.register_many("scan_segment", async_callback, sync=False)
+        self._send_scan_request(request)
 
         if scans._scan_export and scans._scan_export.scans is not None:
             scans._scan_export.scans.append(report)
@@ -164,6 +163,7 @@ class ScanObject:
             self.client._live_updates.process_request(request, callback)
 
         self.client.callbacks.poll()
+        report.request.callbacks.poll()
 
         return report
 

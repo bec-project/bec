@@ -174,6 +174,7 @@ class IPythonLiveUpdates:
 
                 while queue.status not in ["COMPLETED", "ABORTED", "HALTED", "CANCELLED"]:
                     request_context.queue_status = queue.status
+                    scan_request.scan_queue_request.callbacks.poll()
                     if self._process_queue(queue, request):
                         break
 

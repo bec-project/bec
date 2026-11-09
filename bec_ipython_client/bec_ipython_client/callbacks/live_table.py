@@ -96,6 +96,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def wait_for_scan_item_to_finish(self):
         """wait for scan completion"""
         while True:
+            self.scan_item.poll_callbacks()
             if self.scan_item.end_time:
                 if self.scan_item.queue.queue_position is None:
                     break
@@ -223,14 +224,12 @@ class LiveUpdatesTable(LiveUpdatesBase):
                         target_num_points = self.scan_item.num_monitored_readouts
 
                 progressbar.update(self.point_id)
+                self.bec.callbacks.poll()
+                self.scan_item.poll_callbacks()
                 if self.point_data:
                     self.point_id += 1
                     self.print_table_data()
                     progressbar.update(self.point_id)
-
-                    # process sync callbacks
-                    self.bec.callbacks.poll()
-                    self.scan_item.poll_callbacks()
                 else:
                     logger.trace("waiting for new data point")
                     time.sleep(0.1)
