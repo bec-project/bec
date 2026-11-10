@@ -9,6 +9,10 @@ from bec_lib.atlas_models import _DeviceModelCore
 from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.utils.rpc_utils import rgetattr
+from bec_server.device_server.device_providers.device_interfaces import (
+    DeviceTarget,
+    wait_for_completion,
+)
 
 if TYPE_CHECKING:
     from bec_lib.redis_connector import RedisConnector
@@ -43,14 +47,16 @@ class DSDevice(DeviceBaseWithConfig):
             connector (RedisConnector): Connection used to publish the initial readings.
         """
         provider = self.parent.device_provider_manager.get_provider(type(self.obj))
-        readings, limits = provider.read_initial_buffer(self)
+        target = DeviceTarget(self)
+        readings = wait_for_completion(provider.read(target))
+        limits = provider.get_device_limits(self)
         dev_msg = messages.DeviceMessage(signals=readings, metadata={})
         pipe = connector.pipeline()
         connector.set_and_publish(MessageEndpoints.device_readback(self.name), dev_msg, pipe=pipe)
         connector.set_and_publish(
             topic=MessageEndpoints.device_read(self.name), msg=dev_msg, pipe=pipe
         )
-        configuration = provider.read_initial_configuration(self)
+        configuration = wait_for_completion(provider.read_configuration(target, separate_only=True))
         if configuration is not None:
             dev_config_msg = messages.DeviceMessage(signals=configuration, metadata={})
             connector.set_and_publish(

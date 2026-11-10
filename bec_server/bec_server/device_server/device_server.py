@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import enum
-import inspect
 import threading
 import time
 import traceback
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
-
-import ophyd
-from ophyd import Device, DeviceStatus, Kind, OphydObject, Staged, StatusBase
-from ophyd.utils import errors as ophyd_errors
 
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
@@ -22,10 +17,19 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.messages import BECStatus
 from bec_lib.serialization import json_ext
-from bec_lib.utils.rpc_utils import rgetattr
-from bec_server.device_server.devices.devicemanager import BECMessageSignal, DeviceManagerDS
-from bec_server.device_server.friendly_device_exceptions import reformat_known_device_exceptions
-from bec_server.device_server.ophyd_callback_monitor import OphydCallbackMonitor
+from bec_server.device_server.device_providers.device_errors import (
+    DisabledDeviceError,
+    InvalidDeviceError,
+    format_error_info,
+)
+from bec_server.device_server.device_providers.device_interfaces import (
+    DeviceKind,
+    DeviceTarget,
+    RefreshSection,
+    wait_for_completion,
+)
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.instruction_execution import InstructionExecution
 from bec_server.device_server.rpc_handler import RPCHandler
 
 if TYPE_CHECKING:
@@ -36,14 +40,6 @@ if TYPE_CHECKING:
 logger = bec_logger.logger
 
 register_stop = threading.Event()
-
-
-class DisabledDeviceError(Exception):
-    """Exception raised when a disabled device is accessed"""
-
-
-class InvalidDeviceError(Exception):
-    """Exception raised when an invalid device is accessed"""
 
 
 class ResponseState(str, enum.Enum):
@@ -130,24 +126,44 @@ class RequestHandler:
         Args:
             instr_id(str): The ID of the instruction.
         """
-        self._storage.pop(instr_id, None)
+        request = self._storage.pop(instr_id, None)
+        if request is not None:
+            self._close_subscriptions(request)
+
+    @staticmethod
+    def _close_subscriptions(request: dict) -> None:
+        for status in request["status_objects"]:
+            try:
+                status.close_subscription()
+            except Exception:
+                logger.exception("Failed to close instruction subscription")
 
     def clear(self):
         """
         Clear the storage and remove all requests.
         """
+        requests = list(self._storage.values())
         self._storage.clear()
+        for request in requests:
+            self._close_subscriptions(request)
 
-    def add_status_object(self, instr_id: str, status_obj: ophyd.StatusBase):
+    def add_status_object(self, instr_id: str, status_obj: InstructionExecution) -> None:
         """
         Add a status object to the storage.
 
         Args:
             instr_id(str): The ID of the instruction.
-            status_obj(ophyd.StatusBase): The status object to add.
+            status_obj(InstructionExecution): The execution to add.
         """
         self._storage[instr_id]["status_objects"].append(status_obj)
-        status_obj.add_callback(self.on_status_object_update)
+        if not status_obj.callback_inline:
+            status_obj.completion.add_done_callback(
+                lambda _completion: self.parent.executor.submit(
+                    self.on_status_object_update, status_obj
+                )
+            )
+        else:
+            status_obj.add_callback(self.on_status_object_update)
         self._update_instruction(instr_id, is_status_obj=True)
 
     def set_finished(
@@ -166,6 +182,10 @@ class RequestHandler:
             error_info(messages.ErrorInfo, optional): Error information. Defaults to None.
             result(Any): The result of the instruction. Defaults to None. Only relevant for RPC calls.
         """
+        # Cleanup may await an async provider; never hold the request lock while waiting.
+        request = self.get_request(instr_id)
+        if request is not None:
+            self._close_subscriptions(request)
         with self._lock:
             request_info = self.get_request(instr_id)
             if request_info is None:
@@ -188,18 +208,28 @@ class RequestHandler:
             )
             self.remove_request(instr_id)
 
-    def on_status_object_update(self, status_obj: ophyd.StatusBase):
+    def on_status_object_update(self, status_obj: InstructionExecution) -> None:
         """
         Callback for status updates from devices during device instructions.
 
         Args:
-            status_obj(ophyd.StatusBase): The status object that was updated.
+            status_obj(InstructionExecution): The execution that was updated.
         """
         instr_id = status_obj.instruction.metadata["device_instr_id"]
+        if not status_obj.callback_inline and self.get_request(instr_id) is None:
+            status_obj.mark_callback_processed()
+            return
         try:
+            if not status_obj.callback_inline and status_obj.instruction.action in (
+                "stage",
+                "unstage",
+            ):
+                self.parent._operation_staged_callback(status_obj)
             self.parent.status_callback(status_obj)
+            status_obj.mark_callback_processed()
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception(f"Status callback failed for instruction {instr_id}")
+            status_obj.mark_callback_processed()
             error = status_obj.exception() or exc
             error_info = self.get_error_info(error, status_obj)
             self.set_finished(instr_id, success=False, error_info=error_info)
@@ -215,7 +245,7 @@ class RequestHandler:
 
         Args:
             instr_id(str): The ID of the instruction.
-            is_status_obj(bool): Whether we are working with an ophyd status object as result.
+            is_status_obj(bool): Whether the instruction returned a tracked execution.
         """
         request_info = self.get_request(instr_id)
         if request_info is None:
@@ -233,11 +263,7 @@ class RequestHandler:
         status_objects = request_info["status_objects"]
 
         if all(status_obj.done for status_obj in status_objects):
-            exceptions = [
-                (status_obj.exception(), status_obj)
-                for status_obj in status_objects
-                if isinstance(status_obj, StatusBase)
-            ]
+            exceptions = [(status_obj.exception(), status_obj) for status_obj in status_objects]
             if any(val for val, _ in exceptions):
                 error, obj = next((val, obj) for val, obj in exceptions if val)
                 error_info = self.get_error_info(error, obj)
@@ -246,13 +272,13 @@ class RequestHandler:
             else:
                 self.set_finished(instr_id, success=True)
 
-    def get_error_info(self, error: Exception, obj: StatusBase) -> messages.ErrorInfo:
+    def get_error_info(self, error: BaseException, obj: InstructionExecution) -> messages.ErrorInfo:
         """
-        Get basic error information from an ophyd object.
+        Get basic error information from an instruction execution.
 
         Args:
             error(Exception): The error that occurred.
-            obj(StatusBase): The ophyd status object that caused the error.
+            obj(InstructionExecution): The execution that caused the error.
 
         Returns:
             messages.ErrorInfo: A dictionary containing basic error information.
@@ -260,16 +286,11 @@ class RequestHandler:
         if isinstance(error, ExceptionWithErrorInfo):
             return error.error_info
 
-        if hasattr(obj, "device"):
-            device_name = obj.device.dotted_name or obj.device.name
-        elif hasattr(obj, "obj") and isinstance(obj.obj, OphydObject):
-            device_name = obj.obj.dotted_name or obj.obj.name
-        else:
-            device_name = None
-
+        device_name = obj.error_device_name
+        status_type = obj.status_type
         msg = (
             f"{error.__class__.__name__}: {error}\n"
-            f"The status {obj.__class__.__name__} from device {device_name} failed during the execution "
+            f"The status {status_type} from device {device_name} failed during the execution "
             f"of the following instruction:\n"
             f"{json_ext.dumps(obj.instruction, indent=2)}\n"
         )
@@ -335,9 +356,7 @@ class RequestHandler:
 
 
 class DeviceServer(BECService):
-    """DeviceServer using ophyd as a service
-    This class is intended to provide a thin wrapper around ophyd and the devicemanager. It acts as the entry point for other services
-    """
+    """Coordinate native device operations through framework providers."""
 
     def __init__(self, config: str | ServiceConfig, connector_cls: type[RedisConnector]) -> None:
         """Initialize the device server.
@@ -346,13 +365,12 @@ class DeviceServer(BECService):
             config (str | ServiceConfig): Service configuration or its file path.
             connector_cls (type[RedisConnector]): Connector class used by the service.
         """
-        callback_monitor = OphydCallbackMonitor(queue_threshold=1000)
         super().__init__(config, connector_cls, unique_service=True)
-        self.ophyd_callback_monitor = callback_monitor
         self._tasks = []
         self.connector.register(MessageEndpoints.stop_devices(), cb=self.on_stop_devices)
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._start_device_manager()
+        self.provider_manager = self.device_manager.device_provider_manager
         self.requests_handler = RequestHandler(self)
         self.rpc_handler = RPCHandler(self)
 
@@ -377,7 +395,7 @@ class DeviceServer(BECService):
             messages.DeviceConfigMessage(action="reload", config={}),
         )
         self.status = BECStatus.RUNNING
-        self.ophyd_callback_monitor.start()
+        self.provider_manager.start_runtime()
 
     def update_status(self, status: BECStatus):
         """update the status of the device server"""
@@ -390,13 +408,8 @@ class DeviceServer(BECService):
 
     def shutdown(self) -> None:
         """shutdown the device server"""
-        self.ophyd_callback_monitor.request_stop()
-        self.ophyd_callback_monitor.join(timeout=1)
-        try:
-            # Closing the connector also interrupts a warning blocked in the Redis log sink.
+        with self.provider_manager.stop_runtime():
             super().shutdown()
-        finally:
-            self.ophyd_callback_monitor.join()
         self.stop()
         if self.device_manager:
             self.device_manager.shutdown()
@@ -459,22 +472,21 @@ class DeviceServer(BECService):
             if dev.read_only:
                 # don't stop devices that we haven't set
                 continue
-            if hasattr(dev.obj, "stop"):
-                try:
-                    dev.obj.stop()
-                except Exception as exc:  # pylint: disable=broad-except
-                    content = traceback.format_exc()
-                    error_info = messages.ErrorInfo(
-                        error_message=content,
-                        compact_error_message=traceback.format_exc(limit=0),
-                        exception_type=exc.__class__.__name__,
-                        device=dev.obj.name,
-                    )
-                    self.connector.raise_alarm(
-                        severity=Alarms.WARNING,
-                        info=error_info,
-                        metadata=self._get_metadata_for_alarm(None),
-                    )
+            try:
+                self.provider_manager.stop_device(dev)
+            except Exception as exc:  # pylint: disable=broad-except
+                content = traceback.format_exc()
+                error_info = messages.ErrorInfo(
+                    error_message=content,
+                    compact_error_message=traceback.format_exc(limit=0),
+                    exception_type=exc.__class__.__name__,
+                    device=dev.name,
+                )
+                self.connector.raise_alarm(
+                    severity=Alarms.WARNING,
+                    info=error_info,
+                    metadata=self._get_metadata_for_alarm(None),
+                )
         self.status = BECStatus.RUNNING
 
     def assert_device_is_enabled(self, instructions: messages.DeviceInstructionMessage) -> None:
@@ -588,291 +600,204 @@ class DeviceServer(BECService):
                 self.rpc_handler.run_rpc(instructions)
             elif action == "kickoff":
                 self._kickoff_device(instructions)
-            elif action == "complete":
-                self._complete_device(instructions)
-            elif action == "trigger":
-                self._trigger_device(instructions)
-            elif action == "stage":
-                self._stage_device(instructions)
-            elif action == "unstage":
-                self._unstage_device(instructions)
-            elif action == "pre_scan":
-                self._pre_scan(instructions)
+            elif action in ("trigger", "complete", "stage", "unstage", "pre_scan"):
+                self._run_operations(instructions)
             elif action == "broadcast_scan_device_info":
                 self._broadcast_scan_device_info(instructions)
             else:
                 logger.warning(f"Received unknown device instruction: {instructions}")
-        except ophyd_errors.LimitError as limit_error:
-            content = traceback.format_exc()
-            compact_msg = traceback.format_exc(limit=0)
-            error_info = messages.ErrorInfo(
-                error_message=content,
-                compact_error_message=compact_msg,
-                exception_type=limit_error.__class__.__name__,
-                device=self.get_device_from_exception(limit_error),
-            )
-
-            self._ensure_request_registered(instructions)
-            if diid := instructions.metadata.get("device_instr_id"):
-                self.requests_handler.set_finished(diid, success=False, error_info=error_info)
-
-            logger.error(content)
         except Exception as exc:  # pylint: disable=broad-except
             content = traceback.format_exc()
-            if isinstance(exc, ExceptionWithErrorInfo):
-                error_info = exc.error_info
-                if not error_info.device:
-                    error_info.device = self.get_device_from_exception(exc)
-            else:
-                compact_msg = traceback.format_exc(limit=0)
-                error_info = messages.ErrorInfo(
-                    error_message=content,
-                    compact_error_message=compact_msg,
-                    exception_type=exc.__class__.__name__,
-                    device=self.get_device_from_exception(exc),
-                )
+            logger.error(content)
+
+            error_info = self.get_error_info(exc)
             self._ensure_request_registered(instructions)
             if action == "rpc":
                 self.rpc_handler.send_rpc_exception(exc, instructions)
-            else:
-                logger.error(content)
 
             if diid := instructions.metadata.get("device_instr_id"):
                 self.requests_handler.set_finished(diid, success=False, error_info=error_info)
 
-    @staticmethod
-    def get_device_from_exception(exc: Exception) -> str | None:
-        """Try to extract the device name from an exception message.
+    def get_error_info(self, exc: Exception) -> messages.ErrorInfo:
+        """
+        Resolve backend, structured, or default instruction diagnostics.
 
         Args:
-            exc (Exception): The exception to extract the device name from.
+            exc (Exception): Operation failure to format.
+
         Returns:
-            str | None: The device name if found, otherwise None.
+            messages.ErrorInfo: Error information for the terminal instruction response.
         """
-        if not hasattr(exc, "__traceback__"):
-            return None
-        tb = exc.__traceback__
-        while tb:
-            frame = tb.tb_frame
-            local_vars = frame.f_locals
-            if "self" in local_vars:
-                obj = local_vars["self"]
-                if isinstance(obj, ophyd.OphydObject):
-                    return obj.dotted_name or obj.name
-            tb = tb.tb_next
-        return None
+        info = self.provider_manager.get_error_info(exc)
+        if info is not None:
+            return info
+        if isinstance(exc, ExceptionWithErrorInfo):
+            info = exc.error_info
+            if not info.device:
+                info.device = self.get_device_from_exception(exc)
+            return info
+        return format_error_info(exc, self.get_device_from_exception(exc))
+
+    def get_device_from_exception(self, exc: Exception) -> str | None:
+        """
+        Ask providers to identify the device in a traceback.
+
+        Args:
+            exc (Exception): Operation failure to inspect.
+
+        Returns:
+            str | None: Device name recognized by a provider.
+        """
+        return self.provider_manager.get_device_from_exception(exc)
 
     def instructions_callback(self, msg, **_kwargs) -> None:
         """callback for handling device instructions"""
         self.executor.submit(self.handle_device_instructions, msg.value)
 
-    def _add_status_object_info(
-        self,
-        status: StatusBase,
-        instruction: messages.DeviceInstructionMessage,
-        device: ophyd.Device,
-    ) -> None:
-        status.__dict__["instruction"] = instruction
-        if hasattr(status, "obj_ref"):
-            raise RuntimeError(
-                f"The 'obj_ref' attribute is reserved and cannot be used by the status object {status}."
-            )
-        status.__dict__["obj_ref"] = device
+    def _target(self, name: str) -> DeviceTarget:
+        root, _, path = name.partition(".")
+        return DeviceTarget(self.device_manager.devices.get(root), path)
 
-    def _trigger_device(self, instr: messages.DeviceInstructionMessage) -> None:
-        logger.trace(f"Trigger device: {instr}")
-        devices = instr.content["device"]
-        if not isinstance(devices, list):
+    def _track_operation(
+        self, result: InstructionExecution[None] | None, instr: messages.DeviceInstructionMessage
+    ) -> bool:
+        if result is None:
+            return False
+        status = result.bind(instr)
+        if status.instruction.action in ("stage", "unstage") and status.callback_inline:
+            status.add_callback(self._operation_staged_callback)
+        try:
+            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
+        except Exception:
+            try:
+                status.close_subscription()
+            except Exception:
+                logger.exception("Failed to close instruction subscription")
+            raise
+        return True
+
+    def _run_operations(self, instr: messages.DeviceInstructionMessage) -> None:
+        devices = instr.device
+        if devices is None:
+            devices = [dev.name for dev in self.device_manager.devices.enabled_devices]
+        elif not isinstance(devices, list):
             devices = [devices]
         devices = self.device_manager.get_device_order(devices)
         self.requests_handler.add_request(instr, num_status_objects=len(devices))
-        for dev in devices:
-            obj = self.device_manager.devices.get(dev)
-            obj.metadata = instr.metadata
-            obj = obj.obj
-            status = obj.trigger()
-
-            self._add_status_object_info(status, instr, obj)
-            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
+        count = 0
+        for name in devices:
+            target = self._target(name)
+            result = getattr(self.provider_manager, instr.action)(target)
+            if self._track_operation(result, instr):
+                count += 1
+        self.requests_handler.patch_num_status_objects(instr, count)
 
     def _kickoff_device(self, instr: messages.DeviceInstructionMessage) -> None:
-        logger.trace(f"Kickoff device: {instr}")
+        """
+        Run kickoff and publish the matching instruction response sequence.
 
-        obj = self.device_manager.devices.get(instr.content["device"]).obj
-        kickoff_args = inspect.getfullargspec(obj.kickoff).args
-        kickoff_parameter = instr.content["parameter"].get("configure", {})
-        if len(kickoff_args) > 1:
-            obj.kickoff(metadata=instr.metadata, **kickoff_parameter)
-            self.requests_handler.add_request(instr, num_status_objects=0, done=True, success=True)
-            return
+        Args:
+            instr (messages.DeviceInstructionMessage): Kickoff request with target, metadata, and
+                optional acquisition parameters.
+        """
+        target = self._target(instr.device)
 
-        self.requests_handler.add_request(instr, num_status_objects=1)
-        obj.configure(kickoff_parameter)
-        status = obj.kickoff()
+        def expect_status() -> None:
+            self.requests_handler.add_request(instr, num_status_objects=1)
 
-        self._add_status_object_info(status, instr, obj)
-        self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
-
-    def _complete_device(self, instr: messages.DeviceInstructionMessage) -> None:
-        if instr.content["device"] is None:
-            devices = [dev.name for dev in self.device_manager.devices.enabled_devices]
+        result = self.provider_manager.kickoff(
+            target,
+            configure=instr.parameter.get("configure"),
+            metadata=instr.metadata,
+            on_status_expected=expect_status,
+        )
+        instr_id = instr.metadata["device_instr_id"]
+        if result is not None:
+            if self.requests_handler.get_request(instr_id) is None:
+                expect_status()
+            self._track_operation(result, instr)
+        elif self.requests_handler.get_request(instr_id) is not None:
+            self.requests_handler.patch_num_status_objects(instr, 0)
         else:
-            devices = instr.content["device"]
-            if not isinstance(devices, list):
-                devices = [devices]
-
-        devices = self.device_manager.get_device_order(devices)
-
-        self.requests_handler.add_request(instr, num_status_objects=len(devices))
-        num_status_objects = 0
-        for dev in devices:
-            obj = self.device_manager.devices.get(dev).obj
-            if not hasattr(obj, "complete"):
-                continue
-            num_status_objects += 1
-            logger.trace(f"Completing device: {dev}")
-            status = obj.complete()
-            if status is None:
-                raise InvalidDeviceError(
-                    f"The complete method of device {dev} does not return a StatusBase object."
-                )
-
-            self._add_status_object_info(status, instr, obj)
-            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
-
-        self.requests_handler.patch_num_status_objects(instr, num_status_objects)
+            self.requests_handler.add_request(instr, num_status_objects=0, done=True, success=True)
+            self.requests_handler.remove_request(instr_id)
 
     def _set_device(self, instr: messages.DeviceInstructionMessage) -> None:
         self.requests_handler.add_request(instr, num_status_objects=1)
-        device_name = instr.content["device"]
-        child_access = None
-        if "." in device_name:
-            device_name, child_access = device_name.split(".", 1)
-        device_obj = self.device_manager.devices.get(device_name)
-        if device_obj.read_only:
+        target = self._target(instr.device)
+        if target.device.read_only:
             raise DisabledDeviceError(
-                f"Setting the device {device_obj.name} is currently disabled."
+                f"Setting the device {target.device.name} is currently disabled."
             )
-        logger.trace(f"Setting device: {instr}")
-        val = instr.content["parameter"]["value"]
-        sub_id = None
-        if child_access:
-            obj = rgetattr(device_obj.obj, child_access)
-            if "readback" in obj.event_types or "value" in obj.event_types:
-                # pylint: disable=protected-access
-                sub_id = obj.subscribe(self.device_manager._obj_callback_readback, run=True)
-        else:
-            obj = device_obj.obj
-        try:
-            val = self.convert_value_if_needed(obj, val)
-            status = obj.set(val)
-        except Exception as exc:  # pylint: disable=broad-except
-            exc = reformat_known_device_exceptions(
-                exc, "set", f"Device: {device_name}, value: {val}."
-            )
-            status = DeviceStatus(device=obj)
-            status.set_exception(exc)
-        self._add_status_object_info(status, instr, obj)
-        status.__dict__["sub_id"] = sub_id
-        self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
 
-    @staticmethod
-    def convert_value_if_needed(obj: ophyd.OphydObject, val: Any) -> Any:
+        def refresh(resolved_target: DeviceTarget, *, inline: bool = False) -> None:
+            sections = frozenset({RefreshSection.READBACK})
+            if inline:
+                self.device_manager._publish_refresh(
+                    resolved_target.device, RefreshSection.READBACK
+                )
+            else:
+                self.device_manager.request_refresh(resolved_target.device, sections)
+
+        result = self.provider_manager.set(target, instr.parameter["value"], refresh=refresh)
+        if not self._track_operation(result, instr):
+            self.requests_handler.patch_num_status_objects(instr, 0)
+
+    def _operation_staged_callback(self, status: InstructionExecution) -> None:
         """
-        Convert the value to the appropriate type if needed. This is particularly
-        needed for ophyd signals that implement enum strings but are given as floats.
+        Publish the staged state for a completed stage or unstage.
 
         Args:
-            obj (ophyd.OphydObject): The ophyd object to set.
-            val (Any): The value to set.
-
-        Returns:
-            Any: The converted value.
+            status (InstructionExecution): Provider execution carrying the staged device and
+                instruction metadata.
         """
-        if (
-            hasattr(obj, "enum_strs")
-            and obj.enum_strs is not None
-            and len(obj.enum_strs) > 0
-            and isinstance(val, float)
-        ):
-            if not val.is_integer():
-                raise ValueError(
-                    f"Cannot convert float {val} to enum index for {obj.name}. "
-                    f"Value must be an integer to select one of the enum strings: {obj.enum_strs}."
-                )
-            val = int(val)
-        return val
-
-    def _pre_scan(self, instr: messages.DeviceInstructionMessage) -> None:
-        devices = instr.content["device"]
-        if not isinstance(devices, list):
-            devices = [devices]
-
-        devices = self.device_manager.get_device_order(devices)
-
-        self.requests_handler.add_request(instr, num_status_objects=len(devices))
-        num_status_objects = 0
-        for dev in devices:
-            status = None
-            obj = self.device_manager.devices[dev].obj
-            if hasattr(obj, "pre_scan"):
-                status = obj.pre_scan()
-            if status is None:
-                continue
-            if not isinstance(status, StatusBase):
-                raise ValueError(
-                    f"The pre_scan method of {dev} does not return a StatusBase object."
-                )
-
-            num_status_objects += 1
-            self._add_status_object_info(status, instr, obj)
-            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
-
-        self.requests_handler.patch_num_status_objects(instr, num_status_objects)
-
-    def status_callback(self, status):
-        pipe = self.connector.pipeline()
-        # BEC records the requested target, which may differ from the device
-        # owning a status returned by a delegated operation.
-        obj = status.__dict__.get("obj_ref")
-        if obj is None:
-            obj = getattr(status, "device", None)
-        if obj is None:
-            obj = getattr(status, "obj", None)
-
-        # if we've started a subscription, we need to unsubscribe now
-        # this is typically the case for operations on nested devices.
-        # For normal devices, we don't need to unsubscribe, as the
-        # subscription is handled by the device manager
-        if getattr(status, "sub_id", None):
-            obj.unsubscribe(status.sub_id)
-
-        if obj is None:
-            logger.error(
-                f"Could not find device object for status: {status}."
-                f"The status object has not received the metadata through the `_add_status_object_info` method properly."
-            )
-        device_name = (
-            ".".join([obj.root.name, obj.dotted_name]) if obj.dotted_name else obj.root.name
+        name = status.response_device_name
+        state = int(status.instruction.action == "stage")
+        self.connector.set(
+            MessageEndpoints.device_staged(name),
+            messages.DeviceStatusMessage(
+                device=name, status=state, metadata=status.instruction.metadata
+            ),
         )
-        content = status.instruction.content
-        is_config_set = content["action"] == "set"
-        rpc_func = content["parameter"].get("func", "")
-        is_rpc_set = content["action"] == "rpc" and (rpc_func == "set" or ".set" in rpc_func)
+        if state and not self.provider_manager.is_staged(status.target):
+            raise ValueError(f"Failed to stage device {status.target.name}.")
 
-        if is_config_set or is_rpc_set:
-            if obj.kind == Kind.config:
-                self._update_read_configuration(obj, status.instruction.metadata, pipe)
-            elif obj.kind in [Kind.normal, Kind.hinted]:
-                # Refresh readback without replacing the request tracking this status.
-                self._read_device(status.instruction, new_status=False)
+    def status_callback(self, status: InstructionExecution) -> None:
+        """
+        Refresh device data and publish the requested completion response.
 
-        self.dispatch_status_response(status, device_name, pipe=pipe)
+        Args:
+            status (InstructionExecution): Completed provider execution bound to its device
+                instruction.
+        """
+        status.close_subscription()
+        pipe = self.connector.pipeline()
+        instruction = status.instruction
+        rpc_func = instruction.parameter.get("func", "")
+        is_rpc_set = instruction.action == "rpc" and (rpc_func == "set" or ".set" in rpc_func)
+        if instruction.action == "set" or is_rpc_set:
+            kind = (
+                status.target_kind()
+                if status.target_kind is not None
+                else self.provider_manager.get_kind(status.target)
+            )
+            if kind == DeviceKind.CONFIGURATION:
+                signals = wait_for_completion(
+                    self.provider_manager.read_configuration(DeviceTarget(status.target.device))
+                )
+                self.connector.set_and_publish(
+                    MessageEndpoints.device_read_configuration(status.target.device.name),
+                    messages.DeviceMessage(signals=signals, metadata=instruction.metadata),
+                    pipe,
+                )
+            elif kind in (DeviceKind.READOUT, DeviceKind.READOUT | DeviceKind.HINTED):
+                self._read_device(instruction, new_status=False)
+        self.dispatch_status_response(status, status.response_device_name, pipe=pipe)
         pipe.execute()
 
     def dispatch_status_response(
         self,
-        status: StatusBase,
+        status: InstructionExecution,
         device_name: str,
         error_info: messages.ErrorInfo | None = None,
         pipe: Any = None,
@@ -880,7 +805,7 @@ class DeviceServer(BECService):
         """Publish a requested client status response, including callback failures.
 
         Args:
-            status (StatusBase): Completed status carrying the original instruction.
+            status (InstructionExecution): Completed execution carrying the original instruction.
             device_name (str): Device name to include in the response.
             error_info (messages.ErrorInfo | None): Callback error overriding successful
                 motion, if present. Otherwise, use the status exception. Defaults to None.
@@ -911,14 +836,6 @@ class DeviceServer(BECService):
             expire=3600,
         )
 
-    def _update_read_configuration(self, obj: OphydObject, metadata: dict, pipe) -> None:
-        dev_config_msg = messages.DeviceMessage(
-            signals=obj.root.read_configuration(), metadata=metadata
-        )
-        self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(obj.root.name), dev_config_msg, pipe
-        )
-
     def _read_device(self, instr: messages.DeviceInstructionMessage, new_status=True) -> None:
         # check performance -- we might have to change it to a background thread
         devices = instr.content["device"]
@@ -946,13 +863,16 @@ class DeviceServer(BECService):
         for dev in devices:
             device_root = dev.split(".")[0]
             self.device_manager.devices.get(device_root).metadata = metadata
-            obj = self.device_manager.devices.get(device_root).obj
             try:
-                signals = obj.read()
+                signals = wait_for_completion(
+                    self.provider_manager.read(
+                        DeviceTarget(self.device_manager.devices.get(device_root))
+                    )
+                )
                 signal_container.append(signals)
             # pylint: disable=broad-except
             except Exception as exc:
-                signals = self._retry_obj_method(dev, obj, "read", exc)
+                signals = self._retry_obj_method(dev, "read", exc)
 
             self.connector.set_and_publish(
                 MessageEndpoints.device_read(device_root),
@@ -977,13 +897,16 @@ class DeviceServer(BECService):
         devices = self.device_manager.get_device_order(devices)
         for dev in devices:
             self.device_manager.devices.get(dev).metadata = metadata
-            obj = self.device_manager.devices.get(dev).obj
             try:
-                signals = obj.read_configuration()
+                signals = wait_for_completion(
+                    self.provider_manager.read_configuration(
+                        DeviceTarget(self.device_manager.devices.get(dev))
+                    )
+                )
                 signal_container.append(signals)
             # pylint: disable=broad-except
             except Exception as exc:
-                signals = self._retry_obj_method(dev, obj, "read_configuration", exc)
+                signals = self._retry_obj_method(dev, "read_configuration", exc)
             self.connector.set_and_publish(
                 MessageEndpoints.device_read_configuration(dev),
                 messages.DeviceMessage(signals=signals, metadata=metadata),
@@ -995,7 +918,7 @@ class DeviceServer(BECService):
         )
         return signal_container
 
-    def _retry_obj_method(self, device: str, obj: OphydObject, method: str, exc: Exception) -> dict:
+    def _retry_obj_method(self, device: str, method: str, exc: Exception) -> dict:
         error_info = messages.ErrorInfo(
             error_message=f"Failed to run {method} on device {device}.\n{traceback.format_exc()}",
             compact_error_message=traceback.format_exc(limit=0),
@@ -1010,7 +933,12 @@ class DeviceServer(BECService):
 
         if ds_dev.on_failure == OnFailure.RETRY:
             # try to read it again, may have been only a glitch
-            signals = getattr(obj, method)()
+            reader = (
+                self.provider_manager.read_configuration
+                if method == "read_configuration"
+                else self.provider_manager.read
+            )
+            signals = wait_for_completion(reader(DeviceTarget(ds_dev)))
         elif ds_dev.on_failure == OnFailure.RAISE:
             raise exc
         elif ds_dev.on_failure == OnFailure.BUFFER:
@@ -1032,102 +960,6 @@ class DeviceServer(BECService):
         else:
             raise ValueError(f"Unknown on_failure value {ds_dev.on_failure}.")
         return signals
-
-    def _stage_device(
-        self, instr: messages.DeviceInstructionMessage, timeout_on_unstage: int = 10
-    ) -> None:
-        devices = instr.content["device"]
-        if not isinstance(devices, list):
-            devices = [devices]
-
-        devices = self.device_manager.get_device_order(devices)
-
-        self.requests_handler.add_request(instr, num_status_objects=len(devices))
-
-        num_status_objects = 0
-        for dev in devices:
-            status = None
-            obj = self.device_manager.devices[dev].obj
-
-            if not hasattr(obj, "_staged"):
-                continue
-
-            # pylint: disable=protected-access
-            if obj._staged == Staged.yes:
-                logger.info(f"Device {obj.name} was already staged and will be first unstaged.")
-                status = self.device_manager.devices[dev].obj.unstage()
-                if isinstance(status, StatusBase):
-                    for ii in range(3):
-                        try:
-                            status.wait(timeout=timeout_on_unstage)
-                            status = None  # Set status None and break the loop since unstage is successful
-                            break
-                        except ophyd_errors.WaitTimeoutError:
-                            logger.warning(
-                                f"Unstaging device {dev} still running, {timeout_on_unstage * (ii + 1)} seconds passed."
-                            )
-                    if status is not None:
-                        raise ValueError(f"Unstaging device {dev} failed to finish in 30 seconds")
-            status = self.device_manager.devices[dev].obj.stage()
-            if status is None or isinstance(status, list):
-                continue
-            if not isinstance(status, StatusBase):
-                raise ValueError(f"The stage method of {dev} does not return a StatusBase object.")
-            num_status_objects += 1
-            self._add_status_object_info(status, instr, obj)
-            status.__dict__["status"] = 1
-            status.add_callback(self._device_staged_callback)
-            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
-
-        self.requests_handler.patch_num_status_objects(instr, num_status_objects)
-
-    def _device_staged_callback(self, status: StatusBase) -> None:
-        """Set the device status to staged"""
-        obj = status.__dict__["obj_ref"]
-        dev_name = obj.name
-        instr = status.__dict__["instruction"]
-        state = status.__dict__["status"]
-        self.connector.set(
-            MessageEndpoints.device_staged(dev_name),
-            messages.DeviceStatusMessage(device=dev_name, status=state, metadata=instr.metadata),
-        )
-        if state == 1:  # Device was/is staged
-            obj = self.device_manager.devices[dev_name].obj
-            # pylint: disable=protected-access
-            if hasattr(obj, "_staged") and obj._staged != Staged.yes:
-                raise ValueError(f"Failed to stage device {dev_name}.")
-
-    def _unstage_device(self, instr: messages.DeviceInstructionMessage) -> None:
-        devices = instr.content["device"]
-        if not isinstance(devices, list):
-            devices = [devices]
-
-        devices = self.device_manager.get_device_order(devices)
-
-        self.requests_handler.add_request(instr, num_status_objects=len(devices))
-        num_status_objects = 0
-        for dev in devices:
-            status = None
-            obj = self.device_manager.devices[dev].obj
-            if hasattr(obj, "_staged"):
-                # pylint: disable=protected-access
-                if obj._staged == Staged.yes:
-                    status = self.device_manager.devices[dev].obj.unstage()
-                else:
-                    logger.debug(f"Device {obj.name} was already unstaged.")
-            if status is None or isinstance(status, list):
-                continue
-            if not isinstance(status, StatusBase):
-                raise ValueError(
-                    f"The unstage method of {dev} does not return a StatusBase object."
-                )
-            num_status_objects += 1
-            self._add_status_object_info(status, instr, obj)
-            status.__dict__["status"] = 0
-            status.add_callback(self._device_staged_callback)
-            self.requests_handler.add_status_object(instr.metadata["device_instr_id"], status)
-
-        self.requests_handler.patch_num_status_objects(instr, num_status_objects)
 
     def _broadcast_scan_device_info(self, instr: messages.DeviceInstructionMessage) -> None:
         """
@@ -1154,14 +986,9 @@ class DeviceServer(BECService):
             if dev not in self.device_manager.devices:
                 logger.warning(f"Device {dev} not found in device manager. Skipping.")
                 continue
-            obj = self.device_manager.devices.get(dev).obj
-
-            signal_info: dict[str, messages.SignalInfo] = {}
-            if isinstance(obj, Device):
-                for _, sub_name, item in obj.walk_signals():
-                    if not isinstance(item, BECMessageSignal):
-                        continue
-                    signal_info[sub_name] = item.signal_info
+            signal_info = self.provider_manager.get_runtime_signal_info(
+                self.device_manager.devices.get(dev)
+            )
 
             if not signal_info:
                 continue

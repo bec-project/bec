@@ -25,6 +25,11 @@ from bec_lib.devicemanager import CancelledError, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.device_server.bec_message_handler import BECMessageHandler
+from bec_server.device_server.device_providers.device_interfaces import (
+    DeviceTarget,
+    RefreshSection,
+    wait_for_completion,
+)
 from bec_server.device_server.device_providers.device_provider_manager import DeviceProviderManager
 from bec_server.device_server.device_providers.ophyd.ophyd_device_provider import (
     connect_native_device,
@@ -33,6 +38,7 @@ from bec_server.device_server.device_providers.ophyd.ophyd_device_provider impor
 )
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.ds_device import DSDevice, DSDeviceConfig
+from bec_server.device_server.refresh_scheduler import RefreshScheduler
 
 if TYPE_CHECKING:  # pragma: no cover
     from redis.client import Pipeline
@@ -102,11 +108,9 @@ class DeviceManagerDS(DeviceManagerBase):
         self.failed_devices = {}
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
-        self._auto_monitor_readback_updates = set()
-        self._auto_monitor_configuration_updates = set()
-        self._limit_change_updates = set()
-        self._auto_monitor_update_lock = threading.Lock()
+        self._refresh_scheduler = RefreshScheduler()
         self._shutdown_event = threading.Event()
+        self._auto_monitor_start_lock = threading.RLock()
         self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
 
     def _create_auto_monitor_update_thread(self) -> threading.Thread:
@@ -115,16 +119,17 @@ class DeviceManagerDS(DeviceManagerBase):
         )
 
     def _ensure_auto_monitor_update_thread(self) -> None:
-        if self._auto_monitor_update_thread is None:
-            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
-        elif (
-            not self._auto_monitor_update_thread.is_alive()
-            and self._auto_monitor_update_thread.ident is not None
-        ):
-            self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
+        with self._auto_monitor_start_lock:
+            if self._auto_monitor_update_thread is None:
+                self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
+            elif (
+                not self._auto_monitor_update_thread.is_alive()
+                and self._auto_monitor_update_thread.ident is not None
+            ):
+                self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
 
-        if not self._auto_monitor_update_thread.is_alive():
-            self._auto_monitor_update_thread.start()
+            if not self._auto_monitor_update_thread.is_alive():
+                self._auto_monitor_update_thread.start()
 
     def initialize(self, bootstrap_server) -> None:
         self.config_update_handler = (
@@ -344,59 +349,15 @@ class DeviceManagerDS(DeviceManagerBase):
         reload_msg = messages.DeviceConfigMessage(action="reload", config={})
         self.connector.send(MessageEndpoints.device_config_update(), reload_msg)
 
-    def update_config(self, device: DSDevice, config: dict) -> None:
-        """Update a wrapped Ophyd device's configuration.
+    def on_configuration_applied(self, device: DSDevice, *, refresh_buffer: bool) -> None:
+        """Publish BEC state after the provider applies a standard configuration update.
 
         Args:
-            device (DSDevice): Device wrapper to update.
-            config (dict): Configuration values to apply.
+            device (DSDevice): Updated device wrapper.
+            refresh_buffer (bool): Whether unmonitored changes require a synchronous buffer refresh.
         """
-        obj = device.obj
-        if hasattr(obj, "_update_device_config"):
-            # If the device has implemented its own config update method, use it
-            # pylint: disable=protected-access
-            obj._update_device_config(config)  # type: ignore
-            return
-
-        signal_updated = False
-        for config_key, config_value in config.items():
-            # first handle the ophyd exceptions...
-            if config_key == "limits":
-                if hasattr(obj, "low_limit_travel") and hasattr(obj, "high_limit_travel"):
-                    low_limit_status = obj.low_limit_travel.set(config_value[0])  # type: ignore
-                    high_limit_status = obj.high_limit_travel.set(config_value[1])  # type: ignore
-                    # Respect Timeout to avoid blocking the device server indefinitely
-                    low_limit_status.wait(timeout=2)
-                    high_limit_status.wait(timeout=2)
-                    continue
-            if config_key == "labels":
-                if not config_value:
-                    config_value = set()
-                # pylint: disable=protected-access
-                obj._ophyd_labels_ = set(config_value)
-                continue
-            if not hasattr(obj, config_key):
-                raise DeviceConfigError(
-                    f"Unknown config parameter {config_key} for device of type"
-                    f" {obj.__class__.__name__}."
-                )
-
-            config_attr = getattr(obj, config_key)
-            if isinstance(config_attr, ophyd.Signal):
-                config_attr.set(config_value).wait(timeout=2)
-                if not hasattr(config_attr, "_auto_monitor"):
-                    # only signal values that are not auto monitored need
-                    # to trigger a manual buffer update
-                    signal_updated = True
-            elif callable(config_attr):
-                config_attr(config_value)
-            else:
-                setattr(obj, config_key, config_value)
-
-        if signal_updated:
-            # re-initialize the device buffer to reflect the updated signal values
+        if refresh_buffer:
             device.initialize_device_buffer(self.connector)
-
         self.connector.publish_metrics("device_server", {"num_devices": len(self.devices)})
 
     def _subscribe_to_limit_updates(self, obj: OphydObject):
@@ -497,113 +458,96 @@ class DeviceManagerDS(DeviceManagerBase):
         self.connector.delete(MessageEndpoints.device_read_configuration(device.name), pipe)
         self.connector.delete(MessageEndpoints.device_info(device.name), pipe)
 
+    def _publish_refresh(
+        self, device: DSDevice, section: RefreshSection, pipe: Pipeline | None = None
+    ) -> None:
+        """Read through the owning provider and publish one cache section."""
+        if self.devices.get(device.name) is not device:
+            return
+        provider = self.device_provider_manager.get_provider(type(device.obj))
+        target = DeviceTarget(device)
+        if section is RefreshSection.READBACK:
+            readings = wait_for_completion(provider.read(target))
+            endpoint = MessageEndpoints.device_readback
+        elif section is RefreshSection.CONFIGURATION:
+            readings = wait_for_completion(provider.read_configuration(target, separate_only=True))
+            endpoint = MessageEndpoints.device_read_configuration
+        else:
+            readings = provider.get_device_limits(device)
+            endpoint = MessageEndpoints.device_limits
+        if readings is None or self.devices.get(device.name) is not device:
+            return
+        metadata = {} if section is RefreshSection.LIMITS else device.metadata
+        local_pipe = pipe if pipe is not None else self.connector.pipeline()
+        self.connector.set_and_publish(
+            endpoint(device.name),
+            messages.DeviceMessage(signals=readings, metadata=metadata),
+            pipe=local_pipe,
+        )
+        if pipe is None:
+            local_pipe.execute()
+
+    def _callback_refresh(self, obj: OphydObject, section: RefreshSection, pipe=None) -> None:
+        if not obj.connected:
+            return
+        device = self.devices.get(obj.root.name)
+        if device is None or device.obj is not obj.root:
+            return
+        self._publish_refresh(device, section, pipe)
+
     def _obj_callback_limit_change(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
     ):
-        """Callback for limit changes"""
-        if not obj.connected:
-            return
-        name = obj.root.name
-        limits = {
-            "low": {"value": obj.root.low_limit_travel.get()},
-            "high": {"value": obj.root.high_limit_travel.get()},
-        }
-        dev_msg = messages.DeviceMessage(signals=limits)
-        _pipe = pipe if pipe is not None else self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_limits(name), dev_msg, pipe=_pipe)
-        if pipe is None:
-            _pipe.execute()
+        """Acquire and publish limits without exposing Redis to the provider."""
+        self._callback_refresh(obj, RefreshSection.LIMITS, pipe)
 
     def _obj_callback_readback(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
     ):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        signals = obj.root.read()
-        metadata = self.devices.get(obj.root.name).metadata
-        dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        _pipe = pipe if pipe is not None else self.connector.pipeline()
-        self.connector.set_and_publish(MessageEndpoints.device_readback(name), dev_msg, pipe=_pipe)
-        if pipe is None:
-            _pipe.execute()
+        self._callback_refresh(obj, RefreshSection.READBACK, pipe)
 
     def _obj_callback_configuration(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
     ):
+        self._callback_refresh(obj, RefreshSection.CONFIGURATION, pipe)
+
+    def request_refresh(self, device: DSDevice, sections: frozenset[RefreshSection]) -> None:
+        """Queue a backend notification for the shared refresh worker without acquiring data."""
+        with self._auto_monitor_start_lock:
+            if self._shutdown_event.is_set() or self.devices.get(device.name) is not device:
+                return
+            self._refresh_scheduler.request_refresh(device, sections)
+            self._ensure_auto_monitor_update_thread()
+
+    def _request_refresh_scheduler(self, obj: OphydObject, section: RefreshSection) -> None:
         if not obj.connected:
             return
-        if isinstance(obj.root, ophyd.Signal):
-            # we don't need to publish the configuration of a signal
-            return
-        name = obj.root.name
-        signals = obj.root.read_configuration()
-        metadata = self.devices.get(obj.root.name).metadata
-        dev_msg = messages.DeviceMessage(signals=signals, metadata=metadata)
-        _pipe = pipe if pipe is not None else self.connector.pipeline()
-        self.connector.set_and_publish(
-            MessageEndpoints.device_read_configuration(name), dev_msg, pipe=_pipe
-        )
-        if pipe is None:
-            _pipe.execute()
+        device = self.devices.get(obj.root.name)
+        if device is not None and device.obj is obj.root:
+            self._refresh_scheduler.request_refresh(device, frozenset({section}))
 
     def _obj_callback_auto_monitor_readback(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._auto_monitor_readback_updates.add(name)
+        self._request_refresh_scheduler(obj, RefreshSection.READBACK)
 
     def _obj_callback_auto_monitor_configuration(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._auto_monitor_configuration_updates.add(name)
+        self._request_refresh_scheduler(obj, RefreshSection.CONFIGURATION)
 
     def _obj_callback_auto_monitor_limits(self, *_args, obj: OphydObject, **kwargs):
-        if not obj.connected:
-            return
-        name = obj.root.name
-        with self._auto_monitor_update_lock:
-            self._limit_change_updates.add(name)
+        self._request_refresh_scheduler(obj, RefreshSection.LIMITS)
 
     def _auto_monitor_update_loop(self):
         while not self._shutdown_event.wait(0.01):
             try:
-                if (
-                    not self._auto_monitor_readback_updates
-                    and not self._auto_monitor_configuration_updates
-                    and not self._limit_change_updates
-                ):
+                requests = self._refresh_scheduler.drain()
+                if not requests:
                     continue
-                with self._auto_monitor_update_lock:
-                    readback_updates = list(self._auto_monitor_readback_updates)
-                    configuration_updates = list(self._auto_monitor_configuration_updates)
-                    limits_updates = list(self._limit_change_updates)
-                    self._auto_monitor_readback_updates.clear()
-                    self._auto_monitor_configuration_updates.clear()
-                    self._limit_change_updates.clear()
-
                 pipe = self.connector.pipeline()
-                for name in readback_updates:
-                    if name not in self.devices:
+                for device, section in requests:
+                    if self.devices.get(device.name) is not device:
                         continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_readback(obj=obj, pipe=pipe)
-
-                for name in configuration_updates:
-                    if name not in self.devices:
+                    if not self.device_provider_manager.is_connected(device):
                         continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_configuration(obj=obj, pipe=pipe)
-
-                for name in limits_updates:
-                    if name not in self.devices:
-                        continue
-                    obj = self.devices[name].obj
-                    self._obj_callback_limit_change(obj=obj, pipe=pipe)
-
+                    self._publish_refresh(device, section, pipe)
                 pipe.execute()
             except Exception as exc:
                 logger.error(f"Error in auto monitor update loop: {exc}")
@@ -636,9 +580,11 @@ class DeviceManagerDS(DeviceManagerBase):
 
     def shutdown(self):
         """Shutdown the device manager and disconnect all devices"""
-        self._shutdown_event.set()
+        with self._auto_monitor_start_lock:
+            self._shutdown_event.set()
         if self._auto_monitor_update_thread.is_alive():
             self._auto_monitor_update_thread.join(timeout=5)
+        self._refresh_scheduler.clear()
         for device in self.devices.values():
             try:
                 logger.info(f"Disconnecting device {device.name}")

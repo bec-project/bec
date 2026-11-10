@@ -1,6 +1,7 @@
 import copy
 import threading
 import time
+from io import StringIO
 from types import SimpleNamespace
 from unittest import mock
 
@@ -15,6 +16,7 @@ from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
+from bec_server.device_server.device_providers.device_interfaces import RefreshSection
 from bec_server.device_server.device_providers.device_provider_manager import DeviceProviderManager
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.device_info import DeviceInfo
@@ -540,24 +542,25 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_obj_callback_auto_monitor_limits_queues_root_device(dm_with_devices):
     samx = dm_with_devices.devices.samx
-    dm_with_devices._limit_change_updates.clear()
+    dm_with_devices._refresh_scheduler.clear()
 
     dm_with_devices._obj_callback_auto_monitor_limits(obj=samx.obj.low_limit_travel)
 
-    assert samx.name in dm_with_devices._limit_change_updates
+    assert samx.name in dm_with_devices._refresh_scheduler.pending_names(RefreshSection.LIMITS)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_obj_callback_auto_monitor_queueing(dm_with_devices):
     samx = dm_with_devices.devices.samx
-    dm_with_devices._auto_monitor_readback_updates.clear()
-    dm_with_devices._auto_monitor_configuration_updates.clear()
+    dm_with_devices._refresh_scheduler.clear()
 
     dm_with_devices._obj_callback_auto_monitor_readback(obj=samx.obj.readback)
     dm_with_devices._obj_callback_auto_monitor_configuration(obj=samx.obj.velocity)
 
-    assert samx.name in dm_with_devices._auto_monitor_readback_updates
-    assert samx.name in dm_with_devices._auto_monitor_configuration_updates
+    assert samx.name in dm_with_devices._refresh_scheduler.pending_names(RefreshSection.READBACK)
+    assert samx.name in dm_with_devices._refresh_scheduler.pending_names(
+        RefreshSection.CONFIGURATION
+    )
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -677,17 +680,15 @@ def test_ensure_auto_monitor_update_thread_recreates_dead_thread(dm_with_devices
 def test_auto_monitor_callbacks_ignore_disconnected_objects(dm_with_devices):
     disconnected_root = SimpleNamespace(name="samx")
     disconnected_obj = SimpleNamespace(connected=False, root=disconnected_root)
-    dm_with_devices._auto_monitor_readback_updates.clear()
-    dm_with_devices._auto_monitor_configuration_updates.clear()
-    dm_with_devices._limit_change_updates.clear()
+    dm_with_devices._refresh_scheduler.clear()
 
     dm_with_devices._obj_callback_auto_monitor_readback(obj=disconnected_obj)
     dm_with_devices._obj_callback_auto_monitor_configuration(obj=disconnected_obj)
     dm_with_devices._obj_callback_auto_monitor_limits(obj=disconnected_obj)
 
-    assert not dm_with_devices._auto_monitor_readback_updates
-    assert not dm_with_devices._auto_monitor_configuration_updates
-    assert not dm_with_devices._limit_change_updates
+    assert not dm_with_devices._refresh_scheduler.pending_names(RefreshSection.READBACK)
+    assert not dm_with_devices._refresh_scheduler.pending_names(RefreshSection.CONFIGURATION)
+    assert not dm_with_devices._refresh_scheduler.pending_names(RefreshSection.LIMITS)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -697,11 +698,12 @@ def test_auto_monitor_update_loop_batches_updates_and_skips_missing_devices(dm_w
     service._service_name = "device_server"
     device_manager = DeviceManagerDS(service)
     samx_obj = mock.MagicMock()
-    samx_obj.connected = False
-    device_manager.devices["samx"] = SimpleNamespace(name="samx", obj=samx_obj)
-    device_manager._auto_monitor_readback_updates = {"samx", "missing"}
-    device_manager._auto_monitor_configuration_updates = {"samx"}
-    device_manager._limit_change_updates = {"samx"}
+    samx_obj.connected = True
+    device = SimpleNamespace(name="samx", obj=samx_obj)
+    removed = SimpleNamespace(name="missing", obj=mock.MagicMock())
+    device_manager.devices["samx"] = device
+    device_manager._refresh_scheduler.request_refresh(device, frozenset(RefreshSection))
+    device_manager._refresh_scheduler.request_refresh(removed, frozenset(RefreshSection))
     device_manager._shutdown_event = mock.MagicMock()
     device_manager._shutdown_event.wait.side_effect = [False, True]
 
@@ -710,19 +712,18 @@ def test_auto_monitor_update_loop_batches_updates_and_skips_missing_devices(dm_w
     device_manager.connector.pipeline.return_value = pipe
 
     with (
-        mock.patch.object(device_manager, "_obj_callback_readback") as mock_readback,
-        mock.patch.object(device_manager, "_obj_callback_configuration") as mock_configuration,
-        mock.patch.object(device_manager, "_obj_callback_limit_change") as mock_limit_change,
+        mock.patch.object(device_manager, "_publish_refresh") as publish,
+        mock.patch.object(
+            device_manager.device_provider_manager, "is_connected", return_value=True
+        ),
     ):
         device_manager._auto_monitor_update_loop()
 
-        mock_readback.assert_called_once_with(obj=samx_obj, pipe=pipe)
-        mock_configuration.assert_called_once_with(obj=samx_obj, pipe=pipe)
-        mock_limit_change.assert_called_once_with(obj=samx_obj, pipe=pipe)
-        pipe.execute.assert_called_once()
-        assert not device_manager._auto_monitor_readback_updates
-        assert not device_manager._auto_monitor_configuration_updates
-        assert not device_manager._limit_change_updates
+    assert publish.call_args_list == [
+        mock.call(device, section, pipe) for section in RefreshSection
+    ]
+    pipe.execute.assert_called_once()
+    assert device_manager._refresh_scheduler.drain() == []
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -1013,7 +1014,7 @@ def test_provider_lifecycle_preserves_device_wrapper(dm_with_devices):
     assert device.initialized is True
     assert device.obj.get() == 3
     providers.disconnect_device(device)
-    providers.reset_device(device)
+    device.initialized = False
     assert device.obj._destroyed is True
     assert device.initialized is False
 
@@ -1231,3 +1232,103 @@ def test_provider_preserves_existing_runtime_device_names(device_manager, name):
     assert device_manager.devices[name] is device
     assert device.name == name
     assert device.obj.name == name
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_generic_refresh_ingress_starts_worker_once_and_rejects_retired_devices(dm_with_devices):
+    """Concurrent async notifications share one worker and cannot restart a stopped manager."""
+    manager = dm_with_devices
+    manager._shutdown_event.set()
+    if manager._auto_monitor_update_thread.is_alive():
+        manager._auto_monitor_update_thread.join(timeout=3)
+    assert not manager._auto_monitor_update_thread.is_alive()
+    manager._shutdown_event.clear()
+    manager._refresh_scheduler.clear()
+    manager._auto_monitor_update_thread = manager._create_auto_monitor_update_thread()
+    monitor = manager._auto_monitor_update_thread
+    device = manager.devices.samx
+    barrier = threading.Barrier(3)
+    errors = []
+
+    def notify():
+        try:
+            barrier.wait(timeout=3)
+            manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
+        except Exception as exc:
+            errors.append(exc)
+
+    workers = [threading.Thread(target=notify) for _ in range(2)]
+    try:
+        with mock.patch.object(monitor, "start", wraps=monitor.start) as start:
+            for worker in workers:
+                worker.start()
+            barrier.wait(timeout=3)
+            for worker in workers:
+                worker.join(timeout=3)
+                assert not worker.is_alive()
+            assert not errors
+            start.assert_called_once_with()
+    finally:
+        manager._shutdown_event.set()
+        for worker in workers:
+            if worker.ident is not None:
+                worker.join(timeout=3)
+        if monitor.ident is not None:
+            monitor.join(timeout=3)
+        assert not monitor.is_alive()
+
+    manager._refresh_scheduler.clear()
+    manager._shutdown_event.clear()
+    replacement = DSDevice(name=device.name, obj=device.obj, config=None)
+    with mock.patch.object(manager, "_ensure_auto_monitor_update_thread") as start:
+        manager.request_refresh(replacement, frozenset({RefreshSection.READBACK}))
+        manager._shutdown_event.set()
+        manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
+        start.assert_not_called()
+    assert manager._refresh_scheduler.drain() == []
+
+
+@pytest.mark.parametrize("with_manager", [False, True])
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_legacy_offline_construction_delegates_without_registration(dm_with_devices, with_manager):
+    """Keep the native-object constructor signature used by downstream offline tools."""
+    manager = dm_with_devices if with_manager else None
+    config = {"name": "offline", "deviceClass": "ophyd.Signal", "deviceConfig": {"value": 4}}
+    original = copy.deepcopy(config)
+    before = set(dm_with_devices.devices)
+    obj, remaining = DeviceManagerDS.construct_device_obj(config, manager)
+    try:
+        assert isinstance(obj, ophyd.Signal)
+        assert obj.name == "offline"
+        assert obj.get() == 4
+        assert remaining == {}
+        assert config == original
+        assert set(dm_with_devices.devices) == before
+        assert DeviceManagerDS.connect_device(obj, wait_for_all=True, timeout=1, force=True) is None
+    finally:
+        obj.destroy()
+
+
+def test_downstream_static_device_checker_constructs_and_connects(monkeypatch):
+    """Exercise the actual ophyd_test consumer rather than just the compatibility methods."""
+    from ophyd_devices.utils import static_device_test
+
+    # Pytest imports BEC before this optional downstream import can finish. Bind the
+    # manager as a fresh ophyd_test process does after its import cycle completes.
+    monkeypatch.setattr(static_device_test, "device_manager", DeviceManagerDS)
+    StaticDeviceTest = static_device_test.StaticDeviceTest
+    config = {
+        "deviceClass": "ophyd.Signal",
+        "enabled": True,
+        "readoutPriority": "monitored",
+        "deviceConfig": {"value": 4},
+    }
+    output = StringIO()
+    checker = StaticDeviceTest(output_file=output, config_dict={"offline": config})
+    obj = checker.construct_device_obj("offline", config)
+    assert obj is not None, output.getvalue()
+    try:
+        assert checker.connect_device("offline", obj, timeout_per_device=1) == 0, output.getvalue()
+    finally:
+        if not obj._destroyed:
+            obj.destroy()

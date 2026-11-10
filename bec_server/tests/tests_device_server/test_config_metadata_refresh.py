@@ -22,37 +22,31 @@ def make_handler():
                 target.obj, "save_roi_data", cfg["save_roi_data"]
             )
         ),
-        get_device_info=mock.Mock(
-            side_effect=lambda target: {"save_roi_data": target.obj.save_roi_data}
-        ),
+        publish_device_info=mock.Mock(return_value=None),
     )
-    manager = SimpleNamespace(
-        devices={"camera": wrapper},
-        device_provider_manager=providers,
-        publish_device_info=mock.Mock(),
-    )
-    return SimpleNamespace(device_manager=manager), device
+    manager = SimpleNamespace(devices={"camera": wrapper})
+    return SimpleNamespace(device_manager=manager, provider_manager=providers), device
 
 
 def test_update_config_republishes_metadata_after_applying_values():
     handler, _ = make_handler()
     observed = []
-    handler.device_manager.publish_device_info.side_effect = lambda _, info: observed.append(
-        info["save_roi_data"]
+    handler.provider_manager.publish_device_info.side_effect = lambda target: observed.append(
+        target.obj.save_roi_data
     )
     msg = DeviceConfigMessage(
         action="update", config={"camera": {"deviceConfig": {"save_roi_data": False}}}
     )
     ConfigUpdateHandler._update_config(handler, msg, threading.Event())
     assert observed == [False]
-    handler.device_manager.publish_device_info.assert_called_once_with(
-        handler.device_manager.devices["camera"], {"save_roi_data": False}
+    handler.provider_manager.publish_device_info.assert_called_once_with(
+        handler.device_manager.devices["camera"]
     )
 
 
 def test_failed_metadata_publication_restores_old_config_and_metadata():
     handler, device = make_handler()
-    handler.device_manager.publish_device_info.side_effect = [
+    handler.provider_manager.publish_device_info.side_effect = [
         RuntimeError("Metadata unavailable"),
         None,
     ]
@@ -62,4 +56,4 @@ def test_failed_metadata_publication_restores_old_config_and_metadata():
     with pytest.raises(DeviceConfigError, match="Metadata unavailable"):
         ConfigUpdateHandler._update_config(handler, msg, threading.Event())
     assert device.save_roi_data is True
-    assert handler.device_manager.publish_device_info.call_count == 2
+    assert handler.provider_manager.publish_device_info.call_count == 2

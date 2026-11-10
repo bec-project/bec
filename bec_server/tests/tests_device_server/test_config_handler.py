@@ -91,7 +91,6 @@ def test_config_handler_failed_disable_preserves_state_and_can_retry(dm_with_dev
 
     with (
         mock.patch.object(device.obj, "destroy", side_effect=RuntimeError("destroy failed")),
-        mock.patch.object(dm_with_devices.device_provider_manager, "reset_device") as reset_device,
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
@@ -100,7 +99,6 @@ def test_config_handler_failed_disable_preserves_state_and_can_retry(dm_with_dev
     assert device.initialized is True
     assert device.obj._destroyed is False
     assert session_config["enabled"] is True
-    reset_device.assert_not_called()
     assert send_reply.call_args.kwargs["accepted"] is False
     assert "destroy failed" in send_reply.call_args.kwargs["error_msg"]
 
@@ -162,15 +160,17 @@ def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_dev
             device.obj, "destroy", side_effect=RuntimeError("destroy failed")
         ) as destroy,
         mock.patch.object(
-            dm_with_devices.device_provider_manager,
-            "reset_device",
+            type(device),
+            "initialized",
+            create=True,
+            new_callable=mock.PropertyMock,
             side_effect=RuntimeError("reset failed"),
         ) as reset_device,
     ):
         handler._cleanup_failed_device_init(device)
 
     destroy.assert_called_once_with()
-    reset_device.assert_called_once_with(device)
+    reset_device.assert_called_once_with(False)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -231,7 +231,11 @@ def test_config_handler_failed_enable_cleans_and_restores_old_device(dm_with_dev
         raise RuntimeError("post-connect initialization failure")
 
     with (
-        mock.patch.object(dm_with_devices, "update_config", side_effect=fail_after_initialization),
+        mock.patch.object(
+            dm_with_devices.device_provider_manager.providers["ophyd"],
+            "update_device_config",
+            side_effect=fail_after_initialization,
+        ),
         mock.patch.object(
             dm_with_devices.device_provider_manager.providers["ophyd"],
             "connect_device",
@@ -398,7 +402,11 @@ def test_parse_config_request_failed_add_cleans_initialized_device(dm_with_devic
         raise RuntimeError("post-connect initialization failure")
 
     with (
-        mock.patch.object(dm_with_devices, "update_config", side_effect=fail_after_initialization),
+        mock.patch.object(
+            dm_with_devices.device_provider_manager.providers["ophyd"],
+            "update_device_config",
+            side_effect=fail_after_initialization,
+        ),
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
@@ -992,3 +1000,79 @@ def test_limit_publication_failure_does_not_roll_back_hardware(dm_with_devices, 
     apply.assert_called_once_with(device, {"limits": [-20, 20]})
     assert device.obj.low_limit_travel.get() == -20
     assert device.obj.high_limit_travel.get() == 20
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("failure", [None, "extraction", "publication"])
+def test_config_update_refreshes_metadata_and_rolls_back_before_reply(dm_with_devices, failure):
+    """Match main's metadata refresh and rollback boundary through the provider facade."""
+    dm = dm_with_devices
+    obj = SimpleNamespace(name="metadata_device", save_roi_data=True)
+    device = DSDevice(
+        obj.name,
+        obj,
+        config={
+            "enabled": True,
+            "deviceClass": "metadata",
+            "readoutPriority": "monitored",
+            "deviceConfig": {"save_roi_data": True},
+        },
+        parent=dm,
+    )
+    dm.devices._add_device(device.name, device)
+    provider = mock.Mock()
+    provider.supports_device_class.side_effect = lambda cls: cls is type(obj)
+    provider.update_device_config.side_effect = lambda dev, cfg: setattr(
+        dev.obj, "save_roi_data", cfg["save_roi_data"]
+    )
+    calls = []
+    failed = False
+
+    def get_info(dev, connect=True):
+        nonlocal failed
+        calls.append(("extract", dev.obj.save_roi_data, connect))
+        if failure == "extraction" and not failed:
+            failed = True
+            raise RuntimeError("Metadata unavailable")
+        return DeviceInfo.model_validate(
+            {
+                "device_base_class": "device",
+                "device_class": "MetadataDevice",
+                "signals": {
+                    "data": {
+                        "component_name": "data",
+                        "signal_class": "Signal",
+                        "obj_name": "data",
+                        "save_roi_data": dev.obj.save_roi_data,
+                    }
+                },
+            }
+        )
+
+    def publish(dev, info, pipe=None):
+        nonlocal failed
+        calls.append(("publish", info["signals"]["data"]["save_roi_data"]))
+        if failure == "publication" and not failed:
+            failed = True
+            raise RuntimeError("Metadata unavailable")
+
+    provider.get_device_info.side_effect = get_info
+    dm.device_provider_manager.providers["metadata"] = provider
+    handler = ConfigUpdateHandler(dm)
+    msg = messages.DeviceConfigMessage(
+        action="update", config={obj.name: {"deviceConfig": {"save_roi_data": False}}}
+    )
+    with mock.patch.object(dm, "publish_device_info", side_effect=publish):
+        if failure:
+            with pytest.raises(DeviceConfigError, match="Metadata unavailable"):
+                handler._update_config(msg, threading.Event())
+        else:
+            handler._update_config(msg, threading.Event())
+    assert obj.save_roi_data is bool(failure)
+    assert calls[-1] == ("publish", bool(failure))
+    assert calls[0] == ("extract", False, True)
+    expected = [mock.call(device, {"save_roi_data": False})]
+    if failure:
+        expected.append(mock.call(device, {"save_roi_data": True}))
+        assert ("extract", False, False) in calls
+    assert provider.update_device_config.call_args_list == expected

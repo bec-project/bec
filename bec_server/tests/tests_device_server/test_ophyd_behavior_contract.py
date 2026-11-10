@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from threading import Event, RLock, Thread
 from unittest import mock
 
 import numpy as np
@@ -11,9 +12,13 @@ from ophyd import Device, Kind, Signal
 from ophyd_devices import DynamicSignal, FileEventSignal, PreviewSignal, ProgressSignal
 
 from bec_lib import messages
+from bec_lib.device import DeviceBase
+from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.bec_message_handler import BECMessageHandler
-from bec_server.device_server.devices.devicemanager import DSDevice, DeviceManagerDS
+from bec_server.device_server.device_providers.device_interfaces import RefreshSection
+from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+from bec_server.device_server.devices.ds_device import DSDevice
 
 # pylint: disable=protected-access
 
@@ -47,9 +52,7 @@ def publication_device(device_manager, connected_connector):
     for existing in manager.devices.values():
         manager.device_provider_manager.disconnect_device(existing)
     manager.devices.flush()
-    manager._auto_monitor_readback_updates.clear()
-    manager._auto_monitor_configuration_updates.clear()
-    manager._limit_change_updates.clear()
+    manager._refresh_scheduler.clear()
 
     original_connector = manager.connector
     manager.connector = connected_connector
@@ -149,7 +152,7 @@ def test_monitor_notification_during_acquisition_is_published_next_drain(publica
         1,
         22,
     ]
-    assert not manager._auto_monitor_readback_updates
+    assert not manager._refresh_scheduler.pending_names(RefreshSection.READBACK)
 
 
 def test_monitor_acquisition_error_does_not_publish_partial_batch(publication_device):
@@ -175,9 +178,9 @@ def test_monitor_acquisition_error_does_not_publish_partial_batch(publication_de
         MessageEndpoints.device_limits,
     ):
         assert manager.connector.get(endpoint(device.name)) is None
-    assert not manager._auto_monitor_readback_updates
-    assert not manager._auto_monitor_configuration_updates
-    assert not manager._limit_change_updates
+    assert not manager._refresh_scheduler.pending_names(RefreshSection.READBACK)
+    assert not manager._refresh_scheduler.pending_names(RefreshSection.CONFIGURATION)
+    assert not manager._refresh_scheduler.pending_names(RefreshSection.LIMITS)
     pipe.reset()
 
 
@@ -201,13 +204,13 @@ def test_monitor_subscription_kind_contract(publication_device, kind, category):
     with mock.patch.object(manager, "_ensure_auto_monitor_update_thread"):
         manager._subscribe_to_auto_monitors(device.obj)
     # Subscription setup uses run=False; the first notification comes from a subsequent put.
-    assert not manager._auto_monitor_readback_updates
-    assert not manager._auto_monitor_configuration_updates
+    assert not manager._refresh_scheduler.pending_names(RefreshSection.READBACK)
+    assert not manager._refresh_scheduler.pending_names(RefreshSection.CONFIGURATION)
     signal.put(9)
-    assert manager._auto_monitor_readback_updates == (
+    assert manager._refresh_scheduler.pending_names(RefreshSection.READBACK) == (
         {device.name} if category == "readback" else set()
     )
-    assert manager._auto_monitor_configuration_updates == (
+    assert manager._refresh_scheduler.pending_names(RefreshSection.CONFIGURATION) == (
         {device.name} if category == "configuration" else set()
     )
 
@@ -383,3 +386,149 @@ def test_dynamic_message_indices_shapes_and_retention(publication_device):
     )
     assert [index.indices for index in indices] == [{left: 0, right: 0}, {left: 1}]
     assert [index.shapes for index in indices] == [{left: [2], right: []}, {left: [3]}]
+
+
+def test_queued_refresh_does_not_read_same_name_replacement(publication_device):
+    """A refresh queued by a retired wrapper must not acquire its replacement."""
+    manager, old = publication_device
+    manager._obj_callback_auto_monitor_readback(obj=old.obj.first)
+    replacement_obj = _PublicationDevice(name=old.name)
+    replacement = DSDevice(name=old.name, obj=replacement_obj, config=old._config, parent=manager)
+    manager.devices._add_device(old.name, replacement)
+    try:
+        with (
+            mock.patch.object(manager._shutdown_event, "wait", side_effect=[False, True]),
+            mock.patch.object(replacement_obj, "read") as read,
+            mock.patch.object(old.obj, "read") as old_read,
+        ):
+            manager._auto_monitor_update_loop()
+        read.assert_not_called()
+        old_read.assert_not_called()
+        assert manager.connector.get(MessageEndpoints.device_readback(old.name)) is None
+    finally:
+        manager.devices._add_device(old.name, old)
+        replacement_obj.destroy()
+
+
+def test_callback_metadata_is_sampled_after_acquisition(publication_device):
+    """Instruction metadata changed by the read is retained in the published message."""
+    manager, device = publication_device
+    original_read = device.obj.read
+
+    def read_and_change_metadata():
+        values = original_read()
+        device.metadata = {"RID": "after-read"}
+        return values
+
+    with mock.patch.object(device.obj, "read", side_effect=read_and_change_metadata):
+        manager._obj_callback_readback(obj=device.obj)
+    published = manager.connector.get(MessageEndpoints.device_readback(device.name))
+    assert published.metadata == {"RID": "after-read"}
+
+
+def test_native_callback_can_read_while_holding_device_lock(publication_device):
+    """A native callback must retain the invoking thread's reentrant lock ownership."""
+    manager, device = publication_device
+    native_read = device.obj.read
+    device_lock = RLock()
+
+    def locked_read():
+        if not device_lock.acquire(timeout=0.2):
+            raise RuntimeError("Snapshot acquisition crossed a callback-owned lock")
+        try:
+            return native_read()
+        finally:
+            device_lock.release()
+
+    subscription = device.obj.first.subscribe(manager._obj_callback_readback, run=False)
+    try:
+        with mock.patch.object(device.obj, "read", side_effect=locked_read):
+            with device_lock:
+                device.obj.first.put(27)
+        published = manager.connector.get(MessageEndpoints.device_readback(device.name))
+        assert published is not None
+        assert published.signals[device.obj.first.name]["value"] == 27
+    finally:
+        device.obj.first.unsubscribe(subscription)
+
+
+def test_shutdown_disconnects_device_to_release_inflight_monitor_read(publication_device):
+    """A pending read must not prevent shutdown reaching native device cleanup."""
+    manager, device = publication_device
+    entered, released, destroyed = Event(), Event(), Event()
+    reading = device.obj.read()
+    native_destroy = device.obj.destroy
+    errors = []
+
+    def blocked_read():
+        entered.set()
+        assert released.wait(5), "Test cleanup must release the native read"
+        return reading
+
+    def destroy_and_release():
+        destroyed.set()
+        released.set()
+        native_destroy()
+
+    def shutdown():
+        try:
+            manager.shutdown()
+        except Exception as exc:
+            errors.append(exc)
+
+    manager._shutdown_event.clear()
+    manager._obj_callback_auto_monitor_readback(obj=device.obj.first)
+    monitor = Thread(target=manager._auto_monitor_update_loop, daemon=True)
+    manager._auto_monitor_update_thread = monitor
+    join_monitor = monitor.join
+    stopping = Thread(target=shutdown, daemon=True)
+    with (
+        mock.patch.object(device.obj, "read", side_effect=blocked_read),
+        mock.patch.object(device.obj, "destroy", side_effect=destroy_and_release),
+        # Exercise the production bounded join without spending its five-second grace period.
+        mock.patch.object(
+            monitor, "join", side_effect=lambda timeout: join_monitor(timeout=0.01)
+        ) as join,
+        mock.patch.object(DeviceManagerBase, "shutdown"),
+        mock.patch.object(manager, "config_update_handler", None),
+    ):
+        monitor.start()
+        try:
+            assert entered.wait(2)
+            stopping.start()
+            assert destroyed.wait(
+                2
+            ), "Shutdown must reach device cleanup before waiting for the read"
+            stopping.join(timeout=2)
+            join_monitor(timeout=2)
+            assert not stopping.is_alive()
+            assert not monitor.is_alive()
+            assert not errors
+            join.assert_called_once_with(timeout=5)
+        finally:
+            manager._shutdown_event.set()
+            released.set()
+            join_monitor(timeout=2)
+            if stopping.ident is not None:
+                stopping.join(timeout=2)
+
+
+def test_native_callback_publishes_memoryview_payload_and_metadata(publication_device):
+    """The provider accepts mutable views supported by the pre-refactor Redis path."""
+    manager, device = publication_device
+    data_buffer = bytearray(b"abc")
+    metadata_buffer = bytearray(b"tag")
+    device.metadata = {"buffer": memoryview(metadata_buffer), "owner": DeviceBase(name="owner")}
+    subscription = device.obj.first.subscribe(manager._obj_callback_readback, run=False)
+    try:
+        device.obj.first.put(memoryview(data_buffer))
+        published = manager.connector.get(MessageEndpoints.device_readback(device.name))
+        assert published is not None
+        assert published.signals[device.obj.first.name]["value"] == b"abc"
+        assert published.metadata == {"buffer": b"tag", "owner": "owner"}
+        data_buffer[:] = b"xyz"
+        metadata_buffer[:] = b"new"
+        assert published.signals[device.obj.first.name]["value"] == b"abc"
+        assert published.metadata == {"buffer": b"tag", "owner": "owner"}
+    finally:
+        device.obj.first.unsubscribe(subscription)

@@ -30,6 +30,7 @@ class RequestInfo(TypedDict):
 class ConfigUpdateHandler:
     def __init__(self, device_manager: DeviceManagerDS) -> None:
         self.device_manager = device_manager
+        self.provider_manager = device_manager.device_provider_manager
         self.connector = self.device_manager.connector
         self.executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="ConfigUpdateHandler"
@@ -200,7 +201,7 @@ class ConfigUpdateHandler:
     def _cleanup_failed_device_init(self, device: DSDevice) -> None:
         """Best-effort cleanup that does not mask the initialization failure."""
         try:
-            self.device_manager.device_provider_manager.disconnect_device(device)
+            self.provider_manager.disconnect_device(device)
         # pylint: disable=broad-except
         except Exception:
             logger.error(
@@ -209,7 +210,7 @@ class ConfigUpdateHandler:
             )
 
         try:
-            self.device_manager.device_provider_manager.reset_device(device)
+            device.initialized = False
         # pylint: disable=broad-except
         except Exception:
             logger.error(
@@ -235,30 +236,25 @@ class ConfigUpdateHandler:
 
                 # apply config
                 try:
-                    self.device_manager.device_provider_manager.update_device_config(
-                        device, new_config
-                    )
-                    # Configuration can change the signal metadata exposed to clients.
-                    info = self.device_manager.device_provider_manager.get_device_info(device)
-                    self.device_manager.publish_device_info(device, info.to_wire())
+                    self.provider_manager.update_device_config(device, new_config)
+                    error = self.provider_manager.publish_device_info(device)
+                    if error is not None:
+                        raise error
                 except Exception as exc:
-                    self.device_manager.device_provider_manager.update_device_config(
-                        device, old_config
-                    )
-                    info = self.device_manager.device_provider_manager.get_device_info(device)
-                    self.device_manager.publish_device_info(device, info.to_wire())
+                    self.provider_manager.update_device_config(device, old_config)
+                    self.provider_manager.publish_device_info(device)
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
                 if "limits" in new_config:
-                    self.device_manager.device_provider_manager.publish_device_limits(device)
+                    self.provider_manager.publish_device_limits(device)
 
             if "enabled" in dev_config:
                 # pylint: disable=protected-access
                 was_enabled = device._config.get("enabled", True)
                 if was_enabled and not dev_config["enabled"]:
                     # It was enabled and we want to disable it. Disconnect and reset the device.
-                    self.device_manager.device_provider_manager.disconnect_device(device)
-                    self.device_manager.device_provider_manager.reset_device(device)
+                    self.provider_manager.disconnect_device(device)
+                    device.initialized = False
                     device._config["enabled"] = False
                 elif not was_enabled and dev_config["enabled"]:
                     # It was disabled and we want to enable it. Construct and initialize the device.
@@ -266,9 +262,8 @@ class ConfigUpdateHandler:
                     replacement = None
                     try:
                         device_config = DSDeviceConfig.model_validate(device._config)
-                        providers = self.device_manager.device_provider_manager
-                        replacement, config = providers.construct_device(device_config)
-                        providers.initialize_device(replacement, config)
+                        replacement, config = self.provider_manager.construct_device(device_config)
+                        self.provider_manager.initialize_device(replacement, config)
                     # pylint: disable=broad-except
                     except Exception:
                         device._config["enabled"] = was_enabled
@@ -285,7 +280,7 @@ class ConfigUpdateHandler:
         """Flush all devices from the device manager."""
         for device in self.device_manager.devices.values():
             try:
-                self.device_manager.device_provider_manager.disconnect_device(device)
+                self.provider_manager.disconnect_device(device)
             except Exception:
                 logger.warning(f"Failed to destroy {device.name}")
                 raise RuntimeError("Failed to flush config")
@@ -318,9 +313,9 @@ class ConfigUpdateHandler:
             if dev in dm.devices:
                 continue  # tbd what to do here: delete and add new device?
             device_config = DSDeviceConfig.model_validate(dev_config)
-            device, config = dm.device_provider_manager.construct_device(device_config)
+            device, config = self.provider_manager.construct_device(device_config)
             try:
-                dm.device_provider_manager.initialize_device(device, config)
+                self.provider_manager.initialize_device(device, config)
             # pylint: disable=broad-except
             except Exception:
                 error = traceback.format_exc()
@@ -388,8 +383,8 @@ class ConfigUpdateHandler:
             if dev not in self.device_manager.devices:
                 continue
             device = self.device_manager.devices[dev]
-            self.device_manager.device_provider_manager.disconnect_device(device)
-            self.device_manager.device_provider_manager.reset_device(device)
+            self.provider_manager.disconnect_device(device)
+            device.initialized = False
             self.device_manager.devices.pop(dev)
 
     def update_session_config(self, msg: messages.DeviceConfigMessage) -> None:
