@@ -17,6 +17,7 @@ from bec_lib.devicemanager import DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.bec_message_handler import BECMessageHandler
 from bec_server.device_server.device_providers.device_interfaces import RefreshSection
+from bec_server.device_server.device_providers.ophyd.ophyd_device_provider import _EventBinding
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 from bec_server.device_server.devices.ds_device import DSDevice
 
@@ -40,7 +41,7 @@ class _PublicationDevice(Device):
 
 
 @pytest.fixture
-def publication_device(device_manager, connected_connector):
+def publication_device(device_manager, connected_connector, monkeypatch):
     """Reuse the manager fixture with deterministic soft devices and real Redis semantics."""
     manager = device_manager
     # Full-suite collection can supply an already populated manager. Stop its worker before
@@ -53,6 +54,8 @@ def publication_device(device_manager, connected_connector):
         manager.device_provider_manager.disconnect_device(existing)
     manager.devices.flush()
     manager._refresh_scheduler.clear()
+    manager._shutdown_event.clear()
+    monkeypatch.setattr(manager, "_ensure_auto_monitor_update_thread", mock.Mock())
 
     original_connector = manager.connector
     manager.connector = connected_connector
@@ -73,16 +76,32 @@ def publication_device(device_manager, connected_connector):
         manager.connector = original_connector
 
 
+@pytest.fixture
+def subscribe_publication_device(publication_device):
+    manager, device = publication_device
+    provider = manager.device_provider_manager.providers["ophyd"]
+    subscriptions = []
+
+    def subscribe():
+        subscription = provider.subscribe(device, manager).result()
+        subscriptions.append(subscription)
+        return subscription
+
+    yield subscribe
+    for subscription in subscriptions:
+        subscription.close().result()
+
+
 def test_monitor_burst_publishes_latest_root_snapshot_in_one_pipeline(publication_device):
     """Coalesce a burst per category, read the whole root, and sample metadata at drain time."""
     manager, device = publication_device
     obj = device.obj
     connector = manager.connector
     for _ in range(5):
-        manager._obj_callback_auto_monitor_readback(obj=obj.first)
-        manager._obj_callback_auto_monitor_readback(obj=obj.second)
-        manager._obj_callback_auto_monitor_configuration(obj=obj.configuration)
-        manager._obj_callback_auto_monitor_limits(obj=obj.low_limit_travel)
+        manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
+        manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
+        manager.request_refresh(device, frozenset({RefreshSection.CONFIGURATION}))
+        manager.request_refresh(device, frozenset({RefreshSection.LIMITS}))
     obj.first.put(11)
     device.metadata = {"phase": "drain", "scan_id": "scan-1"}
     pipe = connector.pipeline()
@@ -125,7 +144,7 @@ def test_monitor_notification_during_acquisition_is_published_next_drain(publica
     """A notification arriving while a snapshot is read must survive for the next drain."""
     manager, device = publication_device
     obj = device.obj
-    manager._obj_callback_auto_monitor_readback(obj=obj.first)
+    manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
     original_read = obj.read
     reads = 0
 
@@ -135,7 +154,7 @@ def test_monitor_notification_during_acquisition_is_published_next_drain(publica
         reads += 1
         if reads == 1:
             obj.first.put(22)
-            manager._obj_callback_auto_monitor_readback(obj=obj.first)
+            manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
         return reading
 
     with (
@@ -158,9 +177,9 @@ def test_monitor_notification_during_acquisition_is_published_next_drain(publica
 def test_monitor_acquisition_error_does_not_publish_partial_batch(publication_device):
     """Keep the existing batch failure boundary when a later snapshot section fails."""
     manager, device = publication_device
-    manager._obj_callback_auto_monitor_readback(obj=device.obj.first)
-    manager._obj_callback_auto_monitor_configuration(obj=device.obj.configuration)
-    manager._obj_callback_auto_monitor_limits(obj=device.obj.low_limit_travel)
+    manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
+    manager.request_refresh(device, frozenset({RefreshSection.CONFIGURATION}))
+    manager.request_refresh(device, frozenset({RefreshSection.LIMITS}))
     pipe = manager.connector.pipeline()
     with (
         mock.patch.object(manager._shutdown_event, "wait", side_effect=[False, True]),
@@ -195,14 +214,16 @@ def test_monitor_acquisition_error_does_not_publish_partial_batch(publication_de
         (Kind.hinted | Kind.config, None),
     ],
 )
-def test_monitor_subscription_kind_contract(publication_device, kind, category):
+def test_monitor_subscription_kind_contract(
+    publication_device, kind, category, subscribe_publication_device
+):
     """Capture native kind selection, including combinations that currently do not monitor."""
     manager, device = publication_device
     signal = device.obj.first
     signal.kind = kind
     signal._auto_monitor = True
     with mock.patch.object(manager, "_ensure_auto_monitor_update_thread"):
-        manager._subscribe_to_auto_monitors(device.obj)
+        subscribe_publication_device()
     # Subscription setup uses run=False; the first notification comes from a subsequent put.
     assert not manager._refresh_scheduler.pending_names(RefreshSection.READBACK)
     assert not manager._refresh_scheduler.pending_names(RefreshSection.CONFIGURATION)
@@ -215,10 +236,12 @@ def test_monitor_subscription_kind_contract(publication_device, kind, category):
     )
 
 
-def test_file_events_keep_each_payload_and_both_destinations(publication_device):
+def test_file_events_keep_each_payload_and_both_destinations(
+    publication_device, subscribe_publication_device
+):
     """Each file event is published to both existing destinations in its own pipeline."""
     manager, device = publication_device
-    manager._subscribe_to_bec_signals(device.obj)
+    subscribe_publication_device()
     payloads = [
         messages.FileMessage(
             file_path=f"/tmp/file-{index}.h5", done=True, successful=True, metadata={"event": index}
@@ -248,10 +271,12 @@ def test_file_events_keep_each_payload_and_both_destinations(publication_device)
     )
 
 
-def test_progress_events_preserve_each_update_and_enrich_metadata(publication_device):
+def test_progress_events_preserve_each_update_and_enrich_metadata(
+    publication_device, subscribe_publication_device
+):
     """Progress carries the scan context and keeps every callback delivery."""
     manager, device = publication_device
-    manager._subscribe_to_bec_signals(device.obj)
+    subscribe_publication_device()
     with mock.patch.object(
         manager.connector, "set_and_publish", wraps=manager.connector.set_and_publish
     ) as publish:
@@ -267,11 +292,13 @@ def test_progress_events_preserve_each_update_and_enrich_metadata(publication_de
 
 
 @pytest.mark.parametrize("category", ["file_event", "progress"])
-def test_bec_message_events_without_scan_context_are_not_published(publication_device, category):
+def test_bec_message_events_without_scan_context_are_not_published(
+    publication_device, category, subscribe_publication_device
+):
     """Keep the existing scan-context requirements for file and progress events."""
     manager, device = publication_device
     manager.scan_info.msg = None
-    manager._subscribe_to_bec_signals(device.obj)
+    subscribe_publication_device()
     payload = (
         messages.FileMessage(file_path="/tmp/file.h5", done=True, successful=True)
         if category == "file_event"
@@ -283,10 +310,12 @@ def test_bec_message_events_without_scan_context_are_not_published(publication_d
 
 
 @pytest.mark.parametrize("size, max_size", [(8, 100), (11_000_000, 90)])
-def test_preview_event_routing_and_stream_policy(publication_device, size, max_size):
+def test_preview_event_routing_and_stream_policy(
+    publication_device, size, max_size, subscribe_publication_device
+):
     """Preview routing uses the payload signal name and preserves size-based retention."""
     manager, device = publication_device
-    manager._subscribe_to_bec_signals(device.obj)
+    subscribe_publication_device()
     payload = messages.DevicePreviewMessage(
         device=device.name, signal="wire_preview", data=np.zeros(size, dtype=np.uint8)
     )
@@ -300,10 +329,30 @@ def test_preview_event_routing_and_stream_policy(publication_device, size, max_s
     )
 
 
+def test_preview_uses_native_name_when_wrapper_name_differs(
+    publication_device, subscribe_publication_device
+):
+    manager, device = publication_device
+    device.obj.name = "native_camera"
+    subscribe_publication_device()
+    payload = messages.DevicePreviewMessage(
+        device=device.obj.name, signal="wire_preview", data=np.arange(3)
+    )
+
+    with mock.patch.object(manager.connector, "xadd") as publish:
+        device.obj.preview.put(payload)
+
+    assert publish.call_args.args[0] == MessageEndpoints.device_preview(
+        "native_camera", "wire_preview"
+    )
+
+
 @pytest.mark.parametrize(
     "state", ["open", "paused", "closed", "aborted", "halted", "user_completed", "missing"]
 )
-def test_dynamic_message_scan_state_contract(publication_device, state):
+def test_dynamic_message_scan_state_contract(
+    publication_device, state, subscribe_publication_device
+):
     """Dynamic messages publish only in the existing accepted scan states."""
     manager, device = publication_device
     manager.scan_info.msg = (
@@ -311,7 +360,7 @@ def test_dynamic_message_scan_state_contract(publication_device, state):
         if state == "missing"
         else messages.ScanStatusMessage(scan_id="scan-1", status=state, info={})
     )
-    manager._subscribe_to_bec_signals(device.obj)
+    subscribe_publication_device()
     payload = messages.DeviceMessage(
         signals={"left": {"value": [1, 2], "timestamp": 1}},
         metadata={"async_update": {"type": "add", "max_shape": [None]}},
@@ -326,10 +375,12 @@ def test_dynamic_message_scan_state_contract(publication_device, state):
         assert "async_indices" not in payload.metadata
 
 
-def test_dynamic_message_indices_shapes_and_retention(publication_device):
+def test_dynamic_message_indices_shapes_and_retention(
+    publication_device, subscribe_publication_device
+):
     """Keep payload/index pairs, sparse channel counters, and scan-local index reset."""
     manager, device = publication_device
-    manager._subscribe_to_bec_signals(device.obj)
+    subscribe_publication_device()
     left = f"{device.obj.data.name}_left"
     right = f"{device.obj.data.name}_right"
     device.obj.data.signal_info.signal_metadata["expire"] = 123
@@ -391,7 +442,7 @@ def test_dynamic_message_indices_shapes_and_retention(publication_device):
 def test_queued_refresh_does_not_read_same_name_replacement(publication_device):
     """A refresh queued by a retired wrapper must not acquire its replacement."""
     manager, old = publication_device
-    manager._obj_callback_auto_monitor_readback(obj=old.obj.first)
+    manager.request_refresh(old, frozenset({RefreshSection.READBACK}))
     replacement_obj = _PublicationDevice(name=old.name)
     replacement = DSDevice(name=old.name, obj=replacement_obj, config=old._config, parent=manager)
     manager.devices._add_device(old.name, replacement)
@@ -421,7 +472,7 @@ def test_callback_metadata_is_sampled_after_acquisition(publication_device):
         return values
 
     with mock.patch.object(device.obj, "read", side_effect=read_and_change_metadata):
-        manager._obj_callback_readback(obj=device.obj)
+        manager.publish_refresh(device, RefreshSection.READBACK)
     published = manager.connector.get(MessageEndpoints.device_readback(device.name))
     assert published.metadata == {"RID": "after-read"}
 
@@ -440,7 +491,10 @@ def test_native_callback_can_read_while_holding_device_lock(publication_device):
         finally:
             device_lock.release()
 
-    subscription = device.obj.first.subscribe(manager._obj_callback_readback, run=False)
+    provider = manager.device_provider_manager.providers["ophyd"]
+    binding = _EventBinding(device.obj.first, RefreshSection.READBACK)
+    with mock.patch.object(provider, "_event_bindings", return_value=[binding]):
+        subscription = provider.subscribe(device, manager).result()
     try:
         with mock.patch.object(device.obj, "read", side_effect=locked_read):
             with device_lock:
@@ -449,7 +503,7 @@ def test_native_callback_can_read_while_holding_device_lock(publication_device):
         assert published is not None
         assert published.signals[device.obj.first.name]["value"] == 27
     finally:
-        device.obj.first.unsubscribe(subscription)
+        subscription.close().result()
 
 
 def test_shutdown_disconnects_device_to_release_inflight_monitor_read(publication_device):
@@ -477,7 +531,7 @@ def test_shutdown_disconnects_device_to_release_inflight_monitor_read(publicatio
             errors.append(exc)
 
     manager._shutdown_event.clear()
-    manager._obj_callback_auto_monitor_readback(obj=device.obj.first)
+    manager.request_refresh(device, frozenset({RefreshSection.READBACK}))
     monitor = Thread(target=manager._auto_monitor_update_loop, daemon=True)
     manager._auto_monitor_update_thread = monitor
     join_monitor = monitor.join
@@ -519,7 +573,10 @@ def test_native_callback_publishes_memoryview_payload_and_metadata(publication_d
     data_buffer = bytearray(b"abc")
     metadata_buffer = bytearray(b"tag")
     device.metadata = {"buffer": memoryview(metadata_buffer), "owner": DeviceBase(name="owner")}
-    subscription = device.obj.first.subscribe(manager._obj_callback_readback, run=False)
+    provider = manager.device_provider_manager.providers["ophyd"]
+    binding = _EventBinding(device.obj.first, RefreshSection.READBACK)
+    with mock.patch.object(provider, "_event_bindings", return_value=[binding]):
+        subscription = provider.subscribe(device, manager).result()
     try:
         device.obj.first.put(memoryview(data_buffer))
         published = manager.connector.get(MessageEndpoints.device_readback(device.name))
@@ -531,4 +588,25 @@ def test_native_callback_publishes_memoryview_payload_and_metadata(publication_d
         assert published.signals[device.obj.first.name]["value"] == b"abc"
         assert published.metadata == {"buffer": b"tag", "owner": "owner"}
     finally:
-        device.obj.first.unsubscribe(subscription)
+        subscription.close().result()
+
+
+def test_closed_event_subscription_ignores_late_callback(publication_device):
+    manager, device = publication_device
+    provider = manager.device_provider_manager.providers["ophyd"]
+    sink = mock.Mock()
+    signal = device.obj.first
+    binding = _EventBinding(signal, RefreshSection.READBACK)
+    with (
+        mock.patch.object(provider, "_event_bindings", return_value=[binding]),
+        mock.patch.object(signal, "subscribe", wraps=signal.subscribe) as subscribe,
+    ):
+        subscription = provider.subscribe(device, sink).result()
+    callback = subscribe.call_args.args[0]
+
+    signal.put(10)
+    sink.publish_refresh.assert_called_once_with(device, RefreshSection.READBACK)
+    subscription.close().result()
+    callback(obj=signal)
+    signal.put(11)
+    sink.publish_refresh.assert_called_once()

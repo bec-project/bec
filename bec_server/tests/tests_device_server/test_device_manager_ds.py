@@ -18,6 +18,9 @@ from bec_lib.connector import MessageObject
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.device_providers.device_interfaces import RefreshSection
 from bec_server.device_server.device_providers.device_provider_manager import DeviceProviderManager
+from bec_server.device_server.device_providers.ophyd.ophyd_device_provider import (
+    OphydDeviceProvider,
+)
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.device_info import DeviceInfo
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
@@ -259,7 +262,7 @@ def test_obj_callback_configuration(dm_with_devices, connected_connector):
     samx.metadata = {"scan_id": "12345"}
     device_manager.connector = connected_connector
 
-    device_manager._obj_callback_configuration(obj=samx.obj)
+    device_manager.publish_refresh(samx, RefreshSection.CONFIGURATION)
 
     msg = connected_connector.get(MessageEndpoints.device_read_configuration("samx"))
     expected = messages.DeviceMessage(
@@ -283,22 +286,17 @@ def test_device_manager_ds_reset_config(dm_with_devices):
         )
 
 
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_subscribe_to_device_events(dm_with_devices):
-    opaas_obj = mock.MagicMock()
-    opaas_obj.enabled = False
-    obj = mock.MagicMock()
-    for event_type in ("readback", "value", "done_moving"):
-        obj.event_types = (event_type,)
-        obj.subscribe.reset_mock()
-        with mock.patch.object(dm_with_devices, "_obj_callback_readback") as mock_callback:
-            dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
-            obj.subscribe.assert_called_once_with(mock_callback, event_type=event_type, run=False)
+@pytest.mark.parametrize("event_type", ["readback", "value", "done_moving", "unsupported"])
+def test_subscribe_to_device_events(event_type):
+    obj = SimpleNamespace(event_types=(event_type,), subscribe=mock.Mock())
+    device = SimpleNamespace(obj=obj, enabled=False)
+    provider = OphydDeviceProvider(None)
+    provider.subscribe(device, mock.Mock()).result()
 
-    obj.event_types = ("device_monitor_1d", "device_monitor_2d", "file_event", "flyer", "progress")
-    obj.subscribe.reset_mock()
-    dm_with_devices._subscribe_to_device_events(obj=obj, opaas_obj=opaas_obj)
-    obj.subscribe.assert_not_called()
+    if event_type == "unsupported":
+        obj.subscribe.assert_not_called()
+    else:
+        obj.subscribe.assert_called_once_with(mock.ANY, event_type=event_type, run=False)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -316,7 +314,7 @@ def test_device_manager_ds_obj_callback_preview(dm_with_devices, value):
     device_manager = dm_with_devices
     device = dm_with_devices.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
-        device_manager._obj_callback_bec_message_signal(obj=device.preview, value=value)
+        device.preview._run_subs(sub_type=device.preview.SUB_VALUE, value=value)
 
         if not isinstance(value, messages.DevicePreviewMessage):
             mock_xadd.assert_not_called()
@@ -355,7 +353,7 @@ def test_device_manager_ds_obj_callback_file_event_signal(dm_with_devices_and_st
     device_manager = dm_with_devices_and_status
     device = device_manager.devices.bec_signals_device.obj
     with mock.patch.object(device_manager._bec_message_handler, "connector") as mock_connector:
-        device_manager._obj_callback_bec_message_signal(obj=device.file_event, value=value)
+        device.file_event._run_subs(sub_type=device.file_event.SUB_VALUE, value=value)
 
         if not isinstance(value, messages.FileMessage):
             mock_connector.set_and_publish.assert_not_called()
@@ -381,7 +379,7 @@ def test_device_manager_ds_obj_callback_progress_signal(dm_with_devices_and_stat
     device_manager = dm_with_devices_and_status
     device = device_manager.devices.bec_signals_device.obj
     with mock.patch.object(device_manager._bec_message_handler, "connector") as mock_connector:
-        device_manager._obj_callback_bec_message_signal(obj=device.progress, value=value)
+        device.progress._run_subs(sub_type=device.progress.SUB_VALUE, value=value)
 
         if not isinstance(value, messages.ProgressMessage):
             mock_connector.set_and_publish.assert_not_called()
@@ -399,9 +397,9 @@ def test_device_manager_ds_obj_callback_progress_signal_disabled_device(dm_with_
         type(device.progress), "connected", new_callable=mock.PropertyMock
     ) as mock_connected:
         mock_connected.return_value = False
-        with mock.patch.object(device_manager._bec_message_handler, "emit") as mock_emit:
-            device_manager._obj_callback_bec_message_signal(
-                obj=device.progress,
+        with mock.patch.object(device_manager._bec_message_handler, "publish") as mock_emit:
+            device.progress._run_subs(
+                sub_type=device.progress.SUB_VALUE,
                 value=messages.ProgressMessage(
                     value=1, max_value=2, done=False, metadata={"scan_id": "12345"}
                 ),
@@ -425,7 +423,7 @@ def test_device_manager_ds_obj_callback_async_signal(dm_with_devices_and_status,
     device_manager = dm_with_devices_and_status
     device = device_manager.devices.bec_signals_device.obj
     with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
-        device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=value)
+        device.async_signal._run_subs(sub_type=device.async_signal.SUB_VALUE, value=value)
 
         if not isinstance(value, messages.DeviceMessage):
             mock_xadd.assert_not_called()
@@ -445,7 +443,7 @@ def test_device_manager_ds_obj_callback_async_signal_incomplete_info(dm_with_dev
         metadata={"async_update": {"type": "add", "max_shape": [None]}},
     )
     with mock.patch.object(device_manager.connector, "xadd") as mock_xadd:
-        device_manager._obj_callback_bec_message_signal(obj=device.async_signal, value=msg)
+        device.async_signal._run_subs(sub_type=device.async_signal.SUB_VALUE, value=msg)
 
         mock_xadd.assert_not_called()
 
@@ -526,12 +524,8 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
                     epics_motor, wait_for_all=True, timeout=timeout
                 )
                 # Limit updates are queued through the auto-monitor thread callback.
-                mock_low_subscribe.assert_called_once_with(
-                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
-                )
-                mock_high_subscribe.assert_called_once_with(
-                    dm_with_devices._obj_callback_auto_monitor_limits, run=False
-                )
+                mock_low_subscribe.assert_called_once_with(mock.ANY, run=False)
+                mock_high_subscribe.assert_called_once_with(mock.ANY, run=False)
             else:
                 mock_initialize_enabled_device.assert_not_called()
                 mock_connect_native_device.assert_not_called()
@@ -539,116 +533,25 @@ def test_initialize_device(dm_with_devices, epics_motor, epics_motor_config, tim
                 mock_high_subscribe.assert_not_called()
 
 
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_callback_auto_monitor_limits_queues_root_device(dm_with_devices):
-    samx = dm_with_devices.devices.samx
-    dm_with_devices._refresh_scheduler.clear()
-
-    dm_with_devices._obj_callback_auto_monitor_limits(obj=samx.obj.low_limit_travel)
-
-    assert samx.name in dm_with_devices._refresh_scheduler.pending_names(RefreshSection.LIMITS)
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_obj_callback_auto_monitor_queueing(dm_with_devices):
-    samx = dm_with_devices.devices.samx
-    dm_with_devices._refresh_scheduler.clear()
-
-    dm_with_devices._obj_callback_auto_monitor_readback(obj=samx.obj.readback)
-    dm_with_devices._obj_callback_auto_monitor_configuration(obj=samx.obj.velocity)
-
-    assert samx.name in dm_with_devices._refresh_scheduler.pending_names(RefreshSection.READBACK)
-    assert samx.name in dm_with_devices._refresh_scheduler.pending_names(
-        RefreshSection.CONFIGURATION
-    )
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind(dm_with_devices):
-    service = mock.MagicMock()
-    service.connector = mock.MagicMock()
-    service._service_name = "device_server"
-    device_manager = DeviceManagerDS(service)
-
-    normal_component = SimpleNamespace(
-        _auto_monitor=True, kind=ophyd.Kind.normal, subscribe=mock.MagicMock()
-    )
-    hinted_component = SimpleNamespace(
-        _auto_monitor=True, kind=ophyd.Kind.hinted, subscribe=mock.MagicMock()
-    )
-    config_component = SimpleNamespace(
-        _auto_monitor=True, kind=ophyd.Kind.config, subscribe=mock.MagicMock()
-    )
-    ignored_component = SimpleNamespace(
-        _auto_monitor=False, kind=ophyd.Kind.normal, subscribe=mock.MagicMock()
-    )
-
-    nested = SimpleNamespace(component_names=["hinted_component"])
-    nested.hinted_component = hinted_component
-
+def test_subscribe_to_auto_monitors_recurses_and_subscribes_by_kind():
+    normal = SimpleNamespace(_auto_monitor=True, kind=ophyd.Kind.normal)
+    hinted = SimpleNamespace(_auto_monitor=True, kind=ophyd.Kind.hinted)
+    config = SimpleNamespace(_auto_monitor=True, kind=ophyd.Kind.config)
+    ignored = SimpleNamespace(_auto_monitor=False, kind=ophyd.Kind.normal)
     obj = SimpleNamespace(
-        component_names=["normal_component", "config_component", "ignored_component", "nested"],
-        normal_component=normal_component,
-        config_component=config_component,
-        ignored_component=ignored_component,
-        nested=nested,
+        component_names=["normal", "nested", "ignored"],
+        normal=normal,
+        nested=SimpleNamespace(component_names=["hinted", "config"], hinted=hinted, config=config),
+        ignored=ignored,
     )
-
-    device_manager._auto_monitor_update_thread = mock.MagicMock()
-    device_manager._auto_monitor_update_thread.ident = None
-    thread_state = {"alive": False}
-    device_manager._auto_monitor_update_thread.is_alive.side_effect = lambda: thread_state["alive"]
-    device_manager._auto_monitor_update_thread.start.side_effect = lambda: thread_state.__setitem__(
-        "alive", True
-    )
-
-    device_manager._subscribe_to_auto_monitors(obj)
-
-    device_manager._auto_monitor_update_thread.start.assert_called_once_with()
-    normal_component.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_readback, run=False
-    )
-    hinted_component.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_readback, run=False
-    )
-    config_component.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_configuration, run=False
-    )
-    ignored_component.subscribe.assert_not_called()
-
-
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_subscribe_to_limit_updates_starts_thread_and_handles_missing_signals(dm_with_devices):
-    service = mock.MagicMock()
-    service.connector = mock.MagicMock()
-    service._service_name = "device_server"
-    device_manager = DeviceManagerDS(service)
-
-    low_limit = mock.MagicMock()
-    high_limit = mock.MagicMock()
-    obj = SimpleNamespace(low_limit_travel=low_limit, high_limit_travel=high_limit)
-
-    device_manager._auto_monitor_update_thread = mock.MagicMock()
-    device_manager._auto_monitor_update_thread.ident = None
-    thread_state = {"alive": False}
-    device_manager._auto_monitor_update_thread.is_alive.side_effect = lambda: thread_state["alive"]
-    device_manager._auto_monitor_update_thread.start.side_effect = lambda: thread_state.__setitem__(
-        "alive", True
-    )
-
-    device_manager._subscribe_to_limit_updates(obj)
-
-    device_manager._auto_monitor_update_thread.start.assert_called_once_with()
-    low_limit.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_limits, run=False
-    )
-    high_limit.subscribe.assert_called_once_with(
-        device_manager._obj_callback_auto_monitor_limits, run=False
-    )
-
-    device_manager._auto_monitor_update_thread.start.reset_mock()
-    device_manager._subscribe_to_limit_updates(SimpleNamespace())
-    device_manager._auto_monitor_update_thread.start.assert_not_called()
+    provider = OphydDeviceProvider(None)
+    bindings = list(provider._auto_monitor_bindings(obj))
+    assert [(binding.source, binding.category) for binding in bindings] == [
+        (normal, RefreshSection.READBACK),
+        (hinted, RefreshSection.READBACK),
+        (config, RefreshSection.CONFIGURATION),
+    ]
+    assert all(binding.deferred and not binding.run for binding in bindings)
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -676,19 +579,23 @@ def test_ensure_auto_monitor_update_thread_recreates_dead_thread(dm_with_devices
     assert device_manager._auto_monitor_update_thread is replacement_thread
 
 
-@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
-def test_auto_monitor_callbacks_ignore_disconnected_objects(dm_with_devices):
-    disconnected_root = SimpleNamespace(name="samx")
-    disconnected_obj = SimpleNamespace(connected=False, root=disconnected_root)
-    dm_with_devices._refresh_scheduler.clear()
+def test_auto_monitor_callbacks_ignore_disconnected_objects():
+    component = SimpleNamespace(
+        _auto_monitor=True, kind=ophyd.Kind.normal, connected=False, subscribe=mock.Mock()
+    )
+    obj = SimpleNamespace(event_types=(), component_names=["component"], component=component)
+    component.root = obj
+    device = SimpleNamespace(obj=obj, enabled=True)
+    sink = mock.Mock()
 
-    dm_with_devices._obj_callback_auto_monitor_readback(obj=disconnected_obj)
-    dm_with_devices._obj_callback_auto_monitor_configuration(obj=disconnected_obj)
-    dm_with_devices._obj_callback_auto_monitor_limits(obj=disconnected_obj)
+    OphydDeviceProvider(None).subscribe(device, sink).result()
+    callback = component.subscribe.call_args.args[0]
+    callback(obj=component)
+    sink.request_refresh.assert_not_called()
 
-    assert not dm_with_devices._refresh_scheduler.pending_names(RefreshSection.READBACK)
-    assert not dm_with_devices._refresh_scheduler.pending_names(RefreshSection.CONFIGURATION)
-    assert not dm_with_devices._refresh_scheduler.pending_names(RefreshSection.LIMITS)
+    component.connected = True
+    callback(obj=component)
+    sink.request_refresh.assert_called_once_with(device, frozenset({RefreshSection.READBACK}))
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])

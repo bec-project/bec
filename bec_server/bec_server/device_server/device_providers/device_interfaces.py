@@ -144,11 +144,18 @@ class MessageCategory(Enum):
 
 @dataclass(frozen=True)
 class DeviceMessageEvent:
-    """A payload event handed to shared BEC handling, without Redis routing decisions.
+    """
+    Carry a native payload to the BEC publisher.
 
-    signal_name is the existing wire identity and may differ from target.path. Shared
-    BEC handling owns scan-context gating, enrichment, indexing, and publication. The
-    provider transfers stable payload ownership; events must not be snapshot-coalesced.
+    Attributes:
+        target (DeviceTarget): Registered device and native path used to check subscription
+            ownership.
+        category (MessageCategory): Payload category that selects the publication path.
+        signal_name (str): Wire name of the source signal.
+        message (messages.BECMessage): Payload to publish without coalescing.
+        signal_info (messages.SignalInfo | None): Native signal metadata, when available.
+        wire_device_name (str | None): Native wire name when it differs from the registered
+            device name.
     """
 
     target: DeviceTarget
@@ -156,6 +163,7 @@ class DeviceMessageEvent:
     signal_name: str
     message: messages.BECMessage
     signal_info: messages.SignalInfo | None = None
+    wire_device_name: str | None = None
 
 
 class DeviceEventSink(Protocol):
@@ -163,6 +171,12 @@ class DeviceEventSink(Protocol):
 
     def request_refresh(self, device: DSDevice, sections: frozenset[RefreshSection]) -> None:
         """Submit a coalescible refresh notification without acquiring data inline."""
+
+    def publish_refresh(self, device: DSDevice, section: RefreshSection) -> None:
+        """Read and publish a cache section on the caller thread."""
+
+    def publish_motion(self, device: DSDevice, status: int) -> None:
+        """Publish the current native motion state."""
 
     def submit_message(self, event: DeviceMessageEvent) -> None:
         """Accept one payload event and apply BEC context policy at ingress."""

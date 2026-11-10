@@ -6,11 +6,14 @@ import inspect
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from contextlib import contextmanager
+from dataclasses import dataclass
+from functools import partial
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 import ophyd
 import ophyd_devices as opd
+from ophyd_devices.utils import bec_signals as bms
 
 from bec_lib import messages, plugin_helper
 from bec_lib.bec_errors import DeviceConfigError
@@ -19,9 +22,14 @@ from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.device_providers.device_errors import InvalidDeviceError
 from bec_server.device_server.device_providers.device_interfaces import (
     Completion,
+    DeviceEventSink,
     DeviceKind,
+    DeviceMessageEvent,
     DeviceTarget,
+    MessageCategory,
     ReadbackRefresh,
+    RefreshSection,
+    Subscription,
     wait_for_completion,
 )
 from bec_server.device_server.device_providers.device_provider import DeviceProvider
@@ -133,6 +141,38 @@ def connect_native_device(
         return exc
 
 
+def message_category(obj: ophyd.OphydObject) -> MessageCategory | None:
+    """Classify a classic signal before entering the typed publication path."""
+    for signal_class, category in (
+        (bms.FileEventSignal, MessageCategory.FILE_EVENT),
+        (bms.ProgressSignal, MessageCategory.PROGRESS),
+        (bms.PreviewSignal, MessageCategory.PREVIEW),
+        (bms.DynamicSignal, MessageCategory.DYNAMIC_DATA),
+    ):
+        if isinstance(obj, signal_class):
+            return category
+    return None
+
+
+def get_native_message_source(
+    obj: ophyd.OphydObject,
+) -> tuple[MessageCategory, str, str, messages.SignalInfo | None] | None:
+    """
+    Extract the classic wire identity and metadata of a legacy message source.
+
+    Args:
+        obj (ophyd.OphydObject): Native signal emitting the message.
+
+    Returns:
+        tuple[MessageCategory, str, str, messages.SignalInfo | None] | None: Category,
+            root name, signal name, and signal metadata, or None for unsupported sources.
+    """
+    category = message_category(obj)
+    if category is None:
+        return None
+    return category, obj.root.name, obj.name, obj.signal_info
+
+
 class _OphydSetSubscription:  # pylint: disable=too-few-public-methods
     """Own one temporary native readback subscription."""
 
@@ -156,6 +196,49 @@ class _OphydSetSubscription:  # pylint: disable=too-few-public-methods
             return self._closed
 
 
+class _DeviceEventSubscription:
+    """Own the native registrations for one device-wide subscription."""
+
+    def __init__(self) -> None:
+        self.tokens: list[tuple[ophyd.OphydObject, int]] = []
+        self._closed: Future[None] | None = None
+        self._lock = Lock()
+
+    @property
+    def closed(self) -> bool:
+        """Whether callback removal has begun."""
+        return self._closed is not None
+
+    def close(self) -> Completion[None]:
+        """Remove all registrations once, even if one native unsubscribe fails."""
+        with self._lock:
+            if self._closed is not None:
+                return self._closed
+            closed: Future[None] = Future()
+            self._closed = closed
+        errors = []
+        for obj, token in reversed(self.tokens):
+            try:
+                obj.unsubscribe(token)
+            except Exception as exc:
+                errors.append(exc)
+        self.tokens.clear()
+        if errors:
+            closed.set_exception(ExceptionGroup("Failed to remove Ophyd event callbacks", errors))
+        else:
+            closed.set_result(None)
+        return closed
+
+
+@dataclass(frozen=True)
+class _EventBinding:
+    source: ophyd.OphydObject
+    category: RefreshSection | MessageCategory | None
+    native_event: str | None = None
+    run: bool = False
+    deferred: bool = False
+
+
 class OphydDeviceProvider(DeviceProvider):
     device_modules = OPHYD_DEVICE_MODULES
 
@@ -163,6 +246,7 @@ class OphydDeviceProvider(DeviceProvider):
         self.device_manager = device_manager
         self.callback_monitor = OphydCallbackMonitor(queue_threshold=1000)
         self.rpc = OphydRPC(self)
+        self._event_subscriptions: dict[DeviceTarget, Subscription] = {}
 
     ############################################################################
     ############################ Provider Selection ############################
@@ -224,19 +308,20 @@ class OphydDeviceProvider(DeviceProvider):
             device (DSDevice): Registered device wrapper.
             config (dict): Configuration remaining after construction.
         """
-        device_manager = self.device_manager
         if hasattr(device.obj, "on_connected"):
             device.obj.on_connected()
-        device_manager.initialize_enabled_device(device)
-        obj = device.obj
-        if hasattr(obj, "event_types"):
-            # pylint: disable=protected-access
-            device_manager._subscribe_to_device_events(obj, device)
-            device_manager._subscribe_to_auto_monitors(obj)
-            device_manager._subscribe_to_limit_updates(obj)
-            device_manager._subscribe_to_bec_signals(obj)
+        self.device_manager.initialize_enabled_device(device)
+        subscription = wait_for_completion(self.subscribe(device, self.device_manager))
         # Configuration may set signals, so subscriptions must already be installed.
-        self.update_device_config(device, config)
+        try:
+            self.update_device_config(device, config)
+        except Exception:
+            try:
+                wait_for_completion(subscription.close())
+            except Exception:
+                logger.exception(f"Failed to close subscriptions for {device.name}")
+            raise
+        self._event_subscriptions[DeviceTarget(device)] = subscription
 
     def requires_delayed_initialization(self, device_class: type) -> bool:
         """
@@ -293,7 +378,16 @@ class OphydDeviceProvider(DeviceProvider):
         Args:
             device (DSDevice): The device wrapper to disconnect.
         """
+        # A rejected destroy leaves the device enabled. Keep its subscriptions live.
         device.obj.destroy()
+        subscription = self._event_subscriptions.pop(DeviceTarget(device), None)
+        if subscription is not None:
+            try:
+                wait_for_completion(subscription.close())
+            except Exception:
+                # The device has already been destroyed. Report the cleanup error
+                # without leaving a destroyed object marked enabled.
+                logger.exception(f"Failed to remove callbacks for destroyed device {device.name}")
 
     ############################################################################
     ############################# Device Metadata ##############################
@@ -734,6 +828,110 @@ class OphydDeviceProvider(DeviceProvider):
     ############################################################################
     ############################# Backend Helpers ##############################
     ############################################################################
+
+    def subscribe(self, device: DSDevice, sink: DeviceEventSink) -> Completion[Subscription]:
+        """Install classic callbacks and return ownership of their native tokens."""
+        future: Future[Subscription] = Future()
+        subscription = _DeviceEventSubscription()
+        try:
+            for binding in self._event_bindings(device):
+                callback = partial(self._forward_event, device, sink, subscription, binding)
+                options = {"event_type": binding.native_event} if binding.native_event else {}
+                token = binding.source.subscribe(callback, run=binding.run, **options)
+                subscription.tokens.append((binding.source, token))
+        except Exception as exc:
+            cleanup_error = subscription.close().exception(timeout=0)
+            if cleanup_error is not None:
+                exc = ExceptionGroup(
+                    "Failed to install Ophyd event callbacks", [exc, cleanup_error]
+                )
+            future.set_exception(exc)
+        else:
+            future.set_result(subscription)
+        return future
+
+    def _event_bindings(self, device: DSDevice) -> Iterator[_EventBinding]:
+        obj = device.obj
+        native_events = getattr(obj, "event_types", None)
+        if native_events is None:
+            return
+        for native_event in ("readback", "value"):
+            if native_event in native_events:
+                yield _EventBinding(obj, RefreshSection.READBACK, native_event, run=device.enabled)
+                break
+        if hasattr(obj, "motor_is_moving"):
+            yield _EventBinding(obj.motor_is_moving, None, run=device.enabled)
+        if "done_moving" in native_events:
+            yield _EventBinding(obj, RefreshSection.READBACK, "done_moving")
+        yield from self._auto_monitor_bindings(obj)
+        for name in ("low_limit_travel", "high_limit_travel"):
+            signal = getattr(obj, name, None)
+            if hasattr(signal, "subscribe"):
+                yield _EventBinding(signal, RefreshSection.LIMITS, deferred=True)
+        if hasattr(obj, "walk_signals"):
+            for _, _, signal in obj.walk_signals():
+                category = message_category(signal)
+                if category is not None:
+                    yield _EventBinding(signal, category)
+
+    def _auto_monitor_bindings(self, obj: ophyd.OphydObject) -> Iterator[_EventBinding]:
+        for name in getattr(obj, "component_names", ()):
+            component = getattr(obj, name)
+            if hasattr(component, "component_names"):
+                yield from self._auto_monitor_bindings(component)
+            elif getattr(component, "_auto_monitor", False):
+                if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
+                    yield _EventBinding(component, RefreshSection.READBACK, deferred=True)
+                elif component.kind == ophyd.Kind.config:
+                    yield _EventBinding(component, RefreshSection.CONFIGURATION, deferred=True)
+
+    def _forward_event(
+        self,
+        device: DSDevice,
+        sink: DeviceEventSink,
+        subscription: _DeviceEventSubscription,
+        binding: _EventBinding,
+        *_args,
+        obj: ophyd.OphydObject,
+        value: Any = None,
+        **_kwargs,
+    ) -> None:
+        """
+        Translate an Ophyd callback into a BEC event.
+
+        Args:
+            device (DSDevice): Registered wrapper that owns the subscription.
+            sink (DeviceEventSink): BEC receiver for normalized events.
+            subscription (_DeviceEventSubscription): Handle that controls whether the callback is
+                active.
+            binding (_EventBinding): Native signal and its BEC publication category.
+            *_args (Any): Unused positional arguments from Ophyd.
+            obj (ophyd.OphydObject): Native object that emitted the callback.
+            value (Any): Native value or BEC message carried by the callback.
+            **_kwargs (Any): Unused keyword arguments from Ophyd.
+        """
+        if subscription.closed or obj.root is not device.obj:
+            return
+        category = binding.category
+        if category is None:
+            sink.publish_motion(device, int(value))
+        elif obj.connected:
+            if isinstance(category, MessageCategory):
+                if isinstance(value, messages.BECMessage):
+                    sink.submit_message(
+                        DeviceMessageEvent(
+                            DeviceTarget(device, obj.dotted_name),
+                            category,
+                            obj.name,
+                            value,
+                            obj.signal_info,
+                            wire_device_name=obj.root.name,
+                        )
+                    )
+            elif binding.deferred:
+                sink.request_refresh(device, frozenset({category}))
+            else:
+                sink.publish_refresh(device, category)
 
     @staticmethod
     def _resolve(target: DeviceTarget) -> Any:

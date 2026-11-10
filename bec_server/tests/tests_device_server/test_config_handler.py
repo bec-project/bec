@@ -113,6 +113,32 @@ def test_config_handler_failed_disable_preserves_state_and_can_retry(dm_with_dev
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_failed_disable_preserves_live_readback(dm_with_devices, connected_connector):
+    manager = dm_with_devices
+    manager.connector = connected_connector
+    signal = ophyd.Signal(name="disable_readback", value=1)
+    device = DSDevice(
+        name=signal.name,
+        obj=signal,
+        config={"deviceClass": "ophyd.Signal", "enabled": True, "readoutPriority": "monitored"},
+        parent=manager,
+    )
+    manager.device_provider_manager.initialize_device(device, {})
+    msg = messages.DeviceConfigMessage(action="update", config={device.name: {"enabled": False}})
+    handler = ConfigUpdateHandler(manager)
+
+    with (
+        mock.patch.object(signal, "destroy", side_effect=RuntimeError("destroy failed")),
+        pytest.raises(RuntimeError, match="destroy failed"),
+    ):
+        handler._update_config(msg, cancel_event=threading.Event())
+
+    signal.put(42)
+    endpoint = MessageEndpoints.device_readback(device.name)
+    assert connected_connector.get(endpoint).signals[device.name]["value"] == 42
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_config_handler_disable_destroys_disconnected_device(dm_with_devices):
     handler = ConfigUpdateHandler(dm_with_devices)
     device = dm_with_devices.devices.bpm4i

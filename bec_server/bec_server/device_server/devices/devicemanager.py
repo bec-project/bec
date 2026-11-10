@@ -13,10 +13,6 @@ from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import ophyd
-from ophyd.ophydobj import OphydObject
-from ophyd_devices.utils.bec_signals import BECMessageSignal
-
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_errors import DeviceConfigError
@@ -26,6 +22,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_server.device_server.bec_message_handler import BECMessageHandler
 from bec_server.device_server.device_providers.device_interfaces import (
+    DeviceMessageEvent,
     DeviceTarget,
     RefreshSection,
     wait_for_completion,
@@ -360,73 +357,6 @@ class DeviceManagerDS(DeviceManagerBase):
             device.initialize_device_buffer(self.connector)
         self.connector.publish_metrics("device_server", {"num_devices": len(self.devices)})
 
-    def _subscribe_to_limit_updates(self, obj: OphydObject):
-        """
-        Subscribe to limit updates if the device has low_limit_travel and high_limit_travel signals.
-
-        Args:
-            obj (OphydObject): Ophyd object to subscribe to limit updates
-        """
-        if hasattr(obj, "low_limit_travel") and hasattr(obj.low_limit_travel, "subscribe"):
-            self._ensure_auto_monitor_update_thread()
-            obj.low_limit_travel.subscribe(self._obj_callback_auto_monitor_limits, run=False)
-        if hasattr(obj, "high_limit_travel") and hasattr(obj.high_limit_travel, "subscribe"):
-            self._ensure_auto_monitor_update_thread()
-            obj.high_limit_travel.subscribe(self._obj_callback_auto_monitor_limits, run=False)
-
-    def _subscribe_to_device_events(self, obj: OphydObject, opaas_obj: DSDevice):
-        """Subscribe to device events"""
-
-        if "readback" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="readback", run=opaas_obj.enabled)
-        elif "value" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="value", run=opaas_obj.enabled)
-        if hasattr(obj, "motor_is_moving"):
-            obj.motor_is_moving.subscribe(self._obj_callback_is_moving, run=opaas_obj.enabled)  # type: ignore
-        if "done_moving" in obj.event_types:
-            obj.subscribe(self._obj_callback_readback, event_type="done_moving", run=False)
-
-    def _subscribe_to_auto_monitors(self, obj: OphydObject):
-        """
-        If the component has set the _auto_monitor attribute to True,
-        subscribe to the readback or configuration signals.
-
-        Args:
-            obj (OphydObject): Ophyd object to subscribe to auto monitors
-        """
-
-        if not hasattr(obj, "component_names"):
-            return
-
-        for component_name in obj.component_names:  # type: ignore
-            component = getattr(obj, component_name)
-            if hasattr(component, "component_names"):
-                self._subscribe_to_auto_monitors(component)
-                continue
-            if not getattr(component, "_auto_monitor", False):
-                continue
-            self._ensure_auto_monitor_update_thread()
-            if component.kind in (ophyd.Kind.normal, ophyd.Kind.hinted):
-                component.subscribe(self._obj_callback_auto_monitor_readback, run=False)
-            elif component.kind == ophyd.Kind.config:
-                component.subscribe(self._obj_callback_auto_monitor_configuration, run=False)
-
-    def _subscribe_to_bec_signals(self, obj: OphydObject):
-        """
-        Subscribe to BEC signals, such as PreviewSignal, ProgressSignal, FileEventSignal, etc.
-
-        Args:
-            obj (OphydObject): Ophyd object to subscribe to BEC signals
-
-        """
-        if not hasattr(obj, "walk_signals"):
-            # If the object does not have walk_components, it is likely a simple signal
-            return
-        signal_walk = obj.walk_signals()  # type: ignore
-        for _ancestor, _signal_name, signal in signal_walk:
-            if isinstance(signal, BECMessageSignal):
-                signal.subscribe(callback=self._obj_callback_bec_message_signal, run=False)
-
     def initialize_enabled_device(self, device: DSDevice) -> None:
         """Initialize the data buffer for a connected device.
 
@@ -487,29 +417,10 @@ class DeviceManagerDS(DeviceManagerBase):
         if pipe is None:
             local_pipe.execute()
 
-    def _callback_refresh(self, obj: OphydObject, section: RefreshSection, pipe=None) -> None:
-        if not obj.connected:
-            return
-        device = self.devices.get(obj.root.name)
-        if device is None or device.obj is not obj.root:
-            return
-        self._publish_refresh(device, section, pipe)
-
-    def _obj_callback_limit_change(
-        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
-    ):
-        """Acquire and publish limits without exposing Redis to the provider."""
-        self._callback_refresh(obj, RefreshSection.LIMITS, pipe)
-
-    def _obj_callback_readback(
-        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
-    ):
-        self._callback_refresh(obj, RefreshSection.READBACK, pipe)
-
-    def _obj_callback_configuration(
-        self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
-    ):
-        self._callback_refresh(obj, RefreshSection.CONFIGURATION, pipe)
+    def publish_refresh(self, device: DSDevice, section: RefreshSection) -> None:
+        """Read and publish an immediate native notification."""
+        if not self._shutdown_event.is_set():
+            self._publish_refresh(device, section)
 
     def request_refresh(self, device: DSDevice, sections: frozenset[RefreshSection]) -> None:
         """Queue a backend notification for the shared refresh worker without acquiring data."""
@@ -518,22 +429,6 @@ class DeviceManagerDS(DeviceManagerBase):
                 return
             self._refresh_scheduler.request_refresh(device, sections)
             self._ensure_auto_monitor_update_thread()
-
-    def _request_refresh_scheduler(self, obj: OphydObject, section: RefreshSection) -> None:
-        if not obj.connected:
-            return
-        device = self.devices.get(obj.root.name)
-        if device is not None and device.obj is obj.root:
-            self._refresh_scheduler.request_refresh(device, frozenset({section}))
-
-    def _obj_callback_auto_monitor_readback(self, *_args, obj: OphydObject, **kwargs):
-        self._request_refresh_scheduler(obj, RefreshSection.READBACK)
-
-    def _obj_callback_auto_monitor_configuration(self, *_args, obj: OphydObject, **kwargs):
-        self._request_refresh_scheduler(obj, RefreshSection.CONFIGURATION)
-
-    def _obj_callback_auto_monitor_limits(self, *_args, obj: OphydObject, **kwargs):
-        self._request_refresh_scheduler(obj, RefreshSection.LIMITS)
 
     def _auto_monitor_update_loop(self):
         while not self._shutdown_event.wait(0.01):
@@ -553,30 +448,22 @@ class DeviceManagerDS(DeviceManagerBase):
                 logger.error(f"Error in auto monitor update loop: {exc}")
                 logger.error(traceback.format_exc())
 
-    def _obj_callback_is_moving(self, *_args, **kwargs):
-        device = kwargs["obj"].root.name
-        status = int(kwargs.get("value"))
-        metadata = self.devices[device].metadata
+    def publish_motion(self, device: DSDevice, status: int) -> None:
+        """Publish motion immediately, ignoring notifications from retired wrappers."""
+        if self._shutdown_event.is_set() or self.devices.get(device.name) is not device:
+            return
         self.connector.set(
-            MessageEndpoints.device_status(device),
-            messages.DeviceStatusMessage(device=device, status=status, metadata=metadata),
+            MessageEndpoints.device_status(device.name),
+            messages.DeviceStatusMessage(
+                device=device.name, status=status, metadata=device.metadata
+            ),
         )
 
-    def _obj_callback_bec_message_signal(
-        self, *_args, obj: OphydObject, value: messages.BECMessage, **kwargs
-    ):
-        """
-        Callback for BECMessageSignal events. Sends the data to redis.
-
-        Args:
-            obj (OphydObject): ophyd object
-            value (BECMessageSignal): data from ophyd device
-        """
-        if not obj.connected:
-            return
-        if not isinstance(value, messages.BECMessage):
-            return
-        self._bec_message_handler.emit(obj, value)
+    def submit_message(self, event: DeviceMessageEvent) -> None:
+        """Publish each payload immediately while the originating wrapper is active."""
+        device = event.target.device
+        if not self._shutdown_event.is_set() and self.devices.get(device.name) is device:
+            self._bec_message_handler.publish(event)
 
     def shutdown(self):
         """Shutdown the device manager and disconnect all devices"""
