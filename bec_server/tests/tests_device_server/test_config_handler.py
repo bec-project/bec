@@ -1,15 +1,19 @@
 import copy
 import os
 import threading
+from types import SimpleNamespace
 from unittest import mock
 
+import ophyd
 import pytest
 
 import bec_lib
 from bec_lib import messages
 from bec_lib.endpoints import MessageEndpoints
 from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
+from bec_server.device_server.devices.device_info import DeviceInfo
 from bec_server.device_server.devices.devicemanager import DeviceConfigError, DeviceManagerDS
+from bec_server.device_server.devices.ds_device import DSDevice
 
 dir_path = os.path.dirname(bec_lib.__file__)
 
@@ -20,12 +24,17 @@ def test_request_response(session_from_test_config, device_manager):
         device_manager._session = copy.deepcopy(session_from_test_config)
         device_manager._load_session()
 
-    def mocked_failed_connection(obj):
-        if obj.name == "samx":
-            raise ConnectionError
+    def mocked_failed_connection(device, **_kwargs):
+        if device.name == "samx":
+            return ConnectionError("PV is unreachable")
+        return None
 
     config_reply = messages.RequestResponseMessage(accepted=True, message="")
-    with mock.patch.object(device_manager, "connect_device", wraps=mocked_failed_connection):
+    with mock.patch.object(
+        device_manager.device_provider_manager.providers["ophyd"],
+        "connect_device",
+        wraps=mocked_failed_connection,
+    ):
         with mock.patch.object(device_manager, "_get_config", get_config_from_mock):
             with mock.patch.object(
                 device_manager.config_helper, "wait_for_config_reply", return_value=config_reply
@@ -49,6 +58,10 @@ def test_config_handler_update_config(dm_with_devices):
     device_manager = dm_with_devices
     handler = ConfigUpdateHandler(device_manager)
 
+    metadata = {
+        key: device_manager.devices.bpm4i._config[key]
+        for key in ("id", "sessionId", "accessGroups")
+    }
     # bpm4i doesn't have a controller, so it should be destroyed
     msg = messages.DeviceConfigMessage(action="update", config={"bpm4i": {"enabled": False}})
     handler._update_config(msg, cancel_event=threading.Event())
@@ -61,6 +74,8 @@ def test_config_handler_update_config(dm_with_devices):
     assert device_manager.devices.bpm4i.enabled is True
     assert device_manager.devices.bpm4i.initialized is True
     assert device_manager.devices.bpm4i.obj._destroyed is False
+    for key, value in metadata.items():
+        assert device_manager.devices.bpm4i._config[key] == value
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -76,7 +91,7 @@ def test_config_handler_failed_disable_preserves_state_and_can_retry(dm_with_dev
 
     with (
         mock.patch.object(device.obj, "destroy", side_effect=RuntimeError("destroy failed")),
-        mock.patch.object(dm_with_devices, "reset_device") as reset_device,
+        mock.patch.object(dm_with_devices.device_provider_manager, "reset_device") as reset_device,
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
@@ -123,30 +138,38 @@ def test_config_handler_disable_destroys_disconnected_device(dm_with_devices):
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_cleanup_failed_device_init_destroys_disconnected_object(dm_with_devices):
     handler = ConfigUpdateHandler(dm_with_devices)
-    obj = mock.MagicMock(name="failed_device")
-    obj.name = "failed_device"
-    obj.connected = False
+    obj = ophyd.Signal(name="failed_device")
+    device = DSDevice(name=obj.name, obj=obj, config=None)
+    device.initialized = True
+    with (
+        mock.patch.object(
+            type(obj), "connected", new_callable=mock.PropertyMock, return_value=False
+        ),
+        mock.patch.object(obj, "destroy", wraps=obj.destroy) as destroy,
+    ):
+        handler._cleanup_failed_device_init(device)
 
-    handler._cleanup_failed_device_init(obj)
-
-    obj.destroy.assert_called_once_with()
+    destroy.assert_called_once_with()
+    assert obj._destroyed is True
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_cleanup_failed_device_init_does_not_raise_on_cleanup_errors(dm_with_devices):
     handler = ConfigUpdateHandler(dm_with_devices)
-    obj = mock.MagicMock(name="failed_device")
-    obj.name = "failed_device"
-    obj.destroy.side_effect = RuntimeError("destroy failed")
-    device = mock.MagicMock(name="failed_device_wrapper")
-    device.name = "failed_device"
+    device = dm_with_devices.devices.samx
+    with (
+        mock.patch.object(
+            device.obj, "destroy", side_effect=RuntimeError("destroy failed")
+        ) as destroy,
+        mock.patch.object(
+            dm_with_devices.device_provider_manager,
+            "reset_device",
+            side_effect=RuntimeError("reset failed"),
+        ) as reset_device,
+    ):
+        handler._cleanup_failed_device_init(device)
 
-    with mock.patch.object(
-        dm_with_devices, "reset_device", side_effect=RuntimeError("reset failed")
-    ) as reset_device:
-        handler._cleanup_failed_device_init(obj, device)
-
-    obj.destroy.assert_called_once_with()
+    destroy.assert_called_once_with()
     reset_device.assert_called_once_with(device)
 
 
@@ -161,19 +184,23 @@ def test_config_handler_failed_enable_remains_disabled(dm_with_devices):
         if config["name"] == device_name
     )
 
-    construct_device_obj = dm_with_devices.construct_device_obj
+    construct_device = dm_with_devices.device_provider_manager.construct_device
 
     def capture_constructed_object(*args, **kwargs):
-        obj, config = construct_device_obj(*args, **kwargs)
-        constructed_objects.append(obj)
-        return obj, config
+        device, config = construct_device(*args, **kwargs)
+        constructed_objects.append(device.obj)
+        return device, config
 
     with (
         mock.patch.object(
-            dm_with_devices, "construct_device_obj", side_effect=capture_constructed_object
+            dm_with_devices.device_provider_manager,
+            "construct_device",
+            side_effect=capture_constructed_object,
         ),
         mock.patch.object(
-            dm_with_devices, "connect_device", return_value=ConnectionError("PV is unreachable")
+            dm_with_devices.device_provider_manager.providers["ophyd"],
+            "connect_device",
+            return_value=ConnectionError("PV is unreachable"),
         ) as connect_device,
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
@@ -206,7 +233,9 @@ def test_config_handler_failed_enable_cleans_and_restores_old_device(dm_with_dev
     with (
         mock.patch.object(dm_with_devices, "update_config", side_effect=fail_after_initialization),
         mock.patch.object(
-            dm_with_devices, "connect_device", wraps=dm_with_devices.connect_device
+            dm_with_devices.device_provider_manager.providers["ophyd"],
+            "connect_device",
+            wraps=dm_with_devices.device_provider_manager.providers["ophyd"].connect_device,
         ) as connect_device,
     ):
         for _ in range(2):
@@ -297,11 +326,16 @@ def test_parse_config_request_add_remove(dm_with_devices):
             "enabled": True,
             "readOnly": False,
             "name": "new_device",
+            "id": "added-device-id",
+            "sessionId": "added-session-id",
+            "accessGroups": "customer",
         }
     }
     msg = messages.DeviceConfigMessage(action="add", config=config)
     handler.parse_config_request(msg, cancel_event=threading.Event())
     assert "new_device" in dm_with_devices.devices
+    for key in ("id", "sessionId", "accessGroups"):
+        assert dm_with_devices.devices.new_device._config[key] == config["new_device"][key]
 
     config = {"new_device": {}}
     msg = messages.DeviceConfigMessage(action="remove", config=config)
@@ -326,7 +360,9 @@ def test_parse_config_request_failed_add_is_disabled(dm_with_devices):
     msg = messages.DeviceConfigMessage(action="add", config=config)
 
     with mock.patch.object(
-        dm_with_devices, "connect_device", return_value=ConnectionError("PV is unreachable")
+        dm_with_devices.device_provider_manager.providers["ophyd"],
+        "connect_device",
+        return_value=ConnectionError("PV is unreachable"),
     ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
 
@@ -409,7 +445,7 @@ def test_parse_config_request_add_preserves_existing_device_data(
     )
 
     with (
-        mock.patch.object(dm, "construct_device_obj") as construct,
+        mock.patch.object(dm.device_provider_manager, "construct_device") as construct,
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
@@ -450,28 +486,33 @@ def test_parse_config_request_rejected_add_rolls_back_batch(
         config["second_added"]["needs"] = ["missing_device"]
     msg = messages.DeviceConfigMessage(action="add", config=config)
     created_objects = []
-    construct_device_obj = dm.construct_device_obj
-    publish_device_info = dm.publish_device_info
+    construct_device = dm.device_provider_manager.construct_device
+    provider = dm.device_provider_manager.providers["ophyd"]
+    get_device_info = provider.get_device_info
+    connect_device = provider.connect_device
 
     def construct(dev_config, **kwargs):
-        if failure == "construction" and dev_config["name"] == "second_added":
+        if failure == "construction" and dev_config.name == "second_added":
             raise RuntimeError("constructor failed")
-        obj, device_config = construct_device_obj(dev_config, **kwargs)
-        created_objects.append(obj)
-        obj.destroy = mock.Mock(wraps=obj.destroy)
-        return obj, device_config
+        device, device_config = construct_device(dev_config, **kwargs)
+        created_objects.append(device.obj)
+        device.obj.destroy = mock.Mock(wraps=device.obj.destroy)
+        return device, device_config
 
-    def publish(obj, **kwargs):
-        if failure == "device_info" and obj.name == "second_added":
+    def inspect_device(device, **kwargs):
+        if failure == "device_info" and device.name == "second_added":
             raise RuntimeError("device info failed")
-        result = publish_device_info(obj, **kwargs)
-        if first_init_fails and obj.name == "first_added":
+        return get_device_info(device, **kwargs)
+
+    def connect(device, **kwargs):
+        if first_init_fails and device.name == "first_added":
             return RuntimeError("first device initialization failed")
-        return result
+        return connect_device(device, **kwargs)
 
     with (
-        mock.patch.object(dm, "construct_device_obj", side_effect=construct),
-        mock.patch.object(dm, "publish_device_info", side_effect=publish),
+        mock.patch.object(dm.device_provider_manager, "construct_device", side_effect=construct),
+        mock.patch.object(provider, "get_device_info", side_effect=inspect_device),
+        mock.patch.object(provider, "connect_device", side_effect=connect),
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
         handler.parse_config_request(msg, cancel_event=threading.Event())
@@ -524,20 +565,20 @@ def test_parse_config_request_rejected_add_survives_redis_cleanup_failure(dm_wit
     }
     msg = messages.DeviceConfigMessage(action="add", config=config)
     created_objects = []
-    construct_device_obj = dm.construct_device_obj
+    construct_device = dm.device_provider_manager.construct_device
     failed_pipeline = mock.MagicMock()
     failed_pipeline.execute.side_effect = RuntimeError("Redis cleanup failed")
 
     def construct(dev_config, **kwargs):
-        if dev_config["name"] == "second_added":
+        if dev_config.name == "second_added":
             raise RuntimeError("constructor failed")
-        obj, device_config = construct_device_obj(dev_config, **kwargs)
-        created_objects.append(obj)
-        return obj, device_config
+        device, device_config = construct_device(dev_config, **kwargs)
+        created_objects.append(device.obj)
+        return device, device_config
 
     with (
         mock.patch.object(handler, "connector", wraps=dm.connector) as cleanup_connector,
-        mock.patch.object(dm, "construct_device_obj", side_effect=construct),
+        mock.patch.object(dm.device_provider_manager, "construct_device", side_effect=construct),
         mock.patch.object(handler, "send_config_request_reply") as send_reply,
     ):
         # Keep the failure injection separate from the background monitor's connector.
@@ -784,3 +825,170 @@ def test_cancel_config_request_timeout_sends_alarm_and_flushes(dm_with_devices):
                     req_reply.assert_called_once_with(
                         accepted=True, error_msg="", metadata={"RID": "12345"}
                     )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize(
+    "operation", ["disable", "remove", "flush", "failed_registered", "failed_unregistered"]
+)
+def test_config_handler_uses_selected_provider_for_teardown(dm_with_devices, operation):
+    """Configuration teardown must support objects without an Ophyd destroy method."""
+    dm = dm_with_devices
+    handler = ConfigUpdateHandler(dm)
+    obj = SimpleNamespace(name="custom_device")
+    device = DSDevice(
+        name=obj.name,
+        obj=obj,
+        config={"enabled": True, "deviceClass": "custom", "readoutPriority": "monitored"},
+        parent=dm,
+    )
+    device.initialized = True
+    provider = mock.Mock()
+    provider.supports_device_class.side_effect = lambda cls: cls is type(obj)
+    dm.device_provider_manager.providers["custom"] = provider
+    if operation != "failed_unregistered":
+        dm.devices._add_device(device.name, device)
+
+    if operation in ("disable", "remove"):
+        msg = messages.DeviceConfigMessage(
+            action="update" if operation == "disable" else "remove",
+            config={device.name: {"enabled": False} if operation == "disable" else {}},
+        )
+        if operation == "disable":
+            handler._update_config(msg, cancel_event=threading.Event())
+        else:
+            handler._remove_config(msg, cancel_event=threading.Event())
+    elif operation == "flush":
+        handler._flush_config()
+    else:
+        handler._cleanup_failed_device_init(device)
+
+    provider.disconnect_device.assert_called_once()
+    wrapper = provider.disconnect_device.call_args.args[0]
+    assert wrapper.obj is obj
+    assert wrapper.name == device.name
+    assert wrapper is device
+    if operation in ("remove", "flush", "failed_unregistered"):
+        assert device.name not in dm.devices
+    if operation in ("disable", "remove", "failed_registered", "failed_unregistered"):
+        assert device.initialized is False
+    if operation == "disable":
+        assert device.enabled is False
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("fails", [False, True])
+@pytest.mark.parametrize("has_limits", [False, True])
+def test_config_handler_uses_selected_provider_for_update(dm_with_devices, fails, has_limits):
+    """Apply and roll back configuration without requiring Ophyd attributes."""
+    dm = dm_with_devices
+    handler = ConfigUpdateHandler(dm)
+    obj = SimpleNamespace(name="custom_device")
+    old_config = {"setting": 1}
+    new_config = {"setting": 2}
+    if has_limits:
+        new_config["limits"] = [-2, 2]
+    device = DSDevice(
+        name=obj.name,
+        obj=obj,
+        parent=dm,
+        config={
+            "enabled": True,
+            "deviceClass": "custom",
+            "readoutPriority": "monitored",
+            "deviceConfig": old_config,
+        },
+    )
+    dm.devices._add_device(device.name, device)
+    provider = mock.Mock()
+    provider.supports_device_class.side_effect = lambda cls: cls is type(obj)
+    limits = {"low": {"value": -2}, "high": {"value": 2}} if has_limits else None
+    provider.update_device_config.side_effect = (
+        [RuntimeError("update failed"), None] if fails else [None]
+    )
+    provider.get_device_limits.return_value = limits
+    provider.get_device_info.return_value = DeviceInfo(
+        device_base_class="device", device_class="CustomDevice"
+    )
+    dm.device_provider_manager.providers["custom"] = provider
+    msg = messages.DeviceConfigMessage(
+        action="update", config={device.name: {"deviceConfig": new_config}}
+    )
+
+    with mock.patch.object(dm.connector, "set_and_publish") as publish:
+        if fails:
+            with pytest.raises(DeviceConfigError, match="update failed"):
+                handler._update_config(msg, cancel_event=threading.Event())
+        else:
+            handler._update_config(msg, cancel_event=threading.Event())
+
+    expected = [mock.call(device, new_config)]
+    if fails:
+        expected.append(mock.call(device, old_config))
+    assert provider.update_device_config.call_args_list == expected
+    assert device._config["deviceConfig"] == old_config
+    if has_limits and not fails:
+        publish.assert_called_once_with(
+            MessageEndpoints.device_limits(device.name), messages.DeviceMessage(signals=limits)
+        )
+    else:
+        publish.assert_not_called()
+        provider.get_device_limits.assert_not_called()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_config_handler_update_publishes_ophyd_limits(dm_with_devices):
+    """Keep publishing actual limit readbacks after an Ophyd configuration update."""
+    dm = dm_with_devices
+    device = dm.devices.samx
+    handler = ConfigUpdateHandler(dm)
+    msg = messages.DeviceConfigMessage(
+        action="update", config={device.name: {"deviceConfig": {"limits": [-20, 20]}}}
+    )
+    with mock.patch.object(dm.connector, "set_and_publish") as publish:
+        handler._update_config(msg, cancel_event=threading.Event())
+
+    assert device.obj.low_limit_travel.get() == -20
+    assert device.obj.high_limit_travel.get() == 20
+    assert (
+        mock.call(
+            MessageEndpoints.device_limits(device.name),
+            messages.DeviceMessage(signals={"low": {"value": -20}, "high": {"value": 20}}),
+        )
+        in publish.call_args_list
+    )
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("failure", ["readback", "publication"])
+def test_limit_publication_failure_does_not_roll_back_hardware(dm_with_devices, failure):
+    """Only config application failures roll back, matching the previous update behavior."""
+    dm = dm_with_devices
+    device = dm.devices.samx
+    handler = ConfigUpdateHandler(dm)
+    providers = dm.device_provider_manager
+    provider = providers.providers["ophyd"]
+    error = RuntimeError(
+        "limit readback failed" if failure == "readback" else "limit publication failed"
+    )
+    msg = messages.DeviceConfigMessage(
+        action="update", config={device.name: {"deviceConfig": {"limits": [-20, 20]}}}
+    )
+    with (
+        mock.patch.object(
+            provider, "update_device_config", wraps=provider.update_device_config
+        ) as apply,
+        mock.patch.object(provider, "get_device_limits", wraps=provider.get_device_limits) as read,
+        mock.patch.object(dm.connector, "set_and_publish") as publish,
+    ):
+        if failure == "readback":
+            read.side_effect = error
+        else:
+            publish.side_effect = error
+        with pytest.raises(RuntimeError) as exc:
+            handler._update_config(msg, cancel_event=threading.Event())
+
+    assert exc.value is error
+    apply.assert_called_once_with(device, {"limits": [-20, 20]})
+    assert device.obj.low_limit_travel.get() == -20
+    assert device.obj.high_limit_travel.get() == 20

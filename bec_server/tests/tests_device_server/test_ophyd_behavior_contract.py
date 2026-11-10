@@ -45,7 +45,7 @@ def publication_device(device_manager, connected_connector):
         manager._auto_monitor_update_thread.join(timeout=5)
     assert not manager._auto_monitor_update_thread.is_alive()
     for existing in manager.devices.values():
-        manager.disconnect_device(existing.obj)
+        manager.device_provider_manager.disconnect_device(existing)
     manager.devices.flush()
     manager._auto_monitor_readback_updates.clear()
     manager._auto_monitor_configuration_updates.clear()

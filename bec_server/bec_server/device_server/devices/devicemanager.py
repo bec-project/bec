@@ -6,35 +6,33 @@ in BEC. It is the only place where devices are initialized and managed.
 
 from __future__ import annotations
 
-import inspect
 import threading
 import time
 import traceback
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import ophyd
-import ophyd_devices as opd
 from ophyd.ophydobj import OphydObject
-from ophyd.signal import EpicsSignalBase
 from ophyd_devices.utils.bec_signals import BECMessageSignal
 
-from bec_lib import messages, plugin_helper
+from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.bec_errors import DeviceConfigError
 from bec_lib.bec_service import BECService
-from bec_lib.device import DeviceBaseWithConfig
 from bec_lib.devicemanager import CancelledError, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
-from bec_lib.utils.rpc_utils import rgetattr
 from bec_server.device_server.bec_message_handler import BECMessageHandler
-from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
-from bec_server.device_server.devices.device_serializer import (
-    disable_lazy_wait_for_connection,
-    get_device_info,
+from bec_server.device_server.device_providers.device_provider_manager import DeviceProviderManager
+from bec_server.device_server.device_providers.ophyd.ophyd_device_provider import (
+    connect_native_device,
+    construct_native_device,
+    get_native_device_class,
 )
+from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
+from bec_server.device_server.devices.ds_device import DSDevice, DSDeviceConfig
 
 if TYPE_CHECKING:  # pragma: no cover
     from redis.client import Pipeline
@@ -87,54 +85,6 @@ class DeviceProgress:
         )
 
 
-class DSDevice(DeviceBaseWithConfig):
-    def __init__(self, name, obj, config, parent=None):
-        super().__init__(name=name, config=config, parent=parent)
-        self.obj = obj
-        self.metadata = {}
-        self.initialized = False
-        self._device_info_active = True
-
-    def __getattr__(self, name: str) -> inspect.Any:
-        if hasattr(self.obj, name):
-            # compatibility with ophyd devices accessed on the client side
-            return rgetattr(self.obj, name)
-        return super().__getattr__(name)
-
-    def initialize_device_buffer(self, connector):
-        """initialize the device read and readback buffer on redis with a new reading"""
-        dev_msg = messages.DeviceMessage(signals=self.obj.read(), metadata={})
-
-        if hasattr(self.obj, "low_limit_travel") and hasattr(self.obj, "high_limit_travel"):
-            limits = {
-                "low": {"value": self.obj.low_limit_travel.get()},
-                "high": {"value": self.obj.high_limit_travel.get()},
-            }
-        else:
-            limits = None
-        pipe = connector.pipeline()
-        connector.set_and_publish(MessageEndpoints.device_readback(self.name), dev_msg, pipe=pipe)
-        connector.set_and_publish(
-            topic=MessageEndpoints.device_read(self.name), msg=dev_msg, pipe=pipe
-        )
-        if not isinstance(self.obj, ophyd.Signal):
-            # signals have the same read and read_configuration values; no need to publish twice
-            dev_config_msg = messages.DeviceMessage(
-                signals=self.obj.read_configuration(), metadata={}
-            )
-            connector.set_and_publish(
-                MessageEndpoints.device_read_configuration(self.name), dev_config_msg, pipe=pipe
-            )
-        if limits is not None:
-            connector.set_and_publish(
-                MessageEndpoints.device_limits(self.name),
-                messages.DeviceMessage(signals=limits),
-                pipe=pipe,
-            )
-        pipe.execute()
-        self.initialized = True
-
-
 class DeviceManagerDS(DeviceManagerBase):
     def __init__(
         self,
@@ -143,13 +93,13 @@ class DeviceManagerDS(DeviceManagerBase):
         status_cb: list[Callable] | Callable | None = None,
     ):
         super().__init__(service, status_cb)
+        self.device_provider_manager = DeviceProviderManager(self)
         self._use_proxy_objects = False
         self._config_request_connector = None
         self._device_instructions_connector = None
         self._config_update_handler_cls = config_update_handler
         self.config_update_handler = None
         self.failed_devices = {}
-        self._device_info_lock = threading.Lock()
         self._bec_message_handler = BECMessageHandler(self)
         self._device_order_map = {}
         self._auto_monitor_readback_updates = set()
@@ -196,7 +146,32 @@ class DeviceManagerDS(DeviceManagerBase):
     @staticmethod
     def _get_device_class(dev_type: str) -> type:
         """Get the device class from the device type"""
-        return plugin_helper.get_plugin_class(dev_type, [opd, ophyd])
+        return get_native_device_class(dev_type)
+
+    @staticmethod
+    def construct_device_obj(dev: dict, device_manager: DeviceManagerDS | None) -> tuple[Any, dict]:
+        """Construct a classic native device for callers outside the device server."""
+        device_class = DeviceManagerDS._get_device_class(dev["deviceClass"])
+        return construct_native_device(
+            device_class, dev.get("name"), dev.get("deviceConfig"), device_manager
+        )
+
+    @staticmethod
+    def connect_device(
+        obj: Any, wait_for_all: bool = False, timeout: float = 5, **kwargs
+    ) -> Exception | None:
+        """Connect a native object for legacy offline device checkers.
+
+        Args:
+            obj (Any): Previously constructed native device.
+            wait_for_all (bool): Connect all declared signals. Defaults to False.
+            timeout (float): Connection timeout in seconds. Defaults to 5.
+            **kwargs: Additional legacy connection options.
+
+        Returns:
+            Exception | None: Connection error, or None on success.
+        """
+        return connect_native_device(obj, wait_for_all=wait_for_all, timeout=timeout, **kwargs)
 
     def _init_device(self, device_info: dict, delayed: bool, progress: DeviceProgress) -> None:
         """
@@ -204,7 +179,7 @@ class DeviceManagerDS(DeviceManagerBase):
 
         Args:
             device_info (dict): Device configuration dictionary.
-            delayed (bool): Whether to initialize the device in delayed mode.
+            delayed (bool): Whether this device is initialized in the delayed phase.
             progress (DeviceProgress): DeviceProgress instance to track initialization progress.
         """
 
@@ -212,19 +187,15 @@ class DeviceManagerDS(DeviceManagerBase):
         success = True
         progress.update_progress(device_name=name, finished=False, success=success)
 
-        obj, config = self.construct_device_obj(device_info, device_manager=self)
+        device_config = DSDeviceConfig.model_validate(device_info)
+        device, config = self.device_provider_manager.construct_device(device_config)
         try:
+            self.device_provider_manager.initialize_device(device, config)
             if delayed:
-                self.initialize_delayed_devices(device_info, config, obj)
-            else:
-                self.initialize_device(device_info, config, obj)
+                self.device_provider_manager.register_device_proxy(device)
         # pylint: disable=broad-except
         except Exception:
             if name not in self.devices:
-                try:
-                    self.disconnect_device(obj)
-                except Exception:  # pylint: disable=broad-except
-                    logger.error(f"Failed to destroy device {name}: {traceback.format_exc()}")
                 raise
             msg = traceback.format_exc()
             logger.warning(f"Failed to initialize device {name}: {msg}")
@@ -253,8 +224,7 @@ class DeviceManagerDS(DeviceManagerBase):
                 logger.info(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
                 current_device_name = name
 
-                dev_cls = self._get_device_class(dev.get("deviceClass"))
-                if issubclass(dev_cls, (opd.DeviceProxy, opd.ComputedSignal)):
+                if self.device_provider_manager.requires_delayed_initialization(dev["deviceClass"]):
                     delayed_init.append(dev)
                     continue
 
@@ -356,44 +326,6 @@ class DeviceManagerDS(DeviceManagerBase):
             key=lambda name: self._device_order_map.get(name.split(".")[0], float("inf")),
         )
 
-    def initialize_delayed_devices(self, dev: dict, config: dict, obj: OphydObject) -> None:
-        """Initialize delayed device after all other devices have been initialized."""
-        name = dev.get("name")
-        enabled = dev.get("enabled")
-        logger.info(f"Adding device {name}: {'ENABLED' if enabled else 'DISABLED'}")
-
-        obj = self.initialize_device(dev, config, obj)
-
-        if hasattr(obj.obj, "lookup"):
-            self._register_device_proxy(name)
-
-    def _register_device_proxy(self, name: str) -> None:
-        obj_lookup = self.devices.get(name).obj.lookup
-        for key in obj_lookup.keys():
-            signal_name = obj_lookup[key].get("signal_name")
-            if key not in self.devices:
-                raise DeviceConfigError(
-                    f"Failed to init DeviceProxy {name}, no device {key} found in device manager."
-                )
-            dev_obj = self.devices[key].obj
-            registered_proxies = dev_obj.registered_proxies
-            if not hasattr(dev_obj, signal_name):
-                raise DeviceConfigError(
-                    f"Failed to init DeviceProxy {name}, no signal {signal_name} found for device {key}."
-                )
-            if key not in registered_proxies:
-                # pylint: disable=protected-access
-                self.devices[key].obj._registered_proxies.update({name: signal_name})
-                continue
-            if key in registered_proxies and signal_name not in registered_proxies[key]:
-                # pylint: disable=protected-access
-                self.devices[key].obj._registered_proxies.update({name: signal_name})
-                continue
-            if key in registered_proxies.keys() and signal_name in registered_proxies[key]:
-                raise RuntimeError(
-                    f"Failed to init DeviceProxy {name}, device {key} already has a registered DeviceProxy for {signal_name}. Only one DeviceProxy can be active per signal."
-                )
-
     def _reset_config(self):
         """
         Reset the device config in redis and add the current config to the history.
@@ -412,14 +344,14 @@ class DeviceManagerDS(DeviceManagerBase):
         reload_msg = messages.DeviceConfigMessage(action="reload", config={})
         self.connector.send(MessageEndpoints.device_config_update(), reload_msg)
 
-    def update_config(self, obj: OphydObject, config: dict) -> None:
-        """Update an ophyd device's config
+    def update_config(self, device: DSDevice, config: dict) -> None:
+        """Update a wrapped Ophyd device's configuration.
 
         Args:
-            obj (Ophydobj): Ophyd object that should be updated
-            config (dict): Config dictionary
-
+            device (DSDevice): Device wrapper to update.
+            config (dict): Configuration values to apply.
         """
+        obj = device.obj
         if hasattr(obj, "_update_device_config"):
             # If the device has implemented its own config update method, use it
             # pylint: disable=protected-access
@@ -463,130 +395,9 @@ class DeviceManagerDS(DeviceManagerBase):
 
         if signal_updated:
             # re-initialize the device buffer to reflect the updated signal values
-            self.devices[obj.name].initialize_device_buffer(self.connector)
+            device.initialize_device_buffer(self.connector)
 
         self.connector.publish_metrics("device_server", {"num_devices": len(self.devices)})
-
-    @staticmethod
-    def construct_device_obj(
-        dev: dict, device_manager: DeviceManagerDS
-    ) -> tuple[OphydObject, dict]:
-        """
-        Construct a device object from a device config dictionary.
-
-        Args:
-            dev (dict): device config dictionary
-            device_manager (DeviceManagerDS): device manager instance
-
-        Returns:
-            (OphydObject, dict): device object and updated config dictionary
-        """
-        name = dev.get("name")
-        dev_cls = DeviceManagerDS._get_device_class(dev["deviceClass"])
-        device_config = dev.get("deviceConfig")
-        device_config = device_config if device_config is not None else {}
-        config = device_config.copy()
-        config["name"] = name
-
-        # pylint: disable=protected-access
-        device_classes = [dev_cls]
-        if issubclass(dev_cls, ophyd.Signal):
-            device_classes.append(ophyd.Signal)
-        if issubclass(dev_cls, EpicsSignalBase):
-            device_classes.append(EpicsSignalBase)
-        if issubclass(dev_cls, ophyd.OphydObject):
-            device_classes.append(ophyd.OphydObject)
-
-        # get all init parameters of the device class and its parents
-        class_params = set()
-        for device_class in device_classes:
-            class_params.update(inspect.signature(device_class)._parameters)
-        class_params_and_config_keys = class_params & config.keys()
-
-        init_kwargs = {key: config.pop(key) for key in class_params_and_config_keys}
-        device_access = config.pop("device_access", None)
-        if device_access or (device_access is None and config.get("device_mapping")):
-            init_kwargs["device_manager"] = device_manager
-
-        signature = inspect.signature(dev_cls)
-        if "device_manager" in signature.parameters:
-            init_kwargs["device_manager"] = device_manager
-        if "scan_info" in signature.parameters:
-            # Additional device_manager != None is needed for static_device_test which
-            # uses the static method with device_manager=None
-            init_kwargs["scan_info"] = device_manager.scan_info if device_manager else None
-
-        # initialize the device object
-        obj = dev_cls(**init_kwargs)
-        return obj, config
-
-    def initialize_device(self, dev: dict, config: dict, obj: OphydObject) -> DSDevice:
-        """
-        Prepares a device for later usage.
-        This includes inspecting the device class signature,
-        initializing the object, refreshing the device info and buffer,
-        as well as adding subscriptions.
-
-        Args:
-            dev (dict): device config dictionary
-            config (dict): device config dictionary
-            obj (OphydObject): device object
-
-        Returns:
-            DSDevice: initialized device object
-        """
-        name = dev.get("name")
-        enabled = dev.get("enabled")
-
-        # refresh the device info
-        pipe = self.connector.pipeline()
-        self.reset_device_data(obj, pipe)
-        raised_exc = None
-        connect = False
-        if enabled:
-            # Try to connect to the device, needs wait_for_all to include lazy signals e.g. AD detectors
-            raised_exc = self.connect_device(
-                obj, wait_for_all=True, timeout=dev.get("connectionTimeout", 5)
-            )
-            # Publish device info with connect = True if no exception was raised during connection
-            # Otherwise publish with connect = False
-            connect = raised_exc is None
-        # If .describe() fails for connect=True, we rerun with connect=False
-        # and return the exception. This will later be raised even if
-        # connect_device succeeded.
-        publish_device_exc = self.publish_device_info(obj, connect=connect, pipe=pipe)
-        pipe.execute()
-
-        # insert the created device obj into the device manager
-        opaas_obj = DSDevice(name=name, obj=obj, config=dev, parent=self)
-
-        # pylint:disable=protected-access # this function is shared with clients and it is currently not foreseen that clients add new devices
-        self.devices._add_device(name, opaas_obj)
-
-        if raised_exc:
-            raise raised_exc
-
-        if publish_device_exc:
-            raise publish_device_exc
-
-        if not enabled:
-            return opaas_obj
-
-        self.initialize_enabled_device(opaas_obj)
-
-        obj = opaas_obj.obj
-
-        # Add subscriptions to device events and signals if supported by the device
-        if hasattr(obj, "event_types"):
-            self._subscribe_to_device_events(obj, opaas_obj)
-            self._subscribe_to_auto_monitors(obj)
-            self._subscribe_to_limit_updates(obj)
-            self._subscribe_to_bec_signals(obj)
-
-        # Update the config at last as this may also set signals
-        self.update_config(obj, config)
-
-        return opaas_obj
 
     def _subscribe_to_limit_updates(self, obj: OphydObject):
         """
@@ -655,170 +466,36 @@ class DeviceManagerDS(DeviceManagerBase):
             if isinstance(signal, BECMessageSignal):
                 signal.subscribe(callback=self._obj_callback_bec_message_signal, run=False)
 
-    def _subscribe_to_bec_signal_info(self, obj: OphydObject) -> None:
-        """Observe runtime signal metadata after connection hooks finish."""
-        if not hasattr(obj, "walk_signals"):
-            return
-        for _, _, signal in obj.walk_signals():
-            event = getattr(signal, "SUB_SIGNAL_INFO_CHANGED", None)
-            if not isinstance(signal, BECMessageSignal) or event is None:
-                continue
-            signal.clear_sub(self._obj_callback_signal_info_changed, event_type=event)
-            signal.subscribe(self._obj_callback_signal_info_changed, event_type=event, run=False)
-
-    def _obj_callback_signal_info_changed(self, *, obj: OphydObject, **_kwargs) -> None:
-        """Publish the active root device's full runtime description."""
-        root = obj.root
-        device = self.devices.get(root.name)
-        if (
-            device is None
-            or device.obj is not root
-            or not getattr(device, "_device_info_active", True)
-        ):
-            return
-        self.publish_device_info(root, connect=device.enabled)
-
-    def initialize_enabled_device(self, opaas_obj):
-        """connect to an enabled device and initialize the device buffer"""
-        try:
-            if hasattr(opaas_obj.obj, "on_connected"):
-                opaas_obj.obj.on_connected()
-        except Exception:
-            self.publish_device_info(opaas_obj.obj, connect=False)
-            raise
-        self._subscribe_to_bec_signal_info(opaas_obj.obj)
-        publish_error = self.publish_device_info(opaas_obj.obj, connect=opaas_obj.enabled)
-        if publish_error:
-            raise publish_error
-        opaas_obj.initialize_device_buffer(self.connector)
-
-    def disconnect_device(self, obj: OphydObject | DSDevice) -> None:
-        """Stop metadata publication before destroying a device outside the lock.
+    def initialize_enabled_device(self, device: DSDevice) -> None:
+        """Initialize the data buffer for a connected device.
 
         Args:
-            obj (OphydObject | DSDevice): Device object or its server-side wrapper.
+            device (DSDevice): Connected device wrapper to initialize.
         """
-        root = obj.obj if isinstance(obj, DSDevice) else obj
-        with self._device_info_lock:
-            device = self.devices.get(root.name)
-            was_active = getattr(device, "_device_info_active", True)
-            if device is not None and device.obj is root:
-                device._device_info_active = False  # pylint: disable=protected-access
-            else:
-                device = None
-        try:
-            root.destroy()
-        except Exception:
-            # A failed teardown may leave a live device available for retry.
-            if device is not None and getattr(root, "_destroyed", True) is False:
-                with self._device_info_lock:
-                    if self.devices.get(root.name) is device:
-                        device._device_info_active = was_active  # pylint: disable=protected-access
-            raise
-
-    def reset_device(self, obj: DSDevice):
-        """reset a device"""
-        obj.initialized = False
-
-    @staticmethod
-    def connect_device(
-        obj: ophyd.OphydObject, wait_for_all: bool = False, timeout: float = 5, **kwargs
-    ) -> None | Exception:
-        """
-        Establish a connection to a device.
-
-        Args:
-            obj (OphydObject): The device object to connect to.
-            wait_for_all (bool): Whether to wait for all signals to connect.
-                                 Default is False
-            timeout (float): Timeout in seconds for the connection attempt to all signals.
-                             Default is 5 seconds.
-
-        Raises:
-            ConnectionError: If the connection could not be established.
-        """
-
-        try:
-            if hasattr(obj, "wait_for_connection"):
-                try:
-                    with disable_lazy_wait_for_connection(obj):
-                        obj.wait_for_connection(all_signals=wait_for_all, timeout=timeout)  # type: ignore
-                except TypeError:
-                    with disable_lazy_wait_for_connection(obj):
-                        obj.wait_for_connection(timeout=timeout)  # type: ignore
-                return
-            # Check connected last, as an ophyd device with only lazy signals will always
-            # be obj.connected == True. Therefore, we have to call wait_for_connection first
-            # for any ophyd devices. This anyways falls back to checking obj.connected.
-            # For simulated devices or non-ophyd devices that do not implement wait_for_connection
-            # we still want to check obj.connected to allow for them to load.
-            if obj.connected:
-                return
-
-            logger.error(
-                f"Device {obj.name} does not implement the socket controller interface nor"
-                " wait_for_connection and cannot be turned on."
-            )
-            return ConnectionError(f"Failed to establish a connection to device {obj.name}")
-        except Exception as exc:
-            logger.error(f"Failed to connect for {obj.name}: {exc}")
-            return exc
+        device.initialize_device_buffer(self.connector)
 
     def publish_device_info(
-        self, obj: OphydObject, connect: bool = True, pipe: Pipeline | None = None
-    ) -> None | Exception:
-        """
-        Publish the device info to redis. The device info contains
-        inter alia the class name, user functions and signals.
-
-        Immediate publications serialize snapshot construction and writing. The
-        bootstrap description can be queued in the initialization pipeline before
-        runtime metadata subscriptions are installed.
+        self, device: DSDevice, info: dict, pipe: Pipeline | None = None
+    ) -> None:
+        """Publish already extracted device metadata to Redis.
 
         Args:
-            obj (OphydObject): Root device whose complete description is published.
-            connect (bool): Include descriptions of connected signals. False builds
-                a disconnected description. Defaults to True.
-            pipe (Pipeline | None): Optional initialization pipeline to queue the
-                bootstrap description in.
-
-        Returns:
-            None | Exception: Error after publishing the disconnected fallback, or
-                None on success. Errors preventing fallback publication are raised.
+            device (DSDevice): Device wrapper whose metadata should be published.
+            info (dict): Metadata returned by the provider.
+            pipe (Pipeline | None): Optional Redis pipeline. Defaults to None.
         """
-        with self._device_info_lock:
-            if pipe is None:
-                device = self.devices.get(obj.name)
-                if (
-                    device is None
-                    or device.obj is not obj
-                    or not getattr(device, "_device_info_active", True)
-                ):
-                    return None
-            try:
-                interface = get_device_info(obj, connect=connect)
-                self.connector.set_and_publish(
-                    MessageEndpoints.device_info(obj.name),
-                    messages.DeviceInfoMessage(device=obj.name, info=interface),
-                    pipe,
-                )
-            except Exception as exc:
-                logger.error(f"Failed to publish device info for {obj.name}: {exc}")
-                interface = get_device_info(obj, connect=False)
-                self.connector.set_and_publish(
-                    MessageEndpoints.device_info(obj.name),
-                    messages.DeviceInfoMessage(device=obj.name, info=interface),
-                    pipe,
-                )
-                return exc
-        return None
+        self.connector.set(
+            MessageEndpoints.device_info(device.name),
+            messages.DeviceInfoMessage(device=device.name, info=info),
+            pipe,
+        )
 
-    def reset_device_data(self, obj: OphydObject, pipe=None) -> None:
-        """delete all device data and device info"""
-        self.connector.delete(MessageEndpoints.device_status(obj.name), pipe)
-        self.connector.delete(MessageEndpoints.device_read(obj.name), pipe)
-        self.connector.delete(MessageEndpoints.device_read_configuration(obj.name), pipe)
-        self.connector.delete(MessageEndpoints.device_info(obj.name), pipe)
+    def reset_device_data(self, device: DSDevice, pipe=None) -> None:
+        """Delete all data and metadata for a device wrapper."""
+        self.connector.delete(MessageEndpoints.device_status(device.name), pipe)
+        self.connector.delete(MessageEndpoints.device_read(device.name), pipe)
+        self.connector.delete(MessageEndpoints.device_read_configuration(device.name), pipe)
+        self.connector.delete(MessageEndpoints.device_info(device.name), pipe)
 
     def _obj_callback_limit_change(
         self, *_args, obj: OphydObject, pipe: Pipeline | None = None, **kwargs
@@ -965,7 +642,7 @@ class DeviceManagerDS(DeviceManagerBase):
         for device in self.devices.values():
             try:
                 logger.info(f"Disconnecting device {device.name}")
-                self.disconnect_device(device.obj)
+                self.device_provider_manager.disconnect_device(device)
             except Exception:
                 logger.error(f"Failed to disconnect device {device.name}: {traceback.format_exc()}")
         self.devices.flush()

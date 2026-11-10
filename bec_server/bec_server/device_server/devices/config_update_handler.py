@@ -12,11 +12,11 @@ from bec_lib.devicemanager import CancelledError, DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.plugin_helper import reload_plugin_modules
+from bec_server.device_server.devices.ds_device import DSDeviceConfig
 
 if TYPE_CHECKING:
-    from ophyd import OphydObject
-
-    from bec_server.device_server.devices.devicemanager import DeviceManagerDS, DSDevice
+    from bec_server.device_server.devices.devicemanager import DeviceManagerDS
+    from bec_server.device_server.devices.ds_device import DSDevice
 
 logger = bec_logger.logger
 
@@ -197,21 +197,19 @@ class ConfigUpdateHandler:
             MessageEndpoints.device_config_request_response(request_id), msg, expire=60
         )
 
-    def _cleanup_failed_device_init(self, obj: OphydObject, device: DSDevice | None = None) -> None:
+    def _cleanup_failed_device_init(self, device: DSDevice) -> None:
         """Best-effort cleanup that does not mask the initialization failure."""
         try:
-            self.device_manager.disconnect_device(obj)
+            self.device_manager.device_provider_manager.disconnect_device(device)
         # pylint: disable=broad-except
         except Exception:
             logger.error(
-                f"Failed to destroy partially initialized device {obj.name}: "
+                f"Failed to destroy partially initialized device {device.name}: "
                 f"{traceback.format_exc()}"
             )
 
-        if device is None:
-            return
         try:
-            self.device_manager.reset_device(device)
+            self.device_manager.device_provider_manager.reset_device(device)
         # pylint: disable=broad-except
         except Exception:
             logger.error(
@@ -233,48 +231,44 @@ class ConfigUpdateHandler:
                     )
                 new_config = dev_config["deviceConfig"] or {}
                 # store old config
-                old_config = device._config["deviceConfig"].copy()
+                old_config = (device._config.get("deviceConfig") or {}).copy()
 
                 # apply config
                 try:
-                    self.device_manager.update_config(device.obj, new_config)
-                    # Persistence flags and other signal metadata can change with config.
-                    # Publish before acknowledgement and the subsequent proxy update.
-                    error = self.device_manager.publish_device_info(device.obj)
-                    if error is not None:
-                        raise error
+                    self.device_manager.device_provider_manager.update_device_config(
+                        device, new_config
+                    )
+                    # Configuration can change the signal metadata exposed to clients.
+                    info = self.device_manager.device_provider_manager.get_device_info(device)
+                    self.device_manager.publish_device_info(device, info.to_wire())
                 except Exception as exc:
-                    self.device_manager.update_config(device.obj, old_config)
-                    self.device_manager.publish_device_info(device.obj)
+                    self.device_manager.device_provider_manager.update_device_config(
+                        device, old_config
+                    )
+                    info = self.device_manager.device_provider_manager.get_device_info(device)
+                    self.device_manager.publish_device_info(device, info.to_wire())
                     raise DeviceConfigError(f"Error during object update. {exc}")
 
-                if "limits" in dev_config["deviceConfig"]:
-                    limits = {
-                        "low": {"value": device.obj.low_limit_travel.get()},
-                        "high": {"value": device.obj.high_limit_travel.get()},
-                    }
-                    self.device_manager.connector.set_and_publish(
-                        MessageEndpoints.device_limits(device.name),
-                        messages.DeviceMessage(signals=limits),
-                    )
+                if "limits" in new_config:
+                    self.device_manager.device_provider_manager.publish_device_limits(device)
 
             if "enabled" in dev_config:
                 # pylint: disable=protected-access
                 was_enabled = device._config.get("enabled", True)
                 if was_enabled and not dev_config["enabled"]:
                     # It was enabled and we want to disable it. Disconnect and reset the device.
-                    self.device_manager.disconnect_device(device.obj)
-                    self.device_manager.reset_device(device)
+                    self.device_manager.device_provider_manager.disconnect_device(device)
+                    self.device_manager.device_provider_manager.reset_device(device)
                     device._config["enabled"] = False
                 elif not was_enabled and dev_config["enabled"]:
                     # It was disabled and we want to enable it. Construct and initialize the device.
                     device._config["enabled"] = True
-                    obj = None
+                    replacement = None
                     try:
-                        obj, config = self.device_manager.construct_device_obj(
-                            device._config, device_manager=self.device_manager
-                        )
-                        self.device_manager.initialize_device(device._config, config, obj)
+                        device_config = DSDeviceConfig.model_validate(device._config)
+                        providers = self.device_manager.device_provider_manager
+                        replacement, config = providers.construct_device(device_config)
+                        providers.initialize_device(replacement, config)
                     # pylint: disable=broad-except
                     except Exception:
                         device._config["enabled"] = was_enabled
@@ -282,18 +276,18 @@ class ConfigUpdateHandler:
                         if failed_device is not None and failed_device is not device:
                             failed_device._config["enabled"] = was_enabled
                             self.device_manager.devices._add_device(dev, device)
-                            self._cleanup_failed_device_init(failed_device.obj, failed_device)
-                        elif obj is not None:
-                            self._cleanup_failed_device_init(obj)
+                            self._cleanup_failed_device_init(failed_device)
+                        elif replacement is not None:
+                            self._cleanup_failed_device_init(replacement)
                         raise
 
     def _flush_config(self) -> None:
         """Flush all devices from the device manager."""
-        for _, obj in self.device_manager.devices.items():
+        for device in self.device_manager.devices.values():
             try:
-                self.device_manager.disconnect_device(obj.obj)
+                self.device_manager.device_provider_manager.disconnect_device(device)
             except Exception:
-                logger.warning(f"Failed to destroy {obj.obj.name}")
+                logger.warning(f"Failed to destroy {device.name}")
                 raise RuntimeError("Failed to flush config")
         self.device_manager.devices.flush()
 
@@ -323,20 +317,21 @@ class ConfigUpdateHandler:
             logger.info(f"Adding device {name}")
             if dev in dm.devices:
                 continue  # tbd what to do here: delete and add new device?
-            obj, config = dm.construct_device_obj(dev_config, device_manager=dm)
+            device_config = DSDeviceConfig.model_validate(dev_config)
+            device, config = dm.device_provider_manager.construct_device(device_config)
             try:
-                dm.initialize_device(dev_config, config, obj)
+                dm.device_provider_manager.initialize_device(device, config)
             # pylint: disable=broad-except
             except Exception:
                 error = traceback.format_exc()
                 if name not in dm.devices:
-                    self._cleanup_failed_device_init(obj)
+                    self._cleanup_failed_device_init(device)
                     raise
                 dm.failed_devices[name] = error
                 dev_config["enabled"] = False
                 failed_device = dm.devices[name]
                 failed_device._config["enabled"] = False
-                self._cleanup_failed_device_init(failed_device.obj, failed_device)
+                self._cleanup_failed_device_init(failed_device)
                 logger.error(f"Failed to initialize device {name}: {error}")
 
     def _rollback_added_devices(
@@ -354,7 +349,7 @@ class ConfigUpdateHandler:
                 device = dm.devices[name]
                 # Registered initialization failures have already been cleaned up.
                 if name not in dm.failed_devices:
-                    self._cleanup_failed_device_init(device.obj, device)
+                    self._cleanup_failed_device_init(device)
                 del dm.devices[name]
             try:
                 pipe = self.connector.pipeline()
@@ -393,8 +388,8 @@ class ConfigUpdateHandler:
             if dev not in self.device_manager.devices:
                 continue
             device = self.device_manager.devices[dev]
-            self.device_manager.disconnect_device(device)
-            self.device_manager.reset_device(device)
+            self.device_manager.device_provider_manager.disconnect_device(device)
+            self.device_manager.device_provider_manager.reset_device(device)
             self.device_manager.devices.pop(dev)
 
     def update_session_config(self, msg: messages.DeviceConfigMessage) -> None:
@@ -445,7 +440,7 @@ class ConfigUpdateHandler:
                 device = self.device_manager.devices[name]
                 # pylint: disable=protected-access
                 device._config["enabled"] = False
-                self._cleanup_failed_device_init(device.obj, device)
+                self._cleanup_failed_device_init(device)
             self.update_session_config(msg)
             self.force_update_config_in_redis()
 
