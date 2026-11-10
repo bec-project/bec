@@ -406,13 +406,26 @@ class DeviceServer(BECService):
         register_stop.set()
         self.status = BECStatus.IDLE
 
+    @property
+    def is_shutting_down(self) -> bool:
+        """
+        Report whether device server shutdown has started.
+        """
+        return self.device_manager is None or self.device_manager.is_shutting_down
+
     def shutdown(self) -> None:
-        """shutdown the device server"""
+        """
+        Disconnect devices while their provider runtimes are still available.
+        """
+        if self.device_manager is not None:
+            self.device_manager.begin_shutdown()
         with self.provider_manager.stop_runtime():
-            super().shutdown()
-        self.stop()
-        if self.device_manager:
-            self.device_manager.shutdown()
+            try:
+                self.stop()
+                if self.device_manager:
+                    self.device_manager.shutdown()
+            finally:
+                super().shutdown()
 
     def _update_device_metadata(self, instr) -> None:
         devices = instr.content["device"]
@@ -577,6 +590,9 @@ class DeviceServer(BECService):
             msg (str): A DeviceInstructionMessage string containing the action and its parameters
 
         """
+        if self.is_shutting_down:
+            return
+
         action = None
         instructions = msg
         try:
@@ -651,8 +667,11 @@ class DeviceServer(BECService):
         return self.provider_manager.get_device_from_exception(exc)
 
     def instructions_callback(self, msg, **_kwargs) -> None:
-        """callback for handling device instructions"""
-        self.executor.submit(self.handle_device_instructions, msg.value)
+        """
+        Submit incoming instructions while the server is accepting work.
+        """
+        if not self.is_shutting_down:
+            self.executor.submit(self.handle_device_instructions, msg.value)
 
     def _target(self, name: str) -> DeviceTarget:
         root, _, path = name.partition(".")

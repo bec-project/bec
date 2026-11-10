@@ -674,6 +674,25 @@ def test_device_config_callback_normal_request(dm_with_devices):
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_device_config_callback_ignores_requests_during_shutdown(dm_with_devices):
+    handler = ConfigUpdateHandler(dm_with_devices)
+    message = mock.Mock(value=messages.DeviceConfigMessage(action="reload", config={}))
+
+    with (
+        mock.patch.object(
+            type(dm_with_devices),
+            "is_shutting_down",
+            new_callable=mock.PropertyMock,
+            return_value=True,
+        ),
+        mock.patch.object(handler.executor, "submit") as submit,
+    ):
+        handler._device_config_callback(message)
+
+    submit.assert_not_called()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 def test_device_config_callback_cancel_request(dm_with_devices):
     """Test _device_config_callback with a cancel request."""
     handler = ConfigUpdateHandler(dm_with_devices)
@@ -961,13 +980,22 @@ def test_config_handler_uses_selected_provider_for_update(dm_with_devices, fails
         expected.append(mock.call(device, old_config))
     assert provider.update_device_config.call_args_list == expected
     assert device._config["deviceConfig"] == old_config
-    if has_limits and not fails:
-        publish.assert_called_once_with(
-            MessageEndpoints.device_limits(device.name), messages.DeviceMessage(signals=limits)
+    expected_publications = [
+        mock.call(
+            MessageEndpoints.device_info(device.name),
+            messages.DeviceInfoMessage(
+                device=device.name, info=provider.get_device_info.return_value.to_wire()
+            ),
+            None,
         )
-    else:
-        publish.assert_not_called()
-        provider.get_device_limits.assert_not_called()
+    ]
+    if has_limits and not fails:
+        expected_publications.append(
+            mock.call(
+                MessageEndpoints.device_limits(device.name), messages.DeviceMessage(signals=limits)
+            )
+        )
+    assert publish.call_args_list == expected_publications
 
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
@@ -1018,7 +1046,12 @@ def test_limit_publication_failure_does_not_roll_back_hardware(dm_with_devices, 
         if failure == "readback":
             read.side_effect = error
         else:
-            publish.side_effect = error
+
+            def fail_limit_publication(endpoint, *_args, **_kwargs):
+                if endpoint == MessageEndpoints.device_limits(device.name):
+                    raise error
+
+            publish.side_effect = fail_limit_publication
         with pytest.raises(RuntimeError) as exc:
             handler._update_config(msg, cancel_event=threading.Event())
 

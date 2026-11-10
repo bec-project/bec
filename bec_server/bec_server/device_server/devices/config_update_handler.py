@@ -42,6 +42,9 @@ class ConfigUpdateHandler:
         )
 
     def _device_config_callback(self, msg) -> None:
+        if self.device_manager.is_shutting_down:
+            return
+
         logger.info(f"Received request: {msg}")
         config_msg: messages.DeviceConfigMessage = msg.value
 

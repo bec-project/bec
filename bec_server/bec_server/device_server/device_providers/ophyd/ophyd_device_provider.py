@@ -308,12 +308,20 @@ class OphydDeviceProvider(DeviceProvider):
             device (DSDevice): Registered device wrapper.
             config (dict): Configuration remaining after construction.
         """
-        if hasattr(device.obj, "on_connected"):
-            device.obj.on_connected()
-        self.device_manager.initialize_enabled_device(device)
+        provider_manager = self.device_manager.device_provider_manager
+        try:
+            if hasattr(device.obj, "on_connected"):
+                device.obj.on_connected()
+        except Exception:
+            provider_manager.publish_device_info(device, connect=False)
+            raise
         subscription = wait_for_completion(self.subscribe(device, self.device_manager))
         # Configuration may set signals, so subscriptions must already be installed.
         try:
+            error = provider_manager.publish_device_info(device, connect=device.enabled)
+            if error is not None:
+                raise error
+            self.device_manager.initialize_enabled_device(device)
             self.update_device_config(device, config)
         except Exception:
             try:
@@ -839,6 +847,14 @@ class OphydDeviceProvider(DeviceProvider):
                 options = {"event_type": binding.native_event} if binding.native_event else {}
                 token = binding.source.subscribe(callback, run=binding.run, **options)
                 subscription.tokens.append((binding.source, token))
+            if hasattr(device.obj, "walk_signals"):
+                for _, _, signal in device.obj.walk_signals():
+                    event = getattr(signal, "SUB_SIGNAL_INFO_CHANGED", None)
+                    if not isinstance(signal, bms.BECMessageSignal) or event is None:
+                        continue
+                    callback = partial(self._forward_signal_info, device, sink, subscription)
+                    token = signal.subscribe(callback, event_type=event, run=False)
+                    subscription.tokens.append((signal, token))
         except Exception as exc:
             cleanup_error = subscription.close().exception(timeout=0)
             if cleanup_error is not None:
@@ -849,6 +865,18 @@ class OphydDeviceProvider(DeviceProvider):
         else:
             future.set_result(subscription)
         return future
+
+    @staticmethod
+    def _forward_signal_info(
+        device: DSDevice,
+        sink: DeviceEventSink,
+        subscription: _DeviceEventSubscription,
+        *,
+        obj: ophyd.OphydObject,
+        **_kwargs,
+    ) -> None:
+        if not subscription.closed and obj.root is device.obj:
+            sink.refresh_device_info(device)
 
     def _event_bindings(self, device: DSDevice) -> Iterator[_EventBinding]:
         obj = device.obj

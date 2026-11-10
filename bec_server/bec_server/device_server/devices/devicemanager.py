@@ -197,7 +197,11 @@ class DeviceManagerDS(DeviceManagerBase):
                 self.device_provider_manager.register_device_proxy(device)
         # pylint: disable=broad-except
         except Exception:
-            if name not in self.devices:
+            if self.devices.get(name) is not device:
+                try:
+                    self.device_provider_manager.disconnect_device(device)
+                except Exception:
+                    logger.exception(f"Failed to destroy device {name}")
                 raise
             msg = traceback.format_exc()
             logger.warning(f"Failed to initialize device {name}: {msg}")
@@ -365,6 +369,10 @@ class DeviceManagerDS(DeviceManagerBase):
         """
         device.initialize_device_buffer(self.connector)
 
+    def refresh_device_info(self, device: DSDevice) -> None:
+        """Publish updated signal metadata for the active device wrapper."""
+        self.device_provider_manager.publish_device_info(device, connect=device.enabled)
+
     def publish_device_info(
         self, device: DSDevice, info: dict, pipe: Pipeline | None = None
     ) -> None:
@@ -375,7 +383,7 @@ class DeviceManagerDS(DeviceManagerBase):
             info (dict): Metadata returned by the provider.
             pipe (Pipeline | None): Optional Redis pipeline. Defaults to None.
         """
-        self.connector.set(
+        self.connector.set_and_publish(
             MessageEndpoints.device_info(device.name),
             messages.DeviceInfoMessage(device=device.name, info=info),
             pipe,
@@ -465,10 +473,23 @@ class DeviceManagerDS(DeviceManagerBase):
         if not self._shutdown_event.is_set() and self.devices.get(device.name) is device:
             self._bec_message_handler.publish(event)
 
-    def shutdown(self):
-        """Shutdown the device manager and disconnect all devices"""
+    @property
+    def is_shutting_down(self) -> bool:
+        """
+        Report whether device manager shutdown has started.
+        """
+        return self._shutdown_event.is_set()
+
+    def begin_shutdown(self) -> None:
+        """
+        Signal shutdown before device cleanup starts.
+        """
         with self._auto_monitor_start_lock:
             self._shutdown_event.set()
+
+    def shutdown(self):
+        """Shutdown the device manager and disconnect all devices"""
+        self.begin_shutdown()
         if self._auto_monitor_update_thread.is_alive():
             self._auto_monitor_update_thread.join(timeout=5)
         self._refresh_scheduler.clear()

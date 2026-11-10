@@ -32,6 +32,7 @@ class DSDevice(DeviceBaseWithConfig):
         self.obj = obj
         self.metadata = {}
         self.initialized = False
+        self.device_info_active = True
 
     def __getattr__(self, name: str) -> Any:
         if hasattr(self.obj, name):

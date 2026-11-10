@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
+from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from bec_lib import messages, plugin_helper
@@ -39,6 +40,7 @@ class DeviceProviderManager:
 
     def __init__(self, device_manager: DeviceManagerDS):
         self.device_manager = device_manager
+        self._device_info_lock = Lock()
         self.providers: dict[str, DeviceProvider] = {"ophyd": OphydDeviceProvider(device_manager)}
 
     ############################################################################
@@ -125,7 +127,17 @@ class DeviceProviderManager:
             device (DSDevice): The device wrapper to disconnect.
         """
         provider = self.get_provider(type(device.obj))
-        provider.disconnect_device(device)
+        with self._device_info_lock:
+            was_active = device.device_info_active
+            device.device_info_active = False
+        # Native teardown can wait for callbacks that also need the publication lock.
+        try:
+            provider.disconnect_device(device)
+        except Exception:
+            if getattr(device.obj, "_destroyed", True) is False:
+                with self._device_info_lock:
+                    device.device_info_active = was_active
+            raise
 
     ############################################################################
     ############################# Device Metadata ##############################
@@ -180,15 +192,21 @@ class DeviceProviderManager:
             Exception | None: Original extraction or publication error, or None on success.
                 Errors from the disconnected fallback propagate to the caller.
         """
-        try:
-            info = self.get_device_info(device, connect=connect)
-            self.device_manager.publish_device_info(device, info.to_wire(), pipe=pipe)
-        except Exception as exc:
-            logger.error(f"Failed to publish device info for {device.name}: {exc}")
-            info = self.get_device_info(device, connect=False)
-            self.device_manager.publish_device_info(device, info.to_wire(), pipe=pipe)
-            return exc
-        return None
+        with self._device_info_lock:
+            if pipe is None and (
+                not device.device_info_active
+                or self.device_manager.devices.get(device.name) is not device
+            ):
+                return None
+            try:
+                info = self.get_device_info(device, connect=connect)
+                self.device_manager.publish_device_info(device, info.to_wire(), pipe=pipe)
+            except Exception as exc:
+                logger.error(f"Failed to publish device info for {device.name}: {exc}")
+                info = self.get_device_info(device, connect=False)
+                self.device_manager.publish_device_info(device, info.to_wire(), pipe=pipe)
+                return exc
+            return None
 
     def get_runtime_signal_info(self, device: DSDevice) -> dict[str, messages.SignalInfo]:
         """Extract signal runtime metadata without performing publication."""

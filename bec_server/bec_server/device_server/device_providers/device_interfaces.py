@@ -178,5 +178,8 @@ class DeviceEventSink(Protocol):
     def publish_motion(self, device: DSDevice, status: int) -> None:
         """Publish the current native motion state."""
 
+    def refresh_device_info(self, device: DSDevice) -> None:
+        """Publish an updated description after native signal metadata changes."""
+
     def submit_message(self, event: DeviceMessageEvent) -> None:
         """Accept one payload event and apply BEC context policy at ingress."""

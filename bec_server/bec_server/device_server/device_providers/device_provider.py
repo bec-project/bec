@@ -246,10 +246,12 @@ class DeviceProvider(Protocol):
 
     def stop_runtime(self) -> AbstractContextManager[None]:
         """
-        Release service-wide resources around connector shutdown.
+        Release service-wide resources around device and connector shutdown.
+
+        Keep any runtime needed by device cleanup available until the context exits.
 
         Returns:
-            AbstractContextManager[None]: Context surrounding service shutdown.
+            AbstractContextManager[None]: Context surrounding device and connector shutdown.
         """
         return nullcontext()
 

@@ -1,7 +1,7 @@
 import asyncio
 import threading
 from concurrent.futures import Future
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from types import MethodType, SimpleNamespace
 from unittest import mock
 from unittest.mock import ANY, patch
@@ -22,7 +22,7 @@ from bec_lib.messages import BECStatus
 from bec_lib.redis_connector import MessageObject
 from bec_lib.serialization import MsgpackSerialization
 from bec_lib.service_config import ServiceConfig
-from bec_lib.tests.utils import ConnectorMock
+from bec_lib.tests.utils import ConnectorMock, DMClientMock
 from bec_server.device_server.device_providers.device_interfaces import DeviceKind, DeviceTarget
 from bec_server.device_server.device_providers.device_provider_manager import DeviceProviderManager
 from bec_server.device_server.device_providers.ophyd.callback_monitor import OphydCallbackMonitor
@@ -34,12 +34,25 @@ from bec_server.device_server.device_providers.ophyd.ophyd_device_provider impor
 )
 from bec_server.device_server.device_providers.ophyd.ophyd_rpc import OphydRPC
 from bec_server.device_server.device_server import DeviceServer, InvalidDeviceError
+from bec_server.device_server.devices.config_update_handler import ConfigUpdateHandler
 from bec_server.device_server.devices.devicemanager import DeviceManagerDS
 from bec_server.device_server.devices.ds_device import DSDevice
 from bec_server.device_server.instruction_execution import InstructionExecution
 
 # pylint: disable=missing-function-docstring
 # pylint: disable=protected-access
+
+
+class DeviceManagerProxyMock(DMClientMock):
+    is_shutting_down = False
+
+    def begin_shutdown(self) -> None:
+        self.is_shutting_down = True
+
+
+@pytest.fixture
+def device_manager_class():
+    return DeviceManagerProxyMock
 
 
 class DeviceServerMock(DeviceServer):
@@ -224,6 +237,81 @@ def test_shutdown_joins_ophyd_callback_monitor_first(device_server_mock, shutdow
             device_server_mock.shutdown()
 
     assert monitor._thread is None
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_shutdown_keeps_provider_runtime_alive_for_device_cleanup(
+    device_server_mock, cleanup_fails
+):
+    server = device_server_mock
+    calls = mock.Mock()
+
+    @contextmanager
+    def stop_runtime():
+        calls.prepare_runtime_shutdown()
+        try:
+            yield
+        finally:
+            calls.finalize_runtime()
+
+    if cleanup_fails:
+        calls.shutdown_device_manager.side_effect = RuntimeError("Device cleanup failed")
+
+    with (
+        mock.patch.object(server.provider_manager, "stop_runtime", stop_runtime),
+        mock.patch.object(server, "stop", calls.stop_accepting_instructions),
+        mock.patch.object(server.device_manager, "shutdown", calls.shutdown_device_manager),
+        mock.patch(
+            "bec_server.device_server.device_server.BECService.shutdown", calls.shutdown_service
+        ),
+    ):
+        if cleanup_fails:
+            with pytest.raises(RuntimeError, match="Device cleanup failed"):
+                server.shutdown()
+        else:
+            server.shutdown()
+
+    assert calls.mock_calls == [
+        mock.call.prepare_runtime_shutdown(),
+        mock.call.stop_accepting_instructions(),
+        mock.call.shutdown_device_manager(),
+        mock.call.shutdown_service(),
+        mock.call.finalize_runtime(),
+    ]
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+def test_shutdown_ignores_new_and_queued_instructions(device_server_mock):
+    server = device_server_mock
+    handler = ConfigUpdateHandler(server.device_manager)
+    instruction = mock.MagicMock()
+    message = SimpleNamespace(value=instruction)
+    config_message = SimpleNamespace(value=messages.DeviceConfigMessage(action="reload", config={}))
+
+    with (
+        mock.patch.object(server.executor, "submit") as submit,
+        mock.patch.object(handler.executor, "submit") as submit_config,
+    ):
+        server.instructions_callback(message)
+        submit.assert_called_once_with(server.handle_device_instructions, instruction)
+        run, queued_instruction = submit.call_args.args
+        submit.reset_mock()
+        original_stop = server.stop
+
+        def stop():
+            assert server.is_shutting_down
+            assert server.device_manager.is_shutting_down
+            server.instructions_callback(message)
+            run(queued_instruction)
+            handler._device_config_callback(config_message)
+            original_stop()
+
+        with mock.patch.object(server, "stop", side_effect=stop):
+            server.shutdown()
+
+    submit.assert_not_called()
+    submit_config.assert_not_called()
+    instruction.content.__getitem__.assert_not_called()
 
 
 def test_shutdown_without_starting_ophyd_callback_monitor(device_server_mock):
