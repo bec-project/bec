@@ -1963,3 +1963,134 @@ def test_request_handler_update_instruction_uses_snapshot_when_request_removed(d
             device_server.requests_handler._update_instruction("diid", is_status_obj=True)
 
     set_finished_mock.assert_called_once_with("diid", success=True)
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("already_done", [False, True])
+@pytest.mark.parametrize("success", [False, True])
+@pytest.mark.parametrize("kind", [Kind.normal, Kind.config, Kind.normal | Kind.config])
+def test_set_completion_publication_contract(
+    device_server_mock, connected_connector, already_done, success, kind
+):
+    """Preserve native-kind cache routing and publication before terminal responses."""
+    server = device_server_mock
+    device = server.device_manager.devices.samx
+    status = DeviceStatus(device.obj)
+    instruction = messages.DeviceInstructionMessage(
+        device=device.name,
+        action="set",
+        parameter={"value": 5},
+        metadata={
+            "device_instr_id": "completion-contract",
+            "RID": "completion-rid",
+            "response": True,
+        },
+    )
+    signals = {device.name: {"value": 5, "timestamp": 1234}}
+    endpoints = []
+    if kind == Kind.normal:
+        endpoints = [
+            MessageEndpoints.device_read(device.name),
+            MessageEndpoints.device_readback(device.name),
+        ]
+    elif kind == Kind.config:
+        endpoints = [MessageEndpoints.device_read_configuration(device.name)]
+    terminal_snapshots = []
+    original_send = connected_connector.send
+
+    def send_and_observe(topic, message, *args, **kwargs):
+        if isinstance(message, messages.DeviceInstructionResponse) and message.status in (
+            "completed",
+            "error",
+        ):
+            terminal_snapshots.append([connected_connector.get(endpoint) for endpoint in endpoints])
+        return original_send(topic, message, *args, **kwargs)
+
+    def finish():
+        if success:
+            status.set_finished()
+        else:
+            status.set_exception(RuntimeError("motion failed"))
+
+    if already_done:
+        finish()
+    try:
+        with (
+            mock.patch.object(server, "connector", connected_connector),
+            mock.patch.object(server.requests_handler, "connector", connected_connector),
+            mock.patch.object(connected_connector, "send", side_effect=send_and_observe) as send,
+            mock.patch.object(
+                connected_connector, "xadd", wraps=connected_connector.xadd
+            ) as client_status,
+            mock.patch.object(device.obj, "_kind", kind),
+            mock.patch.object(device.obj, "set", return_value=status),
+            mock.patch.object(device.obj, "read", return_value=signals),
+            mock.patch.object(device.obj, "read_configuration", return_value=signals),
+        ):
+            server.handle_device_instructions(instruction)
+            if not already_done:
+                assert server.requests_handler.get_request("completion-contract") is not None
+                assert terminal_snapshots == []
+                finish()
+
+        responses = [call.args[1] for call in send.call_args_list]
+        assert [response.status for response in responses] == [
+            "running",
+            "running",
+            "completed" if success else "error",
+        ]
+        assert responses[-1].result_is_status is True
+        assert server.requests_handler.get_request("completion-contract") is None
+        assert len(terminal_snapshots) == 1
+        for endpoint in (
+            MessageEndpoints.device_read(device.name),
+            MessageEndpoints.device_readback(device.name),
+            MessageEndpoints.device_read_configuration(device.name),
+        ):
+            if endpoint not in endpoints:
+                assert connected_connector.get(endpoint) is None
+        for snapshot in terminal_snapshots[0]:
+            assert snapshot.signals == signals
+            assert snapshot.metadata == instruction.metadata
+        client_status.assert_called_once()
+        assert client_status.call_args.args[0] == MessageEndpoints.device_req_status(
+            "completion-rid"
+        )
+        assert client_status.call_args.args[1]["data"].success is success
+        assert client_status.call_args.kwargs["expire"] == 3600
+    finally:
+        if not status.done:
+            status.set_finished()
+
+
+@pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
+@pytest.mark.parametrize("action", ["stage", "unstage"])
+@pytest.mark.parametrize("result", [None, []])
+def test_synchronous_stage_results_complete_without_status_objects(
+    device_server_mock, action, result
+):
+    """None and list staging results remain immediate successes without status registration."""
+    server = device_server_mock
+    device = server.device_manager.devices.samx
+    instruction = messages.DeviceInstructionMessage(
+        device=device.name,
+        action=action,
+        parameter={},
+        metadata={"device_instr_id": "stage-contract", "RID": "stage-rid"},
+    )
+    with (
+        mock.patch.object(device.obj, "_staged", Staged.no if action == "stage" else Staged.yes),
+        mock.patch.object(device.obj, action, return_value=result),
+        mock.patch.object(server.connector, "send") as send,
+        mock.patch.object(server.connector, "set") as set_message,
+    ):
+        server.handle_device_instructions(instruction)
+
+    responses = [call.args[1] for call in send.call_args_list]
+    assert [response.status for response in responses] == ["running", "completed"]
+    assert responses[-1].result_is_status is None
+    assert server.requests_handler.get_request("stage-contract") is None
+    assert not any(
+        call.args[0] == MessageEndpoints.device_staged(device.name)
+        for call in set_message.call_args_list
+    )

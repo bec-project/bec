@@ -433,3 +433,22 @@ def test_update_cache_omitted_kind(rpc_cls, instr, mock_rpc_methods):
     mock_rpc_methods["read"].assert_called_once_with(instr)
     mock_rpc_methods["read_config"].assert_called_once_with(instr)
     assert result == {"config": "data"}
+
+
+@pytest.mark.parametrize("kind", [Kind.normal | Kind.config, Kind.hinted | Kind.config])
+def test_rpc_mixed_kind_cache_refresh_order(rpc_cls, instr, kind):
+    """Mixed native kinds refresh readings before configuration, unlike monitor selection."""
+    target = mock.Mock(kind=kind)
+    order = []
+    with (
+        mock.patch.object(
+            rpc_cls, "_rpc_read_and_return", side_effect=lambda _: order.append("read")
+        ),
+        mock.patch.object(
+            rpc_cls,
+            "_rpc_read_configuration_and_return",
+            side_effect=lambda _: order.append("configuration"),
+        ),
+    ):
+        rpc_cls._update_cache(target, instr)
+    assert order == ["read", "configuration"]
