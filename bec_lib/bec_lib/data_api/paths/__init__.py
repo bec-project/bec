@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-#: Paths every DataAPI registers, in this order.
-DEFAULT_DATA_PATHS = ()
+from .redis import RedisDataPath
 
-__all__ = ["DEFAULT_DATA_PATHS"]
+#: Paths every DataAPI registers, in this order (Redis priority 10).
+DEFAULT_DATA_PATHS = (RedisDataPath,)
+
+__all__ = ["DEFAULT_DATA_PATHS", "RedisDataPath"]

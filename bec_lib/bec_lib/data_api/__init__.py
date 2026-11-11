@@ -51,7 +51,7 @@ from .models import (
     SubscriptionUpdate,
     UpdateReason,
 )
-from .paths import DEFAULT_DATA_PATHS
+from .paths import DEFAULT_DATA_PATHS, RedisDataPath
 from .scenarios import TERMINAL_SCAN_STATES, ScanTarget, Scenario, classify
 from .subscription import Subscription
 
@@ -86,6 +86,7 @@ __all__ = [
     "SubscriptionUpdate",
     "UpdateReason",
     "DEFAULT_DATA_PATHS",
+    "RedisDataPath",
     "ScanTarget",
     "Scenario",
     "TERMINAL_SCAN_STATES",
