@@ -300,10 +300,15 @@ class AsyncWriter(threading.Thread):
                     else:
                         signal_group = device_group[signal_name]
 
+                    # The value goes first: an update that is rejected leaves no timestamp behind.
+                    if "value" in signal_data and not self.write_value_data(
+                        signal_group, signal_data["value"], async_update
+                    ):
+                        continue
                     for key, value in signal_data.items():
                         if key == "value":
-                            self.write_value_data(signal_group, value, async_update)
-                        elif key == "timestamp":
+                            continue
+                        if key == "timestamp":
                             self.write_timestamp_data(
                                 signal_group,
                                 value,
@@ -333,7 +338,18 @@ class AsyncWriter(threading.Thread):
 
         f.flush()
 
-    def write_value_data(self, signal_group: h5py.Group, value: Any, async_update: dict):
+    def write_value_data(self, signal_group: h5py.Group, value: Any, async_update: dict) -> bool:
+        """
+        Write the value data to the file.
+
+        Args:
+            signal_group (h5py.Group): The group to write the data to
+            value (Any): The value data to write
+            async_update (dict): The async update metadata
+
+        Returns:
+            bool: False if the update was rejected with an alarm and nothing was stored
+        """
 
         if isinstance(value, list):
             value = np.array(value)
@@ -353,14 +369,15 @@ class AsyncWriter(threading.Thread):
         update_type: Literal["add", "add_slice", "replace"] = async_update["type"]
 
         if update_type == "add":
-            self._write_value_add(async_update, signal_group, value)
+            return self._write_value_add(async_update, signal_group, value)
 
         elif update_type == "add_slice":
-            self._write_value_add_slice(async_update, signal_group, value)
+            return self._write_value_add_slice(async_update, signal_group, value)
 
         elif update_type == "replace":
             # store the data to be written after the scan is complete
             self.device_data_replace[signal_group.name] = np.asarray(value)
+            return True
         else:
             msg = f"Unknown async update type: {update_type}. Data will not be written."
             self.connector.raise_alarm(
@@ -373,8 +390,9 @@ class AsyncWriter(threading.Thread):
                 ),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
+            return False
 
-    def _write_value_add(self, async_update: dict, signal_group: h5py.Group, value: Any):
+    def _write_value_add(self, async_update: dict, signal_group: h5py.Group, value: Any) -> bool:
         """
         Write the value data to the file using the 'add' async update type.
 
@@ -382,6 +400,9 @@ class AsyncWriter(threading.Thread):
             async_update (dict): The async update metadata
             signal_group (h5py.Group): The group to write the data to
             value (Any): The value data to write
+
+        Returns:
+            bool: False if the update was rejected with an alarm and nothing was stored
         """
 
         max_shape: tuple = async_update["max_shape"]
@@ -404,7 +425,7 @@ class AsyncWriter(threading.Thread):
                 if value.ndim < len(max_shape):
                     value = value.reshape((1,) + value.shape)
                 create_dataset_safe(signal_group, "value", data=value, maxshape=max_shape)
-            return
+            return True
 
         # add to the already existing dataset
         if value.ndim < len(max_shape):
@@ -434,11 +455,14 @@ class AsyncWriter(threading.Thread):
                     ),
                     metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
                 )
-                return
+                return False
             signal_group["value"].resize((current_shape[0] + value.shape[0], *current_shape[1:]))
             signal_group["value"][-value.shape[0] :, ...] = value
+        return True
 
-    def _write_value_add_slice(self, async_update: dict, signal_group: h5py.Group, value: Any):
+    def _write_value_add_slice(
+        self, async_update: dict, signal_group: h5py.Group, value: Any
+    ) -> bool:
         """
         Write the value data to the file using the 'add_slice' async update type.
 
@@ -446,6 +470,9 @@ class AsyncWriter(threading.Thread):
             async_update (dict): The async update metadata
             signal_group (h5py.Group): The group to write the data to
             value (Any): The value data to write
+
+        Returns:
+            bool: False if the update was rejected with an alarm and nothing was stored
         """
 
         max_shape: tuple = async_update["max_shape"]
@@ -467,7 +494,7 @@ class AsyncWriter(threading.Thread):
                 ),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
-            return
+            return False
 
         if value.ndim != 1:
             msg = f"Invalid data shape for signal group {signal_group.name} async update type 'add_slice': {value.shape}. Data must be 1D. Data will not be written."
@@ -481,7 +508,7 @@ class AsyncWriter(threading.Thread):
                 ),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
-            return
+            return False
 
         # if max_shape contains more than one None, we have to use a vlen_dtype
         num_undefined = sum(1 for i in max_shape if i is None)
@@ -503,7 +530,7 @@ class AsyncWriter(threading.Thread):
                 ),
                 metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
             )
-            return
+            return False
 
         if "value" not in signal_group:
             if num_undefined > 1:
@@ -516,7 +543,7 @@ class AsyncWriter(threading.Thread):
                 signal_group["value"][row_index] = value
             else:
                 self._write_initial_fixed_slice(signal_group, value, max_shape, row_index)
-            return
+            return True
 
         # add a slice to the already existing dataset
         if num_undefined > 1:
@@ -547,6 +574,7 @@ class AsyncWriter(threading.Thread):
             )
             signal_group["value"][row_index, col_index : col_index + len(value)] = value
             self.cursor[signal_group.name][row_index] = col_index + len(value)
+        return True
 
     def _write_initial_fixed_slice(
         self,
