@@ -25,6 +25,17 @@ from .data_bundler import (
     SourceSeries,
     correlation_group,
 )
+from .data_path import (
+    BindContext,
+    DataPath,
+    DataSource,
+    EmissionSink,
+    SourceRequest,
+    SourceSpec,
+    apply_size_gate,
+    total_estimated_bytes,
+)
+from .locking import OwnedLock
 from .models import (
     CONTINUOUS_GROUP,
     SCAN_GROUP,
@@ -39,6 +50,7 @@ from .models import (
     SubscriptionUpdate,
     UpdateReason,
 )
+from .scenarios import TERMINAL_SCAN_STATES, ScanTarget, Scenario, classify
 
 __all__ = [
     "SourceSeries",
@@ -46,6 +58,15 @@ __all__ = [
     "CorrelationGroupError",
     "CorrelationMode",
     "DataBundler",
+    "BindContext",
+    "DataPath",
+    "DataSource",
+    "EmissionSink",
+    "SourceRequest",
+    "SourceSpec",
+    "apply_size_gate",
+    "total_estimated_bytes",
+    "OwnedLock",
     "AxisMode",
     "CONTINUOUS_GROUP",
     "CorrelationGroup",
@@ -58,4 +79,8 @@ __all__ = [
     "SourceKind",
     "SubscriptionUpdate",
     "UpdateReason",
+    "ScanTarget",
+    "Scenario",
+    "TERMINAL_SCAN_STATES",
+    "classify",
 ]
