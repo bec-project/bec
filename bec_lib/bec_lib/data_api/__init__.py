@@ -18,6 +18,7 @@ Layers, top-down, each importing only what is below: data_api -> subscription ->
 decoding -> data_path -> data_bundler, models, scenarios, client_views, emission.
 """
 
+from .data_api import PATH_ENTRY_POINT_GROUP, DataAPI
 from .data_bundler import (
     CorrelationGroupError,
     CorrelationMode,
@@ -49,10 +50,13 @@ from .models import (
     SubscriptionUpdate,
     UpdateReason,
 )
+from .paths import DEFAULT_DATA_PATHS
 from .scenarios import TERMINAL_SCAN_STATES, ScanTarget, Scenario, classify
 from .subscription import Subscription
 
 __all__ = [
+    "DataAPI",
+    "PATH_ENTRY_POINT_GROUP",
     "SourceSeries",
     "correlation_group",
     "Subscription",
@@ -79,6 +83,7 @@ __all__ = [
     "SourceKind",
     "SubscriptionUpdate",
     "UpdateReason",
+    "DEFAULT_DATA_PATHS",
     "ScanTarget",
     "Scenario",
     "TERMINAL_SCAN_STATES",
