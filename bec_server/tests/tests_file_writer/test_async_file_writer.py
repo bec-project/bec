@@ -652,6 +652,42 @@ def test_async_writer_timestamp_aggregation(async_writer, update_type, timestamp
     async_writer.file_handle.close()
 
 
+def test_async_writer_rejected_update_stores_no_timestamp(async_writer):
+    """An update that is rejected with an alarm leaves neither a value nor a timestamp behind."""
+    msg = messages.DeviceMessage(
+        signals={"monitor_async": {"value": [[1, 2], [3, 4]], "timestamp": 1}},
+        metadata={"async_update": {"type": "add_slice", "index": 0, "max_shape": [None, 4]}},
+    )
+    with mock.patch.object(async_writer.connector, "raise_alarm") as raise_alarm:
+        async_writer.write_data({"monitor_async": [msg]})
+    raise_alarm.assert_called_once()
+
+    group = async_writer.file_handle[f"{async_writer.BASE_PATH}/monitor_async/monitor_async"]
+    assert "value" not in group
+    assert "timestamp" not in group
+    assert async_writer.written_signals == {}
+    async_writer.file_handle.close()
+
+
+def test_async_writer_rejected_update_keeps_timestamps_parallel_to_rows(async_writer):
+    """A rejected 'add' update in the middle of a scan adds no timestamp without its row."""
+    async_update = {"type": "add", "max_shape": [None, 3, 2]}
+    values = [np.ones((1, 3, 2)), np.ones((1, 5, 2)), np.ones((1, 3, 2))]
+    with mock.patch.object(async_writer.connector, "raise_alarm") as raise_alarm:
+        for timestamp, value in enumerate(values, start=1):
+            msg = messages.DeviceMessage(
+                signals={"monitor_async": {"value": value, "timestamp": timestamp}},
+                metadata={"async_update": async_update},
+            )
+            async_writer.write_data({"monitor_async": [msg]})
+    raise_alarm.assert_called_once()
+
+    group = async_writer.file_handle[f"{async_writer.BASE_PATH}/monitor_async/monitor_async"]
+    assert group["value"].shape == (2, 3, 2)
+    assert group["timestamp"][:].tolist() == [1, 3]
+    async_writer.file_handle.close()
+
+
 def test_async_writer_async_signal(async_writer):
     """Test that async signals are written correctly using the device_async_signal endpoint."""
     # Only test when async_signals is not empty (when parameterized fixture provides the signal)
