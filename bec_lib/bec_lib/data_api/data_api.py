@@ -384,9 +384,9 @@ class DataAPI:
             min_emit_interval (float): Backend emission coalescing interval in
                 seconds for live updates (trailing emission guaranteed);
                 ``0`` disables coalescing.
-            max_points (int | None): Per-source retention cap; oldest points
-                are dropped beyond it. Recommended for endless device-stream
-                subscriptions.
+            max_points (int | None): Per-source retention cap of a live stream; oldest
+                points are dropped beyond it. Recommended for endless device-stream
+                subscriptions. A scan read from its file is delivered whole.
             progress_callback: Optional callable receiving load fractions
                 (0..1) while a data path reads bulk data (file reads).
                 Invoked on worker threads; must be cheap and must not call
