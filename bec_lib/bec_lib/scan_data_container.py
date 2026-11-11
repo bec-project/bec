@@ -10,12 +10,13 @@ import functools
 import importlib
 import time
 from collections import deque, namedtuple
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Dict, Literal, NamedTuple, Tuple
 
 import h5py
 import hdf5plugin  # Required to ensure compatibility with HDF5 files using plugins
+import numpy as np
 from _collections_abc import dict_items, dict_keys
 from prettytable import PrettyTable
 
@@ -25,6 +26,53 @@ if TYPE_CHECKING:  # pragma: no cover
     from bec_lib import messages
 
 logger = bec_logger.logger
+
+
+class SignalSlab(NamedTuple):
+    """
+    A block of consecutive rows of a stored signal, as handed out by
+    :meth:`SignalDataReference.read_slabs`.
+
+    ``data`` holds the rows ``start:stop`` of the value and of every other dataset of
+    the signal that has one entry per row (the timestamps). ``total`` is the number of
+    rows of the signal. ``other`` holds, in the first slab only, the datasets of another
+    length, whole.
+    """
+
+    start: int
+    stop: int
+    total: int
+    data: dict
+    other: dict = {}
+
+
+class SlabIterator(Iterator[SignalSlab]):
+    """
+    The slabs of a stored signal, as returned by :meth:`SignalDataReference.read_slabs`.
+
+    It is an iterator and a context manager, like the result of :func:`os.scandir`. The
+    file is opened for the first slab. It is closed after the last slab, by :meth:`close`,
+    and at the end of a ``with`` block.
+    """
+
+    def __init__(self, slabs: Iterator[SignalSlab]) -> None:
+        self._slabs = slabs
+
+    def __iter__(self) -> SlabIterator:
+        return self
+
+    def __next__(self) -> SignalSlab:
+        return next(self._slabs)
+
+    def close(self) -> None:
+        """Close the file. No further slabs are handed out."""
+        self._slabs.close()
+
+    def __enter__(self) -> SlabIterator:
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
 
 
 class DataCache:
@@ -307,6 +355,12 @@ class SignalDataReference:
         else:
             self._dict_entry = dict_entry if isinstance(dict_entry, list) else [dict_entry]
 
+    #: Elements of the value in one slab of :meth:`read_slabs`.
+    #: The number was chosen empirically and is not derived from the file: 8 million
+    #: elements are 64 MB of float64, which keeps a slab small in memory and large enough
+    #: that the time is spent reading and not on the calls per slab.
+    _SLAB_ELEMENTS = 8_000_000
+
     def read(self) -> dict[Literal["value", "timestamp"], Any]:
         """
         Read the data from the HDF5 file.
@@ -315,6 +369,104 @@ class SignalDataReference:
             dict: The data from the HDF5 file, including the value and timestamp (optional).
         """
         return self._get_entry()
+
+    def read_slabs(self) -> SlabIterator:
+        """
+        Read the signal block by block along its first axis, without the cache.
+
+        Each :class:`SignalSlab` holds the next rows of the value, together with the same
+        rows of the datasets that have one entry per row. A dataset of another length
+        comes whole, in ``other`` of the first slab. Only one slab is in memory at a time,
+        so the caller decides how much of a large signal it keeps. A slab has about
+        ``_SLAB_ELEMENTS`` elements and, for a dataset that is chunked in the file, a
+        whole number of its HDF5 chunks.
+
+        The rows of a ragged signal (a variable-length dataset, as the async writer stores
+        a signal whose rows differ in length) do not show their length before they are
+        read. Its first slab is a single row. Every later slab holds at most twice the
+        rows of the slab before, and at most as many as give ``_SLAB_ELEMENTS`` elements
+        at the length of the longest row of that slab. A slab is larger than
+        ``_SLAB_ELEMENTS`` only by the factor by which its rows are longer than the rows
+        of the slab before, and never smaller than one row.
+
+        The file is open from the first slab until the last one was read. A loop that may
+        end earlier should run in a ``with`` block, which closes the file when it is left::
+
+            with signal.read_slabs() as slabs:
+                for slab in slabs:
+                    if cancelled():
+                        break
+                    consume(slab)
+
+        Returns:
+            SlabIterator: Hands out the rows ``start:stop`` of ``total`` as
+                :class:`SignalSlab`. A signal without rows gives one slab with
+                ``start == stop == total == 0``.
+        """
+        return SlabIterator(self._iter_slabs())
+
+    def _iter_slabs(self) -> Iterator[SignalSlab]:
+        """The generator behind :meth:`read_slabs`; the file is open while it is suspended."""
+        with h5py.File(self._file_reference.file_path, "r") as f:
+            datasets = self._datasets(f)
+            value = datasets.get("value")
+            total = value.shape[0] if value is not None and value.shape else 0
+            if total == 0:
+                yield SignalSlab(0, 0, 0, {key: dset[()] for key, dset in datasets.items()})
+                return
+            per_row = {
+                key: dset for key, dset in datasets.items() if dset.shape and dset.shape[0] == total
+            }
+            ragged = self._is_ragged(value)
+            rows_per_slab = 1 if ragged else self._rows_per_slab(value)
+            start = 0
+            while start < total:
+                stop = min(start + rows_per_slab, total)
+                data = {key: dset[start:stop] for key, dset in per_row.items()}
+                other = {}
+                if start == 0:
+                    other = {key: dset[()] for key, dset in datasets.items() if key not in per_row}
+                yield SignalSlab(start, stop, total, data, other)
+                if ragged:
+                    # The rows read so far are all that is known about the rows to come:
+                    # size the next slab by the longest of them, and let it grow to at
+                    # most twice the rows, so that one short row does not open the gate.
+                    longest = max((np.size(row) for row in data["value"]), default=1)
+                    by_length = self._SLAB_ELEMENTS // max(1, longest)
+                    rows_per_slab = max(1, min(2 * rows_per_slab, by_length))
+                start = stop
+
+    def _datasets(self, f: h5py.File) -> dict[str, h5py.Dataset]:
+        """The datasets of this signal in the open file ``f``, by name."""
+        node = f[self._entry_path]
+        for key in self._dict_entry or []:
+            node = node[key]
+        if isinstance(node, h5py.Dataset):
+            return {"value": node}
+        return {key: node[key] for key in node.keys() if isinstance(node[key], h5py.Dataset)}
+
+    @staticmethod
+    def _is_ragged(dset: h5py.Dataset) -> bool:
+        """
+        Whether the rows of ``dset`` are arrays of variable length. Its shape then says
+        nothing about the number of elements in a row. Variable-length strings do not
+        count: a string is one small element.
+        """
+        base = h5py.check_vlen_dtype(dset.dtype)
+        return base is not None and base not in (str, bytes)
+
+    @classmethod
+    def _rows_per_slab(cls, dset: h5py.Dataset) -> int:
+        """
+        Rows of ``dset`` in one slab: about ``_SLAB_ELEMENTS`` elements, and a whole
+        number of HDF5 chunks when the dataset is chunked, so that no chunk is read twice.
+        """
+        row_elements = max(1, int(np.prod(dset.shape[1:], dtype=np.int64)))
+        rows = max(1, cls._SLAB_ELEMENTS // row_elements)
+        chunk_rows = dset.chunks[0] if dset.chunks else 0
+        if chunk_rows:
+            rows = max(chunk_rows, rows - rows % chunk_rows)
+        return rows
 
     def _get_entry(self) -> dict:
         data = self._file_reference.read(self._entry_path, entry_filter=self._dict_entry)
