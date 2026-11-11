@@ -844,11 +844,11 @@ def test_async_writer_same_device_readback_and_signal(async_writer):
         assert np.array_equal(signal_out, expected_signal)
 
 
-def test_async_writer_raises_on_wrong_data_type(async_writer):
-    """Test that the async writer raises a TypeError when non-DeviceMessage data is sent."""
+def test_async_writer_reports_wrong_data_type(async_writer):
+    """Test that data h5py cannot store is reported and marks the async file as failed."""
     endpoint = MessageEndpoints.device_async_readback("scan_id", "monitor_async")
 
-    # Send invalid data (not a DeviceMessage)
+    # Send invalid data (a value that cannot be stored in a dataset)
     invalid_data = messages.DeviceMessage(
         signals={"monitor_async": {"value": {"data": None}, "timestamp": 1}},
         metadata={"async_update": {"type": "add", "max_shape": [None]}},
@@ -856,8 +856,43 @@ def test_async_writer_raises_on_wrong_data_type(async_writer):
 
     async_writer.connector.xadd(endpoint, msg_dict={"data": invalid_data})
 
-    with pytest.raises(
-        TypeError,
-        match="Failed to create dataset value in group /entry/collection/devices/monitor_async/monitor_async.",
-    ):
+    with mock.patch.object(async_writer.connector, "raise_alarm") as raise_alarm:
         async_writer.poll_and_write_data()
+
+    raise_alarm.assert_called_once()
+    assert raise_alarm.call_args.kwargs["severity"] == Alarms.WARNING
+    assert async_writer.error_info is raise_alarm.call_args.kwargs["info"]
+    assert async_writer.error_info.device == "monitor_async"
+    assert (
+        "Failed to create dataset value in group /entry/collection/devices/monitor_async/monitor_async."
+        in async_writer.error_info.compact_error_message
+    )
+
+
+def test_async_writer_unwritable_update_does_not_stop_other_signals(async_writer):
+    """An update that cannot be stored is skipped; the updates of other signals are written."""
+    async_update = {"type": "add", "max_shape": [None]}
+    unwritable = messages.DeviceMessage(
+        signals={"monitor_async": {"value": {"data": None}, "timestamp": 1}},
+        metadata={"async_update": async_update},
+    )
+    good = messages.DeviceMessage(
+        signals={"waveform": {"value": [7, 8], "timestamp": 1}},
+        metadata={"async_update": async_update},
+    )
+
+    with mock.patch.object(async_writer.connector, "raise_alarm") as raise_alarm:
+        async_writer.write_data({"monitor_async": [unwritable, unwritable], "waveform": [good]})
+        async_writer.write_data({"waveform": [good]})
+
+    # one alarm per signal, and the scan's async file is still reported as failed
+    raise_alarm.assert_called_once()
+    assert async_writer.error_info is raise_alarm.call_args.kwargs["info"]
+
+    devices = async_writer.file_handle[async_writer.BASE_PATH]
+    assert devices["waveform/waveform/value"][:].tolist() == [7, 8, 7, 8]
+    assert devices["waveform/waveform/timestamp"][:].tolist() == [1, 1]
+    assert "value" not in devices["monitor_async/monitor_async"]
+    assert "timestamp" not in devices["monitor_async/monitor_async"]
+    assert async_writer.written_signals == {"waveform": ["waveform"]}
+    async_writer.file_handle.close()

@@ -109,6 +109,7 @@ class AsyncWriter(threading.Thread):
         self.append_shapes = {}
         self.written_devices = set()
         self._written_signals = defaultdict(set)
+        self._unwritable_signals = set()
         self.file_handle = None
         self.cursor = defaultdict(dict)
         self.error_info: messages.ErrorInfo | None = None
@@ -301,9 +302,15 @@ class AsyncWriter(threading.Thread):
                         signal_group = device_group[signal_name]
 
                     # The value goes first: an update that is rejected leaves no timestamp behind.
-                    if "value" in signal_data and not self.write_value_data(
-                        signal_group, signal_data["value"], async_update
-                    ):
+                    try:
+                        written = "value" not in signal_data or self.write_value_data(
+                            signal_group, signal_data["value"], async_update
+                        )
+                    # pylint: disable=broad-except
+                    except Exception:
+                        self._report_unwritable_update(device_name, signal_name)
+                        written = False
+                    if not written:
                         continue
                     for key, value in signal_data.items():
                         if key == "value":
@@ -337,6 +344,40 @@ class AsyncWriter(threading.Thread):
                 create_dataset_safe(group, "value", data=value, maxshape=value.shape)
 
         f.flush()
+
+    def _report_unwritable_update(self, device_name: str, signal_name: str) -> None:
+        """
+        Report an update that could not be written, from within the exception handler.
+
+        The update is skipped and the writer keeps running, so that the updates of the other
+        signals of the scan are still stored. The failure is kept in error_info, which marks
+        the async file as failed. A signal is reported once; its later failures are skipped.
+
+        Args:
+            device_name (str): The device the update belongs to
+            signal_name (str): The signal the update belongs to
+        """
+        if (device_name, signal_name) in self._unwritable_signals:
+            return
+        self._unwritable_signals.add((device_name, signal_name))
+        msg = (
+            f"Error writing async data of {device_name}.{signal_name} to {self.tmp_file_path}. "
+            "Updates of this signal that cannot be written are skipped."
+        )
+        logger.error(f"{msg} {traceback.format_exc()}")
+        error_info = messages.ErrorInfo(
+            error_message=msg,
+            compact_error_message=traceback.format_exc(limit=0),
+            exception_type="AsyncWriterError",
+            device=device_name,
+        )
+        if self.error_info is None:
+            self.error_info = error_info
+        self.connector.raise_alarm(
+            severity=Alarms.WARNING,
+            info=error_info,
+            metadata={"scan_id": self.scan_id, "scan_number": self.scan_number},
+        )
 
     def write_value_data(self, signal_group: h5py.Group, value: Any, async_update: dict) -> bool:
         """
