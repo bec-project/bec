@@ -51,10 +51,12 @@ from .models import (
     UpdateReason,
 )
 from .scenarios import TERMINAL_SCAN_STATES, ScanTarget, Scenario, classify
+from .subscription import Subscription
 
 __all__ = [
     "SourceSeries",
     "correlation_group",
+    "Subscription",
     "CorrelationGroupError",
     "CorrelationMode",
     "DataBundler",
