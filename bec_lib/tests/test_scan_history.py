@@ -1,3 +1,4 @@
+import os
 import time
 from threading import Event
 from unittest import mock
@@ -5,10 +6,11 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_lib.callback_handler import EventType
+from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.client import BECClient
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.scan_history import ScanHistory
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -254,3 +256,38 @@ def test_scan_history_multiple_scan_numbers(scan_history_without_thread, file_hi
     assert containers[0]._msg == file_history_messages[0]
     assert containers[1]._msg == msgs[0]
     assert containers[2]._msg == msgs[1]
+
+
+def test_history_update_event_fires_after_registry_store(connected_connector):
+    """Consumers of SCAN_HISTORY_UPDATE may read the registry from the
+    callback; the message must be stored before the event fires."""
+    client = mock.MagicMock()
+    client.connector = connected_connector
+    client.callbacks = CallbackHandler()
+    history = ScanHistory(client=client, load_threaded=False)
+
+    class _Recorder:
+        # The callback handler accepts bound methods only (weakly referenced).
+        def __init__(self):
+            self.seen_in_registry = []
+
+        def on_update(self, history_msg=None, **_kwargs):
+            self.seen_in_registry.append(history.get_by_scan_id(history_msg.scan_id) is not None)
+
+    recorder = _Recorder()
+    seen_in_registry = recorder.seen_in_registry
+    client.callbacks.register(EventType.SCAN_HISTORY_UPDATE, recorder.on_update)
+    msg = messages.ScanHistoryMessage(
+        scan_id="hist-1",
+        scan_number=1,
+        dataset_number=1,
+        file_path=os.devnull,
+        exit_status="closed",
+        start_time=1.0,
+        end_time=2.0,
+        scan_name="line_scan",
+        num_points=1,
+    )
+    history._on_scan_history_update({"data": msg})
+    client.callbacks.poll()
+    assert seen_in_registry == [True]
