@@ -1,6 +1,17 @@
 # CHANGELOG
 
 
+## v4.6.1 (2026-11-11)
+
+### Bug Fixes
+
+- **file_writer**: Keep writing async data after an unwritable update
+  ([`61e1c58`](https://github.com/bec-project/bec/commit/61e1c582eea7b4af0db279a523892247ceaa0d8c))
+
+- **file_writer**: Store no timestamp for a rejected async update
+  ([`ef05ed4`](https://github.com/bec-project/bec/commit/ef05ed494ffe99977be425d8efb9cacc37f3ae21))
+
+
 ## v4.6.0 (2026-11-09)
 
 ### Features
