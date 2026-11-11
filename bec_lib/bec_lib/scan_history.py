@@ -103,6 +103,36 @@ class ScanHistory:
             self._remove_oldest_scan()
             self._client.callbacks.run(event_type=EventType.SCAN_HISTORY_UPDATE, history_msg=msg)
 
+    def get_message(self, scan_id: str) -> messages.ScanHistoryMessage | None:
+        """
+        Return the history message of a scan without opening its file.
+
+        Lock-free on purpose: the history-update callback holds the registry
+        lock while it dispatches, so a reader that also waits on another lock
+        must not take it. A single dict read is atomic.
+
+        Args:
+            scan_id (str): Scan ID.
+
+        Returns:
+            messages.ScanHistoryMessage | None: The registry entry, or None.
+        """
+        return self._scan_data.get(scan_id)
+
+    def latest_message(self) -> messages.ScanHistoryMessage | None:
+        """
+        Return the history message of the most recent scan without opening its file.
+
+        Lock-free for the same reason as :meth:`get_message`.
+
+        Returns:
+            messages.ScanHistoryMessage | None: The newest registry entry, or None.
+        """
+        try:
+            return self._scan_data.get(self._scan_ids[-1])
+        except IndexError:
+            return None
+
     def get_by_scan_id(self, scan_id: str) -> ScanDataContainer | None:
         """Get the scan data by scan ID."""
         with self._scan_data_lock:

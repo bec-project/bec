@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from threading import Event
 from unittest import mock
@@ -71,6 +72,28 @@ class _ScanHistoryUpdateRecorder:
 
 
 # @pytest.mark.timeout(20)
+def test_scan_history_get_message_reads_the_registry_without_the_lock(
+    scan_history_without_thread, file_history_messages
+):
+    history, _ = scan_history_without_thread
+    assert history.get_message("scan_id_2") == file_history_messages[1]
+    assert history.get_message("unknown") is None
+    # Must not wait for the registry lock: the update callback holds it while dispatching.
+    with history._scan_data_lock:
+        result = []
+        reader = threading.Thread(target=lambda: result.append(history.get_message("scan_id_1")))
+        reader.start()
+        reader.join(timeout=1)
+        assert result == [file_history_messages[0]]
+
+
+def test_scan_history_latest_message(scan_history_without_thread, file_history_messages):
+    history, _ = scan_history_without_thread
+    assert history.latest_message() == file_history_messages[-1]
+    history._scan_ids.clear()
+    assert history.latest_message() is None
+
+
 def test_scan_history_removes_oldest_scan(scan_history_without_thread, file_history_messages):
     scan_history, _ = scan_history_without_thread
     recorder = _ScanHistoryUpdateRecorder()
