@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -104,6 +104,7 @@ class RecordingBackend:
         if status is None:
             return True
         if self.interrupt:
+            self.interrupt = False
             raise KeyboardInterrupt
         if status.complete and self.failed and status.kind == "set":
             raise RuntimeError("Set failed")
@@ -485,6 +486,7 @@ def test_session_uses_native_blocking_and_nonblocking_apis(metadata):
     device = SimpleNamespace(set=Mock(), read_only=False, velocity=signal)
     report = Mock(spec=ScanReport)
     report.status = "RUNNING"
+    report.queue_item = SimpleNamespace(status="RUNNING")
     client = SimpleNamespace(
         device_manager=SimpleNamespace(devices=DeviceContainer({"samx": device})),
         scans=SimpleNamespace(
@@ -506,11 +508,14 @@ def test_session_uses_native_blocking_and_nonblocking_apis(metadata):
     report.status = "COMPLETED"
     assert status_done(report)
     report.wait.assert_called_once_with(timeout=0, file_written=False)
-    report.status = "FAILED"
+    report.status = report.queue_item.status = "FAILED"
     with pytest.raises(RuntimeError, match="FAILED"):
         status_done(report)
     cancel_status(report)
-    report.cancel.assert_called_once()
+    report.cancel.assert_not_called()
+    report.status = report.queue_item.status = "RUNNING"
+    cancel_status(report)
+    report.cancel.assert_called_once_with(queue_request=True)
     assert session.set("samx.velocity", 3) is None
     status.wait.assert_called_once_with()
     status.wait.reset_mock()
@@ -534,7 +539,7 @@ def test_error_path_and_cleanup(scheduler):
     with pytest.raises(ExecutionError) as error:
         execute_with_backend(scheduler, doc, backend)
     assert error.value.path == ("root", "set")
-    assert backend.cancelled
+    assert not backend.cancelled
 
 
 def test_comparisons_and_boolean_operators(scheduler):
@@ -601,6 +606,20 @@ def test_component_schema_defaults_validated_at_registration():
             body=seq(),
         )
     )
+
+
+@pytest.mark.parametrize("uri", ["http://127.0.0.1/schema", "file:///tmp/schema.json"])
+def test_component_schema_compiler_blocks_external_resolution(uri):
+    definition = Definition(
+        id="external",
+        version=1,
+        parameters={"type": "object", "dependencies": {"x": {"$ref": uri}}},
+        body=seq(),
+    )
+    with patch("urllib.request.urlopen") as urlopen:
+        with pytest.raises(ValueError, match=r"only support local"):
+            DefinitionLibrary([definition])
+        urlopen.assert_not_called()
 
 
 def test_boolean_schema_version_rejected():
@@ -712,7 +731,7 @@ def test_nested_literal_parameter_dictionary_is_not_reinterpreted(scheduler):
 
 @pytest.mark.parametrize("exported", [False, True])
 def test_ctrl_c_during_scan_propagates_and_cleans_up(scheduler, exported):
-    backend = RecordingBackend(scheduler.catalog)
+    backend = RecordingBackend(scheduler.catalog, scans_to_complete=1)
     backend.scan = Mock(side_effect=KeyboardInterrupt)
     document = schedule(seq(setting(wait=False), scan(), setting(2, id="after")))
     with pytest.raises(KeyboardInterrupt):
@@ -832,7 +851,14 @@ class NativeTestMove(ScanReport):
         while not self.backend.done(self.handle):
             pass
 
-    def cancel(self):
+    @property
+    def queue_item(self):
+        state = "RUNNING"
+        if self.handle.complete:
+            state = "FAILED" if self.backend.failed else "COMPLETED"
+        return SimpleNamespace(status=state)
+
+    def cancel(self, **_kwargs):
         self.backend.cancel(self.handle)
 
 
@@ -860,7 +886,8 @@ def native_client(backend):
 
         def run_scan(*args, _name=name, **kwargs):
             backend._catalog.validate(_name, list(args), kwargs)
-            return backend.scan(_name, list(args), kwargs)
+            backend.scan(_name, list(args), kwargs)
+            return Mock(spec=ScanReport)
 
         setattr(scans, name, run_scan)
         scans._available_scans[name] = SimpleNamespace(scan_info=info)
@@ -886,6 +913,42 @@ def readable_export_trace(scheduler, document, backend=None, **options):
     assert "BECAdapter" not in source
     exec(compile(source, "readable_sequence.py", "exec"), namespace)
     return backend.trace
+
+
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize(
+    "queue_state, move_state, cancel_kwargs",
+    [
+        ("COMPLETED", "COMPLETED", None),
+        ("COMPLETED", "RUNNING", {}),
+        ("RUNNING", "RUNNING", {"queue_request": True}),
+        ("PENDING", "PENDING", {"queue_request": True}),
+        ("FAILED", "FAILED", None),
+    ],
+)
+def test_scan_wait_failure_only_cancels_outstanding_move(
+    scheduler, exported, queue_state, move_state, cancel_kwargs
+):
+    client = scheduler.client
+    move = Mock(spec=ScanReport, status=move_state, queue_item=SimpleNamespace(status=queue_state))
+    acquisition = Mock(spec=ScanReport)
+    acquisition.wait.side_effect = RuntimeError("scan failed")
+    client.scans.mv = Mock(return_value=move)
+    client.scans.time_scan = Mock(return_value=acquisition)
+    document = schedule(seq(setting(wait=False), scan()))
+
+    with pytest.raises(RuntimeError, match="scan failed"):
+        if exported:
+            source = scheduler.export(document, format="python")
+            exec(source, {"dev": client.device_manager.devices, "scans": client.scans})
+        else:
+            scheduler.execute(document)
+
+    acquisition.wait.assert_called_once_with(file_written=False)
+    if cancel_kwargs is None:
+        move.cancel.assert_not_called()
+    else:
+        move.cancel.assert_called_once_with(**cancel_kwargs)
 
 
 def test_readable_export_live_signal_and_native_scan_calls(scheduler):
@@ -1020,14 +1083,14 @@ def test_description_literal_set_value_is_not_a_variable(scheduler):
 
 
 @pytest.mark.parametrize("exported", [False, True])
-def test_async_failure_cleanup_matches_native_export(scheduler, exported):
+def test_failed_move_is_not_cancelled(scheduler, exported):
     backend = RecordingBackend(scheduler.catalog, failed=True)
     with pytest.raises(RuntimeError, match="Set failed"):
         if exported:
             readable_export_trace(scheduler, ramp(), backend=backend)
         else:
             execute_with_backend(scheduler, ramp(), backend)
-    assert backend.cancelled == ["set"]
+    assert not backend.cancelled
 
 
 def test_definition_changes_are_used_without_a_snapshot(scheduler):

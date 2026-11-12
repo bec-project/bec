@@ -255,7 +255,7 @@ def export_python(tree: Resolved, device_manager=None) -> str:
                     arguments.append(f"**{value(node.arguments, names)}")
             else:
                 arguments.append(f"**{value(node.arguments, names)}")
-            emit(f"{function}({', '.join(arguments)})", depth)
+            emit(f"{function}({', '.join(arguments)}).wait(file_written=False)", depth)
         elif isinstance(node, Set):
             proxy = device_manager.devices[node.device] if device_manager is not None else None
             destination, resolved_value = target(node.device), value(node.value, names)

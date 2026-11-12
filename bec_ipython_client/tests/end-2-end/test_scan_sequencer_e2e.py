@@ -3,19 +3,15 @@
 from unittest.mock import Mock
 
 import pytest
-from test_procedures_e2e import _wait_while
-from test_procedures_e2e import client_logtool_and_manager as client_logtool_and_manager
 
-from bec_lib import messages
-from bec_lib.endpoints import MessageEndpoints
+from bec_lib.procedures.helper import ProcedureState
 from bec_lib.scan_sequencer import Definition, DefinitionLibrary, Schedule, Sequencer
 
 
 @pytest.mark.timeout(180)
 def test_sequence_uses_existing_scan_queue_and_device_statuses(
-    client_logtool_and_manager, monkeypatch
+    bec_ipython_client_fixture, monkeypatch
 ):
-    bec_ipython_client_fixture, logtool, manager = client_logtool_and_manager
     # Use the standard demo configuration loaded by the shared client fixture.
     grid_arguments = ["samx", -1.0, 1.0, 2, "samy", -1.0, 1.0, 2]
     grid_keywords = {"relative": False, "exp_time": 0.01}
@@ -111,7 +107,8 @@ def test_sequence_uses_existing_scan_queue_and_device_statuses(
         "scans": bec_ipython_client_fixture.scans,
     }
     source = scheduler.export(document, format="python")
-    exec(compile(source, "exported_sequence.py", "exec"), namespace)
+    with bec_ipython_client_fixture.scans.hide_report:
+        exec(compile(source, "exported_sequence.py", "exec"), namespace)
     assert move.call_count == acquire.call_count == 4
     assert [call.args[1] for call in move.call_args_list] == [1, -1, 1, -1]
     assert all(
@@ -124,22 +121,11 @@ def test_sequence_uses_existing_scan_queue_and_device_statuses(
         for call in acquire.call_args_list
     )
 
-    # Follow the existing procedure e2e tests: send a request to their real subprocess manager.
-    request = messages.ProcedureRequestMessage(
-        identifier="run_sequence",
-        args_kwargs=((document.model_dump_json(), [definition.model_dump()]), {}),
+    # Submit to the scan server's procedure manager using the public client API.
+    status = bec_ipython_client_fixture.proc.request_new(
+        "run_sequence",
+        ((document.model_dump_json(), [definition.model_dump()]), {}),
         queue="sequence-e2e",
     )
-    bec_ipython_client_fixture.connector.send(MessageEndpoints.procedure_request(), request)
-    _wait_while(lambda: manager._active_workers == {}, 5)
-    _wait_while(lambda: manager._active_workers != {}, 90)
-
-    logtool.fetch()
-    logs = logtool._logs or []
-    assert any(
-        "Finished procedure" in line and request.execution_id in line for line in logs
-    ), f"Sequence procedure did not finish successfully: {manager._logs}"
-    assert not any(
-        "Encountered error running procedure" in line and request.execution_id in line
-        for line in logs
-    ), f"Sequence procedure failed: {manager._logs}"
+    status.wait(timeout_s=90, raise_on_failure=True)
+    assert status.state == ProcedureState.SUCCESS

@@ -148,7 +148,8 @@ apply defaults, and support local schema references. Remote schema references ar
   Known values are validated before execution, including every finite ForEach value. Dynamic values
   receive available structural checks and full validation again at their call boundary.
 - Execution requires a BEC IPython client, including procedure workers (their existing default).
-  Scans use `bec.scans.<name>(*positional, **arguments)` with ordinary blocking IPython behavior.
+  Scans use `bec.scans.<name>(*positional, **arguments)` and wait for the resulting scan report.
+  This also waits for scan completion when live reporting is disabled.
   The sequencer does not suppress reports, wrap scan handles or poll scan-queue internals.
   Scan arguments can include the standard client `metadata` mapping (including loop references).
   The catalog validates its real `ScanObject` frontend type separately from scan-specific inputs.
@@ -175,8 +176,8 @@ zero iterations. A started body finishes before checking again unless interrupte
 Blocking scans, `umv`, signal `.wait()` and asynchronous status waits use native
 Ctrl-C/KeyboardInterrupt. The sequencer does not install a separate cancellation mechanism.
 
-On errors or cancellation, the runtime attempts to cancel outstanding move reports through
-`ScanReport.cancel()`. Device `Status` has no general abort API: already-started device sets may
+On errors or cancellation, the runtime aborts pending or active move requests by ID.
+If the queue item has already finished and the device is still moving, it stops the motor. Device `Status` has no general abort API: already-started device sets may
 continue. There is no rollback. Procedure aborts use the existing worker's interrupt/termination
 behavior; forced process termination cannot guarantee interpreter cleanup or device/scan abort.
 

@@ -94,16 +94,20 @@ class ScanManager:
             ),
         )
 
-    def request_scan_abortion(self, request_id: str | None = None, scan_id=None):
+    def request_scan_abortion(
+        self, request_id: str | None = None, scan_id=None, *, queue: str | None = None
+    ) -> None:
         """request a scan abortion
 
         Args:
             request_id (str, optional): Request ID. Used when no scan ID exists yet.
             scan_id (str, optional): ScanID. Deprecated, use request_id instead. Defaults to None.
+            queue (str | None): Queue that received the request. Uses the current default queue
+                when omitted.
 
         """
         request_id = self._resolve_request_id(request_id=request_id)
-        target_queue = self.get_default_scan_queue()
+        target_queue = queue if queue is not None else self.get_default_scan_queue()
         logger.info("Requesting scan abortion")
 
         self.connector.send(
