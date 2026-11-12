@@ -19,6 +19,20 @@ def scan_report():
     yield report
 
 
+def test_cancel_queued_move_targets_original_queue(scan_report):
+    scan_report.request.request = messages.ScanQueueMessage(
+        scan_type="mv", parameter={"args": {"samx": 1}}, queue="interception"
+    )
+    scan_report.request.requestID = "move-id"
+
+    assert scan_report.cancel(queue_request=True) is scan_report
+
+    scan_report._client.queue.request_scan_abortion.assert_called_once_with(
+        request_id="move-id", queue="interception"
+    )
+    scan_report._client.device_manager.devices.get.assert_not_called()
+
+
 def test_scan_report_wait_mv(scan_report):
     scan_report.request.request = messages.ScanQueueMessage(scan_type="mv", parameter={})
     with mock.patch.object(scan_report, "_wait_move") as wait_move:

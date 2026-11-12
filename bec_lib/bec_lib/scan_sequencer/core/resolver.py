@@ -11,6 +11,22 @@ from ..components import Component, ComponentCall, Definition, ForEach, Repeat, 
 from .evaluation import UNKNOWN, known, validate_json
 
 
+class _OfflineSchemaHandlers(dict):
+    """Intercept every URI scheme when the compiler attempts external resolution."""
+
+    def __contains__(self, _scheme: object) -> bool:
+        return True
+
+    def __getitem__(self, scheme: str):
+        raise ValueError(
+            f"Component schemas only support local $ref references (scheme: {scheme!r})"
+        )
+
+
+def _compile_schema(schema: dict):
+    return fastjsonschema.compile(schema, handlers=_OfflineSchemaHandlers())
+
+
 @dataclass(frozen=True)
 class Resolved:
     """A resolved tree retaining call boundaries and local identities.
@@ -59,7 +75,7 @@ class DefinitionLibrary:
             raise ValueError("Component parameter schemas must describe objects")
         validate_json(definition.model_dump())
         _validate_schema(definition.parameters)
-        fastjsonschema.compile(definition.parameters)
+        _compile_schema(definition.parameters)
         self._definitions[key] = definition
 
     def get(self, key: tuple[str, int]) -> Definition:
@@ -134,7 +150,7 @@ def bind_parameters(parameters: dict, arguments: dict) -> dict:
     """
     if not isinstance(arguments, dict):
         raise ValueError("Component arguments must resolve to a mapping")
-    return fastjsonschema.compile(parameters)(deepcopy(arguments))
+    return _compile_schema(parameters)(deepcopy(arguments))
 
 
 def _schema_children(schema: dict):
@@ -181,7 +197,7 @@ def _validate_schema(schema: dict, root: dict | None = None) -> None:
         raise ValueError("Component schemas only support local $ref references")
     if "default" in schema:
         context = {key: root[key] for key in ("definitions", "$defs") if key in root}
-        fastjsonschema.compile({**context, **schema})(deepcopy(schema["default"]))
+        _compile_schema({**context, **schema})(deepcopy(schema["default"]))
     for child in _schema_children(schema):
         _validate_schema(child, root)
 
@@ -219,5 +235,5 @@ def partial_parameters(definition: Definition, args: object) -> dict:
             # Select the property within the original root so its local references retain
             # access to definitions and other schema locations. Escape JSON Pointer tokens.
             token = name.replace("~", "~0").replace("/", "~1")
-            fastjsonschema.compile({**schema, "$ref": f"#/properties/{token}"})(params[name])
+            _compile_schema({**schema, "$ref": f"#/properties/{token}"})(params[name])
     return params
