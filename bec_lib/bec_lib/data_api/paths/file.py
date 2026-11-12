@@ -14,10 +14,12 @@ from __future__ import annotations
 
 from typing import Any, Iterator, Mapping
 
+import numpy as np
+
 from bec_lib.logger import bec_logger
 
 from .. import client_views
-from ..data_bundler import DataBundler
+from ..data_bundler import DataBundler, SourceSeries
 from ..data_path import (
     BindContext,
     DataPath,
@@ -29,6 +31,7 @@ from ..data_path import (
 from ..decoding import StoredRows, StoredScan, decode_dataset_columns, stored_scan_specs
 from ..models import SourceKey, SourceKind, UpdateReason
 from ..scenarios import Scenario
+from ..views import ColumnView, ViewWindow, bin_rows_for, held_bytes, minmax_decimate
 
 logger = bec_logger.logger
 
@@ -41,10 +44,20 @@ class _SourceLoad:
     series, so a block that was shown costs the consumer no copy.
     """
 
-    def __init__(self, spec: SourceSpec, reference: Any, loaded: DataBundler, file_path: str):
+    def __init__(
+        self,
+        spec: SourceSpec,
+        reference: Any,
+        loaded: DataBundler,
+        file_path: str,
+        view_limit_bytes: int | None = None,
+    ):
         self.spec = spec
         self.done = False
         self.fraction = 0.0
+        #: Set when the source is too large to hold whole: only an overview is kept.
+        self.view: ColumnView | None = None
+        self._view_limit_bytes = view_limit_bytes
         self._loaded = loaded
         self._file_path = file_path
         self._series = loaded.get_series(spec.device, spec.entry, spec.kind or SourceKind.UNINDEXED)
@@ -78,7 +91,15 @@ class _SourceLoad:
                     self._whole = slab.data if slab is not None else {}
                     self.done = True
                 else:
-                    self._rows.write(slab.start, slab.stop, slab.total, slab.data)
+                    values = slab.data["value"]
+                    if slab.start == 0 and self._held_as_view(values, slab.total):
+                        self.view = ColumnView(
+                            slab.total, reference=self._reference, file_path=self._file_path
+                        )
+                    if self.view is not None:
+                        self.view.add_block(slab.start, slab.stop, values)
+                    else:
+                        self._rows.write(slab.start, slab.stop, slab.total, slab.data)
                     self.fraction = slab.stop / slab.total
                     self.done = slab.stop >= slab.total
         except Exception as exc:  # pylint: disable=broad-except
@@ -90,8 +111,24 @@ class _SourceLoad:
             self.fraction = 1.0
             self.close()
 
+    def _held_as_view(self, values: Any, total: int) -> bool:
+        """Whether the column is above the view limit: numbers, one per row."""
+        limit = self._view_limit_bytes
+        dtype = getattr(values, "dtype", None)
+        return (
+            limit is not None
+            and dtype is not None
+            and dtype.kind in "biuf"
+            and getattr(values, "ndim", 0) == 1
+            and held_bytes(total, dtype.itemsize) > limit
+        )
+
     def publish(self, request: SourceRequest) -> None:
         """Show what was read so far in the request's bundle. Lock held."""
+        if self.view is not None and self._error is None:
+            request.state.setdefault("views", {})[self.spec.key] = self.view
+            publish_view(request, self.spec, self.view)
+            return
         try:
             if self._error is not None:
                 raise ValueError(self._error)
@@ -120,6 +157,17 @@ class _SourceLoad:
         slabs, self._slabs = self._slabs, None
         if slabs is not None and hasattr(slabs, "close"):
             slabs.close()
+
+
+def publish_view(request: SourceRequest, spec: SourceSpec, view: ColumnView) -> None:
+    """Put the points held of a large column into the request's bundle. Lock held."""
+    rows, values = view.columns()
+    series = SourceSeries(spec.device, spec.entry, spec.kind or SourceKind.UNINDEXED)
+    series.metadata["file_path"] = view.file_path
+    series.metadata["view"] = view.describe(len(rows))
+    if len(rows):
+        series.extend(values, None, ordinals=rows)
+    request.adopt({spec.key: series})
 
 
 class FileDataPath(DataPath):
@@ -214,7 +262,13 @@ class FileDataPath(DataPath):
             progress_cb = request.progress_callback
             loaded = DataBundler(request.scan_id, max_points=request.bundle.max_points)
             loads = [
-                _SourceLoad(spec, self._reference(container, spec), loaded, msg.file_path)
+                _SourceLoad(
+                    spec,
+                    self._reference(container, spec),
+                    loaded,
+                    msg.file_path,
+                    request.context.view_limit_bytes,
+                )
                 for spec in request.specs
                 if spec.available
             ]
@@ -254,6 +308,66 @@ class FileDataPath(DataPath):
         finally:
             for load in loads:
                 load.close()
+
+    # --- views of large columns ----------------------------------------------
+
+    def request_view(
+        self, request: SourceRequest, key: SourceKey, start: int, stop: int, max_points: int
+    ) -> bool:
+        view: ColumnView | None = request.state.get("views", {}).get(key)
+        if view is None or request.cancelled:
+            return False
+        start = max(0, min(start, view.total))
+        stop = max(start, min(stop, view.total))
+        view.generation += 1
+        request.start_worker(
+            self._read_view,
+            key,
+            view,
+            start,
+            stop,
+            max_points,
+            view.generation,
+            name="data-api-view",
+        )
+        return True
+
+    def _read_view(
+        self,
+        request: SourceRequest,
+        key: SourceKey,
+        view: ColumnView,
+        start: int,
+        stop: int,
+        max_points: int,
+        generation: int,
+    ) -> None:
+        """Read the rows ``start:stop`` of a large column and show them. Worker thread."""
+        bin_rows = bin_rows_for(stop - start, max_points)
+        rows, values = [np.empty(0, dtype=np.int64)], []
+        try:
+            for slab in view.reference.read_slabs(start, stop):
+                if request.cancelled or view.generation != generation:
+                    return  # closed, or a newer request took over
+                kept_rows, kept = minmax_decimate(slab.data["value"], slab.start, bin_rows)
+                rows.append(kept_rows)
+                values.append(kept)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(f"Reading rows {start}:{stop} of {key} failed: {exc}")
+            return
+        spec = next(spec for spec in request.specs if spec.key == key)
+        with self._lock:
+            if request.cancelled or view.generation != generation:
+                return
+            view.window = ViewWindow(
+                start,
+                stop,
+                bin_rows,
+                np.concatenate(rows),
+                np.concatenate(values) if values else np.empty(0),
+            )
+            publish_view(request, spec, view)
+        request.notify(UpdateReason.HISTORY)
 
     @staticmethod
     def _report_progress(request, progress_cb, loads, finished: bool = False) -> None:

@@ -337,6 +337,7 @@ class DataAPI:
         progress_callback: Callable[[float], None] | None = None,
         force_source: str | None = None,
         devices: list[str] | None = None,
+        view_limit_bytes: int | None = None,
         correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
     ) -> Subscription:
         """
@@ -382,6 +383,11 @@ class DataAPI:
                 exceeds this limit, nothing is read: the subscription reports
                 ``size_gated`` with ``estimated_bytes`` and waits for
                 :meth:`Subscription.confirm_size`.
+            view_limit_bytes (int | None): A stored column (one value per row) that would
+                take more memory than this, samples plus row numbers, is not held whole. The subscription delivers an overview of it,
+                the extremes of every bin of rows, and the consumer asks for the rows it
+                looks at with :meth:`Subscription.request_view`. The source then carries
+                ``metadata["view"]``. ``None`` holds every column whole.
             force_source (str | None): Pin the subscription to one data
                 source (a :class:`DataSource` value or the ``data_source``
                 of a registered path), e.g. ``"file"`` to bypass Redis for a
@@ -434,6 +440,7 @@ class DataAPI:
             progress_callback=progress_callback,
             force_source=force_source,
             correlation=correlation,
+            view_limit_bytes=view_limit_bytes,
         )
         # Prefetch scan items BEFORE taking the DataAPI lock: the reads take
         # the scan-manager RLock, and acquiring it under our lock inverts the
@@ -689,6 +696,7 @@ class DataAPI:
         have_item: bool,
         force_source: str | None,
         size_limit_bytes: int | None = None,
+        view_limit_bytes: int | None = None,
     ) -> BindContext:
         """Build the context a scan is routed under (see ``BindContext``). Lock held."""
         return BindContext(
@@ -697,6 +705,7 @@ class DataAPI:
             scan_item=scan_item if have_item else None,
             have_item=have_item,
             size_limit_bytes=size_limit_bytes,
+            view_limit_bytes=view_limit_bytes,
         )
 
     def _classify(

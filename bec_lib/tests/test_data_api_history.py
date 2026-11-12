@@ -48,13 +48,15 @@ class _SlabSignalRef:
     def read(self):
         raise AssertionError("A reference with read_slabs() is read block by block.")
 
-    def read_slabs(self):
+    def read_slabs(self, start=None, stop=None):
         total = len(self.values)
+        first = 0 if start is None else start
+        last = total if stop is None else stop
         try:
-            for start in range(0, total, self.rows):
+            for start in range(first, last, self.rows):
                 if self.gate is not None:
                     self.gate(start)
-                stop = min(start + self.rows, total)
+                stop = min(start + self.rows, last)
                 self.read_blocks += 1
                 yield SignalSlab(
                     start,
@@ -1376,6 +1378,118 @@ def test_partial_history_updates_are_coalesced(data_api, mock_client):
     assert samx.read_blocks == 200
     assert len(updates) <= 3
     assert len(updates[-1].get("samx", "samx").values) == 200
+    sub.close()
+
+
+def _spiky_column(rows=100_000):
+    values = np.sin(np.arange(rows) / 500.0)
+    values[54_321] = 25.0  # one sample that must survive every reduction
+    return values
+
+
+def test_large_column_is_held_as_an_overview(data_api, mock_client, monkeypatch):
+    """Above the view limit only the extremes of every bin of rows are held."""
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    values = _spiky_column()
+    wave = _SlabSignalRef(values, values, rows=30_000)
+    _serve_slabs(mock_client, "big", {("det", "wave"): wave}, rows=len(values))
+
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("det", "wave")],
+        scan="big",
+        callback=updates.append,
+        min_emit_interval=0,
+        view_limit_bytes=1000,
+    )
+    assert wait_for(
+        lambda: updates
+        and updates[-1].get("det", "wave").metadata["view"]["loaded_rows"] == 100_000
+    )
+    source = updates[-1].get("det", "wave")
+    view = source.metadata["view"]
+    assert view["total_rows"] == 100_000 and view["overview_bin"] == 1000 and view["window"] is None
+    assert len(source.values) == view["points"] <= 2 * 100 + 8  # two per bin, plus block tails
+    assert source.values.max() == 25.0 and 54_321 in source.ordinals  # the spike is kept
+    np.testing.assert_array_equal(source.values, values[source.ordinals])
+    # the overview grew block by block
+    assert [u.get("det", "wave").metadata["view"]["loaded_rows"] for u in updates] == [
+        30_000,
+        60_000,
+        90_000,
+        100_000,
+    ]
+    sub.close()
+
+
+def test_requested_rows_replace_the_overview_of_their_range(data_api, mock_client, monkeypatch):
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    values = _spiky_column()
+    wave = _SlabSignalRef(values, values, rows=30_000)
+    _serve_slabs(mock_client, "big", {("det", "wave"): wave}, rows=len(values))
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("det", "wave")],
+        scan="big",
+        callback=updates.append,
+        min_emit_interval=0,
+        view_limit_bytes=1000,
+    )
+    assert wait_for(
+        lambda: updates
+        and updates[-1].get("det", "wave").metadata["view"]["loaded_rows"] == 100_000
+    )
+    overview_points = len(updates[-1].get("det", "wave").values)
+
+    # a narrow range: its rows come as they are
+    assert sub.request_view(("det", "wave"), 50_000, 50_300, max_points=4000)
+    assert wait_for(lambda: updates[-1].get("det", "wave").metadata["view"]["window"] is not None)
+    source = updates[-1].get("det", "wave")
+    assert source.metadata["view"]["window"] == {"start": 50_000, "stop": 50_300, "bin": 1}
+    inside = (source.ordinals >= 50_000) & (source.ordinals < 50_300)
+    np.testing.assert_array_equal(source.ordinals[inside], np.arange(50_000, 50_300))
+    np.testing.assert_array_equal(source.values, values[source.ordinals])
+    assert inside.sum() == 300 and overview_points < len(source.values) <= overview_points + 300
+    assert np.all(np.diff(source.ordinals) > 0)
+
+    # a wider range is reduced to what was asked for, and replaces the first window
+    assert sub.request_view(("det", "wave"), 20_000, 80_000, max_points=600)
+    assert wait_for(lambda: updates[-1].get("det", "wave").metadata["view"]["window"]["bin"] == 200)
+    source = updates[-1].get("det", "wave")
+    inside = (source.ordinals >= 20_000) & (source.ordinals < 80_000)
+    assert 500 <= inside.sum() <= 700 and source.values.max() == 25.0
+    assert not np.array_equal(
+        source.ordinals[(source.ordinals >= 50_000) & (source.ordinals < 50_300)],
+        np.arange(50_000, 50_300),
+    )
+    np.testing.assert_array_equal(source.values, values[source.ordinals])
+
+    # nobody serves a view of a source that is held whole or unknown
+    assert not sub.request_view(("det", "other"), 0, 10)
+    sub.close()
+    assert not sub.request_view(("det", "wave"), 0, 10)
+
+
+def test_column_below_the_view_limit_is_held_whole(data_api, mock_client):
+    values = np.arange(1000, dtype=np.float64)
+    wave = _SlabSignalRef(values, values, rows=400)
+    _serve_slabs(mock_client, "small", {("det", "wave"): wave}, rows=1000)
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("det", "wave")],
+        scan="small",
+        callback=updates.append,
+        min_emit_interval=0,
+        view_limit_bytes=10**9,
+    )
+    assert wait_for(lambda: updates and updates[-1].complete)
+    source = updates[-1].get("det", "wave")
+    assert "view" not in source.metadata and len(source.values) == 1000
+    assert not sub.request_view(("det", "wave"), 0, 10)
     sub.close()
 
 

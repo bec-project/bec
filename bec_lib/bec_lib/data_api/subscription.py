@@ -127,6 +127,7 @@ class Subscription:
         progress_callback: Callable[[float], None] | None = None,
         force_source: str | None = None,
         correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+        view_limit_bytes: int | None = None,
     ):
         self._api = api
         self._lock = api._lock
@@ -142,6 +143,7 @@ class Subscription:
         self._min_emit_interval = min_emit_interval
         self._max_points = max_points
         self._size_limit_bytes = size_limit_bytes
+        self._view_limit_bytes = view_limit_bytes
         self._closed = False
 
         self._requests: dict[CorrelationGroup, list[SourceRequest]] = (
@@ -431,6 +433,7 @@ class Subscription:
             have_item,
             self._force_source,
             self._size_limit_bytes,
+            self._view_limit_bytes,
         )
 
     def _reresolve(
@@ -649,6 +652,39 @@ class Subscription:
                 self._defer_depth -= 1
         self._flush_deferred()
         return self
+
+    def request_view(
+        self, source: SourceKey, start: int, stop: int, max_points: int = 4000
+    ) -> bool:
+        """
+        Ask for the rows ``start:stop`` of a source that is held as an overview.
+
+        A source above ``view_limit_bytes`` arrives as an overview (see
+        ``metadata["view"]``). A consumer that looks at a part of it asks for those rows
+        here; they are read on the path's worker, reduced to at most about ``max_points``
+        points, and arrive in a later update in place of the overview points of that
+        range. A newer request replaces an older one. Returns at once.
+
+        Args:
+            source (SourceKey): The (device, entry) source.
+            start (int): First row wanted.
+            stop (int): One past the last row wanted.
+            max_points (int): Upper bound of the points for these rows; rows are
+                delivered as they are when they fit.
+
+        Returns:
+            bool: Whether a path serves this source as a view and took the request.
+        """
+        key = tuple(source)
+        with self._lock:
+            if self._closed:
+                return False
+            for request in self._all_requests():
+                if request.path is None or all(spec.key != key for spec in request.specs):
+                    continue
+                if request.path.request_view(request, key, int(start), int(stop), int(max_points)):
+                    return True
+        return False
 
     def _detach_requests(self) -> list[SourceRequest]:
         """Detach the current requests from emission and return them. Lock held."""

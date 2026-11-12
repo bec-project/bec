@@ -160,6 +160,10 @@ class BindContext:
     #: :func:`apply_size_gate`; ``None`` (e.g. ``DataAPI.estimate_bytes``)
     #: never gates.
     size_limit_bytes: int | None = None
+    #: A stored column larger than this is not held whole: the subscription gets an
+    #: overview of it and asks for the rows it looks at (``Subscription.request_view``).
+    #: ``None`` holds every column whole.
+    view_limit_bytes: int | None = None
 
     def resolve_scan_item(self, fetch: Callable[[str], Any]) -> Any:
         """
@@ -512,6 +516,28 @@ class DataPath(ABC):
         request.stop_event.set()
         self._active = [active for active in self._active if active is not request]
         self.close(request)
+
+    def request_view(
+        self, request: SourceRequest, key: SourceKey, start: int, stop: int, max_points: int
+    ) -> bool:
+        """
+        Deliver the rows ``start:stop`` of a source that is held as an overview.
+
+        Called by :meth:`Subscription.request_view` with the lock held, so it must not
+        block: a path that serves views starts a worker and returns. The worker replaces
+        the detail window of the source and notifies as for any other insert.
+
+        Args:
+            request (SourceRequest): The request that serves the source.
+            key (SourceKey): The source.
+            start (int): First row wanted.
+            stop (int): One past the last row wanted.
+            max_points (int): Upper bound of the points to deliver for these rows.
+
+        Returns:
+            bool: Whether the path serves this source as a view and took the request.
+        """
+        return False
 
     def confirm_size(self, request: SourceRequest) -> None:
         """
