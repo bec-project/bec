@@ -1,5 +1,6 @@
 from unittest import mock
 
+import h5py
 import numpy as np
 import pytest
 
@@ -196,3 +197,49 @@ def test_data_container_read_baseline_pandas(mock_file):
     df = container.readout_groups.baseline_devices.to_pandas()
     assert df["samz"]["samz"]["value"].tolist() == [1]
     assert df["samz"]["samz"]["timestamp"].tolist() == [1]
+
+
+def test_numbered_entries_have_independent_history_views(tmp_path):
+    file_path = str(tmp_path / "scan_42.h5")
+    with h5py.File(file_path, "w") as file:
+        file.attrs["default"] = "entry_1"
+        for index in (0, 1, 10):
+            entry = file.create_group(f"entry_{index}")
+            entry.attrs["NX_class"] = "NXentry"
+            entry.create_dataset("collection/metadata/energy", data=index)
+            entry.create_dataset(
+                "collection/readout_groups/monitored/samx/samx/value", data=[index]
+            )
+        file.create_group("entry_2")
+        file.create_group("entry")
+        file["entry_10/named_type"] = np.dtype("int32")
+
+    data = ScanDataContainer(file_path)
+    assert data.entry_paths == ("/entry", "/entry_0", "/entry_1", "/entry_10")
+    assert data.entry_path == "/entry_1"
+    assert data.metadata["energy"] == 1
+    assert data.devices.samx.samx.get().tolist() == [1]
+    before = data.for_entry(0)
+    assert before.entry_path == "/entry_0"
+    assert before.metadata["energy"] == 0
+    assert before.devices.samx.samx.get().tolist() == [0]
+    assert data.devices.samx.samx.get().tolist() == [1]
+    with pytest.raises(KeyError, match="/entry_2"):
+        _ = data.for_entry(2).entry_path
+
+
+def test_numbered_entry_selection_resets_when_rebinding_to_new_file(tmp_path):
+    container = ScanDataContainer()
+    for index in (0, 1):
+        file_path = str(tmp_path / f"scan_{index}.h5")
+        with h5py.File(file_path, "w") as file:
+            entry = file.create_group(f"entry_{index}")
+            entry.attrs["NX_class"] = "NXentry"
+            entry.create_dataset("collection/metadata/energy", data=index)
+            entry.create_dataset(
+                "collection/readout_groups/monitored/samx/samx/value", data=[index]
+            )
+        container.set_file(file_path)
+        assert container.entry_path == f"/entry_{index}"
+        assert container.metadata["energy"] == index
+        assert container.devices.samx.samx.get().tolist() == [index]

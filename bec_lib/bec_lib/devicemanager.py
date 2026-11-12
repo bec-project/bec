@@ -765,6 +765,8 @@ class DeviceManagerBase:
 
     def _update_scan_info(self, msg, **kwargs) -> None:
         msg = msg.value
+        if msg.info.get("entry_sequence"):
+            return
         logger.info(f"Received new ScanStatusMessage with ID {msg.scan_id}")
         self.scan_info.msg = msg
 

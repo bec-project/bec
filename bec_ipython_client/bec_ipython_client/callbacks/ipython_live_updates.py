@@ -9,6 +9,7 @@ from rich.live import Live
 from rich.panel import Panel
 
 from bec_ipython_client.callbacks.device_progress import LiveUpdatesDeviceProgress
+from bec_ipython_client.signals import ScanPaused
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
 from bec_lib.request_context import ActiveRequestContext, active_request_context
@@ -75,6 +76,14 @@ class IPythonLiveUpdates:
         for instr in remaining_report_instructions:
             self._process_instruction(instr)
             self._processed_instructions += 1
+
+    def _process_request_block(self, block: messages.RequestBlock) -> None:
+        if block.entry_sequence:
+            self._process_report_instructions(
+                [{"scan_progress": {"entry_sequence": block.entry_sequence}}]
+            )
+        else:
+            self._process_report_instructions(block.report_instructions or [])
 
     def _process_instruction(self, instr: dict):
         """Process the received instruction based on scan_report_type.
@@ -174,13 +183,12 @@ class IPythonLiveUpdates:
 
                 while queue.status not in ["COMPLETED", "ABORTED", "HALTED", "CANCELLED"]:
                     request_context.queue_status = queue.status
+                    scan_request.scan_queue_request.callbacks.poll()
                     if self._process_queue(queue, request):
                         break
 
                 available_blocks = self._available_req_blocks(queue, request)
-                req_block = available_blocks[0]
-                report_instructions = req_block.report_instructions or []
-                self._process_report_instructions(report_instructions)
+                self._process_request_block(available_blocks[0])
 
             self._reset()
 
@@ -195,10 +203,11 @@ class IPythonLiveUpdates:
 
         except ScanInterruption as scan_interr:
             self._stop_status_live()
-            self._interrupted_request = (request,)
             if self._current_queue and self.client._service_config.abort_on_ctrl_c:
                 self._wait_for_cleanup()
             self._reset()
+            if isinstance(scan_interr, ScanPaused):
+                self._interrupted_request = (request, callbacks)
             raise scan_interr
         except KeyboardInterrupt as exc:
             self._stop_status_live()
@@ -304,10 +313,9 @@ class IPythonLiveUpdates:
         ]:  # TODO: make this more general for all scan types that don't have report instructions
             return True
 
-        report_instructions = req_block.report_instructions or []
-        if not report_instructions:
+        if not (req_block.entry_sequence or req_block.report_instructions):
             return False
-        self._process_report_instructions(report_instructions)
+        self._process_request_block(req_block)
 
         if not queue.active_request_block:
             return True
@@ -378,4 +386,4 @@ class IPythonLiveUpdates:
         """Continue the interrupted request."""
         if not self._interrupted_request:
             return
-        self.process_request(*self._interrupted_request, self._user_callback)
+        self.process_request(*self._interrupted_request)

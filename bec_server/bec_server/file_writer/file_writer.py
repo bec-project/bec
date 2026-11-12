@@ -120,6 +120,9 @@ class HDF5StorageWriter:
     device_storage = None
     info_storage = None
 
+    def __init__(self, entry_name: str = "entry") -> None:
+        self._entry_name = entry_name
+
     def add_group(self, name: str, container: typing.Any, val: HDF5Storage):
         if name in container:
             group = container[name]
@@ -170,7 +173,7 @@ class HDF5StorageWriter:
             dataset = container.create_dataset(name, data=data)
             self.add_attribute(dataset, val.attrs)
             self.add_content(dataset, val._storage)
-            if container.parent.parent.name == "/entry/collection/devices":
+            if container.parent.parent.name == f"/{self._entry_name}/collection/devices":
                 signal_name = container.name.split("/")[-1]
                 group_name = container.parent.name.split("/")[-1]
                 if signal_name == group_name:
@@ -212,8 +215,8 @@ class HDF5StorageWriter:
                 pass
 
     @classmethod
-    def write(cls, writer_storage, file):
-        writer = cls()
+    def write(cls, writer_storage, file, *, entry_name: str = "entry"):
+        writer = cls(entry_name=entry_name)
         writer.add_content(file, writer_storage)
 
 
@@ -267,6 +270,9 @@ class HDF5FileWriter:
         mode="w",
         file_handle=None,
         written_async_signals: dict[str, list[str]] | None = None,
+        *,
+        entry_index: int | None = None,
+        default_entry: bool = False,
     ):
         """
         Write the data to an HDF5 file.
@@ -275,13 +281,21 @@ class HDF5FileWriter:
             file_path (str): File path
             data (ScanStorage): Scan data
             configuration_data (dict[str, dict]): Configuration data
-            mode (str, optional): File mode. Defaults to "w".
+            mode (str, optional): File mode for legacy writes. Numbered entries append.
             file_handle (h5py.File, optional): File handle. Defaults to None.
             written_async_signals (dict[str, list[str]], optional): Dictionary of written async signals. Defaults to None.
+
+            entry_index (int, optional): Write to a numbered NXentry rather than /entry.
+            default_entry (bool): Mark this numbered entry as the file's default.
 
         Raises:
             NeXusLayoutError: Raised when the NeXus layout is incorrect.
         """
+        if entry_index is not None and (type(entry_index) is not int or entry_index < 0):
+            raise ValueError("entry_index must be a non-negative integer.")
+        if default_entry and entry_index is None:
+            raise ValueError("default_entry requires a numbered entry.")
+        entry_name = "entry" if entry_index is None else f"entry_{entry_index}"
         device_storage = self._create_device_data_storage(data)
         info_storage = {}
         bec_metadata = deepcopy(data.metadata)
@@ -306,7 +320,7 @@ class HDF5FileWriter:
         additional_scan_metadata = AdditionalScanMetadata(
             start_time=info_storage.get("start_time"),
             end_time=info_storage.get("end_time"),
-            entry_identifier_uuid=data.metadata.get("scan_id") or data.scan_id,
+            entry_identifier_uuid=bec_metadata.get("scan_id") or data.scan_id,
             deployment_info=self._get_deployment_info(),
             versions=messages.ServiceVersions._get_version_numbers(),
         )
@@ -326,8 +340,66 @@ class HDF5FileWriter:
             logger.error(f"Plugin {requested_plugin} not found. Using default plugin.")
             writer_format_cls = default_NeXus_format
 
+        format_kwargs = {}
+        if entry_index is not None:
+            if writer_format_cls is not default_NeXus_format:
+                raise NeXusLayoutError("Numbered entries require the default writer.")
+            format_kwargs["entry_name"] = entry_name
+
+        file_references = self._resolve_file_references(file_path, data.file_references)
+
+        writer_storage = writer_format_cls(
+            storage=HDF5Storage(),
+            data=device_storage,
+            info_storage=info_storage,
+            configuration=configuration_data,
+            file_references=file_references,
+            beamline_states=data.beamline_states,
+            device_manager=self.file_writer_manager.device_manager,
+            additional_scan_metadata=additional_scan_metadata,
+            written_async_signals=written_async_signals,
+            **format_kwargs,
+        ).get_storage_format()
+
+        if entry_index is None:
+            self._publish_file_content(file_path, device_storage, info_storage)
+
+        # Write to temporary file first
+        tmp_file_path = file_path.replace(".h5", ".tmp")
+
+        close_handle = entry_index is None or file_handle is None
+        file_handle = file_handle or h5py.File(
+            tmp_file_path, mode=mode if entry_index is None else "a"
+        )
+        try:
+            logger.info(f"Writing to file {tmp_file_path}.")
+            if (
+                entry_index is not None
+                and entry_name in file_handle
+                and written_async_signals is None
+            ):
+                raise NeXusLayoutError(f"Entry /{entry_name} already exists.")
+            if default_entry and "default" in file_handle.attrs:
+                raise NeXusLayoutError("A default entry is already set.")
+            HDF5StorageWriter.write(writer_storage, file_handle, entry_name=entry_name)
+            if default_entry:
+                file_handle.attrs["default"] = entry_name
+                self.stored_data_info.clear()
+            if entry_index is None or default_entry:
+                self.update_data_info(file_handle, entry_name)
+        finally:
+            if close_handle:
+                file_handle.close()
+
+        if entry_index is not None:
+            return self._build_file_content(file_path, device_storage, info_storage)
+        return None
+
+    @staticmethod
+    def _resolve_file_references(file_path: str, references: dict) -> dict:
+        file_references = {name: ref.model_copy() for name, ref in references.items()}
         file_refs_to_remove = []
-        for device_name, file_ref in data.file_references.items():
+        for device_name, file_ref in file_references.items():
             if file_ref.file_path == file_path:
                 # avoid self-referencing file links
                 file_refs_to_remove.append(device_name)
@@ -339,48 +411,62 @@ class HDF5FileWriter:
             rel_path = os.path.relpath(file_ref.file_path, os.path.dirname(file_path))
             file_ref.file_path = rel_path
         for device_name in file_refs_to_remove:
-            data.file_references.pop(device_name, None)
+            file_references.pop(device_name, None)
 
-        writer_storage = writer_format_cls(
-            storage=HDF5Storage(),
-            data=device_storage,
-            info_storage=info_storage,
-            configuration=configuration_data,
-            file_references=data.file_references,
-            beamline_states=data.beamline_states,
-            device_manager=self.file_writer_manager.device_manager,
-            additional_scan_metadata=additional_scan_metadata,
-            written_async_signals=written_async_signals,
-        ).get_storage_format()
+        return file_references
 
-        file_data = {}
-        for key, val in device_storage.items():
-            file_data[key] = val if not isinstance(val, list) else merge_dicts(val)
-        msg_data = {"file_path": file_path, "data": file_data, "scan_info": info_storage}
-        msg = messages.FileContentMessage(**msg_data)
+    def update_entry_links(
+        self,
+        file_handle,
+        file_path: str,
+        entry: ScanStorage,
+        entry_index: int,
+        *,
+        update_file_references: bool,
+    ) -> None:
+        """Include detector links and the primary data link after the final async drain."""
+        name = f"entry_{entry_index}"
+        group = file_handle[name]
+        collection = group["collection"]
+        if update_file_references:
+            storage = HDF5Storage()
+            references = self._resolve_file_references(file_path, entry.file_references)
+            default_NeXus_format.write_file_references(storage, references)
+            del collection["file_references"]
+            HDF5StorageWriter.write(storage._storage, collection, entry_name=name)
+
+        report_devices = entry.metadata.get("scan_report_devices") or []
+        if report_devices:
+            device = report_devices[0]
+            target = f"/{name}/collection/devices/{device}/{device}/value"
+            if group["data"].get(device, getlink=True) is None and target in file_handle:
+                group["data"][device] = h5py.SoftLink(target)
+
+    def _publish_file_content(self, file_path: str, device_storage: dict, info_storage: dict):
+        msg = self._build_file_content(file_path, device_storage, info_storage)
         self.file_writer_manager.connector.set_and_publish(
             MessageEndpoints.file_content(), msg, expire=3600
         )
 
-        # Write to temporary file first
-        tmp_file_path = file_path.replace(".h5", ".tmp")
+    @staticmethod
+    def _build_file_content(file_path: str, device_storage: dict, info_storage: dict):
+        file_data = {
+            key: merge_dicts(value) if isinstance(value, list) else value
+            for key, value in device_storage.items()
+        }
+        return messages.FileContentMessage(
+            file_path=file_path, data=file_data, scan_info=info_storage
+        )
 
-        file_handle = file_handle or h5py.File(tmp_file_path, mode=mode)
-        try:
-            logger.info(f"Writing to file {tmp_file_path}.")
-            HDF5StorageWriter.write(writer_storage, file_handle)
-            self.update_data_info(file_handle)
-        finally:
-            file_handle.close()
-
-    def update_data_info(self, file_handle: h5py.File):
+    def update_data_info(self, file_handle: h5py.File, entry_name: str = "entry"):
         """
         Update the stored data information in the file handle.
 
         Args:
-            file_handle (h5py.File): The HDF5 file handle to update.
+            file_handle (h5py.File): The HDF5 file handle to inspect.
+            entry_name (str): NeXus entry containing the devices.
         """
-        device_group = file_handle.get("/entry/collection/devices")
+        device_group = file_handle.get(f"/{entry_name}/collection/devices")
         for device_name, device_group in device_group.items():
             if not isinstance(device_group, h5py.Group):
                 continue

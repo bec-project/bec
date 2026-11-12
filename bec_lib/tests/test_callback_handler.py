@@ -7,6 +7,7 @@ from unittest import mock
 import pytest
 
 from bec_lib.callback_handler import CallbackEntry, CallbackHandler, CallbackRegister, EventType
+from bec_lib.scan_items import ScanStorage
 
 
 class _MethodRecorder:
@@ -141,6 +142,81 @@ def test_run_ignores_callbacks_for_other_event_types():
 
     assert recorder.calls == []
     assert callback_id in handler.callbacks
+
+
+def test_sync_callback_can_read_scan_storage_while_producer_enqueues():
+    handler = CallbackHandler()
+    storage = ScanStorage(None)
+    storage.add_scan_item("queue", 1, "scan", "open")
+    callback_started = threading.Event()
+    producer_has_storage = threading.Event()
+    reads = []
+
+    class Recorder:
+        def callback(self, point):
+            if point == 0:
+                callback_started.set()
+                if not producer_has_storage.wait(timeout=5):
+                    return
+            # Bound the lock attempt so a regression fails without leaving threads hung.
+            if not storage._lock.acquire(timeout=1):
+                return
+            try:
+                reads.append((point, storage.find_scan_by_ID("scan").scan_number))
+            finally:
+                storage._lock.release()
+
+    recorder = Recorder()
+    handler.register(EventType.SCAN_SEGMENT, recorder.callback, sync=True)
+    handler.run(EventType.SCAN_SEGMENT, 0)
+
+    def enqueue():
+        if not callback_started.wait(timeout=5):
+            return
+        with storage._lock:
+            producer_has_storage.set()
+            handler.run(EventType.SCAN_SEGMENT, 1)
+
+    producer = threading.Thread(target=enqueue, daemon=True)
+    producer.start()
+    try:
+        handler.poll()
+    finally:
+        producer.join(timeout=5)
+
+    assert not producer.is_alive()
+    assert reads == [(0, 1)]
+    handler.poll()
+    assert reads == [(0, 1), (1, 1)]
+
+
+def test_remove_discards_pending_callback_from_active_poll():
+    handler = CallbackHandler()
+    started = threading.Event()
+    resume = threading.Event()
+
+    class Blocker:
+        def callback(self, *_):
+            started.set()
+            resume.wait(timeout=5)
+
+    blocker = Blocker()
+    recorder = _MethodRecorder()
+    handler.register(EventType.SCAN_SEGMENT, blocker.callback, sync=True)
+    callback_id = handler.register(EventType.SCAN_SEGMENT, recorder.callback, sync=True)
+    handler.run(EventType.SCAN_SEGMENT, 1)
+
+    poller = threading.Thread(target=handler.poll, daemon=True)
+    poller.start()
+    try:
+        assert started.wait(timeout=5)
+        assert handler.remove(callback_id) == callback_id
+    finally:
+        resume.set()
+        poller.join(timeout=5)
+
+    assert not poller.is_alive()
+    assert recorder.calls == []
 
 
 def test_poll_skips_async_callbacks_without_removing_them():

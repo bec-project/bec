@@ -233,7 +233,7 @@ class ScanReport:
             timeout (float, optional): timeout in seconds. Defaults to None.
             sleep_time (float, optional): sleep time in seconds. Defaults to 0.1.
         """
-        elapsed_time = 0
+        started = time.monotonic()
 
         def conditions_are_met() -> bool:
             """Check if the conditions are met"""
@@ -255,12 +255,14 @@ class ScanReport:
             if self.status in ["STOPPED", "CANCELLED"]:
                 raise ScanAbortion
             self._client.callbacks.poll()
+            self.request.callbacks.poll()
             time.sleep(sleep_time)
-            elapsed_time += sleep_time
-            self._check_timeout(timeout, elapsed_time)
+            self._check_timeout(timeout, time.monotonic() - started)
 
-        # final poll to ensure all callbacks are processed
-        self._client.callbacks.poll()
+        # Finish request callbacks even if another thread is already draining them.
+        for handler, wait in ((self._client.callbacks, False), (self.request.callbacks, True)):
+            remaining = None if timeout is None else max(0, timeout - (time.monotonic() - started))
+            handler.poll(wait=wait, timeout=remaining)
 
     def _request_expects_scan_item(self) -> bool:
         """Return whether the request should eventually have a scan item."""

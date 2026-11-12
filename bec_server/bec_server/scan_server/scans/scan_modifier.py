@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 
 ScanHookName: TypeAlias = Literal[
+    "configure_subscans",
     "prepare_scan",
     "open_scan",
     "stage",

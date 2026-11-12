@@ -198,8 +198,12 @@ class AtlasMetadataHandler:
 
     def _handle_scan_status(self, msg, **_kwargs) -> None:
         msg = msg.value
+        updates = msg.sequence_updates() if msg.info.get("entry_index") is not None else [msg]
         try:
-            self.send_atlas_update({"scan_status": msg})
+            if start := msg.sequence_start():
+                self.send_atlas_update({"scan_status": start})
+            for update in updates:
+                self.send_atlas_update({"scan_status": update})
         # pylint: disable=broad-except
         except Exception:
             content = traceback.format_exc()

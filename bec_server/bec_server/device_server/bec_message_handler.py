@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, TypedDict
+from collections import OrderedDict
+from threading import Lock
+from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
 from ophyd import OphydObject
@@ -15,11 +17,6 @@ logger = bec_logger.logger
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_server.device_server.devices.devicemanager import DeviceManagerDS
-
-
-class _AsyncSignalIndexState(TypedDict):
-    scan_id: str
-    indices: dict[str, int]
 
 
 class BECMessageHandler:
@@ -38,7 +35,11 @@ class BECMessageHandler:
         self.device_manager = device_manager
         self.connector: RedisConnector = device_manager.connector
         self.devices = device_manager.devices
-        self._async_signal_index_state: dict[tuple[str, str], _AsyncSignalIndexState] = {}
+        self._event_lock = Lock()
+        self._async_signal_indices: OrderedDict[tuple[str, str, str], dict[str, int]] = (
+            OrderedDict()
+        )
+        self._pending_files: OrderedDict[tuple[str, str], tuple[str, int | None]] = OrderedDict()
 
     def emit(self, obj: OphydObject, message: messages.BECMessage):
         """
@@ -70,13 +71,37 @@ class BECMessageHandler:
             raise TypeError(f"Expected FileMessage, got {type(message)}")
 
         device_name = obj.root.name
-        scan_id = self._get_current_scan_id()
+        file_key = (device_name, message.file_path)
+        with self._event_lock:
+            status = self._get_scan_status_message()
+            active_scan_id = status.scan_id if status else None
+            captured = self._pending_files.get(file_key)
+            scan_id = message.metadata.get("scan_id") or (
+                captured[0] if message.done and captured else active_scan_id
+            )
+            owns_pending = captured is not None and captured[0] == scan_id
+            entry_index = message.metadata.get("entry_index")
+            if entry_index is None:
+                if owns_pending:
+                    entry_index = captured[1]
+                elif status and active_scan_id == scan_id:
+                    entry_index = status.info.get("entry_index")
+            if message.done:
+                if owns_pending:
+                    del self._pending_files[file_key]
+            elif scan_id and (not captured or owns_pending or scan_id == active_scan_id):
+                # A delayed announcement can be published without changing the current owner.
+                self._pending_files[file_key] = (scan_id, entry_index)
+                if len(self._pending_files) > 4096:
+                    self._pending_files.popitem(last=False)
         if scan_id is None:
             logger.warning(
                 f"Scan ID is None for device {device_name} and file event signal. Cannot emit file event."
             )
             return
 
+        if entry_index is not None:
+            message.metadata.update(scan_id=scan_id, entry_index=entry_index)
         pipe = self.connector.pipeline()
         self.connector.set_and_publish(
             MessageEndpoints.file_event(device_name), message, pipe=pipe, expire=3600
@@ -140,19 +165,15 @@ class BECMessageHandler:
         signal_name = obj.name
 
         scan_status_msg = self._get_scan_status_message()
-        if scan_status_msg is None:
-            logger.warning(
-                f"Scan status message is None for device {device_name} and async signal {signal_name}."
-            )
-            return
-        scan_id = scan_status_msg.scan_id
+        captured_id = message.metadata.get("scan_id")
+        scan_id = captured_id or (scan_status_msg.scan_id if scan_status_msg else None)
         if scan_id is None:
             logger.warning(
                 f"Scan ID is None for device {device_name} and async signal {signal_name}."
             )
             return
-        status = scan_status_msg.status
-        if status in ["closed", "aborted", "halted", "user_completed", None]:
+        status = scan_status_msg.status if scan_status_msg else None
+        if not captured_id and status in ["closed", "aborted", "halted", "user_completed", None]:
             logger.warning(
                 f"Cannot emit async signal {signal_name} for device {device_name} with status {status}."
             )
@@ -214,19 +235,18 @@ class BECMessageHandler:
     def _get_async_signal_indices(
         self, obj: bms.DynamicSignal, scan_id: str, signal_names: Iterable[str]
     ) -> dict[str, int]:
-        state_key = (obj.root.name, obj.name)
-        state = self._async_signal_index_state.get(state_key)
-        if state is None or state["scan_id"] != scan_id:
-            state = _AsyncSignalIndexState(scan_id=scan_id, indices={})
-            self._async_signal_index_state[state_key] = state
-
-        out = {}
-        indices = state["indices"]
-        for signal_name in signal_names:
-            current_index = indices.get(signal_name, -1) + 1
-            indices[signal_name] = current_index
-            out[signal_name] = current_index
-        return out
+        state_key = (scan_id, obj.root.name, obj.name)
+        with self._event_lock:
+            indices = self._async_signal_indices.setdefault(state_key, {})
+            self._async_signal_indices.move_to_end(state_key)
+            if len(self._async_signal_indices) > 4096:
+                self._async_signal_indices.popitem(last=False)
+            out = {}
+            for signal_name in signal_names:
+                current_index = indices.get(signal_name, -1) + 1
+                indices[signal_name] = current_index
+                out[signal_name] = current_index
+            return out
 
     def _get_scan_status_message(self) -> messages.ScanStatusMessage | None:
         """
@@ -238,15 +258,3 @@ class BECMessageHandler:
         if self.device_manager.scan_info is None or self.device_manager.scan_info.msg is None:
             return None
         return self.device_manager.scan_info.msg
-
-    def _get_current_scan_id(self) -> str | None:
-        """
-        Get the current scan ID from the device manager's scan info.
-
-        Returns:
-            str | None: The current scan ID, or None if not available.
-        """
-        scan_status_msg = self._get_scan_status_message()
-        if scan_status_msg is None or scan_status_msg.scan_id is None:
-            return None
-        return scan_status_msg.scan_id

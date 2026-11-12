@@ -10,6 +10,7 @@ import enum
 import functools
 import inspect
 import threading
+import time
 import traceback
 import types
 import weakref
@@ -102,11 +103,14 @@ class CallbackEntry:
         self._on_delete = on_delete
         return ref
 
+    @threadlocked
     def release(self) -> None:
-        """Detach the collection notification; louie keeps it alive as long as the owner lives."""
+        """Discard pending calls and detach the collection notification."""
         methods = getattr(self.func, "deletion_methods", [])
         if self._on_delete in methods:
             methods.remove(self._on_delete)
+        self.func = None
+        self.queue.clear()
 
     def _resolve_func(self) -> Callable | None:
         return None if self.func is None else self.func()
@@ -114,6 +118,8 @@ class CallbackEntry:
     @threadlocked
     def run(self, *args, **kwargs) -> None:
         """Run the callback function. If sync is True, the callback is run immediately. Otherwise, the callback is added to a queue and executed in the next poll."""
+        if self.func is None:
+            return
         if not self.sync:
             self._run_cb(*args, **kwargs)
             return
@@ -143,17 +149,20 @@ class CallbackEntry:
         """Check if the callback function is still alive"""
         return self._resolve_func() is not None
 
-    @threadlocked
-    def poll(self) -> None:
-        """Run callback.
+    def poll(self) -> bool:
+        """Run one queued callback and return whether an event was consumed.
 
         Raises:
             RuntimeError: Raises if attempt is made to run async callbacks manually.
         """
         if not self.sync:
             raise RuntimeError("Cannot poll on an async callback.")
-        args, kwargs = self.queue.popleft()
+        with self._lock:
+            if not self.queue:
+                return False
+            args, kwargs = self.queue.popleft()
         self._run_cb(*args, **kwargs)
+        return True
 
 
 class CallbackHandler:
@@ -163,6 +172,7 @@ class CallbackHandler:
         self.callbacks = {}
         self.id_counter = 0
         self._lock = threading.RLock()
+        self._poll_lock = threading.RLock()
         self._dead_ids = deque()
         self._on_dead = functools.partial(self._notify_dead, weakref.ref(self))
 
@@ -277,15 +287,40 @@ class CallbackHandler:
                 continue
             cb.run(*args, **kwargs)
 
-    @threadlocked
-    def poll(self):
-        """Run all pending callbacks"""
-        self._remove_dead_callbacks()
-        for callback in list(self.callbacks.values()):
-            if not callback.sync:
-                continue
-            while callback.num_pending_events:
-                callback.poll()
+    def poll(self, *, wait: bool = False, timeout: float | None = None) -> None:
+        """Run pending callbacks on the polling thread.
+
+        Args:
+            wait (bool): Wait for an active poll before draining. Callers must not hold
+                locks that callbacks may need.
+            timeout (float | None): Time budget in seconds for waiting and draining.
+                The deadline is checked before and after each callback.
+
+        Raises:
+            TimeoutError: If waiting for an active poll or draining callbacks exceeds the budget.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        if wait:
+            lock_timeout = -1 if timeout is None else min(timeout, threading.TIMEOUT_MAX)
+            if not self._poll_lock.acquire(timeout=lock_timeout):
+                raise TimeoutError("Timed out waiting for request callbacks to finish.")
+        elif not self._poll_lock.acquire(blocking=False):
+            return
+        try:
+            with self._lock:
+                self._remove_dead_callbacks()
+                callbacks = [callback for callback in self.callbacks.values() if callback.sync]
+            for callback in callbacks:
+                # Bound each drain so a continuous producer cannot keep poll() busy.
+                for _ in range(callback.num_pending_events):
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError("Timed out draining callbacks.")
+                    if not callback.poll():
+                        break
+                    if deadline is not None and time.monotonic() > deadline:
+                        raise TimeoutError("Timed out draining callbacks.")
+        finally:
+            self._poll_lock.release()
 
 
 class CallbackRegister:

@@ -9,7 +9,9 @@ import enum
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Annotated, Callable, Type
+from copy import deepcopy
+from dataclasses import dataclass
+from typing import Annotated, Callable, Literal, Type
 
 import numpy as np
 import pint
@@ -18,7 +20,9 @@ from toolz import partition
 
 from bec_lib.device import DeviceBase
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
+from bec_lib.messages import sequence_id_for_acquisition
 from bec_lib.redis_connector import RedisConnector
+from bec_lib.serialization import msgpack
 from bec_server.scan_server.instruction_handler import InstructionHandler
 from bec_server.scan_server.scans.scan_actions import ScanActions
 from bec_server.scan_server.scans.scan_components import ScanComponents
@@ -50,6 +54,31 @@ def bundle_args(args: tuple, bundle_size: int) -> dict:
     return params
 
 
+SubscanPhase = Literal["before", "after"]
+
+
+@dataclass(frozen=True)
+class SubscanSpec:
+    """A scan class and its user inputs, registered for later execution."""
+
+    scan_class: type[ScanBase]
+    args: tuple
+    kwargs: dict
+    when: SubscanPhase
+
+
+class ScanEntryPlan(BaseModel):
+    """The announced identity and inputs of one acquisition in a parent scan."""
+
+    model_config = ConfigDict(frozen=True)
+
+    entry_index: int
+    scan_id: str
+    role: Literal["before", "main", "after"]
+    scan_name: str
+    request_inputs: dict
+
+
 class ScanInfo(BaseModel):
 
     # General scan information
@@ -63,6 +92,17 @@ class ScanInfo(BaseModel):
     ]
     scan_number: Annotated[int | None, Field(description="Scan number, if applicable")] = None
     dataset_number: Annotated[int | None, Field(description="Dataset number, if applicable")] = None
+
+    sequence_index: int = 0
+    total_sequences: int = 1
+    entry_sequence: tuple[ScanEntryPlan, ...] | None = None
+
+    @property
+    def sequence_id(self) -> str | None:
+        """Return the shared key used for queue and file bookkeeping."""
+        if self.total_sequences > 1:
+            return sequence_id_for_acquisition(self.scan_id, self.sequence_index) or self.scan_id
+        return self.scan_id
 
     # Preview metadata uses the same mapping as the advertised scan definition.
     position_preview: str | None = None
@@ -197,6 +237,7 @@ class ScanBase(ABC):
         self.device_manager = device_manager
         self._instruction_handler = instruction_handler
         self.dev = self.device_manager.devices
+        self._entry_scans: tuple[ScanBase, ...] = ()
         self._shutdown_event = threading.Event()
         self.actions = ScanActions(scan=self)
         self.components = ScanComponents(scan=self)
@@ -228,6 +269,8 @@ class ScanBase(ABC):
         self._premove_motor_status = None
         self.positions = np.array([])
         self.start_positions = []
+        self._subscan_registration: list[SubscanSpec] | None = None
+        self._subscans_configured = False
         self._scan_original_hooks = self._collect_original_scan_hooks()
         self._scan_modifier_hooks = (
             get_scan_hooks_impl(scan_modifier) if scan_modifier is not None else {}
@@ -303,6 +346,67 @@ class ScanBase(ABC):
             self.scan_info.readout_priority_modification["on_request"] = [
                 device.name if isinstance(device, DeviceBase) else device for device in on_request
             ]
+
+    @scan_hook
+    def configure_subscans(self) -> None:
+        """Declare acquisitions before preparation or device staging begins.
+
+        Decorate overrides with `@scan_hook` to allow beamline scan modifiers to
+        extend the declaration, as for other scan hooks.
+        """
+
+    def add_subscan(
+        self, scan_class: type[ScanBase], *args, when: SubscanPhase = "before", **kwargs
+    ) -> None:
+        """Register a scan class with its ordinary scan arguments.
+
+        Call this from `configure_subscans`, for example
+        `self.add_subscan(Acquire, exp_time=0.1, when="after")`. The worker
+        announces the sequence before opening the first acquisition. Each entry
+        has its own staging lifecycle and acquisition ID in the parent's file.
+        """
+        if self._subscan_registration is None:
+            raise RuntimeError("Subscans can only be registered during configure_subscans.")
+        if not isinstance(scan_class, type) or not issubclass(scan_class, ScanBase):
+            raise TypeError("A subscan must be a ScanBase class.")
+        if not scan_class.is_scan or scan_class.is_internal:
+            raise ValueError("A subscan must be a public acquisition scan.")
+        if when not in ("before", "after"):
+            raise ValueError("Subscan phase must be 'before' or 'after'.")
+        # Match ordinary scan requests and snapshot mutable inputs at registration.
+        args, kwargs = msgpack.loads(msgpack.dumps((args, kwargs)))
+        self._subscan_registration.append(SubscanSpec(scan_class, tuple(args), kwargs, when))
+
+    def _configure_entry_sequence(
+        self, describe: Callable[[SubscanSpec], dict]
+    ) -> tuple[tuple[SubscanSpec, ...], tuple[SubscanSpec, ...]]:
+        """Collect and validate the flat plan once, before the worker prepares the scan."""
+        if self._subscans_configured or self._subscan_registration is not None:
+            raise RuntimeError("Subscans have already been configured.")
+        self._subscan_registration = []
+        try:
+            self.configure_subscans()
+            before = tuple(spec for spec in self._subscan_registration if spec.when == "before")
+            after = tuple(spec for spec in self._subscan_registration if spec.when == "after")
+        finally:
+            self._subscan_registration = None
+        if before or after:
+            entries = []
+            for index, spec in enumerate((*before, None, *after)):
+                entries.append(
+                    ScanEntryPlan(
+                        entry_index=index,
+                        scan_id=f"{self.scan_info.scan_id}-{index}",
+                        role="main" if spec is None else spec.when,
+                        scan_name=self.scan_name if spec is None else spec.scan_class.scan_name,
+                        request_inputs=deepcopy(
+                            self.scan_info.request_inputs if spec is None else describe(spec)
+                        ),
+                    )
+                )
+            self.scan_info.entry_sequence = tuple(entries)
+        self._subscans_configured = True
+        return before, after
 
     @scan_hook
     @abstractmethod

@@ -11,11 +11,18 @@ from bec_ipython_client.progressbar import ScanProgressBar
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
 
-from .utils import LiveUpdatesBase, check_alarms, pending_queue_message
+from .utils import (
+    LiveUpdatesBase,
+    ScanState,
+    check_alarms,
+    evaluate_scan_state,
+    pending_queue_message,
+)
 
 if TYPE_CHECKING:
     from bec_lib import messages
     from bec_lib.client import BECClient
+    from bec_lib.scan_items import ScanItem
 
 logger = bec_logger.logger
 
@@ -80,10 +87,11 @@ class LiveUpdatesTable(LiveUpdatesBase):
             queue = self.scan_item.queue
             queue_pos = queue.queue_position
             self.check_alarms()
-            if self.scan_item.status == "closed":
+            if self.scan_item.status in {"closed", "aborted", "halted", "user_completed"}:
                 break
             if queue_pos is None:
                 logger.trace(f"Could not find queue entry for scan_id {self.scan_item.scan_id}")
+                time.sleep(0.05)
                 continue
             message = pending_queue_message(bec=self.bec, queue=queue, queue_position=queue_pos)
             if message is None:
@@ -96,6 +104,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
     def wait_for_scan_item_to_finish(self):
         """wait for scan completion"""
         while True:
+            self.scan_item.poll_callbacks()
             if self.scan_item.end_time:
                 if self.scan_item.queue.queue_position is None:
                     break
@@ -179,10 +188,53 @@ class LiveUpdatesTable(LiveUpdatesBase):
 
     def core(self):
         """core function to run the live updates for the table"""
+        if sequence := self.report_instruction[self.REPORT_TYPE].get("entry_sequence"):
+            self._run_sequence(sequence)
+            return
         self._wait_for_report_instructions()
         show_table = self.report_instruction[self.REPORT_TYPE].get("show_table", True)
         self._print_table_data = show_table
         self._run_update(self.report_instruction[self.REPORT_TYPE]["points"])
+
+    def _run_sequence(self, sequence: list[dict]) -> None:
+        parent = self.scan_item
+        if parent is None:
+            return
+        print_table = self._print_table_data
+        try:
+            for index, entry in enumerate(sequence, start=1):
+                while True:
+                    self.check_alarms()
+                    acquisition = parent.acquisitions.get(entry["scan_id"])
+                    if acquisition and acquisition.status_message:
+                        break
+                    if evaluate_scan_state(scan_item=parent, queue=parent.queue) == ScanState.DONE:
+                        return
+                    time.sleep(0.05)
+
+                self.scan_item = acquisition
+                self.point_id = 0
+                self.point_data = None
+                if self.table:
+                    print(self.table.get_row_separator())
+                    self.table = None
+                instruction = next(
+                    (
+                        item[self.REPORT_TYPE]
+                        for item in acquisition.scan_report_instructions
+                        if self.REPORT_TYPE in item
+                    ),
+                    {},
+                )
+                self._print_table_data = print_table and instruction.get("show_table", True)
+                if self._print_table_data:
+                    print(f'Acquisition {index}/{len(sequence)} ({entry["role"]})')
+                self._run_update(instruction.get("points", 0), sequence_parent=parent)
+                if acquisition.status == "user_completed":
+                    break
+        finally:
+            self.scan_item = parent
+            self._print_table_data = print_table
 
     def _wait_for_report_instructions(self):
         """wait until the report instructions are available"""
@@ -202,7 +254,7 @@ class LiveUpdatesTable(LiveUpdatesBase):
                 break
             self.check_alarms()
 
-    def _run_update(self, target_num_points: int):
+    def _run_update(self, target_num_points: int, *, sequence_parent: ScanItem | None = None):
         """run the update loop with the progress bar
 
         Args:
@@ -223,29 +275,42 @@ class LiveUpdatesTable(LiveUpdatesBase):
                         target_num_points = self.scan_item.num_monitored_readouts
 
                 progressbar.update(self.point_id)
+                # Subscan callbacks can arrive while the main table has no new point.
+                self.bec.callbacks.poll()
+                self.scan_item.poll_callbacks()
                 if self.point_data:
                     self.point_id += 1
                     self.print_table_data()
                     progressbar.update(self.point_id)
 
-                    # process sync callbacks
-                    self.bec.callbacks.poll()
-                    self.scan_item.poll_callbacks()
                 else:
                     logger.trace("waiting for new data point")
                     time.sleep(0.1)
 
-                if self.scan_item.restarted_msg:
-                    raise ScanRestart(new_scan_msg=self.scan_item.restarted_msg)
+                tracked_scan = sequence_parent if sequence_parent is not None else self.scan_item
+                if tracked_scan.restarted_msg:
+                    raise ScanRestart(new_scan_msg=tracked_scan.restarted_msg)
 
                 if self.scan_item.status == "user_completed":
                     print("Scan was set to 'completed' by user.")
                     break
 
-                if self.scan_item.status_message and self.scan_item.status_message.reason == "user":
+                status = self.scan_item.status_message
+                if status and status.reason == "user":
                     raise ScanInterruption(
                         f"Scan {self.scan_item.scan_number} was aborted by user."
                     )
+
+                if sequence_parent is not None:
+                    if status and status.status == "closed":
+                        if self.point_id >= (status.num_monitored_readouts or 0):
+                            break
+                    elif (
+                        evaluate_scan_state(scan_item=sequence_parent, queue=sequence_parent.queue)
+                        == ScanState.DONE
+                    ):
+                        break
+                    continue
 
                 if not self.scan_item.num_monitored_readouts and self.scan_item.status != "closed":
                     continue

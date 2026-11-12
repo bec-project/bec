@@ -1,3 +1,4 @@
+import threading
 from unittest import mock
 
 import pytest
@@ -5,6 +6,7 @@ import pytest
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bec_errors import ScanAbortion
+from bec_lib.callback_handler import CallbackHandler, EventType
 from bec_lib.scan_report import ScanReport
 
 # pylint: skip-file
@@ -79,6 +81,109 @@ def test_scan_report_wait_for_scan(scan_report):
         get_mv_status.side_effect = [False, False, True]
         scan_report.queue_item.status = "COMPLETED"
         scan_report._wait_scan(None, 0.1)
+
+
+@pytest.mark.parametrize("timeout", [None, 0.05])
+def test_scan_report_wait_finishes_callbacks_while_another_thread_polls(scan_report, timeout):
+    handler = CallbackHandler()
+    scan_report.request.callbacks = handler
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
+    scan_report.queue_item.status = "COMPLETED"
+    started = threading.Event()
+    resume = threading.Event()
+    final_poll_started = threading.Event()
+    wait_finished = threading.Event()
+    points = []
+    errors = []
+
+    class Recorder:
+        def callback(self, point):
+            if point == 0:
+                started.set()
+                resume.wait(timeout=5)
+            points.append(point)
+
+    recorder = Recorder()
+    handler.register(EventType.SCAN_SEGMENT, recorder.callback, sync=True)
+    handler.run(EventType.SCAN_SEGMENT, 0)
+    scan_report._client.callbacks.poll.side_effect = lambda **_: final_poll_started.set()
+
+    def wait_for_report():
+        try:
+            scan_report.wait(timeout=timeout, file_written=False)
+        except TimeoutError as exc:
+            errors.append(exc)
+        finally:
+            wait_finished.set()
+
+    poller = threading.Thread(target=handler.poll, daemon=True)
+    waiter = threading.Thread(target=wait_for_report, daemon=True)
+    poller.start()
+    try:
+        assert started.wait(timeout=5)
+        handler.run(EventType.SCAN_SEGMENT, 1)
+        waiter.start()
+        assert final_poll_started.wait(timeout=5)
+        if timeout is None:
+            assert not wait_finished.wait(timeout=0.1)
+        else:
+            assert wait_finished.wait(timeout=2)
+            assert len(errors) == 1
+            assert points == []
+    finally:
+        resume.set()
+        poller.join(timeout=5)
+        if waiter.ident is not None:
+            waiter.join(timeout=5)
+
+    assert not poller.is_alive()
+    assert wait_finished.is_set()
+    if timeout is None:
+        assert not errors
+        assert points == [0, 1]
+    else:
+        handler.poll()
+        assert points == [0, 1]
+
+
+def test_scan_report_wait_with_zero_timeout_accepts_completed_scan_without_callbacks(scan_report):
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
+    scan_report.queue_item.status = "COMPLETED"
+    scan_report.request.callbacks = CallbackHandler()
+    scan_report._client.callbacks = CallbackHandler()
+
+    assert scan_report.wait(timeout=0, file_written=False) is scan_report
+
+
+@pytest.mark.parametrize("callback_scope", ["request", "client"])
+def test_scan_report_wait_checks_timeout_after_running_callback(scan_report, callback_scope):
+    handler = CallbackHandler()
+    owner = scan_report.request if callback_scope == "request" else scan_report._client
+    owner.callbacks = handler
+    scan_report.request.request = messages.ScanQueueMessage(scan_type="line_scan", parameter={})
+    scan_report.queue_item.status = "COMPLETED"
+    points = []
+
+    class Recorder:
+        def callback(self, point):
+            points.append(point)
+            clock.return_value = 1
+
+    recorder = Recorder()
+    handler.register(EventType.SCAN_SEGMENT, recorder.callback, sync=True)
+    handler.run(EventType.SCAN_SEGMENT, 0)
+    handler.run(EventType.SCAN_SEGMENT, 1)
+
+    with mock.patch("time.monotonic", return_value=0) as clock:
+        with pytest.raises(TimeoutError, match="draining callbacks"):
+            scan_report.wait(timeout=0, file_written=False)
+        assert points == []
+        with pytest.raises(TimeoutError, match="draining callbacks"):
+            scan_report.wait(timeout=0.02, file_written=False)
+
+    assert points == [0]
+    handler.poll()
+    assert points == [0, 1]
 
 
 def test_scan_report_wait_for_scan_file_pending(scan_report):

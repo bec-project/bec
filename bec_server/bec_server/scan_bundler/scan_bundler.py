@@ -88,15 +88,21 @@ class ScanBundler(BECService):
         """handle scan status messages"""
         logger.info(f"Received new scan status: {msg}")
         scan_id = msg.content["scan_id"]
-        if not scan_id:
+        if not scan_id or msg.info.get("entry_sequence"):
             return
         self.cleanup_storage()
         if scan_id not in self.sync_storage:
             self._initialize_scan_container(msg)
-            if scan_id not in self.scan_id_history:
-                self.scan_id_history.append(scan_id)
-        if msg.content.get("status") != "open":
+            history_id = (
+                messages.sequence_id_for_acquisition(scan_id, msg.info.get("entry_index"))
+                or scan_id
+            )
+            if history_id not in self.scan_id_history:
+                self.scan_id_history.append(history_id)
+        if msg.status != "open":
             self._scan_status_modification(msg)
+        elif msg.info.get("entry_index") is not None:
+            self.scan_report_instructions[scan_id] = msg.info.get("scan_report_instructions", [])
         self.run_emitter("on_scan_status_update", msg)
 
     def on_scan_queue_status_update(self, msg_obj: MessageObject):
@@ -141,8 +147,12 @@ class ScanBundler(BECService):
         else:
             self.sync_storage[scan_id] = {"info": {}, "status": status, "sent": set()}
             self.storage_initialized.add(scan_id)
-            if scan_id not in self.scan_id_history:
-                self.scan_id_history.append(scan_id)
+            history_id = (
+                messages.sequence_id_for_acquisition(scan_id, msg.info.get("entry_index"))
+                or scan_id
+            )
+            if history_id not in self.scan_id_history:
+                self.scan_id_history.append(history_id)
 
     def _initialize_scan_container(self, scan_msg: messages.ScanStatusMessage):
         with self._lock:
@@ -387,7 +397,13 @@ class ScanBundler(BECService):
         for scan_id, entry in self.sync_storage.items():
             if entry.get("status") not in ["closed", "aborted", "halted", "user_completed"]:
                 continue
-            if scan_id in self.scan_id_history:
+            history_id = (
+                messages.sequence_id_for_acquisition(
+                    scan_id, entry.get("info", {}).get("entry_index")
+                )
+                or scan_id
+            )
+            if history_id in self.scan_id_history:
                 continue
             remove_scan_ids.append(scan_id)
 

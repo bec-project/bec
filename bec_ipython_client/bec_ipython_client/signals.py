@@ -28,6 +28,10 @@ class OperationMode(Enum):
     Procedure = auto()  # Procedure operation mode, exits (after aborting scan) after SIGINT
 
 
+class ScanPaused(ScanInterruption):
+    """The user paused a scan that can be resumed."""
+
+
 class SignalHandler:
     """Context manager for signal handing
 
@@ -55,6 +59,7 @@ class SignalHandler:
         self.interrupted = False
         self.count = 0
 
+        self.released = False
         self.original_handler = signal.getsignal(self.sig)
 
         def handler(signum, frame):
@@ -92,6 +97,10 @@ class SigintHandler(SignalHandler):
         self.bec = bec
         self.last_sigint_time = None  # time most recent SIGINT was processed
         self.num_sigints_processed = 0  # count SIGINTs processed
+
+    def __enter__(self):
+        self.last_sigint_time = None
+        return super().__enter__()
 
     def handle_signals(self):
         if self._operation_mode == OperationMode.Normal:
@@ -170,4 +179,4 @@ class SigintHandler(SignalHandler):
             kwargs={"deferred_pause": False, "request_id": request_id},
             daemon=True,
         ).start()
-        raise ScanInterruption(PAUSE_MSG)
+        raise ScanPaused(PAUSE_MSG)
