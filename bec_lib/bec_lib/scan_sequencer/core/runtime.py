@@ -227,4 +227,5 @@ class Session:
                     self.scope.statuses[node.bind_status] = status
             elif isinstance(node, ScanCall):
                 args, kwargs = self.value(node.positional), self.value(node.arguments)
-                getattr(self.client.scans, node.name)(*args, **kwargs)
+                report = getattr(self.client.scans, node.name)(*args, **kwargs)
+                report.wait(file_written=False)

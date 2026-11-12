@@ -58,7 +58,7 @@ def test_registered_sequence_procedure_uses_scan_and_device_apis(json_text):
     assert callable_from_name("run_sequence") is run_sequence
     run_sequence(document.model_dump_json() if json_text else document.model_dump(), bec=client)
     assert trace == [("umv", 1), ("scan", (1, 0.1), {})]
-    report.wait.assert_not_called()
+    report.wait.assert_called_once_with(file_written=False)
 
 
 def test_metadata_fixture_matches_real_time_scan_signature():
