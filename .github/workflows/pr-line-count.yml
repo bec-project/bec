@@ -1,0 +1,22 @@
+name: PR line count
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-line-count-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  line-count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: bec-project/cloc_action@v1
+        with:
+          test-directories: bec_ipython_client/tests,bec_lib/bec_lib/tests,bec_lib/tests,bec_server/bec_server/device_server/tests,bec_server/bec_server/scan_server/tests,bec_server/bec_server/test,bec_server/tests
