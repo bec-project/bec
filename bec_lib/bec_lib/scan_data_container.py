@@ -370,7 +370,7 @@ class SignalDataReference:
         """
         return self._get_entry()
 
-    def read_slabs(self) -> SlabIterator:
+    def read_slabs(self, start: int | None = None, stop: int | None = None) -> SlabIterator:
         """
         Read the signal block by block along its first axis, without the cache.
 
@@ -380,6 +380,10 @@ class SignalDataReference:
         so the caller decides how much of a large signal it keeps. A slab has about
         ``_SLAB_ELEMENTS`` elements and, for a dataset that is chunked in the file, a
         whole number of its HDF5 chunks.
+
+        With ``start`` and ``stop`` only the rows ``start:stop`` are read, so a consumer
+        that looks at a part of a large signal reads that part alone. The slabs end on
+        the same rows as in a read of the whole signal.
 
         The rows of a ragged signal (a variable-length dataset, as the async writer stores
         a signal whose rows differ in length) do not show their length before they are
@@ -398,14 +402,18 @@ class SignalDataReference:
                         break
                     consume(slab)
 
+        Args:
+            start (int | None): First row to read. Defaults to the first row of the signal.
+            stop (int | None): One past the last row to read. Defaults to the end.
+
         Returns:
             SlabIterator: Hands out the rows ``start:stop`` of ``total`` as
                 :class:`SignalSlab`. A signal without rows gives one slab with
                 ``start == stop == total == 0``.
         """
-        return SlabIterator(self._iter_slabs())
+        return SlabIterator(self._iter_slabs(start, stop))
 
-    def _iter_slabs(self) -> Iterator[SignalSlab]:
+    def _iter_slabs(self, start: int | None, stop: int | None) -> Iterator[SignalSlab]:
         """The generator behind :meth:`read_slabs`; the file is open while it is suspended."""
         with h5py.File(self._file_reference.file_path, "r") as f:
             datasets = self._datasets(f)
@@ -417,16 +425,22 @@ class SignalDataReference:
             per_row = {
                 key: dset for key, dset in datasets.items() if dset.shape and dset.shape[0] == total
             }
+            first = 0 if start is None else max(0, min(int(start), total))
+            last = total if stop is None else max(first, min(int(stop), total))
             ragged = self._is_ragged(value)
             rows_per_slab = 1 if ragged else self._rows_per_slab(value)
-            start = 0
-            while start < total:
-                stop = min(start + rows_per_slab, total)
-                data = {key: dset[start:stop] for key, dset in per_row.items()}
+            begin = first
+            while begin < last:
+                if ragged:
+                    end = min(last, begin + rows_per_slab)
+                else:
+                    # the same slab ends as in a read of the whole signal
+                    end = min(last, (begin // rows_per_slab + 1) * rows_per_slab)
+                data = {key: dset[begin:end] for key, dset in per_row.items()}
                 other = {}
-                if start == 0:
+                if begin == first:
                     other = {key: dset[()] for key, dset in datasets.items() if key not in per_row}
-                yield SignalSlab(start, stop, total, data, other)
+                yield SignalSlab(begin, end, total, data, other)
                 if ragged:
                     # The rows read so far are all that is known about the rows to come:
                     # size the next slab by the longest of them, and let it grow to at
@@ -434,7 +448,7 @@ class SignalDataReference:
                     longest = max((np.size(row) for row in data["value"]), default=1)
                     by_length = self._SLAB_ELEMENTS // max(1, longest)
                     rows_per_slab = max(1, min(2 * rows_per_slab, by_length))
-                start = stop
+                begin = end
 
     def _datasets(self, f: h5py.File) -> dict[str, h5py.Dataset]:
         """The datasets of this signal in the open file ``f``, by name."""
