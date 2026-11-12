@@ -19,8 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from toolz import partition
 
 from bec_lib.device import DeviceBase
-from bec_lib.messages import sequence_id_for_acquisition
 from bec_lib.devicemanager import DeviceManagerBase as DeviceManager
+from bec_lib.messages import sequence_id_for_acquisition
 from bec_lib.redis_connector import RedisConnector
 from bec_lib.serialization import msgpack
 from bec_server.scan_server.instruction_handler import InstructionHandler
