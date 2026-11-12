@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v4.7.0 (2026-11-12)
+
+### Bug Fixes
+
+- **device_server**: Coordinate destruction with metadata publication
+  ([`03c9c12`](https://github.com/bec-project/bec/commit/03c9c12fb80d8a43920e837253978ea060c3335b))
+
+### Features
+
+- **bec_lib**: Add mailbox-based ADZMQ preview streams
+  ([`95358cb`](https://github.com/bec-project/bec/commit/95358cb79df259db02cd43907531f09c20ccb2fa))
+
+- **devices**: Propagate runtime device metadata updates
+  ([`b81f696`](https://github.com/bec-project/bec/commit/b81f696371cafe76c73eef5d5fa7235bffcaa399))
+
+
 ## v4.6.1 (2026-11-11)
 
 ### Bug Fixes
