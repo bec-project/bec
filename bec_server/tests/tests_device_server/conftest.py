@@ -16,7 +16,7 @@ from bec_lib.redis_connector import RedisConnector
 # @pytest.fixture(autouse=True)
 # def threads_check(threads_check):
 #    yield
-#    bec_logger.logger.remove()
+#    bec_logger.shutdown()
 ###
 ### MEANWHILE, THIS FIXTURE WILL JUST CLEAN LOGGER
 ### THREADS, AND THERE WILL BE NO CHECK FOR DANGLING
@@ -48,4 +48,4 @@ def threads_check():
     #     _dispatcher.stop()
     # except Exception:
     #     pass
-    bec_logger.logger.remove()
+    bec_logger.shutdown()
