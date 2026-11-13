@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v4.8.1 (2026-11-13)
+
+### Bug Fixes
+
+- **ci**: Select QEMU package for Ubuntu runner
+  ([`7984f1b`](https://github.com/bec-project/bec/commit/7984f1b093b14fe2072831acccc7b7d084f1ad7d))
+
+
 ## v4.8.0 (2026-11-13)
 
 ### Bug Fixes
