@@ -15,7 +15,15 @@ jobs:
     - uses: actions/checkout@v6
 
     - name: Setup tools
-      run: sudo apt update && sudo apt install qemu-user-static
+      run: |
+        . /etc/os-release
+        if [ "$VERSION_ID" = "24.04" ]; then
+          qemu_package=qemu-user-static
+        else
+          qemu_package=qemu-user-binfmt
+        fi
+        sudo apt-get update
+        sudo apt-get install -y "$qemu_package"
 
     - name: Get version
       id: version
