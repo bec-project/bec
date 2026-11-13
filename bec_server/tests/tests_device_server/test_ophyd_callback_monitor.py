@@ -5,7 +5,7 @@ from unittest import mock
 
 import pytest
 
-from bec_server.device_server.ophyd_callback_monitor import OphydCallbackMonitor
+from bec_server.device_server.device_providers.ophyd.callback_monitor import OphydCallbackMonitor
 
 # pylint: disable=protected-access
 
@@ -21,16 +21,20 @@ def test_sample_warns_only_above_threshold(queue_size):
     frame = object()
 
     with (
-        mock.patch("bec_server.device_server.ophyd_callback_monitor.ophyd.get_cl") as get_cl,
         mock.patch(
-            "bec_server.device_server.ophyd_callback_monitor.sys._current_frames",
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.ophyd.get_cl"
+        ) as get_cl,
+        mock.patch(
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.sys._current_frames",
             return_value={42: frame},
         ) as frames,
         mock.patch(
-            "bec_server.device_server.ophyd_callback_monitor.traceback.format_stack",
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.traceback.format_stack",
             return_value=["callback stack"],
         ) as stack,
-        mock.patch("bec_server.device_server.ophyd_callback_monitor.logger.warning") as warning,
+        mock.patch(
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.logger.warning"
+        ) as warning,
     ):
         get_cl.return_value.get_dispatcher.return_value = SimpleNamespace(
             threads={"monitor": monitor_thread}
@@ -58,11 +62,16 @@ def test_sample_repeats_warning_while_over_custom_threshold_and_recovers():
     )
 
     with (
-        mock.patch("bec_server.device_server.ophyd_callback_monitor.ophyd.get_cl") as get_cl,
         mock.patch(
-            "bec_server.device_server.ophyd_callback_monitor.sys._current_frames", return_value={}
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.ophyd.get_cl"
+        ) as get_cl,
+        mock.patch(
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.sys._current_frames",
+            return_value={},
         ),
-        mock.patch("bec_server.device_server.ophyd_callback_monitor.logger.warning") as warning,
+        mock.patch(
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.logger.warning"
+        ) as warning,
     ):
         get_cl.return_value.get_dispatcher.return_value = SimpleNamespace(
             threads={"monitor": monitor_thread}
@@ -85,8 +94,12 @@ def test_sample_without_monitor_thread_does_not_warn(dispatcher):
     callback_monitor = OphydCallbackMonitor()
 
     with (
-        mock.patch("bec_server.device_server.ophyd_callback_monitor.ophyd.get_cl") as get_cl,
-        mock.patch("bec_server.device_server.ophyd_callback_monitor.logger.warning") as warning,
+        mock.patch(
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.ophyd.get_cl"
+        ) as get_cl,
+        mock.patch(
+            "bec_server.device_server.device_providers.ophyd.callback_monitor.logger.warning"
+        ) as warning,
     ):
         get_cl.return_value.get_dispatcher.return_value = dispatcher
 

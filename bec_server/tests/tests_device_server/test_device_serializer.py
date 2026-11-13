@@ -6,8 +6,16 @@ from ophyd import Component as Cpt
 from ophyd import Device, EpicsSignal, Signal
 from ophyd_devices import PSIDeviceBase
 
+from bec_lib import messages
 from bec_lib.bec_errors import DeviceConfigError
+from bec_lib.serialization import MsgpackSerialization
+from bec_server.device_server.device_providers.ophyd.ophyd_device_provider import (
+    OphydDeviceProvider,
+)
+from bec_server.device_server.devices import OwnershipMode
+from bec_server.device_server.devices.device_info import DeviceInfo
 from bec_server.device_server.devices.device_serializer import get_device_info, is_serializable
+from bec_server.device_server.devices.ds_device import DSDevice
 
 
 @pytest.mark.parametrize(
@@ -213,3 +221,48 @@ def test_get_device_info_raises_device_config_error_for_invalid_explicit_ownersh
         match="Invalid ownership_mode 'not-a-mode' configured on DummyInvalidOwnershipDevice",
     ):
         get_device_info(device, connect=False)
+
+
+@pytest.mark.parametrize("connect", [False, True])
+def test_device_info_model_preserves_wire_shape(connect):
+    """The provider model retains classic keys and serializes nested ownership as strings."""
+
+    class Child(Device):
+        signal = Cpt(Signal, value=1)
+
+    class Root(Device):
+        child = Cpt(Child)
+
+    obj = Root(name="model_root")
+    provider = OphydDeviceProvider(None)
+    info = provider.get_device_info(DSDevice(obj.name, obj, config=None), connect=connect)
+
+    assert isinstance(info, DeviceInfo)
+    assert info.ownership_mode is OwnershipMode.CLAIMABLE
+    wire = info.to_wire()
+    assert wire["ownership_mode"] == "claimable"
+    assert type(wire["ownership_mode"]) is str
+    assert wire["custom_user_access"] == {}
+    if connect:
+        assert isinstance(info.sub_devices[0], DeviceInfo)
+        child = wire["sub_devices"][0]
+        assert child["device_attr_name"] == "child"
+        assert type(child["ownership_mode"]) is str
+        assert child["signals"]["signal"]["obj_name"] == "model_root_child_signal"
+        assert "storage_name" not in child["signals"]["signal"]
+    else:
+        assert wire["sub_devices"] == []
+        assert wire["describe"] == wire["describe_configuration"] == wire["signals"] == {}
+
+    message = messages.DeviceInfoMessage(device=obj.name, info=wire)
+    assert MsgpackSerialization.loads(MsgpackSerialization.dumps(message)).info == wire
+
+
+def test_device_info_model_preserves_extension_fields_and_omissions():
+    wire = {
+        "device_base_class": "signal",
+        "device_class": "CustomSignal",
+        "vendor_extension": {"flag": None},
+    }
+
+    assert DeviceInfo.model_validate(wire).to_wire() == wire

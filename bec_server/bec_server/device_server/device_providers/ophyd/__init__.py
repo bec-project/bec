@@ -1,0 +1,1 @@
+"""Classic Ophyd device provider."""
