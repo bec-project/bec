@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v4.8.0 (2026-11-13)
+
+### Bug Fixes
+
+- **scan_history**: Store the entry before firing SCAN_HISTORY_UPDATE
+  ([`922c7ca`](https://github.com/bec-project/bec/commit/922c7cad4bfd39a4ded31012f1bd44afe3c32c7d))
+
+### Continuous Integration
+
+- Add PR line count workflow
+  ([`ab5955f`](https://github.com/bec-project/bec/commit/ab5955fb25bd416fa1dbc0355088a3017e78a9c3))
+
+### Features
+
+- **scan_data_container**: Read stored signals slab by slab
+  ([`9bd2520`](https://github.com/bec-project/bec/commit/9bd2520339b21eefd7fec104a8455b6c2e1fb3a1))
+
+- **scan_history**: Lock-free get_message and latest_message
+  ([`b7a9124`](https://github.com/bec-project/bec/commit/b7a91243799788e59ab73043bc07e4c35096e8e4))
+
+
 ## v4.7.0 (2026-11-12)
 
 ### Bug Fixes
