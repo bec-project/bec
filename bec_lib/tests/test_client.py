@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 
 from bec_lib import messages
-from bec_lib.client import SystemConfig
+from bec_lib.client import BECClient, SystemConfig
 from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.file_utils import sanitize_relative_subdir
 from bec_lib.redis_connector import MessageObject
@@ -29,6 +29,47 @@ def test_system_config():
     with pytest.raises(ValueError):
         config = SystemConfig(file_suffix="@")
         config = SystemConfig(file_directory="ä")
+
+
+def test_shutdown_closes_data_api_before_client_services(bec_client_mock):
+    client = bec_client_mock
+    api = mock.Mock()
+    client._data_api = api
+
+    def shutdown_services(_timeout):
+        api.close.assert_called_once_with()
+        assert client._data_api is None
+
+    with (
+        mock.patch("bec_lib.client.BECService.shutdown", side_effect=shutdown_services),
+        mock.patch("bec_lib.client.bec_logger.logger.remove"),
+    ):
+        client.shutdown()
+
+
+def test_data_api_property_is_lazy_and_recreated_after_close(connected_connector):
+    """client.data_api creates the DataAPI on first access, keeps handing out that one,
+    and never a closed one."""
+    from bec_lib.data_api import DataAPI
+
+    DataAPI.clear_instance()
+    client = BECClient.__new__(BECClient)
+    client._data_api = None
+    client.connector = connected_connector
+    client.callbacks = mock.MagicMock()
+    client.callbacks.register = mock.MagicMock(return_value="callback_id")
+    client.queue = mock.MagicMock()
+    client.device_manager = mock.MagicMock()
+    client.device_manager.get_bec_signals.return_value = []
+    try:
+        api = client.data_api
+        assert client.data_api is api
+        api.close()
+        fresh = client.data_api
+        assert fresh is not api and not fresh.closed
+        assert fresh.paths
+    finally:
+        DataAPI.clear_instance()
 
 
 def test_show_all_commands(bec_client_mock, capsys):
