@@ -159,16 +159,24 @@ class ScanReport:
 
         return self
 
-    def cancel(self) -> ScanReport:
+    def cancel(self, *, queue_request: bool = False) -> ScanReport:
         """
-        Cancel the scan request
+        Cancel the scan request.
+
+        Args:
+            queue_request (bool): Abort through the queue even for a move. This can remove a
+                queued move before it starts. By default, move cancellation stops its motors.
         """
         if self.request is None:
             raise ValueError("Request is not set. Cannot cancel the scan.")
         if self._client is None:
             raise ValueError("Client is not set. Cannot cancel the scan.")
         scan_type = self.request.request.content["scan_type"]
-        if scan_type == "mv":
+        if queue_request:
+            self._client.queue.request_scan_abortion(
+                request_id=self.request.requestID, queue=self.request.request.queue
+            )
+        elif scan_type == "mv":
             motors = list(self.request.request.parameter["args"].keys())
             for motor in motors:
                 try:
