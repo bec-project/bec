@@ -329,6 +329,23 @@ class RedisConnector:
         return self._managed_connection.xrange(topic, min, max, count)
 
     @validate_endpoint("topic")
+    def xrevrange(
+        self, topic: EndpointInfo, max: str = "+", min: str = "-", count: int = 50
+    ) -> list[tuple[str, dict]]:
+        """Read decoded stream entries newest first, preserving IDs for pagination.
+
+        Args:
+            topic (EndpointInfo): Stream endpoint.
+            max (str): Upper ID bound, inclusive unless prefixed with "(".
+            min (str): Lower ID bound.
+            count (int): Maximum number of entries to decode.
+
+        Returns:
+            list[tuple[str, dict]]: Stream IDs and decoded field dictionaries.
+        """
+        return self._managed_connection.xrevrange(topic, max=max, min=min, count=count)
+
+    @validate_endpoint("topic")
     def remove_from_set(self, topic, msg, pipe=None):
         return self._managed_connection.remove_from_set(topic, msg, pipe)
 
