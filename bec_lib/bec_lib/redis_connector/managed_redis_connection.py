@@ -1219,6 +1219,28 @@ class ManagedRedisConnection:
             )
         return msgs if msgs else None
 
+    def xrevrange(
+        self, topic: str, max: str = "+", min: str = "-", count: int = 50
+    ) -> list[tuple[str, dict]]:
+        """Read a bounded reverse stream range with IDs for exclusive pagination.
+
+        Args:
+            topic (str): Redis stream key.
+            max (str): Upper stream ID bound.
+            min (str): Lower stream ID bound.
+            count (int): Maximum number of entries to decode.
+
+        Returns:
+            list[tuple[str, dict]]: Newest-first IDs and decoded fields.
+        """
+        return [
+            (
+                stream_id.decode(),
+                {key.decode(): MsgpackSerialization.loads(value) for key, value in fields.items()},
+            )
+            for stream_id, fields in self._redis_conn.xrevrange(topic, max, min, count=count)
+        ]
+
     def client_id(self) -> int:
         """Get the current connection's client ID."""
         return self._redis_conn.client_id()  # type: ignore
