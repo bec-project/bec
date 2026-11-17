@@ -617,6 +617,12 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
             return
         return []
 
+    def xrevrange(
+        self, topic: EndpointInfo, max: str = "+", min: str = "-", count: int = 50
+    ) -> list[tuple[str, dict]]:
+        """Return an empty reverse stream range for the in-memory connector mock."""
+        return []
+
     def can_connect(self):
         return True
 

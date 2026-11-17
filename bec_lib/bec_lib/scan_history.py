@@ -53,27 +53,34 @@ class ScanHistory:
         self._connector.register(MessageEndpoints.scan_history(), cb=self._on_scan_history_update)
 
     def _load_data(self) -> None:
-        data = self._connector.xread(
-            MessageEndpoints.scan_history(), from_start=True, user_id="ScanHistoryLoader"
-        )
-        if not data:
-            self._scan_history_loaded_event.set()
-            return
-        with self._scan_data_lock:
-            for entry in data:
+        newest_first = []
+        upper_id = "+"
+        while len(newest_first) < self._max_scans:
+            batch = self._connector.xrevrange(
+                MessageEndpoints.scan_history(), max=upper_id, count=self._max_scans
+            )
+            if len(batch) == 0:
+                break
+            upper_id = f"({batch[-1][0]}"
+            for _, entry in batch:
                 msg: messages.ScanHistoryMessage = entry["data"]
-                if not hasattr(msg, "file_path"):
-                    # Even though the new ScanHistoryMessage should always have a file_path attribute, we add
-                    # this check to maintain compatibility with older messages.
-                    # Can be removed after a few versions.
+                if not hasattr(msg, "file_path") or not os.access(msg.file_path, os.R_OK):
                     continue
-                if not os.access(msg.file_path, os.R_OK):
-                    # If the file is not readable, we skip adding it to the history
-                    continue
-                self._scan_data[msg.scan_id] = msg
-                self._scan_ids.append(msg.scan_id)
-                self._scan_numbers.append(msg.scan_number)
-                self._remove_oldest_scan()
+                newest_first.append(msg)
+                if len(newest_first) == self._max_scans:
+                    break
+            # Release each decoded batch before fetching another one.
+            del batch
+        with self._scan_data_lock:
+            # Preserve snapshot order when subscription callbacks overlap with it.
+            # Updating an existing dict key replaces its message without moving it.
+            live_ids = list(dict.fromkeys(self._scan_ids))
+            loaded = {msg.scan_id: msg for msg in reversed(newest_first)}
+            loaded.update((scan_id, self._scan_data[scan_id]) for scan_id in live_ids)
+            self._scan_data = loaded
+            self._scan_ids = list(loaded)
+            self._scan_numbers = [msg.scan_number for msg in loaded.values()]
+            self._remove_oldest_scan()
             self._client.callbacks.run(
                 event_type=EventType.SCAN_HISTORY_LOADED,
                 history_msgs=[self._scan_data[scan_id] for scan_id in self._scan_ids],
