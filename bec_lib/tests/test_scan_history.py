@@ -314,3 +314,132 @@ def test_history_update_event_fires_after_registry_store(connected_connector):
     history._on_scan_history_update({"data": msg})
     client.callbacks.poll()
     assert seen_in_registry == [True]
+
+
+@pytest.mark.parametrize("unreadable", [0, 65])
+def test_initial_history_reads_bounded_reverse_batches(
+    connected_connector, file_history_messages, unreadable
+):
+    """Only decode enough bounded batches to find the latest 50 readable scans."""
+    endpoint = MessageEndpoints.scan_history()
+    for index in range(150):
+        msg = file_history_messages[0].model_copy(
+            update={
+                "scan_id": f"scan-{index}",
+                "scan_number": index,
+                "file_path": "missing" if index >= 150 - unreadable else os.devnull,
+            }
+        )
+        connected_connector.xadd(endpoint, {"data": msg})
+    client = mock.MagicMock(connector=connected_connector)
+    with (
+        mock.patch("bec_lib.scan_history.os.access", side_effect=lambda path, _: path != "missing"),
+        mock.patch.object(
+            connected_connector, "xrevrange", wraps=connected_connector.xrevrange
+        ) as read,
+        mock.patch.object(connected_connector, "xread") as unbounded_read,
+    ):
+        history = ScanHistory(client, load_threaded=False)
+    assert history._scan_numbers == list(range(100 - unreadable, 150 - unreadable))
+    assert history.latest_message().scan_number == 149 - unreadable
+    assert history._scan_history_loaded_event.is_set()
+    assert read.call_count == (1 if unreadable == 0 else 3)
+    assert all(call.kwargs["count"] == 50 for call in read.call_args_list)
+    unbounded_read.assert_not_called()
+    client.callbacks.run.assert_called_once_with(
+        event_type=EventType.SCAN_HISTORY_LOADED,
+        history_msgs=[history.get_message(scan_id) for scan_id in history._scan_ids],
+    )
+    history._connector.unregister(endpoint, cb=history._on_scan_history_update)
+
+
+def test_initial_history_empty_stream(connected_connector):
+    history = ScanHistory(mock.MagicMock(connector=connected_connector), load_threaded=False)
+    assert len(history) == 0
+    assert history._scan_history_loaded_event.is_set()
+    history._connector.unregister(
+        MessageEndpoints.scan_history(), cb=history._on_scan_history_update
+    )
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_initial_history_preserves_updates_during_loading(file_history_messages, overlap):
+    """A concurrent update survives merging and overlapping entries appear only once."""
+    snapshot_ready = Event()
+    resume_loading = Event()
+    client = mock.MagicMock()
+    snapshot = [
+        file_history_messages[0].model_copy(
+            update={"scan_id": f"scan-{index}", "scan_number": index, "file_path": os.devnull}
+        )
+        for index in range(50)
+    ]
+
+    def read_batch(*_args, **_kwargs):
+        snapshot_ready.set()
+        assert resume_loading.wait(timeout=5)
+        return [(f"{index}-0", {"data": snapshot[index]}) for index in reversed(range(50))]
+
+    client.connector.xrevrange.side_effect = read_batch
+    with mock.patch.object(ScanHistory, "_start_retrieval"):
+        history = ScanHistory(client, load_threaded=True)
+    loader = threading.Thread(target=history._load_data)
+    loader.start()
+    try:
+        assert snapshot_ready.wait(timeout=5)
+        if overlap:
+            history._on_scan_history_update({"data": snapshot[-1]})
+        newest = snapshot[-1].model_copy(update={"scan_id": "scan-50", "scan_number": 50})
+        history._on_scan_history_update({"data": newest})
+    finally:
+        resume_loading.set()
+        loader.join(timeout=5)
+    assert not loader.is_alive()
+    assert history._scan_history_loaded_event.is_set()
+    assert history._scan_numbers == list(range(1, 51))
+    assert len(history._scan_ids) == len(history._scan_data) == 50
+    assert history.latest_message() == newest
+    assert history.get_message("scan-50") == newest
+    assert history.get_message("scan-0") is None
+    client.callbacks.run.assert_called_with(
+        event_type=EventType.SCAN_HISTORY_LOADED,
+        history_msgs=[history.get_message(scan_id) for scan_id in history._scan_ids],
+    )
+
+
+def test_initial_history_keeps_older_overlap_in_snapshot_order(file_history_messages):
+    """A delayed callback must not move an older snapshot entry to the end."""
+    client = mock.MagicMock()
+    snapshot = [
+        file_history_messages[0].model_copy(
+            update={"scan_id": f"scan-{index}", "scan_number": index, "file_path": os.devnull}
+        )
+        for index in range(50)
+    ]
+    updated = snapshot[48].model_copy(update={"num_points": 123})
+    with mock.patch.object(ScanHistory, "_start_retrieval"):
+        history = ScanHistory(client, load_threaded=False)
+
+    def read_batch(*_args, **_kwargs):
+        history._on_scan_history_update({"data": updated})
+        return [(f"{index}-0", {"data": snapshot[index]}) for index in reversed(range(50))]
+
+    client.connector.xrevrange.side_effect = read_batch
+    history._load_data()
+    assert history._scan_numbers == list(range(50))
+    assert history.latest_message() == snapshot[49]
+    assert history.get_message("scan-48") == updated
+    assert len(history._scan_ids) == len(history._scan_data) == 50
+    client.callbacks.run.assert_called_with(
+        event_type=EventType.SCAN_HISTORY_LOADED,
+        history_msgs=[*snapshot[:48], updated, snapshot[49]],
+    )
+
+
+def test_initial_history_empty_mock_stream_stops():
+    """Unconfigured connector mocks must not spin forever during client startup."""
+    client = mock.MagicMock()
+    history = ScanHistory(client, load_threaded=False)
+    assert len(history) == 0
+    assert history._scan_history_loaded_event.is_set()
+    client.connector.xrevrange.assert_called_once()
