@@ -8,6 +8,8 @@ import yaml
 from bec_lib import messages
 from bec_lib.alarm_handler import AlarmBase
 from bec_lib.bl_states import DeviceWithinLimitsStateConfig
+from bec_lib.data_api import DataAPI
+from bec_lib.data_api.models import SCAN_GROUP, CorrelationGroup
 from bec_lib.devicemanager import DeviceConfigError
 from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
@@ -120,6 +122,92 @@ def test_async_callback_data_matches_scan_data_lib(bec_client_lib):
 
     for ii, msg in enumerate(s.scan.live_data.messages.values()):
         assert msg.content == recorder.data[ii]
+
+
+@pytest.mark.timeout(100)
+def test_data_api_groups_monitored_grid_scan_and_multi_signal_lib(bec_client_lib):
+    """Monitored signals align by scan point; the sub-signals of one AsyncMultiSignal
+    align with each other in their own group (they are emitted in the same messages)."""
+    bec = bec_client_lib
+    scans = bec.scans
+    dev = bec.device_manager.devices
+    updates = []
+
+    def callback(update):
+        updates.append(update)
+
+    DataAPI.clear_instance()
+    try:
+        bec.metadata.update({"unit_test": "test_data_api_grid_scan_multi_signal_groups"})
+        scans.umv(dev.samx, 0, dev.samy, 0, relative=False)
+        # A non-constant model so that mispaired points would be detectable.
+        dev.waveform.sim.select_model("GaussianModel")
+        dev.waveform.async_update.set("add")
+
+        data_api = DataAPI(bec)
+        monitored = [("samx", "samx"), ("samy", "samy"), ("bpm4i", "bpm4i")]
+        multi = [
+            ("waveform", "waveform_async_multi_data_data1"),
+            ("waveform", "waveform_async_multi_data_data2"),
+        ]
+        multi_group = CorrelationGroup.multi("waveform", "waveform_async_multi_data")
+        with data_api.subscribe(
+            sources=monitored + multi, scan="live", callback=callback
+        ) as subscription:
+            status = scans.grid_scan(
+                dev.samx, -5, 5, 10, dev.samy, -5, 5, 10, exp_time=0.05, relative=True
+            )
+            scan_id = status.queue_item.scan_ids[0]
+
+            status.wait(num_points=True, file_written=True)
+            expected_points = status.scan.num_points
+
+            def latest(group):
+                return next(
+                    (
+                        u
+                        for u in reversed(updates)
+                        if u.scan_id == scan_id and u.metadata.get("group") == group
+                    ),
+                    None,
+                )
+
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                scan_update = latest(SCAN_GROUP)
+                if (
+                    scan_update is not None
+                    and len(scan_update.aligned_ordinals) == expected_points
+                    and latest(multi_group) is not None
+                ):
+                    break
+                time.sleep(0.1)
+            assert subscription.groups == {SCAN_GROUP: monitored, multi_group: multi}
+
+        assert expected_points == 100
+        scan_update = latest(SCAN_GROUP)
+        assert set(scan_update.sources) == set(monitored)
+        assert list(scan_update.aligned_ordinals) == list(range(expected_points))
+        assert scan_update.complete
+        columns = scan_update.aligned()
+        # Value-aware pairing check: monitored positions at aligned ordinal i
+        # must equal the scan item's recorded point i.
+        scan_item = bec.queue.scan_storage.find_scan_by_ID(scan_id)
+        recorded_x = scan_item.live_data["samx"]["samx"]["val"]
+        recorded_y = scan_item.live_data["samy"]["samy"]["val"]
+        assert list(columns[("samx", "samx")]) == list(recorded_x)
+        assert list(columns[("samy", "samy")]) == list(recorded_y)
+
+        multi_update = latest(multi_group)
+        assert set(multi_update.sources) == set(multi)
+        data1, data2 = (multi_update.get(*key) for key in multi)
+        assert len(multi_update.aligned_ordinals) > 0
+        assert list(data1.ordinals) == list(data2.ordinals)
+        # The sim sends the same waveform to both sub-signals of each message.
+        assert np.array_equal(data1.as_array(), data2.as_array())
+        assert data1.metadata["async_update_type"] == "add"
+    finally:
+        DataAPI.clear_instance()
 
 
 @pytest.mark.timeout(100)
