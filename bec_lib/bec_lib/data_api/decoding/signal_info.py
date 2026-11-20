@@ -23,6 +23,7 @@ from bec_lib.logger import bec_logger
 from bec_lib.messages import ScanHistoryMessage
 
 from .. import client_views
+from ..data_bundler import MONITORED_GROUP
 from ..data_path import SourceSpec
 from ..models import DeviceStream, SourceKey, SourceKind
 
@@ -191,6 +192,20 @@ def multi_signal_name(entry_info: dict | None) -> str | None:
     return storage_name
 
 
+def declared_correlation_group(entry_info: dict | None) -> str | None:
+    """
+    The correlation group a signal declares in its signal info.
+
+    Returns:
+        str | None: ``"monitored"`` for a signal that promises one value per scan point,
+            any other tag for signals that are emitted together, ``None`` without one.
+    """
+    described = (entry_info or {}).get("describe") or {}
+    signal_info = described.get("signal_info") or {}
+    # ``acquisition_group`` is the name older devices publish the same field under.
+    return signal_info.get("correlation_group") or signal_info.get("acquisition_group")
+
+
 # --- stored datasets ---------------------------------------------------------
 
 
@@ -270,6 +285,7 @@ def open_scan_specs(
                     entry=entry,
                     kind=SourceKind.ASYNC,
                     multi_signal=multi_signal_name(info),
+                    correlation_group=declared_correlation_group(info),
                     storage_name=info.get("storage_name"),
                 )
             )
@@ -369,6 +385,11 @@ def stored_scan_specs(
         if info is None and stored:
             specs.append(SourceSpec(device=device, entry=entry, available=False))
             continue
+        group = declared_correlation_group(declaration)
+        if group == MONITORED_GROUP and (points is None or _rows(info) != points):
+            # The declaration is today's; the file does not show one value per scan point,
+            # so its rows cannot be paired with the points.
+            group = None
         if declaration is not None:
             kind = SourceKind.ASYNC
         elif points is not None and _rows(info) == points:
@@ -381,6 +402,7 @@ def stored_scan_specs(
                 entry=entry,
                 kind=kind,
                 multi_signal=multi_signal_name(declaration),
+                correlation_group=group,
                 storage_name=stored_key,
                 provisional=not stored,
                 estimated_bytes=estimate_stored_bytes(info) if info is not None else None,

@@ -264,7 +264,10 @@ class Subscription:
             if not self._specs:
                 return {}
             return partition_correlation_groups(
-                [(s.key, s.kind or SourceKind.UNINDEXED, s.multi_signal) for s in self._specs],
+                [
+                    (s.key, s.kind or SourceKind.UNINDEXED, s.multi_signal, s.correlation_group)
+                    for s in self._specs
+                ],
                 correlation=self._correlation,
             )
 
@@ -633,7 +636,10 @@ class Subscription:
         """Create shared correlation bundles, then open one request per adapter/group."""
         specs = {spec.key: spec for spec in self._specs}
         for label, keys in partition_correlation_groups(
-            [(s.key, s.kind or SourceKind.UNINDEXED, s.multi_signal) for s in self._specs],
+            [
+                (s.key, s.kind or SourceKind.UNINDEXED, s.multi_signal, s.correlation_group)
+                for s in self._specs
+            ],
             correlation=self._correlation,
         ).items():
             if self._closed or self._generation != generation:

@@ -50,6 +50,8 @@ class GroupKind(enum.StrEnum):
     SCAN = "scan"
     #: The message counter of one AsyncMultiSignal: its sub-signals.
     MULTI = "multi"
+    #: A tag the signals declare themselves (``signal_info.correlation_group``).
+    TAGGED = "tagged"
     #: Nothing: a single source that cannot be paired with any other.
     STANDALONE = "standalone"
     #: The sample-and-hold rows of ``CorrelationMode.CONTINUOUS``.
@@ -70,13 +72,19 @@ class CorrelationGroup:
     kind: GroupKind
     #: Device of a ``MULTI`` or ``STANDALONE`` group; empty otherwise.
     device: str = ""
-    #: Storage name of the AsyncMultiSignal (``MULTI``) or entry of the source (``STANDALONE``).
+    #: Storage name of the AsyncMultiSignal (``MULTI``), entry of the source (``STANDALONE``)
+    #: or the declared tag (``TAGGED``).
     name: str = ""
 
     @classmethod
     def multi(cls, device: str, storage_name: str) -> CorrelationGroup:
         """The group of the sub-signals of one AsyncMultiSignal."""
         return cls(GroupKind.MULTI, device, storage_name)
+
+    @classmethod
+    def tagged(cls, tag: str) -> CorrelationGroup:
+        """The group of the async signals that declare the same correlation group."""
+        return cls(GroupKind.TAGGED, name=tag)
 
     @classmethod
     def standalone(cls, device: str, entry: str) -> CorrelationGroup:
@@ -86,6 +94,8 @@ class CorrelationGroup:
     def __str__(self) -> str:
         if not self.device and not self.name:
             return str(self.kind)
+        if not self.device:
+            return f"{self.kind}:{self.name}"
         return f"{self.kind}:{self.device}/{self.name}"
 
 

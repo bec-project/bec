@@ -238,6 +238,9 @@ class RedisDataPath(DataPath):
         scan_item = context.resolve_scan_item(self._scan_item)
         if scan_item is None or scan_item.status_message is None:
             return None
+        # A device can change what its signals declare without a config update (which is
+        # what clears this cache otherwise): every resolution reads the declarations anew.
+        self._async_info_cache.clear()
         return open_scan_specs(
             self.client, sources, scan_item.status_message.readout_priority, self._async_info_cache
         )
