@@ -180,6 +180,20 @@ def test_a_receiver_that_broke_is_reported_and_replaced_for_the_next_subscriber(
     assert wait_for(lambda: FakeStream.created[1].stopped and not zmq_path_of(api).feeds)
 
 
+def test_a_changed_address_moves_the_subscription_to_the_new_publisher(api):
+    sub, updates = subscribe(api)
+    old = FakeStream.created[0]
+    moved = "tcp://127.0.0.1:6000"
+    advertise(api.client, address=moved)
+    api.refresh()
+    assert wait_for(lambda: len(FakeStream.created) == 2 and old.stopped)
+    new = FakeStream.created[1]
+    assert new.started_with.address == moved
+    new.send(np.ones((2, 2)))
+    assert wait_for(lambda: updates and len(updates[-1].get(*PREVIEW).values) == 1)
+    sub.close()
+
+
 def test_transport_is_found_by_component_name_and_by_signal_name(api):
     path = zmq_path_of(api)
     for entry in ("preview", "cam_preview"):
