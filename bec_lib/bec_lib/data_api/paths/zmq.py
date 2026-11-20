@@ -94,11 +94,21 @@ class ZMQDataPath(DataPath):
     def resolve(self, sources: list[SourceKey], context: BindContext) -> list[SourceSpec] | None:
         if not pyzmq_installed():
             return None
-        return [
-            SourceSpec(*key, kind=SourceKind.UNINDEXED, stream=DeviceStream.PREVIEW)
-            for key in sources
-            if self.transport_of(tuple(key)) is not None
-        ]
+        specs = []
+        for key in sources:
+            transport = self.transport_of(tuple(key))
+            if transport is not None:
+                # The address is the revision: a signal that moves to another publisher
+                # is bound again.
+                specs.append(
+                    SourceSpec(
+                        *key,
+                        kind=SourceKind.UNINDEXED,
+                        stream=DeviceStream.PREVIEW,
+                        revision=transport.address,
+                    )
+                )
+        return specs
 
     # --- requests ---------------------------------------------------------------------
 
