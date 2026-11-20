@@ -78,6 +78,8 @@ class FakeStream:
 def api(monkeypatch):
     FakeStream.created = []
     monkeypatch.setitem(zmq_path.STREAMS, ENCODER, FakeStream)
+    # The stand-in receiver needs no PyZMQ; only the test with a real socket does.
+    monkeypatch.setattr(zmq_path, "pyzmq_installed", lambda: True)
     api = DataAPI(make_mock_client())
     advertise(api.client)
     path = next(path for path in api.paths if path.data_source == "zmq")
