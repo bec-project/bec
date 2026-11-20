@@ -23,6 +23,7 @@ from .protocol import DecodedFrame, EncodedFrame
 # pylint: disable=duplicate-code,import-outside-toplevel
 
 _EPICS_TO_UNIX_SECONDS = 631_152_000
+ADZMQ_ENCODERS = frozenset({"adzmq-array-1.0", "array-1.0"})
 
 
 def _unix_timestamp(header: Mapping) -> float | None:
@@ -39,8 +40,8 @@ def _unix_timestamp(header: Mapping) -> float | None:
 class ADZMQStream:
     """Receive ADZMQ images; implements :class:`SignalStream`.
 
-    The proposed BEC encoder identifier is ``adzmq-array-1.0``. ADZMQ itself
-    identifies headers with ``htype=array-1.0``. There is no separate topic frame.
+    The BEC encoder identifier is ``adzmq-array-1.0``. Older descriptors can use
+    ``array-1.0``, the value of the ADZMQ header's ``htype``. There is no separate topic frame.
     Missing byte order uses ``default_byte_order`` (little endian per array-1.0).
     Configure this explicitly for publishers sending native big-endian memory.
     Mailbox and lifecycle semantics follow :class:`SignalStream`.
@@ -74,7 +75,7 @@ class ADZMQStream:
         Args:
             transport (ZMQSignalTransport): ADZMQ connection settings.
         """
-        if transport.encoder != "adzmq-array-1.0":
+        if transport.encoder not in ADZMQ_ENCODERS:
             raise ValueError(f"Unsupported encoder: {transport.encoder}")
         if transport.topic:
             raise ValueError("ADZMQ has no topic frame")
