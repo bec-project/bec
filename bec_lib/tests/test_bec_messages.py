@@ -11,6 +11,8 @@ from bec_lib.endpoints import MessageEndpoints, MessageOp
 from bec_lib.messaging_services import NotificationMessageObject
 from bec_lib.serialization import MsgpackSerialization
 
+ENCODER_PLUGIN = "bec_lib.zmq_transports.adzmq.ADZMQStream"
+
 
 @pytest.mark.parametrize("version", [1.0, 1.1, 1.2, None])
 def test_bec_message_msgpack_serialization_version(version):
@@ -117,6 +119,7 @@ def test_signal_info_defaults_and_roundtrip():
                 "address": "tcp://detector-host:5555",
                 "topic": "detector/preview",
                 "encoder": "bec-v1",
+                "encoder_plugin": ENCODER_PLUGIN,
             },
         ],
     ],
@@ -148,9 +151,32 @@ def test_signal_info_transports_roundtrip(transports):
             "message_op": "invalid",
         },
         {"transport": "zmq", "address": "tcp://localhost:5555", "topic": "preview"},
-        {"transport": "zmq", "topic": "preview", "encoder": "bec-v1"},
-        {"transport": "zmq", "address": "", "topic": "preview", "encoder": "bec-v1"},
-        {"transport": "zmq", "address": "tcp://localhost:5555", "topic": "", "encoder": ""},
+        {
+            "transport": "zmq",
+            "address": "tcp://localhost:5555",
+            "encoder": "bec-v1",
+            "encoder_plugin": "",
+        },
+        {
+            "transport": "zmq",
+            "topic": "preview",
+            "encoder": "bec-v1",
+            "encoder_plugin": ENCODER_PLUGIN,
+        },
+        {
+            "transport": "zmq",
+            "address": "",
+            "topic": "preview",
+            "encoder": "bec-v1",
+            "encoder_plugin": ENCODER_PLUGIN,
+        },
+        {
+            "transport": "zmq",
+            "address": "tcp://localhost:5555",
+            "topic": "",
+            "encoder": "",
+            "encoder_plugin": ENCODER_PLUGIN,
+        },
     ],
 )
 def test_signal_info_transports_reject_invalid_descriptors(transport):
@@ -187,7 +213,9 @@ def test_redis_signal_transport_from_endpoint_info(endpoint_info):
 
 
 def test_zmq_signal_transport_assignment():
-    zmq = messages.ZMQSignalTransport(address="ipc:///tmp/bec-preview", topic="", encoder="bec-v1")
+    zmq = messages.ZMQSignalTransport(
+        address="ipc:///tmp/bec-preview", topic="", encoder="bec-v1", encoder_plugin=ENCODER_PLUGIN
+    )
     assert zmq.transport == "zmq"
     with pytest.raises(pydantic.ValidationError):
         zmq.encoder = ""
@@ -198,6 +226,23 @@ def test_zmq_signal_transport_defaults():
     assert transport.socket_type == "sub"
     assert transport.connection_mode == "connect"
     assert transport.topic is None
+    assert transport.encoder_plugin is None
+
+
+def test_scan_device_info_accepts_legacy_zmq_descriptor():
+    descriptor = {
+        "transport": "zmq",
+        "address": "tcp://localhost:5555",
+        "encoder": "adzmq-array-1.0",
+    }
+    snapshot = messages.ScanDeviceInfoMessage.model_validate(
+        {
+            "scan_id": "scan-id",
+            "devices": {"detector": {"signal_info": {"preview": {"transports": [descriptor]}}}},
+        }
+    )
+    transport = snapshot.devices["detector"].signal_info["preview"].transports[0]
+    assert transport.encoder_plugin is None
 
 
 @pytest.mark.parametrize("socket_type", ["sub", "pull"])
@@ -208,6 +253,7 @@ def test_zmq_signal_transport_modes_roundtrip(socket_type, connection_mode):
         socket_type=socket_type,
         connection_mode=connection_mode,
         encoder="dectris-stream-v2" if socket_type == "pull" else "array-1.0",
+        encoder_plugin=ENCODER_PLUGIN,
     )
     info = messages.SignalInfo(transports=[transport])
     assert messages.SignalInfo.model_validate_json(info.model_dump_json()) == info
@@ -219,7 +265,10 @@ def test_zmq_signal_transport_modes_roundtrip(socket_type, connection_mode):
 @pytest.mark.parametrize("topic", [None, "", "camera/color"])
 def test_zmq_signal_transport_sub_topics(topic):
     transport = messages.ZMQSignalTransport(
-        address="tcp://localhost:5555", topic=topic, encoder="camera-stream-v1"
+        address="tcp://localhost:5555",
+        topic=topic,
+        encoder="camera-stream-v1",
+        encoder_plugin=ENCODER_PLUGIN,
     )
     assert transport.topic == topic
     assert messages.ZMQSignalTransport.model_validate_json(transport.model_dump_json()) == transport
@@ -242,6 +291,7 @@ def test_zmq_signal_transport_rejects_invalid_modes(invalid_fields):
                     "transport": "zmq",
                     "address": "tcp://localhost:5555",
                     "encoder": "bec-v1",
+                    "encoder_plugin": ENCODER_PLUGIN,
                     **invalid_fields,
                 }
             ]
@@ -250,7 +300,10 @@ def test_zmq_signal_transport_rejects_invalid_modes(invalid_fields):
 
 def test_zmq_signal_transport_topic_assignment():
     transport = messages.ZMQSignalTransport(
-        address="tcp://localhost:5555", topic="preview", encoder="bec-v1"
+        address="tcp://localhost:5555",
+        topic="preview",
+        encoder="bec-v1",
+        encoder_plugin=ENCODER_PLUGIN,
     )
     with pytest.raises(pydantic.ValidationError):
         transport.socket_type = "pull"

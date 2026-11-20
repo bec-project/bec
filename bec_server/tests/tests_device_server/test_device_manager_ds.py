@@ -855,7 +855,9 @@ def test_device_info_refreshes_after_connection(
                         self.preview.update_signal_info,
                         transports=[
                             messages.ZMQSignalTransport(
-                                address=f"tcp://localhost:{port}", encoder="adzmq-array-1.0"
+                                address=f"tcp://localhost:{port}",
+                                encoder="adzmq-array-1.0",
+                                encoder_plugin="bec_lib.zmq_transports.adzmq.ADZMQStream",
                             )
                         ],
                     ).result(timeout=3)
@@ -1189,7 +1191,9 @@ def test_signal_info_subscription_is_not_duplicated(
             detector.preview.update_signal_info(
                 transports=[
                     messages.ZMQSignalTransport(
-                        address="tcp://localhost:5555", encoder="adzmq-array-1.0"
+                        address="tcp://localhost:5555",
+                        encoder="adzmq-array-1.0",
+                        encoder_plugin="bec_lib.zmq_transports.adzmq.ADZMQStream",
                     )
                 ]
             )
