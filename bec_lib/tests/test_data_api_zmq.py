@@ -104,10 +104,21 @@ def test_preview_frames_arrive_with_unix_time(api):
     stream = FakeStream.created[0]
     assert stream.started_with.address == ADDRESS
     stream.send(np.ones((4, 3)), stamp=10.0)
-    assert wait_for(lambda: len(updates[-1].get(*PREVIEW).values) == 1)
+    assert wait_for(lambda: updates and len(updates[-1].get(*PREVIEW).values) == 1)
     source = updates[-1].get(*PREVIEW)
     assert source.values[-1].shape == (4, 3)
     assert source.timestamps[-1] == 10.0 + EPICS_EPOCH
+    sub.close()
+
+
+def test_the_first_update_is_the_first_frame(api):
+    """A stream has no data from before the subscription, so nothing is sent as backfill."""
+    sub, updates = subscribe(api)
+    time.sleep(0.05)
+    assert updates == []
+    FakeStream.created[0].send(np.ones((2, 2)))
+    assert wait_for(lambda: len(updates) == 1)
+    assert updates[0].reason == "live"
     sub.close()
 
 
@@ -116,7 +127,7 @@ def test_a_frame_without_a_time_stamp_is_stamped_on_arrival(api, stamp):
     sub, updates = subscribe(api)
     before = time.time()
     FakeStream.created[0].send(np.ones((2, 2)), stamp=stamp)
-    assert wait_for(lambda: len(updates[-1].get(*PREVIEW).values) == 1)
+    assert wait_for(lambda: updates and len(updates[-1].get(*PREVIEW).values) == 1)
     assert before <= updates[-1].get(*PREVIEW).timestamps[-1] <= time.time()
     sub.close()
 
@@ -128,7 +139,7 @@ def test_two_subscribers_share_one_receiver_and_the_last_one_stops_it(api):
     stream = FakeStream.created[0]
     thread = zmq_path_of(api).feeds[ADDRESS].thread
     stream.send(np.zeros((2, 2)))
-    assert wait_for(lambda: len(updates[-1].get(*PREVIEW).values) == 1)
+    assert wait_for(lambda: updates and len(updates[-1].get(*PREVIEW).values) == 1)
     first.close()
     assert not stream.stopped and thread.is_alive()
     second.close()
@@ -141,7 +152,7 @@ def test_a_malformed_frame_does_not_stop_the_stream(api):
     stream = FakeStream.created[0]
     stream.send(None)
     stream.send(np.zeros((2, 2)))
-    assert wait_for(lambda: len(updates[-1].get(*PREVIEW).values) == 1)
+    assert wait_for(lambda: updates and len(updates[-1].get(*PREVIEW).values) == 1)
     sub.close()
 
 
@@ -149,13 +160,15 @@ def test_a_receiver_that_broke_is_reported_and_replaced_for_the_next_subscriber(
     first, updates = subscribe(api)
     broken = FakeStream.created[0]
     broken.frames.put(RuntimeError("socket closed"))
-    assert wait_for(lambda: "socket closed" in updates[-1].get(*PREVIEW).metadata.get("error", ""))
+    assert wait_for(
+        lambda: updates and "socket closed" in updates[-1].get(*PREVIEW).metadata.get("error", "")
+    )
     assert wait_for(lambda: broken.stopped and not zmq_path_of(api).feeds)
 
     second, fresh = subscribe(api)
     assert len(FakeStream.created) == 2
     FakeStream.created[1].send(np.zeros((2, 2)))
-    assert wait_for(lambda: len(fresh[-1].get(*PREVIEW).values) == 1)
+    assert wait_for(lambda: fresh and len(fresh[-1].get(*PREVIEW).values) == 1)
     first.close()  # the request of the broken receiver leaves the new one alone
     assert not FakeStream.created[1].stopped
     second.close()

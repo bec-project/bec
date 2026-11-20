@@ -103,14 +103,19 @@ class ZMQDataPath(DataPath):
     # --- requests ---------------------------------------------------------------------
 
     def _open(self, request: SourceRequest) -> None:
+        # A stream has nothing from before the subscription: the first update of a source
+        # is its first frame. Only a source that cannot be opened is reported at once.
+        failed = False
         for spec in request.specs:
             transport = self.transport_of(spec.key)
             if transport is None:  # withdrawn since the request was resolved (config reload)
                 request.set_status(spec.key, error="The signal advertises no ZMQ stream any more.")
+                failed = True
                 continue
             feed = self.feeds.get(transport.address) or self._start_feed(transport)
             feed.requests.setdefault(request, []).append(spec)
-        request.notify(UpdateReason.BACKFILL)
+        if failed:
+            request.notify(UpdateReason.LIVE)
 
     def _start_feed(self, transport: ZMQSignalTransport) -> _Feed:
         feed = _Feed(transport.address, STREAMS[transport.encoder]())
