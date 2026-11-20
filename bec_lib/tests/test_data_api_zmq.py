@@ -194,6 +194,27 @@ def test_a_changed_address_moves_the_subscription_to_the_new_publisher(api):
     sub.close()
 
 
+def test_a_failed_receiver_marks_only_its_own_sources(api):
+    """One subscription pairs two cameras that publish on different addresses."""
+    other = ("cam2", "preview")
+    advertise(api.client, device="cam2", address="tcp://127.0.0.1:5556")
+    updates = []
+    sub = api.subscribe(
+        sources=[PREVIEW, other],
+        scan=None,
+        callback=updates.append,
+        min_emit_interval=0,
+        correlation="continuous",
+    )
+    by_address = {stream.started_with.address: stream for stream in FakeStream.created}
+    by_address[ADDRESS].frames.put(RuntimeError("socket closed"))
+    assert wait_for(
+        lambda: updates and "socket closed" in updates[-1].get(*PREVIEW).metadata.get("error", "")
+    )
+    assert "error" not in updates[-1].get(*other).metadata
+    sub.close()
+
+
 def test_transport_is_found_by_component_name_and_by_signal_name(api):
     path = zmq_path_of(api)
     for entry in ("preview", "cam_preview"):
