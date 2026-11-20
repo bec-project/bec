@@ -45,6 +45,7 @@ class DataSource(enum.StrEnum):
 
     REDIS = "redis"
     FILE = "file"
+    ZMQ = "zmq"
 
 
 @dataclass
