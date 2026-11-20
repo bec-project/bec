@@ -60,8 +60,8 @@ class FakeStream:
         return frame
 
     def decode(self, frame):
-        if frame.data is None:
-            raise ValueError("malformed frame")
+        if isinstance(frame.data, Exception):
+            raise frame.data
         return SimpleNamespace(data=frame.data)
 
     def stop(self):
@@ -149,10 +149,13 @@ def test_two_subscribers_share_one_receiver_and_the_last_one_stops_it(api):
     assert not zmq_path_of(api).feeds
 
 
-def test_a_malformed_frame_does_not_stop_the_stream(api):
+@pytest.mark.parametrize(
+    "error", [ValueError("wrong size"), OSError("image file is truncated")], ids=["size", "jpeg"]
+)
+def test_a_frame_that_cannot_be_decoded_does_not_stop_the_stream(api, error):
     sub, updates = subscribe(api)
     stream = FakeStream.created[0]
-    stream.send(None)
+    stream.send(error)
     stream.send(np.zeros((2, 2)))
     assert wait_for(lambda: updates and len(updates[-1].get(*PREVIEW).values) == 1)
     sub.close()

@@ -169,16 +169,22 @@ class ZMQDataPath(DataPath):
         while not feed.stopping.is_set():
             try:
                 frame = feed.stream.take_frame()
-                if frame is None:  # the receiver was stopped
-                    return
-                image = feed.stream.decode(frame)
-            except ValueError as exc:  # one malformed frame; the next may be fine
+            except ValueError as exc:  # one message with a malformed header
                 logger.warning(f"Dropped a ZMQ frame from {feed.address}: {exc}")
                 continue
             except Exception as exc:  # pylint: disable=broad-except
                 logger.opt(exception=exc).error(f"The ZMQ receiver of {feed.address} broke.")
                 self._give_up(feed, f"ZMQ receiver stopped: {exc}")
                 return
+            if frame is None:  # the receiver was stopped
+                return
+            try:
+                image = feed.stream.decode(frame)
+            except Exception as exc:  # pylint: disable=broad-except
+                # One frame that cannot be decoded (a truncated JPEG, a wrong size); the
+                # next may be fine.
+                logger.warning(f"Dropped a ZMQ frame from {feed.address}: {exc}")
+                continue
             # A publisher that leaves its frames unstamped must not date them to 1990.
             stamped = frame.timestamp is not None and frame.metadata.get("timeStamp")
             timestamp = frame.timestamp if stamped else time.time()
