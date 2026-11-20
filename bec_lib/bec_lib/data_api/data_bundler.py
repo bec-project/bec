@@ -57,8 +57,12 @@ class CorrelationGroupError(ValueError):
     """Raised when a source set cannot be partitioned into groups."""
 
 
+#: The correlation group an async signal declares to promise one value per scan point.
+MONITORED_GROUP = "monitored"
+
+
 def correlation_group(
-    key: SourceKey, kind: SourceKind, multi_signal: str | None = None
+    key: SourceKey, kind: SourceKind, multi_signal: str | None = None, declared: str | None = None
 ) -> CorrelationGroup:
     """
     Return the correlation group of one source.
@@ -68,25 +72,33 @@ def correlation_group(
         kind (SourceKind): Source kind.
         multi_signal (str | None): Storage name of the AsyncMultiSignal the
             source is a sub-signal of (async sources only).
+        declared (str | None): The correlation group the signal declares in its signal
+            info (async sources only). The declaration is a promise of the device: its
+            values are paired by their message counter, so a ``"monitored"`` signal that
+            skips a scan point shifts its later values onto earlier points while the
+            scan runs. The stored scan is checked: see ``stored_scan_specs``.
 
     Returns:
-        CorrelationGroup: ``SCAN_GROUP`` for monitored signals (keyed by scan point);
-            a ``MULTI`` group for the sub-signals of one AsyncMultiSignal (they are
-            emitted in the same messages, so their ordinals coincide); a
-            ``STANDALONE`` group of its own for everything else (other async or
-            unindexed sources cannot promise a shared counter and therefore cannot
-            be correlated with other sources).
+        CorrelationGroup: ``SCAN_GROUP`` for monitored signals (keyed by scan point) and
+            for async signals that declare the group ``"monitored"`` (one value per scan
+            point); a ``TAGGED`` group for async signals that declare another group (the
+            signals of one tag are emitted together); a ``MULTI`` group for the
+            sub-signals of one AsyncMultiSignal (they are emitted in the same messages,
+            so their ordinals coincide); a ``STANDALONE`` group of its own for
+            everything else (other async or unindexed sources cannot promise a shared
+            counter and therefore cannot be correlated with other sources).
     """
     if kind == SourceKind.MONITORED:
         return SCAN_GROUP
+    if kind == SourceKind.ASYNC and declared:
+        return SCAN_GROUP if declared == MONITORED_GROUP else CorrelationGroup.tagged(declared)
     if kind == SourceKind.ASYNC and multi_signal:
         return CorrelationGroup.multi(key[0], multi_signal)
     return CorrelationGroup.standalone(key[0], key[1])
 
 
 def partition_correlation_groups(
-    specs: list[tuple[SourceKey, SourceKind, str | None]],
-    correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+    specs: list[tuple], correlation: CorrelationMode | str = CorrelationMode.ORDINAL
 ) -> dict[CorrelationGroup, list[SourceKey]]:
     """
     Partition sources into correlation groups.
@@ -96,8 +108,8 @@ def partition_correlation_groups(
     they correlate.
 
     Args:
-        specs: One ``(key, kind, multi_signal)`` tuple per source; see
-            :func:`correlation_group`.
+        specs: One ``(key, kind, multi_signal, declared)`` tuple per source, the last
+            two optional; see :func:`correlation_group`.
         correlation (CorrelationMode): ``"ordinal"`` groups by ordinal
             meaning; ``"continuous"`` puts every source into the single
             sample-and-hold group.
@@ -112,10 +124,10 @@ def partition_correlation_groups(
     if not specs:
         raise CorrelationGroupError("A subscription needs at least one source.")
     if correlation == CorrelationMode.CONTINUOUS:
-        return {CONTINUOUS_GROUP: [key for key, _, _ in specs]}
+        return {CONTINUOUS_GROUP: [spec[0] for spec in specs]}
     groups: dict[CorrelationGroup, list[SourceKey]] = {}
-    for key, kind, multi_signal in specs:
-        groups.setdefault(correlation_group(key, kind, multi_signal), []).append(key)
+    for key, kind, *names in specs:
+        groups.setdefault(correlation_group(key, kind, *names), []).append(key)
     return groups
 
 

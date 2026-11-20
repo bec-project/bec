@@ -135,12 +135,15 @@ class TestDeviceLookups:
 class TestSpecBuilders:
     def test_open_scan_specs(self):
         client = fake_client({"samx": SAMX_SIGNALS}, async_signals=[WAVE_ASYNC])
-        cache = {}
+        lookups = []
+        declared = client.device_manager.get_bec_signals
+        client.device_manager.get_bec_signals = lambda classes: lookups.append(1) or declared(
+            classes
+        )
         specs = open_scan_specs(
             client,
             [("samx", "samx"), ("det", "wave"), ("det", "other")],
             {"monitored": ["samx"], "baseline": []},
-            cache,
         )
         assert [(s.kind, s.available) for s in specs] == [
             ("monitored", True),
@@ -149,7 +152,8 @@ class TestSpecBuilders:
         ]
         # A declared acquisition group is not used for correlation.
         assert specs[1].multi_signal is None and specs[1].storage_name == "wave"
-        assert ("det", "wave") in cache
+        # The declarations are read once for all sources, not once per source.
+        assert len(lookups) == 1
 
     def test_open_scan_specs_mark_multi_signal_sub_signals(self):
         client = fake_client(async_signals=[WAVE_ASYNC, *map(multi_sub_signal, ("x", "y"))])
