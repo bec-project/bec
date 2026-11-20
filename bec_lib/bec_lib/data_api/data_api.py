@@ -563,8 +563,10 @@ class DataAPI:
 
         Returns:
             dict[CorrelationGroup, list[SourceKey]]: Group -> sources: ``SCAN_GROUP`` for
-                the monitored signals, one ``MULTI`` group per AsyncMultiSignal and one
-                ``STANDALONE`` group per source that cannot be paired.
+                the monitored signals and the async signals that declare the group
+                ``"monitored"``, one ``TAGGED`` group per other declared group, one
+                ``MULTI`` group per AsyncMultiSignal and one ``STANDALONE`` group per
+                source that cannot be paired.
         """
         self._ensure_open()
         reject_reentrant_call(self._lock, "DataAPI.correlation_groups()")
@@ -577,7 +579,15 @@ class DataAPI:
             )
         specs = self._describe_specs(sources, scan, force_source)
         return partition_correlation_groups(
-            [(spec.key, spec.kind or SourceKind.UNINDEXED, spec.multi_signal) for spec in specs]
+            [
+                (
+                    spec.key,
+                    spec.kind or SourceKind.UNINDEXED,
+                    spec.multi_signal,
+                    spec.correlation_group,
+                )
+                for spec in specs
+            ]
         )
 
     def describe(
@@ -618,7 +628,10 @@ class DataAPI:
                 group = CONTINUOUS_GROUP
             else:
                 group = correlation_group(
-                    spec.key, spec.kind or SourceKind.UNINDEXED, spec.multi_signal
+                    spec.key,
+                    spec.kind or SourceKind.UNINDEXED,
+                    spec.multi_signal,
+                    spec.correlation_group,
                 )
             out[spec.key] = SourceInfo(
                 device=spec.device,

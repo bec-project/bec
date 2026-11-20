@@ -1896,15 +1896,6 @@ class TestClientOwnershipAndVisibility:
         gc.collect()
         assert len(DataAPI._instances) == 0
 
-    def test_device_update_invalidates_async_info_cache(self, data_api, mock_client):
-        plugin = data_api.paths[0]
-        plugin._async_info_cache[("det", "wave")] = {"obj_name": "wave"}
-        # The plugin registered the device_update event at connect time.
-        registered = {call.args[0] for call in mock_client.callbacks.register.call_args_list}
-        assert "device_update" in registered
-        plugin._on_device_update("update", {})
-        assert plugin._async_info_cache == {}
-
     def test_lagging_sources_reported(self, data_api, mock_client):
         item = make_scan_item(mock_client, "scan_1")
         register_scan(mock_client, {"scan_1": item})
@@ -1952,7 +1943,6 @@ def test_unbound_source_recovers_on_next_scan_status(data_api, mock_client):
 
     # Device info settles: the async signal is now resolvable.
     mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
-    data_api.paths[0]._async_info_cache.clear()
     sub._on_scan_status({"scan_id": "scan_1", "status": "open"}, {})
 
     assert sub.unbound_sources == []
