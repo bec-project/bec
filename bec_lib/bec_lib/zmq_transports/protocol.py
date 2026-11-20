@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -34,12 +34,13 @@ class DecodedFrame:
     timestamp: float | None = None
 
 
+@runtime_checkable
 class SignalStream(Protocol):
     """Single-consumer preview stream backed by a one-frame mailbox.
 
     Use a concrete implementation such as ``ADZMQStream``; this protocol defines
-    the consumer-facing interface and is not instantiated directly. Choose the
-    implementation matching the transport descriptor's ``encoder``. Pass the
+    the consumer-facing interface and is not instantiated directly. Use
+    ``load_encoder_plugin`` to resolve the class from the descriptor. Pass the
     advertised descriptor to ``start``; its address, socket type, connection mode,
     and topic describe the receiving side of the connection.
     Install ``bec_lib[adzmq]`` for the ADZMQ receiver and JPEG decoder dependencies.
@@ -94,15 +95,15 @@ class SignalStream(Protocol):
             from threading import Thread
 
             from bec_lib.messages import ZMQSignalTransport
-            from bec_lib.zmq_transports import ADZMQStream, SignalStream
+            from bec_lib.zmq_transports import load_encoder_plugin
 
-            stream: SignalStream = ADZMQStream()
             transport = ZMQSignalTransport(
                 address="tcp://127.0.0.1:1234",
                 socket_type="sub",
                 connection_mode="connect",
                 encoder="adzmq-array-1.0",
             )
+            stream = load_encoder_plugin(transport)()
 
             def consume():
                 try:

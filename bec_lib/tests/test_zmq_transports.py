@@ -2,15 +2,21 @@
 
 import io
 import json
+from importlib.metadata import EntryPoint
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
 from bec_lib.messages import ZMQSignalTransport
-from bec_lib.zmq_transports import ADZMQStream, EncodedFrame
+from bec_lib.zmq_transports import ADZMQStream, EncodedFrame, load_encoder_plugin
+from bec_lib.zmq_transports import plugin as zmq_plugin
+
+ADZMQ_PLUGIN = "bec_lib.zmq_transports.adzmq.ADZMQStream"
 
 zmq = pytest.importorskip("zmq")
 Image = pytest.importorskip("PIL.Image")
@@ -163,8 +169,97 @@ def sender():
 def transport(address, **updates):
     """Build a receiver descriptor."""
     return ZMQSignalTransport(
-        address=address, socket_type="pull", encoder="adzmq-array-1.0", **updates
+        address=address,
+        socket_type="pull",
+        encoder="adzmq-array-1.0",
+        encoder_plugin=ADZMQ_PLUGIN,
+        **updates,
     )
+
+
+def test_load_encoder_plugin_resolves_receiver_class():
+    descriptor = transport("tcp://127.0.0.1:1234")
+    descriptor.encoder_plugin = "unregistered.receivers.Stream"
+    with patch("bec_lib.zmq_transports.plugin.import_module") as importer:
+        assert load_encoder_plugin(descriptor) is ADZMQStream
+    importer.assert_not_called()
+
+
+def test_load_encoder_plugin_requires_explicit_plugin_for_unknown_encoder():
+    descriptor = ZMQSignalTransport(address="tcp://127.0.0.1:1234", encoder="custom-v1")
+    with pytest.raises(ValueError, match="requires an encoder_plugin"):
+        load_encoder_plugin(descriptor)
+
+
+@pytest.fixture
+def installed_bec_plugins():
+    plugins = [
+        EntryPoint(name="plugin_bec", value="beamline_plugin", group="bec"),
+        EntryPoint(name="plugin_bec", value="second_beamline_plugin", group="bec"),
+    ]
+    zmq_plugin._bec_plugin_package_names.cache_clear()
+    zmq_plugin._load_encoder_plugin.cache_clear()
+    try:
+        with patch.object(zmq_plugin, "entry_points", return_value=plugins) as discover:
+            yield discover
+    finally:
+        zmq_plugin._bec_plugin_package_names.cache_clear()
+        zmq_plugin._load_encoder_plugin.cache_clear()
+
+
+def test_load_encoder_plugin_accepts_multiple_bec_packages_and_caches(installed_bec_plugins):
+    first = ZMQSignalTransport(
+        address="tcp://127.0.0.1:1234",
+        encoder="custom-v1",
+        encoder_plugin="beamline_plugin.receivers.CustomStream",
+    )
+    second = first.model_copy(
+        update={"encoder_plugin": "second_beamline_plugin.receivers.SecondStream"}
+    )
+    modules = [SimpleNamespace(CustomStream=ADZMQStream), SimpleNamespace(SecondStream=ADZMQStream)]
+    with patch("bec_lib.zmq_transports.plugin.import_module", side_effect=modules) as importer:
+        for _ in range(2):
+            assert load_encoder_plugin(first) is ADZMQStream
+            assert load_encoder_plugin(second) is ADZMQStream
+    installed_bec_plugins.assert_called_once_with(group="bec")
+    assert [call.args[0] for call in importer.call_args_list] == [
+        "beamline_plugin.receivers",
+        "second_beamline_plugin.receivers",
+    ]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "other_package.receivers.CustomStream",
+        "beamline_plugin_extra.receivers.CustomStream",
+        "bec_lib.zmq_transports.ADZMQStream",
+    ],
+)
+def test_load_encoder_plugin_rejects_classes_outside_bec_plugin(installed_bec_plugins, path):
+    descriptor = ZMQSignalTransport(
+        address="tcp://127.0.0.1:1234", encoder="custom-v1", encoder_plugin=path
+    )
+    with (
+        patch("bec_lib.zmq_transports.plugin.import_module") as importer,
+        pytest.raises(ValueError, match="must be in an installed BEC plugin package"),
+    ):
+        load_encoder_plugin(descriptor)
+    importer.assert_not_called()
+
+
+def test_load_encoder_plugin_rejects_invalid_receiver(installed_bec_plugins):
+    descriptor = ZMQSignalTransport(
+        address="tcp://127.0.0.1:1234",
+        encoder="invalid-v1",
+        encoder_plugin="beamline_plugin.receivers.InvalidStream",
+    )
+    module = SimpleNamespace(InvalidStream=EncodedFrame)
+    with (
+        patch("bec_lib.zmq_transports.plugin.import_module", return_value=module),
+        pytest.raises(TypeError, match="implementing SignalStream"),
+    ):
+        load_encoder_plugin(descriptor)
 
 
 def test_receive_stop_restart_and_recover(sender):
@@ -327,22 +422,23 @@ def test_jpeg_stays_encoded_until_consumed(sender):
     "updates", [dict(encoder="other"), dict(topic="camera", socket_type="sub")]
 )
 def test_reject_descriptor(updates):
-    settings = dict(address="tcp://127.0.0.1:1234", encoder="adzmq-array-1.0")
+    settings = dict(
+        address="tcp://127.0.0.1:1234", encoder="adzmq-array-1.0", encoder_plugin=ADZMQ_PLUGIN
+    )
     settings.update(updates)
     with pytest.raises(ValueError):
         ADZMQStream().start(ZMQSignalTransport(**settings))
 
 
-def test_subscribe_without_topic():
-    stream = ADZMQStream()
+@pytest.mark.parametrize("encoder", ["adzmq-array-1.0", "array-1.0"])
+def test_subscribe_without_topic(encoder):
     with zmq.Context() as context:
         with context.socket(zmq.XPUB) as publisher:
             publisher.setsockopt(zmq.LINGER, 0)
             publisher.setsockopt(zmq.RCVTIMEO, 3000)
             port = publisher.bind_to_random_port("tcp://127.0.0.1")
-            descriptor = ZMQSignalTransport(
-                address=f"tcp://127.0.0.1:{port}", encoder="adzmq-array-1.0"
-            )
+            descriptor = ZMQSignalTransport(address=f"tcp://127.0.0.1:{port}", encoder=encoder)
+            stream = load_encoder_plugin(descriptor)()
             try:
                 stream.start(descriptor)
                 # XPUB confirms the subscription, avoiding a slow-joiner sleep.

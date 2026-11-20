@@ -1088,6 +1088,14 @@ class ZMQSignalTransport(BaseModel):
     encoder: str = Field(
         min_length=1, description="Identifier of the complete payload wire format."
     )
+    encoder_plugin: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Fully qualified import path of the receiver class, for example "
+        "'bec_lib.zmq_transports.adzmq.ADZMQStream'. If omitted, the client uses the built-in "
+        "receiver for a recognized wire format. Custom receivers must be defined in "
+        "a locally installed BEC plugin package.",
+    )
 
     model_config = ConfigDict(validate_assignment=True)
 
