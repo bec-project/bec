@@ -210,14 +210,19 @@ class ZMQDataPath(DataPath):
 
     def _give_up(self, feed: _Feed, error: str) -> None:
         """
-        Drop a receiver that broke. Its requests show ``error``; the next request for the
+        Drop a receiver that broke. Its sources show ``error``; the next request for the
         address starts a new receiver.
         """
         with self.lock:
             if self.feeds.get(feed.address) is feed:
                 del self.feeds[feed.address]
-            requests = list(feed.requests)
+            failed = dict(feed.requests)
             feed.requests.clear()
+            # A request may hold sources of other receivers: those keep delivering.
+            for request, specs in failed.items():
+                for spec in specs:
+                    request.set_status(spec.key, error=error)
         feed.stopping.set()
-        self.report(error, requests)
+        for request in failed:
+            request.notify(UpdateReason.LIVE)
         feed.stream.stop()
