@@ -138,8 +138,6 @@ class RedisDataPath(DataPath):
         self._stream_requests: list[SourceRequest] = []
         # Keys are ("async", scan_id, device, signal) or ("stream", stream, device, entry-or-"").
         self._feeds: dict[tuple, _Feed] = {}
-        # (device, entry) -> async signal info (positive hits only)
-        self._async_info_cache: dict[SourceKey, dict] = {}
         self._recipes: dict[Scenario, _Recipe] = {
             Scenario.OPEN_SCAN: _Recipe(
                 self._resolve_open_scan, self._open_open_scan, self._close_open_scan
@@ -155,15 +153,7 @@ class RedisDataPath(DataPath):
     # --- lifecycle -----------------------------------------------------------
 
     def connect(self) -> None:
-        self._callback_ids = [
-            self.client.callbacks.register("scan_segment", self._on_scan_segment),
-            self.client.callbacks.register("device_update", self._on_device_update),
-        ]
-
-    def _on_device_update(self, *_args, **_kwargs) -> None:
-        """Invalidate cached device metadata on device-config changes."""
-        with self._lock:
-            self._async_info_cache.clear()
+        self._callback_ids = [self.client.callbacks.register("scan_segment", self._on_scan_segment)]
 
     def disconnect(self) -> None:
         for callback_id in self._callback_ids:
@@ -175,7 +165,6 @@ class RedisDataPath(DataPath):
             self._feeds.clear()
             self._scan_requests.clear()
             self._stream_requests.clear()
-            self._async_info_cache.clear()
 
     # --- contract: dispatch on the scenario ----------------------------------
 
@@ -238,9 +227,7 @@ class RedisDataPath(DataPath):
         scan_item = context.resolve_scan_item(self._scan_item)
         if scan_item is None or scan_item.status_message is None:
             return None
-        return open_scan_specs(
-            self.client, sources, scan_item.status_message.readout_priority, self._async_info_cache
-        )
+        return open_scan_specs(self.client, sources, scan_item.status_message.readout_priority)
 
     def _open_open_scan(self, request: SourceRequest) -> None:
         scan_item = request.context.resolve_scan_item(self._scan_item)

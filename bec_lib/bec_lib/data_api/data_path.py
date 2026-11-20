@@ -58,6 +58,9 @@ class SourceSpec:
     #: sub-signals are emitted in the same messages, so they share ordinals and one
     #: correlation group.
     multi_signal: str | None = None
+    #: The correlation group an async signal declares in its signal info: ``"monitored"``
+    #: for one value per scan point, or a tag shared by the signals that are emitted together.
+    correlation_group: str | None = None
     #: Name the data is stored under when it differs from ``entry`` (async
     #: signals in the scan file are keyed by their storage name).
     storage_name: str | None = None
