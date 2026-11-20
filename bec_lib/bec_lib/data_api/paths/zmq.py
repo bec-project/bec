@@ -87,7 +87,8 @@ class ZMQDataPath(DataPath):
             described = (info.get("describe") or {}).get("signal_info") or {}
             for item in described.get("transports") or []:
                 usable = item.get("transport") == "zmq" and item.get("encoder") in STREAMS
-                if usable and item.get("socket_type", "sub") == "sub":
+                # The receivers of STREAMS read streams without a topic frame.
+                if usable and item.get("socket_type", "sub") == "sub" and not item.get("topic"):
                     return ZMQSignalTransport.model_validate(item)
         return None
 

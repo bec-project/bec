@@ -224,8 +224,13 @@ def test_transport_is_found_by_component_name_and_by_signal_name(api):
 
 @pytest.mark.parametrize(
     "transport",
-    [{"socket_type": "pull"}, {"encoder": "something-else"}, {"transport": "redis"}],
-    ids=["pull socket", "unknown encoder", "redis transport"],
+    [
+        {"socket_type": "pull"},
+        {"encoder": "something-else"},
+        {"transport": "redis"},
+        {"topic": "frames"},
+    ],
+    ids=["pull socket", "unknown encoder", "redis transport", "topic"],
 )
 def test_other_transports_are_left_to_the_redis_path(api, transport):
     advertise(api.client, device="other", **transport)
