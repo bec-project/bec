@@ -348,7 +348,7 @@ class RedisDataPath(DataPath):
         log.append(msg_obj)
         # Requests without a cap hold the data anyway (the log only adds references);
         # when all are capped, keep a bounded tail so the log cannot outgrow them.
-        caps = [request.bundle.max_points for request in holders]
+        caps = [request.bundle.max_buffer_size for request in holders]
         if caps and all(cap is not None for cap in caps):
             limit = max(_FEED_LOG_CAP, *caps)
             while len(log) > limit:
@@ -466,7 +466,7 @@ class RedisDataPath(DataPath):
 
     def _seed_reading(self, request: SourceRequest, spec: SourceSpec) -> None:
         """
-        Seed the latest cached reading for every correlation mode. Lock held.
+        Seed the latest cached reading, paired sources or not. Lock held.
 
         Readback and configuration pubsub topics store their last message.
         A stationary device need not publish after subscription, so DataAPI
@@ -548,7 +548,7 @@ class RedisDataPath(DataPath):
                         if _same_message(seed, msg_obj):
                             continue
                     specs.append(spec)
-                # The entries of one message form one row in a continuous group.
+                # The entries of one message form one row in a paired group.
                 if specs and decode_stream_points(request.bundle, specs, stream, msg_obj):
                     targets.append(request)
         for request in targets:

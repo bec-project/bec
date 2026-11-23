@@ -10,7 +10,7 @@ import pytest
 from bec_lib.data_api import DataAPI, FileDataPath, SourceInfo, SourceSpec
 from bec_lib.data_api.data_bundler import DataBundler
 from bec_lib.data_api.decoding import open_scan_specs
-from bec_lib.data_api.models import CONTINUOUS_GROUP, SCAN_GROUP
+from bec_lib.data_api.models import PAIRED_GROUP, SCAN_GROUP
 from bec_lib.data_api.scenarios import Scenario
 from bec_lib.data_api.testing import REMOTE_SCAN, ReferencePath, make_mock_client, wait_for
 
@@ -32,7 +32,7 @@ def api():
 def subscribe(api, sources=(A,), scan=REMOTE_SCAN, **kwargs):
     updates = []
     sub = api.subscribe(
-        sources=list(sources), scan=scan, callback=updates.append, min_emit_interval=0, **kwargs
+        sources=list(sources), scan=scan, callback=updates.append, update_rate=None, **kwargs
     )
     return sub, updates
 
@@ -72,9 +72,9 @@ def test_idle_live_description_without_the_hook_stays_unavailable(api):
     assert not api.describe([EXT], scan="live")[EXT].available
 
 
-def test_continuous_description_is_one_group(api):
-    info = api.describe([A, B], scan=None, correlation="continuous")
-    assert {item.group for item in info.values()} == {CONTINUOUS_GROUP}
+def test_paired_description_is_one_group(api):
+    info = api.describe([A, B], scan=None, pair_sources=True)
+    assert {item.group for item in info.values()} == {PAIRED_GROUP}
 
 
 def test_knows_scan_covers_scans_only_a_path_describes(api):

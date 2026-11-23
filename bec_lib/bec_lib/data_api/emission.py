@@ -2,7 +2,7 @@
 Emission scheduler of the DataAPI.
 
 Coalesced ("live") updates are not delivered on every notification: a
-subscription emits at most once per ``min_emit_interval`` per correlation
+subscription emits at most ``update_rate`` times a second per correlation
 group and guarantees a trailing emission carrying the final state. The
 trailing emissions of *all* subscriptions of one client are delivered by one
 :class:`EmissionScheduler` — a single lazily started daemon thread holding a

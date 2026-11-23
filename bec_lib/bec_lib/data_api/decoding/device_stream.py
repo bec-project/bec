@@ -1,5 +1,5 @@
 """Scan-less DeviceMessage signals or preview payloads;
-ordinals are unindexed arrival positions, with held samples in continuous mode.
+ordinals are unindexed arrival positions, with held samples when the sources are paired.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from bec_lib.messages import DeviceMessage, DevicePreviewMessage
 
 from ..data_bundler import DataBundler
 from ..data_path import SourceSpec
-from ..models import CorrelationMode, DeviceStream, SourceKind
+from ..models import DeviceStream, SourceKind
 
 # --- device streams ----------------------------------------------------------
 
@@ -49,7 +49,7 @@ def decode_stream_values(
     """
     Insert scan-less points that arrived together, from any transport.
 
-    Points of one arrival form one sample-and-hold row in a continuous bundle (not one
+    Points of one arrival form one sample-and-hold row in a paired bundle (not one
     row per source with stale partners); otherwise each is an unindexed point.
 
     Args:
@@ -62,7 +62,7 @@ def decode_stream_values(
             points of earlier scans, so a consumer that shows one scan starts there.
 
     Returns:
-        int: Number of sources that changed; a continuous member's first (held)
+        int: Number of sources that changed; a paired member's first (held)
             sample counts as a change, so the group's lagging report becomes
             observable to the consumer.
     """
@@ -74,7 +74,7 @@ def decode_stream_values(
         if scan_id is not None and series.metadata.get("scan_id") != scan_id:
             series.update_metadata(scan_id=scan_id, scan_first_ordinal=series.frontier)
         series.metadata["stream"] = stream
-        if bundle.correlation == CorrelationMode.CONTINUOUS:
+        if bundle.pair_sources:
             if not bundle.has_sample(spec.key):
                 changed += 1
             samples.append((series, value, timestamp))
@@ -120,7 +120,7 @@ def decode_stream_message(bundle: DataBundler, spec: SourceSpec, stream: str, ms
         msg: The message (see :func:`extract_stream_point`).
 
     Returns:
-        int: 1 when a point was inserted or the sample is a continuous
+        int: 1 when a point was inserted or the sample is a paired
             member's first (held) one; 0 for an unusable message or a
             further held sample.
     """

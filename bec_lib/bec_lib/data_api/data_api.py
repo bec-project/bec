@@ -23,12 +23,7 @@ from bec_lib.device import ReadoutPriority
 from bec_lib.logger import bec_logger
 
 from . import client_views
-from .data_bundler import (
-    CorrelationGroupError,
-    CorrelationMode,
-    correlation_group,
-    partition_correlation_groups,
-)
+from .data_bundler import CorrelationGroupError, correlation_group, partition_correlation_groups
 from .data_path import (
     BindContext,
     DataPath,
@@ -40,7 +35,7 @@ from .data_path import (
 from .decoding import open_scan_specs
 from .emission import EmissionScheduler
 from .models import (
-    CONTINUOUS_GROUP,
+    PAIRED_GROUP,
     CorrelationGroup,
     SourceInfo,
     SourceKey,
@@ -50,7 +45,12 @@ from .models import (
 )
 from .paths import DEFAULT_DATA_PATHS
 from .scenarios import DEVICE_SCOPE, ScanTarget, Scenario, classify
-from .subscription import Subscription, reject_reentrant_call
+from .subscription import (
+    DEFAULT_UPDATE_RATE,
+    Subscription,
+    check_update_rate,
+    reject_reentrant_call,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from bec_lib.client import BECClient
@@ -345,14 +345,14 @@ class DataAPI:
         sources: list[SourceKey] | None = None,
         scan: str | None = ScanTarget.LIVE,
         callback: Callable[[SubscriptionUpdate], Any] | None = None,
-        min_emit_interval: float = 0.1,
-        max_points: int | None = None,
+        update_rate: float | None = DEFAULT_UPDATE_RATE,
+        max_buffer_size: int | None = None,
         size_limit_bytes: int | None = None,
         progress_callback: Callable[[float], None] | None = None,
         force_source: str | None = None,
         devices: list[str] | None = None,
         view_limit_bytes: int | None = None,
-        correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+        pair_sources: bool = False,
     ) -> Subscription:
         """
         Create a subscription delivering columnar updates for the sources.
@@ -367,12 +367,12 @@ class DataAPI:
             devices (list[str] | None): Shorthand for hub signals:
                 ``devices=["samx", "samy"]`` is ``sources=[("samx", "samx"),
                 ("samy", "samy")]``. Exclusive with ``sources``.
-            correlation (CorrelationMode): ``"ordinal"`` (default) aligns
-                by ordinal within the automatic groups. ``"continuous"`` is
-                for scan-less device streams (``scan=None``): all sources
-                form one sample-and-hold group in which every arriving
-                sample appends a row holding the latest value of every
-                source — the (x, y) pairing of independent motor readbacks.
+            pair_sources (bool): Only for scan-less device streams (``scan=None``),
+                which share nothing they could be aligned by. False (default): every
+                source is its own stream with its own updates. True: all sources form
+                one sample-and-hold group in which every arriving sample appends a row
+                holding the latest value of every source — the (x, y) pairing of
+                independent motor readbacks.
             scan (str | None): ``ScanTarget.LIVE`` (or its string ``"live"``) to follow
                 the active scan (while
                 none runs, the most recent scan is shown until the next one
@@ -382,12 +382,12 @@ class DataAPI:
                 configuration readings, preview signals).
             callback: Called with each :class:`SubscriptionUpdate`; may run on
                 dispatcher/timer/worker threads and must not block.
-            min_emit_interval (float): Backend emission coalescing interval in
-                seconds for live updates (trailing emission guaranteed);
-                ``0`` disables coalescing.
-            max_points (int | None): Per-source retention cap; oldest points
+            update_rate (float | None): Most live updates a second per correlation
+                group, in Hz. Updates arriving faster are coalesced, and the last state
+                is always emitted. ``None`` emits every update.
+            max_buffer_size (int | None): Most points kept per source; the oldest
                 are dropped beyond it. Recommended for endless device-stream
-                subscriptions.
+                subscriptions. ``None`` keeps every point.
             progress_callback: Optional callable receiving load fractions
                 (0..1) while a data path reads bulk data (file reads).
                 Invoked on worker threads; must be cheap and must not call
@@ -421,8 +421,9 @@ class DataAPI:
             ValueError: If a concrete scan id cannot be served by any data
                 path (of the forced source), if ``force_source`` names no
                 registered data source or cannot follow live scans, if
-                neither or both of ``sources`` and ``devices`` are given, or
-                if ``correlation`` is not defined for the requested scan.
+                neither or both of ``sources`` and ``devices`` are given, if
+                ``pair_sources`` is asked for a scan, or if ``update_rate`` or
+                ``max_buffer_size`` is not positive.
             CorrelationGroupError: If the source list is empty.
         """
         self._ensure_open()
@@ -434,29 +435,22 @@ class DataAPI:
             sources = [(device, device) for device in devices]
         if not sources:
             raise CorrelationGroupError("A subscription needs at least one source.")
-        if max_points is not None and max_points < 1:
-            raise ValueError("max_points must be at least 1 (or None for unbounded).")
-        try:
-            correlation = CorrelationMode(correlation)
-        except ValueError:
-            raise ValueError(
-                f"Unknown correlation '{correlation}' (ordinal or continuous)."
-            ) from None
-        if correlation == CorrelationMode.CONTINUOUS and scan is not None:
-            raise ValueError(
-                "correlation='continuous' is defined for scan-less subscriptions only."
-            )
+        if max_buffer_size is not None and max_buffer_size < 1:
+            raise ValueError("max_buffer_size must be at least 1 (or None for unbounded).")
+        check_update_rate(update_rate)
+        if pair_sources and scan is not None:
+            raise ValueError("pair_sources is defined for scan-less subscriptions only.")
         subscription = Subscription(
             self,
             sources,
             scan,
             callback,
-            min_emit_interval=min_emit_interval,
-            max_points=max_points,
+            update_rate=update_rate,
+            max_buffer_size=max_buffer_size,
             size_limit_bytes=size_limit_bytes,
             progress_callback=progress_callback,
             force_source=force_source,
-            correlation=correlation,
+            pair_sources=pair_sources,
             view_limit_bytes=view_limit_bytes,
         )
         # Prefetch scan items BEFORE taking the DataAPI lock: the reads take
@@ -541,7 +535,7 @@ class DataAPI:
         self,
         sources: list[SourceKey],
         scan: str | None = ScanTarget.LIVE,
-        correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+        pair_sources: bool = False,
         force_source: str | None = None,
     ) -> dict[CorrelationGroup, list[SourceKey]]:
         """
@@ -558,7 +552,8 @@ class DataAPI:
                 scan can read per point, e.g. a ``baseline`` motor it promotes,
                 counts as the scan group), a concrete scan id, or ``None`` for
                 scan-less device streams.
-            correlation (CorrelationMode): ``"continuous"`` puts every source in one group.
+            pair_sources (bool): Put every source in one group, as a scan-less
+                subscription with ``pair_sources`` does.
             force_source (str | None): Classify as if pinned to this data source.
 
         Returns:
@@ -573,9 +568,9 @@ class DataAPI:
         sources = [tuple(source) for source in sources]
         if not sources:
             return {}
-        if correlation == CorrelationMode.CONTINUOUS:
+        if pair_sources:
             return partition_correlation_groups(
-                [(key, SourceKind.UNINDEXED, None) for key in sources], correlation=correlation
+                [(key, SourceKind.UNINDEXED, None) for key in sources], pair_sources=True
             )
         specs = self._describe_specs(sources, scan, force_source)
         return partition_correlation_groups(
@@ -594,7 +589,7 @@ class DataAPI:
         self,
         sources: list[SourceKey],
         scan: str | None = ScanTarget.LIVE,
-        correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+        pair_sources: bool = False,
         force_source: str | None = None,
     ) -> dict[SourceKey, SourceInfo]:
         """
@@ -610,7 +605,8 @@ class DataAPI:
             scan (str | None): ``ScanTarget.LIVE`` (the running scan; without one, the device
                 configuration plus what the data paths announce for the next scan), a
                 concrete scan id, or ``None`` for scan-less device streams.
-            correlation (CorrelationMode): ``"continuous"`` puts every source in one group.
+            pair_sources (bool): Put every source in one group, as a scan-less
+                subscription with ``pair_sources`` does.
             force_source (str | None): Describe as if pinned to this data source.
 
         Returns:
@@ -624,8 +620,8 @@ class DataAPI:
         specs = self._describe_specs(sources, scan, force_source)
         out = {}
         for spec in specs:
-            if correlation == CorrelationMode.CONTINUOUS:
-                group = CONTINUOUS_GROUP
+            if pair_sources:
+                group = PAIRED_GROUP
             else:
                 group = correlation_group(
                     spec.key,

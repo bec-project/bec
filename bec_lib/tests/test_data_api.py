@@ -14,7 +14,7 @@ from bec_lib.callback_handler import CallbackHandler
 from bec_lib.client import BECClient
 from bec_lib.data_api import CorrelationGroupError, DataAPI
 from bec_lib.data_api.data_path import BindContext
-from bec_lib.data_api.models import CONTINUOUS_GROUP, SCAN_GROUP, CorrelationGroup
+from bec_lib.data_api.models import PAIRED_GROUP, SCAN_GROUP, CorrelationGroup
 from bec_lib.data_api.paths.redis import RedisDataPath
 from bec_lib.data_api.scenarios import Scenario, classify
 from bec_lib.endpoints import MessageEndpoints
@@ -122,7 +122,7 @@ class TestLiveSubscription:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
             **kwargs,
         )
         return sub, item, updates
@@ -137,7 +137,7 @@ class TestLiveSubscription:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         assert updates and updates[-1].reason == "backfill"
         cols = updates[-1].aligned()
@@ -188,7 +188,7 @@ class TestLiveSubscription:
                 sources=[("samx", "samx"), ("samy", "samy")],
                 scan="live",
                 callback=lambda u: None,
-                min_emit_interval=0,
+                update_rate=None,
             )
 
         threads = [
@@ -229,7 +229,7 @@ class TestLiveSubscription:
         mock_client.queue.scan_storage.find_scan_by_ID.side_effect = locked_find
         # A bound subscription is what makes the dispatcher need the DataAPI lock.
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=lambda u: None, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=lambda u: None, update_rate=None
         )
 
         def dispatcher():
@@ -273,7 +273,7 @@ class TestLiveSubscription:
         plugin = data_api.paths[0]
         # An already-bound subscription makes the dispatcher need the DataAPI lock.
         first = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=lambda u: None, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=lambda u: None, update_rate=None
         )
 
         scan_lock = threading.RLock()
@@ -308,10 +308,7 @@ class TestLiveSubscription:
 
         def gui():
             result["sub"] = data_api.subscribe(
-                sources=[("samy", "samy")],
-                scan="scan_1",
-                callback=lambda u: None,
-                min_emit_interval=0,
+                sources=[("samy", "samy")], scan="scan_1", callback=lambda u: None, update_rate=None
             )
 
         threads = [
@@ -355,10 +352,7 @@ class TestLiveSubscription:
             handler.register("scan_segment", flag.mark)
             handler.register("scan_segment", plugin._on_scan_segment)
             sub = data_api.subscribe(
-                sources=[("samx", "samx")],
-                scan="live",
-                callback=lambda u: None,
-                min_emit_interval=0,
+                sources=[("samx", "samx")], scan="live", callback=lambda u: None, update_rate=None
             )
             assert sub._callback_ids
 
@@ -388,21 +382,24 @@ class TestLiveSubscription:
         finally:
             mock_client.callbacks = original_callbacks
 
-    def test_set_min_emit_interval_live_change(self, data_api, mock_client):
+    def test_set_update_rate_live_change(self, data_api, mock_client):
         """A rate change applies to subsequent emissions without a rebuild."""
         sub, item, updates = self._subscribe_xy(data_api, mock_client)
         plugin = data_api.paths[0]
-        assert sub.min_emit_interval == 0
-        sub.set_min_emit_interval(3600.0)
-        assert sub.min_emit_interval == 3600.0
+        assert sub.update_rate is None
+        once_an_hour = 1 / 3600  # Hz
+        sub.set_update_rate(once_an_hour)
+        assert sub.update_rate == once_an_hour
         n_before = len(updates)
         # the initial backfill emission armed the limiter, so every live
         # emission within the huge interval is coalesced
         seed_xy(item, "scan_1", 0, 2)
         plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
         assert len(updates) == n_before
-        sub.set_min_emit_interval(-5)  # clamped to 0 -> uncoalesced again
-        assert sub.min_emit_interval == 0.0
+        with pytest.raises(ValueError, match="update_rate must be positive"):
+            sub.set_update_rate(-5)
+        assert sub.update_rate == once_an_hour
+        sub.set_update_rate(None)  # every update again
         seed_xy(item, "scan_1", 2, 3)
         plugin._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
         assert len(updates) == n_before + 1
@@ -429,7 +426,7 @@ class TestLiveSubscription:
         keys = [("det", "det_group_x"), ("det", "det_group_y")]
         updates = []
         sub = data_api.subscribe(
-            sources=keys, scan="live", callback=updates.append, min_emit_interval=0
+            sources=keys, scan="live", callback=updates.append, update_rate=None
         )
         assert sub.groups == {CorrelationGroup.multi("det", "det_group"): keys}
         plugin = data_api.paths[0]
@@ -478,7 +475,7 @@ class TestLiveSubscription:
             sources=[("det", "det_group_data1"), ("det", "det_group_data2")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         plugin = data_api.paths[0]
         msg = messages.DeviceMessage(
@@ -507,7 +504,7 @@ class TestLiveSubscription:
         mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
         updates = []
         sub = data_api.subscribe(
-            sources=[("det", "wave")], scan="live", callback=updates.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="live", callback=updates.append, update_rate=None
         )
         plugin = data_api.paths[0]
         plugin._on_async_message(
@@ -532,7 +529,7 @@ class TestLiveSubscription:
         mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
         updates = []
         sub = data_api.subscribe(
-            sources=[("det", "wave")], scan="live", callback=updates.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="live", callback=updates.append, update_rate=None
         )
         plugin = data_api.paths[0]
         plugin._on_async_message({"data": async_msg("wave", [1], 0, "replace")}, "scan_1", "det")
@@ -554,7 +551,7 @@ class TestLiveSubscription:
             sources=[("samx", "samx"), ("det", "wave")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         plugin = data_api.paths[0]
         seed_xy(item, "scan_1", 0, 2)
@@ -617,7 +614,7 @@ class TestLiveSubscription:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0.15,
+            update_rate=1 / 0.15,
         )
         plugin = data_api.paths[0]
         for i in range(5):
@@ -643,7 +640,7 @@ class TestLiveSubscription:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         seed_xy(item1, "scan_1", 0, 1)
         data_api.paths[0]._on_scan_segment({"scan_id": "scan_1"}, {"scan_id": "scan_1"})
@@ -672,7 +669,7 @@ class TestLiveSubscription:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="scan_1",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         assert sub.unbound_sources == [("samy", "samy")]
         sub._on_scan_status({"scan_id": "scan_2", "status": "open"}, {})  # not ours
@@ -761,7 +758,7 @@ class TestLifecycle:
         mock_client.device_manager.devices.get = lambda name, default=None: mock.MagicMock()
         updates = []
         sub = data_api.subscribe(
-            devices=["samx"], scan=None, callback=updates.append, min_emit_interval=0
+            devices=["samx"], scan=None, callback=updates.append, update_rate=None
         )
         old = data_api.paths[0]
 
@@ -872,7 +869,7 @@ class TestAxisModes:
         mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
         updates = []
         sub = data_api.subscribe(
-            sources=[("det", "wave")], scan="live", callback=updates.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="live", callback=updates.append, update_rate=None
         )
         plugin = data_api.paths[0]
         msg = messages.DeviceMessage(
@@ -909,7 +906,7 @@ class TestAxisModes:
 
         ups_a, ups_b = [], []
         sub_a = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, update_rate=None
         )
         feed = next(iter(plugin._feeds.values()))
         msgs = [self._async_add_message(i) for i in range(2)]
@@ -920,7 +917,7 @@ class TestAxisModes:
         stream = [{"data": m} for m in msgs]
         monkeypatch.setattr(mock_client.connector, "xrange", lambda *a, **k: stream)
         sub_b = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         assert tuple(ups_a[-1].get("det", "wave").ordinals) == (0, 1)
         assert tuple(ups_b[-1].get("det", "wave").ordinals) == (0, 1)
@@ -939,7 +936,7 @@ class TestAxisModes:
 
         ups_a, ups_b = [], []
         sub_a = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, update_rate=None
         )
         feed = next(iter(plugin._feeds.values()))
         msgs = [self._async_add_message(i) for i in range(3)]
@@ -949,7 +946,7 @@ class TestAxisModes:
         stream = [{"data": m} for m in msgs]
         monkeypatch.setattr(mock_client.connector, "xrange", lambda *a, **k: stream)
         sub_b = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         assert tuple(ups_b[-1].get("det", "wave").ordinals) == (0, 1)
         feed.callback({"data": msgs[2]})  # in-flight entry arrives normally
@@ -969,7 +966,7 @@ class TestAxisModes:
         mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
         plugin = data_api.paths[0]
         sub_a = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=lambda _: None, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=lambda _: None, update_rate=None
         )
         feed = next(iter(plugin._feeds.values()))
         msgs = [async_msg("wave", [i], i, "add_slice", slice_index=0) for i in range(5)]
@@ -980,7 +977,7 @@ class TestAxisModes:
         monkeypatch.setattr(mock_client.connector, "xrange", xrange)
         ups_b = []
         sub_b = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         feed.callback({"data": msgs[4]})
         source = ups_b[-1].get("det", "wave")
@@ -1000,14 +997,14 @@ class TestAxisModes:
         plugin = data_api.paths[0]
         ups_a, ups_b = [], []
         sub_a = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, update_rate=None
         )
         feed = next(iter(plugin._feeds.values()))
         for index in (7, 8):
             feed.callback({"data": self._async_add_message(index)})
         assert ups_a[-1].get("det", "wave").metadata["stream_trimmed"] is True
         sub_b = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         assert tuple(ups_b[-1].get("det", "wave").ordinals) == (7, 8)
         assert ups_b[-1].get("det", "wave").metadata["stream_trimmed"] is True
@@ -1030,8 +1027,8 @@ class TestAxisModes:
             sources=[("det", "wave")],
             scan="scan_1",
             callback=lambda _: None,
-            min_emit_interval=0,
-            max_points=2,
+            update_rate=None,
+            max_buffer_size=2,
         )
         feed = next(iter(plugin._feeds.values()))
         for index in range(6):
@@ -1039,7 +1036,7 @@ class TestAxisModes:
         assert len(feed.log) == 3
         ups_b = []
         sub_b = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         source = ups_b[-1].get("det", "wave")
         assert tuple(source.ordinals) == (3, 4, 5)
@@ -1086,7 +1083,7 @@ class TestAxisModes:
 
         ups_a, ups_b = [], []
         sub_a = data_api.subscribe(
-            sources=keys, scan="scan_1", callback=ups_a.append, min_emit_interval=0
+            sources=keys, scan="scan_1", callback=ups_a.append, update_rate=None
         )
         assert sub_a.groups == {CorrelationGroup.multi("gauss", "gauss_data"): keys}
         (feed_key,) = plugin._feeds
@@ -1097,7 +1094,7 @@ class TestAxisModes:
         stream = [{"data": m} for m in msgs]
         monkeypatch.setattr(mock_client.connector, "xrange", lambda *a, **k: stream)
         sub_b = data_api.subscribe(
-            sources=keys, scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=keys, scan="scan_1", callback=ups_b.append, update_rate=None
         )
         for update in (ups_a[-1], ups_b[-1]):
             aligned = update.aligned()
@@ -1196,7 +1193,7 @@ class TestAxisModes:
             sources=[("samx", "samx"), ("det", "wave")],
             scan="scan_1",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         assert {u.metadata["group"] for u in updates} == {
             SCAN_GROUP,
@@ -1246,7 +1243,7 @@ class TestAxisModes:
 
         ups_a, ups_b = [], []
         sub_a = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_a.append, update_rate=None
         )
         feed = next(iter(plugin._feeds.values()))
         msgs = [slice_message(i) for i in range(2)]
@@ -1270,7 +1267,7 @@ class TestAxisModes:
         inflight.start()
         assert paused.wait(2)
         sub_b = data_api.subscribe(
-            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         opened.set()
         inflight.join(2)
@@ -1290,7 +1287,7 @@ class TestAxisModes:
         mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
         updates = []
         sub = data_api.subscribe(
-            sources=[("det", "wave")], scan="live", callback=updates.append, min_emit_interval=0
+            sources=[("det", "wave")], scan="live", callback=updates.append, update_rate=None
         )
         plugin = data_api.paths[0]
         # A future messages.py accepts "sparse_block"; this client's handler
@@ -1322,7 +1319,7 @@ class TestAxisModes:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         update = updates[-1]
         assert list(update.axis("index")) == [0, 1, 2]
@@ -1346,8 +1343,8 @@ class TestDeviceStreams:
             sources=[("samx", "samx")],
             scan=None,
             callback=updates.append,
-            min_emit_interval=0,
-            max_points=3,
+            update_rate=None,
+            max_buffer_size=3,
         )
         assert sub.unbound_sources == []
         plugin = self._plugin(data_api)
@@ -1364,8 +1361,8 @@ class TestDeviceStreams:
         sub.close()
         assert not plugin._feeds
 
-    def test_continuous_correlation_pairs_readbacks(self, data_api, mock_client):
-        """``devices=[...]`` + ``correlation="continuous"``: independent
+    def test_pair_sources_pairs_readbacks(self, data_api, mock_client):
+        """``devices=[...]`` + ``pair_sources=True``: independent
         readbacks are sample-and-hold paired into rows by the bundler, so a
         motor map no longer pairs positions itself."""
         mock_client.device_manager.devices = mock.MagicMock()
@@ -1377,11 +1374,11 @@ class TestDeviceStreams:
             devices=["samx", "samy"],
             scan=None,
             callback=updates.append,
-            min_emit_interval=0,
-            correlation="continuous",
+            update_rate=None,
+            pair_sources=True,
         )
         assert sub.sources == [("samx", "samx"), ("samy", "samy")]
-        assert sub.correlation == "continuous"
+        assert sub.pair_sources is True
         plugin = self._plugin(data_api)
 
         def readback(device, value, timestamp):
@@ -1396,7 +1393,7 @@ class TestDeviceStreams:
         readback("samx", 1.0, 102.0)
         readback("samy", 11.0, 103.0)
         update = updates[-1]
-        assert update.metadata["group"] == CONTINUOUS_GROUP
+        assert update.metadata["group"] == PAIRED_GROUP
         assert {k: list(v) for k, v in update.aligned().items()} == {
             ("samx", "samx"): [0.0, 1.0, 1.0],
             ("samy", "samy"): [10.0, 10.0, 11.0],
@@ -1417,19 +1414,19 @@ class TestDeviceStreams:
         assert sub.sources == [("samx", "samx")] and sub.unbound_sources == []
         sub.close()
 
-    def test_continuous_correlation_needs_scanless_and_one_source_form(self, data_api, mock_client):
+    def test_pair_sources_needs_scanless_and_one_source_form(self, data_api, mock_client):
         with pytest.raises(ValueError, match="scan-less"):
-            data_api.subscribe(devices=["samx"], scan="live", correlation="continuous")
+            data_api.subscribe(devices=["samx"], scan="live", pair_sources=True)
         with pytest.raises(ValueError, match="exactly one of"):
             data_api.subscribe(sources=[("samx", "samx")], devices=["samx"], scan=None)
         with pytest.raises(ValueError, match="exactly one of"):
             data_api.subscribe(scan=None)
-        with pytest.raises(ValueError, match="Unknown correlation"):
-            data_api.subscribe(devices=["samx"], scan=None, correlation="magic")
+        with pytest.raises(ValueError, match="update_rate must be positive"):
+            data_api.subscribe(devices=["samx"], scan=None, update_rate=0)
 
-    def test_continuous_readbacks_are_seeded_from_the_cached_value(self, data_api, mock_client):
+    def test_paired_readbacks_are_seeded_from_the_cached_value(self, data_api, mock_client):
         """A parked motor publishes nothing after subscribe: its cached
-        readback seeds a continuous group before either motor moves."""
+        readback seeds a paired group before either motor moves."""
         mock_client.device_manager.devices = mock.MagicMock()
         mock_client.device_manager.devices.get = lambda name, default=None: mock.MagicMock()
         for device, value in (("samx", 1.5), ("samy", 2.5)):
@@ -1444,8 +1441,8 @@ class TestDeviceStreams:
             devices=["samx", "samy"],
             scan=None,
             callback=updates.append,
-            min_emit_interval=0,
-            correlation="continuous",
+            update_rate=None,
+            pair_sources=True,
         )
         assert updates[-1].reason == "backfill"
         assert {k: list(v) for k, v in updates[-1].aligned().items()} == {
@@ -1478,7 +1475,7 @@ class TestDeviceStreams:
         mock_client.connector.set_and_publish(MessageEndpoints.device_readback("samx"), reading())
         updates = []
         sub = data_api.subscribe(
-            devices=["samx"], scan=None, callback=updates.append, min_emit_interval=0
+            devices=["samx"], scan=None, callback=updates.append, update_rate=None
         )
         assert list(updates[-1].get("samx", "samx").values) == [1.5]
         self._plugin(data_api)._on_stream_message(
@@ -1493,7 +1490,7 @@ class TestDeviceStreams:
         updates = []
         with mock.patch.object(mock_client.connector, "get", side_effect=RuntimeError("down")):
             sub = data_api.subscribe(
-                devices=["samx"], scan=None, callback=updates.append, min_emit_interval=0
+                devices=["samx"], scan=None, callback=updates.append, update_rate=None
             )
         assert len(updates[-1].get("samx", "samx").values) == 0
         fresh = messages.DeviceMessage(
@@ -1505,10 +1502,10 @@ class TestDeviceStreams:
         assert list(updates[-1].get("samx", "samx").values) == [1.6]
         sub.close()
 
-    @pytest.mark.parametrize("correlation", ["ordinal", "continuous"])
+    @pytest.mark.parametrize("pair_sources", [False, True])
     @pytest.mark.parametrize("stream", ["readback", "configuration"])
     def test_initial_reading_and_queued_publications(
-        self, data_api, mock_client, correlation, stream
+        self, data_api, mock_client, pair_sources, stream
     ):
         device = SimpleNamespace(
             _info={
@@ -1538,9 +1535,9 @@ class TestDeviceStreams:
         sub = data_api.subscribe(
             sources=[("det", "det_value")],
             scan=None,
-            correlation=correlation,
-            max_points=1,
-            min_emit_interval=0,
+            pair_sources=pair_sources,
+            max_buffer_size=1,
+            update_rate=None,
             callback=updates.append,
         )
         assert updates[-1].reason == "backfill"
@@ -1586,7 +1583,7 @@ class TestDeviceStreams:
         sub = data_api.subscribe(
             sources=[("temperature", "temperature")],
             scan=None,
-            min_emit_interval=0,
+            update_rate=None,
             callback=updates.append,
         )
         source = updates[-1].get("temperature", "temperature")
@@ -1617,13 +1614,13 @@ class TestDeviceStreams:
         }
         readings, configurations = [], []
         readback = data_api.subscribe(
-            sources=[("samx", "samx")], scan=None, callback=readings.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan=None, callback=readings.append, update_rate=None
         )
         config = data_api.subscribe(
             sources=[("samx", "samx_velocity")],
             scan=None,
             callback=configurations.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         plugin = self._plugin(data_api)
         config_feed = plugin._feeds[("stream", "configuration", "samx", "")]
@@ -1641,7 +1638,7 @@ class TestDeviceStreams:
         readback.close()
         assert not plugin._feeds
 
-    def test_continuous_group_holds_on_every_declared_member(self, data_api, mock_client):
+    def test_paired_group_holds_on_every_declared_member(self, data_api, mock_client):
         """An unavailable member never yields rows with a missing column: the
         group holds, reports the member as lagging, and re-resolves it on the
         next device update."""
@@ -1655,8 +1652,8 @@ class TestDeviceStreams:
             devices=["samx", "samy"],
             scan=None,
             callback=updates.append,
-            min_emit_interval=0,
-            correlation="continuous",
+            update_rate=None,
+            pair_sources=True,
         )
         assert sub.unbound_sources == [("samy", "samy")]
         plugin = self._plugin(data_api)
@@ -1694,7 +1691,7 @@ class TestDeviceStreams:
         )
         updates = []
         sub = data_api.subscribe(
-            devices=["samx", "ghost"], scan=None, callback=updates.append, min_emit_interval=0
+            devices=["samx", "ghost"], scan=None, callback=updates.append, update_rate=None
         )
         plugin = self._plugin(data_api)
         for value in (1.0, 2.0):
@@ -1736,10 +1733,7 @@ class TestDeviceStreams:
         self._preview_device(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("eiger", "preview_img")],
-            scan=None,
-            callback=updates.append,
-            min_emit_interval=0,
+            sources=[("eiger", "preview_img")], scan=None, callback=updates.append, update_rate=None
         )
         plugin = self._plugin(data_api)
         msg = messages.DevicePreviewMessage(
@@ -1785,10 +1779,7 @@ class TestDeviceStreams:
 
         updates = []
         sub = data_api.subscribe(
-            sources=[("eiger", "preview_img")],
-            scan=None,
-            callback=updates.append,
-            min_emit_interval=0,
+            sources=[("eiger", "preview_img")], scan=None, callback=updates.append, update_rate=None
         )
         msg = messages.DevicePreviewMessage(
             device="eiger", signal="preview_img", data=np.array([[1, 2], [3, 4]])
@@ -1831,7 +1822,7 @@ class TestDeviceStreamsThroughRealConnector:
         )
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan=None, callback=updates.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan=None, callback=updates.append, update_rate=None
         )
 
         for position in (1.5, 2.5):
@@ -1856,10 +1847,7 @@ class TestDeviceStreamsThroughRealConnector:
         TestDeviceStreams._preview_device(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("eiger", "preview_img")],
-            scan=None,
-            callback=updates.append,
-            min_emit_interval=0,
+            sources=[("eiger", "preview_img")], scan=None, callback=updates.append, update_rate=None
         )
         mock_client.connector.xadd(
             MessageEndpoints.device_preview("eiger", "preview_img"),
@@ -1905,7 +1893,7 @@ class TestClientOwnershipAndVisibility:
             sources=[("samx", "samx"), ("samy", "samy")],
             scan="live",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
         )
         plugin = data_api.paths[0]
         # samx delivers 5 points; samy none — samy must be reported lagging.
@@ -1937,7 +1925,7 @@ def test_unbound_source_recovers_on_next_scan_status(data_api, mock_client):
         sources=[("samx", "samx"), ("det", "wave")],
         scan="live",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
     )
     assert sub.unbound_sources == [("det", "wave")]
 

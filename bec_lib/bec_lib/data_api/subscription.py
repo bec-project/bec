@@ -14,12 +14,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from bec_lib.logger import bec_logger
 
-from .data_bundler import (
-    CorrelationGroupError,
-    CorrelationMode,
-    DataBundler,
-    partition_correlation_groups,
-)
+from .data_bundler import CorrelationGroupError, DataBundler, partition_correlation_groups
 from .data_path import BindContext, DataPath, SourceRequest, SourceSpec, total_estimated_bytes
 from .models import (
     ALIGN_LATER,
@@ -50,6 +45,15 @@ _INFLIGHT_TIMEOUT = 1.0
 _JOIN_TIMEOUT = 0.25
 #: Scheduler key of deliveries handed over by a notify() made with the lock held.
 _HANDOFF = "__handoff__"
+
+#: Most live updates a subscription emits a second per correlation group, in Hz.
+DEFAULT_UPDATE_RATE: float = 10.0
+
+
+def check_update_rate(update_rate: float | None) -> None:
+    """Raise unless ``update_rate`` is a positive rate in Hz, or None for every update."""
+    if update_rate is not None and not update_rate > 0:
+        raise ValueError("update_rate must be positive (or None to emit every update).")
 
 
 def lock_held(lock: threading.RLock) -> bool:
@@ -119,14 +123,14 @@ class Subscription:
         sources: list[SourceKey],
         scan: str | None,
         callback: Callable[[SubscriptionUpdate], Any],
-        min_emit_interval: float = 0.1,
+        update_rate: float | None = DEFAULT_UPDATE_RATE,
         # Keep these options consistent with the public DataAPI.subscribe signature.
         # pylint: disable-next=duplicate-code
-        max_points: int | None = None,
+        max_buffer_size: int | None = None,
         size_limit_bytes: int | None = None,
         progress_callback: Callable[[float], None] | None = None,
         force_source: str | None = None,
-        correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+        pair_sources: bool = False,
         view_limit_bytes: int | None = None,
     ):
         self._api = api
@@ -134,14 +138,14 @@ class Subscription:
         self._callback = callback
         self._progress_callback = progress_callback
         self._force_source = force_source
-        self._correlation: CorrelationMode = correlation
+        self._pair_sources = pair_sources
         self._sources: list[SourceKey] = [tuple(s) for s in sources]
         self._follow = scan == ScanTarget.LIVE
         self._scan_id: str | None = (
             DEVICE_SCOPE if scan is None else (None if self._follow else scan)
         )
-        self._min_emit_interval = min_emit_interval
-        self._max_points = max_points
+        self._update_rate = update_rate
+        self._max_buffer_size = max_buffer_size
         self._size_limit_bytes = size_limit_bytes
         self._view_limit_bytes = view_limit_bytes
         self._closed = False
@@ -233,9 +237,9 @@ class Subscription:
         return self._force_source
 
     @property
-    def correlation(self) -> CorrelationMode:
-        """How the sources are correlated into rows (``"ordinal"`` or ``"continuous"``)."""
-        return self._correlation
+    def pair_sources(self) -> bool:
+        """Whether the scan-less sources are paired into rows holding the latest value of each."""
+        return self._pair_sources
 
     @property
     def unbound_sources(self) -> list[SourceKey]:
@@ -268,7 +272,7 @@ class Subscription:
                     (s.key, s.kind or SourceKind.UNINDEXED, s.multi_signal, s.correlation_group)
                     for s in self._specs
                 ],
-                correlation=self._correlation,
+                pair_sources=self._pair_sources,
             )
 
     @property
@@ -278,25 +282,30 @@ class Subscription:
             return {spec.key: str(spec.data_source) for spec in self._specs if spec.available}
 
     @property
-    def min_emit_interval(self) -> float:
-        """Live-emission coalescing interval in seconds (0 = uncoalesced)."""
-        return self._min_emit_interval
+    def update_rate(self) -> float | None:
+        """Most live updates a second per correlation group, in Hz (None = every update)."""
+        return self._update_rate
 
-    def set_min_emit_interval(self, seconds: float) -> Subscription:
+    def set_update_rate(self, update_rate: float | None) -> Subscription:
         """
-        Change the live-emission coalescing interval.
+        Change how often live updates are emitted.
 
         Takes effect from the next emission; an already scheduled trailing
         flush fires once with the previous delay.
 
         Args:
-            seconds (float): New interval in seconds; 0 disables coalescing.
+            update_rate (float | None): Most live updates a second, in Hz; ``None``
+                emits every update.
 
         Returns:
             Subscription: self, for chaining.
+
+        Raises:
+            ValueError: If ``update_rate`` is not positive.
         """
+        check_update_rate(update_rate)
         with self._lock:
-            self._min_emit_interval = max(0.0, float(seconds))
+            self._update_rate = update_rate
         return self
 
     # --- source set ----------------------------------------------------------
@@ -640,14 +649,14 @@ class Subscription:
                 (s.key, s.kind or SourceKind.UNINDEXED, s.multi_signal, s.correlation_group)
                 for s in self._specs
             ],
-            correlation=self._correlation,
+            pair_sources=self._pair_sources,
         ).items():
             if self._closed or self._generation != generation:
                 return
             if not any(key in paths for key in keys):
                 continue
             bundle = DataBundler(
-                scan_id, max_points=self._max_points, correlation=self._correlation
+                scan_id, max_buffer_size=self._max_buffer_size, pair_sources=self._pair_sources
             )
             by_path: dict[DataPath, list[SourceSpec]] = {}
             for key in keys:
@@ -942,8 +951,7 @@ class Subscription:
         Entry point of :class:`~.data_path.EmissionSink`, called by the data
         paths through ``request.notify(reason)`` on any thread. ``UpdateReason.LIVE``
         updates, and the partial updates of a load (``coalesce``), are coalesced
-        per group to at most one per
-        ``min_emit_interval``; the first notification in a window emits at
+        per group to at most ``update_rate`` a second; the first notification in a window emits at
         once, later ones arm one trailing flush delivered by the client's
         scheduler thread. Every other notification emits synchronously. Snapshots
         are built under the lock and delivered after it is released; an
@@ -968,7 +976,7 @@ class Subscription:
                 return
             slot = self._slots[request.group]
             now = time.monotonic()
-            interval = self._min_emit_interval
+            interval = 0.0 if self._update_rate is None else 1.0 / self._update_rate
             if slot.seq == 0 and reason != UpdateReason.LIVE and request.initial_reason is not None:
                 reason = request.initial_reason  # first snapshot of a re-bound request
             if (

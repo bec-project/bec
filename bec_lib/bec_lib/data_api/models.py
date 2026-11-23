@@ -34,15 +34,6 @@ class SourceKind(enum.StrEnum):
     UNINDEXED = "unindexed"
 
 
-class CorrelationMode(enum.StrEnum):
-    """How the sources of one subscription are paired."""
-
-    #: By acquisition key, within the groups BEC guarantees (the default).
-    ORDINAL = "ordinal"
-    #: Scan-less streams sampled together: every arrival takes the latest value of all.
-    CONTINUOUS = "continuous"
-
-
 class GroupKind(enum.StrEnum):
     """What the sources of a :class:`CorrelationGroup` share, so that they can be paired."""
 
@@ -54,8 +45,8 @@ class GroupKind(enum.StrEnum):
     TAGGED = "tagged"
     #: Nothing: a single source that cannot be paired with any other.
     STANDALONE = "standalone"
-    #: The sample-and-hold rows of ``CorrelationMode.CONTINUOUS``.
-    CONTINUOUS = "continuous"
+    #: The sample-and-hold rows of a scan-less subscription with ``pair_sources``.
+    PAIRED = "paired"
 
 
 @dataclass(frozen=True)
@@ -101,8 +92,8 @@ class CorrelationGroup:
 
 #: The group of the monitored signals of a scan.
 SCAN_GROUP = CorrelationGroup(GroupKind.SCAN)
-#: The single group of a continuous (sample-and-hold) subscription.
-CONTINUOUS_GROUP = CorrelationGroup(GroupKind.CONTINUOUS)
+#: The single group of a scan-less subscription that pairs its sources (sample-and-hold).
+PAIRED_GROUP = CorrelationGroup(GroupKind.PAIRED)
 
 
 class DeviceStream(enum.StrEnum):
@@ -132,7 +123,7 @@ class UpdateReason(enum.StrEnum):
     path may pass the plain string to ``request.notify``.
     """
 
-    #: New data of the bound scan or stream. Coalesced to ``min_emit_interval``.
+    #: New data of the bound scan or stream. Coalesced to ``update_rate``.
     LIVE = "live"
     #: What was already there when the binding was made.
     BACKFILL = "backfill"

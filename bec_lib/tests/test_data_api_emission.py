@@ -144,7 +144,7 @@ class TestSinkContract:
         make_open_scan(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, update_rate=None
         )
         old = sub._requests[SCAN_GROUP][0]
         sub.set_sources([("samx", "samx")])  # rebind: new request, same group label
@@ -161,10 +161,10 @@ class TestCoalescing:
         item = make_open_scan(mock_client)
         ups_a, ups_b = [], []
         sub_a = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=ups_a.append, min_emit_interval=0.4
+            sources=[("samx", "samx")], scan="scan_1", callback=ups_a.append, update_rate=2.5
         )
         sub_b = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=ups_b.append, min_emit_interval=0.4
+            sources=[("samx", "samx")], scan="scan_1", callback=ups_b.append, update_rate=2.5
         )
         assert [u.reason for u in ups_a] == ["backfill"] and [u.reason for u in ups_b] == [
             "backfill"
@@ -189,7 +189,7 @@ class TestCoalescing:
         item = make_open_scan(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, update_rate=None
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)
@@ -203,7 +203,7 @@ class TestCoalescing:
         )
         updates = []
         sub = data_api.subscribe(
-            devices=["samx", "samy"], scan=None, callback=updates.append, min_emit_interval=0.4
+            devices=["samx", "samy"], scan=None, callback=updates.append, update_rate=2.5
         )
         plugin = data_api.paths[0]
         for device in ("samx", "samy"):
@@ -225,7 +225,7 @@ class TestCoalescing:
         item = make_open_scan(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="live", callback=updates.append, min_emit_interval=1.0
+            sources=[("samx", "samx")], scan="live", callback=updates.append, update_rate=1.0
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)
@@ -246,10 +246,10 @@ class TestCoalescing:
 
         good = []
         sub_bad = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=bad, min_emit_interval=0.1
+            sources=[("samx", "samx")], scan="scan_1", callback=bad, update_rate=10
         )
         sub_good = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=good.append, min_emit_interval=0.1
+            sources=[("samx", "samx")], scan="scan_1", callback=good.append, update_rate=10
         )
         seed(item, "scan_1", 2, 3)
         with mock.patch("bec_lib.data_api.subscription.logger") as log:
@@ -266,10 +266,7 @@ class TestClose:
         item = make_open_scan(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")],
-            scan="scan_1",
-            callback=updates.append,
-            min_emit_interval=0.2,
+            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, update_rate=5
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)
@@ -291,7 +288,7 @@ class TestClose:
                 gate.wait(2)
 
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=blocking, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=blocking, update_rate=None
         )
         seed(item, "scan_1", 2, 3)
         dispatcher = threading.Thread(target=segment, args=(data_api,), name="dispatcher")
@@ -326,7 +323,7 @@ class TestClose:
                 gate.wait(5)
 
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=stuck, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=stuck, update_rate=None
         )
         seed(item, "scan_1", 2, 3)
         dispatcher = threading.Thread(target=segment, args=(data_api,), name="dispatcher")
@@ -352,7 +349,7 @@ class TestClose:
                 done.set()
 
         holder["sub"] = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=cb, min_emit_interval=0.05
+            sources=[("samx", "samx")], scan="scan_1", callback=cb, update_rate=20
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)
@@ -371,7 +368,7 @@ class TestClose:
                 holder["elapsed"] = time.monotonic() - t0
 
         holder["sub"] = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=cb, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=cb, update_rate=None
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)
@@ -381,10 +378,7 @@ class TestClose:
         item = make_open_scan(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")],
-            scan="scan_1",
-            callback=updates.append,
-            min_emit_interval=0.5,
+            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, update_rate=2
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)  # arms a trailing flush
@@ -413,9 +407,7 @@ class TestClose:
                 data_api.close()  # stop() must not join its own thread
                 done.set()
 
-        data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=cb, min_emit_interval=0.05
-        )
+        data_api.subscribe(sources=[("samx", "samx")], scan="scan_1", callback=cb, update_rate=20)
         seed(item, "scan_1", 2, 3)
         segment(data_api)
         assert done.wait(1)
@@ -470,7 +462,7 @@ class TestDeliveryOrder:
         make_open_scan(mock_client)
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=updates.append, update_rate=None
         )
         request, slot = sub._requests[SCAN_GROUP][0], sub._slots[SCAN_GROUP]
         with sub._lock:
@@ -510,7 +502,7 @@ class TestDeliveryOrder:
                 holder["sub"].close()
 
         holder["sub"] = data_api.subscribe(
-            devices=["samx"], scan=None, callback=close_on_rebind, min_emit_interval=0
+            devices=["samx"], scan=None, callback=close_on_rebind, update_rate=None
         )
         sub = holder["sub"]
         sub.set_sources([("samx", "samx"), ("samy", "samy")])  # two standalone groups
@@ -526,13 +518,13 @@ class TestDeliveryOrder:
 
         with mock.patch("bec_lib.data_api.subscription.logger") as log:
             sub = data_api.subscribe(
-                sources=[("samx", "samx")], scan="scan_1", callback=raising, min_emit_interval=0
+                sources=[("samx", "samx")], scan="scan_1", callback=raising, update_rate=None
             )
             assert log.exception.called
         assert sub.scan_id == "scan_1" and sub._requests
         other = []
         sub2 = data_api.subscribe(
-            sources=[("samx", "samx")], scan="scan_1", callback=other.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan="scan_1", callback=other.append, update_rate=None
         )
         seed(item, "scan_1", 2, 3)
         segment(data_api)  # the raising subscriber does not starve the other one

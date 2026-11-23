@@ -9,7 +9,7 @@ from bec_lib.data_api.data_bundler import (
     SourceSeries,
     partition_correlation_groups,
 )
-from bec_lib.data_api.models import CONTINUOUS_GROUP, SCAN_GROUP, CorrelationGroup, GroupKind
+from bec_lib.data_api.models import PAIRED_GROUP, SCAN_GROUP, CorrelationGroup, GroupKind
 
 # pylint: disable=protected-access
 # pylint: disable=missing-function-docstring
@@ -68,7 +68,7 @@ class TestCorrelationGroups:
         # str() is for logs and messages; a group does not compare equal to it
         assert str(multi) == "multi:gauss/gauss_data" and multi != "multi:gauss/gauss_data"
         assert str(SCAN_GROUP) == "scan" and SCAN_GROUP != "scan"
-        assert str(CONTINUOUS_GROUP) == "continuous"
+        assert str(PAIRED_GROUP) == "paired"
         with pytest.raises(AttributeError):
             multi.device = "other"
 
@@ -310,17 +310,17 @@ class TestBulkIngest:
         assert np.shares_memory(update.aligned()[("a", "a")], values)  # end-to-end zero copy
 
 
-class TestContinuousCorrelation:
-    def _bundle(self, max_points=None):
-        bundle = DataBundler("", max_points=max_points, correlation="continuous")
+class TestPairedSources:
+    def _bundle(self, max_buffer_size=None):
+        bundle = DataBundler("", max_buffer_size=max_buffer_size, pair_sources=True)
         for device in ("samx", "samy"):
             bundle.get_series(device, device, "unindexed")
         return bundle
 
     def test_partition_puts_all_sources_in_one_group(self):
         specs = [(("samx", "samx"), "unindexed", None), (("samy", "samy"), "unindexed", None)]
-        assert partition_correlation_groups(specs, correlation="continuous") == {
-            CONTINUOUS_GROUP: [("samx", "samx"), ("samy", "samy")]
+        assert partition_correlation_groups(specs, pair_sources=True) == {
+            PAIRED_GROUP: [("samx", "samx"), ("samy", "samy")]
         }
         assert len(partition_correlation_groups(specs)) == 2  # ordinal: standalone each
 
@@ -356,8 +356,8 @@ class TestContinuousCorrelation:
         assert list(update.get("samx", "samx").timestamps) == [101.0, 102.0, 103.0]
         assert list(update.get("samy", "samy").timestamps) == [101.0, 102.0, 103.0]
 
-    def test_max_points_bounds_rows(self):
-        bundle = self._bundle(max_points=2)
+    def test_max_buffer_size_bounds_rows(self):
+        bundle = self._bundle(max_buffer_size=2)
         samx = bundle.get_series("samx", "samx", "unindexed")
         samy = bundle.get_series("samy", "samy", "unindexed")
         samy.insert(None, 10.0, 0.0)
@@ -383,7 +383,7 @@ class TestContinuousCorrelation:
 
 class TestTrimWatermark:
     def test_trimmed_ordinals_stay_known(self):
-        series = SourceSeries("samx", "samx", "monitored", max_points=2)
+        series = SourceSeries("samx", "samx", "monitored", max_buffer_size=2)
         for i in range(3):
             series.insert(i, float(i), None)
         assert list(series.snapshot().ordinals) == [1, 2]

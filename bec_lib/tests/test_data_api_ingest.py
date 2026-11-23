@@ -1,4 +1,4 @@
-"""Ingest paths: co-delivered continuous members and per-segment scan ingest."""
+"""Ingest paths: co-delivered paired members and per-segment scan ingest."""
 
 from unittest import mock
 
@@ -19,7 +19,7 @@ def _motor(*entries):
     return motor
 
 
-def test_entries_of_one_readback_message_form_one_continuous_row(data_api, mock_client):
+def test_entries_of_one_readback_message_form_one_paired_row(data_api, mock_client):
     """A device's readback and setpoint arrive in one message: one row per message,
     not one row per entry with a stale partner."""
     motor = _motor("samx", "samx_setpoint")
@@ -32,8 +32,8 @@ def test_entries_of_one_readback_message_form_one_continuous_row(data_api, mock_
         sources=[("samx", "samx"), ("samx", "samx_setpoint")],
         scan=None,
         callback=updates.append,
-        min_emit_interval=0,
-        correlation="continuous",
+        update_rate=None,
+        pair_sources=True,
     )
     plugin = data_api.paths[0]
     assert len([key for key in plugin._feeds if key[0] == "stream"]) == 1  # one feed per device
@@ -57,7 +57,7 @@ def test_a_scan_segment_is_ingested_without_rewalking_the_scan(data_api, mock_cl
     register_scan(mock_client, {"scan_1": item})
     updates = []
     sub = data_api.subscribe(
-        sources=[("samx", "samx")], scan="scan_1", callback=updates.append, min_emit_interval=0
+        sources=[("samx", "samx")], scan="scan_1", callback=updates.append, update_rate=None
     )
     plugin = data_api.paths[0]
     # A segment carries its own point: scan storage (live data) is not consulted.

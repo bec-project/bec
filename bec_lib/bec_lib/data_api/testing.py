@@ -282,7 +282,7 @@ class DataPathConformance:
             sources=list(sources or (self.A, self.B)),
             scan=REMOTE_SCAN,
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
             **kwargs,
         )
         return sub, updates
