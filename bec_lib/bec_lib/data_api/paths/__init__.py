@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from .file import FileDataPath
 from .redis import RedisDataPath
+from .zmq import ZMQDataPath
 
-#: Paths every DataAPI registers, in this order (Redis priority 10, file priority 50).
-DEFAULT_DATA_PATHS = (RedisDataPath, FileDataPath)
+#: Paths every DataAPI registers. Routing follows their priority, not this order
+#: (ZMQ 5, Redis 10, file 50).
+DEFAULT_DATA_PATHS = (RedisDataPath, FileDataPath, ZMQDataPath)
 
-__all__ = ["DEFAULT_DATA_PATHS", "FileDataPath", "RedisDataPath"]
+__all__ = ["DEFAULT_DATA_PATHS", "FileDataPath", "RedisDataPath", "ZMQDataPath"]

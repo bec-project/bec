@@ -44,7 +44,7 @@ from .models import (
     SubscriptionUpdate,
     UpdateReason,
 )
-from .paths import DEFAULT_DATA_PATHS, FileDataPath, RedisDataPath
+from .paths import DEFAULT_DATA_PATHS, FileDataPath, RedisDataPath, ZMQDataPath
 from .scenarios import TERMINAL_SCAN_STATES, ScanTarget, Scenario, classify
 from .subscription import DEFAULT_UPDATE_RATE, Subscription
 
@@ -80,6 +80,7 @@ __all__ = [
     "DEFAULT_DATA_PATHS",
     "FileDataPath",
     "RedisDataPath",
+    "ZMQDataPath",
     "ScanTarget",
     "Scenario",
     "TERMINAL_SCAN_STATES",
