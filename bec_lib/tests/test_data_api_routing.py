@@ -71,7 +71,7 @@ def test_remote_scan_combines_adapters_by_acquisition_key(data_api, paths):
         sources=[("samx", "samx"), ("det", "wave")],
         scan="remote",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
     )
     assert second.resolutions[-1] == [("det", "wave")]
     assert first.requests[0].bundle is second.requests[0].bundle

@@ -6,13 +6,13 @@ every source is keyed by an ordinal (scan point_id, async ordinal, or arrival
 counter), and a bundle emits a point only at ordinals present in *all* sources.
 Out-of-order and gapped delivery fill holes instead of shifting pairs.
 
-Two correlation policies exist:
+Sources are paired in one of two ways:
 
-* ``"ordinal"`` (default): sources are partitioned into groups by what their
+* by ordinal (the default): sources are partitioned into groups by what their
   ordinals mean (scan points, the shared message counter of one
   AsyncMultiSignal, standalone streams) and each group aligns by ordinal
   intersection.
-* ``"continuous"``: for scan-less device streams that share no ordinal at
+* ``pair_sources``: for scan-less device streams that share no ordinal at
   all (motor readbacks at independent rates). All sources form one group;
   every arriving sample is held as the source's latest value and, once every
   member has delivered once, each arrival appends one row holding the latest
@@ -34,10 +34,9 @@ from bec_lib.logger import bec_logger
 
 from .models import (
     ALIGN_LATER,
-    CONTINUOUS_GROUP,
+    PAIRED_GROUP,
     SCAN_GROUP,
     CorrelationGroup,
-    CorrelationMode,
     SourceData,
     SourceKey,
     SourceKind,
@@ -98,7 +97,7 @@ def correlation_group(
 
 
 def partition_correlation_groups(
-    specs: list[tuple], correlation: CorrelationMode | str = CorrelationMode.ORDINAL
+    specs: list[tuple], pair_sources: bool = False
 ) -> dict[CorrelationGroup, list[SourceKey]]:
     """
     Partition sources into correlation groups.
@@ -110,9 +109,8 @@ def partition_correlation_groups(
     Args:
         specs: One ``(key, kind, multi_signal, declared)`` tuple per source, the last
             two optional; see :func:`correlation_group`.
-        correlation (CorrelationMode): ``"ordinal"`` groups by ordinal
-            meaning; ``"continuous"`` puts every source into the single
-            sample-and-hold group.
+        pair_sources (bool): Put every source into the single sample-and-hold group
+            instead of grouping by ordinal meaning.
 
     Returns:
         dict[CorrelationGroup, list[SourceKey]]: Group -> source keys, insertion
@@ -123,8 +121,8 @@ def partition_correlation_groups(
     """
     if not specs:
         raise CorrelationGroupError("A subscription needs at least one source.")
-    if correlation == CorrelationMode.CONTINUOUS:
-        return {CONTINUOUS_GROUP: [spec[0] for spec in specs]}
+    if pair_sources:
+        return {PAIRED_GROUP: [spec[0] for spec in specs]}
     groups: dict[CorrelationGroup, list[SourceKey]] = {}
     for key, kind, *names in specs:
         groups.setdefault(correlation_group(key, kind, *names), []).append(key)
@@ -230,12 +228,14 @@ class SourceSeries:
     adopted with their own dtype and shape (zero copy).
     """
 
-    def __init__(self, device: str, entry: str, kind: SourceKind, max_points: int | None = None):
+    def __init__(
+        self, device: str, entry: str, kind: SourceKind, max_buffer_size: int | None = None
+    ):
         self.device = device
         self.entry = entry
         self.kind = SourceKind(kind)
         self.metadata: dict[str, Any] = {}
-        self._max_points = max_points
+        self._max_buffer_size = max_buffer_size
         self._ord = np.empty(0, dtype=np.int64)
         self._val: np.ndarray = np.empty(0, dtype=np.float64)
         self._ts: np.ndarray = np.empty(0, dtype=np.float64)
@@ -330,10 +330,10 @@ class SourceSeries:
         return None
 
     def _trim(self) -> None:
-        """Apply the retention cap (keep the newest ``max_points``)."""
-        if self._max_points is None:
+        """Apply the retention cap (keep the newest ``max_buffer_size`` points)."""
+        if self._max_buffer_size is None:
             return
-        overflow = self._hi - self._lo - self._max_points
+        overflow = self._hi - self._lo - self._max_buffer_size
         if overflow <= 0:
             return
         self._lo += overflow
@@ -691,7 +691,7 @@ class SourceSeries:
 
 class _HeldSeries(SourceSeries):
     """
-    Member of a continuous bundle: an insert is a *sample* — the bundle
+    Member of a paired bundle: an insert is a *sample* — the bundle
     decides when a row is appended and stores it in every member.
     """
 
@@ -713,23 +713,20 @@ class DataBundler:
     The aligned series of one subscription for one scan.
 
     Owns one :class:`SourceSeries` per source and builds
-    :class:`SubscriptionUpdate` snapshots. With ``correlation="continuous"``
+    :class:`SubscriptionUpdate` snapshots. With ``pair_sources``
     it implements the sample-and-hold pairing described in the module
     docstring.
     """
 
     def __init__(
-        self,
-        scan_id: str,
-        max_points: int | None = None,
-        correlation: CorrelationMode | str = CorrelationMode.ORDINAL,
+        self, scan_id: str, max_buffer_size: int | None = None, pair_sources: bool = False
     ):
         self.scan_id = scan_id
-        self.max_points = max_points
-        self.correlation = CorrelationMode(correlation)
+        self.max_buffer_size = max_buffer_size
+        self.pair_sources = pair_sources
         self.series: dict[SourceKey, SourceSeries] = {}
         self._lag_warned = False
-        # continuous mode: latest sample per member and the row counter
+        # paired sources: latest sample per member and the row counter
         self._latest: dict[SourceKey, Any] = {}
         self._rows = 0
 
@@ -738,10 +735,12 @@ class DataBundler:
         key = (device, entry)
         series = self.series.get(key)
         if series is None:
-            if self.correlation == CorrelationMode.CONTINUOUS:
-                series = _HeldSeries(self, device, entry, kind, max_points=self.max_points)
+            if self.pair_sources:
+                series = _HeldSeries(
+                    self, device, entry, kind, max_buffer_size=self.max_buffer_size
+                )
             else:
-                series = SourceSeries(device, entry, kind, max_points=self.max_points)
+                series = SourceSeries(device, entry, kind, max_buffer_size=self.max_buffer_size)
             self.series[key] = series
         return series
 
@@ -750,7 +749,7 @@ class DataBundler:
         Take over series built elsewhere (e.g. by a worker without the lock).
 
         A series replaces the bundle's own only when both are plain series; members
-        of a continuous bundle keep their sample-and-hold type and receive the
+        of a paired bundle keep their sample-and-hold type and receive the
         adopted points as samples.
 
         Args:
@@ -770,12 +769,12 @@ class DataBundler:
                 current.insert(int(ordinal), value, timestamp)
 
     def has_sample(self, key: SourceKey) -> bool:
-        """Whether a continuous member has delivered at least one sample."""
+        """Whether a member of a paired bundle has delivered at least one sample."""
         return key in self._latest
 
     def sample_many(self, samples: list[tuple[SourceSeries, Any, Any]]) -> int:
         """
-        Take samples of several continuous members that arrived together as one row.
+        Take samples of several members of a paired bundle that arrived together as one row.
 
         Args:
             samples (list[tuple[SourceSeries, Any, Any]]): ``(member, value, timestamp)``
@@ -796,7 +795,7 @@ class DataBundler:
         return row
 
     def _sample(self, series: _HeldSeries, value: Any, timestamp: Any) -> int:
-        """Take one sample of a continuous member (see :meth:`sample_many`)."""
+        """Take one sample of a member of a paired bundle (see :meth:`sample_many`)."""
         return self.sample_many([(series, value, timestamp)])
 
     def build_update(
@@ -844,7 +843,7 @@ class DataBundler:
         """
         if len(self.series) < 2:
             return []
-        if self.correlation == CorrelationMode.CONTINUOUS:
+        if self.pair_sources:
             # Rows start once every member has delivered: a member that has
             # not is what blocks the group, and the only observable reason.
             if not self._latest:
@@ -853,7 +852,7 @@ class DataBundler:
             if lagging and not self._lag_warned:
                 self._lag_warned = True
                 logger.warning(
-                    f"Continuous group: source(s) {lagging} have not delivered a sample yet; "
+                    f"Paired group: source(s) {lagging} have not delivered a sample yet; "
                     "no rows are emitted until every member has."
                 )
             return lagging

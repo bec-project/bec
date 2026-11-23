@@ -151,7 +151,7 @@ class _SourceLoad:
             request.state.get("views", {}).pop(self.spec.key, None)
             logger.warning(f"Decoding {self.spec.key} from scan {request.scan_id} failed: {exc}")
         # A plain series is adopted by reference, so every block can be shown. The members
-        # of a continuous bundle take the points as samples: they get them once, at the end.
+        # of a paired bundle take the points as samples: they get them once, at the end.
         # pylint: disable=unidiomatic-typecheck
         if self.done or type(request.series(self.spec)) is type(self._series):
             request.adopt({self.spec.key: self._series})
@@ -266,7 +266,7 @@ class FileDataPath(DataPath):
             if container is None:
                 raise ValueError(f"History container for scan {request.scan_id} disappeared.")
             progress_cb = request.progress_callback
-            # A stored scan is delivered whole: max_points bounds live streams only.
+            # A stored scan is delivered whole: max_buffer_size bounds live streams only.
             loaded = DataBundler(request.scan_id)
             loads = [
                 _SourceLoad(

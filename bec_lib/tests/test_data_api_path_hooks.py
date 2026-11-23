@@ -7,7 +7,6 @@ import pytest
 
 from bec_lib.data_api import (
     AxisMode,
-    CorrelationMode,
     DataAPI,
     DataBundler,
     DataPath,
@@ -41,7 +40,7 @@ def api():
 def subscribe(api, sources=(A,), scan=REMOTE_SCAN, **kwargs):
     updates = []
     sub = api.subscribe(
-        sources=list(sources), scan=scan, callback=updates.append, min_emit_interval=0, **kwargs
+        sources=list(sources), scan=scan, callback=updates.append, update_rate=None, **kwargs
     )
     return sub, updates
 
@@ -172,9 +171,8 @@ def test_string_options_are_enums_that_accept_their_strings(api):
         SourceSpec("det", "wave", kind="scalar")
     assert SourceSeries("det", "wave", "async").kind is SourceKind.ASYNC
 
-    assert DataBundler("scan-1", correlation="continuous").correlation is CorrelationMode.CONTINUOUS
-    with pytest.raises(ValueError, match="Unknown correlation"):
-        api.subscribe(sources=[A], scan=None, correlation="pairwise", callback=print)
+    with pytest.raises(ValueError, match="scan-less"):
+        api.subscribe(sources=[A], scan="live", pair_sources=True, callback=print)
 
     assert DataSource.REDIS == "redis" and DataSource.FILE == "file"
 
@@ -242,8 +240,8 @@ def test_set_status_reaches_the_consumer_without_new_points(api):
     sub.close()
 
 
-def test_adopt_keeps_continuous_members_and_partner_series():
-    bundle = DataBundler("scan", correlation="continuous")
+def test_adopt_keeps_paired_members_and_partner_series():
+    bundle = DataBundler("scan", pair_sources=True)
     held = bundle.get_series("samx", "samx", "unindexed")
     partner = bundle.get_series("samy", "samy", "unindexed")
     loaded = SourceSeries("samx", "samx", "unindexed")
@@ -291,9 +289,7 @@ def test_flush_delivers_the_final_state_uncoalesced(api):
     path = ReferencePath(api.client, keys=[A], priority=0)
     api.register_path(path)
     updates = []
-    sub = api.subscribe(
-        sources=[A], scan=REMOTE_SCAN, callback=updates.append, min_emit_interval=60
-    )
+    sub = api.subscribe(sources=[A], scan=REMOTE_SCAN, callback=updates.append, update_rate=1 / 60)
     request = path.active_requests[0]
     for ordinal in range(3):
         with path.lock:
@@ -397,10 +393,10 @@ def test_retry_unbound_picks_up_newly_servable_sources(api):
     sub.close()
 
 
-def test_stream_values_from_any_transport_form_one_continuous_row():
+def test_stream_values_from_any_transport_form_one_paired_row():
     from bec_lib.data_api.decoding import decode_stream_values
 
-    bundle = DataBundler("", correlation="continuous")
+    bundle = DataBundler("", pair_sources=True)
     for name in ("x", "y"):
         bundle.get_series(name, name, "unindexed")
     specs = [SourceSpec("x", "x"), SourceSpec("y", "y")]
@@ -424,7 +420,7 @@ def _recording_subscription(api, path):
         sources=[A],
         scan=REMOTE_SCAN,
         callback=lambda u: seen.append((u, threading.current_thread(), lock_held(api._lock))),
-        min_emit_interval=0,
+        update_rate=None,
     )
     assert wait_for(lambda: path.active_requests)
     return sub, seen
