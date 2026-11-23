@@ -23,9 +23,9 @@ from bec_lib.data_api.models import SourceData, align_ordinals
 class ReferenceSeries:
     """Pure-Python model of the SourceSeries semantics (sorted ordinals, overwrite, cap)."""
 
-    def __init__(self, max_points=None):
+    def __init__(self, max_buffer_size=None):
         self.points: dict[int, tuple] = {}
-        self.max_points = max_points
+        self.max_buffer_size = max_buffer_size
         self.frontier = 0
         self.watermark = 0
 
@@ -33,8 +33,8 @@ class ReferenceSeries:
         ordinal = self.frontier if ordinal is None else ordinal
         self.points[ordinal] = (value, timestamp)
         self.frontier = max(self.frontier, ordinal + 1)
-        if self.max_points is not None and len(self.points) > self.max_points:
-            for old in sorted(self.points)[: len(self.points) - self.max_points]:
+        if self.max_buffer_size is not None and len(self.points) > self.max_buffer_size:
+            for old in sorted(self.points)[: len(self.points) - self.max_buffer_size]:
                 del self.points[old]
                 self.watermark = max(self.watermark, old + 1)
 
@@ -63,11 +63,11 @@ def same(left, right):
 
 
 @pytest.mark.parametrize("seed", range(8))
-@pytest.mark.parametrize("max_points", [None, 7])
-def test_random_operations_match_the_reference_and_never_mutate_snapshots(seed, max_points):
+@pytest.mark.parametrize("max_buffer_size", [None, 7])
+def test_random_operations_match_the_reference_and_never_mutate_snapshots(seed, max_buffer_size):
     rng = random.Random(seed)
-    series = SourceSeries("dev", "sig", "monitored", max_points=max_points)
-    reference = ReferenceSeries(max_points=max_points)
+    series = SourceSeries("dev", "sig", "monitored", max_buffer_size=max_buffer_size)
+    reference = ReferenceSeries(max_buffer_size=max_buffer_size)
     delivered = []
     for _ in range(300):
         op = rng.random()
@@ -122,7 +122,7 @@ def test_snapshot_is_o1_and_read_only():
 
 
 def test_build_update_after_one_insert_is_independent_of_size():
-    bundle = DataBundler("scan", max_points=None)
+    bundle = DataBundler("scan", max_buffer_size=None)
     for name in ("a", "b"):
         bundle.get_series(name, name, "monitored").extend(np.arange(1_000_000, dtype=float))
     bundle.get_series("a", "a", "monitored").insert(None, 1.0, 1.0)
@@ -232,7 +232,7 @@ def test_alignment_of_contiguous_sources_is_a_view():
 
 
 def test_concurrent_writer_and_reader_see_consistent_snapshots():
-    series = SourceSeries("dev", "sig", "monitored", max_points=500)
+    series = SourceSeries("dev", "sig", "monitored", max_buffer_size=500)
     lock = threading.Lock()
     stop = threading.Event()
     errors = []
@@ -325,7 +325,7 @@ def test_adopt_rows_shows_a_growing_part_of_one_column_without_copying():
 
 def test_adopt_rows_without_timestamps_and_with_a_retention_cap():
     values = np.arange(5.0)
-    series = SourceSeries("samx", "samx", "monitored", max_points=2)
+    series = SourceSeries("samx", "samx", "monitored", max_buffer_size=2)
 
     series.adopt_rows(values, None, 3)
     assert series.snapshot().values.tolist() == [1.0, 2.0]

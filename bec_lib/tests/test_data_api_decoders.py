@@ -70,7 +70,7 @@ class TestScanSegments:
         assert decode_scan_message(bundle, specs, msg.model_copy(update={"point_id": None})) == 0
 
     def test_live_data_replay_skips_trimmed_points(self):
-        bundle = DataBundler("scan_1", max_points=2)
+        bundle = DataBundler("scan_1", max_buffer_size=2)
         specs = [monitored("samx")]
         live_data = {"samx": {"samx": {i: {"value": float(i), "timestamp": 1.0} for i in range(3)}}}
         assert decode_live_data(bundle, specs, live_data) == 3
@@ -344,9 +344,9 @@ class TestStoredDatasets:
         assert not bundle.series
 
 
-class TestContinuousHold:
+class TestPairedHold:
     def test_held_sample_reports_nothing_inserted(self):
-        bundle = DataBundler("", correlation="continuous")
+        bundle = DataBundler("", pair_sources=True)
         for device in ("samx", "samy"):
             bundle.get_series(device, device, "unindexed")
         spec = SourceSpec(device="samx", entry="samx", kind="unindexed", stream="readback")

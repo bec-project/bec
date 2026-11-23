@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from bec_lib.data_api.decoding import stored_scan_specs
-from bec_lib.data_api.models import CONTINUOUS_GROUP, SCAN_GROUP, CorrelationGroup
+from bec_lib.data_api.models import PAIRED_GROUP, SCAN_GROUP, CorrelationGroup
 from bec_lib.device import ReadoutPriority
 
 from .test_data_api import (  # noqa: F401
@@ -94,11 +94,11 @@ def test_live_without_a_running_scan_counts_baseline_motors_as_scan_members(data
     assert data_api.correlation_groups(sources, scan="live") == {SCAN_GROUP: sources}
 
 
-def test_scanless_streams_pair_only_continuously(data_api, mock_client):
+def test_scanless_streams_pair_only_when_asked(data_api, mock_client):
     sources = [("samx", "samx"), ("samy", "samy")]
     assert len(data_api.correlation_groups(sources, scan=None)) == 2
-    assert data_api.correlation_groups(sources, scan=None, correlation="continuous") == {
-        CONTINUOUS_GROUP: sources
+    assert data_api.correlation_groups(sources, scan=None, pair_sources=True) == {
+        PAIRED_GROUP: sources
     }
 
 
@@ -182,9 +182,7 @@ def test_monitored_group_async_values_are_aligned_with_the_scan_points(data_api,
     mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
     updates = []
     x, y = ("samx", "samx"), ("det", "counts")
-    sub = data_api.subscribe(
-        sources=[x, y], scan="live", callback=updates.append, min_emit_interval=0
-    )
+    sub = data_api.subscribe(sources=[x, y], scan="live", callback=updates.append, update_rate=None)
     assert sub.groups == {SCAN_GROUP: [x, y]}
     path = data_api.paths[0]
 

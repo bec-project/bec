@@ -19,13 +19,7 @@ decoding -> data_path -> data_bundler, models, scenarios, client_views, emission
 """
 
 from .data_api import PATH_ENTRY_POINT_GROUP, DataAPI
-from .data_bundler import (
-    CorrelationGroupError,
-    CorrelationMode,
-    DataBundler,
-    SourceSeries,
-    correlation_group,
-)
+from .data_bundler import CorrelationGroupError, DataBundler, SourceSeries, correlation_group
 from .data_path import (
     BindContext,
     DataPath,
@@ -37,7 +31,7 @@ from .data_path import (
     total_estimated_bytes,
 )
 from .models import (
-    CONTINUOUS_GROUP,
+    PAIRED_GROUP,
     SCAN_GROUP,
     AxisMode,
     CorrelationGroup,
@@ -52,7 +46,7 @@ from .models import (
 )
 from .paths import DEFAULT_DATA_PATHS, FileDataPath, RedisDataPath
 from .scenarios import TERMINAL_SCAN_STATES, ScanTarget, Scenario, classify
-from .subscription import Subscription
+from .subscription import DEFAULT_UPDATE_RATE, Subscription
 
 __all__ = [
     "DataAPI",
@@ -60,8 +54,8 @@ __all__ = [
     "SourceSeries",
     "correlation_group",
     "Subscription",
+    "DEFAULT_UPDATE_RATE",
     "CorrelationGroupError",
-    "CorrelationMode",
     "DataBundler",
     "BindContext",
     "DataPath",
@@ -72,7 +66,7 @@ __all__ = [
     "apply_size_gate",
     "total_estimated_bytes",
     "AxisMode",
-    "CONTINUOUS_GROUP",
+    "PAIRED_GROUP",
     "CorrelationGroup",
     "DeviceStream",
     "GroupKind",

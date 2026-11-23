@@ -132,13 +132,16 @@ def wait_for(predicate, timeout=5.0):
 
 
 class TestHistoryPlugin:
-    def test_history_respects_max_points(self, data_api, mock_client):
+    def test_history_respects_max_buffer_size(self, data_api, mock_client):
         stored = {"samx": {"samx": {"shape": (5,), "dtype": "float64"}}}
         columns = {("samx", "samx"): ([0.0, 1.0, 2.0, 3.0, 4.0], [100, 101, 102, 103, 104])}
         mock_client.history, _ = make_history("bounded-history", stored, columns, num_points=5)
         updates = []
         sub = data_api.subscribe(
-            sources=list(columns), scan="bounded-history", callback=updates.append, max_points=2
+            sources=list(columns),
+            scan="bounded-history",
+            callback=updates.append,
+            max_buffer_size=2,
         )
         assert wait_for(lambda: updates)
         source = updates[-1].get("samx", "samx")
@@ -430,7 +433,7 @@ class TestHistoryPlugin:
             sources=[("samx", "samx")],
             scan="scan_t",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
             size_limit_bytes=8,
         )
         assert {s.path_name for s in sub._specs} == {"RedisDataPath"}
@@ -471,7 +474,7 @@ class TestHistoryPlugin:
             sources=[("samx", "samx")],
             scan="scan_t",
             callback=updates.append,
-            min_emit_interval=0,
+            update_rate=None,
             size_limit_bytes=8,
         )
         sub.confirm_size()  # nothing is withheld yet: the size of this scan is accepted
@@ -616,7 +619,7 @@ class TestHistoryPlugin:
 
         updates = []
         sub = data_api.subscribe(
-            sources=[("samx", "samx")], scan="live", callback=updates.append, min_emit_interval=0
+            sources=[("samx", "samx")], scan="live", callback=updates.append, update_rate=None
         )
         assert sub.scan_id == "scan_1"
 
@@ -1340,7 +1343,7 @@ def test_stored_scan_is_delivered_block_by_block(data_api, mock_client):
         scan="blocks",
         callback=updates.append,
         progress_callback=fractions.append,
-        min_emit_interval=0,
+        update_rate=None,
     )
     seen = []
     for step in steps:
@@ -1387,7 +1390,7 @@ def test_scan_file_is_loaded_through_the_slab_reader(data_api, mock_client, tmp_
 
     updates = []
     sub = data_api.subscribe(
-        sources=[("cam", "cam_frames")], scan="file", callback=updates.append, min_emit_interval=0
+        sources=[("cam", "cam_frames")], scan="file", callback=updates.append, update_rate=None
     )
     assert wait_for(lambda: updates and updates[-1].complete)
     assert [len(update.get("cam", "cam_frames").values) for update in updates] == [4, 8, 10]
@@ -1406,7 +1409,7 @@ def test_stored_blocks_are_shown_without_copying_them_again(data_api, mock_clien
 
     updates = []
     sub = data_api.subscribe(
-        sources=[("samx", "samx")], scan="views", callback=updates.append, min_emit_interval=0
+        sources=[("samx", "samx")], scan="views", callback=updates.append, update_rate=None
     )
     assert wait_for(lambda: updates and updates[-1].complete)
     columns = [update.get("samx", "samx").values for update in updates]
@@ -1430,7 +1433,7 @@ def test_stored_sources_of_one_group_grow_together(data_api, mock_client):
         sources=[("samx", "samx"), ("bpm4i", "bpm4i")],
         scan="pair",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
     )
     assert wait_for(lambda: updates)
     first = updates[0].aligned()
@@ -1460,7 +1463,7 @@ def test_block_wise_read_stops_once_the_request_is_cancelled(data_api, mock_clie
 
     updates = []
     sub = data_api.subscribe(
-        sources=[("samx", "samx")], scan="cancel", callback=updates.append, min_emit_interval=0
+        sources=[("samx", "samx")], scan="cancel", callback=updates.append, update_rate=None
     )
     (worker,) = sub._all_requests()[0].workers
     assert first_block_read.wait(5)
@@ -1488,7 +1491,7 @@ def test_failing_block_reports_the_source_and_keeps_the_others(data_api, mock_cl
         sources=[("samx", "samx"), ("bpm4i", "bpm4i")],
         scan="broken",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
     )
     assert wait_for(lambda: updates and len(updates[-1].get("samx", "samx").values) == 4)
     last = updates[-1]
@@ -1507,7 +1510,7 @@ def test_partial_history_updates_are_coalesced(data_api, mock_client):
 
     updates = []
     sub = data_api.subscribe(
-        sources=[("samx", "samx")], scan="many", callback=updates.append, min_emit_interval=30.0
+        sources=[("samx", "samx")], scan="many", callback=updates.append, update_rate=1 / 30
     )
     assert wait_for(lambda: updates and updates[-1].complete)
     assert samx.read_blocks == 200
@@ -1536,7 +1539,7 @@ def test_large_column_is_held_as_an_overview(data_api, mock_client, monkeypatch)
         sources=[("det", "wave")],
         scan="big",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
         view_limit_bytes=1000,
     )
     assert wait_for(
@@ -1571,7 +1574,7 @@ def test_requested_rows_replace_the_overview_of_their_range(data_api, mock_clien
         sources=[("det", "wave")],
         scan="big",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
         view_limit_bytes=1000,
     )
     assert wait_for(
@@ -1645,7 +1648,7 @@ def test_failed_overview_keeps_its_error_when_rows_are_requested(data_api, mock_
         sources=[("det", "wave")],
         scan="views",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
         view_limit_bytes=100,
     )
     assert wait_for(lambda: updates and updates[-1].get("det", "wave").metadata.get("error"))
@@ -1668,7 +1671,7 @@ def test_rows_read_while_the_overview_fails_do_not_replace_its_error(data_api, m
         sources=[("det", "wave")],
         scan="views",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
         view_limit_bytes=100,
     )
     assert wait_for(lambda: updates and updates[-1].get("det", "wave").metadata.get("view"))
@@ -1695,7 +1698,7 @@ def test_column_below_the_view_limit_is_held_whole(data_api, mock_client):
         sources=[("det", "wave")],
         scan="small",
         callback=updates.append,
-        min_emit_interval=0,
+        update_rate=None,
         view_limit_bytes=10**9,
     )
     assert wait_for(lambda: updates and updates[-1].complete)

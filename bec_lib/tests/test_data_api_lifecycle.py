@@ -59,11 +59,7 @@ def api():
 def subscribe(api, sources=(A,), **kwargs):
     updates = []
     sub = api.subscribe(
-        sources=list(sources),
-        scan=REMOTE_SCAN,
-        callback=updates.append,
-        min_emit_interval=0,
-        **kwargs,
+        sources=list(sources), scan=REMOTE_SCAN, callback=updates.append, update_rate=None, **kwargs
     )
     return sub, updates
 
