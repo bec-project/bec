@@ -24,7 +24,7 @@ dependencies = [
     "psutil>=5.9,<8.0",
     "pydantic>=2.8, <3.0",
     "pyyaml~=6.0",
-    "redis[hiredis]>=6.2, <9.0",
+    "redis[hiredis]>=6.2, <9.0, !=8.2.0",
     "requests~=2.31",
     "rich>=13.7,<16.0",
     "scipy~=1.12",
@@ -74,32 +74,6 @@ bec_lib_fixtures = "bec_lib.tests.fixtures"
 [project.urls]
 "Bug Tracker" = "https://github.com/bec-project/bec/issues"
 Homepage = "https://github.com/bec-project/bec"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 [tool.hatch.build.targets.wheel]
 include = ["*"]
