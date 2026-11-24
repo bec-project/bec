@@ -1058,22 +1058,6 @@ class MessageEndpoints:
         )
 
     @staticmethod
-    def file_content():
-        """
-        Endpoint for file content. This endpoint is used by the file writer to publish the
-        file content using a messages.FileContentMessage message.
-
-        Returns:
-            EndpointInfo: Endpoint for file content.
-        """
-        endpoint = f"{EndpointType.INTERNAL.value}/internal/file_content"
-        return EndpointInfo(
-            endpoint=endpoint,
-            message_type=messages.FileContentMessage,
-            message_op=MessageOp.SET_PUBLISH,
-        )
-
-    @staticmethod
     def storage_copy_request():
         """
         Endpoint for storage copy request. This endpoint is used to request a copy of a file

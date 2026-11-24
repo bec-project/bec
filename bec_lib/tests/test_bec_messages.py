@@ -804,15 +804,6 @@ def test_wrong_DAPRequestMessage():
         )
 
 
-def test_FileContentMessage():
-    msg = messages.FileContentMessage(
-        file_path="/path/to/file", data={}, scan_info={}, metadata={"RID": "1234"}
-    )
-    res = MsgpackSerialization.dumps(msg)
-    res_loaded = MsgpackSerialization.loads(res)
-    assert res_loaded == msg
-
-
 def test_CredentialsMessage():
     msg = messages.CredentialsMessage(credentials={"username": "user", "password": "pass"})
     res = MsgpackSerialization.dumps(msg)

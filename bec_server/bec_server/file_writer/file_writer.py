@@ -379,15 +379,6 @@ class HDF5FileWriter:
             written_async_signals=written_async_signals,
         ).get_storage_format()
 
-        file_data = {}
-        for key, val in device_storage.items():
-            file_data[key] = val if not isinstance(val, list) else merge_dicts(val)
-        msg_data = {"file_path": file_path, "data": file_data, "scan_info": info_storage}
-        msg = messages.FileContentMessage(**msg_data)
-        self.file_writer_manager.connector.set_and_publish(
-            MessageEndpoints.file_content(), msg, expire=3600
-        )
-
         # Write to temporary file first
         tmp_file_path = file_path.replace(".h5", ".tmp")
 

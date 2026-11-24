@@ -1644,23 +1644,6 @@ class FileMessage(BECMessage):
     hinted_h5_entries: dict[str, str] | None = None
 
 
-class FileContentMessage(BECMessage):
-    """File content message to inform about the content of a file
-
-    Args:
-        file_path (str): Path to the file.
-        data (str): Content of the file.
-        scan_info (dict): Scan information.
-        metadata (dict, optional): Status metadata. Defaults to None.
-
-    """
-
-    msg_type: ClassVar[str] = "file_content_message"
-    file_path: str
-    data: dict
-    scan_info: dict
-
-
 class StorageCopyRequestMessage(BECMessage):
     """Message to request a copy of a file to a storage location
 
