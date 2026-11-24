@@ -332,6 +332,18 @@ def test_signal_info_serialization_excludes_deprecated_alias_without_warnings():
     assert not caught
 
 
+def test_signal_info_aliases_store_a_mapping_of_declared_sources():
+    signals = [("signal1", 1), ("signal2", 1)]
+    aliases = {"signal1": "alias1", "signal2": "alias2"}
+    info = messages.SignalInfo(signals=signals, aliases=aliases)
+    assert info.model_dump()["aliases"] == aliases
+
+    with pytest.raises(pydantic.ValidationError, match="Alias source 'device_signal1'"):
+        messages.SignalInfo(signals=signals, aliases={"device_signal1": "alias1"})
+    with pytest.raises(pydantic.ValidationError, match="valid dictionary"):
+        messages.SignalInfo(signals=signals, aliases="alias1")
+
+
 def test_signal_info_rejects_invalid_dimensions():
     with pytest.raises(pydantic.ValidationError):
         messages.SignalInfo(ndim=3)

@@ -7,7 +7,7 @@ import pytest
 from bec_lib import messages
 from bec_lib.alarm_handler import Alarms
 from bec_lib.endpoints import MessageEndpoints
-from bec_server.file_writer.async_writer import AsyncWriter
+from bec_server.file_writer.async_writer import AsyncWriter, WrittenAsyncSignal
 
 
 @pytest.fixture(
@@ -206,6 +206,9 @@ def test_async_writer_add_slice_var_size(async_writer, data):
         out = f[async_writer.BASE_PATH]["monitor_async"]["monitor_async"]["value"][:]
 
     assert out.shape == (2,)
+    assert async_writer.written_signals == {
+        "monitor_async": [WrittenAsyncSignal("monitor_async", out.shape)]
+    }
     assert out[0].shape == (20,)
     assert out[1].shape == (10,)
 
@@ -594,6 +597,9 @@ def test_async_writer_replace(async_writer, data):
         timestamps = f[async_writer.BASE_PATH]["monitor_async"]["monitor_async"]["timestamp"][:]
 
     assert out.shape == (10,)
+    assert async_writer.written_signals == {
+        "monitor_async": [WrittenAsyncSignal("monitor_async", out.shape)]
+    }
     assert np.allclose(out, data[-1].signals["monitor_async"]["value"])
     assert np.array_equal(timestamps, [data[-1].signals["monitor_async"]["timestamp"]])
 
@@ -620,8 +626,14 @@ def test_async_writer_replace_scalar(async_writer, values):
     group = async_writer.file_handle[f"{async_writer.BASE_PATH}/monitor_async/monitor_async"]
     try:
         assert "value" not in group
+        assert async_writer.written_signals == {
+            "monitor_async": [WrittenAsyncSignal("monitor_async", None)]
+        }
         async_writer.write_data({}, write_replace=True)
         assert group["value"].shape == ()
+        assert async_writer.written_signals == {
+            "monitor_async": [WrittenAsyncSignal("monitor_async", ())]
+        }
         assert group["value"][()] == values[-1]
         assert np.array_equal(group["timestamp"][:], [2.0])
     finally:
@@ -721,7 +733,7 @@ def test_async_writer_async_signal(async_writer):
     # Check that the data was appended correctly
     expected_data = np.array([1, 2, 3, 4, 5, 6, 7, 8])
     assert np.array_equal(out, expected_data)
-    assert async_writer.written_signals == {"waveform": ["waveform_data"]}
+    assert async_writer.written_signals == {"waveform": [WrittenAsyncSignal("waveform_data", (8,))]}
 
 
 def test_async_writer_mixed_readback_and_signal(async_writer):
@@ -781,8 +793,8 @@ def test_async_writer_mixed_readback_and_signal(async_writer):
         expected_signal = np.array([100, 200, 300, 400, 500])
         assert np.array_equal(signal_out, expected_signal)
     assert async_writer.written_signals == {
-        "monitor_async": ["monitor_async"],
-        "waveform": ["waveform_data"],
+        "monitor_async": [WrittenAsyncSignal("monitor_async", (5,))],
+        "waveform": [WrittenAsyncSignal("waveform_data", (5,))],
     }
 
 
@@ -894,5 +906,5 @@ def test_async_writer_unwritable_update_does_not_stop_other_signals(async_writer
     assert devices["waveform/waveform/timestamp"][:].tolist() == [1, 1]
     assert "value" not in devices["monitor_async/monitor_async"]
     assert "timestamp" not in devices["monitor_async/monitor_async"]
-    assert async_writer.written_signals == {"waveform": ["waveform"]}
+    assert async_writer.written_signals == {"waveform": [WrittenAsyncSignal("waveform", (4,))]}
     async_writer.file_handle.close()

@@ -17,6 +17,7 @@ from bec_lib.endpoints import MessageEndpoints
 from bec_lib.logger import bec_logger
 from bec_lib.utils.scan_utils import compose_cli_input_from_scan_info
 
+from .async_writer import WrittenAsyncSignal
 from .default_writer import DefaultFormat as default_NeXus_format
 from .merged_dicts import dict_to_storage, merge_dicts
 
@@ -126,9 +127,33 @@ class HDF5StorageWriter:
         else:
             group = container.create_group(name)
         self.add_attribute(group, val.attrs)
-        self.add_content(group, val._storage)
-
+        contents = val._storage
         data = val._data
+        preserve_async = group.parent.parent.name == "/entry/collection/devices" and isinstance(
+            group.get("value"), h5py.Dataset
+        )
+        if preserve_async:
+            # Preserve an async value and its timestamps while applying layout metadata.
+            contents = contents.copy()
+            for field in ("value", "timestamp"):
+                field_storage = contents.pop(field, None)
+                dataset = group.get(field)
+                if field_storage is not None and isinstance(dataset, h5py.Dataset):
+                    self.add_attribute(dataset, field_storage.attrs)
+                    self.add_content(dataset, field_storage._storage)
+            if data:
+                data = {
+                    key: value for key, value in data.items() if key not in ("value", "timestamp")
+                }
+        elif (
+            group.parent.parent.name == "/entry/collection/devices"
+            and "value" in contents
+            and contents["value"]._data is not None
+            and isinstance(group.get("timestamp"), h5py.Dataset)
+        ):
+            # Fall back to the synchronous pair if async updates supplied only timestamps.
+            del group["timestamp"]
+        self.add_content(group, contents)
 
         if not data:
             return
@@ -266,7 +291,7 @@ class HDF5FileWriter:
         configuration_data: dict[str, dict],
         mode="w",
         file_handle=None,
-        written_async_signals: dict[str, list[str]] | None = None,
+        written_async_signals: dict[str, list[WrittenAsyncSignal]] | None = None,
     ):
         """
         Write the data to an HDF5 file.
@@ -277,7 +302,8 @@ class HDF5FileWriter:
             configuration_data (dict[str, dict]): Configuration data
             mode (str, optional): File mode. Defaults to "w".
             file_handle (h5py.File, optional): File handle. Defaults to None.
-            written_async_signals (dict[str, list[str]], optional): Dictionary of written async signals. Defaults to None.
+            written_async_signals (dict, optional): WrittenAsyncSignal dataclasses grouped by
+                device. A None shape means no value dataset was written. Defaults to None.
 
         Raises:
             NeXusLayoutError: Raised when the NeXus layout is incorrect.

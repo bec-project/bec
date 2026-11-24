@@ -16,7 +16,7 @@ from bec_lib.redis_connector import MessageObject
 from bec_lib.service_config import ServiceConfig
 from bec_lib.tests.utils import ConnectorMock
 from bec_server.file_writer import FileWriterManager
-from bec_server.file_writer.async_writer import AsyncWriter
+from bec_server.file_writer.async_writer import AsyncWriter, WrittenAsyncSignal
 from bec_server.file_writer.file_writer import HDF5FileWriter
 from bec_server.file_writer.file_writer_manager import ScanStorage
 
@@ -244,7 +244,9 @@ def test_write_file(file_writer_manager_mock, scan_storage_mock):
 def test_write_file_forwards_written_async_signals(file_writer_manager_mock, scan_storage_mock):
     file_manager = file_writer_manager_mock
     scan_storage_mock.async_writer = mock.Mock(
-        written_signals={"waveform": ["waveform_data"]}, file_handle=None, error_info=None
+        written_signals={"waveform": [WrittenAsyncSignal("waveform_data", (8,))]},
+        file_handle=None,
+        error_info=None,
     )
     file_manager.scan_storage["scan_id"] = scan_storage_mock
 
@@ -255,7 +257,7 @@ def test_write_file_forwards_written_async_signals(file_writer_manager_mock, sca
 
     file_manager.file_writer.write.assert_called_once()
     assert file_manager.file_writer.write.call_args.kwargs["written_async_signals"] == {
-        "waveform": ["waveform_data"]
+        "waveform": [WrittenAsyncSignal("waveform_data", (8,))]
     }
 
 
@@ -898,7 +900,7 @@ def test_async_failure_survives_finalization(
     ):
         # Error propagation does not require a background thread or a timing deadline.
         writer.run()
-    assert writer.written_signals == {"det": ["det"]}
+    assert writer.written_signals == {"det": [WrittenAsyncSignal("det", (1,))]}
     assert writer.file_handle["/entry/collection/devices/det/det/value"][:].tolist() == [1]
     if failure_stage:
         assert "async acquisition failed" in writer.error_info.compact_error_message
