@@ -1729,6 +1729,42 @@ def test_aligned_views_keep_the_same_rows(data_api, mock_client, monkeypatch):
     sub.close()
 
 
+def test_aligned_views_do_not_read_ahead_of_each_other(data_api, mock_client, monkeypatch):
+    """
+    The blocks of aligned columns can differ in size. The column that is ahead waits for
+    the others: reading on would pile its rows up in memory until they have caught up.
+    """
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    rows = 100_000
+    column = np.linspace(0.0, 1.0, rows)
+    ahead = []
+    slow = _SlabSignalRef(column, column, rows=1_000)
+    fast = _SlabSignalRef(
+        column,
+        column,
+        rows=40_000,
+        gate=lambda start: ahead.append(start - slow.read_blocks * 1_000),
+    )
+    _serve_slabs(mock_client, "uneven", {("samx", "samx"): fast, ("det", "wave"): slow}, rows=rows)
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("samx", "samx"), ("det", "wave")],
+        scan="uneven",
+        callback=updates.append,
+        update_rate=None,
+        view_limit_bytes=1000,
+    )
+    assert wait_for(lambda: updates and updates[-1].complete, timeout=20)
+    # Whenever the fast column read a block, the slow one had read up to its start.
+    assert len(ahead) == 3 and max(ahead) <= 0
+    np.testing.assert_array_equal(
+        updates[-1].get("samx", "samx").ordinals, updates[-1].get("det", "wave").ordinals
+    )
+    sub.close()
+
+
 def test_views_keep_the_timestamps_of_their_rows(data_api, mock_client, monkeypatch):
     """A column that is held as a view still has the timestamp of every row it keeps."""
     sub, updates, _, _, times = _aligned_views(data_api, mock_client, monkeypatch)

@@ -343,9 +343,12 @@ class FileDataPath(DataPath):
             while pending:
                 if request.cancelled:
                     return
-                # One block of every source: reading and copying happen on this worker.
+                # One block of every source: reading and copying happen on this worker. A
+                # column that is ahead of the ones it is reduced with waits for them.
                 for load in pending:
-                    load.read_next(request.scan_id)
+                    reduction = reductions.get(load.total)
+                    if reduction is None or not reduction.waits(load):
+                        load.read_next(request.scan_id)
                 grown = self._reduce_views(loads, reductions)
                 with self._lock:
                     if request.cancelled:
@@ -530,10 +533,15 @@ class FileDataPath(DataPath):
             key: [] for key in slabs
         }
         try:
-            while slabs:
+            idle = False
+            while slabs and not idle:
+                idle = True  # until a view reads: one whose file ended early stalls the others
                 for key in list(slabs):
                     if superseded():
                         return None
+                    if reduction.waits(key):
+                        continue  # ahead of the views it is reduced with
+                    idle = False
                     slab = next(slabs[key], None)
                     if slab is None or slab.stop <= slab.start:
                         del slabs[key]

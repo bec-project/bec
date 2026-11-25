@@ -123,6 +123,15 @@ class JointReduction:
         self._blocks.setdefault(member, []).append((values, timestamps))
         self._read[member] = stop
 
+    def waits(self, member: Any) -> bool:
+        """
+        Whether the member has read rows the others have not reached yet.
+
+        Such a member should not read on: its rows are held until the others have read
+        theirs, and blocks of very different sizes would pile them up.
+        """
+        return self._read.get(member, self.reduced) > self.reduced
+
     def drop(self, member: Any) -> None:
         """Leave a member out from now on (its load failed): the others go on without it."""
         self._read.pop(member, None)
