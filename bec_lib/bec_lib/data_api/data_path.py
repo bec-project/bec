@@ -73,6 +73,9 @@ class SourceSpec:
     #: asked first whatever its priority; the provisional claim stands if none has.
     provisional: bool = False
     estimated_bytes: int | None = None
+    #: Rows of a stored dataset when each row is one acquisition, so that a buffer cap can
+    #: keep the last of them. None when the dataset is one acquisition (a single frame).
+    stored_acquisitions: int | None = None
     #: Set by the serving path in ``resolve`` (:func:`apply_size_gate`) on the
     #: available specs when their total exceeds ``BindContext.size_limit_bytes``.
     #: :meth:`DataPath.open` withholds a gated request; :meth:`DataPath.confirm_size`

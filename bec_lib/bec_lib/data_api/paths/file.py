@@ -51,6 +51,7 @@ class _SourceLoad:
         loaded: DataBundler,
         file_path: str,
         view_limit_bytes: int | None = None,
+        max_rows: int | None = None,
     ):
         self.spec = spec
         self.done = False
@@ -66,10 +67,18 @@ class _SourceLoad:
         self._error: str | None = None
         self._reference = reference
         self._slabs: Iterator | None = None
+        # The buffer cap counts acquisitions: it does not cut a single stored frame.
+        self._max_rows = max_rows if spec.stored_acquisitions is not None else None
+        self._first = 0  # first row that is read
+        self._tail: list[Mapping] = []
         if reference is None:
             self._fail("Stored signal is missing.")
         elif hasattr(reference, "read_slabs"):
-            self._slabs = reference.read_slabs()
+            if self._max_rows is not None:
+                self._first = max(0, spec.stored_acquisitions - self._max_rows)
+                if self._first:
+                    self._series.expect(spec.stored_acquisitions)  # not complete while it loads
+            self._slabs = reference.read_slabs(self._first or None)
 
     def _fail(self, error: str) -> None:
         self._error = error
@@ -82,7 +91,7 @@ class _SourceLoad:
         try:
             if self._slabs is None:
                 # A reference without read_slabs() delivers the source in one piece.
-                self._whole = self._reference.read()
+                self._whole = self._last_rows(self._reference.read())
                 self.done = True
             else:
                 slab = next(self._slabs, None)
@@ -90,6 +99,17 @@ class _SourceLoad:
                     # Nothing to read in rows: a scalar or an empty dataset.
                     self._whole = slab.data if slab is not None else {}
                     self.done = True
+                elif self._first:
+                    # Only the last rows are read: few enough to be joined in one piece.
+                    self._tail.append(slab.data)
+                    self.fraction = (slab.stop - self._first) / (slab.total - self._first)
+                    self.done = slab.stop >= slab.total
+                    if self.done:
+                        self._whole = {
+                            name: np.concatenate([np.asarray(part[name]) for part in self._tail])
+                            for name in ("value", "timestamp")
+                            if self._tail[0].get(name) is not None
+                        }
                 else:
                     values = slab.data["value"]
                     if slab.start == 0 and self._held_as_view(values, slab.total):
@@ -110,6 +130,18 @@ class _SourceLoad:
         if self.done:
             self.fraction = 1.0
             self.close()
+
+    def _last_rows(self, data: Mapping) -> Mapping:
+        """The last ``max_rows`` rows of a source that was read in one piece."""
+        values = data.get("value")
+        rows = np.shape(values)[0] if np.ndim(values) else 0
+        if self._max_rows is None or rows <= self._max_rows:
+            return data
+        self._first = rows - self._max_rows
+        return {
+            name: column[self._first :] if np.shape(column)[:1] == (rows,) else column
+            for name, column in data.items()
+        }
 
     def _held_as_view(self, values: Any, total: int) -> bool:
         """Whether the column is above the view limit: numbers, one per row."""
@@ -136,7 +168,11 @@ class _SourceLoad:
                 if self._whole.get("value") is None:
                     raise ValueError("Stored signal is missing.")
                 decode_dataset_columns(
-                    self._loaded, self.spec, self._whole, file_path=self._file_path
+                    self._loaded,
+                    self.spec,
+                    self._whole,
+                    file_path=self._file_path,
+                    first=self._first,
                 )
                 self._whole = None
             else:
@@ -266,8 +302,7 @@ class FileDataPath(DataPath):
             if container is None:
                 raise ValueError(f"History container for scan {request.scan_id} disappeared.")
             progress_cb = request.progress_callback
-            # A stored scan is delivered whole: max_buffer_size bounds live streams only.
-            loaded = DataBundler(request.scan_id)
+            loaded = DataBundler(request.scan_id)  # the loads apply max_buffer_size themselves
             loads = [
                 _SourceLoad(
                     spec,
@@ -275,6 +310,7 @@ class FileDataPath(DataPath):
                     loaded,
                     msg.file_path,
                     request.context.view_limit_bytes,
+                    request.bundle.max_buffer_size,
                 )
                 for spec in request.specs
                 if spec.available

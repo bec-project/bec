@@ -385,10 +385,10 @@ class DataAPI:
             update_rate (float | None): Most live updates a second per correlation
                 group, in Hz. Updates arriving faster are coalesced, and the last state
                 is always emitted. ``None`` emits every update.
-            max_buffer_size (int | None): Most points kept per source of a live stream;
-                the oldest are dropped beyond it. Recommended for endless device-stream
-                subscriptions. ``None`` keeps every point. A scan read from its file is
-                delivered whole.
+            max_buffer_size (int | None): Most points kept per source; the oldest
+                are dropped beyond it. Recommended for endless device-stream
+                subscriptions. ``None`` keeps every point. Of a stored scan only the
+                last acquisitions are read; a single stored frame is not cut.
             progress_callback: Optional callable receiving load fractions
                 (0..1) while a data path reads bulk data (file reads).
                 Invoked on worker threads; must be cheap and must not call

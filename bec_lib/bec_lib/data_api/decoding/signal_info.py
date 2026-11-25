@@ -375,6 +375,7 @@ def stored_scan_specs(
                 storage_name=stored_key,
                 provisional=not stored,
                 estimated_bytes=estimate_stored_bytes(info) if info is not None else None,
+                stored_acquisitions=_acquisition_rows(info, declaration),
             )
         )
     return specs
@@ -445,6 +446,24 @@ def _monitored_readouts(history_message: StoredScan) -> int | None:
         # Written before the readout count was recorded: one readout per scan point.
         readouts = history_message.num_points
     return readouts if readouts is not None and readouts > 0 else None
+
+
+def _acquisition_rows(info: Any, declaration: dict | None) -> int | None:
+    """
+    Rows of a stored dataset that are one acquisition each, or ``None``.
+
+    A dataset with as many dimensions as its signal declares is a single acquisition (one
+    frame, stored as its rows); with one more, it is a stack of them. A dataset of a
+    signal without a declaration is read as one row per scan point.
+    """
+    shape = tuple(stored_info_field(info, "shape") or ()) if info is not None else ()
+    if not shape:
+        return None
+    if declaration is not None:
+        ndim = ((declaration.get("describe") or {}).get("signal_info") or {}).get("ndim")
+        if ndim is None or len(shape) <= ndim:
+            return None
+    return int(shape[0])
 
 
 def _rows(info: Any) -> int | None:
