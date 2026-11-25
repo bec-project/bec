@@ -1066,6 +1066,25 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
+    def test_feed_log_reads_the_update_type_of_a_model(self, data_api, mock_client):
+        """A message built in this process carries ``async_update`` as a model, not as a dict."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=updates.append, update_rate=None
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        for index in range(3):
+            msg = async_msg("wave", [index], index, "replace")
+            msg.metadata["async_update"] = messages.DeviceAsyncUpdate(type="replace")
+            feed.callback({"data": msg})
+        assert len(feed.log) == 1
+        assert list(updates[-1].get("det", "wave").as_array()) == [2]
+        sub.close()
+
     def test_multi_signal_sub_signals_align_and_catch_up_once(
         self, data_api, mock_client, monkeypatch
     ):

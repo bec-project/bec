@@ -345,7 +345,9 @@ class RedisDataPath(DataPath):
                 for spec in request.specs:
                     if spec.available and self._async_feed_key(request.scan_id, spec) == feed_key:
                         request.set_status(spec.key, stream_trimmed=True)
-        if (msg_obj.metadata.get("async_update") or {}).get("type") == "replace":
+        update = msg_obj.metadata.get("async_update")
+        kind = update.get("type") if isinstance(update, dict) else getattr(update, "type", None)
+        if kind == "replace":
             log.clear()  # a replace message is the whole state: the ones before are obsolete
         log.append(msg_obj)
         # Requests without a cap hold the data anyway (the log only adds references);
