@@ -9,12 +9,13 @@ import builtins
 import datetime
 import importlib
 import threading
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Literal
 
 from bec_lib.live_scan_data import LiveScanData
 from bec_lib.logger import bec_logger
 from bec_lib.scan_data_container import ScanDataContainer
+from bec_lib.scan_queue_cache import ScanQueueCache
 from bec_lib.utils import threadlocked
 
 logger = bec_logger.logger
@@ -249,18 +250,19 @@ class ScanStorage:
 
     Attributes:
         scan_manager: The scan manager instance that owns this storage.
-        storage: Double-ended queue (deque) storing scan items with maximum length.
+        storage: Indexable collection of bounded history followed by live scan items.
         last_scan_number: The most recently assigned scan number.
 
     Args:
         scan_manager: The scan manager that will use this storage.
-        maxlen: Maximum number of scan items to store (default: 10).
+        maxlen: History limit for results and other departed items separately (default: 10).
         init_scan_number: Initial scan number to start from (default: 0).
     """
 
     def __init__(self, scan_manager: ScanManager, maxlen=10, init_scan_number=0) -> None:
         self.scan_manager = scan_manager
-        self.storage = deque(maxlen=maxlen)
+        self._cache = ScanQueueCache[ScanItem](maxlen, key=lambda item: item.scan_id)
+        self.storage = self._cache
         self.last_scan_number = init_scan_number
         self._lock = threading.RLock()
         self._pending_inserts = defaultdict(list[dict[Literal["func", "func_args"], Any]])
@@ -321,10 +323,7 @@ class ScanStorage:
         """
         if scan_id is None:
             return None
-        for scan in self.storage:
-            if scan_id == scan.scan_id:
-                return scan
-        return None
+        return self._cache.get(scan_id)
 
     @threadlocked
     def update_with_scan_status(self, scan_status: messages.ScanStatusMessage) -> None:
@@ -467,7 +466,7 @@ class ScanStorage:
             scan_id: List of scan IDs for this scan.
             status: Current status of the scan.
         """
-        self.storage.append(
+        self._cache.append(
             ScanItem(
                 scan_manager=self.scan_manager,
                 queue_id=queue_id,
@@ -493,6 +492,23 @@ class ScanStorage:
         Args:
             queue_msg(messages.ScanQueueStatusMessage): The queue status message containing scan info.
         """
+        self._cache.retain(
+            (
+                scan_id
+                for queue in queue_msg.queue.values()
+                for item in queue.info
+                for scan_id in item.scan_id
+                if scan_id is not None
+            ),
+            result_ids=(
+                scan_id
+                for queue in queue_msg.queue.values()
+                for item in queue.info
+                for scan_id in item.scan_id
+                if scan_id is not None
+                if item.status not in {"PENDING", "CANCELLED"}
+            ),
+        )
         for queue in queue_msg.queue.values():
             for ii, queue_item in enumerate(queue.info):
 
