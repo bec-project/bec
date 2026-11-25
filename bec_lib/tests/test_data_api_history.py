@@ -1449,6 +1449,15 @@ def test_scan_file_is_loaded_through_the_slab_reader(data_api, mock_client, tmp_
     sub.close()
 
 
+def _latest(updates, key):
+    """The newest snapshot of one source: every correlation group has its own updates."""
+    return next((u.sources[key] for u in reversed(updates) if key in u.sources), None)
+
+
+def _all_complete(updates, keys):
+    return all((source := _latest(updates, key)) is not None and source.complete for key in keys)
+
+
 def _serve_scan_file(mock_client, scan_id, file_path, datasets):
     """Write ``{(device, entry): (values, timestamps)}`` to a scan file and serve it as history."""
     stored, devices = {}, {}
@@ -1504,6 +1513,79 @@ def test_only_the_last_frames_are_read_from_a_scan_file(
     np.testing.assert_array_equal(source.ordinals, [3, 4])
     np.testing.assert_array_equal(source.timestamps, [3.0, 4.0])
     np.testing.assert_array_equal(source.latest(), stack[4])
+    sub.close()
+
+
+def test_only_the_last_frames_are_read_when_the_catalog_lists_no_datasets(
+    data_api, mock_client, tmp_path, monkeypatch
+):
+    """
+    A catalog written by an older BEC does not list the datasets of the file. One row tells
+    the shape of the stack, and the last frames are read as with a catalog that lists it.
+    """
+    stack = np.arange(5 * 3 * 4, dtype=np.uint16).reshape(5, 3, 4)
+    frame = np.arange(12, dtype=np.uint16).reshape(3, 4)
+    datasets = {
+        ("cam", "cam_image"): (stack, np.arange(5.0)),
+        ("cam", "cam_frame"): (frame, None),  # one frame, stored as its rows
+        ("samx", "samx"): (np.arange(5.0), 100 + np.arange(5.0)),
+    }
+    _serve_scan_file(mock_client, "old", tmp_path / "old.h5", datasets)
+    object.__setattr__(mock_client.history.get_message("old"), "stored_data_info", None)
+    mock_client.device_manager.get_bec_signals.return_value = [
+        ("cam", None, {"obj_name": name, "describe": {"signal_info": {"ndim": 2}}})
+        for name in ("cam_image", "cam_frame")
+    ]
+    rows_read = {}
+    read = h5py.Dataset.__getitem__
+
+    def spy(dataset, key):
+        if dataset.name.endswith("/value"):
+            rows_read.setdefault(dataset.name.split("/")[-2], []).append(key)
+        return read(dataset, key)
+
+    monkeypatch.setattr(h5py.Dataset, "__getitem__", spy)
+    updates = []
+    sub = data_api.subscribe(
+        sources=list(datasets),
+        scan="old",
+        callback=updates.append,
+        max_buffer_size=2,
+        update_rate=None,
+    )
+    assert wait_for(lambda: _all_complete(updates, datasets))
+    stored = _latest(updates, ("cam", "cam_image"))
+    assert rows_read["cam_image"] == [slice(0, 1), slice(3, 5)]  # one row for the shape
+    np.testing.assert_array_equal(stored.ordinals, [3, 4])
+    np.testing.assert_array_equal(stored.as_array(), stack[3:])
+    np.testing.assert_array_equal(_latest(updates, ("cam", "cam_frame")).as_array(), frame)
+    np.testing.assert_array_equal(_latest(updates, ("samx", "samx")).values, [3.0, 4.0])
+    sub.close()
+
+
+def test_stack_read_in_one_piece_is_cut_when_the_catalog_lists_no_datasets(data_api, mock_client):
+    """A reference without ``read_slabs`` is read whole: its shape then tells the stack."""
+    stack = np.arange(60.0).reshape(5, 3, 4)
+    frame = np.arange(12.0).reshape(3, 4)
+    columns = {("cam", "cam_image"): (stack, np.arange(5.0)), ("cam", "cam_frame"): (frame, None)}
+    history, msg = make_history("old", {}, columns, 5)
+    object.__setattr__(msg, "stored_data_info", None)
+    mock_client.history = history
+    mock_client.device_manager.get_bec_signals.return_value = [
+        ("cam", None, {"obj_name": name, "describe": {"signal_info": {"ndim": 2}}})
+        for name in ("cam_image", "cam_frame")
+    ]
+    updates = []
+    sub = data_api.subscribe(
+        sources=list(columns),
+        scan="old",
+        callback=updates.append,
+        max_buffer_size=2,
+        update_rate=None,
+    )
+    assert wait_for(lambda: _all_complete(updates, columns))
+    np.testing.assert_array_equal(_latest(updates, ("cam", "cam_image")).as_array(), stack[3:])
+    np.testing.assert_array_equal(_latest(updates, ("cam", "cam_frame")).as_array(), frame)
     sub.close()
 
 

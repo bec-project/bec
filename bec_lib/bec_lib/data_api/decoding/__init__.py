@@ -32,6 +32,7 @@ from .scan_points import decode_live_data, decode_scan_message, decode_scan_poin
 from .signal_info import (
     ASYNC_SIGNAL_CLASSES,
     StoredScan,
+    acquisition_rows,
     async_declarations,
     declared_correlation_group,
     device_known,
@@ -70,6 +71,7 @@ __all__ = [
     "decode_scan_message",
     "decode_scan_point",
     "ASYNC_SIGNAL_CLASSES",
+    "acquisition_rows",
     "async_declarations",
     "declared_correlation_group",
     "device_known",

@@ -74,8 +74,12 @@ class SourceSpec:
     provisional: bool = False
     estimated_bytes: int | None = None
     #: Rows of a stored dataset when each row is one acquisition, so that a buffer cap can
-    #: keep the last of them. None when the dataset is one acquisition (a single frame).
+    #: keep the last of them. None when the dataset is one acquisition (a single frame), or
+    #: when the catalog does not list it: its shape in the file then decides.
     stored_acquisitions: int | None = None
+    #: Dimensions of one acquisition of a stored signal (0: one row per scan point); None
+    #: when its declaration does not say.
+    acquisition_ndim: int | None = None
     #: Set by the serving path in ``resolve`` (:func:`apply_size_gate`) on the
     #: available specs when their total exceeds ``BindContext.size_limit_bytes``.
     #: :meth:`DataPath.open` withholds a gated request; :meth:`DataPath.confirm_size`

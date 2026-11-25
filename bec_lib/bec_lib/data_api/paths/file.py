@@ -28,7 +28,13 @@ from ..data_path import (
     SourceSpec,
     apply_size_gate,
 )
-from ..decoding import StoredRows, StoredScan, decode_dataset_columns, stored_scan_specs
+from ..decoding import (
+    StoredRows,
+    StoredScan,
+    acquisition_rows,
+    decode_dataset_columns,
+    stored_scan_specs,
+)
 from ..models import SourceKey, SourceKind, UpdateReason
 from ..scenarios import Scenario
 from ..views import (
@@ -79,18 +85,11 @@ class _SourceLoad:
         self._error: str | None = None
         self._reference = reference
         self._slabs: Iterator | None = None
-        # The buffer cap counts acquisitions: it does not cut a single stored frame.
-        self._max_rows = max_rows if spec.stored_acquisitions is not None else None
+        self._max_rows = max_rows
         self._first = 0  # first row that is read
         self._tail: list[Mapping] = []
         if reference is None:
             self._fail("Stored signal is missing.")
-        elif hasattr(reference, "read_slabs"):
-            if self._max_rows is not None:
-                self._first = max(0, spec.stored_acquisitions - self._max_rows)
-                if self._first:
-                    self._series.expect(spec.stored_acquisitions)  # not complete while it loads
-            self._slabs = reference.read_slabs(self._first or None)
 
     @property
     def failed(self) -> bool:
@@ -106,11 +105,14 @@ class _SourceLoad:
         if self.done:
             return
         try:
-            if self._slabs is None:
+            if not hasattr(self._reference, "read_slabs"):
                 # A reference without read_slabs() delivers the source in one piece.
                 self._whole = self._last_rows(self._reference.read())
                 self.done = True
             else:
+                if self._slabs is None:
+                    self._first = self._tail_start()
+                    self._slabs = self._reference.read_slabs(self._first or None)
                 self._take_slab(next(self._slabs, None))
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
@@ -157,12 +159,48 @@ class _SourceLoad:
                 if self._tail[0].get(name) is not None
             }
 
+    def _acquisitions(self, shape: tuple[int, ...] | None = None) -> int | None:
+        """
+        Rows of the stored dataset that are one acquisition each, or ``None``.
+
+        The buffer cap counts acquisitions: it does not cut a single stored frame. A catalog
+        written by an older BEC does not list the dataset; its shape in the file then decides.
+
+        Args:
+            shape (tuple[int, ...] | None): Shape of the dataset when it is known; else one
+                row is read to learn it.
+        """
+        if not self.spec.provisional:
+            return self.spec.stored_acquisitions
+        if shape is None:
+            slabs = self._reference.read_slabs(0, 1)
+            try:
+                slab = next(slabs, None)
+            finally:
+                getattr(slabs, "close", lambda: None)()
+            if slab is None or not slab.total:
+                return None
+            shape = (slab.total, *np.shape(slab.data["value"])[1:])
+        return acquisition_rows(tuple(shape), self.spec.acquisition_ndim)
+
+    def _tail_start(self) -> int:
+        """The first row to read: with a buffer cap, the last acquisitions of a stack."""
+        if self._max_rows is None:
+            return 0
+        rows = self._acquisitions()
+        if rows is None or rows <= self._max_rows:
+            return 0
+        self._series.expect(rows)  # not complete while it loads
+        return rows - self._max_rows
+
     def _last_rows(self, data: Mapping) -> Mapping:
-        """The last ``max_rows`` rows of a source that was read in one piece."""
-        values = data.get("value")
-        rows = np.shape(values)[0] if np.ndim(values) else 0
-        if self._max_rows is None or rows <= self._max_rows:
+        """The last ``max_rows`` acquisitions of a source that was read in one piece."""
+        shape = np.shape(data.get("value"))
+        if self._max_rows is None or not shape or shape[0] <= self._max_rows:
             return data
+        if self._acquisitions(shape) is None:
+            return data
+        rows = shape[0]
         self._first = rows - self._max_rows
         return {
             name: column[self._first :] if np.shape(column)[:1] == (rows,) else column

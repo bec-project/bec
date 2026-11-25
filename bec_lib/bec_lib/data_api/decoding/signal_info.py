@@ -394,7 +394,8 @@ def stored_scan_specs(
                 storage_name=stored_key,
                 provisional=not stored,
                 estimated_bytes=estimate_stored_bytes(info) if info is not None else None,
-                stored_acquisitions=_acquisition_rows(info, declaration),
+                stored_acquisitions=acquisition_rows(_shape(info), _acquisition_ndim(declaration)),
+                acquisition_ndim=_acquisition_ndim(declaration),
             )
         )
     return specs
@@ -467,25 +468,42 @@ def _monitored_readouts(history_message: StoredScan) -> int | None:
     return readouts if readouts is not None and readouts > 0 else None
 
 
-def _acquisition_rows(info: Any, declaration: dict | None) -> int | None:
+def _acquisition_ndim(declaration: dict | None) -> int | None:
+    """
+    Dimensions of one acquisition of a stored signal, or ``None`` when it does not say.
+
+    A dataset of a signal without a declaration is read as one row per scan point.
+    """
+    if declaration is None:
+        return 0
+    return ((declaration.get("describe") or {}).get("signal_info") or {}).get("ndim")
+
+
+def acquisition_rows(shape: tuple[int, ...], ndim: int | None) -> int | None:
     """
     Rows of a stored dataset that are one acquisition each, or ``None``.
 
-    A dataset with as many dimensions as its signal declares is a single acquisition (one
-    frame, stored as its rows); with one more, it is a stack of them. A dataset of a
-    signal without a declaration is read as one row per scan point.
+    A dataset with as many dimensions as one acquisition of its signal is a single
+    acquisition (one frame, stored as its rows); with more, it is a stack of them.
+
+    Args:
+        shape (tuple[int, ...]): Shape of the dataset, from the catalog or from the file.
+        ndim (int | None): Dimensions of one acquisition (see ``SourceSpec.acquisition_ndim``).
+
+    Returns:
+        int | None: The number of acquisitions, or ``None`` for a single one.
     """
-    shape = tuple(stored_info_field(info, "shape") or ()) if info is not None else ()
-    if not shape:
+    if not shape or ndim is None or len(shape) <= ndim:
         return None
-    if declaration is not None:
-        ndim = ((declaration.get("describe") or {}).get("signal_info") or {}).get("ndim")
-        if ndim is None or len(shape) <= ndim:
-            return None
     return int(shape[0])
+
+
+def _shape(info: Any) -> tuple[int, ...]:
+    """Shape of a stored dataset from its catalog info; empty when the catalog has none."""
+    return tuple(stored_info_field(info, "shape") or ()) if info is not None else ()
 
 
 def _rows(info: Any) -> int | None:
     """Rows of a stored dataset from its catalog info, or ``None`` when it has no shape."""
-    shape = tuple(stored_info_field(info, "shape") or ()) if info is not None else ()
+    shape = _shape(info)
     return int(shape[0]) if shape else None
