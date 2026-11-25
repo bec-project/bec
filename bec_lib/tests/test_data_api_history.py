@@ -1911,6 +1911,101 @@ def test_a_view_keeps_the_extremes_of_a_column_that_is_held_whole(
     sub.close()
 
 
+def test_a_window_keeps_the_extremes_of_a_column_that_still_loads(
+    data_api, mock_client, monkeypatch
+):
+    """
+    A window can be asked for while a column that is held whole still loads. Its rows are
+    read from the file then: the window replaces the overview of its range for good, so a
+    spike it left out would be gone from the finished scan.
+    """
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    rows = 100_000
+    x = np.linspace(0.0, 1.0, rows)
+    y = np.zeros(rows, dtype=np.uint8)
+    y[54_321] = 100
+    resume = threading.Event()
+
+    def hold_the_load(start):
+        # The load of the detector stops after its first block; a window read goes on.
+        if start >= 20_000 and "view" not in threading.current_thread().name:
+            resume.wait(10)
+
+    references = {
+        ("samx", "samx"): _SlabSignalRef(x, x, rows=30_000),
+        ("det", "wave"): _SlabSignalRef(y, x, rows=20_000, gate=hold_the_load),
+    }
+    _serve_slabs(mock_client, "mixed", references, rows=rows)
+    updates = []
+    sub = data_api.subscribe(
+        sources=list(references),
+        scan="mixed",
+        callback=updates.append,
+        update_rate=None,
+        view_limit_bytes=12 * rows,  # x takes 16 bytes a row, y takes 9
+    )
+    assert wait_for(lambda: updates and len(updates[-1].get("det", "wave").values) == 20_000)
+    assert sub.request_view(("samx", "samx"), 40_000, 70_000, max_points=100)
+    assert wait_for(lambda: updates[-1].get("samx", "samx").metadata["view"]["window"] is not None)
+    assert 54_321 in updates[-1].get("samx", "samx").ordinals
+    resume.set()
+    assert wait_for(lambda: updates[-1].complete)
+    assert updates[-1].get("samx", "samx").metadata["view"]["window"]["start"] == 40_000
+    assert 54_321 in updates[-1].get("samx", "samx").ordinals
+    assert np.max(updates[-1].aligned()[("det", "wave")]) == 100
+    sub.close()
+
+
+def test_a_window_of_a_scan_file_keeps_a_peak_that_still_loads(
+    data_api, mock_client, tmp_path, monkeypatch
+):
+    """
+    The same with a real scan file: a motor ramp that is held as a view, and a detector
+    with one peak that is held whole. A window asked for while the detector still loads
+    has the peak, and so has the finished scan.
+    """
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    monkeypatch.setattr(SignalDataReference, "_SLAB_ELEMENTS", 20_000)  # rows per block
+    rows = 100_000
+    x = np.linspace(0.0, 1.0, rows)
+    y = np.zeros(rows, dtype=np.uint8)
+    y[54_321] = 100
+    datasets = {("samx", "samx"): (x, x), ("det", "wave"): (y, x)}
+    _serve_scan_file(mock_client, "mixed", tmp_path / "mixed.h5", datasets)
+    detector = mock_client.history.get_by_scan_id.return_value.devices.get("det")["wave"]
+    read_slabs, resume = detector.read_slabs, threading.Event()
+
+    def read_slabs_held(start=None, stop=None):
+        for slab in read_slabs(start, stop):
+            # The load stops after its first block; a window read goes on.
+            if slab.start >= 20_000 and "view" not in threading.current_thread().name:
+                resume.wait(10)
+            yield slab
+
+    detector.read_slabs = read_slabs_held
+    updates = []
+    sub = data_api.subscribe(
+        sources=list(datasets),
+        scan="mixed",
+        callback=updates.append,
+        update_rate=None,
+        view_limit_bytes=12 * rows,  # x takes 16 bytes a row, y takes 9
+    )
+    assert wait_for(lambda: updates and len(updates[-1].get("det", "wave").values) == 20_000)
+    assert sub.request_view(("samx", "samx"), 40_000, 70_000, max_points=100)
+    assert wait_for(lambda: updates[-1].get("samx", "samx").metadata["view"]["window"] is not None)
+    assert 54_321 in updates[-1].get("samx", "samx").ordinals
+    resume.set()
+    assert wait_for(lambda: updates[-1].complete)
+    assert np.max(updates[-1].get("det", "wave").values) == 100
+    assert np.max(updates[-1].aligned()[("det", "wave")]) == 100
+    sub.close()
+
+
 def test_requested_rows_replace_the_overview_of_their_range(data_api, mock_client, monkeypatch):
     from bec_lib.data_api import views
 

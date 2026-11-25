@@ -17,6 +17,7 @@ from typing import Any, Callable, Iterator, Mapping
 import numpy as np
 
 from bec_lib.logger import bec_logger
+from bec_lib.scan_data_container import SignalSlab
 
 from .. import client_views
 from ..data_bundler import DataBundler, SourceSeries
@@ -73,6 +74,8 @@ class _SourceLoad:
         self.view: ColumnView | None = None
         #: Rows of the source in the file, known with its first block.
         self.total: int | None = None
+        #: Whether the source is a column of numbers that is held whole, row by row as stored.
+        self.numbers = False
         #: The block of a column of numbers that was read last and is not reduced yet:
         #: one past its last row, its samples and its timestamps.
         self.block: tuple[int, Any, Any] | None = None
@@ -141,7 +144,8 @@ class _SourceLoad:
             self.block = (slab.stop, values, slab.data.get("timestamp"))
         else:
             self._rows.write(slab.start, slab.stop, slab.total, slab.data)
-            if is_number_column(values):
+            self.numbers = is_number_column(values)
+            if self.numbers:
                 # Held whole, but its extremes count for the views it is aligned with.
                 self.block = (slab.stop, values, None)
         self.fraction = slab.stop / slab.total
@@ -222,6 +226,9 @@ class _SourceLoad:
             request.state.setdefault("views", {})[self.spec.key] = self.view
             publish_view(request, self.spec, self.view)
             return
+        if self.numbers and self._error is None:
+            # A window of the views it is aligned with reads its rows while it still loads.
+            request.state.setdefault("stored", {})[self.spec.key] = (self.total, self._reference)
         try:
             if self._error is not None:
                 raise ValueError(self._error)
@@ -246,6 +253,7 @@ class _SourceLoad:
             # request for rows is refused, so the error stays with the source instead of
             # being replaced by the rows that could still be read.
             request.state.get("views", {}).pop(self.spec.key, None)
+            request.state.get("stored", {}).pop(self.spec.key, None)
             logger.warning(f"Decoding {self.spec.key} from scan {request.scan_id} failed: {exc}")
         # A plain series is adopted by reference, so every block can be shown. The members
         # of a paired bundle take the points as samples: they get them once, at the end.
@@ -474,17 +482,10 @@ class FileDataPath(DataPath):
         generation = max(member.generation for member in members.values()) + 1
         for member in members.values():
             member.generation = generation
-        # The columns that are held whole have these rows in memory: their extremes count too.
-        whole = {}
-        for spec in request.specs:
-            if spec.available and spec.key not in members:
-                values = request.series(spec).snapshot().values
-                if is_number_column(values) and len(values) == view.total:
-                    whole[spec.key] = values[start:stop]
         request.start_worker(
             self._read_view,
             members,
-            whole,
+            self._partner_slabs(request, members, start, stop),
             start,
             stop,
             max_points,
@@ -493,11 +494,45 @@ class FileDataPath(DataPath):
         )
         return True
 
+    @staticmethod
+    def _partner_slabs(
+        request: SourceRequest, members: dict[SourceKey, ColumnView], start: int, stop: int
+    ) -> dict[SourceKey, Iterator]:
+        """
+        The rows ``start:stop`` of the columns that are held whole and aligned with views.
+
+        Their extremes count for the rows a window keeps. The rows are in memory, or still
+        in the file while the column loads. Lock held.
+
+        Args:
+            request (SourceRequest): The request the views belong to.
+            members (dict[SourceKey, ColumnView]): The views that share their rows.
+            start (int): First row wanted.
+            stop (int): One past the last row wanted.
+
+        Returns:
+            dict[SourceKey, Iterator]: Per column, the blocks of its rows.
+        """
+        total = next(iter(members.values())).total
+        stored = request.state.get("stored", {})
+        partners = {}
+        for spec in request.specs:
+            if not spec.available or spec.key in members:
+                continue
+            values = request.series(spec).snapshot().values
+            rows, reference = stored.get(spec.key, (None, None))
+            if is_number_column(values) and len(values) == total:
+                slab = SignalSlab(start, stop, total, {"value": values[start:stop]})
+                partners[spec.key] = iter([slab])
+            elif rows == total:
+                partners[spec.key] = reference.read_slabs(start, stop)
+        return partners
+
     def _read_view(
         self,
         request: SourceRequest,
         members: dict[SourceKey, ColumnView],
-        whole: dict[SourceKey, np.ndarray],
+        partners: dict[SourceKey, Iterator],
         start: int,
         stop: int,
         max_points: int,
@@ -509,8 +544,8 @@ class FileDataPath(DataPath):
         Args:
             request (SourceRequest): The request the views belong to.
             members (dict[SourceKey, ColumnView]): The views that share their rows.
-            whole (dict[SourceKey, np.ndarray]): The same rows of the columns that are held
-                whole: they take part in choosing the rows.
+            partners (dict[SourceKey, Iterator]): The blocks of the same rows of the columns
+                that are held whole: they take part in choosing the rows.
             start (int): First row wanted.
             stop (int): One past the last row wanted.
             max_points (int): Upper bound of the points for these rows.
@@ -523,10 +558,8 @@ class FileDataPath(DataPath):
 
         bin_rows = bin_rows_for(stop - start, max_points)
         reduction = JointReduction(bin_rows, first_row=start)
-        for key, values in whole.items():
-            if len(values):
-                reduction.add(key, stop, values)
         slabs = {key: view.reference.read_slabs(start, stop) for key, view in members.items()}
+        slabs |= partners
         try:
             window = self._reduce_window(reduction, slabs, superseded)
         except Exception as exc:  # pylint: disable=broad-except
@@ -555,16 +588,16 @@ class FileDataPath(DataPath):
         reduction: JointReduction, slabs: dict[SourceKey, Iterator], superseded: Callable[[], bool]
     ) -> tuple[np.ndarray, dict[SourceKey, tuple[np.ndarray, np.ndarray | None]]] | None:
         """
-        Read the views block by block and reduce them together.
+        Read aligned columns block by block and reduce them together.
 
         Args:
             reduction (JointReduction): The reduction of the rows that are read.
-            slabs (dict[SourceKey, Iterator]): Per view, the blocks of the rows to read.
+            slabs (dict[SourceKey, Iterator]): Per column, the blocks of the rows to read.
             superseded (Callable[[], bool]): Whether the read is no longer wanted.
 
         Returns:
-            tuple | None: The kept row numbers and, per view, its samples and timestamps at
-                those rows; ``None`` when the read was superseded.
+            tuple | None: The kept row numbers and, per column, its samples and timestamps
+                at those rows; ``None`` when the read was superseded.
         """
         rows: list[np.ndarray] = [np.empty(0, dtype=np.int64)]
         parts: dict[SourceKey, list[tuple[np.ndarray, np.ndarray | None]]] = {
