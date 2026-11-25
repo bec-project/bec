@@ -436,7 +436,7 @@ def test_device_manager_ds_obj_callback_async_signal(dm_with_devices_and_status,
 
 @pytest.mark.parametrize("device_manager_class", [DeviceManagerDS])
 @pytest.mark.parametrize("metadata", [{}, {"scan_id": 12345}])  # Invalid scan_id type
-def test_device_manager_ds_obj_callback_async_signal_incomplete_info(dm_with_devices, metadata):
+def test_device_manager_ds_obj_callback_async_signal_without_scan(dm_with_devices, metadata):
     device_manager = dm_with_devices
     device = dm_with_devices.devices.bec_signals_device.obj
     dm_with_devices.devices.bec_signals_device.metadata = metadata

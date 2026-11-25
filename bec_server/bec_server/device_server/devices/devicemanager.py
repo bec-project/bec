@@ -159,6 +159,12 @@ class DeviceManagerDS(DeviceManagerBase):
         self._shutdown_event = threading.Event()
         self._auto_monitor_update_thread = self._create_auto_monitor_update_thread()
 
+    def _update_scan_info(self, msg, **kwargs) -> None:
+        """Retain active scan context and clear it when a terminal status arrives."""
+        status = msg.value
+        logger.info(f"Received new ScanStatusMessage with ID {status.scan_id}")
+        self.scan_info.msg = status if status.status in {"open", "paused"} else None
+
     def _create_auto_monitor_update_thread(self) -> threading.Thread:
         return threading.Thread(
             target=self._auto_monitor_update_loop, daemon=True, name="AutoMonitorUpdateThread"

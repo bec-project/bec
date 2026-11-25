@@ -595,7 +595,7 @@ class ConnectorMock(RedisConnector):  # pragma: no cover
     def execute_pipeline(self, pipeline):
         pipeline.execute()
 
-    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire: int = None):
+    def xadd(self, topic, msg_dict, max_size=None, pipe=None, expire: int = None, approximate=True):
         if pipe:
             pipe._pipe_buffer.append(("xadd", (topic, msg_dict), {"expire": expire}))
             return

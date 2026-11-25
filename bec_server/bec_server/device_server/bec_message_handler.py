@@ -139,28 +139,36 @@ class BECMessageHandler:
         device_name = obj.root.name
         signal_name = obj.name
 
-        scan_status_msg = self._get_scan_status_message()
-        if scan_status_msg is None:
-            logger.warning(
-                f"Scan status message is None for device {device_name} and async signal {signal_name}."
+        if message.metadata.get("scan_id") == "preview":
+            scan_id = "preview"
+        else:
+            scan_status_msg = self._get_scan_status_message()
+            scan_id = (
+                scan_status_msg.scan_id
+                if scan_status_msg is not None and scan_status_msg.status in {"open", "paused"}
+                else None
             )
-            return
-        scan_id = scan_status_msg.scan_id
-        if scan_id is None:
-            logger.warning(
-                f"Scan ID is None for device {device_name} and async signal {signal_name}."
-            )
-            return
-        status = scan_status_msg.status
-        if status in ["closed", "aborted", "halted", "user_completed", None]:
-            logger.warning(
-                f"Cannot emit async signal {signal_name} for device {device_name} with status {status}."
-            )
-            return
+            if scan_id is None:
+                logger.warning(
+                    f"Cannot emit async signal {signal_name} for device {device_name} "
+                    "without an active scan or explicit preview routing."
+                )
+                return
 
         if obj.signal_metadata is None:
             logger.warning(
                 f"Signal metadata is None for device {device_name} and signal {signal_name}."
+            )
+            return
+
+        if scan_id == "preview":
+            self.connector.xadd(
+                MessageEndpoints.device_async_signal(
+                    scan_id="preview", device=device_name, signal=signal_name
+                ),
+                {"data": message},
+                max_size=100,
+                expire=obj.signal_metadata.get("expire", 600),
             )
             return
 
