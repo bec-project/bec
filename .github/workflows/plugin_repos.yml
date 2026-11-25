@@ -1,28 +1,26 @@
 name: Run pytest on plugin repositories
-on: 
+on:
   workflow_call:
     inputs:
       BEC_WIDGETS_BRANCH:
-        description: 'Branch for BEC Widgets'
+        description: "Branch for BEC Widgets"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       BEC_CORE_BRANCH:
-        description: 'Branch for BEC Core'
+        description: "Branch for BEC Core"
         required: false
-        default: 'main'
+        default: "main"
         type: string
       OPHYD_DEVICES_BRANCH:
-        description: 'Branch for Ophyd Devices'
+        description: "Branch for Ophyd Devices"
         required: false
-        default: 'main'
+        default: "main"
         type: string
-      
+
     secrets:
       GH_READ_TOKEN:
         required: true
-
-
 
 jobs:
   plugin_repos:
@@ -32,15 +30,19 @@ jobs:
       run:
         shell: bash -el {0}
 
-    env: 
+    env:
       QTWEBENGINE_DISABLE_SANDBOX: 1
       QT_QPA_PLATFORM: "offscreen"
 
     strategy:
       matrix:
-        beamline_repo: ${{ fromJSON(vars.BEAMLINE_REPO_NAMES) }}
+        # A JSON list with one object per plugin repository: {"repo": "<name>"}, optionally with
+        # "extras": ["<name>", ...] for repositories of the same organisation which the plugin
+        # depends on and which are installed along with it, e.g.
+        # [{"repo": "sim_bec"}, {"repo": "pxii_bec", "extras": ["mx_bec"]}]
+        beamline_repo: ${{ fromJSON(vars.BEAMLINE_REPO_NAMES_WITH_EXTRAS) }}
 
-    name: Plugin ${{ matrix.beamline_repo }}
+    name: Plugin ${{ matrix.beamline_repo.repo }}
 
     steps:
       - name: Checkout BEC Core
@@ -55,11 +57,8 @@ jobs:
           BEC_CORE_BRANCH: ${{ inputs.BEC_CORE_BRANCH }}
           BEC_WIDGETS_BRANCH: ${{ inputs.BEC_WIDGETS_BRANCH }}
           OPHYD_DEVICES_BRANCH: ${{ inputs.OPHYD_DEVICES_BRANCH }}
-          BEC_PLUGIN_REPO_URL: github.com/bec-project/${{ matrix.beamline_repo }}.git
-          BEC_PLUGIN_REPO_NAME: ${{ matrix.beamline_repo }}
+          BEC_PLUGIN_REPO_URL: github.com/bec-project/${{ matrix.beamline_repo.repo }}.git
+          BEC_PLUGIN_REPO_NAME: ${{ matrix.beamline_repo.repo }}
+          BEC_PLUGIN_EXTRA_REPOS: ${{ join(matrix.beamline_repo.extras || fromJSON('[]'), ' ') }}
           GH_READ_TOKEN: ${{ secrets.GH_READ_TOKEN }}
-          PYTHON_VERSION: '3.11'
-
-      
-
-    
+          PYTHON_VERSION: "3.11"
