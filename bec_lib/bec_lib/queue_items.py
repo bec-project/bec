@@ -151,6 +151,7 @@ class QueueItem:
         self.scan_ids = queue_item.scan_id
         self.reason = queue_item.reason
 
+    @threadlocked
     def update_with_client_message(self, message: messages.ClientInfoMessage):
         """append a client message to the queue item"""
         self.client_messages.append(message)
@@ -169,30 +170,35 @@ class QueueItem:
                     return queue_position
         return None
 
+    @threadlocked
     def get_client_messages(self, only_asap: bool = False) -> list[messages.ClientInfoMessage]:
-        """Get all client messages from the queue item.
+        """Consume client messages in arrival order, retaining any unselected messages.
 
         Args:
             only_asap (bool): If True, only return the asap messages.
+
+        Returns:
+            list[messages.ClientInfoMessage]: The messages removed from the queue item.
         """
         msgs = []
-        for ii, msg in enumerate(self.client_messages):
-            if only_asap is True and msg.show_asap is False:
-                continue
-            msgs.append(msg)
-            self.client_messages.pop(ii)
+        remaining = []
+        for msg in self.client_messages:
+            if only_asap and not msg.show_asap:
+                remaining.append(msg)
+            else:
+                msgs.append(msg)
+        self.client_messages[:] = remaining
         return msgs
 
     @staticmethod
     def format_client_msg(msg: messages.ClientInfoMessage) -> str:
-        """Pop messages from the client message handler.
+        """Format a client message for display.
 
         Args:
             msg (messages.ClientInfoMessage): client message
         """
-        source = msg.source if msg.source else ""
-        rtr = f"Client info ({source}) : {msg.message}"
-        return rtr
+        source = f" ({msg.source})" if msg.source else ""
+        return f"Client info{source}: {msg.message}"
 
 
 class QueueStorage:

@@ -7,6 +7,8 @@ from collections.abc import Callable
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from rich import get_console
+
 from bec_lib.bec_errors import ScanInterruption, ScanRestart
 from bec_lib.logger import bec_logger
 from bec_lib.request_items import RequestItem
@@ -254,7 +256,7 @@ class LiveUpdatesBase(abc.ABC):
         if self.bec.live_updates_config.print_client_messages is False:
             return
         for msg in msgs:
-            print(queue.format_client_msg(msg))
+            get_console().print(queue.format_client_msg(msg), markup=False, highlight=False)
 
     def _print_client_msgs_all(self):
         """Print a summary of all queued client messages."""
@@ -274,7 +276,7 @@ class LiveUpdatesBase(abc.ABC):
         print("------------------------")
         # pylint: disable=protected-access
         for msg in msgs:
-            print(queue.format_client_msg(msg))
+            get_console().print(queue.format_client_msg(msg), markup=False, highlight=False)
         print("------------------------")
 
 
