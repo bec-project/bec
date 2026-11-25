@@ -57,6 +57,12 @@ def check_update_rate(update_rate: float | None) -> None:
         raise ValueError("update_rate must be positive (or None to emit every update).")
 
 
+def check_max_buffer_size(max_buffer_size: int | None) -> None:
+    """Raise unless ``max_buffer_size`` is at least one point, or None for all points."""
+    if max_buffer_size is not None and max_buffer_size < 1:
+        raise ValueError("max_buffer_size must be at least 1 (or None for unbounded).")
+
+
 def lock_held(lock: threading.RLock) -> bool:
     """Whether the calling thread holds the DataAPI lock."""
     # RLock has no public way to ask this; threading.Condition relies on the same method.
@@ -309,6 +315,36 @@ class Subscription:
         check_update_rate(update_rate)
         with self._lock:
             self._update_rate = update_rate
+        return self
+
+    @property
+    def max_buffer_size(self) -> int | None:
+        """Most points kept per source of a live stream (None = every point)."""
+        return self._max_buffer_size
+
+    def set_max_buffer_size(self, max_buffer_size: int | None) -> Subscription:
+        """
+        Change how many points are kept per source of a live stream.
+
+        A smaller cap drops the oldest points at once: the next update is without them. A
+        larger one keeps more from now on; the points that were dropped do not come back.
+        What was read from a scan file is not changed.
+
+        Args:
+            max_buffer_size (int | None): Most points kept per source; ``None`` keeps
+                every point.
+
+        Returns:
+            Subscription: self, for chaining.
+
+        Raises:
+            ValueError: If ``max_buffer_size`` is below 1.
+        """
+        check_max_buffer_size(max_buffer_size)
+        with self._lock:
+            self._max_buffer_size = max_buffer_size
+            for request in self._all_requests():
+                request.bundle.set_max_buffer_size(max_buffer_size)
         return self
 
     # --- source set ----------------------------------------------------------

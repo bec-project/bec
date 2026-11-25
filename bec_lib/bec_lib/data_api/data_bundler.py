@@ -329,6 +329,12 @@ class SourceSeries:
             return self._lo + index
         return None
 
+    def set_max_buffer_size(self, max_buffer_size: int | None) -> None:
+        """Change the buffer cap; a smaller one drops the oldest points at once."""
+        self._max_buffer_size = max_buffer_size
+        self._trim()
+        self._cached_snapshot = None
+
     def _trim(self) -> None:
         """Apply the retention cap (keep the newest ``max_buffer_size`` points)."""
         if self._max_buffer_size is None:
@@ -731,6 +737,8 @@ class DataBundler:
         self.pair_sources = pair_sources
         self.series: dict[SourceKey, SourceSeries] = {}
         self._lag_warned = False
+        # Series that were built elsewhere and adopted: they keep what they hold.
+        self._adopted: set[SourceKey] = set()
         # paired sources: latest sample per member and the row counter
         self._latest: dict[SourceKey, Any] = {}
         self._rows = 0
@@ -766,12 +774,25 @@ class DataBundler:
                 new
             ):  # pylint: disable=unidiomatic-typecheck
                 self.series[key] = new
+                self._adopted.add(key)
                 continue
             snapshot = new.snapshot()
             for ordinal, value, timestamp in zip(
                 snapshot.ordinals, snapshot.values, snapshot.timestamps
             ):
                 current.insert(int(ordinal), value, timestamp)
+
+    def set_max_buffer_size(self, max_buffer_size: int | None) -> None:
+        """
+        Change the buffer cap of the series this bundle fills.
+
+        A smaller cap drops the oldest points at once. A series that was built elsewhere
+        and adopted (a column of a stored scan) keeps what it holds.
+        """
+        self.max_buffer_size = max_buffer_size
+        for key, series in self.series.items():
+            if key not in self._adopted:
+                series.set_max_buffer_size(max_buffer_size)
 
     def has_sample(self, key: SourceKey) -> bool:
         """Whether a member of a paired bundle has delivered at least one sample."""

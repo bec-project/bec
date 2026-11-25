@@ -370,6 +370,23 @@ class TestPairedSources:
         }
         assert list(update.aligned_ordinals) == [2, 3]
 
+    def test_buffer_cap_can_be_changed_and_spares_adopted_series(self):
+        """The cap of a bundle's own series can be changed; an adopted stored column is not cut."""
+        bundle = DataBundler("scan")
+        live = bundle.get_series("samx", "samx", "monitored")
+        for i in range(5):
+            live.insert(i, float(i), float(i))
+        stored = SourceSeries("cam", "frame", "async")
+        stored.extend(np.arange(12.0).reshape(3, 4))  # one stored frame: three rows
+        bundle.adopt({("cam", "frame"): stored})
+
+        bundle.set_max_buffer_size(2)
+        assert list(live.snapshot().ordinals) == [3, 4]
+        assert len(stored.snapshot().values) == 3
+        live.insert(5, 5.0, 5.0)
+        assert list(live.snapshot().ordinals) == [4, 5]
+        assert bundle.get_series("samy", "samy", "monitored")._max_buffer_size == 2
+
     def test_clear_resets_the_hold(self):
         bundle = self._bundle()
         samx = bundle.get_series("samx", "samx", "unindexed")

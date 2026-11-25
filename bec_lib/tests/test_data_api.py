@@ -1085,6 +1085,32 @@ class TestAxisModes:
         assert list(updates[-1].get("det", "wave").as_array()) == [2]
         sub.close()
 
+    def test_buffer_cap_of_a_running_subscription_can_be_changed(self, data_api, mock_client):
+        """A smaller cap drops the oldest points at once; a larger one keeps more from then on."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=updates.append, update_rate=None
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+
+        def send(index):
+            feed.callback({"data": self._async_add_message(index)})
+            return tuple(updates[-1].get("det", "wave").ordinals)
+
+        assert [send(index) for index in range(4)][-1] == (0, 1, 2, 3)
+        assert sub.max_buffer_size is None
+        sub.set_max_buffer_size(2)
+        assert sub.max_buffer_size == 2 and send(4) == (3, 4)
+        sub.set_max_buffer_size(None)
+        assert send(5) == (3, 4, 5) and send(6) == (3, 4, 5, 6)  # what was dropped stays dropped
+        with pytest.raises(ValueError, match="max_buffer_size must be at least 1"):
+            sub.set_max_buffer_size(0)
+        sub.close()
+
     def test_multi_signal_sub_signals_align_and_catch_up_once(
         self, data_api, mock_client, monkeypatch
     ):

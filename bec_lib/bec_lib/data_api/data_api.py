@@ -48,6 +48,7 @@ from .scenarios import DEVICE_SCOPE, ScanTarget, Scenario, classify
 from .subscription import (
     DEFAULT_UPDATE_RATE,
     Subscription,
+    check_max_buffer_size,
     check_update_rate,
     reject_reentrant_call,
 )
@@ -436,8 +437,7 @@ class DataAPI:
             sources = [(device, device) for device in devices]
         if not sources:
             raise CorrelationGroupError("A subscription needs at least one source.")
-        if max_buffer_size is not None and max_buffer_size < 1:
-            raise ValueError("max_buffer_size must be at least 1 (or None for unbounded).")
+        check_max_buffer_size(max_buffer_size)
         check_update_rate(update_rate)
         if pair_sources and scan is not None:
             raise ValueError("pair_sources is defined for scan-less subscriptions only.")
