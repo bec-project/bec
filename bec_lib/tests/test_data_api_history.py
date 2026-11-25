@@ -132,9 +132,21 @@ def wait_for(predicate, timeout=5.0):
 
 
 class TestHistoryPlugin:
-    def test_history_respects_max_buffer_size(self, data_api, mock_client):
-        stored = {"samx": {"samx": {"shape": (5,), "dtype": "float64"}}}
-        columns = {("samx", "samx"): ([0.0, 1.0, 2.0, 3.0, 4.0], [100, 101, 102, 103, 104])}
+    def test_stored_scan_is_delivered_whole_despite_max_buffer_size(self, data_api, mock_client):
+        """
+        ``max_buffer_size`` bounds what a live stream keeps. The rows of a stored dataset
+        are not acquisitions (a single stored frame is one point per image row), so cutting
+        them would cut the data itself.
+        """
+        frame = np.arange(12.0).reshape(3, 4)  # one stored 2-D frame: 3 rows of 4 pixels
+        stored = {
+            "samx": {"samx": {"shape": (5,), "dtype": "float64"}},
+            "cam": {"cam_image": {"shape": (3, 4), "dtype": "float64"}},
+        }
+        columns = {
+            ("samx", "samx"): ([0.0, 1.0, 2.0, 3.0, 4.0], [100, 101, 102, 103, 104]),
+            ("cam", "cam_image"): (frame, None),
+        }
         mock_client.history, _ = make_history("bounded-history", stored, columns, num_points=5)
         updates = []
         sub = data_api.subscribe(
@@ -142,13 +154,17 @@ class TestHistoryPlugin:
             scan="bounded-history",
             callback=updates.append,
             max_buffer_size=2,
+            update_rate=None,
         )
-        assert wait_for(lambda: updates)
-        source = updates[-1].get("samx", "samx")
-        assert source is not None
-        assert len(source.values) == 2
-        np.testing.assert_array_equal(source.ordinals, [3, 4])
-        np.testing.assert_array_equal(source.values, [3.0, 4.0])
+
+        def latest(device, entry):
+            # The two sources are different correlation groups: each has its own updates.
+            found = [u.get(device, entry) for u in updates if u.get(device, entry) is not None]
+            return found[-1] if found else None
+
+        assert wait_for(lambda: latest("samx", "samx") and latest("cam", "cam_image"))
+        np.testing.assert_array_equal(latest("samx", "samx").ordinals, [0, 1, 2, 3, 4])
+        np.testing.assert_array_equal(latest("cam", "cam_image").as_array(), frame)
         sub.close()
 
     def test_vanished_history_entry_marks_every_source_as_error(self, data_api, mock_client):

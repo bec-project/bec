@@ -266,7 +266,8 @@ class FileDataPath(DataPath):
             if container is None:
                 raise ValueError(f"History container for scan {request.scan_id} disappeared.")
             progress_cb = request.progress_callback
-            loaded = DataBundler(request.scan_id, max_buffer_size=request.bundle.max_buffer_size)
+            # A stored scan is delivered whole: max_buffer_size bounds live streams only.
+            loaded = DataBundler(request.scan_id)
             loads = [
                 _SourceLoad(
                     spec,
