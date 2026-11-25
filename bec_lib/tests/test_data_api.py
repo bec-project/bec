@@ -1057,7 +1057,7 @@ class TestAxisModes:
         feed = next(iter(plugin._feeds.values()))
         for index in range(100):
             feed.callback({"data": async_msg("wave", [index, index], index, "replace")})
-        assert len(feed.log) == 1
+        assert len(feed.messages()) == 1
         ups_b = []  # a later subscriber still starts from the current state
         sub_b = data_api.subscribe(
             sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
@@ -1081,9 +1081,70 @@ class TestAxisModes:
             msg = async_msg("wave", [index], index, "replace")
             msg.metadata["async_update"] = messages.DeviceAsyncUpdate(type="replace")
             feed.callback({"data": msg})
-        assert len(feed.log) == 1
+        assert len(feed.messages()) == 1
         assert list(updates[-1].get("det", "wave").as_array()) == [2]
         sub.close()
+
+    def _replace_feed_of_two_signals(self, data_api, mock_client):
+        """Subscribe to the signals ``a`` and ``b`` of one feed; returns (sub, feed, updates)."""
+        mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(
+            "det", "data", ("a", "b")
+        )
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        keys = [("det", "data_a"), ("det", "data_b")]
+        updates = []
+        sub = data_api.subscribe(
+            sources=keys, scan="scan_1", callback=updates.append, update_rate=None
+        )
+        return sub, next(iter(data_api.paths[0]._feeds.values())), updates
+
+    @staticmethod
+    def _replace_message(index, **values):
+        """One replace message that carries ``values`` ({signal: value}) of the feed."""
+        return messages.DeviceMessage(
+            signals={name: {"value": value, "timestamp": 1.0} for name, value in values.items()},
+            metadata={
+                "async_indices": {name: index for name in values},
+                "async_update": messages.DeviceAsyncUpdate(type="replace").model_dump(),
+            },
+        )
+
+    def test_feed_log_keeps_the_state_of_every_signal_of_a_feed(self, data_api, mock_client):
+        """A message may carry only some signals of its feed: the state of the others stays."""
+        sub_a, feed, ups_a = self._replace_feed_of_two_signals(data_api, mock_client)
+        for index in range(50):
+            feed.callback({"data": self._replace_message(2 * index, data_a=[index])})
+            feed.callback({"data": self._replace_message(2 * index + 1, data_b=[-index])})
+        assert len(feed.messages()) == 2  # one state per signal, not one per message
+        ups_b = []  # a later subscriber starts from the state of both signals
+        sub_b = data_api.subscribe(
+            sources=sub_a.sources, scan="scan_1", callback=ups_b.append, update_rate=None
+        )
+        for update in (ups_a[-1], ups_b[-1]):
+            assert list(update.get("det", "data_a").as_array()) == [49]
+            assert list(update.get("det", "data_b").as_array()) == [-49]
+        sub_a.close()
+        sub_b.close()
+
+    def test_feed_log_replays_overlapping_replace_messages_in_order(self, data_api, mock_client):
+        """A message that is partly replaced still holds the state of its other signals."""
+        sub_a, feed, ups_a = self._replace_feed_of_two_signals(data_api, mock_client)
+        feed.callback({"data": self._replace_message(0, data_a=[1], data_b=[1])})
+        feed.callback({"data": self._replace_message(1, data_a=[2])})
+        assert len(feed.messages()) == 2
+        feed.callback({"data": self._replace_message(2, data_b=[3])})
+        assert len(feed.messages()) == 2  # the first message holds no state any more
+        ups_b = []
+        sub_b = data_api.subscribe(
+            sources=sub_a.sources, scan="scan_1", callback=ups_b.append, update_rate=None
+        )
+        for update in (ups_a[-1], ups_b[-1]):
+            assert list(update.get("det", "data_a").as_array()) == [2]
+            assert list(update.get("det", "data_b").as_array()) == [3]
+        sub_a.close()
+        sub_b.close()
 
     def test_buffer_cap_of_a_running_subscription_can_be_changed(self, data_api, mock_client):
         """A smaller cap drops the oldest points at once; a larger one keeps more from then on."""

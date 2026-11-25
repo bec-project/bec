@@ -103,9 +103,17 @@ class _Feed:
     delivered: int = 0
     #: The delivered messages, kept in memory so that a later request catches up.
     log: collections.deque = field(default_factory=collections.deque)
+    #: Per signal, the last replace message that carried it: such a signal has a state,
+    #: not a history. In the order the messages arrived.
+    state: dict[str, DeviceMessage] = field(default_factory=dict)
     #: Whether messages are missing before the start of ``log``: the stream was already
     #: trimmed when the feed attached, or the log itself was capped.
     trimmed: bool = False
+
+    def messages(self) -> list[DeviceMessage]:
+        """What a later request catches up from: the log, then the state of the replace signals."""
+        state = {id(msg): msg for msg in self.state.values()}  # one message can hold several
+        return [*self.log, *state.values()]
 
 
 @dataclass(frozen=True)
@@ -326,7 +334,7 @@ class RedisDataPath(DataPath):
             return
         if feed.trimmed:
             request.set_status(spec.key, stream_trimmed=True)
-        for msg_obj in list(feed.log):
+        for msg_obj in feed.messages():
             self._ingest_message([request], msg_obj, spec.device)
 
     def _log_async_message(self, feed: _Feed, feed_key: tuple, msg_obj: DeviceMessage) -> None:
@@ -348,7 +356,10 @@ class RedisDataPath(DataPath):
         update = msg_obj.metadata.get("async_update")
         kind = update.get("type") if isinstance(update, dict) else getattr(update, "type", None)
         if kind == "replace":
-            log.clear()  # a replace message is the whole state: the ones before are obsolete
+            for name in msg_obj.signals:
+                feed.state.pop(name, None)  # goes to the end: the state replays in arrival order
+                feed.state[name] = msg_obj
+            return
         log.append(msg_obj)
         # Requests without a cap hold the data anyway (the log only adds references);
         # when all are capped, keep a bounded tail so the log cannot outgrow them.
