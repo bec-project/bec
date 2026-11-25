@@ -98,10 +98,12 @@ def decode_add_slice(point: AsyncPoint) -> int:
     rows[row] = (buffer, filled)
     view = buffer[:filled]
     view.flags.writeable = False
+    trimmed = point.series.trimmed_below
     point.series.insert(row, view, point.timestamp)
-    # The rows the buffer cap dropped are not kept for reconstruction either.
-    while rows and next(iter(rows)) < point.series.trimmed_below:
-        del rows[next(iter(rows))]
+    if point.series.trimmed_below > trimmed:
+        # The rows the buffer cap dropped are not kept for reconstruction either.
+        for dropped in [held for held in rows if held < point.series.trimmed_below]:
+            del rows[dropped]
     return 1
 
 

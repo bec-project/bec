@@ -174,6 +174,35 @@ class TestAsyncStreams:
         assert sorted(state["slice_rows"][("det", "wave")]) == [98, 99]
         assert list(series.snapshot().ordinals) == [98, 99]
 
+    @pytest.mark.parametrize(
+        "order", [[100, *range(100)], [*range(50, 101), *range(50)], [*reversed(range(101))]]
+    )
+    def test_add_slice_scratch_rows_are_dropped_in_any_arrival_order(self, order):
+        """Rows need not arrive in order: a high row that comes first keeps no other buffer."""
+        bundle, state = DataBundler("scan_1", max_buffer_size=2), {}
+        specs = [async_spec("det", "wave")]
+        for count, row in enumerate(order):
+            msg = async_msg("wave", [row, row], count, "add_slice", index=row)
+            decode_async_message(bundle, state, specs, msg, device="det")
+        series = bundle.get_series("det", "wave", "async")
+        assert list(series.snapshot().ordinals) == [99, 100]
+        assert sorted(state["slice_rows"][("det", "wave")]) == [99, 100]
+
+    def test_add_slice_scratch_rows_follow_a_cap_that_is_set_later(self):
+        """A cap set on the running series drops the buffers with the next row it drops."""
+        bundle, state = DataBundler("scan_1"), {}
+        specs = [async_spec("det", "wave")]
+
+        def send(row):
+            msg = async_msg("wave", [row, row], row, "add_slice", index=row)
+            decode_async_message(bundle, state, specs, msg, device="det")
+
+        for row in range(10):
+            send(row)
+        bundle.set_max_buffer_size(2)
+        send(10)
+        assert sorted(state["slice_rows"][("det", "wave")]) == [9, 10]
+
     def test_add_slice_rows_stop_at_the_declared_row_size(self):
         bundle, state = DataBundler("scan_1"), {}
         specs = [async_spec("det", "wave")]
