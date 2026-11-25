@@ -360,6 +360,76 @@ class TestClose:
         assert not second.is_alive() and not first.is_alive()
         assert closed
 
+    def test_set_sources_in_a_callback_does_not_deadlock_a_notifying_thread(
+        self, data_api, mock_client
+    ):
+        """
+        ``set_sources()`` looks the scan item up, which takes the lock of the scan storage.
+        A thread that notifies from under that lock must not wait for the callback.
+        """
+        item = make_open_scan(mock_client)
+        storage_lock = threading.RLock()  # stands in for the lock of the scan storage
+        in_callback, notifier_has_lock = threading.Event(), threading.Event()
+
+        def find(scan_id):
+            with storage_lock:
+                return item if scan_id == "scan_1" else None
+
+        mock_client.queue.scan_storage.find_scan_by_ID.side_effect = find
+        done = []
+
+        def changing(update):
+            if update.reason == "live" and not done:
+                in_callback.set()
+                notifier_has_lock.wait(2)
+                sub.set_sources([("samx", "samx")])
+                done.append(True)
+
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")], scan="scan_1", callback=changing, update_rate=None
+        )
+        seed(item, "scan_1", 2, 3)
+        first = threading.Thread(target=segment, args=(data_api,), daemon=True)
+        first.start()
+        assert in_callback.wait(2)
+
+        def notify_under_the_storage_lock():
+            with storage_lock:
+                notifier_has_lock.set()
+                seed(item, "scan_1", 3, 4)
+                segment(data_api)
+
+        second = threading.Thread(target=notify_under_the_storage_lock, daemon=True)
+        second.start()
+        second.join(3)
+        first.join(3)
+        assert not second.is_alive() and not first.is_alive()
+        assert done
+        sub.close()
+
+    def test_group_is_delivered_again_after_its_thread_was_torn_out_of_a_callback(
+        self, data_api, mock_client
+    ):
+        """What ends a thread inside a callback (not an error of the callback) frees the group."""
+        item = make_open_scan(mock_client)
+        seen = []
+
+        def callback(update):
+            seen.append(update)
+            if len(seen) == 2:
+                raise SystemExit
+
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")], scan="scan_1", callback=callback, update_rate=None
+        )
+        seed(item, "scan_1", 2, 3)
+        with pytest.raises(SystemExit):
+            segment(data_api)
+        seed(item, "scan_1", 3, 4)
+        segment(data_api)
+        assert len(seen) == 3
+        sub.close()
+
     def test_close_gives_up_on_a_stuck_callback(self, data_api, mock_client, monkeypatch):
         item = make_open_scan(mock_client)
         gate = threading.Event()

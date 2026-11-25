@@ -1108,14 +1108,21 @@ class Subscription:
                 self._move_token(delivery, delivering)  # that thread runs the callback
                 return
             self._delivering[group] = me
-        while True:
+        try:
+            while True:
+                with self._delivery_cv:
+                    if not queue:
+                        del self._delivering[group]
+                        return
+                    delivery = queue.popleft()
+                    self._move_token(delivery, me)
+                self._run_callback(delivery)
+        except BaseException:
+            # Not a failing callback (those are logged): this thread is being torn down.
+            # Give the group up, so that the next snapshot is delivered by its own thread.
             with self._delivery_cv:
-                if not queue:
-                    del self._delivering[group]
-                    return
-                delivery = queue.popleft()
-                self._move_token(delivery, me)
-            self._run_callback(delivery)
+                self._delivering.pop(group, None)
+            raise
 
     def _move_token(self, delivery: _Delivery, thread: int) -> None:
         """Let the in-flight token follow the delivery to the thread that runs it. cv held."""
