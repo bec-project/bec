@@ -314,6 +314,52 @@ class TestClose:
         segment(data_api)
         assert len(seen) == 2  # nothing after close
 
+    def test_close_in_a_callback_does_not_deadlock_a_notifying_thread(self, data_api, mock_client):
+        """
+        ``close()`` removes the client callbacks, which takes the lock of the client's
+        callback handler. That handler notifies the data paths while it holds its lock: a
+        notification that waited for the callback and a callback that waits for the lock
+        would block each other for good.
+        """
+        item = make_open_scan(mock_client)
+        handler_lock = threading.Lock()  # stands in for the lock of the callback handler
+        in_callback, notifier_has_lock = threading.Event(), threading.Event()
+
+        def remove(_callback_id):
+            with handler_lock:
+                pass
+
+        mock_client.callbacks.remove.side_effect = remove
+        closed = []
+
+        def closing(update):
+            if update.reason == "live" and not closed:
+                in_callback.set()
+                notifier_has_lock.wait(2)
+                sub.close()
+                closed.append(True)
+
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")], scan="scan_1", callback=closing, update_rate=None
+        )
+        seed(item, "scan_1", 2, 3)
+        first = threading.Thread(target=segment, args=(data_api,), daemon=True)
+        first.start()
+        assert in_callback.wait(2)
+
+        def notify_under_the_handler_lock():
+            with handler_lock:
+                notifier_has_lock.set()
+                seed(item, "scan_1", 3, 4)
+                segment(data_api)
+
+        second = threading.Thread(target=notify_under_the_handler_lock, daemon=True)
+        second.start()
+        second.join(3)
+        first.join(3)
+        assert not second.is_alive() and not first.is_alive()
+        assert closed
+
     def test_close_gives_up_on_a_stuck_callback(self, data_api, mock_client, monkeypatch):
         item = make_open_scan(mock_client)
         gate = threading.Event()

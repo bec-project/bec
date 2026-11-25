@@ -7,6 +7,7 @@ run outside that lock; Qt consumers should hand updates to a queued signal.
 
 from __future__ import annotations
 
+import collections
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -178,7 +179,9 @@ class Subscription:
         self._deferred: list[_Delivery] = []
         self._warned_locked_notify = False
         self._generation = 0
-        self._group_locks: dict[CorrelationGroup, threading.RLock] = {}
+        # Per group: the snapshots waiting for their callback, and the thread delivering them.
+        self._delivery_queues: dict[CorrelationGroup, collections.deque[_Delivery]] = {}
+        self._delivering: dict[CorrelationGroup, int] = {}
         self._delivered: dict[CorrelationGroup, tuple[int, int]] = {}
         # Requests released by a rebind; joined by the facade's reaper, outside the lock.
         self._retired: list[SourceRequest] = []
@@ -1089,38 +1092,64 @@ class Subscription:
         """
         Hand one snapshot to the callback, in per-group order.
 
-        Deliveries of one group are serialized; a snapshot older than the
-        last delivered one is dropped (every update is full state, so the
-        newest wins). If the first snapshot of a binding was superseded that
-        way, the first delivered update adopts its reason (``backfill``,
-        ``rebind``, ``history``) so consumers still see the transition. A
-        raising callback is logged and never alters the subscription.
+        Deliveries of one group are serialized without any thread waiting for the callback
+        of another: the first thread delivers, and a snapshot that arrives meanwhile is
+        queued for it. A thread that notifies while it holds locks of its own (the client's
+        callback handler) therefore never blocks on a callback, which may itself be waiting
+        for those locks (a ``close()`` from inside the callback).
         """
         me = threading.get_ident()
+        group = delivery.group
         with self._delivery_cv:
-            lock = self._group_locks.setdefault(delivery.group, threading.RLock())
-            if delivery.owner != me:
-                # Built by another thread: the token follows the delivery, so a close()
-                # on the building thread waits for this callback too.
-                self._inflight[me] = self._inflight.get(me, 0) + 1
-                depth = self._inflight.get(delivery.owner, 0) - 1
-                if depth <= 0:
-                    self._inflight.pop(delivery.owner, None)
-                else:
-                    self._inflight[delivery.owner] = depth
-                delivery.owner = me
-        try:
-            with lock:
-                key = (delivery.generation, delivery.seq)
-                with self._delivery_cv:
-                    last = self._delivered.get(delivery.group)
-                    stale = last is not None and key <= last
-                    first = last is None or last[0] != delivery.generation
-                    if not stale:
-                        self._delivered[delivery.group] = key
-                if stale or self._closed or delivery.generation != self._generation:
+            queue = self._delivery_queues.setdefault(group, collections.deque())
+            queue.append(delivery)
+            delivering = self._delivering.get(group)
+            if delivering is not None:
+                self._move_token(delivery, delivering)  # that thread runs the callback
+                return
+            self._delivering[group] = me
+        while True:
+            with self._delivery_cv:
+                if not queue:
+                    del self._delivering[group]
                     return
-                update = delivery.update
+                delivery = queue.popleft()
+                self._move_token(delivery, me)
+            self._run_callback(delivery)
+
+    def _move_token(self, delivery: _Delivery, thread: int) -> None:
+        """Let the in-flight token follow the delivery to the thread that runs it. cv held."""
+        if delivery.owner == thread:
+            return
+        self._inflight[thread] = self._inflight.get(thread, 0) + 1
+        depth = self._inflight.get(delivery.owner, 0) - 1
+        if depth <= 0:
+            self._inflight.pop(delivery.owner, None)
+        else:
+            self._inflight[delivery.owner] = depth
+        delivery.owner = thread
+
+    def _run_callback(self, delivery: _Delivery) -> None:
+        """
+        Call the consumer with one snapshot, unless a newer one was delivered already.
+
+        Every update is full state, so the newest wins. If the first snapshot of a binding
+        was superseded that way, the first delivered update adopts its reason
+        (``backfill``, ``rebind``, ``history``) so consumers still see the transition. A
+        raising callback is logged and never alters the subscription.
+        """
+        try:
+            key = (delivery.generation, delivery.seq)
+            with self._delivery_cv:
+                last = self._delivered.get(delivery.group)
+                stale = last is not None and key <= last
+                first = last is None or last[0] != delivery.generation
+                if not stale:
+                    self._delivered[delivery.group] = key
+            if stale or self._closed or delivery.generation != self._generation:
+                return
+            update = delivery.update
+            try:
                 if update.aligned_ordinals is ALIGN_LATER:
                     # Aligned here, outside the DataAPI lock, and only for
                     # snapshots that are actually delivered.
@@ -1131,13 +1160,12 @@ class Subscription:
                     and delivery.first_reason is not None
                 ):
                     update = replace(update, reason=delivery.first_reason)
-                try:
-                    delivery.callback(update)
-                except Exception:  # pylint: disable=broad-except
-                    logger.exception(
-                        f"Subscription callback failed for group '{delivery.group}' "
-                        f"(scan {update.scan_id!r}, reason {update.reason!r})."
-                    )
+                delivery.callback(update)
+            except Exception:  # pylint: disable=broad-except
+                logger.exception(
+                    f"Subscription callback failed for group '{delivery.group}' "
+                    f"(scan {update.scan_id!r}, reason {update.reason!r})."
+                )
         finally:
             self._end_delivery(delivery.owner)
 
