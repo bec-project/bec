@@ -7,6 +7,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest import mock
 
+import h5py
 import numpy as np
 import pytest
 
@@ -19,7 +20,7 @@ from bec_lib.data_api.models import SCAN_GROUP, CorrelationGroup
 from bec_lib.data_api.paths import FileDataPath
 from bec_lib.data_api.scenarios import Scenario, classify
 from bec_lib.live_scan_data import LiveScanData
-from bec_lib.scan_data_container import SignalSlab
+from bec_lib.scan_data_container import SignalDataReference, SignalSlab
 from bec_lib.scan_items import ScanItem
 
 # pylint: disable=protected-access
@@ -1419,10 +1420,6 @@ def test_stored_scan_is_delivered_block_by_block(data_api, mock_client):
 
 def test_scan_file_is_loaded_through_the_slab_reader(data_api, mock_client, tmp_path, monkeypatch):
     """The real reference of a scan file hands out blocks, and the file path delivers them."""
-    import h5py
-
-    from bec_lib.scan_data_container import SignalDataReference
-
     file_path = tmp_path / "scan.h5"
     frames = np.arange(40, dtype=np.int32).reshape(10, 4)
     with h5py.File(file_path, "w") as f:
@@ -1449,6 +1446,83 @@ def test_scan_file_is_loaded_through_the_slab_reader(data_api, mock_client, tmp_
     assert last.values.dtype == np.int32
     assert list(last.timestamps) == list(np.arange(10, dtype=float))
     sub.close()
+
+
+def _serve_scan_file(mock_client, scan_id, file_path, datasets):
+    """Write ``{(device, entry): (values, timestamps)}`` to a scan file and serve it as history."""
+    stored, devices = {}, {}
+    with h5py.File(file_path, "w") as f:
+        for (device, entry), (values, timestamps) in datasets.items():
+            path = f"entry/collection/devices/{device}/{entry}"
+            group = f.create_group(path)
+            group.create_dataset("value", data=values)
+            if timestamps is not None:
+                group.create_dataset("timestamp", data=timestamps)
+            stored.setdefault(device, {})[entry] = {
+                "shape": values.shape,
+                "dtype": str(values.dtype),
+            }
+            devices.setdefault(device, {})[entry] = SignalDataReference(str(file_path), path)
+    rows = len(next(iter(datasets.values()))[0])
+    history, _ = make_history(scan_id, stored, {}, rows)
+    history.get_by_scan_id.return_value = SimpleNamespace(devices=SimpleNamespace(get=devices.get))
+    mock_client.history = history
+
+
+def test_only_the_last_frames_are_read_from_a_scan_file(
+    data_api, mock_client, tmp_path, monkeypatch
+):
+    """With a buffer cap the file is asked for the last frames of a stack only."""
+    stack = np.arange(5 * 3 * 4, dtype=np.uint16).reshape(5, 3, 4)
+    datasets = {("cam", "cam_image"): (stack, np.arange(5.0))}
+    _serve_scan_file(mock_client, "stack", tmp_path / "stack.h5", datasets)
+    mock_client.device_manager.get_bec_signals.return_value = [
+        ("cam", None, {"obj_name": "cam_image", "describe": {"signal_info": {"ndim": 2}}})
+    ]
+    rows_read = []
+    read = h5py.Dataset.__getitem__
+
+    def spy(dataset, key):
+        if dataset.name.endswith("/value"):
+            rows_read.append(key)
+        return read(dataset, key)
+
+    monkeypatch.setattr(h5py.Dataset, "__getitem__", spy)
+    updates = []
+    sub = data_api.subscribe(
+        sources=[("cam", "cam_image")],
+        scan="stack",
+        callback=updates.append,
+        max_buffer_size=2,
+        update_rate=None,
+    )
+    assert wait_for(lambda: updates and len(updates[-1].get("cam", "cam_image").values) == 2)
+    source = updates[-1].get("cam", "cam_image")
+    assert rows_read == [slice(3, 5)]
+    np.testing.assert_array_equal(source.ordinals, [3, 4])
+    np.testing.assert_array_equal(source.timestamps, [3.0, 4.0])
+    np.testing.assert_array_equal(source.latest(), stack[4])
+    sub.close()
+
+
+def test_view_of_a_scan_file_keeps_the_timestamps(data_api, mock_client, tmp_path):
+    """The same stored column has its timestamps whether it is held whole or as a view."""
+    values, times = np.arange(10.0), 100.0 + np.arange(10)
+    _serve_scan_file(mock_client, "times", tmp_path / "t.h5", {("samx", "samx"): (values, times)})
+    for view_limit_bytes in (None, 1):
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("samx", "samx")],
+            scan="times",
+            callback=updates.append,
+            view_limit_bytes=view_limit_bytes,
+            update_rate=None,
+        )
+        assert wait_for(lambda: updates and updates[-1].complete)
+        source = updates[-1].get("samx", "samx")
+        assert ("view" in source.metadata) == (view_limit_bytes is not None)
+        assert list(source.timestamps) == list(times)
+        sub.close()
 
 
 def test_stored_blocks_are_shown_without_copying_them_again(data_api, mock_client):
