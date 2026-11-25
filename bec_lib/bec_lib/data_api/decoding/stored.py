@@ -44,6 +44,8 @@ def decode_dataset_columns(
         return 0
     series = bundle.get_series(spec.device, spec.entry, spec.kind or SourceKind.UNINDEXED)
     series.metadata["file_path"] = file_path
+    if first:
+        series.drop_below(first)  # the rows before are left out, not missing
     # Explicit ordinals: row i is ordinal i also when the series already holds points.
     rows = np.shape(values)[0] if np.ndim(values) else 1
     ordinals = np.arange(first, first + rows, dtype=np.int64)

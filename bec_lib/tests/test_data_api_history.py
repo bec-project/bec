@@ -144,9 +144,9 @@ class TestHistoryPlugin:
             callback=updates.append,
             max_buffer_size=2,
         )
-        assert wait_for(lambda: updates)
+        assert wait_for(lambda: updates and updates[-1].complete)  # the rows left out are no gaps
         source = updates[-1].get("samx", "samx")
-        assert source is not None
+        assert source is not None and source.complete
         assert len(source.values) == 2
         np.testing.assert_array_equal(source.ordinals, [3, 4])
         np.testing.assert_array_equal(source.values, [3.0, 4.0])
@@ -194,9 +194,10 @@ class TestHistoryPlugin:
             max_buffer_size=2,
             update_rate=None,
         )
-        assert wait_for(lambda: updates and len(updates[-1].get("cam", "cam_image").values) == 2)
+        assert wait_for(lambda: updates and updates[-1].complete)
         assert not any(update.complete for update in updates[:-1])  # nothing shown as done early
         source = updates[-1].get("cam", "cam_image")
+        assert source.complete
         np.testing.assert_array_equal(source.ordinals, [3, 4])
         np.testing.assert_array_equal(source.as_array(), stack[3:])
         assert reference.read_blocks == 2  # one block per frame: frames 0 to 2 were not read
@@ -1496,8 +1497,9 @@ def test_only_the_last_frames_are_read_from_a_scan_file(
         max_buffer_size=2,
         update_rate=None,
     )
-    assert wait_for(lambda: updates and len(updates[-1].get("cam", "cam_image").values) == 2)
+    assert wait_for(lambda: updates and updates[-1].complete)
     source = updates[-1].get("cam", "cam_image")
+    assert source.complete and len(source.values) == 2
     assert rows_read == [slice(3, 5)]
     np.testing.assert_array_equal(source.ordinals, [3, 4])
     np.testing.assert_array_equal(source.timestamps, [3.0, 4.0])

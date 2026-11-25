@@ -210,7 +210,8 @@ class SourceSeries:
     Ordinal-keyed columnar store for one source within one scan.
 
     A point inserted at an existing ordinal overwrites it (add_slice rows grow
-    in place); completeness means "no holes from ordinal 0 to the frontier".
+    in place); completeness means "no holes up to the frontier". The rows a buffer
+    cap dropped are no holes.
 
     Storage is three numpy buffers (ordinals, values, timestamps) with a live
     region ``[lo, hi)``. Appending at the frontier is amortised O(1); retention
@@ -554,6 +555,19 @@ class SourceSeries:
             buffer[start + offset] = value
         return buffer
 
+    def drop_below(self, ordinal: int) -> None:
+        """
+        Count the rows below ``ordinal`` as dropped by the buffer cap, without holding them.
+
+        A loader that reads only the last rows of a stored source says so here: the rows
+        it leaves out are dropped, not missing.
+
+        Args:
+            ordinal (int): The first row that is kept.
+        """
+        self._trim_watermark = max(self._trim_watermark, int(ordinal))
+        self._cached_snapshot = None
+
     def expect(self, total: int | None, rows_read: int | None = None) -> None:
         """
         Declare how many rows a load in progress will deliver.
@@ -660,14 +674,15 @@ class SourceSeries:
 
     @property
     def complete(self) -> bool:
-        """Whether every ordinal from 0 to the frontier is present and no load is under way."""
+        """Whether every row the series keeps is present and no load is under way."""
         if self.metadata.get("error"):
             return False
         if self._expected is not None and self._rows_read is not None:
             return self._rows_read >= self._expected
         if self._expected is not None and self._frontier < self._expected:
             return False
-        return len(self) == self.frontier
+        # The rows the buffer cap dropped are no gaps.
+        return len(self) == self._frontier - self._trim_watermark
 
     def snapshot(self) -> SourceData:
         """

@@ -408,6 +408,28 @@ class TestTrimWatermark:
         series.clear()
         assert not series.is_known(0)
 
+    def test_rows_the_cap_dropped_are_no_gaps(self):
+        """A capped series is complete when the rows it keeps have no hole."""
+        series = SourceSeries("samx", "samx", "monitored", max_buffer_size=2)
+        for i in range(5):
+            series.insert(i, float(i), None)
+        assert list(series.snapshot().ordinals) == [3, 4]
+        assert series.complete and series.snapshot().complete
+        series.insert(6, 6.0, None)  # row 5 is missing among the rows that are kept
+        assert list(series.snapshot().ordinals) == [4, 6] and not series.complete
+        series.insert(5, 5.0, None)
+        assert list(series.snapshot().ordinals) == [5, 6] and series.complete
+
+    def test_rows_left_out_of_a_load_are_no_gaps(self):
+        """A load of the last rows says which rows it leaves out: they are dropped, not missing."""
+        series = SourceSeries("samx", "samx", "monitored")
+        series.drop_below(8)
+        series.expect(10)
+        assert not series.complete  # nothing is loaded yet
+        series.extend(np.arange(8.0, 10.0), ordinals=np.arange(8, 10))
+        assert list(series.snapshot().ordinals) == [8, 9]
+        assert series.complete and series.trimmed_below == 8 and series.is_known(3)
+
     def test_bulk_series_knows_its_rows(self):
         series = SourceSeries("samx", "samx", "monitored")
         assert series.extend(np.arange(3.0), np.arange(3.0)) == 3
