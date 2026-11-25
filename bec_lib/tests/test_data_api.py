@@ -1044,6 +1044,28 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
+    def test_feed_log_keeps_only_the_latest_replace_state(self, data_api, mock_client):
+        """A replace signal has one state: the log must not keep every image it ever sent."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        plugin = data_api.paths[0]
+        sub_a = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=lambda _: None, update_rate=None
+        )
+        feed = next(iter(plugin._feeds.values()))
+        for index in range(100):
+            feed.callback({"data": async_msg("wave", [index, index], index, "replace")})
+        assert len(feed.log) == 1
+        ups_b = []  # a later subscriber still starts from the current state
+        sub_b = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
+        )
+        assert list(ups_b[-1].get("det", "wave").as_array()) == [99, 99]
+        sub_a.close()
+        sub_b.close()
+
     def test_multi_signal_sub_signals_align_and_catch_up_once(
         self, data_api, mock_client, monkeypatch
     ):
