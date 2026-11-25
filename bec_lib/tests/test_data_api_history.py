@@ -132,21 +132,9 @@ def wait_for(predicate, timeout=5.0):
 
 
 class TestHistoryPlugin:
-    def test_stored_scan_is_delivered_whole_despite_max_buffer_size(self, data_api, mock_client):
-        """
-        ``max_buffer_size`` bounds what a live stream keeps. The rows of a stored dataset
-        are not acquisitions (a single stored frame is one point per image row), so cutting
-        them would cut the data itself.
-        """
-        frame = np.arange(12.0).reshape(3, 4)  # one stored 2-D frame: 3 rows of 4 pixels
-        stored = {
-            "samx": {"samx": {"shape": (5,), "dtype": "float64"}},
-            "cam": {"cam_image": {"shape": (3, 4), "dtype": "float64"}},
-        }
-        columns = {
-            ("samx", "samx"): ([0.0, 1.0, 2.0, 3.0, 4.0], [100, 101, 102, 103, 104]),
-            ("cam", "cam_image"): (frame, None),
-        }
+    def test_history_respects_max_buffer_size(self, data_api, mock_client):
+        stored = {"samx": {"samx": {"shape": (5,), "dtype": "float64"}}}
+        columns = {("samx", "samx"): ([0.0, 1.0, 2.0, 3.0, 4.0], [100, 101, 102, 103, 104])}
         mock_client.history, _ = make_history("bounded-history", stored, columns, num_points=5)
         updates = []
         sub = data_api.subscribe(
@@ -154,17 +142,63 @@ class TestHistoryPlugin:
             scan="bounded-history",
             callback=updates.append,
             max_buffer_size=2,
+        )
+        assert wait_for(lambda: updates)
+        source = updates[-1].get("samx", "samx")
+        assert source is not None
+        assert len(source.values) == 2
+        np.testing.assert_array_equal(source.ordinals, [3, 4])
+        np.testing.assert_array_equal(source.values, [3.0, 4.0])
+        sub.close()
+
+    @staticmethod
+    def _camera(mock_client, scan_id, images):
+        """A stored 2-D async signal ``cam/cam_image`` holding ``images``; returns its reference."""
+        images = np.asarray(images)
+        stored = {"cam": {"cam_image": {"shape": images.shape, "dtype": "float64"}}}
+        mock_client.history, _ = make_history(scan_id, stored, {}, num_points=5)
+        reference = _SlabSignalRef(images, np.arange(len(images), dtype=float), rows=1)
+        container = mock_client.history.get_by_scan_id.return_value
+        container.devices = SimpleNamespace(get={"cam": _FakeDeviceRef(cam_image=reference)}.get)
+        mock_client.device_manager.get_bec_signals.return_value = [
+            ("cam", None, {"obj_name": "cam_image", "describe": {"signal_info": {"ndim": 2}}})
+        ]
+        return reference
+
+    def test_single_stored_frame_is_not_cut_by_max_buffer_size(self, data_api, mock_client):
+        """A single frame is stored as its rows: the cap counts frames, not image lines."""
+        frame = np.arange(12.0).reshape(3, 4)
+        self._camera(mock_client, "one-frame", frame)
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("cam", "cam_image")],
+            scan="one-frame",
+            callback=updates.append,
+            max_buffer_size=2,
             update_rate=None,
         )
+        assert wait_for(lambda: updates and updates[-1].complete)
+        np.testing.assert_array_equal(updates[-1].get("cam", "cam_image").as_array(), frame)
+        sub.close()
 
-        def latest(device, entry):
-            # The two sources are different correlation groups: each has its own updates.
-            found = [u.get(device, entry) for u in updates if u.get(device, entry) is not None]
-            return found[-1] if found else None
-
-        assert wait_for(lambda: latest("samx", "samx") and latest("cam", "cam_image"))
-        np.testing.assert_array_equal(latest("samx", "samx").ordinals, [0, 1, 2, 3, 4])
-        np.testing.assert_array_equal(latest("cam", "cam_image").as_array(), frame)
+    def test_only_the_last_frames_of_a_stored_stack_are_read(self, data_api, mock_client):
+        """A stack of frames is not loaded whole to show its last ones."""
+        stack = np.arange(60.0).reshape(5, 3, 4)
+        reference = self._camera(mock_client, "stack", stack)
+        updates = []
+        sub = data_api.subscribe(
+            sources=[("cam", "cam_image")],
+            scan="stack",
+            callback=updates.append,
+            max_buffer_size=2,
+            update_rate=None,
+        )
+        assert wait_for(lambda: updates and len(updates[-1].get("cam", "cam_image").values) == 2)
+        assert not any(update.complete for update in updates[:-1])  # nothing shown as done early
+        source = updates[-1].get("cam", "cam_image")
+        np.testing.assert_array_equal(source.ordinals, [3, 4])
+        np.testing.assert_array_equal(source.as_array(), stack[3:])
+        assert reference.read_blocks == 2  # one block per frame: frames 0 to 2 were not read
         sub.close()
 
     def test_vanished_history_entry_marks_every_source_as_error(self, data_api, mock_client):

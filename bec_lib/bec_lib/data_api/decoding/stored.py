@@ -18,10 +18,15 @@ from ..models import SourceKind
 
 
 def decode_dataset_columns(
-    bundle: DataBundler, spec: SourceSpec, data: Mapping, *, file_path: str | None = None
+    bundle: DataBundler,
+    spec: SourceSpec,
+    data: Mapping,
+    *,
+    file_path: str | None = None,
+    first: int = 0,
 ) -> int:
     """
-    Insert the stored columns of one source; row ``i`` becomes ordinal ``i``.
+    Insert the stored columns of one source; row ``i`` becomes ordinal ``first + i``.
 
     Args:
         bundle (DataBundler): Target bundle; the caller serializes access to it.
@@ -29,6 +34,7 @@ def decode_dataset_columns(
         data (Mapping): The stored ``value`` column and, optionally, its ``timestamp``
             column (dropped when it is not parallel to the values).
         file_path (str | None): Provenance recorded on the source.
+        first (int): Row of the dataset the columns start at (a read of its last rows).
 
     Returns:
         int: Number of points loaded.
@@ -40,7 +46,8 @@ def decode_dataset_columns(
     series.metadata["file_path"] = file_path
     # Explicit ordinals: row i is ordinal i also when the series already holds points.
     rows = np.shape(values)[0] if np.ndim(values) else 1
-    return series.extend(values, data.get("timestamp"), ordinals=np.arange(rows, dtype=np.int64))
+    ordinals = np.arange(first, first + rows, dtype=np.int64)
+    return series.extend(values, data.get("timestamp"), ordinals=ordinals)
 
 
 class StoredRows:
