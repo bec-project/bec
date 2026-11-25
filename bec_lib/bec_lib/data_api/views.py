@@ -169,6 +169,12 @@ class JointReduction:
         return values[:count], None if timestamps is None else timestamps[:count]
 
 
+def is_number_column(values: Any) -> bool:
+    """Whether ``values`` are numbers, one per row: what a view can be made of."""
+    dtype = getattr(values, "dtype", None)
+    return dtype is not None and dtype.kind in "biuf" and getattr(values, "ndim", 0) == 1
+
+
 def held_bytes(rows: int, itemsize: int) -> int:
     """
     Memory of a column that is held whole: its samples and one 8 byte row number per row.

@@ -12,7 +12,7 @@ short-lived worker thread, block by block. Every block is delivered as a
 
 from __future__ import annotations
 
-from typing import Any, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 import numpy as np
 
@@ -31,7 +31,14 @@ from ..data_path import (
 from ..decoding import StoredRows, StoredScan, decode_dataset_columns, stored_scan_specs
 from ..models import SourceKey, SourceKind, UpdateReason
 from ..scenarios import Scenario
-from ..views import ColumnView, JointReduction, ViewWindow, bin_rows_for, held_bytes
+from ..views import (
+    ColumnView,
+    JointReduction,
+    ViewWindow,
+    bin_rows_for,
+    held_bytes,
+    is_number_column,
+)
 
 logger = bec_logger.logger
 
@@ -104,38 +111,7 @@ class _SourceLoad:
                 self._whole = self._last_rows(self._reference.read())
                 self.done = True
             else:
-                slab = next(self._slabs, None)
-                if slab is None or slab.total == 0:
-                    # Nothing to read in rows: a scalar or an empty dataset.
-                    self._whole = slab.data if slab is not None else {}
-                    self.done = True
-                elif self._first:
-                    # Only the last rows are read: few enough to be joined in one piece.
-                    self._tail.append(slab.data)
-                    self.fraction = (slab.stop - self._first) / (slab.total - self._first)
-                    self.done = slab.stop >= slab.total
-                    if self.done:
-                        self._whole = {
-                            name: np.concatenate([np.asarray(part[name]) for part in self._tail])
-                            for name in ("value", "timestamp")
-                            if self._tail[0].get(name) is not None
-                        }
-                else:
-                    values = slab.data["value"]
-                    self.total = slab.total
-                    if slab.start == 0 and self._held_as_view(values, slab.total):
-                        self.view = ColumnView(
-                            slab.total, reference=self._reference, file_path=self._file_path
-                        )
-                    if self.view is not None:
-                        self.block = (slab.stop, values, slab.data.get("timestamp"))
-                    else:
-                        self._rows.write(slab.start, slab.stop, slab.total, slab.data)
-                        if self._is_column(values):
-                            # Held whole, but its extremes count for the views it is aligned with.
-                            self.block = (slab.stop, values, None)
-                    self.fraction = slab.stop / slab.total
-                    self.done = slab.stop >= slab.total
+                self._take_slab(next(self._slabs, None))
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
                 f"Reading {self.spec.device}/{self.spec.entry} from scan {scan_id} failed: {exc}"
@@ -144,6 +120,42 @@ class _SourceLoad:
         if self.done:
             self.fraction = 1.0
             self.close()
+
+    def _take_slab(self, slab: Any) -> None:
+        """Take the next block of the source: for a view, or into the rows that are held."""
+        if slab is None or slab.total == 0:
+            # Nothing to read in rows: a scalar or an empty dataset.
+            self._whole = slab.data if slab is not None else {}
+            self.done = True
+            return
+        if self._first:
+            self._take_tail(slab)
+            return
+        values = slab.data["value"]
+        self.total = slab.total
+        if slab.start == 0 and self._held_as_view(values, slab.total):
+            self.view = ColumnView(slab.total, reference=self._reference, file_path=self._file_path)
+        if self.view is not None:
+            self.block = (slab.stop, values, slab.data.get("timestamp"))
+        else:
+            self._rows.write(slab.start, slab.stop, slab.total, slab.data)
+            if is_number_column(values):
+                # Held whole, but its extremes count for the views it is aligned with.
+                self.block = (slab.stop, values, None)
+        self.fraction = slab.stop / slab.total
+        self.done = slab.stop >= slab.total
+
+    def _take_tail(self, slab: Any) -> None:
+        """Take a block of the last rows: few enough to be joined in one piece at the end."""
+        self._tail.append(slab.data)
+        self.fraction = (slab.stop - self._first) / (slab.total - self._first)
+        self.done = slab.stop >= slab.total
+        if self.done:
+            self._whole = {
+                name: np.concatenate([np.asarray(part[name]) for part in self._tail])
+                for name in ("value", "timestamp")
+                if self._tail[0].get(name) is not None
+            }
 
     def _last_rows(self, data: Mapping) -> Mapping:
         """The last ``max_rows`` rows of a source that was read in one piece."""
@@ -157,18 +169,12 @@ class _SourceLoad:
             for name, column in data.items()
         }
 
-    @staticmethod
-    def _is_column(values: Any) -> bool:
-        """Whether the rows are numbers, one per row."""
-        dtype = getattr(values, "dtype", None)
-        return dtype is not None and dtype.kind in "biuf" and getattr(values, "ndim", 0) == 1
-
     def _held_as_view(self, values: Any, total: int) -> bool:
         """Whether the column is above the view limit: numbers, one per row."""
         limit = self._view_limit_bytes
         return (
             limit is not None
-            and self._is_column(values)
+            and is_number_column(values)
             and held_bytes(total, values.dtype.itemsize) > limit
         )
 
@@ -432,7 +438,7 @@ class FileDataPath(DataPath):
         for spec in request.specs:
             if spec.available and spec.key not in members:
                 values = request.series(spec).snapshot().values
-                if _SourceLoad._is_column(values) and len(values) == view.total:
+                if is_number_column(values) and len(values) == view.total:
                     whole[spec.key] = values[start:stop]
         request.start_worker(
             self._read_view,
@@ -479,32 +485,15 @@ class FileDataPath(DataPath):
         for key, values in whole.items():
             if len(values):
                 reduction.add(key, stop, values)
-        kept_rows: list[np.ndarray] = [np.empty(0, dtype=np.int64)]
-        kept: dict[SourceKey, list[tuple[np.ndarray, np.ndarray | None]]] = {k: [] for k in members}
         slabs = {key: view.reference.read_slabs(start, stop) for key, view in members.items()}
         try:
-            while slabs:
-                for key in list(slabs):
-                    if superseded():
-                        return
-                    slab = next(slabs[key], None)
-                    if slab is None or slab.stop <= slab.start:
-                        del slabs[key]
-                        continue
-                    reduction.add(key, slab.stop, slab.data["value"], slab.data.get("timestamp"))
-                result = reduction.reduce()
-                if result is not None:
-                    kept_rows.append(result[0])
-                    for key, column in result[1].items():
-                        if key in kept:
-                            kept[key].append(column)
+            window = self._reduce_window(reduction, slabs, superseded)
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(f"Reading rows {start}:{stop} of {list(members)} failed: {exc}")
             return
-        finally:
-            for iterator in slabs.values():
-                getattr(iterator, "close", lambda: None)()
-        rows = np.concatenate(kept_rows)
+        if window is None:
+            return
+        rows, columns = window
         shown = False
         with self._lock:
             if superseded():
@@ -513,18 +502,59 @@ class FileDataPath(DataPath):
                 view = members.get(spec.key)
                 if view is None or request.state.get("views", {}).get(spec.key) is not view:
                     continue  # the overview failed meanwhile: its error stands
-                columns = kept[spec.key]
-                timestamps = None
-                if columns and all(column[1] is not None for column in columns):
-                    timestamps = np.concatenate([column[1] for column in columns])
-                values = (
-                    np.concatenate([column[0] for column in columns]) if columns else np.empty(0)
-                )
+                values, timestamps = columns[spec.key]
                 view.window = ViewWindow(start, stop, bin_rows, rows, values, timestamps)
                 publish_view(request, spec, view)
                 shown = True
         if shown:
             request.notify(UpdateReason.HISTORY)
+
+    @staticmethod
+    def _reduce_window(
+        reduction: JointReduction, slabs: dict[SourceKey, Iterator], superseded: Callable[[], bool]
+    ) -> tuple[np.ndarray, dict[SourceKey, tuple[np.ndarray, np.ndarray | None]]] | None:
+        """
+        Read the views block by block and reduce them together.
+
+        Args:
+            reduction (JointReduction): The reduction of the rows that are read.
+            slabs (dict[SourceKey, Iterator]): Per view, the blocks of the rows to read.
+            superseded (Callable[[], bool]): Whether the read is no longer wanted.
+
+        Returns:
+            tuple | None: The kept row numbers and, per view, its samples and timestamps at
+                those rows; ``None`` when the read was superseded.
+        """
+        rows: list[np.ndarray] = [np.empty(0, dtype=np.int64)]
+        parts: dict[SourceKey, list[tuple[np.ndarray, np.ndarray | None]]] = {
+            key: [] for key in slabs
+        }
+        try:
+            while slabs:
+                for key in list(slabs):
+                    if superseded():
+                        return None
+                    slab = next(slabs[key], None)
+                    if slab is None or slab.stop <= slab.start:
+                        del slabs[key]
+                        continue
+                    reduction.add(key, slab.stop, slab.data["value"], slab.data.get("timestamp"))
+                result = reduction.reduce()
+                if result is not None:
+                    rows.append(result[0])
+                    for key, column in parts.items():
+                        column.append(result[1][key])
+        finally:
+            for iterator in slabs.values():
+                getattr(iterator, "close", lambda: None)()
+        columns = {}
+        for key, column in parts.items():
+            timestamps = None
+            if column and all(part[1] is not None for part in column):
+                timestamps = np.concatenate([part[1] for part in column])
+            values = np.concatenate([part[0] for part in column]) if column else np.empty(0)
+            columns[key] = (values, timestamps)
+        return np.concatenate(rows), columns
 
     @staticmethod
     def _report_progress(request, progress_cb, loads, finished: bool = False) -> None:
