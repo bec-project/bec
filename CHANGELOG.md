@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v4.9.0 (2026-11-25)
+
+### Build System
+
+- Exclude redis version 8.2.0 from dependencies
+  ([`65f7be5`](https://github.com/bec-project/bec/commit/65f7be5fd4efb6d9969997882e6de359f7df864f))
+
+### Features
+
+- Load messages and beamline states from plugins
+  ([`be4428a`](https://github.com/bec-project/bec/commit/be4428a5c575911a9b9ed24dfd6174f7bb295664))
+
+
 ## v4.8.1 (2026-11-13)
 
 ### Bug Fixes
