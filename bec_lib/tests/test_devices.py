@@ -26,6 +26,8 @@ from bec_lib.device import (
 )
 from bec_lib.devicemanager import DeviceContainer, DeviceManagerBase
 from bec_lib.endpoints import MessageEndpoints
+from bec_lib.queue_items import QueueItem
+from bec_lib.scan_manager import ScanManager
 from bec_lib.signature_serializer import signature_to_dict
 from bec_lib.tests.fixtures import device_manager_class
 from bec_lib.tests.utils import ClientMock, ConnectorMock, get_device_info_mock
@@ -405,6 +407,89 @@ def test_handle_rpc_response_raises(dev: Any):
 def test_handle_rpc_response_returns_dict(dev: Any):
     msg = messages.DeviceRPCMessage(device="samx", return_val={"a": "b"}, out="done", success=True)
     assert dev.samx._handle_rpc_response(msg) == {"a": "b"}
+
+
+@pytest.mark.parametrize("print_messages", [True, False])
+@pytest.mark.parametrize("response_ready", [True, False])
+@pytest.mark.parametrize("queued", [True, False])
+@pytest.mark.parametrize("previous_scan", [True, False])
+def test_rpc_client_messages_do_not_replay_scan_messages(
+    dev, connected_connector, capsys, print_messages, response_ready, queued, previous_scan
+):
+    client = dev.samx.root.parent.parent
+    # No stream callback runs in this manager: delivery can lag until after the RPC returns.
+    manager = ScanManager(mock.Mock())
+    client.live_updates_config.print_client_messages = print_messages
+    rpc_messages = []
+    pending = {}
+    real_get = connected_connector.get
+
+    def emit_message():
+        info = messages.ClientInfoMessage(message=f"RPC diagnostic {len(rpc_messages)}")
+        rpc_messages.append(info)
+        connected_connector.xadd(MessageEndpoints.client_info(), {"data": info})
+
+    def finish_rpc():
+        emit_message()
+        connected_connector.set(
+            MessageEndpoints.device_rpc(pending["rpc_id"]),
+            messages.DeviceRPCMessage(device="samx", success=True, return_val=42, out=""),
+        )
+
+    def send_rpc(_endpoint, msg):
+        request_id = msg.metadata["RID"]
+        pending["rpc_id"] = msg.parameter["kwargs"]["rpc_id"]
+        pending["reads"] = 0
+        manager.request_storage.update_with_response(
+            messages.RequestResponseMessage(accepted=True, message={}, metadata={"RID": request_id})
+        )
+        if queued:
+            manager.queue_storage.storage.append(
+                QueueItem(manager, request_id, [mock.Mock(RID=request_id)], "running", None, [])
+            )
+        assert (manager.request_storage.find_request_by_ID(request_id).queue is not None) == queued
+        emit_message()
+        if response_ready:
+            finish_rpc()
+
+    def get_response(endpoint):
+        pending["reads"] += 1
+        if not response_ready and pending["reads"] == 1:
+            return None
+        if not response_ready and pending["reads"] == 2:
+            finish_rpc()
+        return real_get(endpoint)
+
+    def scan_message():
+        info = messages.ClientInfoMessage(
+            message="Already displayed scan statistics", show_asap=True
+        )
+        connected_connector.xadd(MessageEndpoints.client_info(), {"data": info})
+
+    # Establish an earlier read cursor, then leave a scan message unread by the RPC consumer.
+    connected_connector.xread(MessageEndpoints.client_info(), from_start=True)
+    if previous_scan:
+        scan_message()
+    with (
+        mock.patch.object(dev.samx.root.parent, "connector", connected_connector),
+        mock.patch.object(client, "queue", manager),
+        mock.patch.object(client.connector, "send", side_effect=send_rpc),
+        mock.patch.object(connected_connector, "get", side_effect=get_response),
+        mock.patch.object(dev.samx, "_validate_rpc_client"),
+    ):
+        func = "set" if queued else "read"
+        assert dev.samx._run_rpc_call("samx", func) == 42
+        # Messages from the next scan must also be skipped before the next RPC.
+        scan_message()
+        assert dev.samx._run_rpc_call("samx", func) == 42
+        dev.samx._handle_client_info_msg()
+    output = capsys.readouterr().out
+    assert "Already displayed scan statistics" not in output
+    assert len(rpc_messages) == 4
+    for info in rpc_messages:
+        assert output.count(info.message) == int(print_messages)
+    # There was no dependency on delivery into a queue's callback buffer.
+    assert all(item.client_messages == [] for item in manager.queue_storage.storage)
 
 
 def test_prepare_rpc_msg_uses_device_rpc_signature(dev: Any):

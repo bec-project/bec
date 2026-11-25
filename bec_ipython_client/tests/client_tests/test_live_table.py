@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from rich.console import Console
 
 from bec_ipython_client.callbacks.live_table import LiveUpdatesTable, sort_devices
 from bec_ipython_client.callbacks.utils import ScanRequestMixin
@@ -458,12 +459,39 @@ class TestLiveTable:
             result = StringIO()
             with redirect_stdout(result):
                 live_update._print_client_msgs_asap()
-                rtr1 = "Client info (scan_server) : message" + "\n"
+                rtr1 = "Client info (scan_server): message" + "\n"
                 assert result.getvalue() == rtr1
                 # second time should not add anything
-                rtr1 += "------------------------\nSummary of client messages\n------------------------\nClient info () : message2\n------------------------\n"
+                rtr1 += "------------------------\nSummary of client messages\n------------------------\nClient info: message2\n------------------------\n"
                 live_update._print_client_msgs_all()
                 assert result.getvalue() == rtr1
+
+    @pytest.mark.parametrize("summary", [True, False])
+    def test_print_client_msgs_wraps_literal_text(self, client_with_grid_scan, summary):
+        client, request_msg = client_with_grid_scan
+        live_update = LiveUpdatesTable(
+            client, {"scan_progress": {"points": 10, "show_table": True}}, request_msg
+        )
+        msg = messages.ClientInfoMessage(
+            message="[statistics] average standard deviation during exposures: "
+            "7.4 nm; scan time 24.5 s; exposure 18.2 s.\nSecond line [red] stays literal."
+        )
+        queue = QueueItem(mock.MagicMock(), "scan", [], "running", None, [], client_messages=[msg])
+        live_update.scan_queue_request = mock.Mock(queue=queue)
+        result = StringIO()
+        console = Console(file=result, width=60, color_system=None)
+        with mock.patch("bec_ipython_client.callbacks.utils.get_console", return_value=console):
+            if summary:
+                live_update._print_client_msgs_all()
+            else:
+                live_update._print_client_msgs_asap()
+        lines = result.getvalue().splitlines()
+        assert all(len(line) <= 60 for line in lines)
+        assert " ".join(result.getvalue().split()) == (
+            "Client info: [statistics] average standard deviation during exposures: "
+            "7.4 nm; scan time 24.5 s; exposure 18.2 s. Second line [red] stays literal."
+        )
+        assert queue.get_client_messages() == []
 
     @pytest.mark.parametrize(["prec", "warn"], [(2, False), (3, False), ("wrong_prec", True)])
     @mock.patch("bec_ipython_client.callbacks.live_table.logger")

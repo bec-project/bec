@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
 from pydantic import ConfigDict
+from rich import get_console
 from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
@@ -406,24 +407,23 @@ class DeviceBase:
             )
         while True:
             msg = self.root.parent.connector.get(MessageEndpoints.device_rpc(rpc_id))
+            self._handle_client_info_msg()
             if msg:
                 break
             self.root.parent.parent.alarm_handler.raise_alarms()
-            self._handle_client_info_msg()
             time.sleep(0.01)
         return self._handle_rpc_response(msg)
 
-    def _handle_client_info_msg(self):
-        """Handle client messages during RPC calls"""
-        msgs = self.root.parent.connector.xread(MessageEndpoints.client_info(), block=5)
-        # The client is the parent.parent of the device
+    def _handle_client_info_msg(self) -> None:
+        """Print new client messages directly from the stream during RPC calls."""
+        msgs = self.root.parent.connector.xread(MessageEndpoints.client_info())
         client: BECClient = self.root.parent.parent
         if client.live_updates_config.print_client_messages is False:
             return
-        if not msgs:
-            return
-        for msg in msgs:
-            print(QueueItem.format_client_msg(msg["data"]))
+        for msg in msgs or []:
+            get_console().print(
+                QueueItem.format_client_msg(msg["data"]), markup=False, highlight=False
+            )
 
     def _run_rpc_call(self, device, func_call, *args, wait_for_rpc_response=True, **kwargs) -> Any:
         """
@@ -459,6 +459,11 @@ class DeviceBase:
                 "username": client._system_user,
                 "hostname": client._hostname,
             }
+
+            # Advance past messages from previous scans before the RPC can produce new ones.
+            # Read synchronously: the scan manager's stream callback may lag behind the RPC result.
+            if wait_for_rpc_response:
+                self.root.parent.connector.xread(MessageEndpoints.client_info(), from_start=True)
 
             # send RPC message
             client.connector.send(MessageEndpoints.scan_queue_request(client.username), msg)

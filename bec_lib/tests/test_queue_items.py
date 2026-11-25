@@ -419,16 +419,19 @@ def test_queue_item_update_with_client_message(queue_item):
     assert queue_item.client_messages[1].message == "Second message"
 
 
-def test_queue_item_get_client_messages(queue_item):
+@pytest.mark.parametrize(
+    "asap", [(True, False, True), (True, True, False), (False, True, True), (False, False, False)]
+)
+def test_queue_item_get_client_messages(queue_item, asap):
     """Test retrieving client messages from queue item."""
     msg1 = messages.ClientInfoMessage(
-        message="Message 1", source="scan_server", show_asap=True, metadata={}
+        message="Message 1", source="scan_server", show_asap=asap[0], metadata={}
     )
     msg2 = messages.ClientInfoMessage(
-        message="Message 2", source="scan_server", show_asap=False, metadata={}
+        message="Message 2", source="scan_server", show_asap=asap[1], metadata={}
     )
     msg3 = messages.ClientInfoMessage(
-        message="Message 3", source="scan_server", show_asap=True, metadata={}
+        message="Message 3", source="scan_server", show_asap=asap[2], metadata={}
     )
 
     queue_item.client_messages = [msg1, msg2, msg3]
@@ -436,10 +439,11 @@ def test_queue_item_get_client_messages(queue_item):
     # Get only asap messages
     asap_msgs = queue_item.get_client_messages(only_asap=True)
 
-    # Note: get_client_messages has a bug - it modifies list while iterating
-    # But we test the current behavior
-    assert len(asap_msgs) >= 1
-    assert all(msg.show_asap for msg in asap_msgs)
+    assert asap_msgs == [msg for msg in [msg1, msg2, msg3] if msg.show_asap]
+    remaining = [msg for msg in [msg1, msg2, msg3] if not msg.show_asap]
+    assert queue_item.client_messages == remaining
+    assert queue_item.get_client_messages() == remaining
+    assert queue_item.get_client_messages() == []
 
 
 def test_queue_item_get_client_messages_all(queue_item):
@@ -452,7 +456,9 @@ def test_queue_item_get_client_messages_all(queue_item):
     # Get all messages
     all_msgs = queue_item.get_client_messages(only_asap=False)
 
-    assert len(all_msgs) >= 1
+    assert all_msgs == [msg1, msg2]
+    assert queue_item.client_messages == []
+    assert queue_item.get_client_messages() == []
 
 
 def test_queue_item_format_client_msg():
@@ -475,7 +481,7 @@ def test_queue_item_format_client_msg_no_source():
 
     formatted = QueueItem.format_client_msg(msg)
 
-    assert "Client info ()" in formatted
+    assert formatted == "Client info: Test message"
     assert "Test message" in formatted
 
 
