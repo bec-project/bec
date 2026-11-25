@@ -501,7 +501,7 @@ class RedisDataPath(DataPath):
     @staticmethod
     def _stream_endpoint(spec: SourceSpec):
         if spec.stream == DeviceStream.PREVIEW:
-            return MessageEndpoints.device_preview(spec.device, spec.entry)
+            return MessageEndpoints.device_preview(spec.device, spec.storage_name or spec.entry)
         if spec.stream == DeviceStream.CONFIGURATION:
             return MessageEndpoints.device_read_configuration(spec.device)
         return MessageEndpoints.device_readback(spec.device)
@@ -510,7 +510,8 @@ class RedisDataPath(DataPath):
     def _feed_key(spec: SourceSpec) -> tuple:
         """One feed per endpoint: all entries of a device share its readback message."""
         stream = spec.stream or DeviceStream.READBACK
-        return ("stream", stream, spec.device, spec.entry if stream == DeviceStream.PREVIEW else "")
+        preview = spec.storage_name or spec.entry if stream == DeviceStream.PREVIEW else ""
+        return ("stream", stream, spec.device, preview)
 
     def _ensure_stream_feed(self, spec: SourceSpec) -> tuple:
         key = self._feed_key(spec)

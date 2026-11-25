@@ -118,14 +118,26 @@ def is_readback_signal(client, device: str, entry: str) -> bool:
     )
 
 
-def is_preview_signal(client, device: str, entry: str) -> bool:
-    """Whether ``entry`` names a ``PreviewSignal`` of ``device``."""
-    for info in (device_signals(client, device) or {}).values():
+def preview_component(client, device: str, entry: str) -> str | None:
+    """
+    The component name of the ``PreviewSignal`` of ``device`` that ``entry`` names, if any.
+
+    A preview is published under its component name (``det/preview``), whichever of its
+    names a consumer asks for: the component name or the object name (``det_preview``).
+    """
+    for component, info in (device_signals(client, device) or {}).items():
         if not isinstance(info, dict):
             continue
         if info.get("obj_name") == entry or info.get("component_name") == entry:
-            return info.get("signal_class") == "PreviewSignal"
-    return False
+            if info.get("signal_class") != "PreviewSignal":
+                return None
+            return info.get("component_name") or component
+    return None
+
+
+def is_preview_signal(client, device: str, entry: str) -> bool:
+    """Whether ``entry`` names a ``PreviewSignal`` of ``device``."""
+    return preview_component(client, device, entry) is not None
 
 
 def is_configuration_signal(client, device: str, entry: str) -> bool:
@@ -294,7 +306,8 @@ def device_stream_specs(client, sources: list[SourceKey]) -> list[SourceSpec]:
     """
     specs: list[SourceSpec] = []
     for device, entry in sources:
-        if is_preview_signal(client, device, entry):
+        published_as = preview_component(client, device, entry)
+        if published_as is not None:
             stream = DeviceStream.PREVIEW
         elif is_configuration_signal(client, device, entry):
             stream = DeviceStream.CONFIGURATION
@@ -304,7 +317,13 @@ def device_stream_specs(client, sources: list[SourceKey]) -> list[SourceSpec]:
             specs.append(SourceSpec(device=device, entry=entry, available=False))
             continue
         specs.append(
-            SourceSpec(device=device, entry=entry, kind=SourceKind.UNINDEXED, stream=stream)
+            SourceSpec(
+                device=device,
+                entry=entry,
+                kind=SourceKind.UNINDEXED,
+                stream=stream,
+                storage_name=published_as,
+            )
         )
     return specs
 

@@ -61,8 +61,8 @@ class SourceSpec:
     #: The correlation group an async signal declares in its signal info: ``"monitored"``
     #: for one value per scan point, or a tag shared by the signals that are emitted together.
     correlation_group: str | None = None
-    #: Name the data is stored under when it differs from ``entry`` (async
-    #: signals in the scan file are keyed by their storage name).
+    #: Name the data is stored or published under when it differs from ``entry``: the
+    #: storage name of an async signal in the scan file, the component of a preview signal.
     storage_name: str | None = None
     #: Scan-less device stream the source is read from (``"readback"``,
     #: ``"configuration"`` or ``"preview"``); ``None`` for scan data.

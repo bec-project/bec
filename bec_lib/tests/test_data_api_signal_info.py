@@ -198,7 +198,8 @@ class TestSpecBuilders:
             None,
             None,
         ]
-        assert all(s.storage_name is None for s in specs)
+        # A preview is published under its component name, not the object name asked for.
+        assert [s.storage_name for s in specs] == [None, "preview", None, None, None, None]
         # Legacy monitor entries and unknown entries of known devices are left to other paths.
         assert [s.available for s in specs] == [False, True, True, True, False, False]
         assert all(s.kind == "unindexed" for s in specs if s.available)

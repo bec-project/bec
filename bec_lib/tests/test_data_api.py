@@ -1743,7 +1743,7 @@ class TestDeviceStreams:
             timestamp=7.0,
             metadata={"scan_id": "scan_7"},
         )
-        plugin._on_stream_message({"data": msg}, ("stream", "preview", "eiger", "preview_img"))
+        plugin._on_stream_message({"data": msg}, ("stream", "preview", "eiger", "preview"))
         source = updates[-1].get("eiger", "preview_img")
         assert [list(value) for value in source.values] == [[1, 2, 3]]
         assert list(source.timestamps) == [7.0]
@@ -1784,7 +1784,7 @@ class TestDeviceStreams:
         msg = messages.DevicePreviewMessage(
             device="eiger", signal="preview_img", data=np.array([[1, 2], [3, 4]])
         )
-        plugin._on_stream_message({"data": msg}, ("stream", "preview", "eiger", "preview_img"))
+        plugin._on_stream_message({"data": msg}, ("stream", "preview", "eiger", "preview"))
         (image,) = updates[-1].get("eiger", "preview_img").values
         assert image.tolist() == [[1, 2], [3, 4]]
         sub.close()
@@ -1850,7 +1850,8 @@ class TestDeviceStreamsThroughRealConnector:
             sources=[("eiger", "preview_img")], scan=None, callback=updates.append, update_rate=None
         )
         mock_client.connector.xadd(
-            MessageEndpoints.device_preview("eiger", "preview_img"),
+            # Published under the component name; the subscription asks by object name.
+            MessageEndpoints.device_preview("eiger", "preview"),
             {
                 "data": messages.DevicePreviewMessage(
                     device="eiger", signal="preview_img", data=np.array([1, 2, 3])
