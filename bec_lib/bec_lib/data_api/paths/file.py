@@ -31,7 +31,7 @@ from ..data_path import (
 from ..decoding import StoredRows, StoredScan, decode_dataset_columns, stored_scan_specs
 from ..models import SourceKey, SourceKind, UpdateReason
 from ..scenarios import Scenario
-from ..views import ColumnView, ViewWindow, bin_rows_for, held_bytes, minmax_decimate
+from ..views import ColumnView, JointReduction, ViewWindow, bin_rows_for, held_bytes
 
 logger = bec_logger.logger
 
@@ -58,6 +58,9 @@ class _SourceLoad:
         self.fraction = 0.0
         #: Set when the source is too large to hold whole: only an overview is kept.
         self.view: ColumnView | None = None
+        #: The block of a view that was read last and is not reduced yet:
+        #: one past its last row, its samples and its timestamps.
+        self.block: tuple[int, Any, Any] | None = None
         self._view_limit_bytes = view_limit_bytes
         self._loaded = loaded
         self._file_path = file_path
@@ -79,6 +82,11 @@ class _SourceLoad:
                 if self._first:
                     self._series.expect(spec.stored_acquisitions)  # not complete while it loads
             self._slabs = reference.read_slabs(self._first or None)
+
+    @property
+    def failed(self) -> bool:
+        """Whether the source could not be read."""
+        return self._error is not None
 
     def _fail(self, error: str) -> None:
         self._error = error
@@ -117,7 +125,7 @@ class _SourceLoad:
                             slab.total, reference=self._reference, file_path=self._file_path
                         )
                     if self.view is not None:
-                        self.view.add_block(slab.start, slab.stop, values)
+                        self.block = (slab.stop, values, slab.data.get("timestamp"))
                     else:
                         self._rows.write(slab.start, slab.stop, slab.total, slab.data)
                     self.fraction = slab.stop / slab.total
@@ -201,12 +209,12 @@ class _SourceLoad:
 
 def publish_view(request: SourceRequest, spec: SourceSpec, view: ColumnView) -> None:
     """Put the points held of a large column into the request's bundle. Lock held."""
-    rows, values = view.columns()
+    rows, values, timestamps = view.columns()
     series = SourceSeries(spec.device, spec.entry, spec.kind or SourceKind.UNINDEXED)
     series.metadata["file_path"] = view.file_path
     series.metadata["view"] = view.describe(len(rows))
     if len(rows):
-        series.extend(values, None, ordinals=rows)
+        series.extend(values, timestamps, ordinals=rows)
     # The overview keeps some rows of many: the column is complete when all were read.
     series.expect(view.total, rows_read=view.loaded_rows)
     request.adopt({spec.key: series})
@@ -316,17 +324,20 @@ class FileDataPath(DataPath):
                 if spec.available
             ]
             pending = list(loads)
+            reductions: dict[int, JointReduction] = {}
             while pending:
                 if request.cancelled:
                     return
                 # One block of every source: reading and copying happen on this worker.
                 for load in pending:
                     load.read_next(request.scan_id)
+                grown = self._reduce_views(loads, reductions)
                 with self._lock:
                     if request.cancelled:
                         return
-                    # Only showing the blocks takes the shared lock.
-                    for load in pending:
+                    # Only showing the blocks takes the shared lock. A view that has read
+                    # all its rows still grows while the views it is reduced with read on.
+                    for load in pending + [load for load in grown if load not in pending]:
                         load.publish(request)
                 pending = [load for load in pending if not load.done]
                 if not pending:
@@ -354,65 +365,120 @@ class FileDataPath(DataPath):
 
     # --- views of large columns ----------------------------------------------
 
+    @staticmethod
+    def _reduce_views(
+        loads: list[_SourceLoad], reductions: dict[int, JointReduction]
+    ) -> list[_SourceLoad]:
+        """
+        Reduce the blocks the views have read. Worker thread, no lock.
+
+        The views of one request with the same number of rows are aligned with each other:
+        they are reduced together, to the same rows (see :class:`JointReduction`).
+
+        Returns:
+            list[_SourceLoad]: The loads whose view got new rows.
+        """
+        for load in loads:
+            if load.view is None:
+                continue
+            reduction = reductions.setdefault(load.view.total, JointReduction(load.view.bin_rows))
+            if load.failed:
+                reduction.drop(load)
+            elif load.block is not None:
+                reduction.add(load, *load.block)
+            load.block = None
+        grown = []
+        for reduction in reductions.values():
+            result = reduction.reduce()
+            if result is None:
+                continue
+            rows, columns = result
+            for load, (values, timestamps) in columns.items():
+                load.view.add_rows(rows, values, timestamps, reduction.reduced)
+                grown.append(load)
+        return grown
+
     def request_view(
         self, request: SourceRequest, key: SourceKey, start: int, stop: int, max_points: int
     ) -> bool:
-        view: ColumnView | None = request.state.get("views", {}).get(key)
+        views: dict[SourceKey, ColumnView] = request.state.get("views", {})
+        view = views.get(key)
         if view is None or request.cancelled:
             return False
         start = max(0, min(start, view.total))
         stop = max(start, min(stop, view.total))
-        view.generation += 1
+        # The views it is aligned with show the same rows: one request moves them all.
+        members = {k: v for k, v in views.items() if v.total == view.total}
+        generation = max(member.generation for member in members.values()) + 1
+        for member in members.values():
+            member.generation = generation
         request.start_worker(
-            self._read_view,
-            key,
-            view,
-            start,
-            stop,
-            max_points,
-            view.generation,
-            name="data-api-view",
+            self._read_view, members, start, stop, max_points, generation, name="data-api-view"
         )
         return True
 
     def _read_view(
         self,
         request: SourceRequest,
-        key: SourceKey,
-        view: ColumnView,
+        members: dict[SourceKey, ColumnView],
         start: int,
         stop: int,
         max_points: int,
         generation: int,
     ) -> None:
-        """Read the rows ``start:stop`` of a large column and show them. Worker thread."""
+        """Read the rows ``start:stop`` of aligned large columns and show them. Worker thread."""
+
+        def superseded() -> bool:
+            # closed, or a newer request took over
+            return request.cancelled or any(v.generation != generation for v in members.values())
+
         bin_rows = bin_rows_for(stop - start, max_points)
-        rows, values = [np.empty(0, dtype=np.int64)], []
+        reduction = JointReduction(bin_rows, first_row=start)
+        kept_rows: list[np.ndarray] = [np.empty(0, dtype=np.int64)]
+        kept: dict[SourceKey, list[tuple[np.ndarray, np.ndarray | None]]] = {k: [] for k in members}
+        slabs = {key: view.reference.read_slabs(start, stop) for key, view in members.items()}
         try:
-            for slab in view.reference.read_slabs(start, stop):
-                if request.cancelled or view.generation != generation:
-                    return  # closed, or a newer request took over
-                kept_rows, kept = minmax_decimate(slab.data["value"], slab.start, bin_rows)
-                rows.append(kept_rows)
-                values.append(kept)
+            while slabs:
+                for key in list(slabs):
+                    if superseded():
+                        return
+                    slab = next(slabs[key], None)
+                    if slab is None or slab.stop <= slab.start:
+                        del slabs[key]
+                        continue
+                    reduction.add(key, slab.stop, slab.data["value"], slab.data.get("timestamp"))
+                result = reduction.reduce()
+                if result is not None:
+                    kept_rows.append(result[0])
+                    for key, column in result[1].items():
+                        kept[key].append(column)
         except Exception as exc:  # pylint: disable=broad-except
-            logger.warning(f"Reading rows {start}:{stop} of {key} failed: {exc}")
+            logger.warning(f"Reading rows {start}:{stop} of {list(members)} failed: {exc}")
             return
-        spec = next(spec for spec in request.specs if spec.key == key)
+        finally:
+            for iterator in slabs.values():
+                getattr(iterator, "close", lambda: None)()
+        rows = np.concatenate(kept_rows)
+        shown = False
         with self._lock:
-            if request.cancelled or view.generation != generation:
+            if superseded():
                 return
-            if request.state.get("views", {}).get(key) is not view:
-                return  # the overview failed meanwhile: its error stands
-            view.window = ViewWindow(
-                start,
-                stop,
-                bin_rows,
-                np.concatenate(rows),
-                np.concatenate(values) if values else np.empty(0),
-            )
-            publish_view(request, spec, view)
-        request.notify(UpdateReason.HISTORY)
+            for spec in request.specs:
+                view = members.get(spec.key)
+                if view is None or request.state.get("views", {}).get(spec.key) is not view:
+                    continue  # the overview failed meanwhile: its error stands
+                columns = kept[spec.key]
+                timestamps = None
+                if columns and all(column[1] is not None for column in columns):
+                    timestamps = np.concatenate([column[1] for column in columns])
+                values = (
+                    np.concatenate([column[0] for column in columns]) if columns else np.empty(0)
+                )
+                view.window = ViewWindow(start, stop, bin_rows, rows, values, timestamps)
+                publish_view(request, spec, view)
+                shown = True
+        if shown:
+            request.notify(UpdateReason.HISTORY)
 
     @staticmethod
     def _report_progress(request, progress_cb, loads, finished: bool = False) -> None:

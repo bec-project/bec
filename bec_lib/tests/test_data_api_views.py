@@ -57,11 +57,11 @@ def test_column_view_merges_the_window_into_the_overview(monkeypatch):
     assert view.bin_rows == 100
     view.add_block(0, 600, values[:600])
     view.add_block(600, 1000, values[600:])
-    rows, kept = view.columns()
+    rows, kept, _ = view.columns()
     assert rows.tolist() == [r for b in range(0, 1000, 100) for r in (b, b + 99)]
 
     view.window = ViewWindow(250, 255, 1, np.arange(250, 255), values[250:255])
-    rows, kept = view.columns()
+    rows, kept, _ = view.columns()
     assert rows.tolist()[4:11] == [200, 250, 251, 252, 253, 254, 299]
     np.testing.assert_array_equal(kept, values[rows])
     assert view.describe(len(rows)) == {

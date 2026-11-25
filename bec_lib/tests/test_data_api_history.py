@@ -1612,6 +1612,68 @@ def test_large_column_is_held_as_an_overview(data_api, mock_client, monkeypatch)
     sub.close()
 
 
+def _aligned_views(data_api, mock_client, monkeypatch):
+    """A motor ramp and a detector with one spike, both too large to hold whole."""
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    y = _spiky_column()
+    x = np.linspace(0.0, 1.0, len(y))
+    times = 1000.0 + np.arange(len(y))
+    # The two columns are read in blocks of different sizes, as chunked datasets are.
+    references = {
+        ("samx", "samx"): _SlabSignalRef(x, times, rows=30_000),
+        ("det", "wave"): _SlabSignalRef(y, times, rows=20_000),
+    }
+    _serve_slabs(mock_client, "big", references, rows=len(y))
+    updates = []
+    sub = data_api.subscribe(
+        sources=list(references),
+        scan="big",
+        callback=updates.append,
+        update_rate=None,
+        view_limit_bytes=1000,
+    )
+    return sub, updates, x, y, times
+
+
+def test_aligned_views_keep_the_same_rows(data_api, mock_client, monkeypatch):
+    """
+    Columns that are paired row by row are reduced to the same rows: a spike of the
+    detector is still there after pairing it with the motor, and the group is complete.
+    """
+    sub, updates, x, y, _ = _aligned_views(data_api, mock_client, monkeypatch)
+    assert wait_for(lambda: updates and updates[-1].complete)
+    update = updates[-1]
+    motor, detector = update.get("samx", "samx"), update.get("det", "wave")
+    np.testing.assert_array_equal(motor.ordinals, detector.ordinals)
+    assert 54_321 in detector.ordinals
+    aligned = update.aligned()
+    assert np.max(aligned[("det", "wave")]) == 25.0
+    np.testing.assert_array_equal(aligned[("samx", "samx")], x[detector.ordinals])
+    np.testing.assert_array_equal(aligned[("det", "wave")], y[detector.ordinals])
+    sub.close()
+
+
+def test_views_keep_the_timestamps_of_their_rows(data_api, mock_client, monkeypatch):
+    """A column that is held as a view still has the timestamp of every row it keeps."""
+    sub, updates, _, _, times = _aligned_views(data_api, mock_client, monkeypatch)
+    assert wait_for(lambda: updates and updates[-1].complete)
+    source = updates[-1].get("det", "wave")
+    np.testing.assert_array_equal(source.timestamps, times[source.ordinals])
+
+    assert sub.request_view(("det", "wave"), 50_000, 50_300, max_points=4000)
+    assert wait_for(lambda: updates[-1].get("det", "wave").metadata["view"]["window"] is not None)
+    for key in (("det", "wave"), ("samx", "samx")):  # the window moves the aligned views together
+        source = updates[-1].get(*key)
+        assert source.metadata["view"]["window"] == {"start": 50_000, "stop": 50_300, "bin": 1}
+        np.testing.assert_array_equal(source.timestamps, times[source.ordinals])
+    np.testing.assert_array_equal(
+        updates[-1].get("samx", "samx").ordinals, updates[-1].get("det", "wave").ordinals
+    )
+    sub.close()
+
+
 def test_requested_rows_replace_the_overview_of_their_range(data_api, mock_client, monkeypatch):
     from bec_lib.data_api import views
 
