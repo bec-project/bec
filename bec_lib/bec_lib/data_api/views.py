@@ -142,9 +142,11 @@ class JointReduction:
         if count <= 0:
             return None
         columns = {member: self._take(member, count) for member in self._read}
-        index = np.unique(
-            np.concatenate([minmax_index(values, self.bin_rows) for values, _ in columns.values()])
-        )
+        # The first and the last row are kept as well: what is reduced then ends on the
+        # last row that was read, for every member alike.
+        kept = [np.array([0, count - 1], dtype=np.int64)]
+        kept += [minmax_index(values, self.bin_rows) for values, _ in columns.values()]
+        index = np.unique(np.concatenate(kept))
         rows = index + self.reduced
         self.reduced += count
         return rows, {
@@ -251,10 +253,10 @@ class ColumnView:
         end = self._count + len(rows)
         if self._rows is None:
             capacity = max(end, 2 * (self.total // self.bin_rows + 1))
-            self._rows = np.empty(capacity, dtype=np.int64)
             self._values = np.empty(capacity, dtype=values.dtype)
             if timestamps is not None:
                 self._timestamps = np.empty(capacity, dtype=timestamps.dtype)
+            self._rows = np.empty(capacity, dtype=np.int64)  # last: columns() looks at it first
         if end > len(self._rows):  # more points than planned: the old columns stay valid
             grown = max(end, 2 * len(self._rows))
 

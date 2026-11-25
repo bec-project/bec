@@ -58,7 +58,9 @@ class _SourceLoad:
         self.fraction = 0.0
         #: Set when the source is too large to hold whole: only an overview is kept.
         self.view: ColumnView | None = None
-        #: The block of a view that was read last and is not reduced yet:
+        #: Rows of the source in the file, known with its first block.
+        self.total: int | None = None
+        #: The block of a column of numbers that was read last and is not reduced yet:
         #: one past its last row, its samples and its timestamps.
         self.block: tuple[int, Any, Any] | None = None
         self._view_limit_bytes = view_limit_bytes
@@ -120,6 +122,7 @@ class _SourceLoad:
                         }
                 else:
                     values = slab.data["value"]
+                    self.total = slab.total
                     if slab.start == 0 and self._held_as_view(values, slab.total):
                         self.view = ColumnView(
                             slab.total, reference=self._reference, file_path=self._file_path
@@ -128,6 +131,9 @@ class _SourceLoad:
                         self.block = (slab.stop, values, slab.data.get("timestamp"))
                     else:
                         self._rows.write(slab.start, slab.stop, slab.total, slab.data)
+                        if self._is_column(values):
+                            # Held whole, but its extremes count for the views it is aligned with.
+                            self.block = (slab.stop, values, None)
                     self.fraction = slab.stop / slab.total
                     self.done = slab.stop >= slab.total
         except Exception as exc:  # pylint: disable=broad-except
@@ -151,16 +157,19 @@ class _SourceLoad:
             for name, column in data.items()
         }
 
+    @staticmethod
+    def _is_column(values: Any) -> bool:
+        """Whether the rows are numbers, one per row."""
+        dtype = getattr(values, "dtype", None)
+        return dtype is not None and dtype.kind in "biuf" and getattr(values, "ndim", 0) == 1
+
     def _held_as_view(self, values: Any, total: int) -> bool:
         """Whether the column is above the view limit: numbers, one per row."""
         limit = self._view_limit_bytes
-        dtype = getattr(values, "dtype", None)
         return (
             limit is not None
-            and dtype is not None
-            and dtype.kind in "biuf"
-            and getattr(values, "ndim", 0) == 1
-            and held_bytes(total, dtype.itemsize) > limit
+            and self._is_column(values)
+            and held_bytes(total, values.dtype.itemsize) > limit
         )
 
     def publish(self, request: SourceRequest) -> None:
@@ -372,21 +381,26 @@ class FileDataPath(DataPath):
         """
         Reduce the blocks the views have read. Worker thread, no lock.
 
-        The views of one request with the same number of rows are aligned with each other:
-        they are reduced together, to the same rows (see :class:`JointReduction`).
+        The columns of one request with the same number of rows are aligned with each
+        other. They are reduced together, to the same rows (see :class:`JointReduction`).
+        A column that is held whole takes part in choosing the rows, so that its extremes
+        are among the rows the views keep.
 
         Returns:
             list[_SourceLoad]: The loads whose view got new rows.
         """
+        views = {load.total: load.view for load in loads if load.view is not None}
         for load in loads:
-            if load.view is None:
-                continue
-            reduction = reductions.setdefault(load.view.total, JointReduction(load.view.bin_rows))
+            block, load.block = load.block, None
+            view = views.get(load.total)
+            if view is None:
+                continue  # no view among the columns with as many rows
+            if load.total not in reductions:
+                reductions[load.total] = JointReduction(view.bin_rows)
             if load.failed:
-                reduction.drop(load)
-            elif load.block is not None:
-                reduction.add(load, *load.block)
-            load.block = None
+                reductions[load.total].drop(load)
+            elif block is not None:
+                reductions[load.total].add(load, *block)
         grown = []
         for reduction in reductions.values():
             result = reduction.reduce()
@@ -394,8 +408,9 @@ class FileDataPath(DataPath):
                 continue
             rows, columns = result
             for load, (values, timestamps) in columns.items():
-                load.view.add_rows(rows, values, timestamps, reduction.reduced)
-                grown.append(load)
+                if load.view is not None:
+                    load.view.add_rows(rows, values, timestamps, reduction.reduced)
+                    grown.append(load)
         return grown
 
     def request_view(
@@ -412,8 +427,22 @@ class FileDataPath(DataPath):
         generation = max(member.generation for member in members.values()) + 1
         for member in members.values():
             member.generation = generation
+        # The columns that are held whole have these rows in memory: their extremes count too.
+        whole = {}
+        for spec in request.specs:
+            if spec.available and spec.key not in members:
+                values = request.series(spec).snapshot().values
+                if _SourceLoad._is_column(values) and len(values) == view.total:
+                    whole[spec.key] = values[start:stop]
         request.start_worker(
-            self._read_view, members, start, stop, max_points, generation, name="data-api-view"
+            self._read_view,
+            members,
+            whole,
+            start,
+            stop,
+            max_points,
+            generation,
+            name="data-api-view",
         )
         return True
 
@@ -421,12 +450,25 @@ class FileDataPath(DataPath):
         self,
         request: SourceRequest,
         members: dict[SourceKey, ColumnView],
+        whole: dict[SourceKey, np.ndarray],
         start: int,
         stop: int,
         max_points: int,
         generation: int,
     ) -> None:
-        """Read the rows ``start:stop`` of aligned large columns and show them. Worker thread."""
+        """
+        Read the rows ``start:stop`` of aligned large columns and show them. Worker thread.
+
+        Args:
+            request (SourceRequest): The request the views belong to.
+            members (dict[SourceKey, ColumnView]): The views that share their rows.
+            whole (dict[SourceKey, np.ndarray]): The same rows of the columns that are held
+                whole: they take part in choosing the rows.
+            start (int): First row wanted.
+            stop (int): One past the last row wanted.
+            max_points (int): Upper bound of the points for these rows.
+            generation (int): The request counter of the views when this read was asked for.
+        """
 
         def superseded() -> bool:
             # closed, or a newer request took over
@@ -434,6 +476,9 @@ class FileDataPath(DataPath):
 
         bin_rows = bin_rows_for(stop - start, max_points)
         reduction = JointReduction(bin_rows, first_row=start)
+        for key, values in whole.items():
+            if len(values):
+                reduction.add(key, stop, values)
         kept_rows: list[np.ndarray] = [np.empty(0, dtype=np.int64)]
         kept: dict[SourceKey, list[tuple[np.ndarray, np.ndarray | None]]] = {k: [] for k in members}
         slabs = {key: view.reference.read_slabs(start, stop) for key, view in members.items()}
@@ -451,7 +496,8 @@ class FileDataPath(DataPath):
                 if result is not None:
                     kept_rows.append(result[0])
                     for key, column in result[1].items():
-                        kept[key].append(column)
+                        if key in kept:
+                            kept[key].append(column)
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(f"Reading rows {start}:{stop} of {list(members)} failed: {exc}")
             return

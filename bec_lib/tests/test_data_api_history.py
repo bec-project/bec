@@ -1674,6 +1674,49 @@ def test_views_keep_the_timestamps_of_their_rows(data_api, mock_client, monkeypa
     sub.close()
 
 
+def test_a_view_keeps_the_extremes_of_a_column_that_is_held_whole(
+    data_api, mock_client, monkeypatch
+):
+    """
+    Whether a column is held as a view depends on the size of its samples: a motor of
+    8 byte floats can be a view while a detector of small integers is held whole. The spike
+    of the detector still has to be among the rows the motor keeps, or it is gone once the
+    two are paired, in the overview and in a window alike.
+    """
+    from bec_lib.data_api import views
+
+    monkeypatch.setattr(views, "OVERVIEW_POINTS", 200)
+    rows = 100_000
+    x = np.linspace(0.0, 1.0, rows)
+    y = np.zeros(rows, dtype=np.uint8)
+    y[54_321] = 100
+    references = {
+        ("samx", "samx"): _SlabSignalRef(x, x, rows=30_000),
+        ("det", "wave"): _SlabSignalRef(y, x, rows=20_000),
+    }
+    _serve_slabs(mock_client, "mixed", references, rows=rows)
+    updates = []
+    sub = data_api.subscribe(
+        sources=list(references),
+        scan="mixed",
+        callback=updates.append,
+        update_rate=None,
+        view_limit_bytes=12 * rows,  # x takes 16 bytes a row, y takes 9
+    )
+    assert wait_for(lambda: updates and updates[-1].complete)
+    motor, detector = updates[-1].get("samx", "samx"), updates[-1].get("det", "wave")
+    assert "view" in motor.metadata and "view" not in detector.metadata
+    assert 54_321 in motor.ordinals
+    assert np.max(updates[-1].aligned()[("det", "wave")]) == 100
+
+    assert sub.request_view(("samx", "samx"), 40_000, 70_000, max_points=100)
+    assert wait_for(lambda: updates[-1].get("samx", "samx").metadata["view"]["window"] is not None)
+    assert updates[-1].get("samx", "samx").metadata["view"]["window"]["bin"] > 1
+    assert 54_321 in updates[-1].get("samx", "samx").ordinals
+    assert np.max(updates[-1].aligned()[("det", "wave")]) == 100
+    sub.close()
+
+
 def test_requested_rows_replace_the_overview_of_their_range(data_api, mock_client, monkeypatch):
     from bec_lib.data_api import views
 
