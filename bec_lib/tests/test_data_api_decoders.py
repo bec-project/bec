@@ -158,6 +158,22 @@ class TestAsyncStreams:
         with pytest.raises(ValueError):
             third.values[0][0] = 0
 
+    def test_add_slice_scratch_rows_follow_the_buffer_cap(self):
+        """The buffers the rows are rebuilt in are dropped with the rows the cap drops."""
+        bundle, state = DataBundler("scan_1", max_buffer_size=2), {}
+        specs = [async_spec("det", "wave")]
+        for row in range(100):
+            msg = async_msg("wave", [row, row], row, "add_slice", index=row)
+            decode_async_message(bundle, state, specs, msg, device="det")
+        series = bundle.get_series("det", "wave", "async")
+        assert list(series.snapshot().ordinals) == [98, 99]
+        assert sorted(state["slice_rows"][("det", "wave")]) == [98, 99]
+        # A late fragment of a dropped row is not rebuilt.
+        late = async_msg("wave", [7], 100, "add_slice", index=3)
+        decode_async_message(bundle, state, specs, late, device="det")
+        assert sorted(state["slice_rows"][("det", "wave")]) == [98, 99]
+        assert list(series.snapshot().ordinals) == [98, 99]
+
     def test_add_slice_rows_stop_at_the_declared_row_size(self):
         bundle, state = DataBundler("scan_1"), {}
         specs = [async_spec("det", "wave")]

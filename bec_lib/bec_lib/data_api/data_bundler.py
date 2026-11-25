@@ -633,6 +633,11 @@ class SourceSeries:
         return self._position(ordinal) is not None
 
     @property
+    def trimmed_below(self) -> int:
+        """Ordinals below this one were dropped by the buffer cap (0 when none were)."""
+        return self._trim_watermark
+
+    @property
     def frontier(self) -> int:
         """One past the highest stored ordinal (0 when empty)."""
         return self._frontier

@@ -79,6 +79,9 @@ def decode_add_slice(point: AsyncPoint) -> int:
             f"add_slice update without index for {point.spec.device}/{point.spec.entry}; dropped."
         )
         return 0
+    if row < point.series.trimmed_below:
+        rows.pop(row, None)
+        return 0  # the buffer cap dropped this row: it is not rebuilt
     buffer, length = rows.get(row, (None, 0))
     fragment = np.atleast_1d(np.asarray(point.value))
     row_size = point.update.max_shape[1]
@@ -96,6 +99,9 @@ def decode_add_slice(point: AsyncPoint) -> int:
     view = buffer[:filled]
     view.flags.writeable = False
     point.series.insert(row, view, point.timestamp)
+    # The rows the buffer cap dropped are not kept for reconstruction either.
+    while rows and next(iter(rows)) < point.series.trimmed_below:
+        del rows[next(iter(rows))]
     return 1
 
 
