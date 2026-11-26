@@ -1,11 +1,82 @@
 """Sequences compose real queue requests and proxy sets against demo services."""
 
+from contextlib import nullcontext
 from unittest.mock import Mock
 
 import pytest
 
 from bec_lib.procedures.helper import ProcedureState
-from bec_lib.scan_sequencer import Definition, DefinitionLibrary, Schedule, Sequencer
+from bec_lib.scan_sequencer import (
+    Definition,
+    DefinitionLibrary,
+    ExecutionError,
+    Schedule,
+    Sequencer,
+)
+from bec_lib.tests.utils import wait_until
+
+
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize("completed", [False, True])
+def test_sequence_motor_reuse_requires_completed_move(
+    bec_ipython_client_fixture, monkeypatch, exported, completed
+):
+    bec = bec_ipython_client_fixture
+    motor = bec.device_manager.devices.samx
+    velocity = motor.velocity.get()
+    native_mv = bec.scans.mv
+    blocking_move = Mock(wraps=bec.scans.umv)
+
+    def start_move(*args, **kwargs):
+        report = native_mv(*args, **kwargs)
+        wait_until(lambda: motor.motor_is_moving.get(), timeout_s=10)
+        if completed:
+            report.wait()
+        return report
+
+    document = Schedule(
+        id="exclusive_move",
+        revision=1,
+        root={
+            "id": "root",
+            "type": "sequence",
+            "children": [
+                {"id": "first", "type": "set", "device": "samx", "value": 5, "wait": False},
+                {"id": "second", "type": "set", "device": "samx", "value": 0},
+            ],
+        },
+    )
+    try:
+        motor.velocity.set(1).wait(timeout=10)
+        monkeypatch.setattr(bec.scans, "mv", start_move)
+        monkeypatch.setattr(bec.scans, "umv", blocking_move)
+        sequencer = Sequencer(bec)
+        expected = (
+            nullcontext()
+            if completed
+            else pytest.raises(RuntimeError, match="still has an outstanding nonblocking move")
+        )
+        with bec.scans.hide_report:
+            with expected as error:
+                if exported:
+                    exec(
+                        sequencer.export(document, format="python"),
+                        {"dev": bec.device_manager.devices, "scans": bec.scans},
+                    )
+                else:
+                    sequencer.execute(document)
+        if not completed and not exported:
+            assert isinstance(error.value, ExecutionError)
+            assert error.value.path == ("root", "second")
+        if completed:
+            blocking_move.assert_called_once()
+        else:
+            blocking_move.assert_not_called()
+        wait_until(lambda: not motor.motor_is_moving.get(), timeout_s=5)
+    finally:
+        motor.stop()
+        motor.velocity.set(velocity).wait(timeout=10)
 
 
 @pytest.mark.timeout(180)

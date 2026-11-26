@@ -5,10 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from bec_lib.bec_errors import DeviceConfigError
-from bec_lib.signature_serializer import dict_to_signature
 
 from .catalog import ScanCatalog
-from .evaluation import UNKNOWN, Scope, boolean, evaluate, known
+from .evaluation import UNKNOWN, Scope, boolean, evaluate
 from .resolver import Resolved, partial_parameters
 
 if TYPE_CHECKING:
@@ -142,19 +141,13 @@ class _Validator:
             _path (tuple[str, ...]): Current contextual node path.
         """
         node = item.node
-        info = self.catalog.info(node.name)
+        self.catalog.info(node.name)
         args = evaluate(node.positional, scope)
         kwargs = evaluate(node.arguments, scope)
         if kwargs is not UNKNOWN and not isinstance(kwargs, dict):
             raise ValueError("Scan arguments must resolve to a mapping")
-        if known(args) and known(kwargs):
-            self.catalog.validate(node.name, args, kwargs)
-        elif isinstance(kwargs, dict) and info.get("signature"):
-            signature = dict_to_signature(info["signature"])
-            if info.get("arg_bundle_size", {}).get("bundle", 0):
-                signature.bind(**kwargs)
-            else:
-                signature.bind(*args, **kwargs)
+        if isinstance(kwargs, dict):
+            self.catalog.validate(node.name, args, kwargs, partial=True)
 
     def _set(self, item, scope, _path):
         """Validate the target, value and optional status binding.

@@ -80,17 +80,12 @@ def test_scan_manager_next_dataset_number_setter(scan_manager):
         )
 
 
-@pytest.mark.parametrize("queue", [None, "interception"])
-def test_scan_manager_request_scan_abortion(scan_manager, queue):
-    scan_manager.request_scan_abortion("request-id", queue=queue)
+def test_scan_manager_request_scan_abortion(scan_manager):
+    scan_manager.request_scan_abortion("request-id")
     scan_manager.connector.send.assert_called_once_with(
         MessageEndpoints.scan_queue_modification_request(),
         messages.ScanQueueModificationMessage(
-            scan_id=None,
-            request_id="request-id",
-            action="abort",
-            parameter={},
-            queue=queue or "primary",
+            scan_id=None, request_id="request-id", action="abort", parameter={}
         ),
     )
 

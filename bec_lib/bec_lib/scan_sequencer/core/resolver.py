@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass
+from urllib.parse import unquote
 
 import fastjsonschema
 
@@ -160,10 +162,19 @@ def _schema_children(schema: dict):
         schema (dict): JSON Schema object to inspect.
 
     Yields:
-        dict: Each nested parameter schema.
+        tuple[tuple[str, ...], dict]: Relative path and nested parameter schema.
     """
-    for key in ("properties", "patternProperties", "definitions", "$defs", "dependentSchemas"):
-        yield from (child for child in schema.get(key, {}).values() if isinstance(child, dict))
+    for key in (
+        "properties",
+        "patternProperties",
+        "definitions",
+        "$defs",
+        "dependencies",
+        "dependentSchemas",
+    ):
+        for name, child in schema.get(key, {}).items():
+            if isinstance(child, dict):
+                yield (key, name), child
     for key in (
         "additionalProperties",
         "additionalItems",
@@ -177,29 +188,167 @@ def _schema_children(schema: dict):
     ):
         value = schema.get(key)
         if isinstance(value, dict):
-            yield value
+            yield (key,), value
         elif isinstance(value, list):
-            yield from (child for child in value if isinstance(child, dict))
+            for index, child in enumerate(value):
+                if isinstance(child, dict):
+                    yield (key, str(index)), child
     for key in ("allOf", "anyOf", "oneOf", "prefixItems"):
-        yield from (child for child in schema.get(key, []) if isinstance(child, dict))
+        for index, child in enumerate(schema.get(key, [])):
+            if isinstance(child, dict):
+                yield (key, str(index)), child
 
 
-def _validate_schema(schema: dict, root: dict | None = None) -> None:
+def _validate_schema(schema: dict, root: dict | None = None, path: tuple[str, ...] = ()) -> None:
     """Check defaults and allow only local schema references, without network access.
 
     Args:
         schema (dict): JSON Schema object to inspect.
         root (dict | None): Root schema used for local references. Defaults to schema.
+        path (tuple[str, ...]): Path to the current subschema within the root.
     """
     root = schema if root is None else root
     reference = schema.get("$ref")
     if reference is not None and not reference.startswith("#"):
         raise ValueError("Component schemas only support local $ref references")
     if "default" in schema:
-        context = {key: root[key] for key in ("definitions", "$defs") if key in root}
-        _compile_schema({**context, **schema})(deepcopy(schema["default"]))
-    for child in _schema_children(schema):
-        _validate_schema(child, root)
+        pointer = "#/" + "/".join(token.replace("~", "~0").replace("/", "~1") for token in path)
+        context = {**root, "$ref": pointer} if path else root
+        _compile_schema(context)(deepcopy(schema["default"]))
+    for child_path, child in _schema_children(schema):
+        _validate_schema(child, root, path + child_path)
+
+
+def _schema_at(root, path):
+    """Look up a schema by decoded JSON Pointer tokens."""
+    for part in path:
+        root = root[int(part)] if isinstance(root, list) else root[part]
+    return root
+
+
+def _parameter_schemas(root, schema, path=(), conditional=False, active=frozenset()):
+    """Visit object constraints in native order, retaining their original reference paths."""
+    if isinstance(schema, bool):
+        yield schema, path, conditional
+        return
+    if "$ref" in schema:
+        reference = unquote(schema["$ref"][1:])
+        target_path = (
+            tuple(part.replace("~1", "/").replace("~0", "~") for part in reference[1:].split("/"))
+            if reference
+            else ()
+        )
+        if target_path in active:
+            return
+        yield from _parameter_schemas(
+            root, _schema_at(root, target_path), target_path, conditional, active | {target_path}
+        )
+        return
+    for index, child in enumerate(schema.get("allOf", [])):
+        yield from _parameter_schemas(
+            root, child, path + ("allOf", str(index)), conditional, active
+        )
+    for keyword in ("anyOf", "oneOf"):
+        for index, child in enumerate(schema.get(keyword, [])):
+            yield from _parameter_schemas(root, child, path + (keyword, str(index)), True, active)
+    for keyword in ("then", "else"):
+        if keyword in schema:
+            yield from _parameter_schemas(root, schema[keyword], path + (keyword,), True, active)
+    for name, child in schema.get("dependencies", {}).items():
+        if isinstance(child, dict):
+            yield from _parameter_schemas(root, child, path + ("dependencies", name), True, active)
+    yield schema, path, conditional
+
+
+def _partial_array(root, schema, path, value):
+    """Validate array items against their original homogeneous or tuple schemas."""
+    items = schema["items"]
+    for index, item in enumerate(value):
+        if isinstance(items, list):
+            if index >= len(items) and "additionalItems" not in schema:
+                continue
+            child = items[index] if index < len(items) else schema["additionalItems"]
+            suffix = ("items", str(index)) if index < len(items) else ("additionalItems",)
+        else:
+            child, suffix = items, ("items",)
+        value[index] = _partial_value(root, child, path + suffix, item)
+
+
+def _partial_value(root, schema, path, value):
+    """Validate known values and container shapes without interpreting unknown leaves."""
+    if known(value) or schema is False:
+        pointer = "#/" + "/".join(token.replace("~", "~0").replace("/", "~1") for token in path)
+        return _compile_schema({**root, "$ref": pointer})(
+            deepcopy(value) if known(value) else value
+        )
+    if value is UNKNOWN:
+        return value
+    result = value.copy()
+    for current, current_path, conditional in _parameter_schemas(root, schema, path):
+        if conditional:
+            continue
+        if current is False:
+            raise ValueError("Component value is forbidden by its schema")
+        if current is True:
+            continue
+        if "type" in current:
+            _compile_schema({"type": current["type"]})(result)
+        if isinstance(result, list) and "items" in current:
+            _partial_array(root, current, current_path, result)
+    if isinstance(result, dict):
+        return _partial_parameters(root, schema, path, result)
+    return result
+
+
+def _parameter_checks(schema, name):
+    """Select all property constraints that apply to a concrete argument name."""
+    checks = [("properties", name)] if name in schema.get("properties", {}) else []
+    checks.extend(
+        ("patternProperties", pattern)
+        for pattern in schema.get("patternProperties", {})
+        if re.search(pattern, name)
+    )
+    if not checks:
+        extra = schema.get("additionalProperties", True)
+        if extra is False:
+            raise ValueError(f"Unknown component parameters: {[name]}")
+        if isinstance(extra, dict):
+            checks.append(("additionalProperties",))
+    return checks
+
+
+def _partial_parameters(root, schema, path, args):
+    """Check unconditional known fields; defer branch-dependent constraints and defaults."""
+    if args is not UNKNOWN and not isinstance(args, dict):
+        raise ValueError("Component arguments must resolve to a mapping")
+    params = {} if args is UNKNOWN else args.copy()
+    deferred = set()
+    for current, current_path, conditional in _parameter_schemas(root, schema, path):
+        if isinstance(current, bool):
+            if not conditional and not current:
+                raise ValueError("Component parameters are forbidden by their schema")
+            continue
+        properties = current.get("properties", {})
+        if conditional or args is UNKNOWN:
+            deferred.update(properties)
+            continue
+        if "type" in current:
+            _compile_schema({"type": current["type"]})(params)
+        missing = set(current.get("required", [])) - set(params)
+        if missing:
+            raise ValueError(f"Missing component parameters: {sorted(missing)}")
+        for name, prop in properties.items():
+            if name not in params and isinstance(prop, dict) and "default" in prop:
+                params[name] = deepcopy(prop["default"])
+        for name in list(params):
+            for suffix in _parameter_checks(current, name):
+                child_path = current_path + suffix
+                params[name] = _partial_value(
+                    root, _schema_at(root, child_path), child_path, params[name]
+                )
+    for name in deferred:
+        params.setdefault(name, UNKNOWN)
+    return params
 
 
 def partial_parameters(definition: Definition, args: object) -> dict:
@@ -210,30 +359,9 @@ def partial_parameters(definition: Definition, args: object) -> dict:
         args (object): Resolved arguments, possibly containing statically unknown values.
 
     Returns:
-        dict: Known parameter values and placeholders for unknown values.
+        dict: Known parameter values and placeholders for unknown values. Defaults and constraints
+            in alternative or conditional schemas are deferred until runtime.
     """
     if known(args):
         return bind_parameters(definition.parameters, args)
-    schema = definition.parameters
-    properties = schema.get("properties", {})
-    if args is UNKNOWN:
-        return {name: prop.get("default", UNKNOWN) for name, prop in properties.items()}
-    if not isinstance(args, dict):
-        raise ValueError("Component arguments must resolve to a mapping")
-    missing = set(schema.get("required", [])) - set(args)
-    if missing:
-        raise ValueError(f"Missing component parameters: {sorted(missing)}")
-    if schema.get("additionalProperties") is False:
-        extra = set(args) - set(properties)
-        if extra:
-            raise ValueError(f"Unknown component parameters: {sorted(extra)}")
-    params = args.copy()
-    for name, prop in properties.items():
-        if name not in params and "default" in prop:
-            params[name] = prop["default"]
-        if name in params and known(params[name]):
-            # Select the property within the original root so its local references retain
-            # access to definitions and other schema locations. Escape JSON Pointer tokens.
-            token = name.replace("~", "~0").replace("/", "~1")
-            _compile_schema({**schema, "$ref": f"#/properties/{token}"})(params[name])
-    return params
+    return _partial_parameters(definition.parameters, definition.parameters, (), args)

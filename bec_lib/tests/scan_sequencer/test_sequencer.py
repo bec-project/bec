@@ -478,6 +478,104 @@ def test_safe_quoting_and_reserved_literal_wrappers(scheduler):
         schedule(setting(object()))
 
 
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize("wait", [False, True])
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("layout", ["sequence", "repeat", "for_each", "component"])
+def test_motor_reuse_requires_completed_nonblocking_move(
+    scheduler, exported, wait, completed, layout
+):
+    first = setting(wait=False, id="first")
+    second = setting(2, wait=wait, id="second")
+    if layout == "sequence":
+        root = seq(first, second)
+    elif layout == "repeat":
+        root = {"id": "repeat", "type": "repeat", "count": 2, "body": first}
+    elif layout == "for_each":
+        root = {
+            "id": "loop",
+            "type": "for_each",
+            "variable": "position",
+            "values": [1, 2],
+            "body": first,
+        }
+    else:
+        scheduler.definitions.add(Definition(id="move", version=1, body=second))
+        root = seq(first, call("move"))
+    backend = RecordingBackend(scheduler.catalog, scans_to_complete=0 if completed else 1)
+    if completed:
+        if exported:
+            readable_export_trace(scheduler, schedule(root), backend=backend)
+        else:
+            execute_with_backend(scheduler, schedule(root), backend)
+        assert len(backend.trace) == 2
+        assert not backend.cancelled
+        return
+    with pytest.raises(RuntimeError, match="still has an outstanding nonblocking move"):
+        if exported:
+            readable_export_trace(scheduler, schedule(root), backend=backend)
+        else:
+            execute_with_backend(scheduler, schedule(root), backend)
+    assert backend.trace == [("set", "samx", 1)]
+    assert backend.cancelled == ([] if completed else ["set"])
+
+
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize("wait", [False, True])
+def test_completed_nonblocking_motor_can_move_after_scan(scheduler, exported, wait):
+    document = schedule(seq(setting(wait=False), scan(), setting(2, id="later", wait=wait)))
+    assert execute(scheduler, document, exported=exported, scans_to_complete=1) == [
+        ("set", "samx", 1),
+        ("scan", "time_scan", [], {"points": 1, "interval": 0.1}),
+        ("set", "samx", 2),
+    ]
+
+
+def test_motor_reuse_checks_device_completion_and_allows_after_wait():
+    report = Mock(spec=ScanReport)
+    report.status = "COMPLETED"
+    report.wait.side_effect = TimeoutError("motor still moving")
+    device = Mock(read_only=False)
+    client = SimpleNamespace(
+        device_manager=SimpleNamespace(devices=DeviceContainer({"samx": device})),
+        scans=SimpleNamespace(mv=Mock(return_value=report), umv=Mock()),
+    )
+    session = Session(client)
+    move = session.set("samx", 1, wait=False)
+    with pytest.raises(RuntimeError, match="outstanding nonblocking move"):
+        session.set("samx", 2)
+    client.scans.umv.assert_not_called()
+    report.wait.side_effect = None
+    move.wait()
+    session.set("samx", 2)
+    client.scans.umv.assert_called_once_with(device, 2, relative=False)
+
+
+@pytest.mark.parametrize("exported", [False, True])
+def test_nonblocking_motor_reservation_is_scoped_to_one_execution(scheduler, exported):
+    document = schedule(setting(wait=False))
+    for _ in range(2):
+        assert execute(scheduler, document, exported=exported) == [("set", "samx", 1)]
+
+
+@pytest.mark.parametrize("exported", [False, True])
+def test_nonblocking_motor_allows_signal_writes(scheduler, exported):
+    document = schedule(seq(setting(wait=False), {**setting(2, id="signal"), "device": "id_mode"}))
+    assert execute(scheduler, document, exported=exported) == [
+        ("set", "samx", 1),
+        ("set", "samx", 2),
+    ]
+
+
+def test_nonblocking_motor_allows_other_motors():
+    devices = DeviceContainer({name: Mock(read_only=False) for name in ("samx", "samy")})
+    client = SimpleNamespace(device_manager=SimpleNamespace(devices=devices), scans=Mock())
+    session = Session(client)
+    session.set("samx", 1, wait=False)
+    session.set("samy", 2)
+    client.scans.umv.assert_called_once_with(devices.samy, 2, relative=False)
+
+
 def test_session_uses_native_blocking_and_nonblocking_apis(metadata):
     status = SimpleNamespace(done=False, wait=Mock())
     signal = Mock(spec=Signal)
@@ -513,9 +611,10 @@ def test_session_uses_native_blocking_and_nonblocking_apis(metadata):
         status_done(report)
     cancel_status(report)
     report.cancel.assert_not_called()
+    report.cancel.reset_mock()
     report.status = report.queue_item.status = "RUNNING"
     cancel_status(report)
-    report.cancel.assert_called_once_with(queue_request=True)
+    report.cancel.assert_called_once_with()
     assert session.set("samx.velocity", 3) is None
     status.wait.assert_called_once_with()
     status.wait.reset_mock()
@@ -531,6 +630,16 @@ def test_session_uses_native_blocking_and_nonblocking_apis(metadata):
     Sequencer(client).execute(schedule(scan(positional=[1, 0.1], arguments={})))
     client.scans.time_scan.assert_called_once_with(1, 0.1)
     assert status_done(None)
+
+
+def test_cancel_status_stops_motor_when_only_queue_has_completed():
+    report = Mock(spec=ScanReport, status="COMPLETED")
+    report.wait.side_effect = TimeoutError("motor still moving")
+
+    cancel_status(report)
+
+    report.wait.assert_called_once_with(timeout=0, file_written=False)
+    report.cancel.assert_called_once_with()
 
 
 def test_error_path_and_cleanup(scheduler):
@@ -859,7 +968,8 @@ class NativeTestMove(ScanReport):
         return SimpleNamespace(status=state)
 
     def cancel(self, **_kwargs):
-        self.backend.cancel(self.handle)
+        if not self.handle.complete:
+            self.backend.cancel(self.handle)
 
 
 def native_client(backend):
@@ -878,7 +988,9 @@ def native_client(backend):
         return NativeTestMove(backend, backend.set("samx", value, wait=False))
 
     def blocking_move(target, value, *, relative):
-        move(target, value, relative=relative).wait()
+        report = move(target, value, relative=relative)
+        report.wait()
+        return report
 
     scans.umv = blocking_move
     scans.mv = move
@@ -921,8 +1033,8 @@ def readable_export_trace(scheduler, document, backend=None, **options):
     [
         ("COMPLETED", "COMPLETED", None),
         ("COMPLETED", "RUNNING", {}),
-        ("RUNNING", "RUNNING", {"queue_request": True}),
-        ("PENDING", "PENDING", {"queue_request": True}),
+        ("RUNNING", "RUNNING", {}),
+        ("PENDING", "PENDING", {}),
         ("FAILED", "FAILED", None),
     ],
 )
@@ -1316,7 +1428,275 @@ def test_client_catalog_is_refreshed_before_validation_and_export(scheduler):
 def test_live_export_resolves_targets_before_generating_source(scheduler):
     document = schedule(setting())
     source = scheduler.export(document, format="python")
-    assert source == "scans.umv(dev.samx, 1, relative=False)\n"
+    assert source.endswith("scans.umv(dev.samx, 1, relative=False).wait()\n")
     scheduler.client.device_manager.devices.pop("samx")
     with pytest.raises(ValueError, match="Unknown device or signal"):
         scheduler.export(document, format="python")
+
+
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize("failed", [False, True])
+def test_blocking_device_set_waits_for_report_before_next_operation(scheduler, exported, failed):
+    trace = []
+    client = scheduler.client
+    report = Mock(spec=ScanReport)
+
+    def finish_move(**kwargs):
+        trace.append("move completed")
+        if failed:
+            raise RuntimeError("move failed")
+
+    report.wait.side_effect = finish_move
+    client.scans.umv = Mock(return_value=report)
+    client.scans.time_scan = Mock(side_effect=lambda **kwargs: trace.append("scan") or Mock())
+    document = schedule(seq(setting(), scan()))
+
+    def run():
+        if exported:
+            source = scheduler.export(document, format="python")
+            exec(source, {"scans": client.scans, "dev": client.device_manager.devices})
+        else:
+            scheduler.execute(document)
+
+    if failed:
+        with pytest.raises(RuntimeError, match="move failed"):
+            run()
+        assert trace == ["move completed"]
+    else:
+        run()
+        assert trace == ["move completed", "scan"]
+    report.wait.assert_called_once_with()
+
+
+@pytest.mark.parametrize("dynamic_field", ["metadata", "exp_time"])
+@pytest.mark.parametrize(
+    "invalid, message",
+    [
+        ({"interval": -0.1}, "Invalid value"),
+        ({"points": "bad"}, "Invalid type"),
+        ({"garbage": 1}, "Unknown keyword"),
+    ],
+)
+def test_dynamic_scan_fields_preserve_known_input_validation(
+    scheduler, dynamic_field, invalid, message
+):
+    observation = {"type": "status_field", "status_ref": "move", "field": "done"}
+    arguments = {"points": 1, "interval": 0.1, **invalid}
+    arguments[dynamic_field] = {"done": observation} if dynamic_field == "metadata" else observation
+    document = schedule(seq(setting(wait=False, bind="move"), scan(arguments=arguments)))
+    backend = RecordingBackend(scheduler.catalog)
+    with pytest.raises(ValueError, match=message):
+        execute_with_backend(scheduler, document, backend)
+    assert backend.trace == []
+
+
+@pytest.mark.parametrize("default", [1, "bad"])
+@pytest.mark.parametrize("container", ["properties", "$defs", "definitions"])
+def test_referenced_parameter_defaults_preserve_schema_root(scheduler, container, default):
+    parameters = {
+        "type": "object",
+        "properties": {"value/~": {"$ref": f"#/{container}/number", "default": default}},
+    }
+    parameters.setdefault(container, {})["number"] = {"type": "number"}
+    definition = Definition(
+        id="referenced_default",
+        version=1,
+        parameters=parameters,
+        body=setting({"param": "value/~"}),
+    )
+    if default == "bad":
+        with pytest.raises(ValueError, match="must be number"):
+            scheduler.definitions.add(definition)
+    else:
+        scheduler.definitions.add(definition)
+        document = schedule(call("referenced_default"))
+        assert execute(scheduler, document) == [("set", "samx", 1)]
+        assert readable_export_trace(scheduler, document) == [("set", "samx", 1)]
+
+
+@pytest.mark.parametrize(
+    "positional, steps, message",
+    [
+        ([], 2, "at least"),
+        (["samx", 0], 2, "multiples"),
+        (["samx", "bad", 1], 2, "Invalid type"),
+        (["samx", 0, 1], 0, "Invalid value"),
+    ],
+)
+def test_dynamic_metadata_preserves_bundle_validation(metadata, positional, steps, message):
+    sequencer = Sequencer.from_catalog(ScanCatalog(metadata))
+    node = {
+        "id": "line",
+        "type": "scan_call",
+        "name": "line_scan",
+        "positional": positional,
+        "arguments": {
+            "steps": steps,
+            "relative": False,
+            "metadata": {"done": {"type": "status_field", "status_ref": "move", "field": "done"}},
+        },
+    }
+    with pytest.raises(ValueError, match=message):
+        sequencer.validate(schedule(seq(setting(wait=False, bind="move"), node)))
+
+
+def test_unresolved_scan_input_is_deferred_while_known_inputs_are_validated(scheduler):
+    observation = {"type": "status_field", "status_ref": "move", "field": "done"}
+    document = schedule(
+        seq(
+            setting(wait=False, bind="move"),
+            scan(arguments={"points": 1, "interval": 0.1, "metadata": {"done": observation}}),
+        )
+    )
+    assert execute(scheduler, document) == readable_export_trace(scheduler, document)
+    document.root.children[1].arguments["interval"] = observation
+    scheduler.validate(document)
+
+
+@pytest.mark.parametrize(
+    "schema_kind", ["pattern", "boolean", "root_ref", "all_of", "one_of", "dependency"]
+)
+def test_dynamic_component_parameters_preserve_schema_forms(scheduler, schema_kind):
+    parameters = {"type": "object"}
+    selected = "done"
+    expected = True
+    if schema_kind == "pattern":
+        parameters.update(
+            patternProperties={"^done$": {"type": "boolean"}}, additionalProperties=False
+        )
+    elif schema_kind == "boolean":
+        parameters["properties"] = {"anything": True, "done": {"type": "boolean"}}
+    else:
+        selected, expected = "x", 1
+        fields = {"x": {"type": "number", "default": 1}, "done": {"type": "boolean"}}
+        if schema_kind == "root_ref":
+            parameters.update(
+                {
+                    "$ref": "#/$defs/params",
+                    "$defs": {"params": {"type": "object", "properties": fields}},
+                }
+            )
+        elif schema_kind == "all_of":
+            parameters["allOf"] = [{"properties": fields}]
+        elif schema_kind == "one_of":
+            parameters["oneOf"] = [
+                {"properties": {"done": {"const": True}, "x": {"default": 1}}},
+                {"properties": {"done": {"const": False}, "x": {"default": 2}}},
+            ]
+        else:
+            parameters["dependencies"] = {"done": {"properties": fields}}
+    scheduler.definitions.add(
+        Definition(
+            id="dynamic_schema", version=1, parameters=parameters, body=setting({"param": selected})
+        )
+    )
+    document = schedule(
+        seq(
+            setting(id="start", bind="move"),
+            call(
+                "dynamic_schema",
+                arguments={"done": {"type": "status_field", "status_ref": "move", "field": "done"}},
+            ),
+        )
+    )
+    interpreted = execute(scheduler, document)
+    assert interpreted[-1] == ("set", "samx", expected)
+    assert interpreted == readable_export_trace(scheduler, document)
+
+
+def test_dynamic_pattern_parameters_validate_known_values(scheduler):
+    scheduler.definitions.add(
+        Definition(
+            id="pattern",
+            version=1,
+            parameters={
+                "type": "object",
+                "patternProperties": {"^done$": {"type": "boolean"}, "^value$": {"type": "number"}},
+                "additionalProperties": False,
+            },
+            body=seq(),
+        )
+    )
+    document = schedule(
+        seq(
+            setting(bind="move"),
+            call(
+                "pattern",
+                arguments={
+                    "done": {"type": "status_field", "status_ref": "move", "field": "done"},
+                    "value": "bad",
+                },
+            ),
+        )
+    )
+    backend = RecordingBackend(scheduler.catalog)
+    with pytest.raises(ValueError, match="must be number"):
+        execute_with_backend(scheduler, document, backend)
+    assert backend.trace == []
+
+
+def test_dependency_schema_defaults_are_validated_at_registration():
+    definition = Definition(
+        id="dependency_default",
+        version=1,
+        parameters={
+            "type": "object",
+            "dependencies": {
+                "done": {"properties": {"value": {"type": "number", "default": "bad"}}}
+            },
+        },
+        body=setting({"param": "value"}),
+    )
+    with pytest.raises(ValueError, match="must be number"):
+        DefinitionLibrary([definition])
+
+
+@pytest.mark.parametrize(
+    "schema, value",
+    [
+        (
+            {"type": "number"},
+            {"done": {"type": "status_field", "status_ref": "move", "field": "done"}},
+        ),
+        (
+            {"type": "array", "items": {"type": "number"}},
+            ["bad", {"type": "status_field", "status_ref": "move", "field": "done"}],
+        ),
+    ],
+)
+def test_dynamic_parameter_containers_validate_known_shapes_and_items(scheduler, schema, value):
+    scheduler.definitions.add(
+        Definition(
+            id="container",
+            version=1,
+            parameters={"type": "object", "properties": {"value": schema}},
+            body=seq(),
+        )
+    )
+    document = schedule(seq(setting(bind="move"), call("container", arguments={"value": value})))
+    backend = RecordingBackend(scheduler.catalog)
+    with pytest.raises(ValueError, match="must be number"):
+        execute_with_backend(scheduler, document, backend)
+    assert backend.trace == []
+
+
+def test_nested_dynamic_comparison_validates_and_matches_export(scheduler):
+    document = schedule(
+        seq(
+            setting(wait=False, bind="ramp"),
+            {
+                "id": "during_move",
+                "type": "while",
+                "condition": {
+                    "type": "compare",
+                    "operator": "lt",
+                    "left": [{"type": "status_field", "status_ref": "ramp", "field": "done"}],
+                    "right": [True],
+                },
+                "body": scan(),
+            },
+        )
+    )
+    interpreted = execute(scheduler, document, scans_to_complete=1)
+    assert interpreted == execute(scheduler, document, exported=True, scans_to_complete=1)
+    assert [entry[0] for entry in interpreted] == ["set", "scan"]
