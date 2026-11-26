@@ -1563,6 +1563,27 @@ def test_only_the_last_frames_are_read_when_the_catalog_lists_no_datasets(
     sub.close()
 
 
+def test_columns_of_a_scan_file_pair_when_the_catalog_lists_no_datasets(
+    data_api, mock_client, tmp_path
+):
+    """A scan written by an older BEC: motor and detector still come as one group, row by row."""
+    rows = np.arange(12.0)
+    samx, bpm4i = ("samx", "samx"), ("bpm4i", "bpm4i")
+    datasets = {samx: (10 + rows, rows), bpm4i: (100 + rows, rows)}
+    _serve_scan_file(mock_client, "old", tmp_path / "old.h5", datasets)
+    object.__setattr__(mock_client.history.get_message("old"), "stored_data_info", None)
+    updates = []
+    sub = data_api.subscribe(
+        sources=[samx, bpm4i], scan="old", callback=updates.append, update_rate=None
+    )
+    assert sub.groups == {SCAN_GROUP: [samx, bpm4i]}
+    assert wait_for(lambda: updates and updates[-1].complete)
+    aligned = updates[-1].aligned()
+    np.testing.assert_array_equal(aligned[samx], 10 + rows)
+    np.testing.assert_array_equal(aligned[bpm4i], 100 + rows)
+    sub.close()
+
+
 def test_stack_read_in_one_piece_is_cut_when_the_catalog_lists_no_datasets(data_api, mock_client):
     """A reference without ``read_slabs`` is read whole: its shape then tells the stack."""
     stack = np.arange(60.0).reshape(5, 3, 4)

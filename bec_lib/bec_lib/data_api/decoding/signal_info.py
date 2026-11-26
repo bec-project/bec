@@ -343,7 +343,8 @@ def stored_scan_specs(
 
     A catalog entry without ``stored_data_info`` (written by an older BEC) does not say
     which datasets the file holds. Its specs are ``provisional``: the read decides, and a
-    data path that has evidence for a source is asked first.
+    data path that has evidence for a source is asked first. Its signals that are not
+    declared async are paired by row, as the monitored signals of a scan file are.
 
     Args:
         client: BEC client (device manager).
@@ -380,7 +381,8 @@ def stored_scan_specs(
             group = None
         if declaration is not None:
             kind = SourceKind.ASYNC
-        elif points is not None and _rows(info) == points:
+        elif not stored or (points is not None and _rows(info) == points):
+            # Without a catalog the read decides; a scan file holds one row per scan point.
             kind = SourceKind.MONITORED
         else:
             kind = SourceKind.UNINDEXED
