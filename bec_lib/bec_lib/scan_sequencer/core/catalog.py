@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 from bec_lib.scan_input_validator import ScanInputValidator
 from bec_lib.scans import ScanObject
 
+from .evaluation import UNKNOWN, known
+
 if TYPE_CHECKING:
     from bec_lib.client import BECClient
     from bec_lib.devicemanager import DeviceManagerBase
@@ -41,6 +43,33 @@ def fingerprint(info: dict) -> str:
 
 # pylint: disable=protected-access
 _METADATA_ARGUMENT = inspect.signature(ScanObject._run).parameters["metadata"]
+
+
+class _StaticInputValidator(ScanInputValidator):
+    """Reuse native structural checks while deferring unresolved input values."""
+
+    @staticmethod
+    def _known_arguments(bound):
+        """Keep fully known bindings for native type and bounds checks."""
+        return inspect.BoundArguments(
+            bound.signature,
+            {name: value for name, value in bound.arguments.items() if known(value)},
+        )
+
+    def _validate_signature_bound_types(self, signature, bound):
+        """Check the types of resolved signature inputs."""
+        super()._validate_signature_bound_types(signature, self._known_arguments(bound))
+
+    def _validate_signature_bounds(self, signature, bound):
+        """Check the bounds of resolved signature inputs."""
+        super()._validate_signature_bounds(signature, self._known_arguments(bound))
+
+    def _validate_value(self, *, arg_name, value, annotation, index):
+        """Check resolved bundle values without dropping bundle structure checks."""
+        if known(value):
+            super()._validate_value(
+                arg_name=arg_name, value=value, annotation=annotation, index=index
+            )
 
 
 class ScanCatalog:
@@ -129,20 +158,27 @@ class ScanCatalog:
             },
         }
 
-    def validate(self, name: str, positional: list, arguments: dict) -> None:
+    def validate(
+        self, name: str, positional: list, arguments: dict, *, partial: bool = False
+    ) -> None:
         """Validate with BEC metadata; leave defaults to the scan implementation.
 
         Args:
             name (str): Device, signal or scan name to look up.
             positional (list): Resolved positional scan arguments.
             arguments (dict): Resolved keyword arguments.
+            partial (bool): Defer unresolved values during static validation. Defaults to False.
         """
         if not isinstance(arguments, dict):
             raise ValueError("Scan arguments must resolve to a mapping")
         info = self.info(name)
         scan_arguments = arguments.copy()
         metadata = scan_arguments.pop("metadata", None)
-        if metadata is not None and not isinstance(metadata, dict):
+        if (
+            not (partial and metadata is UNKNOWN)
+            and metadata is not None
+            and not isinstance(metadata, dict)
+        ):
             raise ValueError(f"Invalid client metadata for scan {name}: expected a mapping or None")
         # Offline catalogs can validate device-name types without creating device objects.
         # Live validation additionally resolves names through the device manager.
@@ -166,4 +202,5 @@ class ScanCatalog:
                 return value
 
             info = names(info)
-        ScanInputValidator(self.device_manager).validate(name, info, positional, scan_arguments)
+        validator = _StaticInputValidator if partial else ScanInputValidator
+        validator(self.device_manager).validate(name, info, positional, scan_arguments)

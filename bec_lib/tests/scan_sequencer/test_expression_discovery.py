@@ -8,7 +8,7 @@ import fastjsonschema
 import pytest
 
 from bec_lib.scan_sequencer import available_components, available_expressions
-from bec_lib.scan_sequencer.core.evaluation import Scope, evaluate
+from bec_lib.scan_sequencer.core.evaluation import UNKNOWN, Scope, evaluate
 from bec_lib.scan_sequencer.expressions import expression
 
 
@@ -68,3 +68,13 @@ def test_component_schema_identifies_expression_capable_fields(component, field)
     assert "available_expressions()" in property_schema["description"]
     assert "literal wrapper" in property_schema["description"]
     assert property_schema["examples"]
+
+
+@pytest.mark.parametrize("operator", ["eq", "ne", "lt", "le", "gt", "ge"])
+def test_comparison_defers_nested_unknown_operands(operator):
+    observation = {"type": "status_field", "status_ref": "ramp", "field": "done"}
+    value = {"type": "compare", "operator": operator, "left": [observation], "right": [True]}
+    scope = Scope(statuses={"ramp": None})
+    assert evaluate(value, scope) is UNKNOWN
+    expected = operator in {"ne", "lt", "le"}
+    assert evaluate(value, scope, lambda _status: False) is expected

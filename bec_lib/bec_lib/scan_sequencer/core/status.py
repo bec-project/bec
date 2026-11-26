@@ -32,18 +32,38 @@ def status_done(status: object) -> bool:
     return True
 
 
+def check_motor_available(moves: dict[str, object], name: str) -> None:
+    """Release a completed motor move or reject an overlapping write.
+
+    Args:
+        moves (dict[str, object]): Outstanding move handles indexed by motor name.
+        name (str): Motor targeted by the next write.
+    """
+    if name not in moves:
+        return
+    try:
+        done = status_done(moves[name])
+    except TimeoutError:
+        # A completed queue request can still have a moving device.
+        done = False
+    if not done:
+        raise RuntimeError(f"Motor {name!r} still has an outstanding nonblocking move")
+    del moves[name]
+
+
 def cancel_status(status: object) -> None:
-    """Cancel an outstanding move without stopping motors from a terminal move.
+    """Cancel outstanding moves using the existing native handle.
 
     Args:
         status (object): Runtime asynchronous handle, or None for a completed blocking call.
     """
     if isinstance(status, ScanReport):
-        state = status.queue_item.status
-        if state in _MOVE_FAILURE_STATES:
+        if status.status in _MOVE_FAILURE_STATES:
             return
-        if state != "COMPLETED":
-            status.cancel(queue_request=True)
-        elif status.status != "COMPLETED":
-            # The queue item can finish before the device reports move completion.
-            status.cancel()
+        try:
+            if status_done(status):
+                return
+        except TimeoutError:
+            # Queue completion does not imply motor completion.
+            pass
+        status.cancel()

@@ -14,7 +14,7 @@ from bec_lib.device import Signal
 from ..components import ComponentCall, ForEach, Repeat, ScanCall, Sequence, Set, While
 from .evaluation import Scope, boolean, evaluate
 from .resolver import Resolved, bind_parameters
-from .status import cancel_status, status_done
+from .status import cancel_status, check_motor_available, status_done
 from .validation import resolve_set_target
 
 if TYPE_CHECKING:
@@ -57,6 +57,7 @@ class Session:
         self.scope = Scope()
         self.path: tuple = ()
         self.pending: deque[tuple[object, tuple]] = deque()
+        self.nonblocking_moves: dict[str, object] = {}
 
     def __enter__(self) -> Session:
         """Enter the execution session.
@@ -180,10 +181,13 @@ class Session:
                 status.wait()
                 return None
             return status
+        check_motor_available(self.nonblocking_moves, name)
         if wait:
-            self.client.scans.umv(target, value, relative=False)
+            self.client.scans.umv(target, value, relative=False).wait()
             return None
-        return self.client.scans.mv(target, value, relative=False)
+        status = self.client.scans.mv(target, value, relative=False)
+        self.nonblocking_moves[name] = status
+        return status
 
     # One branch per discriminated component, plus status bookkeeping.
     # pylint: disable=too-many-branches

@@ -132,7 +132,7 @@ def evaluate(
         right = evaluate(expr.right, scope, status_done)
         return (
             UNKNOWN
-            if left is UNKNOWN or right is UNKNOWN
+            if not known(left) or not known(right)
             else OPERATORS[expr.operator](left, right)
         )
     if isinstance(value, list):

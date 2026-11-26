@@ -100,8 +100,10 @@ def export_python(tree: Resolved, device_manager=None) -> str:
         "sleep",
         "status_done",
         "cancel_status",
+        "check_motor_available",
     }
     async_operations = False
+    motor_operations = False
 
     def emit(text, depth):
         """Append an indented line of Python source.
@@ -202,7 +204,7 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             depth (int): Indentation depth in the generated output.
             names (_Names): Symbolic Python names visible in the current scope.
         """
-        nonlocal counter, async_operations
+        nonlocal counter, async_operations, motor_operations
         node = item.node
         index = counter
         counter += 1
@@ -267,12 +269,19 @@ def export_python(tree: Resolved, device_manager=None) -> str:
                     ".wait()" if node.wait else ""
                 )
             else:
+                motor_operations = True
+                imports.add("from bec_lib.scan_sequencer.core.status import check_motor_available")
+                emit(f"check_motor_available(_nonblocking_moves, {literal(node.device)})", depth)
                 function = "umv" if node.wait else "mv"
                 operation = f"scans.{function}({destination}, {resolved_value}, relative=False)"
+                if node.wait:
+                    operation += ".wait()"
             if not node.wait:
                 async_operations = True
                 emit(f"{status} = {operation}", depth)
                 emit(f"_pending.append({status})", depth)
+                if not isinstance(proxy, Signal):
+                    emit(f"_nonblocking_moves[{literal(node.device)}] = {status}", depth)
             else:
                 emit(operation, depth)
                 if node.bind_status:
@@ -284,6 +293,8 @@ def export_python(tree: Resolved, device_manager=None) -> str:
             raise ValueError(f"Node {node.id}: unsupported Python export")
 
     visit(tree, 0, _Names())
+    if motor_operations:
+        lines.insert(0, "_nonblocking_moves = {}")
     if async_operations:
         imports.discard("from bec_lib.scan_sequencer.core.status import status_done")
         # Drain on success, matching the interpreter; cancel supported handles on errors.

@@ -135,6 +135,9 @@ expression-shaped data as `{"type": "literal", "value": {...}}`. Retrieved param
 values are data and are not reinterpreted as expressions. Arbitrary Python expressions and non-JSON
 literal objects are rejected. Parameter schemas use the existing `fastjsonschema` dependency,
 apply defaults, and support local schema references. Remote schema references are rejected.
+For dynamic component arguments, static validation checks unconditional known fields, including
+pattern properties and referenced schemas. Branch-dependent defaults and constraints are deferred;
+the complete schema validates resolved arguments and inserts defaults at the component call boundary.
 
 ## Concrete BEC integration
 
@@ -173,11 +176,18 @@ apply defaults, and support local schema references. Remote schema references ar
 on successful schedule exit the runtime waits for every outstanding operation and propagates
 failures. A While checks its condition before entering a body, so an already-complete status starts
 zero iterations. A started body finishes before checking again unless interrupted.
+After a nonblocking motor Set (`wait=False`), another Set on that motor is rejected while the earlier
+move is outstanding. Once completion has been checked successfully (including after `.wait()`),
+another Set is allowed. This includes moves in loops and reusable components, and applies to Python
+exports. An overlapping move fails before sending a request; existing pending operations are cleaned
+up normally. Signal writes and moves on other motors remain allowed.
 Blocking scans, `umv`, signal `.wait()` and asynchronous status waits use native
 Ctrl-C/KeyboardInterrupt. The sequencer does not install a separate cancellation mechanism.
 
-On errors or cancellation, the runtime aborts pending or active move requests by ID.
-If the queue item has already finished and the device is still moving, it stops the motor. Device `Status` has no general abort API: already-started device sets may
+On errors or cancellation, the runtime calls the existing native move report's `cancel()` method
+for outstanding moves. Successfully completed and failed moves are skipped. Cancellation uses the
+existing client/server behavior; the sequencer adds no cancellation protocol or acknowledgement.
+Device `Status` has no general abort API: already-started device sets may
 continue. There is no rollback. Procedure aborts use the existing worker's interrupt/termination
 behavior; forced process termination cannot guarantee interpreter cleanup or device/scan abort.
 
