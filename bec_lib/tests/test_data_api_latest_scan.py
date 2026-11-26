@@ -51,16 +51,24 @@ def _set_history(mock_client, message):
     )
 
 
-def test_latest_scan_prefers_the_newer_of_scan_storage_and_history(mock_client):
-    older, newer = _finished_scan(mock_client, "s6", 6), _finished_scan(mock_client, "s7", 7)
-    mock_client.queue.scan_storage.storage = [newer, older]
-    _set_history(mock_client, _history_message("h5", 5))
-    assert client_views.latest_scan(mock_client) == ("s7", newer)
+def test_latest_scan_is_the_last_one_that_arrived(mock_client):
+    """
+    The scans of the storage are in the order they arrived, and the storage is ahead of the
+    history. The scan number does not decide: a new experiment sets it back to 1.
+    """
+    before, after = _finished_scan(mock_client, "old", 500), _finished_scan(mock_client, "new", 2)
+    mock_client.queue.scan_storage.storage = [before, after]
+    _set_history(mock_client, _history_message("old", 500))
+    assert client_views.latest_scan(mock_client) == ("new", after)
 
-    _set_history(mock_client, _history_message("h9", 9))
-    assert client_views.latest_scan(mock_client) == ("h9", None)
+    queued = make_scan_item(mock_client, "queued")  # no status yet: it has not started
+    queued.status_message = None
+    mock_client.queue.scan_storage.storage = [before, after, queued]
+    assert client_views.latest_scan(mock_client) == ("new", after)
 
-    mock_client.queue.scan_storage.storage = []
+    mock_client.queue.scan_storage.storage = []  # a client that started after the scans
+    assert client_views.latest_scan(mock_client) == ("old", None)
+
     _set_history(mock_client, None)
     assert client_views.latest_scan(mock_client) is None
 

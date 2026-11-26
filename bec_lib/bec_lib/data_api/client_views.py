@@ -13,7 +13,6 @@ these helpers BEFORE taking the DataAPI lock and pass the result along (see Bind
 
 from __future__ import annotations
 
-from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -66,25 +65,19 @@ def latest_scan(client: BECClient) -> tuple[str, ScanItem | None] | None:
     """
     Return ``(scan_id, scan_item)`` of the most recent scan, running or finished, or ``None``.
 
-    Scan storage holds the scans this client saw (with their live data, also before the
-    file is written); the history registry holds finished scans, including those from
-    before the client started. The higher scan number wins; a scan found only in the
-    history has no item (``None``, an explicit empty prefetch).
+    Scan storage holds the scans this client saw, in the order they arrived (with their live
+    data, also before the file is written); the history registry holds finished scans,
+    including those from before the client started. The last scan of the storage wins; a
+    scan found only in the history has no item (``None``, an explicit empty prefetch). The
+    scan number does not decide: it starts again when a new experiment sets it back.
     """
-    number, scan_id, latest_item = -1, None, None
     storage = scan_storage(client)
-    for item in list(storage.storage) if storage is not None else ():
-        # An item is created from the queue entry; its number and status follow later.
-        if not isinstance(item.scan_id, str) or not item.scan_id:
-            continue
-        if not isinstance(item.scan_number, Integral) or item.status_message is None:
-            continue
-        if item.scan_number > number:
-            number, scan_id, latest_item = int(item.scan_number), item.scan_id, item
+    for item in reversed(list(storage.storage)) if storage is not None else ():
+        # An item is created from the queue entry; its id and status follow later.
+        if isinstance(item.scan_id, str) and item.scan_id and item.status_message is not None:
+            return item.scan_id, item
     message = None if client.history is None else client.history.latest_message()
-    if message is not None and message.scan_number > number:
-        scan_id, latest_item = message.scan_id, None
-    return None if scan_id is None else (scan_id, latest_item)
+    return None if message is None else (message.scan_id, None)
 
 
 def device(client: BECClient, name: str) -> Any:
