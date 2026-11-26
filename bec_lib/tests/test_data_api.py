@@ -1011,10 +1011,13 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
-    def test_feed_log_holds_what_the_requests_of_the_feed_hold(self, data_api, mock_client):
+    def test_feed_log_holds_what_the_requests_of_the_feed_hold(
+        self, data_api, mock_client, monkeypatch
+    ):
         """
-        The log serves requests that attach later. It keeps the messages of the points a
-        request still holds: a cap of 2 frames must not leave every frame of the scan in memory.
+        The log keeps the messages of the points a request still holds: a cap of 2 frames
+        must not leave every frame of the scan in memory. A request that attaches later and
+        wants more reads the stream in Redis, and gets no message twice.
         """
         mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
         item = make_scan_item(mock_client, "scan_1")
@@ -1029,21 +1032,42 @@ class TestAxisModes:
             max_buffer_size=2,
         )
         feed = next(iter(plugin._feeds.values()))
-        for index in range(300):
-            feed.callback({"data": self._async_add_message(index)})
+        sent = [
+            async_msg("wave", [index], index, "add_slice", slice_index=index)
+            for index in range(301)
+        ]
+        for message in sent[:300]:
+            feed.callback({"data": message})
         assert len(feed.log) == 2
-        ups_b = []  # a request without a cap attaches: from now on the log keeps everything
+
+        # The stream holds one message more than the feed has delivered so far.
+        monkeypatch.setattr(
+            mock_client.connector, "xrange", lambda *a, **k: [{"data": m} for m in sent]
+        )
+        ups_b = []
         sub_b = data_api.subscribe(
             sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
         )
         source = ups_b[-1].get("det", "wave")
-        assert tuple(source.ordinals) == (298, 299)
-        assert source.metadata["stream_trimmed"] is True
-        for index in range(300, 310):
-            feed.callback({"data": self._async_add_message(index)})
-        assert len(feed.log) == 12
-        sub_a.close()
-        sub_b.close()
+        assert tuple(source.ordinals) == tuple(range(301))
+        assert "stream_trimmed" not in source.metadata
+        feed.callback({"data": sent[300]})  # delivered now: the later request has it already
+        feed.callback({"data": async_msg("wave", [7], 301, "add_slice", slice_index=301)})
+        source = ups_b[-1].get("det", "wave")
+        assert [list(row) for row in source.values[-2:]] == [[300], [7]]
+
+        monkeypatch.setattr(mock_client.connector, "xrange", lambda *a, **k: [])
+        ups_c = []  # the stream is gone: what the log holds, flagged as trimmed
+        sub_c = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=ups_c.append,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        assert ups_c[-1].get("det", "wave").metadata["stream_trimmed"] is True
+        for sub in (sub_a, sub_b, sub_c):
+            sub.close()
 
     def test_feed_log_keeps_every_fragment_of_the_rows_that_are_held(self, data_api, mock_client):
         """A row is built from several messages: a later request needs all of them."""

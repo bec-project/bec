@@ -105,6 +105,8 @@ class _Feed:
     #: Whether messages are missing before the start of ``log``: the stream was already
     #: trimmed when the feed attached, or the log itself was capped.
     trimmed: bool = False
+    #: Whether the log was cut to what its requests hold: the stream in Redis may hold more.
+    cut: bool = False
 
     def messages(self) -> list[DeviceMessage]:
         """What a later request catches up from: the log, then the state of the replace signals."""
@@ -328,9 +330,23 @@ class RedisDataPath(DataPath):
         feed = self._feeds.get(self._async_feed_key(request.scan_id, spec))
         if feed is None:
             return
-        if feed.trimmed:
+        key = self._async_feed_key(request.scan_id, spec)
+        messages = feed.messages()
+        if feed.cut:
+            # The log holds what the other requests kept; this one reads the stream again.
+            stored = self.client.connector.xrange(feed.endpoint, "-", "+") or []
+            stored = [m["data"] for m in stored if isinstance(m.get("data"), DeviceMessage)]
+            indices = [self._stream_index(m, key[3]) for m in stored]
+            if stored and None not in indices:
+                messages = stored
+                # A message of the stream that the feed has not delivered yet comes once.
+                request.state.setdefault("replayed", {})[key] = max(indices)
+                request.set_status(spec.key, stream_trimmed=True if min(indices) > 0 else None)
+            else:
+                request.set_status(spec.key, stream_trimmed=True)
+        elif feed.trimmed:
             request.set_status(spec.key, stream_trimmed=True)
-        for msg_obj in feed.messages():
+        for msg_obj in messages:
             self._ingest_message([request], msg_obj, spec.device)
 
     def _log_async_message(self, feed: _Feed, feed_key: tuple, msg_obj: DeviceMessage) -> None:
@@ -369,7 +385,7 @@ class RedisDataPath(DataPath):
                     held_from = first if held_from is None else min(held_from, first)
         while feed.log and (self._point_index(feed.log[0], feed_key[3]) or 0) < (held_from or 0):
             feed.log.popleft()
-            feed.trimmed = True
+            feed.cut = True
 
     def _point_index(self, msg_obj: DeviceMessage, signal: str) -> int | None:
         """The ordinal of the point a logged message belongs to: its row, or its message index."""
@@ -402,7 +418,12 @@ class RedisDataPath(DataPath):
                     self._log_async_message(feed, feed_key, msg_obj)
             if not isinstance(msg_obj, DeviceMessage):
                 return
-            requests = list(self._scan_requests.get(scan_id, []))
+            index = self._stream_index(msg_obj, feed_key[3]) if feed_key is not None else None
+            requests = [
+                request
+                for request in self._scan_requests.get(scan_id, [])
+                if index is None or index > request.state.get("replayed", {}).get(feed_key, -1)
+            ]
             if not requests:
                 return
             touched = self._ingest_message(requests, msg_obj, device)
