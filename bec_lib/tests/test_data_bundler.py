@@ -436,3 +436,18 @@ class TestTrimWatermark:
         assert series.is_known(0) and series.is_known(2)
         assert not series.is_known(3) and not series.is_known(-1)
         assert isinstance(series.snapshot().values, np.ndarray)
+
+
+def test_a_load_in_progress_is_not_reported_as_lagging():
+    """Stored columns are read in blocks of different sizes: none of them trails the other."""
+    bundle = DataBundler("scan_1")
+    fast, slow = (bundle.get_series(name, name, "monitored") for name in ("samx", "bpm4i"))
+    for series in (fast, slow):
+        series.expect(100)
+    fast.extend(np.arange(50.0))
+    slow.extend(np.arange(5.0))
+    assert "lagging_sources" not in bundle.build_update("history").metadata
+    fast.extend(np.arange(50.0, 100.0))
+    slow.extend(np.arange(5.0, 100.0))
+    slow_live = bundle.build_update("history")
+    assert slow_live.complete and "lagging_sources" not in slow_live.metadata

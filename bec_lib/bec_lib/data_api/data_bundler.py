@@ -673,6 +673,14 @@ class SourceSeries:
         return self._gapless
 
     @property
+    def loading(self) -> bool:
+        """Whether a load of stored rows is under way (see :meth:`expect`)."""
+        if self._expected is None:
+            return False
+        read = self._frontier if self._rows_read is None else self._rows_read
+        return read < self._expected
+
+    @property
     def complete(self) -> bool:
         """Whether every row the series keeps is present and no load is under way."""
         if self.metadata.get("error"):
@@ -884,6 +892,8 @@ class DataBundler:
         """
         if len(self.series) < 2:
             return []
+        if any(series.loading for series in self.series.values()):
+            return []  # a stored scan is read block by block: nothing trails
         if self.pair_sources:
             # Rows start once every member has delivered: a member that has
             # not is what blocks the group, and the only observable reason.
