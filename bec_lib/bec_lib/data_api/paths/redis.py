@@ -335,6 +335,7 @@ class RedisDataPath(DataPath):
         if feed.cut and not self._log_holds(feed, key[3], cap):
             # The log holds what the other requests kept; this one keeps more of the stream.
             request.state.setdefault("pending", set()).add(key)  # live messages wait in the log
+            self._expect_replay(request, key, 1)  # not complete before the rows are in
             request.start_worker(self._replay_stream, spec, feed, name="data-api-catch-up")
             return
         self._replay(request, spec, feed, list(feed.log), feed.trimmed)
@@ -351,6 +352,7 @@ class RedisDataPath(DataPath):
             if request.cancelled:
                 return
             request.state["pending"].discard(key)
+            self._expect_replay(request, key, None)
             indices = [self._stream_index(m, key[3]) for m in stored]
             if stored and None not in indices:
                 last = max(indices)
@@ -362,6 +364,13 @@ class RedisDataPath(DataPath):
             else:
                 self._replay(request, spec, feed, list(feed.log), True)
         request.notify(UpdateReason.BACKFILL)
+
+    def _expect_replay(self, request: SourceRequest, key: tuple, rows: int | None) -> None:
+        """Mark the sources of a feed as loading (or no longer) in one request. Lock held."""
+        for spec in request.specs:
+            if spec.available and spec.kind == SourceKind.ASYNC:
+                if self._async_feed_key(request.scan_id, spec) == key:
+                    request.series(spec).expect(rows)
 
     def _replay(
         self,

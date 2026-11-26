@@ -1118,6 +1118,47 @@ class TestAxisModes:
         sub_a.close()
         sub_b.close()
 
+    def test_later_request_is_not_complete_before_its_rows_are_in(
+        self, data_api, mock_client, monkeypatch
+    ):
+        """The update sent while the stream is still being read must not say complete."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        sub_a = data_api.subscribe(
+            sources=[("det", "wave")],
+            scan="scan_1",
+            callback=lambda _: None,
+            update_rate=None,
+            max_buffer_size=2,
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        sent = [
+            async_msg("wave", [index], index, "add_slice", slice_index=index) for index in range(9)
+        ]
+        for message in sent:
+            feed.callback({"data": message})
+        read_may_end = threading.Event()
+
+        def xrange(*_args, **_kwargs):
+            read_may_end.wait(5)
+            return [{"data": m} for m in sent]
+
+        monkeypatch.setattr(mock_client.connector, "xrange", xrange)
+        ups_b = []
+        sub_b = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=ups_b.append, update_rate=None
+        )
+        waiting = ups_b[-1]
+        assert not waiting.complete and not waiting.get("det", "wave").complete
+        read_may_end.set()
+        join_catch_up(sub_b)
+        source = ups_b[-1].get("det", "wave")
+        assert tuple(source.ordinals) == tuple(range(9)) and source.complete
+        sub_a.close()
+        sub_b.close()
+
     def test_later_request_with_a_cap_reads_only_what_it_keeps(
         self, data_api, mock_client, monkeypatch
     ):
