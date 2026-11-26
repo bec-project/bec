@@ -380,6 +380,7 @@ class HDF5FileWriter:
         Args:
             file_handle (h5py.File): The HDF5 file handle to update.
         """
+        self.stored_data_info = defaultdict(dict)  # of this file only, not of the scans before
         device_group = file_handle.get("/entry/collection/devices")
         for device_name, device_group in device_group.items():
             if not isinstance(device_group, h5py.Group):
