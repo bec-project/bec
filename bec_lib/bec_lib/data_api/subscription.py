@@ -345,6 +345,11 @@ class Subscription:
             self._max_buffer_size = max_buffer_size
             for request in self._all_requests():
                 request.bundle.set_max_buffer_size(max_buffer_size)
+                # The rows the cap dropped are not kept for rebuilding sliced rows either.
+                for key, rows in request.state.get("slice_rows", {}).items():
+                    kept_from = request.bundle.series[key].trimmed_below
+                    for dropped in [row for row in rows if row < kept_from]:
+                        del rows[dropped]
         return self
 
     # --- source set ----------------------------------------------------------

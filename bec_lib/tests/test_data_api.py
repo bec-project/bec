@@ -1158,6 +1158,24 @@ class TestAxisModes:
         assert "stream_trimmed" not in updates[-1].get("det", "wave").metadata
         sub.close()
 
+    def test_lowered_cap_drops_the_scratch_rows_of_sliced_signals(self, data_api, mock_client):
+        """The buffers sliced rows are rebuilt in go with the rows a lowered cap drops."""
+        mock_client.device_manager.get_bec_signals.return_value = [ASYNC_WAVE_INFO]
+        item = make_scan_item(mock_client, "scan_1")
+        register_scan(mock_client, {"scan_1": item})
+        mock_client.queue.scan_storage.current_scan_id = ["scan_1"]
+        sub = data_api.subscribe(
+            sources=[("det", "wave")], scan="scan_1", callback=lambda _: None, update_rate=None
+        )
+        feed = next(iter(data_api.paths[0]._feeds.values()))
+        for row in range(4):
+            feed.callback({"data": async_msg("wave", [row], row, "add_slice", slice_index=row)})
+        request = sub._all_requests()[0]
+        assert sorted(request.state["slice_rows"][("det", "wave")]) == [0, 1, 2, 3]
+        sub.set_max_buffer_size(1)
+        assert sorted(request.state["slice_rows"][("det", "wave")]) == [3]
+        sub.close()
+
     def _replace_feed_of_two_signals(self, data_api, mock_client):
         """Subscribe to the signals ``a`` and ``b`` of one feed; returns (sub, feed, updates)."""
         mock_client.device_manager.get_bec_signals.return_value = multi_signal_info(
