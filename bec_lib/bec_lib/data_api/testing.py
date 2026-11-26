@@ -62,7 +62,7 @@ class HistoryStub:
 
     def latest_message(self) -> Any:
         """Return the registry entry of the most recent scan, or None."""
-        return max(self.messages.values(), key=lambda message: message.scan_number, default=None)
+        return max(self.messages.values(), key=lambda message: message.start_time, default=None)
 
     def get_by_scan_id(self, scan_id: str) -> Any:
         """Return the file container of a scan, or None."""

@@ -29,14 +29,14 @@ def _finished_scan(mock_client, scan_id, number, points=3):
     return item
 
 
-def _history_message(scan_id, number):
+def _history_message(scan_id, number, start_time=0.0):
     return messages.ScanHistoryMessage(
         scan_id=scan_id,
         scan_number=number,
         dataset_number=1,
         exit_status="closed",
         file_path=f"/tmp/{scan_id}.h5",
-        start_time=0.0,
+        start_time=start_time,
         end_time=1.0,
         scan_name="line_scan",
         num_points=3,
@@ -51,23 +51,34 @@ def _set_history(mock_client, message):
     )
 
 
-def test_latest_scan_is_the_last_one_that_arrived(mock_client):
+def _started(item, when):
+    item.start_time = when
+    return item
+
+
+def test_latest_scan_is_the_one_that_started_last(mock_client):
     """
-    The scans of the storage are in the order they arrived, and the storage is ahead of the
-    history. The scan number does not decide: a new experiment sets it back to 1.
+    Neither the scan number nor the place in the storage says which scan ran last: a new
+    experiment sets the number back, and the storage is in the order the scans were queued.
     """
-    before, after = _finished_scan(mock_client, "old", 500), _finished_scan(mock_client, "new", 2)
-    mock_client.queue.scan_storage.storage = [before, after]
-    _set_history(mock_client, _history_message("old", 500))
-    assert client_views.latest_scan(mock_client) == ("new", after)
+    first = _started(_finished_scan(mock_client, "first", 500), 100.0)
+    second = _started(_finished_scan(mock_client, "second", 2), 300.0)
+    third = _started(_finished_scan(mock_client, "third", 1), 200.0)
+    mock_client.queue.scan_storage.storage = [first, second, third]  # queued second, ran third
+    _set_history(mock_client, _history_message("first", 500, start_time=100.0))
+    assert client_views.latest_scan(mock_client) == ("second", second)
 
     queued = make_scan_item(mock_client, "queued")  # no status yet: it has not started
     queued.status_message = None
-    mock_client.queue.scan_storage.storage = [before, after, queued]
-    assert client_views.latest_scan(mock_client) == ("new", after)
+    mock_client.queue.scan_storage.storage = [first, second, third, queued]
+    assert client_views.latest_scan(mock_client) == ("second", second)
+
+    # A scan the client missed is only in the history: it still counts when it ran later.
+    _set_history(mock_client, _history_message("missed", 3, start_time=400.0))
+    assert client_views.latest_scan(mock_client) == ("missed", None)
 
     mock_client.queue.scan_storage.storage = []  # a client that started after the scans
-    assert client_views.latest_scan(mock_client) == ("old", None)
+    assert client_views.latest_scan(mock_client) == ("missed", None)
 
     _set_history(mock_client, None)
     assert client_views.latest_scan(mock_client) is None

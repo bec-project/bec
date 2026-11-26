@@ -61,23 +61,35 @@ def current_live_scan(client: BECClient) -> tuple[str, ScanItem] | None:
     return scan_id, item
 
 
+def scan_start(item: ScanItem) -> float:
+    """When the scan of a scan item started (its ``open`` status); 0 while that is unknown."""
+    started = item.start_time or getattr(item.status_message, "timestamp", None)
+    return float(started) if isinstance(started, (int, float)) else 0.0
+
+
 def latest_scan(client: BECClient) -> tuple[str, ScanItem | None] | None:
     """
     Return ``(scan_id, scan_item)`` of the most recent scan, running or finished, or ``None``.
 
-    Scan storage holds the scans this client saw, in the order they arrived (with their live
-    data, also before the file is written); the history registry holds finished scans,
-    including those from before the client started. The last scan of the storage wins; a
-    scan found only in the history has no item (``None``, an explicit empty prefetch). The
-    scan number does not decide: it starts again when a new experiment sets it back.
+    Scan storage holds the scans this client saw (with their live data, also before the
+    file is written); the history registry holds finished scans, including those from
+    before the client started and those it missed. The scan that started last wins; a scan
+    found only in the history has no item (``None``, an explicit empty prefetch). Neither
+    the scan number nor the place in the storage decides: the number starts again with a
+    new experiment, and the storage is in the order the scans were queued.
     """
+    started, scan_id, latest_item = -1.0, None, None
     storage = scan_storage(client)
-    for item in reversed(list(storage.storage)) if storage is not None else ():
+    for item in list(storage.storage) if storage is not None else ():
         # An item is created from the queue entry; its id and status follow later.
-        if isinstance(item.scan_id, str) and item.scan_id and item.status_message is not None:
-            return item.scan_id, item
+        if not isinstance(item.scan_id, str) or not item.scan_id or item.status_message is None:
+            continue
+        if scan_start(item) >= started:
+            started, scan_id, latest_item = scan_start(item), item.scan_id, item
     message = None if client.history is None else client.history.latest_message()
-    return None if message is None else (message.scan_id, None)
+    if message is not None and message.scan_id != scan_id and message.start_time > started:
+        scan_id, latest_item = message.scan_id, None
+    return None if scan_id is None else (scan_id, latest_item)
 
 
 def device(client: BECClient, name: str) -> Any:
