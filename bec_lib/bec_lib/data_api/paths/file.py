@@ -297,6 +297,7 @@ class _SourceLoad:
 
 def publish_view(request: SourceRequest, spec: SourceSpec, view: ColumnView) -> None:
     """Put the points held of a large column into the request's bundle. Lock held."""
+    loaded = view.loaded_rows  # before the points: the loader adds rows without the lock
     rows, values, timestamps = view.columns()
     series = SourceSeries(spec.device, spec.entry, spec.kind or SourceKind.UNINDEXED)
     series.metadata["file_path"] = view.file_path
@@ -304,7 +305,7 @@ def publish_view(request: SourceRequest, spec: SourceSpec, view: ColumnView) -> 
     if len(rows):
         series.extend(values, timestamps, ordinals=rows)
     # The overview keeps some rows of many: the column is complete when all were read.
-    series.expect(view.total, rows_read=view.loaded_rows)
+    series.expect(view.total, rows_read=loaded)
     request.adopt({spec.key: series})
 
 
